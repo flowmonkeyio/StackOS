@@ -17,6 +17,7 @@ from content_stack.actions.manifest import (
 )
 from content_stack.actions.openai_images import OpenAIImagesActionConnector
 from content_stack.actions.repository import (
+    ActionCallAuditOut,
     ActionCallOut,
     ActionDescribeOut,
     ActionExecutionOut,
@@ -29,6 +30,7 @@ DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
 __all__ = [
     "ACTION_MANIFEST_SCHEMA_VERSION",
     "DEFAULT_ACTION_CONNECTORS",
+    "ActionCallAuditOut",
     "ActionCallOut",
     "ActionConnector",
     "ActionConnectorRegistry",

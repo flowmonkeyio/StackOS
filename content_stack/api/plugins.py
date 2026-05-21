@@ -11,6 +11,7 @@ from sqlmodel import Session
 from content_stack.api.deps import get_session
 from content_stack.api.envelopes import WriteResponse, write_response
 from content_stack.repositories.plugins import (
+    ActionOut,
     CapabilityOut,
     CatalogOut,
     PluginCatalogOut,
@@ -102,6 +103,25 @@ async def describe_provider(
 ) -> ProviderOut:
     """Describe one provider; pass plugin_slug if the key is ambiguous."""
     return PluginRepository(session).get_provider(key=provider_key, plugin_slug=plugin_slug)
+
+
+@router.get("/actions", response_model=list[ActionOut])
+async def list_actions(
+    plugin_slug: str | None = Query(default=None),
+    session: Session = Depends(get_session),
+) -> list[ActionOut]:
+    """List registered action schemas."""
+    return PluginRepository(session).list_actions(plugin_slug=plugin_slug)
+
+
+@router.get("/actions/{action_key}", response_model=ActionOut)
+async def describe_action(
+    action_key: str,
+    plugin_slug: str | None = Query(default=None),
+    session: Session = Depends(get_session),
+) -> ActionOut:
+    """Describe one action schema; pass plugin_slug if the key is ambiguous."""
+    return PluginRepository(session).get_action(key=action_key, plugin_slug=plugin_slug)
 
 
 @router.post(

@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 
 from fastapi.testclient import TestClient
+from sqlmodel import Session
+
+from content_stack.db.models import MetricSnapshot
 
 
 def test_project_memory_routes_create_and_query_sanitized_context(
@@ -64,11 +67,18 @@ def test_experiment_and_decision_routes_store_supplied_data_without_winner_logic
         json={
             "experiment_id": experiment_id,
             "variant_key": "question",
-            "metrics_json": {"ctr": 0.12},
+            "metrics_json": {"ctr": 0.12, "api_key": "secret"},
             "summary": "Early observation only.",
         },
     )
     assert obs_resp.status_code == 200, obs_resp.text
+
+    observations = api.get(
+        f"/api/v1/projects/{project_id}/experiments/observations",
+        params={"experiment_id": experiment_id},
+    )
+    assert observations.status_code == 200
+    assert observations.json()["items"][0]["metrics_json"]["api_key"] == "[redacted]"
 
     decision_resp = api.post(
         f"/api/v1/projects/{project_id}/experiments/decisions",
@@ -88,6 +98,43 @@ def test_experiment_and_decision_routes_store_supplied_data_without_winner_logic
 
     assert [item["id"] for item in experiments.json()["items"]] == [experiment_id]
     assert decisions.json()["items"][0]["decision"].startswith("Keep running")
+
+
+def test_context_snapshot_and_metric_read_routes_are_sanitized(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    snapshot = api.post(
+        f"/api/v1/projects/{project_id}/context/snapshots",
+        json={
+            "name": "Recent history",
+            "query_json": {"sources": ["runs"], "access_token": "secret"},
+            "selected_sources_json": [{"source": "runs", "ids": [1]}],
+        },
+    )
+    assert snapshot.status_code == 201, snapshot.text
+
+    snapshots = api.get(f"/api/v1/projects/{project_id}/context/snapshots")
+    assert snapshots.status_code == 200
+    assert snapshots.json()["items"][0]["query_json"]["access_token"] == "[redacted]"
+
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        session.add(
+            MetricSnapshot(
+                project_id=project_id,
+                source_type="experiment",
+                source_id=123,
+                metric_key="ctr",
+                metric_value=0.42,
+                metadata_json={"api_key": "secret"},
+            )
+        )
+        session.commit()
+
+    metrics = api.get(f"/api/v1/projects/{project_id}/metrics", params={"metric_key": "ctr"})
+    assert metrics.status_code == 200
+    assert metrics.json()["items"][0]["metadata_json"]["api_key"] == "[redacted]"
 
 
 def test_context_query_route_enforces_limit_and_field_projection(

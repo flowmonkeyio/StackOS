@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from content_stack.api.actions import router as actions_router
 from content_stack.api.articles import (
     article_router as articles_article_router,
 )
@@ -65,6 +66,7 @@ from content_stack.api.topics import (
 from content_stack.api.topics import (
     topic_router as topic_router,
 )
+from content_stack.api.workflow_templates import router as workflow_templates_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -87,10 +89,14 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(meta_router)
     # StackOS plugin/catalog discovery.
     app.include_router(plugins_router)
+    # StackOS action audit discovery.
+    app.include_router(actions_router)
     # Generic StackOS resources/artifacts.
     app.include_router(resources_router)
     # Project memory/context primitives.
     app.include_router(context_router)
+    # Reusable workflow templates.
+    app.include_router(workflow_templates_router)
     # Domain routers — projects + nested presets land first because most
     # other resources hang off ``/projects/{id}/...``.
     app.include_router(projects_router)

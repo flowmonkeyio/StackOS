@@ -30,6 +30,7 @@ run_plan_router = APIRouter(prefix="/api/v1/run-plans", tags=["run-plans"])
 async def list_run_plans(
     project_id: int,
     page: PaginationParams = Depends(pagination_params),
+    run_id: int | None = None,
     status: RunPlanStatus | None = None,
     template_key: str | None = None,
     session: Session = Depends(get_session),
@@ -38,6 +39,7 @@ async def list_run_plans(
     return page_response(
         RunPlanRepository(session).list(
             project_id=project_id,
+            run_id=run_id,
             status=status,
             template_key=template_key,
             limit=page.limit,

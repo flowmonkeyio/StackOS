@@ -25,6 +25,7 @@ from content_stack.context import (
     ExperimentObservationOut,
     ExperimentOut,
     LearningOut,
+    MetricSnapshotOut,
     ProjectEventOut,
 )
 
@@ -176,6 +177,24 @@ async def context_timeline(
             limit=page.limit,
             after_id=page.after,
             event_type=event_type,
+        )
+    )
+
+
+@router.get("/context/snapshots", response_model=PageResponse[ContextSnapshotOut])
+async def query_context_snapshots(
+    project_id: int,
+    run_id: int | None = Query(default=None),
+    page: PaginationParams = Depends(pagination_params),
+    session: Session = Depends(get_session),
+) -> PageResponse[ContextSnapshotOut]:
+    """Query sanitized context snapshots for generic project-data views."""
+    return page_response(
+        ContextRepository(session).query_snapshots(
+            project_id=project_id,
+            run_id=run_id,
+            limit=page.limit,
+            after_id=page.after,
         )
     )
 
@@ -358,6 +377,26 @@ async def record_experiment_observation(
     )
 
 
+@router.get("/experiments/observations", response_model=PageResponse[ExperimentObservationOut])
+async def query_experiment_observations(
+    project_id: int,
+    experiment_id: int | None = Query(default=None),
+    run_id: int | None = Query(default=None),
+    page: PaginationParams = Depends(pagination_params),
+    session: Session = Depends(get_session),
+) -> PageResponse[ExperimentObservationOut]:
+    """Query sanitized experiment observations without interpreting them."""
+    return page_response(
+        ContextRepository(session).query_observations(
+            project_id=project_id,
+            experiment_id=experiment_id,
+            run_id=run_id,
+            limit=page.limit,
+            after_id=page.after,
+        )
+    )
+
+
 @router.post("/experiments/decisions", response_model=WriteResponse[DecisionOut])
 async def record_experiment_decision(
     project_id: int,
@@ -387,6 +426,7 @@ async def record_experiment_decision(
 async def query_decisions(
     project_id: int,
     experiment_id: int | None = Query(default=None),
+    run_id: int | None = Query(default=None),
     status_value: str | None = Query(default=None, alias="status"),
     tags: list[str] | None = Query(default=None),
     page: PaginationParams = Depends(pagination_params),
@@ -397,6 +437,7 @@ async def query_decisions(
         ContextRepository(session).query_decisions(
             project_id=project_id,
             experiment_id=experiment_id,
+            run_id=run_id,
             status=status_value,
             tags=tags,
             limit=page.limit,
@@ -425,6 +466,28 @@ async def record_decision(
             metadata_json=body.metadata_json,
             run_id=body.run_id,
             experiment_id=body.experiment_id,
+        )
+    )
+
+
+@router.get("/metrics", response_model=PageResponse[MetricSnapshotOut])
+async def query_metrics(
+    project_id: int,
+    metric_key: str | None = Query(default=None),
+    source_type: str | None = Query(default=None),
+    source_id: int | None = Query(default=None),
+    page: PaginationParams = Depends(pagination_params),
+    session: Session = Depends(get_session),
+) -> PageResponse[MetricSnapshotOut]:
+    """Query supplied metric snapshots as data, without ranking or decisions."""
+    return page_response(
+        ContextRepository(session).query_metrics(
+            project_id=project_id,
+            metric_key=metric_key,
+            source_type=source_type,
+            source_id=source_id,
+            limit=page.limit,
+            after_id=page.after,
         )
     )
 

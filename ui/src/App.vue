@@ -4,21 +4,32 @@
 // Sidebar holds the brand, ProjectSwitcher, primary nav, and theme toggle.
 // At < md the layout collapses to a single column with a top-of-page nav.
 
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
+import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
+import {
+  compatibilityNavSection,
+  coreNavSections,
+  pluginContributionSections,
+  setupNavSection,
+  type StackOsNavSection,
+} from '@/lib/stackos/nav'
 import { useAuthStore } from '@/stores/auth'
+import { useStackOsCatalogStore } from '@/stores/plugins'
 import { useProjectsStore } from '@/stores/projects'
 import { useToastsStore } from '@/stores/toasts'
 
 const auth = useAuthStore()
 const projects = useProjectsStore()
+const catalog = useStackOsCatalogStore()
 const toasts = useToastsStore()
 const route = useRoute()
 
 const { activeProject } = storeToRefs(projects)
+const { enabledPlugins } = storeToRefs(catalog)
 const { items: toastItems } = storeToRefs(toasts)
 
 const theme = ref<'light' | 'dark'>('light')
@@ -51,72 +62,24 @@ onMounted(() => {
   applyTheme()
 })
 
-interface NavItem {
-  label: string
-  to: string
-  description?: string
-  matchPrefix?: boolean
-}
-
-interface NavSection {
-  label: string
-  items: NavItem[]
-}
-
-const projectNavSections = computed<NavSection[]>(() => {
+const projectNavSections = computed<StackOsNavSection[]>(() => {
   const id = activeProject.value?.id
   if (!id) return []
   return [
-    {
-      label: 'Command',
-      items: [
-        { label: 'Overview', to: `/projects/${id}/overview`, description: 'Readiness and next action' },
-      ],
-    },
-    {
-      label: 'Content pipeline',
-      items: [
-        { label: 'Clusters', to: `/projects/${id}/clusters`, description: 'Topical structure' },
-        { label: 'Topics', to: `/projects/${id}/topics`, description: 'Queue and approvals' },
-        { label: 'Articles', to: `/projects/${id}/articles`, description: 'Production workspace', matchPrefix: true },
-        { label: 'Procedures', to: `/projects/${id}/procedures`, description: 'Guided operations' },
-      ],
-    },
-    {
-      label: 'Project setup',
-      items: [
-        { label: 'Voice', to: `/projects/${id}/voice`, description: 'Editorial profile' },
-        { label: 'Compliance', to: `/projects/${id}/compliance`, description: 'Rules and disclosures' },
-        { label: 'EEAT', to: `/projects/${id}/eeat`, description: 'Quality criteria' },
-        { label: 'Publishing', to: `/projects/${id}/targets`, description: 'Targets and channels' },
-        { label: 'Integrations', to: `/projects/${id}/integrations`, description: 'Vendor credentials' },
-        { label: 'Schedules', to: `/projects/${id}/schedules`, description: 'Recurring work' },
-        { label: 'Cost & Budget', to: `/projects/${id}/cost-budget`, description: 'Spend controls' },
-      ],
-    },
-    {
-      label: 'Monitoring',
-      items: [
-        { label: 'Interlinks', to: `/projects/${id}/interlinks`, description: 'Internal link queue' },
-        { label: 'Search Console', to: `/projects/${id}/gsc`, description: 'Queries and redirects' },
-        { label: 'Drift', to: `/projects/${id}/drift`, description: 'Content baselines' },
-        { label: 'Runs', to: `/projects/${id}/runs`, description: 'Execution audit', matchPrefix: true },
-      ],
-    },
+    ...coreNavSections(id),
+    ...pluginContributionSections(id, enabledPlugins.value),
+    setupNavSection(id),
+    compatibilityNavSection(id),
   ]
 })
 
-function navItemClass(item: NavItem): string {
-  const active = item.matchPrefix
-    ? route.path === item.to || route.path.startsWith(`${item.to}/`)
-    : route.path === item.to
-  return [
-    'relative block rounded-md px-3 py-1.5 text-sm transition-colors duration-fast focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
-    active
-      ? 'bg-accent-subtle text-accent-fg shadow-xs before:absolute before:bottom-1.5 before:left-1 before:top-1.5 before:w-0.5 before:rounded-full before:bg-accent'
-      : 'text-fg-default hover:bg-bg-surface-alt',
-  ].join(' ')
-}
+watch(
+  () => activeProject.value?.id,
+  (projectId) => {
+    if (projectId) void catalog.refresh(projectId)
+  },
+  { immediate: true },
+)
 
 function closeDrawer(): void {
   drawerOpen.value = false
@@ -153,13 +116,13 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
             <span
               class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-bg-inverse font-mono text-sm font-bold text-fg-inverse"
               aria-hidden="true"
-            >cs</span>
+            >OS</span>
             <div class="min-w-0">
               <div class="truncate text-sm font-semibold leading-tight text-fg-strong">
-                content-stack
+                StackOS
               </div>
               <div class="text-xs text-fg-muted">
-                Operator console
+                Local runtime
               </div>
             </div>
           </div>
@@ -191,37 +154,11 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
           >
             Pick a project to see its operating navigation.
           </p>
-          <div
+          <PluginNavRenderer
             v-else
-            class="space-y-3"
-          >
-            <section
-              v-for="section in projectNavSections"
-              :key="section.label"
-              :aria-label="`${section.label} navigation`"
-            >
-              <h2 class="mb-0.5 px-3 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-                {{ section.label }}
-              </h2>
-              <ul class="space-y-0.5">
-                <li
-                  v-for="item in section.items"
-                  :key="item.to"
-                >
-                  <RouterLink
-                    :to="item.to"
-                    :class="navItemClass(item)"
-                    :title="item.description"
-                    @click="closeDrawer"
-                  >
-                    <span class="block min-w-0 truncate pl-2 font-medium">
-                      {{ item.label }}
-                    </span>
-                  </RouterLink>
-                </li>
-              </ul>
-            </section>
-          </div>
+            :sections="projectNavSections"
+            @click.capture="closeDrawer"
+          />
         </nav>
 
         <div class="border-t border-subtle px-4 py-3">

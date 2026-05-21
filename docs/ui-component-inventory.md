@@ -51,6 +51,23 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, read-only action slot, and route chrome |
 
+## Shipped — StackOS renderers (`ui/src/components/renderers/`)
+
+| Component | Notes |
+|---|---|
+| `PluginNavRenderer` | renders core/plugin/compatibility nav sections from static route descriptors or plugin `manifest_json.ui.nav` contributions |
+| `TemplateRenderer` | renders reusable workflow template setup, contracts, context requirements, policies, approvals, and learning hooks |
+| `RunPlanRenderer` | renders concrete run-plan steps, allowed tools, approvals, run context, and redacted action calls |
+| `ActionSchemaRenderer` | renders action input/output schemas and connector config with defensive redaction |
+| `ResourceViewRenderer` | renders resource schemas or project resource records using explicit plugin/resource fields |
+| `ArtifactRenderer` | renders artifact metadata/provenance without inventing plugin ownership |
+| `ContextQueryRenderer` | renders bounded context query items with sanitized fields and provenance |
+
+These renderers are intentionally generic. New domains should contribute
+manifests/templates/resources/actions and let the renderer surface them; do not
+add workflow-specific UI unless the generic renderer is insufficient and the
+exception is signed off.
+
 Removed action-oriented demo components:
 
 `ArticleActionBar`, `ArticleAssetCard`, `ArticleStatusStepper`, `BudgetMeter`,
@@ -96,7 +113,13 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 | Article detail | UiPageHeader, TabBar, UiPanel, UiCodeBlock, UiJsonBlock | (none) |
 | Topics list | UiFilterBar, DataTable, UiBadge | (none) |
 | Runs list | UiFilterBar, DataTable, UiBadge | (none) |
-| Run detail | UiPageHeader, UiCodeBlock, UiJsonBlock | (none) |
+| Run detail | UiPageHeader, UiCodeBlock, UiJsonBlock, RunPlanRenderer, ArtifactRenderer | (none) |
+| Plugins | UiPanel, UiBadge, ActionSchemaRenderer | ProjectPageHeader |
+| Capabilities | DataTable, UiBadge, ActionSchemaRenderer | ProjectPageHeader |
+| Connections | DataTable, UiBadge, UiJsonBlock | ProjectPageHeader |
+| Workflow templates | DataTable, TemplateRenderer | ProjectPageHeader |
+| Project Data | UiSegmentedControl, DataTable, ArtifactRenderer | ProjectPageHeader |
+| Resource Explorer | DataTable, ResourceViewRenderer, ArtifactRenderer | ProjectPageHeader |
 | Procedures list | DataTable, UiBadge | ProjectPageHeader |
 | GSC | DataTable, UiMetricCard | ProjectPageHeader |
 | Drift | DataTable, UiBadge, UiDiffBlock | ProjectPageHeader |

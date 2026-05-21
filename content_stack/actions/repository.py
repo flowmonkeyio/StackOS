@@ -31,7 +31,14 @@ from content_stack.db.models import (
     RunPlan,
     RunPlanStep,
 )
-from content_stack.repositories.base import ConflictError, Envelope, NotFoundError, ValidationError
+from content_stack.repositories.base import (
+    ConflictError,
+    Envelope,
+    NotFoundError,
+    Page,
+    ValidationError,
+    cursor_paginate,
+)
 from content_stack.repositories.plugins import PluginRepository
 from content_stack.repositories.projects import IntegrationBudgetRepository
 from content_stack.workflows.run_plan_schema import find_run_plan_secret_paths
@@ -226,6 +233,37 @@ class ActionCallOut(BaseModel):
     completed_at: datetime | None
 
 
+class ActionCallAuditOut(BaseModel):
+    """Public action-call audit row for UI/read APIs.
+
+    Internal DB identifiers such as ``credential_id`` and replay inputs such as
+    ``idempotency_key`` stay out of this shape. The opaque ``credential_ref`` is
+    safe to display because it is designed for agent-visible references.
+    """
+
+    id: int
+    project_id: int
+    run_id: int | None
+    run_plan_id: int | None
+    run_plan_step_id: int | None
+    action_key: str
+    plugin_slug: str
+    provider_key: str | None
+    connector_key: str | None
+    operation: str
+    status: ActionCallStatus
+    dry_run: bool
+    credential_ref: str | None
+    request_json: dict[str, Any] | None
+    response_json: dict[str, Any] | None
+    metadata_json: dict[str, Any] | None
+    cost_cents: int
+    duration_ms: int | None
+    error: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
 class ActionDescribeOut(BaseModel):
     manifest: ExecutableActionManifest
     connector_registered: bool
@@ -292,6 +330,40 @@ class ActionRepository:
             connector_registered=registered,
             execution_available=registered,
             agent_execute_available=registered,
+        )
+
+    def query_calls(
+        self,
+        *,
+        project_id: int,
+        run_id: int | None = None,
+        run_plan_id: int | None = None,
+        run_plan_step_id: int | None = None,
+        plugin_slug: str | None = None,
+        action_key: str | None = None,
+        limit: int | None = None,
+        after_id: int | None = None,
+    ) -> Page[ActionCallAuditOut]:
+        self._require_project(project_id)
+        filters = [ActionCall.project_id == project_id]
+        if run_id is not None:
+            filters.append(ActionCall.run_id == run_id)
+        if run_plan_id is not None:
+            filters.append(ActionCall.run_plan_id == run_plan_id)
+        if run_plan_step_id is not None:
+            filters.append(ActionCall.run_plan_step_id == run_plan_step_id)
+        if plugin_slug is not None:
+            filters.append(ActionCall.plugin_slug == plugin_slug)
+        if action_key is not None:
+            filters.append(ActionCall.action_key == action_key)
+        stmt = select(ActionCall).where(*filters)
+        return cursor_paginate(
+            self._s,
+            stmt,
+            id_col=ActionCall.id,
+            limit=limit,
+            after_id=after_id,
+            converter=self._call_audit_out,
         )
 
     def validate(
@@ -795,6 +867,61 @@ class ActionRepository:
         self._s.refresh(row)
         return row
 
+    def _call_out(self, row: ActionCall) -> ActionCallOut:
+        assert row.id is not None
+        return ActionCallOut(
+            id=row.id,
+            project_id=row.project_id,
+            run_id=row.run_id,
+            run_plan_id=row.run_plan_id,
+            run_plan_step_id=row.run_plan_step_id,
+            action_id=row.action_id,
+            credential_id=row.credential_id,
+            action_key=row.action_key,
+            plugin_slug=row.plugin_slug,
+            provider_key=row.provider_key,
+            connector_key=row.connector_key,
+            operation=row.operation,
+            status=row.status,
+            dry_run=row.dry_run,
+            idempotency_key=row.idempotency_key,
+            credential_ref=row.credential_ref,
+            request_json=_redact_for_audit(row.request_json),
+            response_json=_redact_for_audit(row.response_json),
+            metadata_json=_redact_for_audit(row.metadata_json),
+            cost_cents=row.cost_cents,
+            duration_ms=row.duration_ms,
+            error=redact_secret_text(row.error) if row.error is not None else None,
+            created_at=row.created_at,
+            completed_at=row.completed_at,
+        )
+
+    def _call_audit_out(self, row: ActionCall) -> ActionCallAuditOut:
+        assert row.id is not None
+        return ActionCallAuditOut(
+            id=row.id,
+            project_id=row.project_id,
+            run_id=row.run_id,
+            run_plan_id=row.run_plan_id,
+            run_plan_step_id=row.run_plan_step_id,
+            action_key=row.action_key,
+            plugin_slug=row.plugin_slug,
+            provider_key=row.provider_key,
+            connector_key=row.connector_key,
+            operation=row.operation,
+            status=row.status,
+            dry_run=row.dry_run,
+            credential_ref=row.credential_ref,
+            request_json=_redact_for_audit(row.request_json),
+            response_json=_redact_for_audit(row.response_json),
+            metadata_json=_redact_for_audit(row.metadata_json),
+            cost_cents=row.cost_cents,
+            duration_ms=row.duration_ms,
+            error=redact_secret_text(row.error) if row.error is not None else None,
+            created_at=row.created_at,
+            completed_at=row.completed_at,
+        )
+
     def _idempotency_replay(
         self,
         *,
@@ -900,6 +1027,7 @@ class ActionRepository:
 
 
 __all__ = [
+    "ActionCallAuditOut",
     "ActionCallOut",
     "ActionDescribeOut",
     "ActionExecutionOut",

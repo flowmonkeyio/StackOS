@@ -33,6 +33,12 @@ import GscView from './views/GscView.vue'
 import DriftView from './views/DriftView.vue'
 import RunsView from './views/RunsView.vue'
 import ProceduresView from './views/ProceduresView.vue'
+import PluginsView from './views/PluginsView.vue'
+import CapabilitiesView from './views/CapabilitiesView.vue'
+import ConnectionsView from './views/ConnectionsView.vue'
+import WorkflowTemplatesView from './views/WorkflowTemplatesView.vue'
+import ProjectDataView from './views/ProjectDataView.vue'
+import ResourceExplorerView from './views/ResourceExplorerView.vue'
 
 // Routes per PLAN.md L185-L194 + the M5.B article-detail tabs.
 // Each article-detail tab is its own child route so the URL preserves the
@@ -146,6 +152,16 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects/:id/interlinks', name: 'project-interlinks', component: InterlinksView },
   { path: '/projects/:id/gsc', name: 'project-gsc', component: GscView },
   { path: '/projects/:id/drift', name: 'project-drift', component: DriftView },
+  { path: '/projects/:id/plugins', name: 'project-plugins', component: PluginsView },
+  { path: '/projects/:id/capabilities', name: 'project-capabilities', component: CapabilitiesView },
+  { path: '/projects/:id/connections', name: 'project-connections', component: ConnectionsView },
+  {
+    path: '/projects/:id/workflow-templates',
+    name: 'project-workflow-templates',
+    component: WorkflowTemplatesView,
+  },
+  { path: '/projects/:id/data', name: 'project-data', component: ProjectDataView },
+  { path: '/projects/:id/resources', name: 'project-resources', component: ResourceExplorerView },
   { path: '/projects/:id/runs', name: 'project-runs', component: RunsView },
   { path: '/projects/:id/runs/:run_id', name: 'project-run-detail', component: RunsView },
   { path: '/projects/:id/procedures', name: 'project-procedures', component: ProceduresView },

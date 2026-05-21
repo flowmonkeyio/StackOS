@@ -1517,11 +1517,27 @@ Acceptance criteria:
 - Raw JSON panels cannot expose connector payloads or secrets.
 - No per-workflow bespoke UI is introduced.
 
+Execution notes:
+
+- Additive read-only REST routes support the generic UI:
+  `/workflow-templates`, `/action-calls`, `/actions`, context snapshots,
+  experiment observations, metrics, and run-plan filtering by `run_id`.
+- The app shell now presents StackOS core navigation first and keeps SEO
+  procedure/content routes under compatibility until D12.
+- Generic renderers own display shape only. They may group explicit records and
+  defensively redact payloads, but they do not decide workflow meaning, choose
+  providers, or execute mutations.
+- Resource and artifact renderers must not invent fallback ownership. Missing
+  plugin/resource fields stay empty rather than guessed.
+
 Verification commands:
 
 ```bash
+TPF_LLM_TOOL=codex tpf pnpm --dir ui type-check
 TPF_LLM_TOOL=codex tpf pnpm --dir ui test
-TPF_LLM_TOOL=codex tpf pytest tests/unit/test_ui_api_contract.py -q
+TPF_LLM_TOOL=codex tpf pnpm --dir ui build
+TPF_LLM_TOOL=codex tpf uv run pytest tests/integration/test_routes tests/unit/test_ui_api_contract.py -q
+TPF_LLM_TOOL=codex tpf uv run ruff check content_stack tests
 ```
 
 Signoff notes:

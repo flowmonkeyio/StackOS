@@ -487,6 +487,39 @@ class ContextRepository:
         self._s.refresh(row)
         return Envelope(data=self._snapshot_out(row), project_id=project_id)
 
+    def query_snapshots(
+        self,
+        *,
+        project_id: int,
+        run_id: int | None = None,
+        limit: int | None = None,
+        after_id: int | None = None,
+    ) -> Page[ContextSnapshotOut]:
+        self._require_project(project_id)
+        n = _normalise_limit(limit)
+        filters = [ContextSnapshot.project_id == project_id]
+        if run_id is not None:
+            filters.append(ContextSnapshot.run_id == run_id)
+        total = _scalar_count(
+            self._s,
+            sa_select(func.count()).select_from(ContextSnapshot).where(*filters),
+        )
+        stmt = select(ContextSnapshot).where(*filters)
+        if after_id is not None:
+            stmt = stmt.where(ContextSnapshot.id > after_id)
+        rows = list(
+            self._s.exec(
+                stmt.order_by(ContextSnapshot.id.asc()).limit(n + 1)  # type: ignore[union-attr]
+            ).all()
+        )
+        page_rows = rows[:n]
+        next_cursor = int(page_rows[-1].id) if len(rows) > n and page_rows else None
+        return Page(
+            items=[self._snapshot_out(row) for row in page_rows],
+            next_cursor=next_cursor,
+            total_estimate=total,
+        )
+
     def query_learnings(
         self,
         *,
@@ -842,6 +875,42 @@ class ContextRepository:
         self._s.refresh(row)
         return Envelope(data=self._observation_out(row), project_id=project_id)
 
+    def query_observations(
+        self,
+        *,
+        project_id: int,
+        experiment_id: int | None = None,
+        run_id: int | None = None,
+        limit: int | None = None,
+        after_id: int | None = None,
+    ) -> Page[ExperimentObservationOut]:
+        self._require_project(project_id)
+        n = _normalise_limit(limit)
+        filters = [ExperimentObservation.project_id == project_id]
+        if experiment_id is not None:
+            filters.append(ExperimentObservation.experiment_id == experiment_id)
+        if run_id is not None:
+            filters.append(ExperimentObservation.run_id == run_id)
+        total = _scalar_count(
+            self._s,
+            sa_select(func.count()).select_from(ExperimentObservation).where(*filters),
+        )
+        stmt = select(ExperimentObservation).where(*filters)
+        if after_id is not None:
+            stmt = stmt.where(ExperimentObservation.id > after_id)
+        rows = list(
+            self._s.exec(
+                stmt.order_by(ExperimentObservation.id.asc()).limit(n + 1)  # type: ignore[union-attr]
+            ).all()
+        )
+        page_rows = rows[:n]
+        next_cursor = int(page_rows[-1].id) if len(rows) > n and page_rows else None
+        return Page(
+            items=[self._observation_out(row) for row in page_rows],
+            next_cursor=next_cursor,
+            total_estimate=total,
+        )
+
     def record_experiment_decision(
         self,
         *,
@@ -882,6 +951,7 @@ class ContextRepository:
         *,
         project_id: int,
         experiment_id: int | None = None,
+        run_id: int | None = None,
         status: str | None = None,
         tags: list[str] | None = None,
         limit: int | None = None,
@@ -892,6 +962,8 @@ class ContextRepository:
         filters = [Decision.project_id == project_id]
         if experiment_id is not None:
             filters.append(Decision.experiment_id == experiment_id)
+        if run_id is not None:
+            filters.append(Decision.run_id == run_id)
         if status is not None:
             filters.append(Decision.status == status)
         stmt = select(Decision).where(*filters)
@@ -939,6 +1011,45 @@ class ContextRepository:
             items=[self._item_from_decision(row, requested) for row in rows],
             next_cursor=page.next_cursor,
             total_estimate=page.total_estimate,
+        )
+
+    def query_metrics(
+        self,
+        *,
+        project_id: int,
+        metric_key: str | None = None,
+        source_type: str | None = None,
+        source_id: int | None = None,
+        limit: int | None = None,
+        after_id: int | None = None,
+    ) -> Page[MetricSnapshotOut]:
+        self._require_project(project_id)
+        n = _normalise_limit(limit)
+        filters = [MetricSnapshot.project_id == project_id]
+        if metric_key is not None:
+            filters.append(MetricSnapshot.metric_key == metric_key)
+        if source_type is not None:
+            filters.append(MetricSnapshot.source_type == source_type)
+        if source_id is not None:
+            filters.append(MetricSnapshot.source_id == source_id)
+        total = _scalar_count(
+            self._s,
+            sa_select(func.count()).select_from(MetricSnapshot).where(*filters),
+        )
+        stmt = select(MetricSnapshot).where(*filters)
+        if after_id is not None:
+            stmt = stmt.where(MetricSnapshot.id > after_id)
+        rows = list(
+            self._s.exec(
+                stmt.order_by(MetricSnapshot.id.asc()).limit(n + 1)  # type: ignore[union-attr]
+            ).all()
+        )
+        page_rows = rows[:n]
+        next_cursor = int(page_rows[-1].id) if len(rows) > n and page_rows else None
+        return Page(
+            items=[self._metric_out(row) for row in page_rows],
+            next_cursor=next_cursor,
+            total_estimate=total,
         )
 
     def record_decision(
@@ -1490,6 +1601,21 @@ class ContextRepository:
             summary=_safe_text(row.summary),
             metadata_json=_safe_json(row.metadata_json),
             observed_at=row.observed_at,
+            created_at=row.created_at,
+        )
+
+    def _metric_out(self, row: MetricSnapshot) -> MetricSnapshotOut:
+        assert row.id is not None
+        return MetricSnapshotOut(
+            id=row.id,
+            project_id=row.project_id,
+            source_type=row.source_type,
+            source_id=row.source_id,
+            metric_key=row.metric_key,
+            metric_value=row.metric_value,
+            dimensions_json=_safe_json(row.dimensions_json),
+            metadata_json=_safe_json(row.metadata_json),
+            captured_at=row.captured_at,
             created_at=row.created_at,
         )
 

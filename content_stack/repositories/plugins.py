@@ -248,6 +248,17 @@ class PluginRepository:
         rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Action.key.asc())).all()
         return [self._action_out(action, plugin, provider) for action, plugin, provider in rows]
 
+    def get_action(self, *, key: str, plugin_slug: str | None = None) -> ActionOut:
+        rows = [a for a in self.list_actions(plugin_slug=plugin_slug) if a.key == key]
+        if not rows:
+            raise NotFoundError(f"action {key!r} not found")
+        if len(rows) > 1 and plugin_slug is None:
+            raise ConflictError(
+                "action key is ambiguous; pass plugin_slug",
+                data={"key": key, "plugin_slugs": sorted(r.plugin_slug for r in rows)},
+            )
+        return rows[0]
+
     def list_resources(self, *, plugin_slug: str | None = None) -> list[ResourceOut]:
         self.sync_builtin_plugins()
         stmt = select(Resource, Plugin).join(Plugin, Resource.plugin_id == Plugin.id)

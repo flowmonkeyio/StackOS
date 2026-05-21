@@ -473,6 +473,7 @@ class RunPlanRepository:
         self,
         *,
         project_id: int | None = None,
+        run_id: int | None = None,
         status: RunPlanStatus | None = None,
         template_key: str | None = None,
         limit: int | None = None,
@@ -481,6 +482,8 @@ class RunPlanRepository:
         stmt = select(RunPlan)
         if project_id is not None:
             stmt = stmt.where(RunPlan.project_id == project_id)
+        if run_id is not None:
+            stmt = stmt.where(RunPlan.run_id == run_id)
         if status is not None:
             stmt = stmt.where(RunPlan.status == status)
         if template_key is not None:

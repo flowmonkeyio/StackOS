@@ -47,6 +47,10 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 ## 4. Layout rules
 
 - Sidebar: 256px desktop rail.
+- StackOS core navigation is first: Plugins, Capabilities, Connections,
+  Workflow Templates, Runs, Project Data, and Resources. Domain-specific
+  surfaces are plugin contributions or compatibility links, not new top-level
+  product lanes.
 - Top bar: 52px. Sticky. Solid `bg.surface`, no blur.
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
 - Page header: title, slug, description, and read-only utility controls (right). Breadcrumbs optional, above title.
@@ -54,6 +58,10 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 - List pages: filter bar (sticky), table, pagination/footer. Bulk action bar appears on selection, takes filter bar's slot.
 - Detail pages: page header, tab bar, tab content. No nested cards.
 - Buttons in product views are limited to navigation, filtering, refresh/read, copy, and close/view affordances.
+- Workflow UI is generic. Templates, run plans, resources, artifacts, context,
+  action schemas, and plugin nav render through reusable renderers; do not add
+  per-workflow or per-channel pages for campaign creation, SEO article flow, or
+  provider-specific steps.
 
 ## 5. Component usage rules
 
@@ -74,6 +82,14 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 **UiBadge.** Status only. Never decorative. Always paired with `status.ts` mapping — never inline string compares.
 
 **Tables.** Compact density (32px row), comfortable for editor density (40px row). Never auto-wrap; use `truncate` + tooltip on overflow. Sticky header. Selection column: 32px.
+
+**StackOS renderers.** `TemplateRenderer`, `RunPlanRenderer`,
+`ResourceViewRenderer`, `ArtifactRenderer`, `ContextQueryRenderer`,
+`ActionSchemaRenderer`, and `PluginNavRenderer` render server-sanitized payloads
+only. They may format, group, filter by explicit ids, and redact defensively;
+they must not infer workflow meaning, choose providers, mutate data, or expose
+secrets. Opaque refs such as `credential_ref` are displayable; token-like
+fields are not.
 
 ## 6. Accessibility
 

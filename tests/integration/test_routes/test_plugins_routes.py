@@ -19,6 +19,14 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     assert providers.status_code == 200
     assert {p["key"] for p in providers.json()} >= {"openai-images", "firecrawl"}
 
+    actions = api.get("/api/v1/actions", params={"plugin_slug": "utils"})
+    assert actions.status_code == 200
+    assert {a["key"] for a in actions.json()} >= {"image.generate", "web.scrape"}
+
+    action = api.get("/api/v1/actions/image.generate", params={"plugin_slug": "utils"})
+    assert action.status_code == 200
+    assert action.json()["input_schema_json"]["required"] == ["prompt"]
+
     capability = api.get(
         "/api/v1/capabilities/seo-content",
         params={"plugin_slug": "seo"},

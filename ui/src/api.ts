@@ -4,6 +4,46 @@
  */
 
 export interface paths {
+    "/api/v1/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Actions
+         * @description List registered action schemas.
+         */
+        get: operations["list_actions_api_v1_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/actions/{action_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe Action
+         * @description Describe one action schema; pass plugin_slug if the key is ambiguous.
+         */
+        get: operations["describe_action_api_v1_actions__action_key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/articles/{article_id}": {
         parameters: {
             query?: never;
@@ -1107,6 +1147,26 @@ export interface paths {
         patch: operations["update_project_api_v1_projects__project_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/action-calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query Action Calls
+         * @description Query redacted action execution audit rows for generic run renderers.
+         */
+        get: operations["query_action_calls_api_v1_projects__project_id__action_calls_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/activate": {
         parameters: {
             query?: never;
@@ -1476,7 +1536,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Query Context Snapshots
+         * @description Query sanitized context snapshots for generic project-data views.
+         */
+        get: operations["query_context_snapshots_api_v1_projects__project_id__context_snapshots_get"];
         put?: never;
         /**
          * Create Context Snapshot
@@ -1659,7 +1723,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Query Experiment Observations
+         * @description Query sanitized experiment observations without interpreting them.
+         */
+        get: operations["query_experiment_observations_api_v1_projects__project_id__experiments_observations_get"];
         put?: never;
         /**
          * Record Experiment Observation
@@ -1963,6 +2031,26 @@ export interface paths {
          * @description Update learning review/status fields supplied by an agent or human.
          */
         patch: operations["update_learning_api_v1_projects__project_id__learnings__learning_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query Metrics
+         * @description Query supplied metric snapshots as data, without ranking or decisions.
+         */
+        get: operations["query_metrics_api_v1_projects__project_id__metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/plugins/{plugin_slug}/disable": {
@@ -2373,6 +2461,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/workflow-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workflow Templates
+         * @description List effective reusable workflow templates for a project.
+         */
+        get: operations["list_workflow_templates_api_v1_projects__project_id__workflow_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/workflow-templates/{template_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe Workflow Template
+         * @description Describe one reusable workflow template without creating a run.
+         */
+        get: operations["describe_workflow_template_api_v1_projects__project_id__workflow_templates__template_key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/providers": {
         parameters: {
             query?: never;
@@ -2645,6 +2773,114 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ActionCallAuditOut
+         * @description Public action-call audit row for UI/read APIs.
+         *
+         *     Internal DB identifiers such as ``credential_id`` and replay inputs such as
+         *     ``idempotency_key`` stay out of this shape. The opaque ``credential_ref`` is
+         *     safe to display because it is designed for agent-visible references.
+         */
+        ActionCallAuditOut: {
+            /** Action Key */
+            action_key: string;
+            /** Completed At */
+            completed_at: string | null;
+            /** Connector Key */
+            connector_key: string | null;
+            /** Cost Cents */
+            cost_cents: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Credential Ref */
+            credential_ref: string | null;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** Error */
+            error: string | null;
+            /** Id */
+            id: number;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Operation */
+            operation: string;
+            /** Plugin Slug */
+            plugin_slug: string;
+            /** Project Id */
+            project_id: number;
+            /** Provider Key */
+            provider_key: string | null;
+            /** Request Json */
+            request_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Response Json */
+            response_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number | null;
+            /** Run Plan Step Id */
+            run_plan_step_id: number | null;
+            status: components["schemas"]["ActionCallStatus"];
+        };
+        /**
+         * ActionCallStatus
+         * @description Persists to ``action_calls.status`` for generic action execution audit.
+         * @enum {string}
+         */
+        ActionCallStatus: ActionCallStatus;
+        /**
+         * ActionContractSpec
+         * @description Action/capability contract a run plan may resolve later.
+         */
+        ActionContractSpec: {
+            /** Action */
+            action?: string | null;
+            /** Approval Ref */
+            approval_ref?: string | null;
+            /** Auth Ref */
+            auth_ref?: string | null;
+            /** Capability */
+            capability?: string | null;
+            /** Config Json */
+            config_json?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Input Schema Json */
+            input_schema_json?: {
+                [key: string]: unknown;
+            };
+            /** Key */
+            key: string;
+            /** Name */
+            name?: string | null;
+            /** Output Schema Json */
+            output_schema_json?: {
+                [key: string]: unknown;
+            };
+            /** Provider */
+            provider?: string | null;
+            /**
+             * Risk Level
+             * @default read
+             */
+            risk_level: string;
+        };
         /** ActionOut */
         ActionOut: {
             /** Capability Key */
@@ -2679,6 +2915,27 @@ export interface components {
             provider_key: string | null;
             /** Risk Level */
             risk_level: string;
+        };
+        /** ApprovalGateSpec */
+        ApprovalGateSpec: {
+            /** Approver */
+            approver?: string | null;
+            /** Config Json */
+            config_json?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Key */
+            key: string;
+            /**
+             * Required When
+             * @default always
+             */
+            required_when: string;
         };
         /** ApprovalRequestOut */
         ApprovalRequestOut: {
@@ -3092,6 +3349,33 @@ export interface components {
             /** Scopes */
             scopes: string[];
         };
+        /**
+         * AuthRequirementSpec
+         * @description Provider auth shape; never stores tokens or credential refs.
+         */
+        AuthRequirementSpec: {
+            /**
+             * Auth Type
+             * @default api-key
+             */
+            auth_type: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Key */
+            key: string;
+            /**
+             * Optional
+             * @default false
+             */
+            optional: boolean;
+            /** Provider */
+            provider: string;
+            /** Scopes */
+            scopes?: string[];
+        };
         /** AuthRevokeOut */
         AuthRevokeOut: {
             /** Credential Ref */
@@ -3409,6 +3693,23 @@ export interface components {
             /** Plugin Slug */
             plugin_slug: string;
         };
+        /** CapabilityRequirementSpec */
+        CapabilityRequirementSpec: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Key */
+            key: string;
+            /** Preferred Providers */
+            preferred_providers?: string[];
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+        };
         /** CatalogOut */
         CatalogOut: {
             /** Plugins */
@@ -3601,6 +3902,37 @@ export interface components {
             statuses?: string[] | null;
             /** Tags */
             tags?: string[] | null;
+        };
+        /**
+         * ContextRequirementSpec
+         * @description Declaration of context the agent should request before planning a run.
+         */
+        ContextRequirementSpec: {
+            /** Fields */
+            fields?: string[];
+            /** Filters Json */
+            filters_json?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /**
+             * Max Items
+             * @default 10
+             */
+            max_items: number;
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            /**
+             * Return Mode
+             * @default compact
+             */
+            return_mode: string;
+            /** Source */
+            source: string;
         };
         /** ContextSnapshotCreateRequest */
         ContextSnapshotCreateRequest: {
@@ -4654,6 +4986,17 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
+        /** LearningHookSpec */
+        LearningHookSpec: {
+            /** Evidence Refs */
+            evidence_refs?: string[];
+            /** Key */
+            key: string;
+            /** Prompt */
+            prompt: string;
+            /** Tags */
+            tags?: string[];
+        };
         /** LearningOut */
         LearningOut: {
             /** Applies To Json */
@@ -4728,6 +5071,11 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
+        /** LoadedWorkflowTemplate */
+        LoadedWorkflowTemplate: {
+            spec: components["schemas"]["WorkflowTemplateSpec"];
+            summary: components["schemas"]["WorkflowTemplateSummaryOut"];
+        };
         /** MarkDraftedRequest */
         MarkDraftedRequest: {
             /** Expected Etag */
@@ -4753,6 +5101,57 @@ export interface components {
         MarkRefreshDueRequest: {
             /** Reason */
             reason: string;
+        };
+        /** MetricSnapshotOut */
+        MetricSnapshotOut: {
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dimensions Json */
+            dimensions_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id: number;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Metric Key */
+            metric_key: string;
+            /** Metric Value */
+            metric_value: number | null;
+            /** Project Id */
+            project_id: number;
+            /** Source Id */
+            source_id: number | null;
+            /** Source Type */
+            source_type: string | null;
+        };
+        /**
+         * PageResponse[ActionCallAuditOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_ActionCallAuditOut_: {
+            /** Items */
+            items: components["schemas"]["ActionCallAuditOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
         };
         /**
          * PageResponse[ArticleOut]
@@ -4845,6 +5244,24 @@ export interface components {
             total_estimate: number;
         };
         /**
+         * PageResponse[ContextSnapshotOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_ContextSnapshotOut_: {
+            /** Items */
+            items: components["schemas"]["ContextSnapshotOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /**
          * PageResponse[DecisionOut]
          * @example {
          *       "items": [],
@@ -4854,6 +5271,24 @@ export interface components {
         PageResponse_DecisionOut_: {
             /** Items */
             items: components["schemas"]["DecisionOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /**
+         * PageResponse[ExperimentObservationOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_ExperimentObservationOut_: {
+            /** Items */
+            items: components["schemas"]["ExperimentObservationOut"][];
             /** Next Cursor */
             next_cursor?: number | null;
             /**
@@ -4908,6 +5343,24 @@ export interface components {
         PageResponse_LearningOut_: {
             /** Items */
             items: components["schemas"]["LearningOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /**
+         * PageResponse[MetricSnapshotOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_MetricSnapshotOut_: {
+            /** Items */
+            items: components["schemas"]["MetricSnapshotOut"][];
             /** Next Cursor */
             next_cursor?: number | null;
             /**
@@ -5121,6 +5574,25 @@ export interface components {
          * @enum {string}
          */
         PluginSource: PluginSource;
+        /** PolicySpec */
+        PolicySpec: {
+            /** Config Json */
+            config_json?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @default general
+             */
+            kind: string;
+        };
         /**
          * ProcedureClaimStepRequest
          * @description Wire shape for claiming the next procedure step.
@@ -5644,6 +6116,27 @@ export interface components {
             url: string;
             /** Used */
             used: boolean;
+        };
+        /** ResourceContractSpec */
+        ResourceContractSpec: {
+            /** Key */
+            key: string;
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /** Resource */
+            resource: string;
+            /** Schema Json */
+            schema_json?: {
+                [key: string]: unknown;
+            };
         };
         /** ResourceOut */
         ResourceOut: {
@@ -6209,6 +6702,59 @@ export interface components {
             /** Suggestions */
             suggestions: components["schemas"]["InterlinkSuggestion"][];
         };
+        /** TemplateBaseSpec */
+        TemplateBaseSpec: {
+            /** Key */
+            key: string;
+            /** Origin Path */
+            origin_path?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Version */
+            version?: string | null;
+        };
+        /**
+         * TemplateIOSpec
+         * @description Reusable input/output contract for templates and stages.
+         */
+        TemplateIOSpec: {
+            /** Default Json */
+            default_json?: unknown | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Key */
+            key: string;
+            /** Name */
+            name?: string | null;
+            /** Options Json */
+            options_json?: unknown[] | null;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /** Schema Json */
+            schema_json?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Type
+             * @default object
+             */
+            type: string;
+        };
+        /** TemplateOwnerSpec */
+        TemplateOwnerSpec: {
+            /** Contact */
+            contact?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Team */
+            team?: string | null;
+        };
         /**
          * TopicCreateRequest
          * @description Inherits ``TopicCreate`` so the wire shape matches MCP exactly.
@@ -6371,6 +6917,156 @@ export interface components {
              * @default
              */
             voice_md: string;
+        };
+        /**
+         * WorkflowStepTemplateSpec
+         * @description Stage blueprint. It names intent/contracts, not concrete action payloads.
+         */
+        WorkflowStepTemplateSpec: {
+            /** Action Refs */
+            action_refs?: string[];
+            /** Approval Refs */
+            approval_refs?: string[];
+            /** Context Refs */
+            context_refs?: string[];
+            /** Depends On */
+            depends_on?: string[];
+            /** Extensions Json */
+            extensions_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id: string;
+            /** Input Refs */
+            input_refs?: string[];
+            /** Instructions */
+            instructions?: string[];
+            /** Output Refs */
+            output_refs?: string[];
+            /** Policy Refs */
+            policy_refs?: string[];
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            /** Resource Refs */
+            resource_refs?: string[];
+            /** Success Criteria */
+            success_criteria?: string[];
+            /** Title */
+            title: string;
+        };
+        /** WorkflowTemplateListOut */
+        WorkflowTemplateListOut: {
+            /**
+             * Include Shadowed
+             * @default false
+             */
+            include_shadowed: boolean;
+            /** Templates */
+            templates: components["schemas"]["WorkflowTemplateSummaryOut"][];
+        };
+        /**
+         * WorkflowTemplateSpec
+         * @description Reusable workflow template contract.
+         */
+        WorkflowTemplateSpec: {
+            /** Action Contracts */
+            action_contracts?: components["schemas"]["ActionContractSpec"][];
+            /** Approval Gates */
+            approval_gates?: components["schemas"]["ApprovalGateSpec"][];
+            /** Auth Requirements */
+            auth_requirements?: components["schemas"]["AuthRequirementSpec"][];
+            based_on?: components["schemas"]["TemplateBaseSpec"] | null;
+            /** Capability Requirements */
+            capability_requirements?: components["schemas"]["CapabilityRequirementSpec"][];
+            /** Context Requirements */
+            context_requirements?: components["schemas"]["ContextRequirementSpec"][];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Domain */
+            domain?: string | null;
+            /** Extensions Json */
+            extensions_json?: {
+                [key: string]: unknown;
+            };
+            /** Failure Handling */
+            failure_handling?: string[];
+            /** Inputs */
+            inputs?: components["schemas"]["TemplateIOSpec"][];
+            /** Key */
+            key: string;
+            /** Learning Hooks */
+            learning_hooks?: components["schemas"]["LearningHookSpec"][];
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /** Outputs */
+            outputs?: components["schemas"]["TemplateIOSpec"][];
+            owner?: components["schemas"]["TemplateOwnerSpec"] | null;
+            /** Policies */
+            policies?: components["schemas"]["PolicySpec"][];
+            /** Resource Contracts */
+            resource_contracts?: components["schemas"]["ResourceContractSpec"][];
+            /**
+             * Schema Version
+             * @default stackos.workflow-template.v1
+             */
+            schema_version: string;
+            /** Steps */
+            steps: components["schemas"]["WorkflowStepTemplateSpec"][];
+            /** Ui Json */
+            ui_json?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Version
+             * @default 0.1.0
+             */
+            version: string;
+            /** When Not To Use */
+            when_not_to_use?: string[];
+            /** When To Use */
+            when_to_use?: string[];
+        };
+        /** WorkflowTemplateSummaryOut */
+        WorkflowTemplateSummaryOut: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Domain */
+            domain?: string | null;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Origin Path */
+            origin_path?: string | null;
+            /** Plugin Slug */
+            plugin_slug?: string | null;
+            /** Precedence */
+            precedence: number;
+            /** Project Id */
+            project_id?: number | null;
+            /** Shadowed By */
+            shadowed_by?: string | null;
+            /** Source */
+            source: string;
+            /** Template Id */
+            template_id?: number | null;
+            /** Version */
+            version: string;
+            /** Version Id */
+            version_id?: number | null;
         };
         /**
          * WriteResponse[ArticleAssetOut]
@@ -6864,7 +7560,10 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaActionCallAuditOut = components['schemas']['ActionCallAuditOut'];
+export type SchemaActionContractSpec = components['schemas']['ActionContractSpec'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
+export type SchemaApprovalGateSpec = components['schemas']['ApprovalGateSpec'];
 export type SchemaApprovalRequestOut = components['schemas']['ApprovalRequestOut'];
 export type SchemaArticleAssetOut = components['schemas']['ArticleAssetOut'];
 export type SchemaArticleCreateRequest = components['schemas']['ArticleCreateRequest'];
@@ -6877,6 +7576,7 @@ export type SchemaArtifactOut = components['schemas']['ArtifactOut'];
 export type SchemaAssetCreateRequest = components['schemas']['AssetCreateRequest'];
 export type SchemaAssetUpdateRequest = components['schemas']['AssetUpdateRequest'];
 export type SchemaAuthProviderOut = components['schemas']['AuthProviderOut'];
+export type SchemaAuthRequirementSpec = components['schemas']['AuthRequirementSpec'];
 export type SchemaAuthRevokeOut = components['schemas']['AuthRevokeOut'];
 export type SchemaAuthRevokeRequest = components['schemas']['AuthRevokeRequest'];
 export type SchemaAuthStartOut = components['schemas']['AuthStartOut'];
@@ -6895,6 +7595,7 @@ export type SchemaBulkTopicCreateRequest = components['schemas']['BulkTopicCreat
 export type SchemaBulkUpdateStatusRequest = components['schemas']['BulkUpdateStatusRequest'];
 export type SchemaCanonicalSetRequest = components['schemas']['CanonicalSetRequest'];
 export type SchemaCapabilityOut = components['schemas']['CapabilityOut'];
+export type SchemaCapabilityRequirementSpec = components['schemas']['CapabilityRequirementSpec'];
 export type SchemaCatalogOut = components['schemas']['CatalogOut'];
 export type SchemaClusterCreateRequest = components['schemas']['ClusterCreateRequest'];
 export type SchemaClusterOut = components['schemas']['ClusterOut'];
@@ -6904,6 +7605,7 @@ export type SchemaComplianceUpdateRequest = components['schemas']['ComplianceUpd
 export type SchemaContextItemOut = components['schemas']['ContextItemOut'];
 export type SchemaContextQueryOut = components['schemas']['ContextQueryOut'];
 export type SchemaContextQueryRequest = components['schemas']['ContextQueryRequest'];
+export type SchemaContextRequirementSpec = components['schemas']['ContextRequirementSpec'];
 export type SchemaContextSnapshotCreateRequest = components['schemas']['ContextSnapshotCreateRequest'];
 export type SchemaContextSnapshotOut = components['schemas']['ContextSnapshotOut'];
 export type SchemaCostResponse = components['schemas']['CostResponse'];
@@ -6947,21 +7649,28 @@ export type SchemaInterlinkSuggestion = components['schemas']['InterlinkSuggesti
 export type SchemaInterlinksReport = components['schemas']['InterlinksReport'];
 export type SchemaInternalLinkOut = components['schemas']['InternalLinkOut'];
 export type SchemaLearningCreateRequest = components['schemas']['LearningCreateRequest'];
+export type SchemaLearningHookSpec = components['schemas']['LearningHookSpec'];
 export type SchemaLearningOut = components['schemas']['LearningOut'];
 export type SchemaLearningUpdateRequest = components['schemas']['LearningUpdateRequest'];
+export type SchemaLoadedWorkflowTemplate = components['schemas']['LoadedWorkflowTemplate'];
 export type SchemaMarkDraftedRequest = components['schemas']['MarkDraftedRequest'];
 export type SchemaMarkEeatPassedRequest = components['schemas']['MarkEeatPassedRequest'];
 export type SchemaMarkPublishedRequest = components['schemas']['MarkPublishedRequest'];
 export type SchemaMarkRefreshDueRequest = components['schemas']['MarkRefreshDueRequest'];
+export type SchemaMetricSnapshotOut = components['schemas']['MetricSnapshotOut'];
+export type SchemaPageResponseActionCallAuditOut = components['schemas']['PageResponse_ActionCallAuditOut_'];
 export type SchemaPageResponseArticleOut = components['schemas']['PageResponse_ArticleOut_'];
 export type SchemaPageResponseArticleVersionOut = components['schemas']['PageResponse_ArticleVersionOut_'];
 export type SchemaPageResponseArtifactOut = components['schemas']['PageResponse_ArtifactOut_'];
 export type SchemaPageResponseAuthorOut = components['schemas']['PageResponse_AuthorOut_'];
 export type SchemaPageResponseClusterOut = components['schemas']['PageResponse_ClusterOut_'];
+export type SchemaPageResponseContextSnapshotOut = components['schemas']['PageResponse_ContextSnapshotOut_'];
 export type SchemaPageResponseDecisionOut = components['schemas']['PageResponse_DecisionOut_'];
+export type SchemaPageResponseExperimentObservationOut = components['schemas']['PageResponse_ExperimentObservationOut_'];
 export type SchemaPageResponseExperimentOut = components['schemas']['PageResponse_ExperimentOut_'];
 export type SchemaPageResponseInternalLinkOut = components['schemas']['PageResponse_InternalLinkOut_'];
 export type SchemaPageResponseLearningOut = components['schemas']['PageResponse_LearningOut_'];
+export type SchemaPageResponseMetricSnapshotOut = components['schemas']['PageResponse_MetricSnapshotOut_'];
 export type SchemaPageResponseProjectEventOut = components['schemas']['PageResponse_ProjectEventOut_'];
 export type SchemaPageResponseProjectOut = components['schemas']['PageResponse_ProjectOut_'];
 export type SchemaPageResponseRedirectOut = components['schemas']['PageResponse_RedirectOut_'];
@@ -6973,6 +7682,7 @@ export type SchemaPageResponseVoiceProfileOut = components['schemas']['PageRespo
 export type SchemaPluginCatalogOut = components['schemas']['PluginCatalogOut'];
 export type SchemaPluginEnableRequest = components['schemas']['PluginEnableRequest'];
 export type SchemaPluginOut = components['schemas']['PluginOut'];
+export type SchemaPolicySpec = components['schemas']['PolicySpec'];
 export type SchemaProcedureClaimStepRequest = components['schemas']['ProcedureClaimStepRequest'];
 export type SchemaProcedureExecuteProgrammaticStepRequest = components['schemas']['ProcedureExecuteProgrammaticStepRequest'];
 export type SchemaProcedureForkRequest = components['schemas']['ProcedureForkRequest'];
@@ -6997,6 +7707,7 @@ export type SchemaPublishTargetUpdateRequest = components['schemas']['PublishTar
 export type SchemaRedirectOut = components['schemas']['RedirectOut'];
 export type SchemaRepairRequest = components['schemas']['RepairRequest'];
 export type SchemaResearchSourceOut = components['schemas']['ResearchSourceOut'];
+export type SchemaResourceContractSpec = components['schemas']['ResourceContractSpec'];
 export type SchemaResourceOut = components['schemas']['ResourceOut'];
 export type SchemaResourceRecordOut = components['schemas']['ResourceRecordOut'];
 export type SchemaResourceRecordUpsertRequest = components['schemas']['ResourceRecordUpsertRequest'];
@@ -7018,6 +7729,9 @@ export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchReque
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSourceCreateRequest = components['schemas']['SourceCreateRequest'];
 export type SchemaSuggestRequest = components['schemas']['SuggestRequest'];
+export type SchemaTemplateBaseSpec = components['schemas']['TemplateBaseSpec'];
+export type SchemaTemplateIoSpec = components['schemas']['TemplateIOSpec'];
+export type SchemaTemplateOwnerSpec = components['schemas']['TemplateOwnerSpec'];
 export type SchemaTopicCreateRequest = components['schemas']['TopicCreateRequest'];
 export type SchemaTopicOut = components['schemas']['TopicOut'];
 export type SchemaTopicUpdateRequest = components['schemas']['TopicUpdateRequest'];
@@ -7025,6 +7739,10 @@ export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaVoiceProfileOut = components['schemas']['VoiceProfileOut'];
 export type SchemaVoiceUpsertRequest = components['schemas']['VoiceUpsertRequest'];
+export type SchemaWorkflowStepTemplateSpec = components['schemas']['WorkflowStepTemplateSpec'];
+export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTemplateListOut'];
+export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
+export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
 export type SchemaWriteResponseArticleAssetOut = components['schemas']['WriteResponse_ArticleAssetOut_'];
 export type SchemaWriteResponseArticleOut = components['schemas']['WriteResponse_ArticleOut_'];
 export type SchemaWriteResponseArticlePublishOut = components['schemas']['WriteResponse_ArticlePublishOut_'];
@@ -7064,6 +7782,70 @@ export type SchemaWriteResponseListInternalLinkOut = components['schemas']['Writ
 export type SchemaWriteResponseListTopicOut = components['schemas']['WriteResponse_list_TopicOut__'];
 export type $defs = Record<string, never>;
 export interface operations {
+    list_actions_api_v1_actions_get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_action_api_v1_actions__action_key__get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+            };
+            header?: never;
+            path: {
+                action_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_article_api_v1_articles__article_id__get: {
         parameters: {
             query?: never;
@@ -9014,6 +9796,45 @@ export interface operations {
             };
         };
     };
+    query_action_calls_api_v1_projects__project_id__action_calls_get: {
+        parameters: {
+            query?: {
+                run_id?: number | null;
+                run_plan_id?: number | null;
+                run_plan_step_id?: number | null;
+                plugin_slug?: string | null;
+                action_key?: string | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_ActionCallAuditOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     activate_project_api_v1_projects__project_id__activate_post: {
         parameters: {
             query?: never;
@@ -9902,6 +10723,41 @@ export interface operations {
             };
         };
     };
+    query_context_snapshots_api_v1_projects__project_id__context_snapshots_get: {
+        parameters: {
+            query?: {
+                run_id?: number | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_ContextSnapshotOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_context_snapshot_api_v1_projects__project_id__context_snapshots_post: {
         parameters: {
             query?: never;
@@ -10009,6 +10865,7 @@ export interface operations {
         parameters: {
             query?: {
                 experiment_id?: number | null;
+                run_id?: number | null;
                 status?: string | null;
                 tags?: string[] | null;
                 limit?: number;
@@ -10273,6 +11130,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WriteResponse_DecisionOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_experiment_observations_api_v1_projects__project_id__experiments_observations_get: {
+        parameters: {
+            query?: {
+                experiment_id?: number | null;
+                run_id?: number | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_ExperimentObservationOut_"];
                 };
             };
             /** @description Validation Error */
@@ -10904,6 +11797,43 @@ export interface operations {
             };
         };
     };
+    query_metrics_api_v1_projects__project_id__metrics_get: {
+        parameters: {
+            query?: {
+                metric_key?: string | null;
+                source_type?: string | null;
+                source_id?: number | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_MetricSnapshotOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     disable_project_plugin_api_v1_projects__project_id__plugins__plugin_slug__disable_post: {
         parameters: {
             query?: never;
@@ -11281,6 +12211,7 @@ export interface operations {
     list_run_plans_api_v1_projects__project_id__run_plans_get: {
         parameters: {
             query?: {
+                run_id?: number | null;
                 status?: components["schemas"]["RunPlanStatus"] | null;
                 template_key?: string | null;
                 limit?: number;
@@ -11830,6 +12761,75 @@ export interface operations {
             };
         };
     };
+    list_workflow_templates_api_v1_projects__project_id__workflow_templates_get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+                include_shadowed?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_workflow_template_api_v1_projects__project_id__workflow_templates__template_key__get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+                source?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+                template_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoadedWorkflowTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_providers_api_v1_providers_get: {
         parameters: {
             query?: {
@@ -12274,6 +13274,11 @@ export interface operations {
             };
         };
     };
+}
+export enum ActionCallStatus {
+    dry_run = "dry-run",
+    success = "success",
+    failed = "failed"
 }
 export enum ApprovalRequestStatus {
     pending = "pending",
