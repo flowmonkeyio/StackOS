@@ -25,7 +25,8 @@ Templates must not contain:
 
 Agents turn templates into concrete run plans. The run plan is where selected
 providers, credential refs, payload drafts, context snapshots, approvals, and
-action order become explicit.
+action order become explicit. See `docs/run-plans.md` for the concrete
+execution record and approval-gate lifecycle.
 
 ## Sources And Precedence
 

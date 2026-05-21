@@ -62,6 +62,11 @@ from content_stack.mcp.server import (
         "resource.upsert",
         "workflowTemplate.save",
         "workflowTemplate.fork",
+        "runPlan.create",
+        "runPlan.start",
+        "runPlan.update",
+        "runPlan.claimStep",
+        "runPlan.recordStep",
         "auth.start",
         "auth.test",
         "auth.revoke",
@@ -89,6 +94,7 @@ def test_mutating_verb_classification(name: str) -> None:
         "cost.queryAll",
         "gscOauth.get",
         "workflowTemplate.validate",
+        "runPlan.validate",
     ],
 )
 def test_read_verb_not_mutating(name: str) -> None:

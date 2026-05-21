@@ -45,6 +45,11 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "workflowTemplate.list",
     "workflowTemplate.describe",
     "workflowTemplate.validate",
+    "runPlan.create",
+    "runPlan.validate",
+    "runPlan.start",
+    "runPlan.get",
+    "runPlan.list",
     "meta.enums",
     # Agent-led procedure controls.
     "procedure.list",
@@ -83,8 +88,15 @@ _AGENT_ADMIN_GATED_TOOL_NAMES = frozenset(
         "plugin.disable",
         "plugin.enable",
         "resource.upsert",
+        "runPlan.update",
         "workflowTemplate.fork",
         "workflowTemplate.save",
+    }
+)
+_AGENT_STEP_GATED_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "runPlan.claimStep",
+        "runPlan.recordStep",
     }
 )
 
@@ -440,6 +452,11 @@ def _bridge_cache_step_context(
         tokens_by_run[run_id] = run_token
     current_step = context.get("current_step")
     if not isinstance(current_step, dict):
+        # runPlan.start returns a run token and linked plan instead of a
+        # procedure current_step package. Cache the token and expose only the
+        # narrow run-plan controller tools through toolbox.call for that run.
+        if isinstance(context.get("plan"), dict) and isinstance(run_token, str) and run_token:
+            allowed_by_run.setdefault(run_id, set()).update(_AGENT_STEP_GATED_TOOL_NAMES)
         return
     allowed_tools = current_step.get("allowed_tools")
     if isinstance(allowed_tools, list):
@@ -487,8 +504,9 @@ def _bridge_toolbox_describe(
         "denied_tool_names": denied,
         "unknown_tool_names": unknown,
         "usage": (
-            "Use direct visible tools for setup/procedure control. Use toolbox.call only "
-            "for setup helpers or the active procedure step's allowed_tools."
+            "Use direct visible tools for setup/procedure/run-plan control. Use "
+            "toolbox.call only for setup helpers, run-plan controller tools, or the "
+            "active procedure step's allowed_tools."
         ),
     }
     return _bridge_tool_result(request_id, payload, is_error=False)
@@ -657,8 +675,9 @@ class AgentBridgeProxy:
                     "tool": target_name,
                     "run_id": run_id,
                     "hint": (
-                        "Use setup tools, or claim/current a procedure step "
-                        "whose allowed_tools include this tool."
+                        "Use setup tools, a started run plan's controller tools, "
+                        "or claim/current a procedure step whose allowed_tools "
+                        "include this tool."
                     ),
                 },
             )
@@ -695,6 +714,7 @@ __all__ = [
     "_AGENT_ADMIN_GATED_TOOL_NAMES",
     "_AGENT_BASE_TOOLBOX_NAMES",
     "_AGENT_SETUP_TOOLBOX_NAMES",
+    "_AGENT_STEP_GATED_TOOL_NAMES",
     "_AGENT_VISIBLE_TOOL_ORDER",
     "AgentBridgeProxy",
     "_bridge_cache_step_context",

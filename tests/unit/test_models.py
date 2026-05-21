@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from content_stack.db.models import (
+    APPROVAL_REQUEST_STATUS_TRANSITIONS,
     ARTICLE_STATUS_TRANSITIONS,
+    RUN_PLAN_STATUS_TRANSITIONS,
+    RUN_PLAN_STEP_STATUS_TRANSITIONS,
+    ApprovalRequestStatus,
     ArticleAssetKind,
     ArticlePublishStatus,
     ArticleStatus,
@@ -18,6 +22,8 @@ from content_stack.db.models import (
     PublishTargetKind,
     RedirectKind,
     RunKind,
+    RunPlanStatus,
+    RunPlanStepStatus,
     RunStatus,
     RunStepStatus,
     TopicIntent,
@@ -173,6 +179,25 @@ def test_run_step_status_values() -> None:
     assert _values(RunStepStatus) == {"pending", "running", "success", "failed", "skipped"}
 
 
+def test_run_plan_status_values() -> None:
+    assert _values(RunPlanStatus) == {"draft", "started", "completed", "failed", "aborted"}
+
+
+def test_run_plan_step_status_values() -> None:
+    assert _values(RunPlanStepStatus) == {
+        "pending",
+        "running",
+        "success",
+        "failed",
+        "skipped",
+        "blocked",
+    }
+
+
+def test_approval_request_status_values() -> None:
+    assert _values(ApprovalRequestStatus) == {"pending", "approved", "rejected", "cancelled"}
+
+
 def test_redirect_kind_values() -> None:
     assert _values(RedirectKind) == {"301", "302"}
 
@@ -200,6 +225,18 @@ def test_status_machine_legal_transitions_only_reference_defined_statuses() -> N
         assert isinstance(src, ArticleStatus)
         for d in dests:
             assert isinstance(d, ArticleStatus)
+    for src, dests in RUN_PLAN_STATUS_TRANSITIONS.items():
+        assert isinstance(src, RunPlanStatus)
+        for d in dests:
+            assert isinstance(d, RunPlanStatus)
+    for src, dests in RUN_PLAN_STEP_STATUS_TRANSITIONS.items():
+        assert isinstance(src, RunPlanStepStatus)
+        for d in dests:
+            assert isinstance(d, RunPlanStepStatus)
+    for src, dests in APPROVAL_REQUEST_STATUS_TRANSITIONS.items():
+        assert isinstance(src, ApprovalRequestStatus)
+        for d in dests:
+            assert isinstance(d, ApprovalRequestStatus)
 
 
 def test_status_machine_terminal_states_are_terminal() -> None:

@@ -9,6 +9,7 @@ from content_stack.mcp.bridge import (
     _AGENT_ADMIN_GATED_TOOL_NAMES,
     _AGENT_BASE_TOOLBOX_NAMES,
     _AGENT_SETUP_TOOLBOX_NAMES,
+    _AGENT_STEP_GATED_TOOL_NAMES,
     _AGENT_VISIBLE_TOOL_NAMES,
     _AGENT_VISIBLE_TOOL_ORDER,
     AgentBridgeProxy,
@@ -192,6 +193,35 @@ def test_bridge_caches_run_token_and_step_grants() -> None:
     assert allowed_by_run == {7: {"article.get", "voice.get"}}
 
 
+def test_bridge_caches_run_plan_controller_grants() -> None:
+    response = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "structuredContent": {
+                    "data": {
+                        "run_id": 9,
+                        "run_token": "tok-plan",
+                        "plan": {"id": 3},
+                    }
+                }
+            },
+        }
+    )
+    allowed_by_run: dict[int, set[str]] = {}
+    tokens_by_run: dict[int, str] = {}
+
+    _bridge_cache_step_context(
+        response,
+        allowed_by_run=allowed_by_run,
+        tokens_by_run=tokens_by_run,
+    )
+
+    assert tokens_by_run == {9: "tok-plan"}
+    assert allowed_by_run == {9: set(_AGENT_STEP_GATED_TOOL_NAMES)}
+
+
 def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> None:
     assert "plugin.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "catalog.describe" in _AGENT_VISIBLE_TOOL_NAMES
@@ -209,6 +239,14 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "workflowTemplate.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "workflowTemplate.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "workflowTemplate.validate" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "runPlan.create" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "runPlan.validate" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "runPlan.start" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "runPlan.get" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "runPlan.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "runPlan.claimStep" in _AGENT_STEP_GATED_TOOL_NAMES
+    assert "runPlan.recordStep" in _AGENT_STEP_GATED_TOOL_NAMES
+    assert "runPlan.update" not in _AGENT_STEP_GATED_TOOL_NAMES
     assert "integration.set" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "integration.test" in _AGENT_BASE_TOOLBOX_NAMES
     assert "article.setDraft" in _AGENT_BASE_TOOLBOX_NAMES
@@ -242,6 +280,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
         "plugin.enable",
         "plugin.disable",
         "resource.upsert",
+        "runPlan.update",
         "workflowTemplate.fork",
         "workflowTemplate.save",
     } == _AGENT_ADMIN_GATED_TOOL_NAMES
@@ -342,6 +381,7 @@ def test_registered_product_mutations_are_agent_reachable() -> None:
         if verb_is_mutating(name)
         and name not in agent_surface
         and name not in _AGENT_ADMIN_GATED_TOOL_NAMES
+        and name not in _AGENT_STEP_GATED_TOOL_NAMES
         and not name.startswith(
             (
                 "dataforseo.",

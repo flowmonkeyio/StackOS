@@ -137,6 +137,8 @@ READ_VERBS: frozenset[str] = frozenset(
 READ_ONLY_TOOL_NAMES: frozenset[str] = frozenset(
     {
         # D06 template validation is pure schema checking; it saves no state.
+        # D07 run-plan validation is also pure schema/template resolution.
+        "runPlan.validate",
         "workflowTemplate.validate",
     }
 )

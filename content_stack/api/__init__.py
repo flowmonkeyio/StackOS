@@ -47,6 +47,12 @@ from content_stack.api.procedures import router as procedures_router
 from content_stack.api.projects import oauth_router as projects_oauth_router
 from content_stack.api.projects import router as projects_router
 from content_stack.api.resources import router as resources_router
+from content_stack.api.run_plans import (
+    project_router as run_plans_project_router,
+)
+from content_stack.api.run_plans import (
+    run_plan_router as run_plans_run_plan_router,
+)
 from content_stack.api.runs import (
     project_router as runs_project_router,
 )
@@ -96,6 +102,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(articles_project_router)
     app.include_router(articles_article_router)
     app.include_router(interlinks_router)
+    app.include_router(run_plans_project_router)
+    app.include_router(run_plans_run_plan_router)
     app.include_router(runs_project_router)
     app.include_router(runs_run_router)
     app.include_router(gsc_bulk_router)

@@ -108,9 +108,12 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "learning.query" in names
     assert "workflowTemplate.list" in names
     assert "workflowTemplate.validate" in names
+    assert "runPlan.create" in names
+    assert "runPlan.start" in names
     assert "learning.create" not in names
     assert "decision.record" not in names
     assert "workflowTemplate.save" not in names
+    assert "runPlan.claimStep" not in names
     assert "dataforseo.serp" not in names
 
 
@@ -279,6 +282,140 @@ def test_bridge_toolbox_operates_former_ui_actions(
     )
     assert tested["data"]["ok"] is True
     assert tested["data"]["vendor"] == "firecrawl"
+
+
+def test_bridge_allows_started_run_plan_controller_tools(mcp_client: MCPClient) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    created_project = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "project.create",
+            {
+                "slug": "bridge-run-plan",
+                "name": "Bridge Run Plan",
+                "domain": "bridge-run-plan.example",
+                "locale": "en-US",
+            },
+            request_id="project-create",
+        )
+    )
+    project_id = created_project["data"]["id"]
+    created_plan = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "runPlan.create",
+            {
+                "project_id": project_id,
+                "run_plan_json": {
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "bridge.review.run",
+                    "title": "Bridge review",
+                    "steps": [{"id": "review", "title": "Review"}],
+                },
+            },
+            request_id="run-plan-create",
+        )
+    )
+    run_plan_id = created_plan["data"]["id"]
+    started = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "runPlan.start",
+            {"project_id": project_id, "run_plan_id": run_plan_id},
+            request_id="run-plan-start",
+        )
+    )
+    run_id = started["data"]["run_id"]
+    second_plan = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "runPlan.create",
+            {
+                "project_id": project_id,
+                "run_plan_json": {
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "bridge.review.second",
+                    "title": "Bridge review second",
+                    "steps": [{"id": "review", "title": "Review"}],
+                },
+            },
+            request_id="run-plan-create-second",
+        )
+    )
+    _structured(
+        _tool_call(
+            proxy,
+            client,
+            "runPlan.start",
+            {"project_id": project_id, "run_plan_id": second_plan["data"]["id"]},
+            request_id="run-plan-start-second",
+        )
+    )
+
+    described = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.describe",
+            {"run_id": run_id, "tool_names": ["runPlan.claimStep"]},
+            request_id="describe-run-plan",
+        )
+    )
+    cross_plan = _tool_call(
+        proxy,
+        client,
+        "toolbox.call",
+        {
+            "run_id": run_id,
+            "tool_name": "runPlan.claimStep",
+            "arguments": {"run_plan_id": second_plan["data"]["id"], "step_id": "review"},
+        },
+        request_id="claim-run-plan-cross",
+    )
+    claimed = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "run_id": run_id,
+                "tool_name": "runPlan.claimStep",
+                "arguments": {"run_plan_id": run_plan_id, "step_id": "review"},
+            },
+            request_id="claim-run-plan",
+        )
+    )
+    completed = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "run_id": run_id,
+                "tool_name": "runPlan.recordStep",
+                "arguments": {
+                    "run_plan_id": run_plan_id,
+                    "step_id": "review",
+                    "status": "success",
+                    "result_json": {"summary": "ok"},
+                },
+            },
+            request_id="record-run-plan",
+        )
+    )
+
+    assert [tool["name"] for tool in described["described_tools"]] == ["runPlan.claimStep"]
+    assert cross_plan["result"]["isError"] is True
+    assert cross_plan["result"]["structuredContent"]["code"] == -32008
+    assert claimed["data"]["status"] == "running"
+    assert completed["data"]["status"] == "completed"
 
 
 def test_bridge_refuses_ungranted_vendor_tool(mcp_client: MCPClient) -> None:

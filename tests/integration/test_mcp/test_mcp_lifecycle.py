@@ -50,6 +50,7 @@ EXPECTED_NAMESPACE_COUNTS = {
     "reddit": 2,
     "resource": 3,
     "run": 14,
+    "runPlan": 8,
     "schedule": 4,
     "schema": 4,
     "sitemap": 1,

@@ -53,6 +53,10 @@ Clean-cut migration rule: add new StackOS primitives as sidecars and route new
 code through them. Do not add Alembic migrations that drop old SEO/procedure/
 content-stack tables during this pivot. Physical destructive cleanup requires a
 separate explicitly signed-off task with backup/restore and verification plans.
+For current pivot deliverables, prefer links from new StackOS sidecar tables to
+existing rows over modifying legacy/current tables. A migration may only remove
+tables or indexes that the same deliverable created, never previous SEO,
+procedure, article, run, or integration history.
 
 ## Workflows
 

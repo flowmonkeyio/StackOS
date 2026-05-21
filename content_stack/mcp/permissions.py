@@ -172,6 +172,11 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "run.recordStepCall",
         "run.resume",
         "run.start",
+        "runPlan.create",
+        "runPlan.get",
+        "runPlan.list",
+        "runPlan.start",
+        "runPlan.validate",
         "provider.describe",
         "provider.list",
         "resource.get",
@@ -691,6 +696,18 @@ _PROCEDURE_CONTROL: frozenset[str] = frozenset(
 )
 
 
+_RUN_PLAN_CONTROL: frozenset[str] = frozenset(
+    {
+        "run.get",
+        "run.heartbeat",
+        "runPlan.claimStep",
+        "runPlan.get",
+        "runPlan.list",
+        "runPlan.recordStep",
+    }
+)
+
+
 _PROGRAMMATIC_CONTROL: frozenset[str] = frozenset(
     {
         "procedure.currentStep",
@@ -713,6 +730,7 @@ SKILL_TOOL_GRANTS: dict[str, frozenset[str]] = {
     "_test_editor": _TEST_EDITOR,
     "_test_eeat_gate": _TEST_EEAT_GATE,
     "_test_publisher": _TEST_PUBLISHER,
+    "stackos/run-plan-controller": _RUN_PLAN_CONTROL,
     # Agent-led procedure controllers (bound between claimed skill steps).
     "01-bootstrap-project": _PROCEDURE_CONTROL,
     "02-one-site-shortcut": _PROCEDURE_CONTROL,

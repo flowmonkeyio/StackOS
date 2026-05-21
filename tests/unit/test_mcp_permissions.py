@@ -54,12 +54,23 @@ def test_check_grant_for_system_skill_covers_agent_owned_operations() -> None:
     check_grant("workflowTemplate.list", SYSTEM_SKILL)
     check_grant("workflowTemplate.describe", SYSTEM_SKILL)
     check_grant("workflowTemplate.validate", SYSTEM_SKILL)
+    check_grant("runPlan.create", SYSTEM_SKILL)
+    check_grant("runPlan.validate", SYSTEM_SKILL)
+    check_grant("runPlan.start", SYSTEM_SKILL)
+    check_grant("runPlan.get", SYSTEM_SKILL)
+    check_grant("runPlan.list", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("learning.create", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("workflowTemplate.save", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("workflowTemplate.fork", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("runPlan.claimStep", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("runPlan.recordStep", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("runPlan.update", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("experiment.recordDecision", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
@@ -81,6 +92,8 @@ def test_check_grant_passes_for_allowed_tool() -> None:
     """A skill can call a tool in its allow-list."""
     # _test_editor's allow-list includes article.setEdited.
     check_grant("article.setEdited", "_test_editor")
+    check_grant("runPlan.claimStep", "stackos/run-plan-controller")
+    check_grant("runPlan.recordStep", "stackos/run-plan-controller")
 
 
 def test_check_grant_raises_for_forbidden_tool() -> None:

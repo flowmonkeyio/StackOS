@@ -43,6 +43,9 @@ Clean-cut migration rule:
 - Do not physically drop previous tables or erase historical state in a pivot
   migration. Any destructive database cleanup requires its own explicit ticket,
   verification plan, backup/restore path, and user signoff.
+- New migrations in this pivot may create new StackOS-owned sidecar tables and
+  indexes. They must not alter legacy tables just to remove old behavior, and
+  they must not drop any table that predates the deliverable being implemented.
 
 ## Verification Status
 
@@ -969,7 +972,8 @@ Data model changes:
 - `run_plans`
 - `run_plan_steps`
 - `approval_requests`
-- links from `runs` to run plans if needed
+- links from run plans to existing `runs` if needed; prefer sidecar ownership
+  over modifying legacy/current execution tables.
 
 API/MCP changes:
 
@@ -982,6 +986,8 @@ API/MCP changes:
   - `runPlan.update`
   - `runPlan.claimStep`
   - `runPlan.recordStep`
+- `runPlan.update` is admin/human-scoped in D07. The run-plan controller
+  token must not be able to approve its own gates.
 
 UI changes:
 
@@ -1005,9 +1011,14 @@ Compatibility:
 
 Migration/rollback concerns:
 
-- Store run-plan data beside existing `runs`/procedure run data. Rollback
-  disables run-plan start/claim endpoints while old procedure runs continue to
-  use the existing runner.
+- Store run-plan data beside existing `runs`/procedure run data.
+- D07 migrations must only create D07-owned sidecar tables/indexes. They must
+  not drop, rewrite, or add cleanup logic for old SEO/procedure/content-stack
+  tables.
+- If a downgrade hook is required by Alembic conventions, it may remove only
+  D07-owned tables/indexes created by this deliverable. Operational rollback is
+  endpoint/tool disablement while old procedure runs continue to use the
+  existing runner.
 
 Risks:
 
