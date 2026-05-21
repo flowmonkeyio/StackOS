@@ -2121,6 +2121,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/run-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Run Plans
+         * @description Cursor-paginated run-plan list scoped to a project.
+         */
+        get: operations["list_run_plans_api_v1_projects__project_id__run_plans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/runs": {
         parameters: {
             query?: never;
@@ -2453,6 +2473,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/run-plans/{run_plan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Plan
+         * @description Fetch one run plan with concrete steps and approval gates.
+         */
+        get: operations["get_run_plan_api_v1_run_plans__run_plan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -2640,6 +2680,63 @@ export interface components {
             /** Risk Level */
             risk_level: string;
         };
+        /** ApprovalRequestOut */
+        ApprovalRequestOut: {
+            /** Approval Key */
+            approval_key: string;
+            /** Approver */
+            approver: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at: string | null;
+            /** Decided By */
+            decided_by: string | null;
+            /** Decision Json */
+            decision_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Description */
+            description: string;
+            /** Id */
+            id: number;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Requested By */
+            requested_by: string | null;
+            /** Required When */
+            required_when: string;
+            /** Run Plan Id */
+            run_plan_id: number;
+            /** Run Plan Step Id */
+            run_plan_step_id: number | null;
+            status: components["schemas"]["ApprovalRequestStatus"];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ApprovalRequestStatus
+         * @description Persists to ``approval_requests.status`` for explicit gates.
+         * @enum {string}
+         */
+        ApprovalRequestStatus: ApprovalRequestStatus;
         /**
          * ArticleAssetKind
          * @description Persists to ``article_assets.kind`` per PLAN.md L396.
@@ -4910,6 +5007,24 @@ export interface components {
             total_estimate: number;
         };
         /**
+         * PageResponse[RunPlanSummaryOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_RunPlanSummaryOut_: {
+            /** Items */
+            items: components["schemas"]["RunPlanSummaryOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /**
          * PageResponse[TopicOut]
          * @example {
          *       "items": [],
@@ -5664,6 +5779,220 @@ export interface components {
              */
             started_at: string;
             status: components["schemas"]["RunStatus"];
+        };
+        /** RunPlanOut */
+        RunPlanOut: {
+            /** Approval Requests */
+            approval_requests?: components["schemas"]["ApprovalRequestOut"][];
+            /** Budget Snapshot Json */
+            budget_snapshot_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Completed At */
+            completed_at: string | null;
+            /** Context Filters Json */
+            context_filters_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Context Snapshot Id */
+            context_snapshot_id: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Goal */
+            goal: string;
+            /** Grant Snapshot Json */
+            grant_snapshot_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id: number;
+            /** Inputs Json */
+            inputs_json: {
+                [key: string]: unknown;
+            };
+            /** Key */
+            key: string;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Output Contract Json */
+            output_contract_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Policy Snapshot Json */
+            policy_snapshot_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Project Id */
+            project_id: number;
+            /** Run Id */
+            run_id: number | null;
+            /** Selected Context Json */
+            selected_context_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["RunPlanStatus"];
+            /** Steps */
+            steps?: components["schemas"]["RunPlanStepOut"][];
+            /** Template Id */
+            template_id: number | null;
+            /** Template Key */
+            template_key: string | null;
+            /** Template Origin Path */
+            template_origin_path: string | null;
+            /** Template Snapshot Json */
+            template_snapshot_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Template Source */
+            template_source: string | null;
+            /** Template Version */
+            template_version: string | null;
+            /** Template Version Id */
+            template_version_id: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * RunPlanStatus
+         * @description Persists to ``run_plans.status`` for StackOS run-plan lifecycle.
+         * @enum {string}
+         */
+        RunPlanStatus: RunPlanStatus;
+        /** RunPlanStepOut */
+        RunPlanStepOut: {
+            /** Action Payloads Json */
+            action_payloads_json: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Action Refs Json */
+            action_refs_json: string[];
+            /** Approval Refs Json */
+            approval_refs_json: string[];
+            /** Claimed At */
+            claimed_at: string | null;
+            /** Claimed By */
+            claimed_by: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /** Context Refs Json */
+            context_refs_json: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Depends On Json */
+            depends_on_json: string[];
+            /** Error */
+            error: string | null;
+            /** Expected Outputs Json */
+            expected_outputs_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id: number;
+            /** Input Refs Json */
+            input_refs_json: string[];
+            /** Instructions Json */
+            instructions_json: string[];
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Output Refs Json */
+            output_refs_json: string[];
+            /** Policy Refs Json */
+            policy_refs_json: string[];
+            /** Position */
+            position: number;
+            /** Purpose */
+            purpose: string;
+            /** Resource Refs Json */
+            resource_refs_json: string[];
+            /** Result Json */
+            result_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Run Plan Id */
+            run_plan_id: number;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["RunPlanStepStatus"];
+            /** Step Id */
+            step_id: string;
+            /** Success Criteria Json */
+            success_criteria_json: string[];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * RunPlanStepStatus
+         * @description Persists to ``run_plan_steps.status`` for agent-owned run plans.
+         * @enum {string}
+         */
+        RunPlanStepStatus: RunPlanStepStatus;
+        /** RunPlanSummaryOut */
+        RunPlanSummaryOut: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Context Snapshot Id */
+            context_snapshot_id: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Project Id */
+            project_id: number;
+            /** Run Id */
+            run_id: number | null;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["RunPlanStatus"];
+            /** Template Id */
+            template_id: number | null;
+            /** Template Key */
+            template_key: string | null;
+            /** Template Source */
+            template_source: string | null;
+            /** Template Version */
+            template_version: string | null;
+            /** Template Version Id */
+            template_version_id: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * RunStatus
@@ -6534,6 +6863,7 @@ export interface components {
     pathItems: never;
 }
 export type SchemaActionOut = components['schemas']['ActionOut'];
+export type SchemaApprovalRequestOut = components['schemas']['ApprovalRequestOut'];
 export type SchemaArticleAssetOut = components['schemas']['ArticleAssetOut'];
 export type SchemaArticleCreateRequest = components['schemas']['ArticleCreateRequest'];
 export type SchemaArticleOut = components['schemas']['ArticleOut'];
@@ -6635,6 +6965,7 @@ export type SchemaPageResponseProjectOut = components['schemas']['PageResponse_P
 export type SchemaPageResponseRedirectOut = components['schemas']['PageResponse_RedirectOut_'];
 export type SchemaPageResponseResourceRecordOut = components['schemas']['PageResponse_ResourceRecordOut_'];
 export type SchemaPageResponseRunOut = components['schemas']['PageResponse_RunOut_'];
+export type SchemaPageResponseRunPlanSummaryOut = components['schemas']['PageResponse_RunPlanSummaryOut_'];
 export type SchemaPageResponseTopicOut = components['schemas']['PageResponse_TopicOut_'];
 export type SchemaPageResponseVoiceProfileOut = components['schemas']['PageResponse_VoiceProfileOut_'];
 export type SchemaPluginCatalogOut = components['schemas']['PluginCatalogOut'];
@@ -6668,6 +6999,9 @@ export type SchemaResourceOut = components['schemas']['ResourceOut'];
 export type SchemaResourceRecordOut = components['schemas']['ResourceRecordOut'];
 export type SchemaResourceRecordUpsertRequest = components['schemas']['ResourceRecordUpsertRequest'];
 export type SchemaRunOut = components['schemas']['RunOut'];
+export type SchemaRunPlanOut = components['schemas']['RunPlanOut'];
+export type SchemaRunPlanStepOut = components['schemas']['RunPlanStepOut'];
+export type SchemaRunPlanSummaryOut = components['schemas']['RunPlanSummaryOut'];
 export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertRequest'];
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
 export type SchemaSchemaEmitOut = components['schemas']['SchemaEmitOut'];
@@ -10942,6 +11276,42 @@ export interface operations {
             };
         };
     };
+    list_run_plans_api_v1_projects__project_id__run_plans_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["RunPlanStatus"] | null;
+                template_key?: string | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_RunPlanSummaryOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_runs_api_v1_projects__project_id__runs_get: {
         parameters: {
             query?: {
@@ -11617,6 +11987,37 @@ export interface operations {
             };
         };
     };
+    get_run_plan_api_v1_run_plans__run_plan_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunPlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_run_api_v1_runs__run_id__get: {
         parameters: {
             query?: never;
@@ -11872,6 +12273,12 @@ export interface operations {
         };
     };
 }
+export enum ApprovalRequestStatus {
+    pending = "pending",
+    approved = "approved",
+    rejected = "rejected",
+    cancelled = "cancelled"
+}
 export enum ArticleAssetKind {
     hero = "hero",
     inline = "inline",
@@ -11993,6 +12400,21 @@ export enum RunKind {
     interlink_suggest = "interlink-suggest",
     scheduled_job = "scheduled-job",
     maintenance = "maintenance"
+}
+export enum RunPlanStatus {
+    draft = "draft",
+    started = "started",
+    completed = "completed",
+    failed = "failed",
+    aborted = "aborted"
+}
+export enum RunPlanStepStatus {
+    pending = "pending",
+    running = "running",
+    success = "success",
+    failed = "failed",
+    skipped = "skipped",
+    blocked = "blocked"
 }
 export enum RunStatus {
     running = "running",

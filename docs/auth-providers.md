@@ -55,6 +55,12 @@ exists.
 No step requires an agent prompt, workflow template, or repository file to carry
 secret material.
 
+The same boundary is used by the D08 action executor. Internal action execution
+passes an opaque `credential_ref` to the auth provider layer; the daemon
+resolves plaintext into a non-serializable `ResolvedCredential` object and hands
+it to the connector adapter in process. Audit rows keep only the opaque ref,
+credential id, provider key, and redacted metadata.
+
 ## GSC OAuth
 
 Google Search Console now uses the generic auth provider boundary while keeping

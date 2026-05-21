@@ -224,6 +224,8 @@ def test_bridge_caches_run_plan_controller_grants() -> None:
 
 def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> None:
     assert "plugin.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "action.describe" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "action.validate" in _AGENT_VISIBLE_TOOL_NAMES
     assert "catalog.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "capability.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "provider.describe" in _AGENT_VISIBLE_TOOL_NAMES
@@ -286,6 +288,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     } == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert "dataforseo.serp" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "openaiImages.generate" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "action.execute" not in _AGENT_BASE_TOOLBOX_NAMES
 
 
 def test_bridge_setup_surface_covers_observer_ui_mutations() -> None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Mapping
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -107,6 +109,33 @@ class AuthRevokeOut(BaseModel):
     project_id: int | None
     revoked_at: datetime
     status: str = "revoked"
+
+
+@dataclass(frozen=True)
+class ResolvedCredential:
+    """Daemon-internal credential bundle for connector execution.
+
+    The plaintext payload is intentionally not a Pydantic model field and is
+    hidden from repr; callers must never serialize this object into MCP/REST
+    responses or audit JSON.
+    """
+
+    credential: Credential
+    integration: IntegrationCredential
+    plaintext_payload: bytes = dataclass_field(repr=False)
+    config_json: dict[str, Any] | None = dataclass_field(default=None, repr=False)
+
+    @property
+    def credential_ref(self) -> str:
+        return self.credential.credential_ref
+
+    @property
+    def credential_id(self) -> int | None:
+        return self.credential.id
+
+    @property
+    def provider_key(self) -> str:
+        return self.credential.provider_key
 
 
 class AuthRepository:
@@ -280,6 +309,50 @@ class AuthRepository:
         )
         self._s.commit()
         return Envelope(data=out, project_id=project_id)
+
+    def resolve_for_execution(
+        self,
+        *,
+        project_id: int,
+        provider_key: str | None,
+        credential_ref: str | None,
+        operation: str,
+    ) -> ResolvedCredential:
+        """Resolve a credential ref for an in-process connector call.
+
+        This is not an agent-facing read. It decrypts the backing payload only
+        inside the daemon, records a redacted usage event, and returns an
+        internal dataclass whose secret fields must not be serialized.
+        """
+        credential, row = self._resolve_credential(
+            project_id=project_id,
+            credential_ref=credential_ref,
+            provider_key=provider_key,
+        )
+        if provider_key is not None and credential.provider_key != provider_key:
+            raise ValidationError(
+                "credential provider does not match action provider",
+                data={
+                    "credential_ref": credential.credential_ref,
+                    "credential_provider": credential.provider_key,
+                    "action_provider": provider_key,
+                },
+            )
+        assert row.id is not None
+        plaintext = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
+        self.record_usage_event(
+            credential=credential,
+            provider_key=credential.provider_key,
+            operation=operation,
+            status="used",
+            metadata_json={"credential_ref": credential.credential_ref},
+        )
+        return ResolvedCredential(
+            credential=credential,
+            integration=row,
+            plaintext_payload=plaintext,
+            config_json=row.config_json,
+        )
 
     def revoke(
         self,
@@ -795,4 +868,5 @@ __all__ = [
     "AuthStatusOut",
     "AuthTestOut",
     "CredentialConnectionOut",
+    "ResolvedCredential",
 ]

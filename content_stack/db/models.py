@@ -332,6 +332,14 @@ class ApprovalRequestStatus(enum.StrEnum):
     CANCELLED = "cancelled"
 
 
+class ActionCallStatus(enum.StrEnum):
+    """Persists to ``action_calls.status`` for generic action execution audit."""
+
+    DRY_RUN = "dry-run"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
 class PluginSource(enum.StrEnum):
     """Persists to ``plugins.source`` for StackOS catalog ownership."""
 
@@ -661,6 +669,84 @@ class ActionVersion(SQLModel, table=True):
     version: str = Field(max_length=40)
     manifest_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class ActionCall(SQLModel, table=True):
+    """Redacted audit row for internal generic action execution.
+
+    Action calls are StackOS sidecars. They record what the daemon executed,
+    which credential ref was used, and the sanitized request/response envelope;
+    plaintext secrets stay inside the connector boundary.
+    """
+
+    __tablename__ = "action_calls"
+    __table_args__ = (
+        Index("ix_action_calls_project_created", "project_id", "created_at"),
+        Index("ix_action_calls_run", "run_id"),
+        Index("ix_action_calls_run_plan_step", "run_plan_step_id"),
+        Index("ix_action_calls_action", "action_id"),
+        Index("ix_action_calls_project_idempotency", "project_id", "idempotency_key"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            ForeignKey("projects.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    run_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("runs.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    run_plan_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("run_plans.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    run_plan_step_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("run_plan_steps.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    action_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("actions.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    credential_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("credentials.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    action_key: str = Field(max_length=160)
+    plugin_slug: str = Field(max_length=120)
+    provider_key: str | None = Field(default=None, max_length=160)
+    connector_key: str | None = Field(default=None, max_length=160)
+    operation: str = Field(max_length=160)
+    status: ActionCallStatus = Field(sa_column=_enum_column(ActionCallStatus))
+    dry_run: bool = Field(default=False)
+    idempotency_key: str | None = Field(default=None, max_length=160)
+    credential_ref: str | None = Field(default=None, max_length=120)
+    request_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    response_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    cost_cents: int = Field(default=0)
+    duration_ms: int | None = Field(default=None)
+    error: str | None = Field(default=None)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    completed_at: datetime | None = Field(default=None)
 
 
 class WorkflowTemplate(SQLModel, table=True):
@@ -2572,6 +2658,8 @@ __all__ = [
     "RUN_PLAN_STEP_STATUS_TRANSITIONS",
     "RUN_STATUS_TRANSITIONS",
     "TOPIC_STATUS_TRANSITIONS",
+    "ActionCall",
+    "ActionCallStatus",
     "AgentSession",
     "ApprovalRequest",
     "ApprovalRequestStatus",

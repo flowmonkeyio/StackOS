@@ -13,6 +13,7 @@ from .conftest import MCPClient
 # Per-namespace expected counts — derived from the registrations in
 # ``content_stack.mcp.tools``. Update intentionally when adding tools.
 EXPECTED_NAMESPACE_COUNTS = {
+    "action": 2,
     "ahrefs": 2,
     "article": 18,
     "artifact": 3,

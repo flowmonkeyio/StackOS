@@ -52,6 +52,8 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         # observer; product-state operations that are not vendor research calls
         # must be available to the agent through the MCP toolbox before a
         # procedure run exists. Costly/vendor calls remain per-skill grants.
+        "action.describe",
+        "action.validate",
         "article.bulkCreate",
         "article.create",
         "article.createVersion",

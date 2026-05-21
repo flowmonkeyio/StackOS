@@ -26,6 +26,8 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "project.getActive",
     "auth.status",
     "auth.test",
+    "action.describe",
+    "action.validate",
     "plugin.list",
     "catalog.list",
     "catalog.describe",

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from content_stack.mcp.server import ToolRegistry
 from content_stack.mcp.tools import (
+    actions,
     articles,
     artifacts,
     auth,
@@ -35,6 +36,7 @@ from content_stack.mcp.tools import (
 
 def register_all(registry: ToolRegistry) -> None:
     """Populate ``registry`` with every M3-shipped tool."""
+    actions.register(registry)
     projects.register(registry)
     auth.register(registry)
     context.register(registry)

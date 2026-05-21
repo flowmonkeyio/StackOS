@@ -138,6 +138,9 @@ READ_ONLY_TOOL_NAMES: frozenset[str] = frozenset(
     {
         # D06 template validation is pure schema checking; it saves no state.
         # D07 run-plan validation is also pure schema/template resolution.
+        # D08 action validation is schema/connector validation only; execution
+        # remains internal and is not registered as an MCP tool in this slice.
+        "action.validate",
         "runPlan.validate",
         "workflowTemplate.validate",
     }

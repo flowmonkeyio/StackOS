@@ -10,6 +10,7 @@ from content_stack.auth_providers.repository import (
     AuthStatusOut,
     AuthTestOut,
     CredentialConnectionOut,
+    ResolvedCredential,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "AuthStatusOut",
     "AuthTestOut",
     "CredentialConnectionOut",
+    "ResolvedCredential",
 ]

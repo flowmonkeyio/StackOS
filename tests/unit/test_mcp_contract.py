@@ -95,6 +95,7 @@ def test_mutating_verb_classification(name: str) -> None:
         "gscOauth.get",
         "workflowTemplate.validate",
         "runPlan.validate",
+        "action.validate",
     ],
 )
 def test_read_verb_not_mutating(name: str) -> None:

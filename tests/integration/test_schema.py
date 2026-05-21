@@ -31,6 +31,7 @@ from content_stack.db.seed import seed_eeat_criteria
 
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
+        "action_calls",
         "action_versions",
         "actions",
         "agent_sessions",

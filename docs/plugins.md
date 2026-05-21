@@ -11,6 +11,11 @@ Agents and humans decide how to use those tools. Plugin manifests must not
 encode business strategy such as choosing winners, optimizing campaigns, or
 deciding the next topic.
 
+Executable action details are documented in
+[`action-executor.md`](action-executor.md). In D08, StackOS can describe,
+validate, and internally execute configured actions through daemon connectors,
+but normal agents still see only `action.describe` and `action.validate`.
+
 ## Manifest Shape
 
 The catalog manifest is intentionally metadata-only:
@@ -85,6 +90,8 @@ Built-in resource schemas include:
 Before D09, normal agents may discover catalog metadata and bounded generic
 reads:
 
+- `action.describe`
+- `action.validate`
 - `plugin.list`
 - `catalog.list`
 - `catalog.describe`
@@ -114,6 +121,10 @@ system/bootstrap agent surface before D09:
 - `artifact.create`
 - `workflowTemplate.save`
 - `workflowTemplate.fork`
+
+Generic execution is also withheld from normal agents before the grant model:
+
+- `action.execute`
 
 Credential setup is metadata-driven by plugin providers, but secrets stay
 outside agent context. Provider manifests declare `auth_type`; the daemon maps

@@ -1118,6 +1118,7 @@ Docs:
 
 - Action manifest docs.
 - Connector adapter docs.
+- `docs/action-executor.md` is the D08 operator/developer reference.
 
 Compatibility:
 
