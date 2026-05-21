@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 
-def test_assets_full_cycle(api: TestClient, article_id: int) -> None:
-    """Create + list + patch + delete an asset row."""
+def test_assets_full_cycle(api: TestClient, project_id: int, article_id: int) -> None:
+    """Create + list + patch + delete an asset row, with generic artifact mirror."""
     resp = api.post(
         f"/api/v1/articles/{article_id}/assets",
         json={"kind": "hero", "url": "https://x.com/hero.png", "alt_text": "Hero"},
@@ -15,6 +15,18 @@ def test_assets_full_cycle(api: TestClient, article_id: int) -> None:
     asset_id = resp.json()["data"]["id"]
     rows = api.get(f"/api/v1/articles/{article_id}/assets").json()
     assert len(rows) == 1
+    artifacts = api.get(
+        f"/api/v1/projects/{project_id}/artifacts",
+        params={"kind": "article-asset"},
+    ).json()["items"]
+    assert len(artifacts) == 1
+    assert artifacts[0]["uri"] == "https://x.com/hero.png"
+    assert artifacts[0]["provenance_json"] == {
+        "source_table": "article_assets",
+        "source_id": asset_id,
+        "article_id": article_id,
+        "prompt": None,
+    }
 
     patch = api.patch(
         f"/api/v1/articles/{article_id}/assets/{asset_id}",

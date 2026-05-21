@@ -17,9 +17,11 @@ from content_stack.db.models import (
     Project,
     ProjectPlugin,
     Provider,
+    Resource,
 )
 from content_stack.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS, PluginManifest
 from content_stack.repositories.base import ConflictError, Envelope, NotFoundError
+from content_stack.repositories.resources import ResourceOut
 
 
 def _utcnow() -> datetime:
@@ -105,6 +107,7 @@ class PluginCatalogOut(BaseModel):
     capabilities: list[CapabilityOut]
     providers: list[ProviderOut]
     actions: list[ActionOut]
+    resources: list[ResourceOut]
 
 
 class CatalogOut(BaseModel):
@@ -245,6 +248,14 @@ class PluginRepository:
         rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Action.key.asc())).all()
         return [self._action_out(action, plugin, provider) for action, plugin, provider in rows]
 
+    def list_resources(self, *, plugin_slug: str | None = None) -> list[ResourceOut]:
+        self.sync_builtin_plugins()
+        stmt = select(Resource, Plugin).join(Plugin, Resource.plugin_id == Plugin.id)
+        if plugin_slug is not None:
+            stmt = stmt.where(Plugin.slug == plugin_slug)
+        rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Resource.key.asc())).all()
+        return [self._resource_out(resource, plugin) for resource, plugin in rows]
+
     def catalog(self, *, plugin_slug: str | None = None) -> CatalogOut:
         self.sync_builtin_plugins()
         plugins = [self.get_plugin(plugin_slug)] if plugin_slug else self.list_plugins()
@@ -254,6 +265,7 @@ class PluginRepository:
                 capabilities=self.list_capabilities(plugin_slug=plugin.slug),
                 providers=self.list_providers(plugin_slug=plugin.slug),
                 actions=self.list_actions(plugin_slug=plugin.slug),
+                resources=self.list_resources(plugin_slug=plugin.slug),
             )
             for plugin in plugins
         ]
@@ -333,6 +345,32 @@ class PluginRepository:
                 capability.config_json = capability_manifest.config
                 capability.updated_at = now
             self._s.add(capability)
+
+        for resource_manifest in manifest.resources:
+            resource = self._s.exec(
+                select(Resource).where(
+                    Resource.plugin_id == row.id,
+                    Resource.key == resource_manifest.key,
+                )
+            ).first()
+            if resource is None:
+                resource = Resource(
+                    plugin_id=row.id,
+                    key=resource_manifest.key,
+                    name=resource_manifest.name,
+                    description=resource_manifest.description,
+                    schema_json=resource_manifest.schema,
+                    ui_schema_json=resource_manifest.ui_schema,
+                    config_json=resource_manifest.config,
+                )
+            else:
+                resource.name = resource_manifest.name
+                resource.description = resource_manifest.description
+                resource.schema_json = resource_manifest.schema
+                resource.ui_schema_json = resource_manifest.ui_schema
+                resource.config_json = resource_manifest.config
+                resource.updated_at = now
+            self._s.add(resource)
 
         for action_manifest in manifest.actions:
             provider_id = None
@@ -456,6 +494,20 @@ class PluginRepository:
             config_json=row.config_json,
         )
 
+    def _resource_out(self, row: Resource, plugin: Plugin) -> ResourceOut:
+        assert row.id is not None and row.plugin_id is not None
+        return ResourceOut(
+            id=row.id,
+            plugin_id=row.plugin_id,
+            plugin_slug=plugin.slug,
+            key=row.key,
+            name=row.name,
+            description=row.description,
+            schema_json=row.schema_json,
+            ui_schema_json=row.ui_schema_json,
+            config_json=row.config_json,
+        )
+
     def _action_out(self, row: Action, plugin: Plugin, provider: Provider | None) -> ActionOut:
         assert row.id is not None and row.plugin_id is not None
         return ActionOut(
@@ -484,4 +536,5 @@ __all__ = [
     "PluginRepository",
     "ProjectPluginOut",
     "ProviderOut",
+    "ResourceOut",
 ]

@@ -11,10 +11,9 @@ Agents and humans decide how to use those tools. Plugin manifests must not
 encode business strategy such as choosing winners, optimizing campaigns, or
 deciding the next topic.
 
-## D02 Manifest Shape
+## Manifest Shape
 
-D02 introduces the catalog skeleton. The initial manifest is intentionally
-small and metadata-only:
+The catalog manifest is intentionally metadata-only:
 
 ```yaml
 slug: seo
@@ -44,6 +43,13 @@ actions:
     output_schema:
       type: object
       additionalProperties: true
+resources:
+  - key: article
+    name: Article
+    description: Compatibility schema for SEO article records.
+    schema:
+      type: object
+      additionalProperties: true
 ```
 
 Required identifiers use lowercase kebab or dotted form, for example
@@ -51,16 +57,23 @@ Required identifiers use lowercase kebab or dotted form, for example
 
 ## Built-In Plugins
 
-D02 registers three built-ins:
+The initial StackOS daemon registers three built-ins:
 
 - `core`: domain-neutral StackOS catalog/workflow/project-data primitives.
 - `seo`: compatibility facade for the current SEO content operations.
 - `utils`: reusable utility capabilities and providers such as image
   generation and web retrieval.
 
+Built-in resource schemas include:
+
+- `core`: `project-note`, `learning`, `experiment`.
+- `seo`: `topic`, `article`, `research-source`, `article-asset`.
+- `utils`: `generated-image`, `web-document`.
+
 ## Agent Exposure
 
-Before D09, normal agents may discover catalog metadata:
+Before D09, normal agents may discover catalog metadata and bounded generic
+reads:
 
 - `plugin.list`
 - `catalog.list`
@@ -69,12 +82,16 @@ Before D09, normal agents may discover catalog metadata:
 - `capability.describe`
 - `provider.list`
 - `provider.describe`
+- `resource.get`
+- `resource.query`
+- `artifact.get`
+- `artifact.query`
 
-Project plugin enable/disable is setup/admin-gated:
+Setup/admin-gated mutations are registered in the daemon catalog but are not
+advertised through the normal agent bridge and are not granted to the
+system/bootstrap agent surface before D09:
 
 - `plugin.enable`
 - `plugin.disable`
-
-Those mutation tools are registered in the daemon catalog but are not advertised
-through the normal agent bridge and are not granted to the system/bootstrap
-agent surface before the D09 admin/run-plan grant work.
+- `resource.upsert`
+- `artifact.create`

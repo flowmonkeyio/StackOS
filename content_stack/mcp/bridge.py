@@ -31,6 +31,10 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "capability.describe",
     "provider.list",
     "provider.describe",
+    "resource.get",
+    "resource.query",
+    "artifact.get",
+    "artifact.query",
     "meta.enums",
     # Agent-led procedure controls.
     "procedure.list",
@@ -51,7 +55,9 @@ _AGENT_VISIBLE_TOOL_NAMES = frozenset(_AGENT_VISIBLE_TOOL_ORDER)
 _TOOLBOX_DESCRIBE_TOOL = "toolbox.describe"
 _TOOLBOX_CALL_TOOL = "toolbox.call"
 _TOOLBOX_TOOL_NAMES = frozenset({_TOOLBOX_DESCRIBE_TOOL, _TOOLBOX_CALL_TOOL})
-_AGENT_ADMIN_GATED_TOOL_NAMES = frozenset({"plugin.enable", "plugin.disable"})
+_AGENT_ADMIN_GATED_TOOL_NAMES = frozenset(
+    {"artifact.create", "plugin.enable", "plugin.disable", "resource.upsert"}
+)
 
 # Tools that stay out of the advertised MCP list but are still useful during
 # setup when an agent explicitly asks the bridge to describe/call them. Procedure

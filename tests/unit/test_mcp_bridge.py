@@ -95,6 +95,8 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
         _tool("article.get"),
         _tool("integration.set"),
         _tool("plugin.enable"),
+        _tool("resource.upsert"),
+        _tool("artifact.create"),
         _tool("cost.queryProject"),
         _tool("dataforseo.serp"),
     ]
@@ -109,6 +111,8 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
     assert "article.get" not in names
     assert "integration.set" not in names
     assert "plugin.enable" not in names
+    assert "resource.upsert" not in names
+    assert "artifact.create" not in names
     assert "cost.queryProject" not in names
     assert "dataforseo.serp" not in names
 
@@ -190,13 +194,22 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "catalog.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "capability.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "provider.describe" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "resource.query" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "artifact.get" in _AGENT_VISIBLE_TOOL_NAMES
     assert "integration.set" in _AGENT_BASE_TOOLBOX_NAMES
     assert "article.setDraft" in _AGENT_BASE_TOOLBOX_NAMES
     assert "cost.queryProject" in _AGENT_BASE_TOOLBOX_NAMES
     assert "publish.recordPublish" in _AGENT_BASE_TOOLBOX_NAMES
     assert "plugin.enable" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "plugin.disable" not in _AGENT_BASE_TOOLBOX_NAMES
-    assert {"plugin.enable", "plugin.disable"} == _AGENT_ADMIN_GATED_TOOL_NAMES
+    assert "resource.upsert" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "artifact.create" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert {
+        "artifact.create",
+        "plugin.enable",
+        "plugin.disable",
+        "resource.upsert",
+    } == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert "dataforseo.serp" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "openaiImages.generate" not in _AGENT_BASE_TOOLBOX_NAMES
 

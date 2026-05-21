@@ -47,6 +47,7 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert {cap.key for cap in utils.capabilities} >= {"image-generation", "web-retrieval"}
     assert {provider.key for provider in utils.providers} >= {"openai-images", "firecrawl"}
     assert {action.key for action in utils.actions} >= {"image.generate", "web.scrape"}
+    assert {resource.key for resource in utils.resources} >= {"generated-image", "web-document"}
 
 
 def test_capability_provider_describe_supports_plugin_filter(session: Session) -> None:

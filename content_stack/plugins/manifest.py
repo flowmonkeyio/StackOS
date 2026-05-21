@@ -77,6 +77,24 @@ class ActionManifest(BaseModel):
         return _validate_key(value)
 
 
+class ResourceManifest(BaseModel):
+    """Resource schema contributed by a plugin."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=160)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    schema: dict[str, Any] = Field(default_factory=dict)
+    ui_schema: dict[str, Any] | None = None
+    config: dict[str, Any] | None = None
+
+    @field_validator("key")
+    @classmethod
+    def _key(cls, value: str) -> str:
+        return _validate_key(value)
+
+
 class PluginManifest(BaseModel):
     """Top-level StackOS plugin manifest."""
 
@@ -90,6 +108,7 @@ class PluginManifest(BaseModel):
     capabilities: list[CapabilityManifest] = Field(default_factory=list)
     providers: list[ProviderManifest] = Field(default_factory=list)
     actions: list[ActionManifest] = Field(default_factory=list)
+    resources: list[ResourceManifest] = Field(default_factory=list)
     ui: dict[str, Any] | None = None
     config: dict[str, Any] | None = None
 
@@ -100,6 +119,25 @@ class PluginManifest(BaseModel):
 
 
 _OBJECT_SCHEMA = {"type": "object", "additionalProperties": True}
+_TEXT_RECORD_SCHEMA = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "title": {"type": "string"},
+        "body": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+}
+_ARTIFACT_RESOURCE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "uri": {"type": "string"},
+        "kind": {"type": "string"},
+        "metadata": {"type": "object", "additionalProperties": True},
+    },
+    "required": ["uri"],
+}
 
 BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
     PluginManifest(
@@ -147,6 +185,26 @@ BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 input_schema=_OBJECT_SCHEMA,
                 output_schema=_OBJECT_SCHEMA,
             )
+        ],
+        resources=[
+            ResourceManifest(
+                key="project-note",
+                name="Project Note",
+                description="Domain-neutral project record for agent-visible context.",
+                schema=_TEXT_RECORD_SCHEMA,
+            ),
+            ResourceManifest(
+                key="learning",
+                name="Learning",
+                description="Durable observation or lesson derived from prior work.",
+                schema=_TEXT_RECORD_SCHEMA,
+            ),
+            ResourceManifest(
+                key="experiment",
+                name="Experiment",
+                description="Experiment definition or result summary owned by the project.",
+                schema=_OBJECT_SCHEMA,
+            ),
         ],
     ),
     PluginManifest(
@@ -211,6 +269,32 @@ BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 risk_level="write",
                 input_schema=_OBJECT_SCHEMA,
                 output_schema=_OBJECT_SCHEMA,
+            ),
+        ],
+        resources=[
+            ResourceManifest(
+                key="topic",
+                name="Topic",
+                description="Compatibility schema for SEO topic candidates.",
+                schema=_OBJECT_SCHEMA,
+            ),
+            ResourceManifest(
+                key="article",
+                name="Article",
+                description="Compatibility schema for SEO article records.",
+                schema=_OBJECT_SCHEMA,
+            ),
+            ResourceManifest(
+                key="research-source",
+                name="Research Source",
+                description="Compatibility schema for article research sources.",
+                schema=_OBJECT_SCHEMA,
+            ),
+            ResourceManifest(
+                key="article-asset",
+                name="Article Asset",
+                description="Compatibility schema for article image/media assets.",
+                schema=_ARTIFACT_RESOURCE_SCHEMA,
             ),
         ],
     ),
@@ -280,6 +364,20 @@ BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 output_schema=_OBJECT_SCHEMA,
             ),
         ],
+        resources=[
+            ResourceManifest(
+                key="generated-image",
+                name="Generated Image",
+                description="Generated image artifact metadata reusable by any workflow.",
+                schema=_ARTIFACT_RESOURCE_SCHEMA,
+            ),
+            ResourceManifest(
+                key="web-document",
+                name="Web Document",
+                description="Retrieved or normalized web document metadata.",
+                schema=_OBJECT_SCHEMA,
+            ),
+        ],
     ),
 )
 
@@ -289,4 +387,5 @@ __all__ = [
     "CapabilityManifest",
     "PluginManifest",
     "ProviderManifest",
+    "ResourceManifest",
 ]

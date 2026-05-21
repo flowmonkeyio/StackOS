@@ -14,7 +14,16 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert slugs == ["core", "seo", "utils"]
     for manifest in BUILTIN_PLUGIN_MANIFESTS:
         assert manifest.capabilities
+        assert manifest.resources
         assert manifest.model_dump(mode="json")["slug"] == manifest.slug
+
+    resources_by_plugin = {
+        manifest.slug: {resource.key for resource in manifest.resources}
+        for manifest in BUILTIN_PLUGIN_MANIFESTS
+    }
+    assert resources_by_plugin["core"] >= {"learning", "experiment"}
+    assert resources_by_plugin["seo"] >= {"article", "article-asset"}
+    assert resources_by_plugin["utils"] >= {"generated-image", "web-document"}
 
 
 def test_manifest_rejects_unknown_fields() -> None:

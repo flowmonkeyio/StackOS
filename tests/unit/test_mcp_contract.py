@@ -59,6 +59,7 @@ from content_stack.mcp.server import (
         "project.delete",
         "plugin.enable",
         "plugin.disable",
+        "resource.upsert",
     ],
 )
 def test_mutating_verb_classification(name: str) -> None:

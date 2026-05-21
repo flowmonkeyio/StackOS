@@ -13,6 +13,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     catalog = api.get("/api/v1/catalog/utils")
     assert catalog.status_code == 200
     assert catalog.json()["plugin"]["slug"] == "utils"
+    assert {r["key"] for r in catalog.json()["resources"]} >= {"generated-image", "web-document"}
 
     providers = api.get("/api/v1/providers", params={"plugin_slug": "utils"})
     assert providers.status_code == 200

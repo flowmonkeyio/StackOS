@@ -45,6 +45,7 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "mark",
         "add",
         "remove",
+        "upsert",
         "toggle",
         "approve",
         "reject",

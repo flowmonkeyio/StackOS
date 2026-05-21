@@ -84,6 +84,15 @@ from content_stack.repositories.projects import (
     VoiceProfileOut,
     VoiceProfileRepository,
 )
+from content_stack.repositories.resources import (
+    ArtifactOut,
+    ArtifactRepository,
+    ResourceGetOut,
+    ResourceOut,
+    ResourceQueryOut,
+    ResourceRecordOut,
+    ResourceRepository,
+)
 from content_stack.repositories.runs import (
     IdempotencyKeyRepository,
     IdempotencyOut,
@@ -112,6 +121,8 @@ __all__ = [
     "ArticlePublishRepository",
     "ArticleRepository",
     "ArticleVersionOut",
+    "ArtifactOut",
+    "ArtifactRepository",
     "AuthorOut",
     "AuthorRepository",
     "BudgetExceededError",
@@ -157,6 +168,11 @@ __all__ = [
     "RepositoryError",
     "ResearchSourceOut",
     "ResearchSourceRepository",
+    "ResourceGetOut",
+    "ResourceOut",
+    "ResourceQueryOut",
+    "ResourceRecordOut",
+    "ResourceRepository",
     "RunOut",
     "RunRepository",
     "RunStepCallOut",

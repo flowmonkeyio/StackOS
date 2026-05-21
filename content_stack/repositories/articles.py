@@ -65,6 +65,7 @@ from content_stack.db.models import (
     ArticlePublishStatus,
     ArticleStatus,
     ArticleVersion,
+    Artifact,
     ResearchSource,
     SchemaEmit,
 )
@@ -791,6 +792,32 @@ class ArticleAssetRepository:
             position=position,
         )
         self._s.add(row)
+        self._s.flush()
+        article = self._s.get(Article, article_id)
+        if article is not None and row.id is not None:
+            asset_kind = kind.value if isinstance(kind, ArticleAssetKind) else str(kind)
+            self._s.add(
+                Artifact(
+                    project_id=article.project_id,
+                    kind="article-asset",
+                    uri=url,
+                    name=alt_text[:300] if alt_text else None,
+                    mime_type=None,
+                    metadata_json={
+                        "asset_kind": asset_kind,
+                        "alt_text": alt_text,
+                        "width": width,
+                        "height": height,
+                        "position": position,
+                    },
+                    provenance_json={
+                        "source_table": "article_assets",
+                        "source_id": row.id,
+                        "article_id": article_id,
+                        "prompt": prompt,
+                    },
+                )
+            )
         self._s.commit()
         self._s.refresh(row)
         return Envelope(data=ArticleAssetOut.model_validate(row))

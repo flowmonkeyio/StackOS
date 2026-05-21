@@ -44,6 +44,7 @@ from content_stack.api.plugins import router as plugins_router
 from content_stack.api.procedures import router as procedures_router
 from content_stack.api.projects import oauth_router as projects_oauth_router
 from content_stack.api.projects import router as projects_router
+from content_stack.api.resources import router as resources_router
 from content_stack.api.runs import (
     project_router as runs_project_router,
 )
@@ -76,6 +77,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(meta_router)
     # StackOS plugin/catalog discovery.
     app.include_router(plugins_router)
+    # Generic StackOS resources/artifacts.
+    app.include_router(resources_router)
     # Domain routers — projects + nested presets land first because most
     # other resources hang off ``/projects/{id}/...``.
     app.include_router(projects_router)

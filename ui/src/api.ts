@@ -541,6 +541,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/artifacts/{artifact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Artifact
+         * @description Fetch one artifact reference.
+         */
+        get: operations["get_artifact_api_v1_artifacts__artifact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/ui-token": {
         parameters: {
             query?: never;
@@ -1126,6 +1146,30 @@ export interface paths {
         get: operations["list_refresh_due_api_v1_projects__project_id__articles_refresh_due_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query Project Artifacts
+         * @description Query artifact references for a project.
+         */
+        get: operations["query_project_artifacts_api_v1_projects__project_id__artifacts_get"];
+        put?: never;
+        /**
+         * Create Artifact
+         * @description Create an artifact reference through the local/admin REST surface.
+         */
+        post: operations["create_artifact_api_v1_projects__project_id__artifacts_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1762,6 +1806,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/resource-records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query Resource Records
+         * @description Query generic resource records for a project.
+         */
+        get: operations["query_resource_records_api_v1_projects__project_id__resource_records_get"];
+        put?: never;
+        /**
+         * Upsert Resource Record
+         * @description Upsert a generic resource record through the local/admin REST surface.
+         */
+        post: operations["upsert_resource_record_api_v1_projects__project_id__resource_records_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/runs": {
         parameters: {
             query?: never;
@@ -2026,6 +2094,66 @@ export interface paths {
          * @description Describe one provider; pass plugin_slug if the key is ambiguous.
          */
         get: operations["describe_provider_api_v1_providers__provider_key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resource-records/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Resource Record
+         * @description Fetch one generic resource record.
+         */
+        get: operations["get_resource_record_api_v1_resource_records__record_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Resources
+         * @description List installed plugin resource schemas.
+         */
+        get: operations["list_resources_api_v1_resources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resources/{resource_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Resource
+         * @description Describe one resource schema; pass plugin_slug if the key is ambiguous.
+         */
+        get: operations["get_resource_api_v1_resources__resource_key__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2447,6 +2575,79 @@ export interface components {
             version: number;
             /** Voice Id Used */
             voice_id_used: number | null;
+        };
+        /**
+         * ArtifactCreateRequest
+         * @description Local-admin/internal body for creating artifact references.
+         * @example {
+         *       "kind": "image",
+         *       "metadata_json": {
+         *         "height": 1024,
+         *         "width": 1024
+         *       },
+         *       "plugin_slug": "utils",
+         *       "uri": "/generated-assets/image.png"
+         *     }
+         */
+        ArtifactCreateRequest: {
+            /** Kind */
+            kind: string;
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Mime Type */
+            mime_type?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Plugin Slug */
+            plugin_slug?: string | null;
+            /** Provenance Json */
+            provenance_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Resource Record Id */
+            resource_record_id?: number | null;
+            /** Size Bytes */
+            size_bytes?: number | null;
+            /** Uri */
+            uri: string;
+        };
+        /** ArtifactOut */
+        ArtifactOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Mime Type */
+            mime_type: string | null;
+            /** Name */
+            name: string | null;
+            /** Plugin Id */
+            plugin_id: number | null;
+            /** Plugin Slug */
+            plugin_slug: string | null;
+            /** Project Id */
+            project_id: number | null;
+            /** Provenance Json */
+            provenance_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Resource Record Id */
+            resource_record_id: number | null;
+            /** Size Bytes */
+            size_bytes: number | null;
+            /** Uri */
+            uri: string;
         };
         /** AssetCreateRequest */
         AssetCreateRequest: {
@@ -3529,6 +3730,24 @@ export interface components {
             total_estimate: number;
         };
         /**
+         * PageResponse[ArtifactOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_ArtifactOut_: {
+            /** Items */
+            items: components["schemas"]["ArtifactOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /**
          * PageResponse[AuthorOut]
          * @example {
          *       "items": [],
@@ -3619,6 +3838,24 @@ export interface components {
             total_estimate: number;
         };
         /**
+         * PageResponse[ResourceRecordOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_ResourceRecordOut_: {
+            /** Items */
+            items: components["schemas"]["ResourceRecordOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /**
          * PageResponse[RunOut]
          * @example {
          *       "items": [],
@@ -3681,6 +3918,8 @@ export interface components {
             plugin: components["schemas"]["PluginOut"];
             /** Providers */
             providers: components["schemas"]["ProviderOut"][];
+            /** Resources */
+            resources: components["schemas"]["ResourceOut"][];
         };
         /**
          * PluginEnableRequest
@@ -4220,6 +4459,101 @@ export interface components {
             /** Used */
             used: boolean;
         };
+        /** ResourceOut */
+        ResourceOut: {
+            /** Config Json */
+            config_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Description */
+            description: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Plugin Id */
+            plugin_id: number;
+            /** Plugin Slug */
+            plugin_slug: string;
+            /** Schema Json */
+            schema_json: {
+                [key: string]: unknown;
+            };
+            /** Ui Schema Json */
+            ui_schema_json: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** ResourceRecordOut */
+        ResourceRecordOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Data Json */
+            data_json: {
+                [key: string]: unknown;
+            };
+            /** External Id */
+            external_id: string | null;
+            /** Id */
+            id: number;
+            /** Plugin Slug */
+            plugin_slug: string;
+            /** Project Id */
+            project_id: number;
+            /** Provenance Json */
+            provenance_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Resource Id */
+            resource_id: number;
+            /** Resource Key */
+            resource_key: string;
+            /** Title */
+            title: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ResourceRecordUpsertRequest
+         * @description Local-admin/internal body for generic resource record upserts.
+         * @example {
+         *       "data_json": {
+         *         "body": "Short, concrete hooks performed best."
+         *       },
+         *       "external_id": "weekly-1",
+         *       "plugin_slug": "core",
+         *       "resource_key": "learning",
+         *       "title": "Winning creative pattern"
+         *     }
+         */
+        ResourceRecordUpsertRequest: {
+            /** Data Json */
+            data_json?: {
+                [key: string]: unknown;
+            };
+            /** External Id */
+            external_id?: string | null;
+            /** Plugin Slug */
+            plugin_slug: string;
+            /** Provenance Json */
+            provenance_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Record Id */
+            record_id?: number | null;
+            /** Resource Key */
+            resource_key: string;
+            /** Title */
+            title?: string | null;
+        };
         /**
          * RunKind
          * @description Persists to ``runs.kind`` per PLAN.md L391 (16 values).
@@ -4689,6 +5023,19 @@ export interface components {
             run_id?: number | null;
         };
         /**
+         * WriteResponse[ArtifactOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_ArtifactOut_: {
+            data: components["schemas"]["ArtifactOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
          * WriteResponse[AuthorOut]
          * @example {
          *       "project_id": 1
@@ -4871,6 +5218,19 @@ export interface components {
             run_id?: number | null;
         };
         /**
+         * WriteResponse[ResourceRecordOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_ResourceRecordOut_: {
+            data: components["schemas"]["ResourceRecordOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
          * WriteResponse[RunOut]
          * @example {
          *       "project_id": 1
@@ -5005,6 +5365,8 @@ export type SchemaArticleOut = components['schemas']['ArticleOut'];
 export type SchemaArticlePatchRequest = components['schemas']['ArticlePatchRequest'];
 export type SchemaArticlePublishOut = components['schemas']['ArticlePublishOut'];
 export type SchemaArticleVersionOut = components['schemas']['ArticleVersionOut'];
+export type SchemaArtifactCreateRequest = components['schemas']['ArtifactCreateRequest'];
+export type SchemaArtifactOut = components['schemas']['ArtifactOut'];
 export type SchemaAssetCreateRequest = components['schemas']['AssetCreateRequest'];
 export type SchemaAssetUpdateRequest = components['schemas']['AssetUpdateRequest'];
 export type SchemaAuthorCreateRequest = components['schemas']['AuthorCreateRequest'];
@@ -5060,11 +5422,13 @@ export type SchemaMarkPublishedRequest = components['schemas']['MarkPublishedReq
 export type SchemaMarkRefreshDueRequest = components['schemas']['MarkRefreshDueRequest'];
 export type SchemaPageResponseArticleOut = components['schemas']['PageResponse_ArticleOut_'];
 export type SchemaPageResponseArticleVersionOut = components['schemas']['PageResponse_ArticleVersionOut_'];
+export type SchemaPageResponseArtifactOut = components['schemas']['PageResponse_ArtifactOut_'];
 export type SchemaPageResponseAuthorOut = components['schemas']['PageResponse_AuthorOut_'];
 export type SchemaPageResponseClusterOut = components['schemas']['PageResponse_ClusterOut_'];
 export type SchemaPageResponseInternalLinkOut = components['schemas']['PageResponse_InternalLinkOut_'];
 export type SchemaPageResponseProjectOut = components['schemas']['PageResponse_ProjectOut_'];
 export type SchemaPageResponseRedirectOut = components['schemas']['PageResponse_RedirectOut_'];
+export type SchemaPageResponseResourceRecordOut = components['schemas']['PageResponse_ResourceRecordOut_'];
 export type SchemaPageResponseRunOut = components['schemas']['PageResponse_RunOut_'];
 export type SchemaPageResponseTopicOut = components['schemas']['PageResponse_TopicOut_'];
 export type SchemaPageResponseVoiceProfileOut = components['schemas']['PageResponse_VoiceProfileOut_'];
@@ -5094,6 +5458,9 @@ export type SchemaPublishTargetUpdateRequest = components['schemas']['PublishTar
 export type SchemaRedirectOut = components['schemas']['RedirectOut'];
 export type SchemaRepairRequest = components['schemas']['RepairRequest'];
 export type SchemaResearchSourceOut = components['schemas']['ResearchSourceOut'];
+export type SchemaResourceOut = components['schemas']['ResourceOut'];
+export type SchemaResourceRecordOut = components['schemas']['ResourceRecordOut'];
+export type SchemaResourceRecordUpsertRequest = components['schemas']['ResourceRecordUpsertRequest'];
 export type SchemaRunOut = components['schemas']['RunOut'];
 export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertRequest'];
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
@@ -5120,6 +5487,7 @@ export type SchemaWriteResponseArticleAssetOut = components['schemas']['WriteRes
 export type SchemaWriteResponseArticleOut = components['schemas']['WriteResponse_ArticleOut_'];
 export type SchemaWriteResponseArticlePublishOut = components['schemas']['WriteResponse_ArticlePublishOut_'];
 export type SchemaWriteResponseArticleVersionOut = components['schemas']['WriteResponse_ArticleVersionOut_'];
+export type SchemaWriteResponseArtifactOut = components['schemas']['WriteResponse_ArtifactOut_'];
 export type SchemaWriteResponseAuthorOut = components['schemas']['WriteResponse_AuthorOut_'];
 export type SchemaWriteResponseBulkIngestResponse = components['schemas']['WriteResponse_BulkIngestResponse_'];
 export type SchemaWriteResponseClusterOut = components['schemas']['WriteResponse_ClusterOut_'];
@@ -5134,6 +5502,7 @@ export type SchemaWriteResponseProjectPluginOut = components['schemas']['WriteRe
 export type SchemaWriteResponsePublishTargetOut = components['schemas']['WriteResponse_PublishTargetOut_'];
 export type SchemaWriteResponseRedirectOut = components['schemas']['WriteResponse_RedirectOut_'];
 export type SchemaWriteResponseResearchSourceOut = components['schemas']['WriteResponse_ResearchSourceOut_'];
+export type SchemaWriteResponseResourceRecordOut = components['schemas']['WriteResponse_ResourceRecordOut_'];
 export type SchemaWriteResponseRunOut = components['schemas']['WriteResponse_RunOut_'];
 export type SchemaWriteResponseScheduledJobOut = components['schemas']['WriteResponse_ScheduledJobOut_'];
 export type SchemaWriteResponseSchemaEmitOut = components['schemas']['WriteResponse_SchemaEmitOut_'];
@@ -6194,6 +6563,37 @@ export interface operations {
             };
         };
     };
+    get_artifact_api_v1_artifacts__artifact_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_ui_token_api_v1_auth_ui_token_get: {
         parameters: {
             query?: never;
@@ -7156,6 +7556,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PageResponse_ArticleOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_project_artifacts_api_v1_projects__project_id__artifacts_get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+                resource_record_id?: number | null;
+                kind?: string | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_ArtifactOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_artifact_api_v1_projects__project_id__artifacts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtifactCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_ArtifactOut_"];
                 };
             };
             /** @description Validation Error */
@@ -8587,6 +9059,77 @@ export interface operations {
             };
         };
     };
+    query_resource_records_api_v1_projects__project_id__resource_records_get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+                resource_key?: string | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_ResourceRecordOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_resource_record_api_v1_projects__project_id__resource_records_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceRecordUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_ResourceRecordOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_runs_api_v1_projects__project_id__runs_get: {
         parameters: {
             query?: {
@@ -9154,6 +9697,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_resource_record_api_v1_resource_records__record_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceRecordOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_resources_api_v1_resources_get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_resource_api_v1_resources__resource_key__get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+            };
+            header?: never;
+            path: {
+                resource_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceOut"];
                 };
             };
             /** @description Validation Error */

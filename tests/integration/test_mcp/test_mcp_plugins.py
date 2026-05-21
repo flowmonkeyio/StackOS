@@ -11,6 +11,10 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
 
     catalog = mcp_client.call_tool_structured("catalog.describe", {"plugin_slug": "utils"})
     assert catalog["plugins"][0]["plugin"]["slug"] == "utils"
+    assert {r["key"] for r in catalog["plugins"][0]["resources"]} >= {
+        "generated-image",
+        "web-document",
+    }
 
     capabilities = mcp_client.call_tool_structured(
         "capability.list", {"plugin_slug": "seo"}

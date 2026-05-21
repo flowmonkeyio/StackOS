@@ -15,6 +15,7 @@ from .conftest import MCPClient
 EXPECTED_NAMESPACE_COUNTS = {
     "ahrefs": 2,
     "article": 18,
+    "artifact": 3,
     "asset": 4,
     "author": 5,
     "budget": 4,
@@ -42,6 +43,7 @@ EXPECTED_NAMESPACE_COUNTS = {
     "publish": 4,
     "redirect": 3,
     "reddit": 2,
+    "resource": 3,
     "run": 14,
     "schedule": 4,
     "schema": 4,

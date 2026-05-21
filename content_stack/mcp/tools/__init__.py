@@ -13,6 +13,7 @@ from __future__ import annotations
 from content_stack.mcp.server import ToolRegistry
 from content_stack.mcp.tools import (
     articles,
+    artifacts,
     authors,
     clusters,
     cost,
@@ -21,6 +22,7 @@ from content_stack.mcp.tools import (
     meta,
     plugins,
     projects,
+    resources,
     runs,
     sitemap,
     vendor_ops,
@@ -40,6 +42,8 @@ def register_all(registry: ToolRegistry) -> None:
     cost.register(registry)
     meta.register(registry)
     plugins.register(registry)
+    resources.register(registry)
+    artifacts.register(registry)
     sitemap.register(registry)
     workspaces.register(registry)
     vendor_ops.register(registry)
