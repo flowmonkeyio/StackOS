@@ -1,128 +1,154 @@
-# content-stack agent notes
+# StackOS agent notes
 
-## Content-Stack Tooling Architecture
+StackOS is the working direction for this repository. The historical
+`content-stack` / SEO implementation remains important compatibility surface,
+but new work should treat SEO as a first-party plugin domain, not as the core
+product identity.
 
-The daemon owns the full MCP catalog for the UI, tests, jobs, and automation.
-The installable Codex plugin must not expose that full catalog to agents. It
-talks to the daemon through `content-stack mcp-bridge`, which keeps the
-agent-facing surface intentionally small.
+## Product Boundary
 
-### Relationship Map
+StackOS is a local tool runtime for agents and humans:
 
-- `content_stack/mcp/tools/*` registers the daemon's full internal tool catalog.
-- `content_stack/mcp/bridge.py` filters that catalog for plugin clients.
-- `_AGENT_VISIBLE_TOOL_ORDER` is the direct tool surface: workspace/project
-  setup, procedure/run control, and status inspection.
-- `toolbox.describe` and `toolbox.call` are bridge-local virtual tools. They
-  are the only path from the plugin to hidden daemon tools.
-- `_AGENT_SETUP_TOOLBOX_NAMES` lists setup helpers that can be described/called
-  through the toolbox without a procedure step, such as `integration.set`,
-  `integration.test`, `target.add`, `voice.set`, and `sitemap.fetch`.
-- `content_stack/mcp/permissions.py` is the grant matrix for step-scoped hidden
-  tools. `procedure.claimStep` binds the run token to the current skill; the
-  bridge refreshes that step and injects the token only when `toolbox.call`
-  targets one of that step's granted tools.
-- `skills/**/SKILL.md` frontmatter `allowed_tools` must mirror the permission
-  grant for that skill, and the prompt must name the actual hidden tool names.
+- Agents and humans decide strategy, interpret results, choose next actions,
+  and write decisions/learnings.
+- StackOS stores, retrieves, schema-checks, enforces auth/grants/budgets,
+  executes external actions, redacts, persists, and audits.
+- StackOS must not contain domain strategy logic such as "pick the winner",
+  "optimize the campaign", "choose the next SEO topic", or "decide what to
+  publish".
+- StackOS tools should be static operations: set data, retrieve data, validate
+  input, trigger external tools, and record auditable outputs.
 
-### Direct Tools vs Toolkit Tools
+No secrets to agents. Credentials, tokens, refresh tokens, API keys, OAuth
+grants, and provider secrets stay inside the daemon/auth provider layer.
+Agent-facing results must use opaque credential refs, setup URLs, sanitized
+status, redacted logs, and artifact/resource references.
 
-Direct tools are only for navigation and orchestration: resolve/connect the
-workspace, create/select a project, start/resume/fork/abort a procedure,
-inspect/claim the current step, record the step result, and check run status.
+## Target Architecture
 
-Hidden daemon tools are called through the toolkit:
+The target model is:
 
-1. Call `toolbox.describe` with exact hidden tool names, or with `run_id` to
-   inspect the active step's available tools.
-2. Call `toolbox.call` with `tool_name`, `arguments`, and `run_id` for
-   step-scoped tools.
-3. Let the bridge inject `run_token`; do not ask the agent or skill prompt to
-   pass it manually for claimed procedure steps.
+```text
+StackOS core
+  local daemon, database, MCP/REST surfaces, auth boundary, grant enforcement,
+  generic resources/artifacts/context/learnings/experiments, workflow templates,
+  run plans, runs, audit, generic UI renderers
 
-Do not add operational tools to `_AGENT_VISIBLE_TOOL_ORDER` unless they are
-workspace/project/procedure/run controls. Article, asset, source, publishing,
-compliance, GSC, cost, and external-vendor operations belong behind
-`toolbox.call`.
+Plugins
+  SEO, media buying, GTM, utils, and private/company domains. Plugins contribute
+  manifests, capabilities, provider/action schemas, resource schemas, workflow
+  templates, UI navigation/resource-view configs, and local instructions.
 
-### External Vendor Pattern
+Agents / humans
+  customize templates, create concrete run plans, select context, decide what
+  actions to take, call granted tools, and record outcomes/learnings.
+```
 
-External integrations such as DataForSEO, Firecrawl, GSC, OpenAI Images,
-Reddit, Jina, Ahrefs, WordPress, and Ghost must follow this relationship:
+Current SEO procedures, skills, article tables, vendor wrappers, and UI pages
+are legacy/current-state implementation. Move or wrap them incrementally behind
+the StackOS plugin/generic model. Preserve existing SEO behavior until a task
+explicitly scopes its migration or removal.
 
-- `content_stack/integrations/*` contains the vendor wrapper: auth, retries,
-  rate limits, budget checks, cost logging, and vendor-specific request shape.
-- `content_stack/mcp/tools/*` may expose a thin daemon operation such as
-  `dataforseo.serp`, `firecrawl.scrape`, or `openaiImages.generate`.
-- Those operation tools stay hidden from the direct plugin list. Do not add
-  vendor operations to `_AGENT_VISIBLE_TOOL_ORDER`.
-- `content_stack/mcp/permissions.py` grants the hidden vendor operation only to
-  the skill that needs it.
-- The skill's frontmatter lists that same operation in `allowed_tools`, and the
-  prompt tells the agent to use `toolbox.describe` / `toolbox.call`.
-- When a vendor returns non-URL artifacts, the daemon wrapper must normalize
-  them before skill state is written. For example, OpenAI Images GPT models
-  return base64 image data; `openaiImages.generate` persists that data under
-  `generated-assets` and returns `/generated-assets/...` URLs for
-  `asset.create`.
+## Workflows
 
-If a prompt mentions an external operation, the actual callable hidden tool must
-exist and be granted. Do not tell the agent to call Python wrapper classes,
-native network fetches, browser fetches, or imaginary vendor methods.
+Procedures are legacy compatibility. New workflow work should use:
 
-### Article Writing Flow
+- **Workflow Template**: reusable, editable setup for a class of work. It can
+  contain purpose, inputs, context requirements, instructions, action/resource
+  contracts, policies, approval gates, output contracts, and extension points.
+- **Run Plan**: a concrete agent-authored execution plan derived from a
+  template for one run. It freezes selected steps, grants, inputs, context
+  filters, budgets, approval gates, and expected outputs.
+- **Run**: auditable execution state and history for a run plan.
 
-Procedure 4, `04-topic-to-published`, is the canonical article flow. The agent
-uses direct bridge tools to start/resume the run, then repeats this per step:
+Templates should not contain one-size-fits-all hard-coded business logic. They
+provide a base contract that agents can adapt in a project/repo context.
 
-1. `procedure.currentStep` or `procedure.claimStep` returns the step package.
-2. The agent reads the referenced skill and its `allowed_tools`.
-3. The agent calls hidden tools through `toolbox.describe` and `toolbox.call`.
-4. The skill writes durable state through the hidden article/source/asset/schema
-   tools granted to that step.
-5. The agent finishes the step with `procedure.recordStep`.
+Project-level context, learnings, experiments, decisions, artifacts, and metric
+snapshots are data stores. StackOS can filter and retrieve them; agents decide
+what they mean.
 
-The procedure-4 step order is:
+## Tooling And MCP Boundary
 
-1. `01-research/content-brief` creates or resumes the article, collects source
-   evidence through granted vendor tools when needed, persists
-   `articles.brief_json`, and writes `research_sources`.
-2. `02-content/outline` turns the brief into the section contract.
-3. `02-content/draft-intro`, `02-content/draft-body`, and
-   `02-content/draft-conclusion` assemble `articles.draft_md`.
-4. `02-content/editor` writes `articles.edited_md`.
-5. `02-content/humanizer` makes the final voice pass.
-6. `02-content/eeat-gate` returns `SHIP`, `FIX`, or `BLOCK`; `FIX` loops back
-   to `editor`, while `BLOCK` aborts the run.
-7. `03-assets/image-generator` and `03-assets/alt-text-auditor` are skippable
-   quality steps.
-8. `04-publishing/schema-emitter` writes JSON-LD.
-9. `04-publishing/interlinker` emits internal-link suggestions and is skippable.
-10. `publish` defaults to `04-publishing/agent-publish`: the main operator
-    agent publishes through whatever external repo/API/DB/tooling is available,
-    then records the targetless result with `publish.recordExternal`.
-    If the project has a primary active target whose kind is fully wired, the
-    runner swaps the step package to that concrete publisher. Today only
-    `nuxt-content` is auto-swapped. WordPress and Ghost have doc-backed
-    credential probes and wrapper foundations, but they must not be used as
-    primary procedure publishers until their media/post operations are exposed
-    behind `toolbox.call` and granted to the publish skills.
+The daemon owns the full internal MCP catalog for the UI, tests, jobs, and
+automation. The installable agent plugin/bridge must expose a deliberately
+small surface.
 
-The daemon stores state and enforces grants; it does not spawn hidden writer
-LLM sessions. The current operator agent is responsible for reading the skill,
-doing the writing/thinking, calling the granted tools, and recording the step.
+Target exposure levels:
 
-### Change Checklist
+- **Direct/discovery tools**: workspace/project navigation, plugin/catalog/
+  capability/provider discovery, sanitized auth status, workflow-template
+  list/describe/validate, run-plan create/validate/start/get/list, run status.
+- **Setup/admin-gated tools**: project plugin enable/disable and auth
+  start/revoke. These are human/local-admin/project-owner setup operations, not
+  normal agent-facing mutations.
+- **Step-scoped/gated tools**: action execution, mutating resource/artifact
+  calls, context fields beyond safe metadata, and learning/experiment/decision
+  writes. These require explicit run-plan grants.
+- **Compatibility tools**: `procedure.*`, existing SEO/vendor tools, and old
+  setup helpers remain only as compatibility surfaces until migrated.
 
-When changing any flow, update all of these together:
+Do not add operational/domain/vendor tools to the direct agent list. Vendor
+actions belong behind the generic action/toolbox path with grants, credential
+refs, budgets, redaction, and audit.
+
+## Existing Content-Stack Compatibility
+
+While the migration is underway, the current implementation still uses:
+
+- `content_stack/mcp/tools/*` for the daemon's internal tool catalog.
+- `content_stack/mcp/bridge.py` for the filtered agent bridge.
+- `content_stack/mcp/permissions.py` for grant checks.
+- `toolbox.describe` and `toolbox.call` for hidden daemon tools.
+- `procedures/*` and `skills/**/SKILL.md` for existing SEO procedure flows.
+- `content_stack/integrations/*` for vendor wrappers.
+
+When changing any current SEO/procedure flow before it is migrated, keep these
+in sync:
 
 1. Daemon tool or integration wrapper.
-2. Bridge visibility: direct only for orchestration, hidden for operations.
+2. Bridge visibility: direct only for navigation/setup; hidden/gated for
+   operations.
 3. Permission grant in `content_stack/mcp/permissions.py`.
 4. Skill frontmatter `allowed_tools`.
-5. Skill/procedure prompt text that tells the agent which real tools to call.
+5. Skill/procedure prompt text naming real tools.
 6. Focused tests proving hidden tools are not advertised directly and are
-   available through the toolbox only when granted.
+   available only when granted.
+
+External integrations such as DataForSEO, Firecrawl, GSC, OpenAI Images,
+Reddit, Jina, Ahrefs, WordPress, Ghost, Meta, Taboola, or Outbrain must keep
+auth, retries, rate limits, budget checks, cost logging, request shaping,
+normalization, and redaction inside daemon-side wrappers/connectors. Agents
+must not call vendor SDKs directly or receive raw secrets.
+
+## UI Direction
+
+Generic UI should become simpler and renderer-driven:
+
+- Core views: Plugins, Capabilities, Auth/Connections, Workflow Templates,
+  Runs, Project Data, Resource Explorer.
+- Generic renderers: template, run plan, action schema, resource view, context
+  query, plugin navigation.
+- SEO/media-buying/GTM views should be plugin contributions or generic
+  resource views, not permanent bespoke workflow pages.
+- Group context snapshots, learnings, experiments, decisions, artifacts,
+  metrics, and timeline under Project Data.
+- Raw JSON panels may show sanitized server payloads only.
+
+Do not add new per-workflow UI unless a signed-off task explicitly scopes it.
+
+## Delivery Discipline
+
+Follow `docs/stackos-deliverable-task-plan.md`.
+
+- One deliverable equals one coherent commit after verification and signoff.
+- Preserve existing SEO flows unless the task explicitly migrates/removes them.
+- Add tests proportional to the blast radius.
+- Any task touching auth, actions, context, logs, or audit needs redaction
+  tests.
+- Any task adding agent-visible tools must prove the direct/gated/compatibility
+  boundary with tests.
+- Keep docs updated when behavior or architecture changes.
 
 ## TPF Token Proxy Filter
 

@@ -1,43 +1,84 @@
-# content-stack architecture
+# StackOS architecture
 
-A reference for new contributors and operators. This document explains
-*how* content-stack is put together; [`../PLAN.md`](../PLAN.md) is the
-canonical source of truth for *what* the system does and *why* each
-decision was made. When the two disagree, PLAN.md wins.
+A reference for contributors and operators. The repository is pivoting from
+SEO Stack/content-stack into StackOS: a local tool runtime where SEO is a
+first-party compatibility/plugin domain, not the product boundary.
 
-Sections below trace the system from the outside in: vision, process
-model, lifespan, schema, repositories, the two API transports, the
-procedure runner, the integrations seam, the UI bundle, distribution,
-operational invariants, crash recovery, and observability. Every
-non-trivial claim points at a code path so you can verify it.
+The current implementation is still named `content-stack` in many packages,
+commands, paths, procedures, and docs. Those names are compatibility surface
+until the signed-off delivery plan migrates them. For target design and
+delivery order, use:
+
+- [`stackos-pivot-design-and-delivery-plan.md`](./stackos-pivot-design-and-delivery-plan.md)
+- [`stackos-current-setup-gap-analysis.md`](./stackos-current-setup-gap-analysis.md)
+- [`stackos-deliverable-task-plan.md`](./stackos-deliverable-task-plan.md)
+
+This file explains the working architecture and the guardrails for changing it.
+Older sections below still document current SEO/procedure internals so they can
+be preserved or migrated safely.
 
 ---
 
 ## 1. Vision
 
-content-stack is a globally-installed Python daemon that gives any
-LLM client a stateful CRUD seam for managing multi-project SEO
-content pipelines end-to-end, plus a minimal Vue 3 UI for human
-inspection and edits, plus installable plugins that expose the curated
-skills and procedures the LLM follows.
+StackOS is a globally installed local daemon and agent plugin surface for
+tooling across domains: SEO, media buying, GTM, utilities, and private
+company workflows.
 
 Three audiences:
 
-1. **The LLM** — calls MCP tools, follows procedures, writes content.
-   The LLM is stateless across calls; the daemon holds the state.
-2. **The human operator** — opens the UI at `http://localhost:5180`,
-   registers projects, approves topics, reviews drafts, edits voice
-   / compliance / EEAT criteria.
-3. **The end developer** — runs `make install`, registers a project
-   via procedure 1 (bootstrap), and the full pipeline runs for any
-   number of sites without writing prompts or processes themselves.
+1. **The agent** calls MCP tools, validates templates/run plans, retrieves
+   bounded context, executes granted actions, and records outputs. The agent
+   decides strategy; StackOS stores and enforces.
+2. **The human operator** opens the UI at `http://localhost:5180`, connects
+   providers, reviews runs, approves gated actions, and inspects project data.
+3. **The end developer/company** installs StackOS once, enables plugins for
+   the work they need, and optionally adds repo/company templates under
+   `.stackos/`.
 
-The repository ships **generic**. There are no project-specific
-defaults (no "gambling-niche voice profile", no "B2B compliance
-preset"). Every project supplies its own voice, compliance rules,
-EEAT criteria, and publish targets via procedure 1.
+The critical boundary:
 
-Per [`../PLAN.md:8-26`](../PLAN.md).
+```text
+Agent / human:
+  decides, interprets, chooses strategy, writes decisions/learnings
+
+StackOS:
+  stores, retrieves, schema-checks, enforces auth/grants/budgets,
+  executes external actions, redacts, persists, and audits
+```
+
+StackOS must not become a decision engine. It should not choose the campaign
+strategy, select the winning experiment, decide the next SEO topic, or infer a
+business learning. It should expose reliable primitives so the agent/human can
+do those things intentionally.
+
+## 1.1 Architecture Guardrails
+
+- Core stays domain-neutral: projects, plugins, capabilities, providers,
+  actions, resources, artifacts, auth refs, workflow templates, run plans,
+  runs, context, learnings, experiments, decisions, audit, and generic UI.
+- Domain behavior belongs to plugins. SEO is a plugin/compatibility domain;
+  media buying, GTM, utilities, and private company tools follow the same
+  plugin model.
+- Tools are static operations: set data, retrieve data, validate input,
+  trigger external actions, and record auditable outputs. Business decisions
+  stay with agents/humans.
+- Agents never receive secrets. Provider credentials, OAuth tokens, API keys,
+  refresh tokens, and raw secret-bearing payloads stay inside the daemon.
+- Agent-visible tools are split into direct/discovery, setup/admin-gated,
+  step-scoped/gated, and compatibility surfaces.
+- Workflow UI is generic by default. New work should render templates, run
+  plans, resources, actions, artifacts, and Project Data through generic
+  renderers instead of adding per-workflow pages.
+
+## 1.2 Current-State Compatibility
+
+The current codebase still has SEO-specific procedures, article tables, skills,
+vendor tools, setup routes, and UI pages. Treat them as current-state behavior
+that must keep working until a signed-off task migrates or removes them.
+
+Procedures remain compatibility. New workflow modeling should use reusable
+Workflow Templates, concrete Run Plans, and auditable Runs.
 
 ---
 
