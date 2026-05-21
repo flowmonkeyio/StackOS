@@ -1,6 +1,6 @@
 ---
 name: operations-console-design
-description: Use this skill to generate well-branded interfaces and assets for an operations / admin / content-ops console — either production code or throwaway prototypes. Contains a full set of design tokens, semantic CSS variables, status mappings, Vue primitives, and domain-shape components for fast prototyping of dense, calm, keyboard-first SaaS dashboards.
+description: Use this skill to generate well-branded interfaces and assets for an operations / admin console — either production code or throwaway prototypes. Contains a full set of design tokens, semantic CSS variables, status mappings, Vue primitives, and domain-shape components for fast prototyping of dense, calm, keyboard-first SaaS dashboards.
 user-invocable: true
 ---
 
@@ -21,4 +21,4 @@ If the user invokes this skill without any other guidance, ask them what they wa
 - Dark mode is first-class — flip via `data-theme` on `<html>`.
 - Components consume semantic tokens (`bg.surface`, `fg.muted`, `accent.primary`), never raw palette values.
 - Focus rings are always visible (2px outline, 2px offset, `--color-border-focus`).
-- Purple is reserved for EEAT/quality domain only — never a primary accent.
+- Purple is not a product status or primary accent; keep the system palette neutral, blue, and semantic status colors.

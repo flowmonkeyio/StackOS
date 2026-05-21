@@ -59,16 +59,6 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "runPlan.get",
     "runPlan.list",
     "meta.enums",
-    # Agent-led procedure controls.
-    "procedure.list",
-    "procedure.run",
-    "procedure.status",
-    "procedure.resume",
-    "procedure.fork",
-    "procedure.currentStep",
-    "procedure.claimStep",
-    "procedure.recordStep",
-    "procedure.executeProgrammaticStep",
     "run.get",
     "run.list",
     "run.heartbeat",
@@ -86,125 +76,29 @@ _AGENT_GATED_TOOL_NAMES: frozenset[str] = (
 )
 
 # Tools that stay out of the advertised MCP list but are still useful during
-# setup when an agent explicitly asks the bridge to describe/call them. Procedure
-# steps add their own per-skill grants dynamically through ``allowed_tools``.
+# setup when an agent explicitly asks the bridge to describe/call them.
 _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
     {
-        "article.bulkCreate",
-        "article.create",
-        "article.createVersion",
-        "article.get",
-        "article.list",
-        "article.listDueForRefresh",
-        "article.listPublishes",
-        "article.listVersions",
-        "article.markAbortedPublish",
-        "article.markDrafted",
-        "article.markEeatPassed",
-        "article.markPublished",
-        "article.markRefreshDue",
-        "article.refreshDue",
-        "article.setBrief",
-        "article.setDraft",
-        "article.setEdited",
-        "article.setOutline",
-        "asset.create",
-        "asset.list",
-        "asset.remove",
-        "asset.update",
-        "author.create",
-        "author.delete",
-        "author.get",
-        "author.list",
-        "author.update",
         "budget.list",
         "budget.queryProject",
         "budget.set",
         "budget.update",
-        "cluster.create",
-        "cluster.get",
-        "cluster.list",
-        "integration.list",
-        "integration.test",
-        "integration.testGsc",
-        "compliance.add",
-        "compliance.list",
-        "compliance.remove",
-        "compliance.update",
         "cost.queryAll",
         "cost.queryProject",
-        "drift.diff",
-        "drift.get",
-        "drift.list",
-        "drift.snapshot",
-        "eeat.bulkRecord",
-        "eeat.bulkSet",
-        "eeat.getReport",
-        "eeat.list",
-        "eeat.listEvaluations",
-        "eeat.record",
-        "eeat.score",
-        "eeat.toggle",
-        "gsc.bulkIngest",
-        "gsc.listDaily",
-        "gsc.queryArticle",
-        "gsc.queryProject",
-        "gsc.rollup",
-        "gscOauth.get",
-        "interlink.apply",
-        "interlink.bulkApply",
-        "interlink.dismiss",
-        "interlink.list",
-        "interlink.repair",
-        "interlink.suggest",
-        "project.activate",
         "project.delete",
-        "publish.preview",
-        "publish.recordExternal",
-        "publish.recordPublish",
-        "publish.setCanonical",
-        "redirect.create",
-        "redirect.list",
-        "redirect.lookup",
         "run.children",
         "run.cost",
         "run.finish",
-        "run.fork",
         "run.insertStep",
         "run.listStepCalls",
         "run.listSteps",
         "run.recordStepCall",
-        "run.resume",
         "run.start",
-        "schema.get",
-        "schema.list",
-        "schema.set",
-        "schema.validate",
-        "source.add",
-        "source.list",
-        "source.update",
         "schedule.list",
         "schedule.remove",
         "schedule.set",
         "schedule.toggle",
         "sitemap.fetch",
-        "target.add",
-        "target.list",
-        "target.remove",
-        "target.setPrimary",
-        "target.update",
-        "topic.approve",
-        "topic.assignCluster",
-        "topic.bulkCreate",
-        "topic.bulkUpdateStatus",
-        "topic.create",
-        "topic.get",
-        "topic.list",
-        "topic.reject",
-        "voice.set",
-        "voice.get",
-        "voice.listVariants",
-        "voice.setActive",
     }
 )
 _AGENT_BASE_TOOLBOX_NAMES = _AGENT_VISIBLE_TOOL_NAMES | _AGENT_SETUP_TOOLBOX_NAMES
@@ -238,9 +132,9 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
         {
             "name": _TOOLBOX_DESCRIBE_TOOL,
             "description": (
-                "Describe hidden content-stack daemon tools available through the bridge. "
+                "Describe hidden StackOS daemon tools available through the bridge. "
                 "Use this before toolbox.call when setup, a run-plan step, or the current "
-                "procedure step mentions a tool that is not listed directly."
+                "run-plan step mentions a tool that is not listed directly."
             ),
             "inputSchema": {
                 "type": "object",
@@ -252,7 +146,7 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
                     },
                     "run_id": {
                         "type": "integer",
-                        "description": "Procedure run id used to refresh current step grants.",
+                        "description": "Run id used to refresh run-plan grants.",
                     },
                     "include_schemas": {
                         "type": "boolean",
@@ -269,7 +163,7 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
             "name": _TOOLBOX_CALL_TOOL,
             "description": (
                 "Call one hidden daemon tool by name. The bridge permits setup tools and "
-                "the active run-plan/procedure step's allowed tools only; pass run_id so "
+                "the active run-plan step's allowed tools only; pass run_id so "
                 "the bridge can refresh grants and inject the run token when available."
             ),
             "inputSchema": {
@@ -283,7 +177,7 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
                     },
                     "run_id": {
                         "type": "integer",
-                        "description": "Procedure run id for step-scoped tool grants.",
+                        "description": "Run id for step-scoped run-plan grants.",
                     },
                 },
                 "required": ["tool_name", "arguments"],
@@ -400,8 +294,7 @@ def _bridge_step_context(structured: object) -> dict[str, Any] | None:
     if not isinstance(structured, dict):
         return None
     if (
-        "current_step" in structured
-        or "run_token" in structured
+        "run_token" in structured
         or "run_id" in structured
         or "allowed_tools" in structured
         or "plan" in structured
@@ -409,11 +302,7 @@ def _bridge_step_context(structured: object) -> dict[str, Any] | None:
         return structured
     data = structured.get("data")
     if isinstance(data, dict) and (
-        "current_step" in data
-        or "run_token" in data
-        or "run_id" in data
-        or "allowed_tools" in data
-        or "plan" in data
+        "run_token" in data or "run_id" in data or "allowed_tools" in data or "plan" in data
     ):
         return data
     return None
@@ -458,38 +347,29 @@ def _bridge_cache_step_context(
         plan_id = _bridge_as_int(plan.get("id"))
         if plan_id is not None and plans_by_run is not None:
             plans_by_run[run_id] = plan_id
-    current_step = context.get("current_step")
-    if not isinstance(current_step, dict):
-        step_package = data if isinstance(data, dict) else context
-        if isinstance(step_package, dict) and isinstance(step_package.get("step_id"), str):
-            allowed_tools = step_package.get("allowed_tools")
-            if isinstance(allowed_tools, list):
-                allowed_by_run[run_id] = set(_AGENT_STEP_GATED_TOOL_NAMES) | {
-                    name for name in allowed_tools if isinstance(name, str) and name
-                }
-                return
-        plan_package = data if isinstance(data, dict) and "steps" in data else context
-        if isinstance(plan_package, dict) and isinstance(plan_package.get("steps"), list):
-            running_step_tools: set[str] = set()
-            for step in plan_package["steps"]:
-                if not isinstance(step, dict) or step.get("status") != "running":
-                    continue
-                allowed_tools = step.get("allowed_tools")
-                if isinstance(allowed_tools, list):
-                    running_step_tools.update(
-                        name for name in allowed_tools if isinstance(name, str) and name
-                    )
-            allowed_by_run[run_id] = set(_AGENT_STEP_GATED_TOOL_NAMES) | running_step_tools
+    step_package = data if isinstance(data, dict) else context
+    if isinstance(step_package, dict) and isinstance(step_package.get("step_id"), str):
+        allowed_tools = step_package.get("allowed_tools")
+        if isinstance(allowed_tools, list):
+            allowed_by_run[run_id] = set(_AGENT_STEP_GATED_TOOL_NAMES) | {
+                name for name in allowed_tools if isinstance(name, str) and name
+            }
             return
-        # runPlan.start returns a run token and linked plan instead of a
-        # procedure current_step package. Cache the token and expose only the
-        # narrow run-plan controller tools through toolbox.call for that run.
-        if isinstance(plan, dict) and isinstance(run_token, str) and run_token:
-            allowed_by_run.setdefault(run_id, set()).update(_AGENT_STEP_GATED_TOOL_NAMES)
+    plan_package = data if isinstance(data, dict) and "steps" in data else context
+    if isinstance(plan_package, dict) and isinstance(plan_package.get("steps"), list):
+        running_step_tools: set[str] = set()
+        for step in plan_package["steps"]:
+            if not isinstance(step, dict) or step.get("status") != "running":
+                continue
+            allowed_tools = step.get("allowed_tools")
+            if isinstance(allowed_tools, list):
+                running_step_tools.update(
+                    name for name in allowed_tools if isinstance(name, str) and name
+                )
+        allowed_by_run[run_id] = set(_AGENT_STEP_GATED_TOOL_NAMES) | running_step_tools
         return
-    allowed_tools = current_step.get("allowed_tools")
-    if isinstance(allowed_tools, list):
-        allowed_by_run[run_id] = {name for name in allowed_tools if isinstance(name, str) and name}
+    if isinstance(plan, dict) and isinstance(run_token, str) and run_token:
+        allowed_by_run.setdefault(run_id, set()).update(_AGENT_STEP_GATED_TOOL_NAMES)
 
 
 def _bridge_allowed_tool_names(
@@ -523,19 +403,18 @@ def _bridge_toolbox_describe(
     described = [catalog[name] for name in requested if name in catalog and name in allowed]
     denied = [name for name in requested if name in catalog and name not in allowed]
     unknown = [name for name in requested if name not in catalog]
-    current_step_tools = sorted(allowed_by_run.get(run_id, set())) if run_id is not None else []
+    active_step_tools = sorted(allowed_by_run.get(run_id, set())) if run_id is not None else []
     payload = {
         "visible_tool_names": list(_AGENT_VISIBLE_TOOL_ORDER),
         "setup_toolbox_tool_names": sorted(_AGENT_SETUP_TOOLBOX_NAMES & set(catalog)),
-        "current_step_tool_names": current_step_tools,
+        "active_step_tool_names": active_step_tools,
         "available_tool_names": sorted(name for name in allowed if name in catalog),
         "described_tools": described,
         "denied_tool_names": denied,
         "unknown_tool_names": unknown,
         "usage": (
-            "Use direct visible tools for setup/procedure/run-plan control. Use "
-            "toolbox.call only for setup helpers, run-plan controller tools, run-plan "
-            "step grants, or the active procedure step's allowed_tools."
+            "Use direct visible tools for setup and run-plan control. Use toolbox.call "
+            "only for setup helpers, run-plan controller tools, or run-plan step grants."
         ),
     }
     return _bridge_tool_result(request_id, payload, is_error=False)
@@ -627,16 +506,6 @@ class AgentBridgeProxy:
     def _refresh_run_context(self, client: Any, run_id: int | None) -> None:
         if run_id is None:
             return
-        body = _bridge_make_tool_call_payload(
-            f"content-stack-bridge-run-{run_id}",
-            "procedure.currentStep",
-            {"run_id": run_id},
-        )
-        try:
-            out = self.request_daemon(client, body)
-        except Exception:
-            return
-        self._cache_step_context(out)
         run_plan_id = self.plans_by_run.get(run_id)
         if run_plan_id is None:
             return
@@ -720,8 +589,7 @@ class AgentBridgeProxy:
                     "run_id": run_id,
                     "hint": (
                         "Use setup tools, a started run plan's controller tools, "
-                        "or claim/current a procedure step whose allowed_tools "
-                        "include this tool."
+                        "or a running run-plan step whose grants include this tool."
                     ),
                 },
             )

@@ -1,10 +1,8 @@
 """Runs router — REST surface for the audit layer.
 
-PLAN.md L602-L605 + ``RunRepository``. REST exposes read + abort +
-heartbeat; ``start`` / ``finish`` / ``resume`` / ``fork`` are MCP-only
-(M3+). The asymmetry is documented in the REST/MCP parity table at
-PLAN.md L765-L790; this router does NOT expose the start/finish/resume
-endpoints — they are deliberately absent.
+``RunRepository`` owns the audit rows. REST exposes read + abort +
+heartbeat; concrete run execution is driven through workflow templates and
+run plans.
 """
 
 from __future__ import annotations
@@ -110,12 +108,9 @@ async def heartbeat(
     return HeartbeatResponse(data=env.data, run_id=env.run_id, project_id=env.project_id)
 
 
-# NOTE: ``POST /runs`` (start), ``POST /runs/{id}/finish``,
-# ``POST /runs/{id}/resume``, ``POST /runs/{id}/fork`` are intentionally
-# absent here. The REST/MCP parity table (PLAN.md L765-L790) marks them
-# as MCP-only — the procedure runner (M8) opens runs through MCP, and
-# the UI does not need to start runs from a button click. M9 may revisit
-# if we surface a "kick off audit run" UX.
+# NOTE: ``POST /runs`` (start) and ``POST /runs/{id}/finish`` are intentionally
+# absent here. Run plans open and close their linked audit rows through the
+# MCP/API run-plan surface.
 
 # Reference imports kept so docs cross-link.
 _ = (Any, BaseModel)

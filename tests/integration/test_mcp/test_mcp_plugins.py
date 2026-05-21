@@ -16,10 +16,10 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
         "web-document",
     }
 
-    capabilities = mcp_client.call_tool_structured(
-        "capability.list", {"plugin_slug": "seo"}
-    )["items"]
-    assert {cap["key"] for cap in capabilities} >= {"seo-content", "search-console"}
+    capabilities = mcp_client.call_tool_structured("capability.list", {"plugin_slug": "seo"})[
+        "items"
+    ]
+    assert {cap["key"] for cap in capabilities} >= {"seo-content", "seo-research"}
 
     provider = mcp_client.call_tool_structured(
         "provider.describe",

@@ -18,7 +18,7 @@ routes.
 ## 2. Visual language
 
 - Neutral grayscale base; one blue accent.
-- Status tones used semantically only: emerald (success), amber (warning), red (danger), blue (info), violet (EEAT only).
+- Status tones used semantically only: emerald (success), amber (warning), red (danger), blue (info), and neutral gray.
 - Subtle borders > heavy shadows.
 - 8px max radius. 4px on controls, 6px on cards, 8px on dialogs.
 - Dark mode flips the semantic layer; component CSS does not branch.
@@ -33,7 +33,7 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 | Color · foreground | `fg.strong`, `fg.default`, `fg.muted`, `fg.subtle`, `fg.disabled`, `fg.inverse`, `fg.link`, `fg.onAccent` |
 | Color · border | `border.subtle`, `border.default`, `border.strong`, `border.focus` |
 | Color · accent | `accent.primary`, `accent.primaryHover`, `accent.primarySubtle`, `accent.primaryFg` |
-| Color · status | `success.*`, `warning.*`, `danger.*`, `info.*`, `neutral.*`, `eeat.*` |
+| Color · status | `success.*`, `warning.*`, `danger.*`, `info.*`, `neutral.*` |
 | Spacing | `0–24` (4px grid) |
 | Radius | `xs:2`, `sm:4`, `md:6`, `lg:8`, `full` |
 | Shadow | `xs`, `sm`, `md`, `lg`, `xl` |
@@ -49,7 +49,7 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 - Sidebar: 256px desktop rail.
 - StackOS core navigation is first: Plugins, Capabilities, Connections,
   Workflow Templates, Runs, Project Data, and Resources. Domain-specific
-  surfaces are plugin contributions or compatibility links, not new top-level
+  surfaces are plugin contributions or generic resource links, not new top-level
   product lanes.
 - Top bar: 52px. Sticky. Solid `bg.surface`, no blur.
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
@@ -60,14 +60,14 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 - Buttons in product views are limited to navigation, filtering, refresh/read, copy, and close/view affordances.
 - Workflow UI is generic. Templates, run plans, resources, artifacts, context,
   action schemas, and plugin nav render through reusable renderers; do not add
-  per-workflow or per-channel pages for campaign creation, SEO article flow, or
+  per-workflow or per-channel pages for campaign creation, content production, or
   provider-specific steps.
 
 ## 5. Component usage rules
 
 **UiButton.** Default `secondary`. `primary` only for navigation to another observer view or non-mutating local utility. `danger` is not used in product views.
 
-**UiCard.** For real things — projects, articles, runs, integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
+**UiCard.** For real things such as projects, plugins, runs, resources, and integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
 
 **UiDialog.** Header / body / footer. Footer right-aligned, ghost cancel + primary confirm. Trap focus. `Esc` closes unless `dirty`.
 
@@ -107,7 +107,7 @@ fields are not.
 
 This is a local desktop operator console. Design, QA, and screenshots target the
 desktop viewport used by Playwright (`1280x800`) plus wide desktop inspection
-when a dense table or article artifact needs it. Mobile-specific drawers,
+when a dense table or artifact needs it. Mobile-specific drawers,
 full-screen dialogs, and breakpoint tours are intentionally out of scope.
 
 ## 8. Dark mode

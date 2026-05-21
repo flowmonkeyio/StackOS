@@ -38,9 +38,6 @@ RUN_PLAN_ADMIN_ONLY_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "auth.revoke",
         "auth.start",
-        "gscOauth.start",
-        "integration.remove",
-        "integration.set",
         "plugin.disable",
         "plugin.enable",
         "runPlan.update",

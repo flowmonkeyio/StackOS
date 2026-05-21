@@ -58,8 +58,9 @@ Every internal execution writes an `action_calls` sidecar row with:
 - redacted request/response/metadata
 - status, dry-run flag, duration, cost, error, and idempotency key
 
-The table is additive. D08 does not drop or rewrite legacy SEO, procedure, or
-vendor-operation tables.
+The table is part of the clean StackOS core. Domain plugins store their durable
+objects in resources/artifacts; the core action executor does not preserve
+legacy workflow tables for compatibility.
 
 ## MCP Surface
 

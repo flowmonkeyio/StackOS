@@ -53,10 +53,14 @@ def _template(version: str = "0.1.0", *, name: str = "Company Review") -> Workfl
 
 
 def test_create_run_plan_from_template(session: Session, project_id: int) -> None:
-    plan = RunPlanRepository(session).create(
-        project_id=project_id,
-        template_key="core.project-memory-review",
-    ).data
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            template_key="core.project-memory-review",
+        )
+        .data
+    )
 
     assert plan.template_key == "core.project-memory-review"
     assert plan.template_snapshot_json["key"] == "core.project-memory-review"
@@ -70,10 +74,14 @@ def test_started_run_plan_keeps_template_snapshot_after_template_changes(
 ) -> None:
     templates = WorkflowTemplateLoader(session)
     templates.save_project_template(project_id=project_id, spec=_template("0.1.0", name="Old"))
-    plan = RunPlanRepository(session).create(
-        project_id=project_id,
-        template_key="company.review",
-    ).data
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            template_key="company.review",
+        )
+        .data
+    )
     started = RunPlanRepository(session).start(plan.id, project_id=project_id).data
 
     templates.save_project_template(project_id=project_id, spec=_template("0.2.0", name="New"))
@@ -84,16 +92,24 @@ def test_started_run_plan_keeps_template_snapshot_after_template_changes(
 
 
 def test_start_links_selected_context_snapshot(session: Session, project_id: int) -> None:
-    snapshot = ContextRepository(session).create_snapshot(
-        project_id=project_id,
-        name="Recent learnings",
-        selected_sources_json=[{"source": "learnings", "ids": [1, 2]}],
-    ).data
-    plan = RunPlanRepository(session).create(
-        project_id=project_id,
-        template_key="core.project-memory-review",
-        context_snapshot_id=snapshot.id,
-    ).data
+    snapshot = (
+        ContextRepository(session)
+        .create_snapshot(
+            project_id=project_id,
+            name="Recent learnings",
+            selected_sources_json=[{"source": "learnings", "ids": [1, 2]}],
+        )
+        .data
+    )
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            template_key="core.project-memory-review",
+            context_snapshot_id=snapshot.id,
+        )
+        .data
+    )
 
     started = RunPlanRepository(session).start(plan.id, project_id=project_id).data
     row = session.get(ContextSnapshot, snapshot.id)

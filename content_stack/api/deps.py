@@ -64,9 +64,8 @@ def get_session(engine: Engine = Depends(get_engine)) -> Iterator[Session]:
 def get_if_match(if_match: Annotated[str | None, Header(alias="If-Match")] = None) -> str | None:
     """Read the ``If-Match`` header for optimistic concurrency.
 
-    Per PLAN.md L803-L809, UI PATCH on ``/articles/{id}`` carries
-    ``If-Match: <updated_at iso>``. We surface the raw string here and
-    let the route compare against the row.
+    Routes that support optimistic concurrency can compare this raw value
+    against their own row version or timestamp.
     """
     return if_match
 

@@ -97,9 +97,10 @@ def test_openapi_exposes_ui_critical_contract_paths(client: TestClient) -> None:
     assert resp.status_code == 200
     paths = resp.json()["paths"]
 
+    assert "get" in paths["/api/v1/projects/{project_id}/cost"]
     assert {"get", "post"} <= set(paths["/api/v1/projects/{project_id}/budgets"])
-    assert "post" in paths["/api/v1/articles/{article_id}/publishes/external"]
-    assert "get" in paths["/api/v1/procedures/runs/{run_id}/current-step"]
-    assert "post" in paths["/api/v1/procedures/runs/{run_id}/claim-step"]
-    assert "post" in paths["/api/v1/procedures/runs/{run_id}/record-step"]
-    assert "post" in paths["/api/v1/procedures/runs/{run_id}/execute-programmatic-step"]
+    assert {"get", "post"} <= set(paths["/api/v1/projects/{project_id}/resource-records"])
+    assert "get" in paths["/api/v1/projects/{project_id}/action-calls"]
+    assert "get" in paths["/api/v1/projects/{project_id}/workflow-templates"]
+    assert "get" in paths["/api/v1/projects/{project_id}/run-plans"]
+    assert "get" in paths["/api/v1/run-plans/{run_plan_id}"]

@@ -13,10 +13,6 @@ from content_stack.integrations.ghost import GhostIntegration
 from content_stack.integrations.wordpress import WordPressIntegration
 
 
-def _json_body(request: httpx.Request) -> object:
-    return json.loads(request.content.decode("utf-8"))
-
-
 def test_wordpress_test_credentials_uses_application_password_basic_auth(
     httpx_mock: HTTPXMock,
     project_id: int,
@@ -51,42 +47,6 @@ def test_wordpress_test_credentials_uses_application_password_basic_auth(
     assert req.headers["authorization"] == "Basic " + base64.b64encode(b"editor:app pass").decode(
         "ascii"
     )
-
-
-def test_wordpress_create_post_posts_core_rest_payload(
-    httpx_mock: HTTPXMock,
-    project_id: int,
-) -> None:
-    httpx_mock.add_response(
-        method="POST",
-        url="https://wp.example/wp-json/wp/v2/posts",
-        json={"id": 123, "link": "https://wp.example/post"},
-    )
-
-    async def go() -> None:
-        async with httpx.AsyncClient() as client:
-            integ = WordPressIntegration(
-                payload=b"editor:app-pass",
-                project_id=project_id,
-                http=client,
-                site_url="https://wp.example/",
-            )
-            await integ.create_post(
-                {
-                    "title": "Hello",
-                    "content": "<p>Body</p>",
-                    "status": "draft",
-                    "meta": {"_yoast_wpseo_metadesc": "Meta"},
-                }
-            )
-
-    asyncio.run(go())
-    assert _json_body(httpx_mock.get_requests()[0]) == {
-        "title": "Hello",
-        "content": "<p>Body</p>",
-        "status": "draft",
-        "meta": {"_yoast_wpseo_metadesc": "Meta"},
-    }
 
 
 def test_ghost_test_credentials_builds_admin_jwt(
@@ -126,37 +86,3 @@ def test_ghost_test_credentials_builds_admin_jwt(
     assert req.headers["accept-version"] == "v5.0"
     token = req.headers["authorization"].removeprefix("Ghost ")
     assert len(token.split(".")) == 3
-
-
-def test_ghost_create_post_uses_source_html_envelope(
-    httpx_mock: HTTPXMock,
-    project_id: int,
-) -> None:
-    httpx_mock.add_response(
-        method="POST",
-        url="https://ghost.example/ghost/api/admin/posts/?source=html",
-        json={"posts": [{"id": "p1", "url": "https://ghost.example/hello/"}]},
-    )
-
-    async def go() -> None:
-        async with httpx.AsyncClient() as client:
-            integ = GhostIntegration(
-                payload=json.dumps(
-                    {"admin_api_key": "keyid:00112233445566778899aabbccddeeff"}
-                ).encode("utf-8"),
-                project_id=project_id,
-                http=client,
-                site_url="https://ghost.example/",
-            )
-            await integ.create_post(
-                {
-                    "title": "Hello",
-                    "html": "<p>Body</p>",
-                    "status": "draft",
-                }
-            )
-
-    asyncio.run(go())
-    assert _json_body(httpx_mock.get_requests()[0]) == {
-        "posts": [{"title": "Hello", "html": "<p>Body</p>", "status": "draft"}]
-    }

@@ -170,9 +170,10 @@ class TemplateIOSpec(BaseModel):
         default=None,
         validation_alias=AliasChoices("default", "default_json"),
     )
-    schema_json: dict[str, Any] = Field(
+    schema_data: dict[str, Any] = Field(
         default_factory=dict,
-        validation_alias=AliasChoices("schema", "schema_json"),
+        validation_alias=AliasChoices("schema", "schema_json", "schema_data"),
+        serialization_alias="schema_json",
     )
     options_json: list[Any] | None = None
 
@@ -289,9 +290,10 @@ class ResourceContractSpec(BaseModel):
     key: str = Field(min_length=1, max_length=160)
     resource: str = Field(min_length=1, max_length=160)
     purpose: str = ""
-    schema_json: dict[str, Any] = Field(
+    schema_data: dict[str, Any] = Field(
         default_factory=dict,
-        validation_alias=AliasChoices("schema", "schema_json"),
+        validation_alias=AliasChoices("schema", "schema_json", "schema_data"),
+        serialization_alias="schema_json",
     )
     required: bool = False
 
@@ -448,7 +450,7 @@ class WorkflowTemplateSpec(BaseModel):
 
     @model_validator(mode="after")
     def _cross_refs_and_secret_guard(self) -> WorkflowTemplateSpec:
-        refs = {
+        refs: dict[str, set[str]] = {
             "inputs": {item.key for item in self.inputs},
             "context": {item.id for item in self.context_requirements},
             "actions": {item.key for item in self.action_contracts},
@@ -459,18 +461,19 @@ class WorkflowTemplateSpec(BaseModel):
             "auth": {item.key for item in self.auth_requirements},
             "steps": {item.id for item in self.steps},
         }
+        sources: dict[str, list[Any]] = {
+            "inputs": list(self.inputs),
+            "context": list(self.context_requirements),
+            "actions": list(self.action_contracts),
+            "resources": list(self.resource_contracts),
+            "policies": list(self.policies),
+            "approvals": list(self.approval_gates),
+            "outputs": list(self.outputs),
+            "auth": list(self.auth_requirements),
+            "steps": list(self.steps),
+        }
         for label, values in refs.items():
-            source = {
-                "inputs": self.inputs,
-                "context": self.context_requirements,
-                "actions": self.action_contracts,
-                "resources": self.resource_contracts,
-                "policies": self.policies,
-                "approvals": self.approval_gates,
-                "outputs": self.outputs,
-                "auth": self.auth_requirements,
-                "steps": self.steps,
-            }[label]
+            source = sources[label]
             if len(values) != len(source):
                 raise ValueError(f"duplicate {label} keys are not allowed")
 
@@ -504,8 +507,7 @@ class WorkflowTemplateSpec(BaseModel):
         if runtime_paths:
             raise ValueError(
                 "workflow templates must not contain final action payloads, provider object ids, "
-                "or hard-coded business decisions: "
-                + ", ".join(runtime_paths[:8])
+                "or hard-coded business decisions: " + ", ".join(runtime_paths[:8])
             )
         return self
 

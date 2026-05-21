@@ -1,4 +1,4 @@
-"""Fixtures for the M2 REST-route integration tests.
+"""Fixtures for REST-route integration tests.
 
 We build the FastAPI app against an isolated tmp dir (via the top-level
 ``settings`` fixture) and ask its lifespan to create the schema, then
@@ -6,10 +6,7 @@ expose:
 
 - ``api`` — a ``TestClient`` with the bearer token pre-bound on the
   default headers so each test isn't repeating ``Authorization``.
-- ``project_id`` — a freshly-created project with EEAT seeded.
-- ``article_id`` — an article in ``status='briefing'`` ready for
-  procedure 4 walks.
-- ``topic_id`` — a queued topic for the same project.
+- ``project_id`` — a freshly-created StackOS project.
 """
 
 from __future__ import annotations
@@ -44,39 +41,6 @@ def project_id(api: TestClient) -> int:
             "domain": "betsage.com",
             "niche": "sportsbetting",
             "locale": "en-US",
-        },
-    )
-    assert resp.status_code == 201, resp.text
-    return int(resp.json()["data"]["id"])
-
-
-@pytest.fixture
-def topic_id(api: TestClient, project_id: int) -> int:
-    """Create a queued topic via REST + return its id."""
-    resp = api.post(
-        f"/api/v1/projects/{project_id}/topics",
-        json={
-            "title": "Evaluating sportsbooks",
-            "primary_kw": "best sportsbook",
-            "intent": "informational",
-            "status": "queued",
-            "source": "manual",
-        },
-    )
-    assert resp.status_code == 201, resp.text
-    return int(resp.json()["data"]["id"])
-
-
-@pytest.fixture
-def article_id(api: TestClient, project_id: int, topic_id: int) -> int:
-    """Create a fresh article in ``status='briefing'`` and return its id."""
-    resp = api.post(
-        f"/api/v1/projects/{project_id}/articles",
-        json={
-            "topic_id": topic_id,
-            "title": "Evaluating sportsbooks",
-            "slug": "evaluating-sportsbooks",
-            "eeat_criteria_version": 1,
         },
     )
     assert resp.status_code == 201, resp.text

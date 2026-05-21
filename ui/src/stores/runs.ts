@@ -1,16 +1,15 @@
-// Runs store — read-only list / get / children / procedure-step companion view.
+// Runs store — read-only list / get / children audit view.
 
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { ApiError, apiFetch, formatApiError } from '@/lib/client'
+import { apiFetch, formatApiError } from '@/lib/client'
 import type { components } from '@/api'
 
 export type Run = components['schemas']['RunOut']
 export type RunStatus = components['schemas']['RunStatus']
 export type RunKind = components['schemas']['RunKind']
 type RunsPage = components['schemas']['PageResponse_RunOut_']
-type ProcedureRunResponse = components['schemas']['ProcedureRunResponse']
 
 const DEFAULT_LIMIT = 50
 
@@ -102,15 +101,6 @@ export const useRunsStore = defineStore('runs', () => {
     return rows
   }
 
-  async function getProcedureRunSteps(runId: number): Promise<ProcedureRunResponse | null> {
-    try {
-      return await apiFetch<ProcedureRunResponse>(`/api/v1/procedures/runs/${runId}`)
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) return null
-      throw err
-    }
-  }
-
   function getById(id: number): Run | null {
     if (currentDetail.value?.id === id) return currentDetail.value
     return items.value.find((run) => run.id === id) ?? null
@@ -174,7 +164,6 @@ export const useRunsStore = defineStore('runs', () => {
     loadMore,
     get,
     children,
-    getProcedureRunSteps,
     setFilter,
     setSort,
     getById,

@@ -1,49 +1,37 @@
-# StackOS Plugins
+# Plugins
 
-Plugins are the boundary between StackOS core and domain/tooling behavior.
+Plugins are StackOS domain packages. They let the core stay generic while each
+domain brings its own capabilities, providers, resources, actions, workflow
+templates, and optional navigation.
 
-StackOS core owns storage, retrieval, schema validation, auth/grant/budget
-enforcement, redaction, execution plumbing, audit, and generic UI renderers.
-Plugins describe what exists for a domain: capabilities, providers, static
-action schemas, resource schemas, workflow templates, and UI contributions.
+## Manifest
 
-Agents and humans decide how to use those tools. Plugin manifests must not
-encode business strategy such as choosing winners, optimizing campaigns, or
-deciding the next topic.
-
-Executable action details are documented in
-[`action-executor.md`](action-executor.md). StackOS can describe, validate, and
-internally execute configured actions through daemon connectors, but normal
-agents still see only the granted action surface. Plugin manifests remain
-metadata; they do not contain secrets or decision logic.
-
-## Manifest Shape
-
-The catalog manifest is intentionally metadata-only. Built-in plugin manifests
-live under `plugins/<plugin>/plugin.yaml` when the plugin owns a domain facade:
+Plugin manifests live at `plugins/<slug>/plugin.yaml`:
 
 ```yaml
-slug: seo
-name: SEO
+slug: media-buying
+name: Media Buying
 version: 0.1.0
-description: Compatibility plugin facade for current SEO content operations.
-source: builtin
+description: Campaign, creative, budget, and reporting operations.
 capabilities:
-  - key: seo-content
-    name: SEO Content
-    description: Topics, articles, sources, links, schema, and publishing.
+  - key: campaign-management
+    name: Campaign Management
     kind: domain
 providers:
-  - key: gsc
-    name: Google Search Console
-    description: Search Console OAuth-backed metrics provider.
+  - key: meta-ads
+    name: Meta Ads
     auth_type: oauth
+resources:
+  - key: campaign
+    name: Campaign
+    schema:
+      type: object
+      additionalProperties: true
 actions:
-  - key: topic.bulk-create
-    name: Create Topic Candidates
-    description: Create topic records from agent-selected SEO candidates.
-    provider: stackos-seo-compat
-    capability: seo-content
+  - key: campaign.create
+    name: Create Campaign
+    provider: meta-ads
+    capability: campaign-management
     risk_level: write
     input_schema:
       type: object
@@ -51,135 +39,61 @@ actions:
     output_schema:
       type: object
       additionalProperties: true
-    config:
-      legacy_tool: topic.bulkCreate
-resources:
-  - key: article
-    name: Article
-    description: Compatibility schema for SEO article records.
-    schema:
-      type: object
-      additionalProperties: true
 ```
-
-Required identifiers use lowercase kebab or dotted form, for example
-`seo-content`, `openai-images`, or `catalog.describe`. Compatibility aliases to
-older MCP tools are explicit metadata in `config.legacy_tool` or
-`config.legacy_tools`; the old tool names continue to exist until their
-workflow migration is complete.
-
-Workflow templates live beside plugin metadata as files:
-
-```text
-plugins/<plugin>/workflows/*.yaml
-```
-
-The loader treats those files as plugin defaults. They can be overridden by
-project/user templates in the DB or by repository/company templates under
-`.stackos/workflows`.
 
 ## Built-In Plugins
 
-The initial StackOS daemon registers three built-ins:
+- `core`: project memory, learnings, experiments, decisions, and shared context.
+- `seo`: SEO content/search resources, providers, actions, and templates.
+- `utils`: reusable utility actions such as image generation and web retrieval.
 
-- `core`: domain-neutral StackOS catalog/workflow/project-data primitives.
-- `seo`: compatibility facade for the current SEO content operations.
-- `utils`: reusable utility capabilities and providers such as image
-  generation and web retrieval.
+## Actions
 
-Built-in resource schemas include:
+Actions describe what can be called. Execution stays in daemon-side code so
+auth, rate limits, retries, budget checks, and output normalization are enforced
+outside the agent prompt.
 
-- `core`: `project-note`, `learning`, `experiment`.
-- `seo`: `cluster`, `topic`, `article`, `research-source`, `article-asset`,
-  `internal-link`, `gsc-metric`, `drift-baseline`, and other compatibility SEO
-  records.
-- `utils`: `generated-image`, `web-document`.
+An action should include:
 
-## Project Enablement
+- stable key
+- provider
+- capability
+- risk level
+- input schema
+- output schema
+- static config such as a local tool reference or vendor operation key
 
-Plugins are installed globally but enabled per project. If a plugin has no
-explicit project row, StackOS treats it as available for compatibility. If a
-project disables a plugin, project-scoped catalog reads hide that plugin's
-capabilities, providers, actions, resources, and UI nav contribution.
+Actions should not decide strategy. For example, `campaign.create` creates the
+campaign structure the agent passes in; it does not decide which campaign should
+exist.
 
-Disabling a plugin does not delete legacy data and does not remove compatibility
-routes. For example, disabling `seo` hides SEO from the generic StackOS catalog
-and sidebar for that project, while existing SEO routes and old run history
-remain readable.
+## Resources
 
-## SEO Facade
+Resources are plugin-owned durable records. Use them for objects that agents
+need to query, update, or link across runs: campaigns, content pieces,
+creatives, leads, experiments, generated assets, and so on.
 
-`plugins/seo/plugin.yaml` is the SEO ownership boundary. It maps the current
-SEO implementation into plugin-owned metadata:
+The core UI should render resources generically by plugin and key.
 
-- capabilities for research, content, publishing, and Search Console;
-- providers for local SEO compatibility, DataForSEO, Ahrefs, GSC, WordPress,
-  and Ghost;
-- resources for current SEO tables and sidecar records;
-- actions that point at legacy daemon tools through explicit alias metadata;
-- the SEO sidebar contribution.
+## Workflow Templates
 
-Utility providers used by SEO, such as OpenAI Images, Firecrawl, Jina, and
-Reddit, remain owned by the `utils` plugin unless a later task makes them
-domain-specific.
+Plugins can ship workflow templates under `plugins/<slug>/workflows/`. These
+templates should define reusable setup and context requirements, not one-off run
+state. Agents create concrete run plans from them.
 
-## Agent Exposure
+## Enablement
 
-Normal agents may discover catalog metadata and bounded generic reads through
-the direct bridge surface:
+Plugins can be enabled per project. A disabled plugin should not appear in the
+project catalog, but its historical records can still be displayed when they are
+part of prior run history.
 
-- `action.describe`
-- `action.validate`
-- `plugin.list`
-- `catalog.list`
-- `catalog.describe`
-- `capability.list`
-- `capability.describe`
-- `provider.list`
-- `provider.describe`
-- `auth.status`
-- `auth.test`
-- `resource.get`
-- `resource.query`
-- `artifact.get`
-- `artifact.query`
-- `workflowTemplate.list`
-- `workflowTemplate.describe`
-- `workflowTemplate.validate`
+## Tests
 
-Setup/admin-gated mutations are registered in the daemon catalog but are not
-advertised through the normal agent bridge and are not granted to the
-system/bootstrap agent surface:
+Plugin changes should verify:
 
-- `plugin.enable`
-- `plugin.disable`
-- `auth.start`
-- `auth.revoke`
-- `workflowTemplate.save`
-- `workflowTemplate.fork`
-
-Advanced context reads and generic run-plan writes are bridge-hidden or
-daemon-filtered. They become callable only with a started run plan, an active
-claimed step, and an explicit step grant:
-
-- `context.query` for fields outside the direct safe set
-- `resource.upsert`
-- `artifact.create`
-- `context.snapshot`
-- `learning.create`
-- `learning.update`
-- `experiment.create`
-- `experiment.recordObservation`
-- `experiment.recordDecision`
-- `decision.record`
-
-Generic execution uses the same grant model:
-
-- `action.execute` with explicit `action_refs`
-
-Credential setup is metadata-driven by plugin providers, but secrets stay
-outside agent context. Provider manifests declare `auth_type`; the daemon maps
-that declaration into auth-provider rows and opaque credential refs. Agents use
-`auth.status` and `auth.test`, while local UI/REST setup handles plaintext or
-OAuth. Compatibility tools such as `integration.set` remain daemon-local and are
-not part of the normal plugin agent surface.
+- manifest validation
+- built-in catalog sync
+- provider/action/resource indexing
+- project enable/disable behavior
+- workflow template loading
+- generic UI rendering for plugin nav and resources

@@ -32,7 +32,6 @@ type IntegrationKindLabels = { [Key in IntegrationKind]: string }
 const integrationLabels: IntegrationKindLabels = {
   dataforseo: 'DataForSEO',
   firecrawl: 'Firecrawl',
-  gsc: 'Google Search Console',
   'openai-images': 'OpenAI Images',
   reddit: 'Reddit',
   'google-paa': 'Google PAA',
@@ -324,7 +323,7 @@ watch(projectId, load)
               </div>
               <div>
                 <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-                  Procedure guard
+                  Run-plan guard
                 </dt>
                 <dd class="mt-1 text-fg-muted">
                   Checked before vendor calls.

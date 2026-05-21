@@ -27,11 +27,6 @@ const activeKey = computed<string>(() => {
 
 type ProjectSetupKey =
   | 'overview'
-  | 'voice'
-  | 'compliance'
-  | 'eeat'
-  | 'targets'
-  | 'integrations'
   | 'schedules'
   | 'cost-budget'
 
@@ -47,27 +42,7 @@ type ProjectSetupPageCopy = {
 const PAGE_COPY = {
   overview: {
     title: 'Overview',
-    description: 'Readiness, current work, blockers, and the safest next action.',
-  },
-  voice: {
-    title: 'Voice',
-    description: 'Editorial voice profiles used by briefs, drafting, and humanization.',
-  },
-  compliance: {
-    title: 'Compliance',
-    description: 'Disclosure rules, jurisdictions, and page placement requirements.',
-  },
-  eeat: {
-    title: 'EEAT',
-    description: 'Quality criteria and gates applied before publishing.',
-  },
-  targets: {
-    title: 'Publishing',
-    description: 'Destination sites, primary channel selection, and publish configuration.',
-  },
-  integrations: {
-    title: 'Integrations',
-    description: 'Vendor credentials and connection readiness for automated procedures.',
+    description: 'Project state, enabled plugins, reusable templates, run plans, resources, and recent runs.',
   },
   schedules: {
     title: 'Schedules',

@@ -55,7 +55,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 
 | Component | Notes |
 |---|---|
-| `PluginNavRenderer` | renders core/plugin/compatibility nav sections from static route descriptors or plugin `manifest_json.ui.nav` contributions |
+| `PluginNavRenderer` | renders core/plugin nav sections from static route descriptors or plugin `manifest_json.ui.nav` contributions |
 | `TemplateRenderer` | renders reusable workflow template setup, contracts, context requirements, policies, approvals, and learning hooks |
 | `RunPlanRenderer` | renders concrete run-plan steps, allowed tools, approvals, run context, and redacted action calls |
 | `ActionSchemaRenderer` | renders action input/output schemas and connector config with defensive redaction |
@@ -68,17 +68,9 @@ manifests/templates/resources/actions and let the renderer surface them; do not
 add workflow-specific UI unless the generic renderer is insufficient and the
 exception is signed off.
 
-Removed action-oriented demo components:
-
-`ArticleActionBar`, `ArticleAssetCard`, `ArticleStatusStepper`, `BudgetMeter`,
-`ComplianceRuleRow`, `CredentialHealthBadge`, `DriftBaselineCard`,
-`EeatCriterionRow`, `EeatScoreCard`, `GscOpportunityCard`,
-`IntegrationProviderCard`, `IntegrationSetupDialog`, `LinkSuggestionCard`,
-`MarkdownSectionEditor`, `ProcedureCard`, `ProjectHeader`,
-`ProjectStatusSummary`, `PublishingTargetCard`, `RunStepAccordion`,
-`RunTimeline`, `ScheduleRuleCard`, `SchemaEditorPanel`, and `SourceLedger`.
-They were removed from `ui/src` because they exposed or demonstrated product
-mutations that now belong to the agent/MCP path.
+Removed action-oriented demo components. They were removed from `ui/src`
+because they exposed or demonstrated domain mutations that now belong to the
+agent/MCP path.
 
 ## Design-system showcase
 
@@ -108,10 +100,8 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 |---|---|---|
 | Projects list | UiPageHeader, UiFilterBar, UiBadge, UiButton | (none) |
 | Project overview | UiPageHeader, UiDescriptionList, UiMetricCard, DataTable | ProjectPageHeader |
-| Project integrations tab | UiPanel, UiButton, UiCallout, UiBadge | ProjectPageHeader |
-| Articles list | UiSegmentedControl, DataTable, UiBadge | ProjectPageHeader |
-| Article detail | UiPageHeader, TabBar, UiPanel, UiCodeBlock, UiJsonBlock | (none) |
-| Topics list | UiFilterBar, DataTable, UiBadge | (none) |
+| Project schedules tab | UiPanel, UiBadge, DataTable | ProjectPageHeader |
+| Project budget tab | UiPanel, UiMetricCard, DataTable | ProjectPageHeader |
 | Runs list | UiFilterBar, DataTable, UiBadge | (none) |
 | Run detail | UiPageHeader, UiCodeBlock, UiJsonBlock, RunPlanRenderer, ArtifactRenderer | (none) |
 | Plugins | UiPanel, UiBadge, ActionSchemaRenderer | ProjectPageHeader |
@@ -120,9 +110,6 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 | Workflow templates | DataTable, TemplateRenderer | ProjectPageHeader |
 | Project Data | UiSegmentedControl, DataTable, ArtifactRenderer | ProjectPageHeader |
 | Resource Explorer | DataTable, ResourceViewRenderer, ArtifactRenderer | ProjectPageHeader |
-| Procedures list | DataTable, UiBadge | ProjectPageHeader |
-| GSC | DataTable, UiMetricCard | ProjectPageHeader |
-| Drift | DataTable, UiBadge, UiDiffBlock | ProjectPageHeader |
 
 ## Refactor priority
 

@@ -10,7 +10,6 @@ const RUN_RUNNING = {
   project_id: 1,
   kind: 'skill-run' as const,
   parent_run_id: null,
-  procedure_slug: null,
   client_session_id: null,
   started_at: '2026-05-05T00:00:00Z',
   ended_at: null,

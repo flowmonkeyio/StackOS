@@ -6,9 +6,9 @@ website repository.
 
 The plugin starts a thin MCP bridge (`python -m content_stack mcp-bridge` in
 the hydrated install) that connects to the singleton local content-stack daemon.
-The bridge is disposable; the
-daemon owns the SQLite database, project bindings, credentials, procedures,
-articles, publish targets, and audit trails.
+The bridge is disposable; the daemon owns the SQLite database, project
+bindings, credentials, workflow templates, run plans, resources, actions,
+context, learnings, experiments, decisions, and audit trails.
 
 Website repositories should not need content-stack setup files. Repo-specific
 knowledge is discovered from the current working directory and persisted in the
@@ -33,20 +33,19 @@ The daemon keeps the full internal MCP catalog for the UI, tests, and advanced
 automation, but the plugin bridge exposes a small agent console:
 
 - Direct tools: workspace binding/session tools, project list/create/get/update
-  and active-project selection, `meta.enums`, `procedure.*`, and a few `run.*`
-  status/control calls.
-- Hidden setup helpers: credentials, voice, publish target, compliance, EEAT,
-  schedule, and sitemap tools are available through `toolbox.describe` and
-  `toolbox.call`.
-- Step tools: when `procedure.currentStep` or `procedure.claimStep` returns a
-  step package, the bridge reads `current_step.allowed_tools`; those tools
-  become callable through `toolbox.call` for that run.
+  and active-project selection, `meta.enums`, workflow-template tools,
+  run-plan tools, and a few `run.*` status/control calls.
+- Hidden setup helpers: credential metadata, budgets, schedules, sitemap
+  fetches, and setup-only project controls are available through
+  `toolbox.describe` and `toolbox.call`.
+- Step tools: when `runPlan.start` and `runPlan.claimStep` establish a running
+  step, the bridge reads that step's grants; those tools become callable
+  through `toolbox.call` for that run.
 
-Agents should use direct tools for setup and procedure control, then use
+Agents should use direct tools for setup and run-plan control, then use
 `toolbox.describe` before calling any hidden tool. This keeps the model context
 small without removing the daemon's richer capabilities.
 
-The installed plugin is hydrated with the full content-stack skill catalog under
-`skills/catalog/` and the procedure catalog under `procedures/`, so runtime
-clients load content-stack through one plugin rather than loose per-project
-files.
+The installed plugin provides the StackOS entrypoint skill. Domain behavior
+lives in plugin manifests and workflow templates rather than hard-coded
+workflow skills.

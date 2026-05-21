@@ -46,10 +46,7 @@ def test_install_plugins_creates_plugin_and_marketplace(
         "args": ["-m", "content_stack", "mcp-bridge"],
     }
     assert (plugin_root / "skills" / "content-stack" / "SKILL.md").is_file()
-    assert (
-        plugin_root / "skills" / "catalog" / "01-research" / "keyword-discovery" / "SKILL.md"
-    ).is_file()
-    assert (plugin_root / "procedures" / "04-topic-to-published" / "PROCEDURE.md").is_file()
+    assert not (plugin_root / "skills" / "catalog").exists()
     assert any(
         p["name"] == "content-stack" and p["source"]["path"] == "./.codex/plugins/content-stack"
         for p in payload["plugins"]

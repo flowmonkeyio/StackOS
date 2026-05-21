@@ -38,15 +38,14 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     assert seo_catalog.status_code == 200
     assert seo_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == "SEO"
     assert {a["key"] for a in seo_catalog.json()["actions"]} >= {
-        "topic.bulk-create",
-        "publish.record",
-        "gsc.query-project",
+        "keyword.research",
+        "serp.analyze",
+        "competitor.keywords",
     }
     assert {r["key"] for r in seo_catalog.json()["resources"]} >= {
-        "cluster",
-        "topic",
-        "article",
-        "internal-link",
+        "keyword-opportunity",
+        "content-piece",
+        "content-refresh",
     }
 
 
@@ -88,4 +87,4 @@ def test_disabled_seo_plugin_is_filtered_from_project_catalog(
 
     resources = api.get("/api/v1/resources", params={"project_id": project_id})
     assert resources.status_code == 200
-    assert "article" not in {r["key"] for r in resources.json()}
+    assert "content-piece" not in {r["key"] for r in resources.json()}

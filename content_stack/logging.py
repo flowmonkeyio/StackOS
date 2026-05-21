@@ -2,8 +2,8 @@
 
 JSON output for the file sink (machine-grep friendly), pretty console output
 when stderr is a TTY (developer ergonomics). `run_id` and `project_id` are
-contextvars that procedure runners set so all downstream log lines inherit
-them without explicit threading.
+contextvars that run-plan/tool execution can set so downstream log lines
+inherit them without explicit threading.
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from pathlib import Path
 
 import structlog
 
-# Contextvars exposed to the rest of the codebase. Procedure runners (M8)
-# set these around the run; everything logged inside inherits.
+# Contextvars exposed to the rest of the codebase. Run execution binds these
+# around work so everything logged inside inherits.
 run_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("run_id", default=None)
 project_id_var: contextvars.ContextVar[int | None] = contextvars.ContextVar(
     "project_id", default=None

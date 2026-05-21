@@ -19,7 +19,7 @@ def test_scheduler_has_default_and_long_executors(engine: object) -> None:
 
 
 def test_scheduler_has_sqlalchemy_default_jobstore_and_memory(engine: object) -> None:
-    """Procedure runs persist via SQLAlchemyJobStore; closures via MemoryJobStore."""
+    """Scheduled run jobs persist via SQLAlchemyJobStore; closures use MemoryJobStore."""
     s = build_scheduler(Settings(), engine)  # type: ignore[arg-type]
     assert isinstance(s._jobstores["default"], SQLAlchemyJobStore)
     assert isinstance(s._jobstores["memory"], MemoryJobStore)
@@ -35,6 +35,6 @@ def test_scheduler_job_defaults_match_plan(engine: object) -> None:
 
 
 def test_scheduler_timezone_is_utc(engine: object) -> None:
-    """Scheduler global timezone is UTC; per-procedure timezones live in CronTrigger."""
+    """Scheduler global timezone is UTC; per-job timezones live in CronTrigger."""
     s = build_scheduler(Settings(), engine)  # type: ignore[arg-type]
     assert str(s.timezone) == "UTC"

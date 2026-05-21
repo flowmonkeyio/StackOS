@@ -15,13 +15,11 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
 from sqlmodel import Session, SQLModel
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
@@ -34,20 +32,6 @@ from content_stack.crypto import cleanup_old_backup
 from content_stack.crypto.aes_gcm import configure_seed_path
 from content_stack.db.connection import make_engine
 from content_stack.db.migrate import upgrade_to_head
-from content_stack.jobs.cron_procedures import register_cron_procedures
-from content_stack.jobs.drift_rollup import (
-    daily_drift_rollup,
-)
-from content_stack.jobs.drift_rollup import (
-    make_session_factory as drift_session_factory,
-)
-from content_stack.jobs.gsc_pull import (
-    daily_gsc_pull,
-)
-from content_stack.jobs.gsc_pull import (
-    make_session_factory as gsc_session_factory,
-)
-from content_stack.jobs.oauth_refresh import refresh_expiring_gsc_tokens
 from content_stack.jobs.runs_reaper import (
     DEFAULT_STALE_AFTER_SECONDS,
     reap_orphaned_runs,
@@ -56,19 +40,12 @@ from content_stack.jobs.runs_reaper import (
     make_session_factory as reaper_session_factory,
 )
 from content_stack.jobs.scheduler import (
-    DRIFT_ROLLUP_JOB_ID,
-    DRIFT_ROLLUP_MISFIRE_GRACE_SECONDS,
-    GSC_PULL_JOB_ID,
-    GSC_PULL_MISFIRE_GRACE_SECONDS,
-    OAUTH_MISFIRE_GRACE_SECONDS,
-    OAUTH_REFRESH_JOB_ID,
     REAPER_MISFIRE_GRACE_SECONDS,
     RUNS_REAPER_JOB_ID,
     build_scheduler,
 )
 from content_stack.logging import configure_logging, get_logger
 from content_stack.mcp import register_mcp
-from content_stack.procedures.runner import ProcedureRunner
 from content_stack.repositories.runs import RunRepository
 
 _SEED_BYTES = 32
@@ -110,30 +87,6 @@ class HostHeaderMiddleware(BaseHTTPMiddleware):
                 status_code=421,
             )
         return await call_next(request)
-
-
-_PARTIAL_INDEX_DDL: tuple[str, ...] = (
-    # Partial unique on internal_links (audit B-09)
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_internal_links_unique "
-    "ON internal_links(from_article_id, to_article_id, anchor_text, position) "
-    "WHERE status != 'dismissed'",
-    # Primary publish target (audit B-08)
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_publish_targets_primary "
-    "ON publish_targets(project_id) WHERE is_primary = 1",
-)
-
-
-def _ensure_partial_indexes(engine: object) -> None:
-    """Emit the partial-unique indexes that SQLModel can't express declaratively.
-
-    The Alembic 0002 migration is the canonical source of truth for these;
-    this fallback runs them only if absent (``IF NOT EXISTS``) so a daemon
-    started against a freshly-``create_all``'d schema still enforces the
-    M1.B invariants (B-08 / B-09).
-    """
-    with engine.begin() as conn:  # type: ignore[attr-defined]
-        for ddl in _PARTIAL_INDEX_DDL:
-            conn.execute(text(ddl))
 
 
 def _ensure_seed(seed_path: Path) -> None:
@@ -187,18 +140,13 @@ def _build_lifespan(
         engine = make_engine(settings.db_path)
 
         SQLModel.metadata.create_all(engine)
-        # Emit the migration-only partial-unique indexes so the M1.B
-        # invariants exercised by integration tests (B-08, B-09, M-20) are
-        # active even when the lifespan path didn't go through alembic.
-        _ensure_partial_indexes(engine)
-
         app.state.settings = settings
         app.state.token = token
         app.state.ui_token = derive_ui_token(token)
         app.state.engine = engine
         app.state.started_at = time.monotonic()
 
-        # M8: build the APScheduler instance + run the crash-recovery
+        # Build the APScheduler instance + run the crash-recovery
         # sweep BEFORE registering recurring jobs (per audit BLOCKER-13).
         # The sweep's effects are idempotent (rows that aren't stale are
         # skipped) so re-running on every boot is fine.
@@ -217,23 +165,9 @@ def _build_lifespan(
             if reaped:
                 log.info("daemon.recovery_sweep.reaped", count=reaped)
 
-        # Build the agent-led procedure controller. It loads PROCEDURE.md
-        # files from the repo's ``procedures/`` directory at construction
-        # time — a malformed file aborts startup which is what we want
-        # (operator sees the parse error in the lifespan log, not a
-        # mysterious 500 on the first ``procedure.run`` call). The
-        # controller owns durable state and step-scoped grants; the
-        # current external agent owns execution.
-        runner = ProcedureRunner(
-            settings=settings,
-            engine=engine,
-            scheduler=scheduler,
-        )
-        app.state.procedure_runner = runner
-
-        # Register recurring background jobs. All four use the
-        # ``memory`` jobstore because their bodies close over the
-        # daemon-local engine + session factory and aren't picklable.
+        # Register recurring background jobs. The reaper uses the ``memory``
+        # jobstore because its body closes over the daemon-local engine +
+        # session factory and is not picklable.
         scheduler.add_job(
             reap_orphaned_runs,
             kwargs={
@@ -246,58 +180,6 @@ def _build_lifespan(
             replace_existing=True,
             jobstore="memory",
             misfire_grace_time=REAPER_MISFIRE_GRACE_SECONDS,
-        )
-
-        # M4's oauth refresh job — kicks every 50 minutes. Per
-        # PLAN.md L1090-L1096.
-        async def _oauth_refresh_wrapper() -> None:
-            with Session(engine) as session:  # type: ignore[name-defined]
-                await refresh_expiring_gsc_tokens(session)
-
-        scheduler.add_job(
-            _oauth_refresh_wrapper,
-            trigger=IntervalTrigger(minutes=50),
-            id=OAUTH_REFRESH_JOB_ID,
-            name="oauth refresh (gsc tokens)",
-            replace_existing=True,
-            jobstore="memory",
-            misfire_grace_time=OAUTH_MISFIRE_GRACE_SECONDS,
-        )
-
-        # Daily GSC pull — 03:15 UTC.
-        scheduler.add_job(
-            daily_gsc_pull,
-            kwargs={"session_factory": gsc_session_factory(engine)},
-            trigger=CronTrigger(hour=3, minute=15, timezone="UTC"),
-            id=GSC_PULL_JOB_ID,
-            name="daily gsc pull",
-            replace_existing=True,
-            jobstore="memory",
-            misfire_grace_time=GSC_PULL_MISFIRE_GRACE_SECONDS,
-        )
-
-        # Daily drift rollup — 04:00 UTC (after gsc pull at 03:15).
-        scheduler.add_job(
-            daily_drift_rollup,
-            kwargs={"session_factory": drift_session_factory(engine)},
-            trigger=CronTrigger(hour=4, minute=0, timezone="UTC"),
-            id=DRIFT_ROLLUP_JOB_ID,
-            name="daily drift rollup + retention",
-            replace_existing=True,
-            jobstore="memory",
-            misfire_grace_time=DRIFT_ROLLUP_MISFIRE_GRACE_SECONDS,
-        )
-
-        # Cron-triggered procedures (procedure 6 weekly, 7 monthly).
-        # One job per active project per scheduled procedure.
-        with Session(engine) as session:  # type: ignore[name-defined]
-            registered = register_cron_procedures(
-                scheduler=scheduler, runner=runner, session=session
-            )
-        log.info(
-            "daemon.scheduler.cron_procedures_registered",
-            count=len(registered),
-            job_ids=registered,
         )
 
         scheduler.start()
@@ -345,13 +227,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ui_token = derive_ui_token(token)
 
     app = FastAPI(
-        title="content-stack",
+        title="StackOS",
         version=__version__,
-        summary="Multi-project SEO content pipelines for any LLM client.",
+        summary="Local StackOS runtime for agents and humans.",
         description=(
-            "A globally-installed Python daemon (FastAPI + SQLite/WAL + MCP "
-            "Streamable HTTP) plus Vue UI giving any LLM client a stateful "
-            "CRUD seam over multi-project SEO content pipelines."
+            "A local Python daemon (FastAPI + SQLite/WAL + MCP Streamable HTTP) "
+            "plus Vue UI for projects, plugins, workflow templates, run plans, "
+            "resources, actions, and auditable runs."
         ),
         lifespan=_build_lifespan(settings),
         docs_url="/api/docs",
@@ -394,7 +276,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 def _mount_ui(app: FastAPI, settings: Settings) -> None:
     """Mount static UI bundle at `/`; serve a placeholder if not yet built.
 
-    SPA-aware: for routes that aren't static files (e.g. ``/projects/12/eeat``)
+    SPA-aware: for routes that aren't static files (e.g. ``/projects/12/resources``)
     we fall back to ``index.html`` so the browser-side router can resolve
     them. The fallback only fires for requests that don't match any API
     or static-file path, which avoids leaking the SPA in place of a real
@@ -445,8 +327,8 @@ def _mount_ui(app: FastAPI, settings: Settings) -> None:
         """Placeholder shown until `make build-ui` populates ui_dist/."""
         body = (
             "<!doctype html><html><head><meta charset='utf-8'>"
-            "<title>content-stack</title></head><body>"
-            "<h1>content-stack daemon is running.</h1>"
+            "<title>StackOS</title></head><body>"
+            "<h1>StackOS daemon is running.</h1>"
             "<p>UI not built yet — run <code>make build-ui</code>.</p>"
             f"<p>API docs: <a href='/api/docs'>/api/docs</a></p>"
             f"<p>Version: {__version__}</p>"

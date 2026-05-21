@@ -75,13 +75,13 @@ class ToolSpec:
 
     Fields:
 
-    - ``name`` — wire-level dotted name (e.g. ``article.setBrief``).
+    - ``name`` — wire-level dotted name (e.g. ``resource.upsert``).
     - ``description`` — one-line docstring (becomes MCP description).
     - ``input_model`` — pydantic Input class (subclass of MCPInput).
     - ``output_model`` — pydantic Output class. For mutating tools this
       is ``WriteEnvelope[<inner>]``; for reads it's the bare data type.
     - ``handler`` — async callable ``(input, context, emitter) -> output``.
-    - ``streaming`` — ``True`` for the four streaming tools per audit M-21.
+    - ``streaming`` — ``True`` when a tool emits progress notifications.
     - ``read_only`` — derived from ``verb_is_mutating(name)``.
     """
 
@@ -258,7 +258,7 @@ def _result_to_json(result: Any) -> dict[str, Any]:
     All BaseModel subclasses go through ``model_dump(mode='json')``.
     """
     if isinstance(result, BaseModel):
-        return result.model_dump(mode="json")
+        return result.model_dump(mode="json", by_alias=True)
     if isinstance(result, list):
         return {"items": [_item_to_json(x) for x in result]}
     if isinstance(result, dict):
@@ -279,7 +279,7 @@ def _item_to_json(item: Any) -> Any:
     but per-element shape is whatever the tool returned.
     """
     if isinstance(item, BaseModel):
-        return item.model_dump(mode="json")
+        return item.model_dump(mode="json", by_alias=True)
     if isinstance(item, dict):
         return {
             k: (_item_to_json(v) if not isinstance(v, str | int | float | bool | type(None)) else v)
@@ -334,15 +334,10 @@ class MCPDispatcher:
         self,
         registry: ToolRegistry,
         engine_resolver: Callable[[], Any],
-        procedure_runner_resolver: Callable[[], Any] | None = None,
         settings_resolver: Callable[[], Any] | None = None,
     ) -> None:
         self._registry = registry
         self._engine_resolver = engine_resolver
-        # Resolves the ``ProcedureRunner`` lazily so tests can build a
-        # dispatcher without one (the M7 runs.py handlers gracefully
-        # raise a typed error when called with no runner attached).
-        self._procedure_runner_resolver = procedure_runner_resolver
         self._settings_resolver = settings_resolver
 
     async def dispatch(self, name: str, arguments: dict[str, Any] | None) -> _CallResult:
@@ -391,11 +386,6 @@ class MCPDispatcher:
             if self._settings_resolver is not None:
                 with suppress(RuntimeError):
                     ctx.extras["settings"] = self._settings_resolver()
-            if self._procedure_runner_resolver is not None:
-                try:
-                    ctx.procedure_runner = self._procedure_runner_resolver()
-                except RuntimeError:
-                    ctx.procedure_runner = None
             with bind_context(ctx):
                 # Resolve session + progress token from SDK request_ctx.
                 emitter = self._build_emitter()
@@ -683,13 +673,14 @@ async def _mcp_lifespan(_server: Server[Any, Any]) -> AsyncIterator[dict[str, An
 def build_server(registry: ToolRegistry, dispatcher: MCPDispatcher) -> Server[Any, Any]:
     """Construct the lowlevel ``Server`` with list_tools / call_tool wired."""
     server = Server[Any, Any](
-        name="content-stack",
+        name="stackos",
         version=__version__,
         instructions=(
-            "content-stack MCP server — multi-project SEO content pipelines. "
+            "StackOS MCP server — local tool runtime for projects, plugins, "
+            "workflow templates, run plans, resources, actions, and audit. "
             "All project-scoped tools require explicit `project_id`. Mutating tools "
             "return `{data, run_id, project_id}`; reads return bare data. Pass "
-            "`run_token` from `run.start` to correlate calls to a procedure run."
+            "`run_token` from `runPlan.start` to execute granted run-plan steps."
         ),
         lifespan=_mcp_lifespan,
     )
@@ -750,19 +741,13 @@ def register_mcp(app: FastAPI) -> None:
             raise RuntimeError("MCP engine not initialised on app.state")
         return engine
 
-    def _runner_resolver() -> Any:
-        runner = getattr(app.state, "procedure_runner", None)
-        if runner is None:  # pragma: no cover — lifespan did not finish
-            raise RuntimeError("procedure_runner not initialised on app.state")
-        return runner
-
     def _settings_resolver() -> Any:
         settings = getattr(app.state, "settings", None)
         if settings is None:  # pragma: no cover — lifespan did not finish
             raise RuntimeError("settings not initialised on app.state")
         return settings
 
-    dispatcher = MCPDispatcher(registry, _engine_resolver, _runner_resolver, _settings_resolver)
+    dispatcher = MCPDispatcher(registry, _engine_resolver, _settings_resolver)
     server = build_server(registry, dispatcher)
 
     # Stash on app.state so tests / introspection can reach the registry.

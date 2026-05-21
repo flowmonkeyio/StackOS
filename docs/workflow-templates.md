@@ -1,114 +1,95 @@
 # Workflow Templates
 
-Workflow templates are reusable StackOS setup contracts. They give an agent a
-strong base for a class of work, but they are not run plans and they do not
-execute actions.
+Workflow templates are reusable setup for agent work. They are not hidden
+automation. A template gives the agent a strong starting structure, then the
+agent creates a concrete run plan for the current project and goal.
 
-Templates may describe:
+## Template Schema
 
-- purpose, when to use, and when not to use
-- required inputs and expected outputs
-- bounded context requirements
-- capability and auth requirements
-- action and resource contracts
-- policies, approval gates, and failure handling
-- reusable learning hooks
-- UI/rendering metadata
+A template should be generic across domains and include:
 
-Templates must not contain:
+- `schema_version`
+- `key`, `name`, `version`, `description`
+- `domain` and optional plugin slug
+- `owner`
+- `when_to_use` and `when_not_to_use`
+- `inputs`
+- `instructions`
+- `context_requirements`
+- `capability_requirements`
+- `provider_requirements`
+- `action_requirements`
+- `policies`
+- `approval_gates`
+- `steps`
+- `expected_outputs`
+- `quality_checks`
+- `history_policy`
 
-- API keys, OAuth tokens, passwords, bearer strings, or credential refs
-- concrete provider object ids, such as a real campaign id or ad account id
-- final action payloads for a specific run
-- hard-coded business decisions, such as which experiment won
-- procedure-runner control flow
+The template should not contain project secrets or one-off task state.
 
-Agents turn templates into concrete run plans. The run plan is where selected
-providers, credential refs, payload drafts, context snapshots, approvals, and
-action order become explicit. See `docs/run-plans.md` for the concrete
-execution record and approval-gate lifecycle.
+## Context Requirements
 
-## Sources And Precedence
-
-Templates can come from three places:
-
-```text
-Plugin defaults:
-  plugins/<plugin>/workflows/*.yaml
-
-Project/user templates:
-  workflow_templates + workflow_template_versions tables
-
-Repository/company overrides:
-  .stackos/workflows/*.yaml
-```
-
-Effective precedence is:
-
-```text
-repo/company > project/user > plugin
-```
-
-`workflowTemplate.list` returns the effective set by default. Passing
-`include_shadowed=true` also returns lower-precedence templates with
-`shadowed_by` set.
-
-## Schema
-
-Templates use `schema_version: stackos.workflow-template.v1`.
-
-Minimal example:
+Context requirements define how the agent can retrieve history without loading
+everything:
 
 ```yaml
-schema_version: stackos.workflow-template.v1
-key: core.project-memory-review
-name: Project Memory Review
-version: 0.1.0
-inputs:
-  - key: goal
-    type: string
-    required: true
 context_requirements:
-  - id: accepted_learnings
-    source: learnings
+  - id: recent_related_runs
+    source: runs
     filters:
-      statuses: [active]
-    fields: [statement, confidence, tags]
-    max_items: 20
-steps:
-  - id: retrieve-context
-    title: Retrieve bounded context
-    context_refs: [accepted_learnings]
-    output_refs: [context_summary]
-outputs:
-  - key: context_summary
-    type: object
+      domain: media-buying
+      statuses: [success, failed]
+    fields: [kind, status, summary, output_json, ended_at]
+    max_items: 10
+    return_mode: compact
 ```
 
-Context sources are intentionally generic: `runs`, `events`, `index`,
-`snapshots`, `learnings`, `experiments`, `decisions`, `metrics`, `resources`,
-and `artifacts`.
+Supported sources should include runs, resources, artifacts, learnings,
+experiments, decisions, action calls, and provider status.
 
-## MCP Boundary
+## Steps
 
-Agent-visible read tools:
+Steps are defaults, not a prison. A good step defines:
 
-- `workflowTemplate.list`
-- `workflowTemplate.describe`
-- `workflowTemplate.validate`
+- `id`
+- `title`
+- `purpose`
+- `instructions`
+- `allowed_actions`
+- `inputs`
+- `expected_outputs`
+- `approval_gate` if needed
+- `completion_criteria`
 
-Admin-gated mutation tools:
+Agents can adapt a run plan when the project requires it. If a project repeats
+the adapted pattern, the agent should save a project-scoped template version.
 
-- `workflowTemplate.save`
-- `workflowTemplate.fork`
+## Built-In And Project Templates
 
-`validate` is read-only for workflow templates. It only checks schema,
-references, limits, and secret-like values. `save` and `fork` are deliberately
-not system-granted before the broader D09 action/grant cleanup.
+StackOS can ship built-in templates through plugins. A project can also save
+its own templates. Project templates should record their source and version so
+agents can understand whether they are using a built-in pattern or a local
+operating method.
 
-## Clean Cut
+## Examples
 
-D06 adds workflow-template sidecars only. It does not drop old SEO,
-procedure, or content-stack tables, and it does not migrate existing procedures
-into templates. Legacy procedures remain compatibility execution until the
-later migration tasks.
+SEO templates can describe keyword discovery, page refresh, or search
+opportunity analysis. Media-buying templates can describe campaign launch, creative
+testing, budget pacing, or account QA. GTM templates can describe list building,
+sequence setup, pipeline hygiene, or launch retrospectives.
+
+All of them should use the same StackOS primitives: context, resources,
+artifacts, actions, approvals, learnings, experiments, and run plans.
+
+## Validation
+
+Template validation should check:
+
+- stable keys and versions
+- valid input schema
+- known plugin/capability/provider/action references
+- bounded context filters
+- approval gates referenced by steps
+- no embedded secrets
+- no domain-only assumptions in core fields

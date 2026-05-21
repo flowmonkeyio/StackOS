@@ -11,7 +11,6 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
 import {
-  compatibilityNavSection,
   coreNavSections,
   pluginContributionSections,
   setupNavSection,
@@ -69,7 +68,6 @@ const projectNavSections = computed<StackOsNavSection[]>(() => {
     ...coreNavSections(id),
     ...pluginContributionSections(id, enabledPlugins.value),
     setupNavSection(id),
-    compatibilityNavSection(id),
   ].filter((section) => section.items.length > 0)
 })
 

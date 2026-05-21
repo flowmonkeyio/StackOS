@@ -1,7 +1,7 @@
 """add StackOS plugin catalog tables
 
 Revision ID: 0006_stackos_plugin_catalog
-Revises: 0005_targetless_article_publishes
+Revises: 0004_workspace_bindings
 Create Date: 2026-05-20
 
 """
@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0006_stackos_plugin_catalog"
-down_revision: str | None = "0005_targetless_article_publishes"
+down_revision: str | None = "0004_workspace_bindings"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

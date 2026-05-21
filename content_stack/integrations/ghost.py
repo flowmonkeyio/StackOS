@@ -118,41 +118,6 @@ class GhostIntegration(BaseIntegration):
             headers=self._headers(),
         )
 
-    async def create_post(
-        self,
-        post: dict[str, Any],
-        *,
-        source: str | None = "html",
-    ) -> IntegrationCallResult:
-        """Create a post through ``POST /admin/posts/``."""
-        params = {"source": source} if source else None
-        return await self.call(
-            op="create_post",
-            method="POST",
-            url=self._url("posts/"),
-            params=params,
-            json_body={"posts": [post]},
-            headers=self._headers(),
-        )
-
-    async def update_post(
-        self,
-        post_id: str,
-        post: dict[str, Any],
-        *,
-        source: str | None = "html",
-    ) -> IntegrationCallResult:
-        """Update a post through ``PUT /admin/posts/{id}/``."""
-        params = {"source": source} if source else None
-        return await self.call(
-            op="update_post",
-            method="PUT",
-            url=self._url(f"posts/{post_id}/"),
-            params=params,
-            json_body={"posts": [post]},
-            headers=self._headers(),
-        )
-
     async def test_credentials(self) -> dict[str, Any]:
         """Probe auth and return a small user/role sample."""
         result = await self.users(limit=1)

@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from content_stack.db.models import (
-    ProcedureRunStep,
-    ProcedureRunStepStatus,
     Run,
     RunKind,
     RunStatus,
@@ -39,7 +37,7 @@ def _seed_run(
     now = _utcnow()
     row = Run(
         project_id=project_id,
-        kind=RunKind.PROCEDURE,
+        kind=RunKind.RUN_PLAN,
         started_at=now - timedelta(seconds=abs(heartbeat_offset_seconds) + 1),
         heartbeat_at=now - timedelta(seconds=heartbeat_offset_seconds),
         status=status,
@@ -70,39 +68,6 @@ async def test_reaper_aborts_stale_running_runs(engine: object) -> None:
         assert recent.status == RunStatus.RUNNING
 
 
-async def test_reaper_fails_active_procedure_step(engine: object) -> None:
-    """A crashed in-flight procedure step becomes failed and resumeable."""
-    with Session(engine) as s:  # type: ignore[arg-type]
-        run_id = _seed_run(session=s, heartbeat_offset_seconds=600)
-        active = ProcedureRunStep(
-            run_id=run_id,
-            step_index=0,
-            step_id="content-brief",
-            status=ProcedureRunStepStatus.RUNNING,
-        )
-        pending = ProcedureRunStep(
-            run_id=run_id,
-            step_index=1,
-            step_id="outline",
-            status=ProcedureRunStepStatus.PENDING,
-        )
-        s.add(active)
-        s.add(pending)
-        s.commit()
-
-    await reap_orphaned_runs(
-        session_factory=make_session_factory(engine),  # type: ignore[arg-type]
-    )
-
-    with Session(engine) as s:  # type: ignore[arg-type]
-        rows = s.exec(select(ProcedureRunStep).where(ProcedureRunStep.run_id == run_id)).all()
-        by_step = {row.step_id: row for row in rows}
-        assert by_step["content-brief"].status == ProcedureRunStepStatus.FAILED
-        assert by_step["content-brief"].error == "daemon-restart-orphan"
-        assert by_step["content-brief"].ended_at is not None
-        assert by_step["outline"].status == ProcedureRunStepStatus.PENDING
-
-
 async def test_reaper_no_op_when_no_stale_rows(engine: object) -> None:
     """All-recent rows → 0 reaped."""
     with Session(engine) as s:  # type: ignore[arg-type]
@@ -125,7 +90,7 @@ async def test_reaper_cascades_to_children(engine: object) -> None:
     with Session(engine) as s:  # type: ignore[arg-type]
         parent_id = _seed_run(session=s, heartbeat_offset_seconds=600)
         child = Run(
-            kind=RunKind.PROCEDURE,
+            kind=RunKind.RUN_PLAN,
             parent_run_id=parent_id,
             started_at=_utcnow() - timedelta(seconds=120),
             heartbeat_at=_utcnow() - timedelta(seconds=10),  # recent

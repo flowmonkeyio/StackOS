@@ -41,14 +41,9 @@ PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 #   this endpoint. The HostHeaderMiddleware (loopback-only) and CORSMiddleware
 #   (same-origin) form the upstream guard. Trade-off documented in
 #   ``docs/security.md`` and in ``content_stack/api/auth.py``.
-# - ``/api/v1/integrations/gsc/oauth/callback``: Google redirects the
-#   operator's browser back to this local callback and cannot attach the
-#   JavaScript-held bearer token. The route validates the OAuth ``state``
-#   nonce before exchanging the code.
 WHITELIST_PREFIXES: tuple[str, ...] = (
     "/api/v1/health",
     "/api/v1/auth/ui-token",
-    "/api/v1/integrations/gsc/oauth/callback",
 )
 
 _TOKEN_BYTES = 32
@@ -110,7 +105,7 @@ def ensure_token(token_path: Path) -> str:
 def derive_ui_token(token: str) -> str:
     """Derive the browser's read-only bearer token from the daemon token.
 
-    The daemon token remains the write-capable agent/MCP token stored on disk.
+    The daemon token remains the write-capable local-admin token stored on disk.
     The derived UI token is what ``/api/v1/auth/ui-token`` returns; middleware
     accepts it only for safe REST reads.
     """
@@ -135,11 +130,6 @@ def requires_auth(path: str) -> bool:
     return False
 
 
-def is_whitelisted(path: str) -> bool:
-    """Backwards-compat alias retained for any test that still imports it."""
-    return not requires_auth(path)
-
-
 def _allows_ui_read(path: str, method: str) -> bool:
     """Return True when a UI token may read this request."""
     if method.upper() not in _UI_SAFE_METHODS:
@@ -150,11 +140,13 @@ def _allows_ui_read(path: str, method: str) -> bool:
 class BearerTokenMiddleware(BaseHTTPMiddleware):
     """Reject requests whose bearer token does not match an allowed scope.
 
-    The daemon token is write-capable and intended for agent/MCP clients. The
-    UI token is read-only, REST-only, and accepted only for safe methods. Token
-    values are supplied at construction time so middleware setup never re-reads
-    the file at request time. Token rotation requires a daemon restart, which
-    matches the spec (rotation runs via `make install`).
+    The daemon token is write-capable local-admin authority used by REST callers
+    and the local MCP bridge process. The bridge does not reveal that token to
+    agents; agent workflow execution is gated inside MCP by run-plan grants.
+    The UI token is read-only, REST-only, and accepted only for safe methods.
+    Token values are supplied at construction time so middleware setup never
+    re-reads the file at request time. Token rotation requires a daemon restart,
+    which matches the spec (rotation runs via `make install`).
     """
 
     def __init__(self, app: object, *, token: str, ui_token: str | None = None) -> None:
@@ -180,13 +172,13 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
                 headers={"www-authenticate": 'Bearer realm="content-stack"'},
             )
         if secrets.compare_digest(value, self._token):
-            request.state.auth_scope = "agent"
+            request.state.auth_scope = "daemon-admin"
             return await call_next(request)
 
         if secrets.compare_digest(value, self._ui_token):
             if not _allows_ui_read(request.url.path, request.method):
                 return JSONResponse(
-                    {"detail": "UI token is read-only; use the agent token for mutations"},
+                    {"detail": "UI token is read-only; use the daemon token for mutations"},
                     status_code=403,
                 )
             request.state.auth_scope = "ui-read-only"

@@ -25,7 +25,7 @@ def test_first_call_creates_key(session: Session, project_id: int) -> None:
     rid = _make_run(session, project_id)
     out, created = repo.check_or_create(
         project_id=project_id,
-        tool_name="article.create",
+        tool_name="resource.upsert",
         idempotency_key="abc-123",
         run_id=rid,
     )
@@ -40,7 +40,7 @@ def test_replay_within_24h_raises(session: Session, project_id: int) -> None:
     rid2 = _make_run(session, project_id)
     repo.check_or_create(
         project_id=project_id,
-        tool_name="article.create",
+        tool_name="resource.upsert",
         idempotency_key="dup-key",
         run_id=rid,
         response_json={"id": 1},
@@ -48,7 +48,7 @@ def test_replay_within_24h_raises(session: Session, project_id: int) -> None:
     with pytest.raises(IdempotencyReplayError) as exc_info:
         repo.check_or_create(
             project_id=project_id,
-            tool_name="article.create",
+            tool_name="resource.upsert",
             idempotency_key="dup-key",
             run_id=rid2,
         )
@@ -62,7 +62,7 @@ def test_stale_key_treated_fresh(session: Session, project_id: int) -> None:
     rid = _make_run(session, project_id)
     repo.check_or_create(
         project_id=project_id,
-        tool_name="article.create",
+        tool_name="resource.upsert",
         idempotency_key="stale-key",
         run_id=rid,
     )
@@ -83,7 +83,7 @@ def test_stale_key_treated_fresh(session: Session, project_id: int) -> None:
     rid2 = _make_run(session, project_id)
     _, created = repo.check_or_create(
         project_id=project_id,
-        tool_name="article.create",
+        tool_name="resource.upsert",
         idempotency_key="stale-key",
         run_id=rid2,
     )
@@ -96,13 +96,13 @@ def test_different_tool_name_does_not_collide(session: Session, project_id: int)
     rid2 = _make_run(session, project_id)
     repo.check_or_create(
         project_id=project_id,
-        tool_name="article.create",
+        tool_name="resource.upsert",
         idempotency_key="same-key",
         run_id=rid,
     )
     _, created = repo.check_or_create(
         project_id=project_id,
-        tool_name="topic.create",
+        tool_name="action.execute",
         idempotency_key="same-key",
         run_id=rid2,
     )

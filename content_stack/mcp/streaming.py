@@ -1,11 +1,8 @@
 """Progress-event helper for streaming MCP tools per audit M-21.
 
-Per PLAN.md L731-L738 four tools stream interim progress to the caller:
-
-- ``procedure.run`` — emits one event per declared step (M8 wiring).
-- ``topic.bulkCreate`` (when N>50) — emits every 50 inserts.
-- ``gsc.bulkIngest`` — emits every 1000 rows.
-- ``interlink.suggest`` — emits every batch of 10 suggestions.
+Some bulk tools stream interim progress to the caller, for example resource
+imports, artifact ingestion, or connector calls that process many provider
+objects.
 
 The MCP SDK's lowlevel ``Server`` owns the wire transport; tool handlers
 get a ``ServerSession`` reference via the ``request_ctx`` ContextVar set

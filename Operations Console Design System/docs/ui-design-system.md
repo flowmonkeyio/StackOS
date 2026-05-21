@@ -2,19 +2,23 @@
 
 The canonical reference. Tokens live in code; rules live here. If you find yourself making a one-off button, you're wrong — extend the primitive instead.
 
+There is no exposed design-system route in the shipped app. The operator UI is
+the reference surface; keep demos and action prototypes out of production
+routes.
+
 ## 1. Product UI principles
 
 1. **Operational, not promotional.** This is admin tooling. Calm > exciting.
 2. **Density is a feature.** Operators scan many rows. 13/18 body, 32px controls.
-3. **Keyboard-first.** Every action reachable with `Tab` + `Enter`/`Space`. Focus rings always visible.
-4. **Predictability over delight.** Same shape, same place, same shortcut, every screen.
-5. **State is information.** Loading, dirty, saved, error, disabled — all explicit, all consistent.
-6. **No surprises.** Destructive actions confirm. Navigation does not. Auto-save is communicated.
+3. **Observer-first.** Product mutations belong to the agent/MCP path. The UI shows state, history, readiness, and artifacts.
+4. **Keyboard-readable.** Every control reachable with `Tab` + `Enter`/`Space`. Focus rings always visible.
+5. **Predictability over delight.** Same shape, same place, same shortcut, every screen.
+6. **State is information.** Loading, empty, stale, error, disabled — all explicit, all consistent.
 
 ## 2. Visual language
 
 - Neutral grayscale base; one blue accent.
-- Status tones used semantically only: emerald (success), amber (warning), red (danger), blue (info), violet (EEAT only).
+- Status tones used semantically only: emerald (success), amber (warning), red (danger), blue (info), and neutral gray.
 - Subtle borders > heavy shadows.
 - 8px max radius. 4px on controls, 6px on cards, 8px on dialogs.
 - Dark mode flips the semantic layer; component CSS does not branch.
@@ -29,7 +33,7 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 | Color · foreground | `fg.strong`, `fg.default`, `fg.muted`, `fg.subtle`, `fg.disabled`, `fg.inverse`, `fg.link`, `fg.onAccent` |
 | Color · border | `border.subtle`, `border.default`, `border.strong`, `border.focus` |
 | Color · accent | `accent.primary`, `accent.primaryHover`, `accent.primarySubtle`, `accent.primaryFg` |
-| Color · status | `success.*`, `warning.*`, `danger.*`, `info.*`, `neutral.*`, `eeat.*` |
+| Color · status | `success.*`, `warning.*`, `danger.*`, `info.*`, `neutral.*` |
 | Spacing | `0–24` (4px grid) |
 | Radius | `xs:2`, `sm:4`, `md:6`, `lg:8`, `full` |
 | Shadow | `xs`, `sm`, `md`, `lg`, `xl` |
@@ -42,19 +46,28 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 ## 4. Layout rules
 
-- Sidebar: 240px, collapsible to 56px.
+- Sidebar: 256px desktop rail.
+- StackOS core navigation is first: Plugins, Capabilities, Connections,
+  Workflow Templates, Runs, Project Data, and Resources. Domain-specific
+  surfaces are plugin contributions or generic resource links, not new top-level
+  product lanes.
 - Top bar: 52px. Sticky. Solid `bg.surface`, no blur.
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
-- Page header: title, slug, description, action cluster (right). Breadcrumbs optional, above title.
+- Page header: title, slug, description, and read-only utility controls (right). Breadcrumbs optional, above title.
 - Tab bar separates the page header from page body. 32px tab height, 2px active underline in `accent.primary`.
 - List pages: filter bar (sticky), table, pagination/footer. Bulk action bar appears on selection, takes filter bar's slot.
 - Detail pages: page header, tab bar, tab content. No nested cards.
+- Buttons in product views are limited to navigation, filtering, refresh/read, copy, and close/view affordances.
+- Workflow UI is generic. Templates, run plans, resources, artifacts, context,
+  action schemas, and plugin nav render through reusable renderers; do not add
+  per-workflow or per-channel pages for campaign creation, content production, or
+  provider-specific steps.
 
 ## 5. Component usage rules
 
-**UiButton.** Default `secondary`. `primary` only for the page's single dominant action. `danger` only on destructive verbs. Never two `primary`s in one cluster.
+**UiButton.** Default `secondary`. `primary` only for navigation to another observer view or non-mutating local utility. `danger` is not used in product views.
 
-**UiCard.** For real things — projects, articles, runs, integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
+**UiCard.** For real things such as projects, plugins, runs, resources, and integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
 
 **UiDialog.** Header / body / footer. Footer right-aligned, ghost cancel + primary confirm. Trap focus. `Esc` closes unless `dirty`.
 
@@ -70,6 +83,14 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 **Tables.** Compact density (32px row), comfortable for editor density (40px row). Never auto-wrap; use `truncate` + tooltip on overflow. Sticky header. Selection column: 32px.
 
+**StackOS renderers.** `TemplateRenderer`, `RunPlanRenderer`,
+`ResourceViewRenderer`, `ArtifactRenderer`, `ContextQueryRenderer`,
+`ActionSchemaRenderer`, and `PluginNavRenderer` render server-sanitized payloads
+only. They may format, group, filter by explicit ids, and redact defensively;
+they must not infer workflow meaning, choose providers, mutate data, or expose
+secrets. Opaque refs such as `credential_ref` are displayable; token-like
+fields are not.
+
 ## 6. Accessibility
 
 - WCAG AA contrast for all text (semantic tokens are tuned for this in both modes).
@@ -82,13 +103,12 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 - Tables use `<th scope>`. Sort buttons inside `<th>` with `aria-sort`.
 - Forms: every input has a `<label for>`. Errors linked via `aria-describedby`.
 
-## 7. Responsive behavior
+## 7. Desktop scope
 
-- ≥1280px: full layout, sidebar visible, tables full-width.
-- 1024–1280px: sidebar collapses to 56px icon rail.
-- 768–1024px: sidebar becomes a drawer (`UiSidePanel` from left). Filter bar wraps.
-- <768px: page header stacks (title above actions). Tables go horizontally scrollable in a wrapper. Dialogs go full-screen with safe-area insets.
-- Forms: never inline labels at <768px. Always above-the-input.
+This is a local desktop operator console. Design, QA, and screenshots target the
+desktop viewport used by Playwright (`1280x800`) plus wide desktop inspection
+when a dense table or artifact needs it. Mobile-specific drawers,
+full-screen dialogs, and breakpoint tours are intentionally out of scope.
 
 ## 8. Dark mode
 

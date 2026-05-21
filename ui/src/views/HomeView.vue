@@ -86,8 +86,8 @@ const schedulerLabel = computed<string>(() => {
 <template>
   <UiPageShell>
     <UiPageHeader
-      title="content-stack"
-      description="Agent-driven SEO content pipelines."
+      title="StackOS"
+      description="Agent-driven projects, plugins, run plans, resources, actions, and audit trails."
     />
 
     <UiPanel

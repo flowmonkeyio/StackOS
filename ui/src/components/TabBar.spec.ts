@@ -5,13 +5,13 @@ import TabBar from './TabBar.vue'
 
 const tabs = [
   { key: 'overview', label: 'Overview' },
-  { key: 'voice', label: 'Voice' },
-  { key: 'eeat', label: 'EEAT' },
+  { key: 'context', label: 'Context' },
+  { key: 'runs', label: 'Runs' },
 ]
 
 describe('TabBar', () => {
   it('renders one button per tab and marks the active one with aria-selected', () => {
-    const w = mount(TabBar, { props: { tabs, activeKey: 'voice' } })
+    const w = mount(TabBar, { props: { tabs, activeKey: 'context' } })
     const buttons = w.findAll('button[role="tab"]')
     expect(buttons.length).toBe(3)
     expect(buttons.map((b) => b.attributes('aria-selected'))).toEqual([
@@ -22,15 +22,15 @@ describe('TabBar', () => {
   })
 
   it('emits change with the clicked key when an inactive tab is clicked', async () => {
-    const w = mount(TabBar, { props: { tabs, activeKey: 'voice' } })
+    const w = mount(TabBar, { props: { tabs, activeKey: 'context' } })
     const buttons = w.findAll('button[role="tab"]')
     await buttons[2].trigger('click')
     expect(w.emitted('change')).toBeTruthy()
-    expect(w.emitted('change')![0][0]).toBe('eeat')
+    expect(w.emitted('change')![0][0]).toBe('runs')
   })
 
   it('does not emit change when the already-active tab is clicked', async () => {
-    const w = mount(TabBar, { props: { tabs, activeKey: 'voice' } })
+    const w = mount(TabBar, { props: { tabs, activeKey: 'context' } })
     const buttons = w.findAll('button[role="tab"]')
     await buttons[1].trigger('click')
     expect(w.emitted('change')).toBeFalsy()
@@ -79,7 +79,7 @@ describe('TabBar', () => {
       { key: 'schema', label: 'Schema', group: 'Quality' },
     ]
     const w = mount(TabBar, {
-      props: { tabs: groupedTabs, activeKey: 'draft', ariaLabel: 'Article workflow' },
+      props: { tabs: groupedTabs, activeKey: 'draft', ariaLabel: 'Workflow tabs' },
       attachTo: document.body,
     })
 

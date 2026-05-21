@@ -41,7 +41,7 @@ def test_connect_resolves_by_fingerprint_and_git_remote(session: Session) -> Non
         normalized_repo_name="org/site",
         last_known_root="/tmp/site",
         framework="nuxt",
-        content_model_json={"articles_dir": "content/articles"},
+        content_model_json={"primary_resource": "content-piece"},
     )
 
     by_fingerprint = repo.resolve(repo_fingerprint="git:abc123")
@@ -64,14 +64,14 @@ def test_reconnect_preserves_omitted_detected_profile_fields(session: Session) -
         repo_fingerprint="git:abc123",
         git_remote_url="git@github.com:org/site.git",
         framework="nuxt",
-        content_model_json={"articles_dir": "content/articles"},
+        content_model_json={"primary_resource": "content-piece"},
     )
     second = repo.connect(project_id=project_id, repo_fingerprint="git:abc123")
 
     assert second.data.id == first.data.id
     assert second.data.git_remote_url == "git@github.com:org/site.git"
     assert second.data.framework == "nuxt"
-    assert second.data.content_model_json == {"articles_dir": "content/articles"}
+    assert second.data.content_model_json == {"primary_resource": "content-piece"}
 
 
 def test_update_profile_and_start_session_attach_binding(session: Session) -> None:

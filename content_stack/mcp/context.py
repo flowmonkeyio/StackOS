@@ -63,11 +63,6 @@ class MCPContext:
     - ``skill_name`` — resolved by ``resolve_run_token``; ``__system__``
       for direct REST/UI traffic, ``__test__`` for the test harness.
     - ``session`` — the SQLModel session bound to this request.
-    - ``procedure_runner`` — the daemon-side ``ProcedureRunner``
-      instance (M7+). The dispatcher injects this so handlers can
-      reach the runner without importing app state directly. Optional
-      at the type level so tests that build a context without the
-      runner still construct cleanly; M7 runners assert on it.
     """
 
     session: Session
@@ -80,7 +75,6 @@ class MCPContext:
     skill_name: str = "__system__"
     expected_etag: str | None = None
     extras: dict[str, Any] = field(default_factory=dict)
-    procedure_runner: Any = None  # ProcedureRunner; ``Any`` to avoid an import cycle.
 
     def to_log_dict(self) -> dict[str, Any]:
         """Serialise the context for structlog binding."""

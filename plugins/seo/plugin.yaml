@@ -1,423 +1,128 @@
 slug: seo
 name: SEO
 version: 0.1.0
-description: Compatibility plugin facade for current SEO content operations.
+description: First-party StackOS domain package for SEO resource schemas, provider contracts, and reusable templates.
 source: builtin
 capabilities:
   - key: seo-research
     name: SEO Research
-    description: Keyword, SERP, competitor, and source research surfaces.
+    description: Keyword, SERP, competitor, and source research contracts.
     kind: domain
   - key: seo-content
     name: SEO Content
-    description: Clusters, topics, articles, sources, assets, EEAT, schema, and internal links.
+    description: Content opportunity, brief, content piece, refresh, and link-opportunity records.
     kind: domain
-  - key: seo-publishing
-    name: SEO Publishing
-    description: Publish target metadata and compatibility publish-record tools.
-    kind: domain
-  - key: search-console
-    name: Search Console
-    description: GSC metrics, opportunity discovery, crawl checks, drift, and refresh signals.
+  - key: seo-measurement
+    name: SEO Measurement
+    description: Search performance snapshots, observations, and experiment inputs.
     kind: domain
 providers:
-  - key: stackos-seo-compat
-    name: StackOS SEO Compatibility
-    description: Local compatibility provider for existing SEO tables, routes, and MCP tools.
-    auth_type: local
   - key: dataforseo
     name: DataForSEO
-    description: SERP, keyword volume, and competitor data provider.
+    description: SERP, keyword volume, and competitor research provider.
     auth_type: api-key
   - key: ahrefs
     name: Ahrefs
     description: Organic keyword and backlink research provider.
     auth_type: api-key
-  - key: gsc
-    name: Google Search Console
-    description: Search Console OAuth-backed metrics provider.
-    auth_type: oauth
-  - key: wordpress
-    name: WordPress
-    description: WordPress publishing target.
-    auth_type: api-key
-  - key: ghost
-    name: Ghost
-    description: Ghost publishing target.
-    auth_type: api-key
 actions:
-  - key: cluster.create
-    name: Create Cluster
-    description: Create a topical map cluster through the legacy cluster tool.
-    provider: stackos-seo-compat
+  - key: keyword.research
+    name: Research Keywords
+    description: Collect keyword ideas, volume, and SERP evidence from a configured SEO data provider.
+    provider: dataforseo
     capability: seo-research
-    risk_level: write
+    risk_level: cost
     input_schema: &object_schema
       type: object
       additionalProperties: true
     output_schema: *object_schema
-    config: { legacy_tool: cluster.create }
-  - key: cluster.list
-    name: List Clusters
-    description: List SEO topical map clusters.
-    provider: stackos-seo-compat
+    config:
+      schema_version: stackos.action.v1
+      operation: keyword.research
+      requires_credential: true
+      budget_kind: dataforseo
+      enforce_budget: true
+  - key: serp.analyze
+    name: Analyze SERP
+    description: Fetch and normalize SERP result evidence for an agent-selected query.
+    provider: dataforseo
     capability: seo-research
-    risk_level: read
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: cluster.list }
-  - key: topic.create
-    name: Create Topic
-    description: Create one SEO topic candidate.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: topic.create }
-  - key: topic.bulk-create
-    name: Create Topic Candidates
-    description: Create topic records from agent-selected SEO candidates.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: topic.bulkCreate }
-  - key: topic.list
-    name: List Topics
-    description: List SEO topics and queue state.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: read
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: topic.list }
-  - key: topic.approve
-    name: Approve Topic
-    description: Move a topic into approved SEO work.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: topic.approve }
-  - key: topic.reject
-    name: Reject Topic
-    description: Reject a topic candidate.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: topic.reject }
-  - key: topic.assign-cluster
-    name: Assign Topic Cluster
-    description: Assign one topic to a topical cluster.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: topic.assignCluster }
-  - key: article.create
-    name: Create Article
-    description: Create a compatibility article record.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: article.create }
-  - key: article.bulk-create
-    name: Create Articles
-    description: Create multiple compatibility article records.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: article.bulkCreate }
-  - key: article.list
-    name: List Articles
-    description: List compatibility article records.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: read
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: article.list }
-  - key: article.get
-    name: Get Article
-    description: Fetch one compatibility article record.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: read
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: article.get }
-  - key: article.set-brief
-    name: Set Article Brief
-    description: Store article brief JSON.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: article.setBrief }
-  - key: article.set-outline
-    name: Set Article Outline
-    description: Store article outline Markdown.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: article.setOutline }
-  - key: article.set-draft
-    name: Set Article Draft
-    description: Store or append article draft Markdown.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: article.setDraft }
-  - key: article.set-edited
-    name: Set Edited Article
-    description: Store edited article Markdown.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: article.setEdited }
-  - key: article.mark-published
-    name: Mark Article Published
-    description: Mark an SEO article as published after external publication.
-    provider: stackos-seo-compat
-    capability: seo-publishing
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: article.markPublished }
-  - key: article.mark-refresh-due
-    name: Mark Article Refresh Due
-    description: Mark a published article as due for refresh.
-    provider: stackos-seo-compat
-    capability: search-console
-    risk_level: write
+    risk_level: cost
     input_schema: *object_schema
     output_schema: *object_schema
     config:
-      legacy_tools: [article.markRefreshDue, article.refreshDue]
-  - key: asset.create
-    name: Create Article Asset
-    description: Store an SEO article asset reference.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: asset.create }
-  - key: source.add
-    name: Add Research Source
-    description: Store a research source citation for an article.
-    provider: stackos-seo-compat
+      schema_version: stackos.action.v1
+      operation: serp.analyze
+      requires_credential: true
+      budget_kind: dataforseo
+      enforce_budget: true
+  - key: competitor.keywords
+    name: Competitor Keywords
+    description: Pull competitor organic keyword evidence for agent analysis.
+    provider: ahrefs
     capability: seo-research
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: source.add }
-  - key: schema.set
-    name: Set Article Schema
-    description: Store JSON-LD schema for an article.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: schema.set }
-  - key: publish.record
-    name: Record Publish
-    description: Record an externally completed publish result.
-    provider: stackos-seo-compat
-    capability: seo-publishing
-    risk_level: write
+    risk_level: cost
     input_schema: *object_schema
     output_schema: *object_schema
     config:
-      legacy_tools: [publish.recordPublish, publish.recordExternal]
-  - key: interlink.suggest
-    name: Suggest Internal Links
-    description: Store internal link suggestions for human review.
-    provider: stackos-seo-compat
-    capability: seo-content
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: interlink.suggest }
-  - key: gsc.query-project
-    name: Query Project GSC Metrics
-    description: Read Search Console metrics for a project.
-    provider: gsc
-    capability: search-console
-    risk_level: read
+      schema_version: stackos.action.v1
+      operation: competitor.keywords
+      requires_credential: true
+      budget_kind: ahrefs
+      enforce_budget: true
+  - key: backlink.research
+    name: Backlink Research
+    description: Pull backlink evidence for an agent-defined SEO investigation.
+    provider: ahrefs
+    capability: seo-research
+    risk_level: cost
     input_schema: *object_schema
     output_schema: *object_schema
     config:
-      legacy_tools: [gsc.queryProject, gsc.searchAnalytics]
-  - key: gsc.inspect-url
-    name: Inspect URL
-    description: Inspect one URL through the Search Console URL Inspection API.
-    provider: gsc
-    capability: search-console
-    risk_level: read
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: gsc.inspectUrl }
-  - key: drift.snapshot
-    name: Snapshot Drift Baseline
-    description: Store a drift baseline for an article.
-    provider: stackos-seo-compat
-    capability: search-console
-    risk_level: write
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: drift.snapshot }
-  - key: sitemap.fetch
-    name: Fetch Sitemap
-    description: Fetch and normalize URLs from a sitemap.
-    provider: stackos-seo-compat
-    capability: seo-research
-    risk_level: read
-    input_schema: *object_schema
-    output_schema: *object_schema
-    config: { legacy_tool: sitemap.fetch }
+      schema_version: stackos.action.v1
+      operation: backlink.research
+      requires_credential: true
+      budget_kind: ahrefs
+      enforce_budget: true
 resources:
-  - key: cluster
-    name: Cluster
-    description: Compatibility schema for SEO topical map clusters.
+  - key: keyword-opportunity
+    name: Keyword Opportunity
+    description: Agent-curated keyword or query opportunity with evidence and priority metadata.
     schema: *object_schema
-  - key: topic
-    name: Topic
-    description: Compatibility schema for SEO topic candidates.
+  - key: serp-snapshot
+    name: SERP Snapshot
+    description: Normalized SERP evidence captured for later comparison or brief creation.
     schema: *object_schema
-  - key: article
-    name: Article
-    description: Compatibility schema for SEO article records.
+  - key: content-brief
+    name: Content Brief
+    description: Reusable content brief contract created by an agent.
     schema: *object_schema
-  - key: article-version
-    name: Article Version
-    description: Compatibility schema for article snapshots.
+  - key: content-piece
+    name: Content Piece
+    description: SEO content work item, draft pointer, ownership metadata, or refresh state.
     schema: *object_schema
-  - key: research-source
-    name: Research Source
-    description: Compatibility schema for article research sources.
+  - key: content-refresh
+    name: Content Refresh
+    description: Refresh opportunity, diagnosis, action taken, and observed result.
     schema: *object_schema
-  - key: article-asset
-    name: Article Asset
-    description: Compatibility schema for article image and media assets.
-    schema:
-      type: object
-      additionalProperties: true
-      properties:
-        uri: { type: string }
-        kind: { type: string }
-        metadata: { type: object, additionalProperties: true }
-      required: [uri]
-  - key: schema-emit
-    name: Schema Emit
-    description: Compatibility schema for JSON-LD schema rows.
+  - key: link-opportunity
+    name: Link Opportunity
+    description: Internal or external link opportunity with rationale and status.
     schema: *object_schema
-  - key: internal-link
-    name: Internal Link
-    description: Compatibility schema for internal link suggestions and applications.
-    schema: *object_schema
-  - key: publish-target
-    name: Publish Target
-    description: Compatibility schema for SEO publishing targets.
-    schema: *object_schema
-  - key: article-publish
-    name: Article Publish
-    description: Compatibility schema for publish audit rows.
-    schema: *object_schema
-  - key: gsc-metric
-    name: GSC Metric
-    description: Compatibility schema for raw Search Console metrics.
-    schema: *object_schema
-  - key: gsc-metric-daily
-    name: GSC Daily Metric
-    description: Compatibility schema for daily Search Console rollups.
-    schema: *object_schema
-  - key: drift-baseline
-    name: Drift Baseline
-    description: Compatibility schema for content drift baselines.
-    schema: *object_schema
-  - key: redirect
-    name: Redirect
-    description: Compatibility schema for SEO redirect records.
-    schema: *object_schema
-  - key: author
-    name: Author
-    description: Compatibility schema for SEO author profiles.
-    schema: *object_schema
-  - key: voice-profile
-    name: Voice Profile
-    description: Compatibility schema for SEO/editorial voice setup.
-    schema: *object_schema
-  - key: compliance-rule
-    name: Compliance Rule
-    description: Compatibility schema for SEO/editorial compliance rules.
-    schema: *object_schema
-  - key: eeat-criterion
-    name: EEAT Criterion
-    description: Compatibility schema for SEO EEAT scoring criteria.
+  - key: search-performance-snapshot
+    name: Search Performance Snapshot
+    description: Imported or summarized search-performance metrics for agent analysis.
     schema: *object_schema
 ui:
   nav:
     section: SEO
     items:
-      - key: seo.clusters
-        label: Clusters
-        to: clusters
-      - key: seo.topics
-        label: Topics
-        to: topics
-      - key: seo.articles
-        label: Articles
-        to: articles
+      - key: seo.resources
+        label: SEO Resources
+        to: resources?plugin_slug=seo
         matchPrefix: true
-      - key: seo.procedures
-        label: Legacy Procedures
-        to: procedures
-      - key: seo.interlinks
-        label: Interlinks
-        to: interlinks
-      - key: seo.search-console
-        label: Search Console
-        to: gsc
-      - key: seo.drift
-        label: Drift
-        to: drift
-      - key: seo.voice
-        label: Voice
-        to: voice
-      - key: seo.compliance
-        label: Compliance
-        to: compliance
-      - key: seo.eeat
-        label: EEAT
-        to: eeat
-      - key: seo.publishing
-        label: Publishing
-        to: targets
-      - key: seo.legacy-integrations
-        label: Legacy Integrations
-        to: integrations
+      - key: seo.templates
+        label: SEO Templates
+        to: workflow-templates?plugin_slug=seo
 config:
   schema_version: stackos.plugin.v1
-  compatibility:
-    keeps_legacy_routes: true
-    keeps_legacy_mcp_tools: true
-    physical_code_move_deferred_to: D13

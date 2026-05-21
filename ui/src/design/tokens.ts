@@ -83,7 +83,6 @@ export const palette = {
     800: '#991b1b',
     900: '#7f1d1d',
   },
-  // Reserved for ONE semantic domain (e.g. EEAT). Not a theme color.
   violet: {
     50:  '#f5f3ff',
     100: '#ede9fe',
@@ -140,8 +139,6 @@ export const lightTheme = {
   danger:  { default: palette.red[600],     subtle: palette.red[50],      fg: palette.red[700],     border: palette.red[200]     },
   info:    { default: palette.blue[600],    subtle: palette.blue[50],     fg: palette.blue[700],    border: palette.blue[200]    },
   neutral: { default: palette.slate[600],   subtle: palette.slate[100],   fg: palette.slate[700],   border: palette.slate[200]   },
-  // Reserved — EEAT and similar dedicated domains only.
-  eeat:    { default: palette.violet[600],  subtle: palette.violet[50],   fg: palette.violet[700],  border: palette.violet[200]  },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -186,7 +183,6 @@ export const darkTheme = {
   danger:  { default: palette.red[400],     subtle: 'rgba(239,68,68,0.12)',  fg: palette.red[300],     border: 'rgba(239,68,68,0.30)'  },
   info:    { default: palette.blue[400],    subtle: 'rgba(59,130,246,0.12)', fg: palette.blue[300],    border: 'rgba(59,130,246,0.30)' },
   neutral: { default: palette.slate[400],   subtle: 'rgba(148,163,184,0.10)',fg: palette.slate[300],   border: palette.slate[700]     },
-  eeat:    { default: palette.violet[400],  subtle: 'rgba(139,92,246,0.12)', fg: palette.violet[300],  border: 'rgba(139,92,246,0.30)' },
 } as const;
 
 // ---------------------------------------------------------------------------

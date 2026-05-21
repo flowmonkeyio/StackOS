@@ -10,11 +10,10 @@ UV ?= uv
 
 .PHONY: help install serve dev-ui build-ui register-codex register-claude \
         install-skills-codex install-skills-claude \
-        install-procedures-codex install-procedures-claude \
         install-plugins \
         install-launchd doctor test test-ui-unit test-ui-e2e migrate lint \
         format typecheck gen-types clean uninstall backup restore \
-        rotate-seed rotate-token oauth-refresh
+        rotate-seed rotate-token
 
 help: ## Show this help with all targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -33,9 +32,9 @@ install: ## (M9) Full install pipeline — deps + migrate + UI + plugin + MCP + 
 	  echo "  ui_dist/ missing — running \`make build-ui\` to regenerate"; \
 	  $(MAKE) build-ui; \
 	fi
-	@echo "==> Registering MCP for Codex CLI"
+	@echo "==> Registering bridge MCP for Codex CLI"
 	@bash scripts/register-mcp-codex.sh
-	@echo "==> Registering MCP for Claude Code"
+	@echo "==> Registering bridge MCP for Claude Code"
 	@bash scripts/register-mcp-claude.sh
 	@echo "==> Installing plugins"
 	@bash scripts/install-plugins.sh
@@ -86,10 +85,10 @@ clean: ## (M0) Remove caches and build artifacts (preserves DB at ~/.local/share
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	find . -type d -name '*.egg-info' -prune -exec rm -rf {} +
 
-register-codex: ## (M9) Register MCP server with Codex CLI
+register-codex: ## (M9) Register bridge MCP server with Codex CLI
 	@bash scripts/register-mcp-codex.sh
 
-register-claude: ## (M9) Register MCP server with Claude Code (.mcp.json upsert)
+register-claude: ## (M9) Register bridge MCP server with Claude Code (.mcp.json upsert)
 	@bash scripts/register-mcp-claude.sh
 
 install-skills-codex: ## (M9) Install skills into ~/.codex/skills/content-stack/
@@ -98,30 +97,22 @@ install-skills-codex: ## (M9) Install skills into ~/.codex/skills/content-stack/
 install-skills-claude: ## (M9) Install skills into ~/.claude/skills/content-stack/
 	@bash scripts/install-claude.sh
 
-install-procedures-codex: ## (M9) Install procedures into ~/.codex/procedures/content-stack/
-	@bash scripts/install-procedures-codex.sh
-
-install-procedures-claude: ## (M9) Install procedures into ~/.claude/procedures/content-stack/
-	@bash scripts/install-procedures-claude.sh
-
 install-plugins: ## Install content-stack plugin into ~/.codex/plugins and ~/.agents marketplace
 	@bash scripts/install-plugins.sh
 
 install-launchd: ## (M9) Write launchd plist for auto-start (macOS, optional)
 	@bash scripts/install-launchd.sh
 
-uninstall: ## (M9) Remove installed skills/procedures/MCP entries; preserve DB + seed
+uninstall: ## (M9) Remove installed skills/plugins/MCP entries; preserve DB + seed
 	@echo "==> Booting out launchd job (if loaded)"
 	@bash scripts/install-launchd.sh --uninstall || true
 	@echo "==> Removing skills"
 	@rm -rf "$(HOME)/.codex/skills/content-stack" "$(HOME)/.claude/skills/content-stack"
-	@echo "==> Removing procedures"
-	@rm -rf "$(HOME)/.codex/procedures/content-stack" "$(HOME)/.claude/procedures/content-stack"
 	@echo "==> Removing plugins"
 	@bash scripts/install-plugins.sh --remove || true
-	@echo "==> Unregistering MCP for Codex CLI"
+	@echo "==> Unregistering bridge MCP for Codex CLI"
 	@bash scripts/register-mcp-codex.sh --remove || true
-	@echo "==> Unregistering MCP for Claude Code"
+	@echo "==> Unregistering bridge MCP for Claude Code"
 	@bash scripts/register-mcp-claude.sh --remove || true
 	@echo "==> Note: ~/.local/share/content-stack/ (DB) and ~/.local/state/content-stack/ (seed + token) preserved."
 	@echo "==> uninstall complete"
@@ -134,9 +125,6 @@ restore: ## (M9) Halt daemon, copy backup file over current DB, restart
 
 rotate-seed: ## (M4) Re-encrypt all integration_credentials with a new seed
 	$(PYTHON) -m content_stack rotate-seed --reencrypt
-
-oauth-refresh: ## (M4) Run the GSC OAuth refresh worker once
-	$(PYTHON) -m content_stack.jobs.oauth_refresh --once
 
 rotate-token: ## (M10) Generate new auth token and update MCP configs
 	$(PYTHON) -m content_stack rotate-token --yes

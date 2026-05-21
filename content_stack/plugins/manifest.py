@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 _KEY_RE = re.compile(r"^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$")
 
@@ -23,7 +23,7 @@ def _validate_key(value: str) -> str:
 class CapabilityManifest(BaseModel):
     """Capability metadata contributed by a plugin."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     key: str = Field(min_length=1, max_length=160)
     name: str = Field(min_length=1, max_length=200)
@@ -89,7 +89,11 @@ class ResourceManifest(BaseModel):
     key: str = Field(min_length=1, max_length=160)
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
-    schema: dict[str, Any] = Field(default_factory=dict)
+    schema_data: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("schema", "schema_data"),
+        serialization_alias="schema",
+    )
     ui_schema: dict[str, Any] | None = None
     config: dict[str, Any] | None = None
 
@@ -242,19 +246,19 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 key="project-note",
                 name="Project Note",
                 description="Domain-neutral project record for agent-visible context.",
-                schema=_TEXT_RECORD_SCHEMA,
+                schema_data=_TEXT_RECORD_SCHEMA,
             ),
             ResourceManifest(
                 key="learning",
                 name="Learning",
                 description="Durable observation or lesson derived from prior work.",
-                schema=_TEXT_RECORD_SCHEMA,
+                schema_data=_TEXT_RECORD_SCHEMA,
             ),
             ResourceManifest(
                 key="experiment",
                 name="Experiment",
                 description="Experiment definition or result summary owned by the project.",
-                schema=_OBJECT_SCHEMA,
+                schema_data=_OBJECT_SCHEMA,
             ),
         ],
     ),
@@ -355,13 +359,13 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 key="generated-image",
                 name="Generated Image",
                 description="Generated image artifact metadata reusable by any workflow.",
-                schema=_ARTIFACT_RESOURCE_SCHEMA,
+                schema_data=_ARTIFACT_RESOURCE_SCHEMA,
             ),
             ResourceManifest(
                 key="web-document",
                 name="Web Document",
                 description="Retrieved or normalized web document metadata.",
-                schema=_OBJECT_SCHEMA,
+                schema_data=_OBJECT_SCHEMA,
             ),
         ],
     ),

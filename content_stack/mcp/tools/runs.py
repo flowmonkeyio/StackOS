@@ -1,26 +1,7 @@
-"""``run.*`` and ``procedure.*`` tools.
+"""``run.*`` tools.
 
 Exposes the audit-trail layer (``RunRepository`` + ``RunStepRepository``
-+ ``RunStepCallRepository`` + ``ProcedureRunStepRepository``) plus the
-procedure-orchestration seam.
-
-The primary procedure surface is agent-led. ``procedure.run`` opens the
-durable run + step skeleton, then the current MCP client calls
-``procedure.claimStep`` / executes the step itself / ``procedure.recordStep``.
-The daemon does not spawn hidden writer sessions for MCP callers.
-
-M8: ``run.resume`` / ``run.fork`` now route through the runner the same
-way the ``procedure.*`` variants do. The two pairs are subtly different:
-
-- ``procedure.resume`` / ``procedure.fork`` use the procedure-step
-  index (an integer step position).
-- ``run.resume`` / ``run.fork`` use a **named step id** because the
-  RunRepository view is per-skill (``run_steps``) rather than
-  per-procedure-step (``procedure_run_steps``). For consistency with
-  M8 behaviour we map ``run.fork(from_step=<step_id>)`` to the
-  procedure-step index, then use the same fork path as
-  ``procedure.fork``. ``run.resume`` resolves to the procedure-resume
-  path.
++ ``RunStepCallRepository``).
 """
 
 from __future__ import annotations
@@ -28,23 +9,16 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-from content_stack.db.models import ProcedureRunStepStatus, RunKind, RunStatus
+from content_stack.db.models import RunKind, RunStatus
 from content_stack.mcp.context import MCPContext
-from content_stack.mcp.contract import MCPInput, MCPOutput, WriteEnvelope
+from content_stack.mcp.contract import MCPInput, WriteEnvelope
 from content_stack.mcp.permissions import INVALID_SKILL, SYSTEM_SKILL, TEST_SKILL
 from content_stack.mcp.server import ToolRegistry, ToolSpec
 from content_stack.mcp.streaming import ProgressEmitter
-from content_stack.procedures.runner import ProcedureRunner
-from content_stack.repositories.base import (
-    NotFoundError,
-    Page,
-    ValidationError,
-)
+from content_stack.repositories.base import Page, ValidationError
 from content_stack.repositories.runs import (
-    ProcedureRunStepOut,
-    ProcedureRunStepRepository,
     RunOut,
     RunRepository,
     RunStepCallOut,
@@ -72,8 +46,8 @@ class RunStartInput(MCPInput):
         json_schema_extra={
             "example": {
                 "project_id": 1,
-                "kind": "procedure",
-                "procedure_slug": "topic-to-published",
+                "kind": "skill-run",
+                "metadata_json": {"stackos_type": "manual-run"},
             }
         },
     )
@@ -81,7 +55,6 @@ class RunStartInput(MCPInput):
     project_id: int | None = None
     kind: RunKind
     parent_run_id: int | None = None
-    procedure_slug: str | None = None
     skill_name: str | None = None
     metadata_json: dict[str, Any] | None = None
 
@@ -167,32 +140,6 @@ class RunCostInput(MCPInput):
     month: str | None = None
 
 
-class RunResumeInput(MCPInput):
-    """Resume a paused procedure run via the runner (M8)."""
-
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_id": 1}})
-
-    run_id: int
-
-
-class RunForkInput(MCPInput):
-    """Fork a procedure run from a named step (M8).
-
-    ``from_step`` names a procedure step id (matches
-    ``procedure_run_steps.step_id``). The runner resolves it to the step
-    index and opens a fork — same path as ``procedure.fork`` but
-    keyed by step id rather than index for the per-skill
-    audit-trail surface.
-    """
-
-    model_config = ConfigDict(
-        extra="forbid", json_schema_extra={"example": {"run_id": 1, "from_step": "editor"}}
-    )
-
-    run_id: int
-    from_step: str
-
-
 # ---------------------------------------------------------------------------
 # run.* handlers.
 # ---------------------------------------------------------------------------
@@ -227,7 +174,6 @@ async def _run_start(
         project_id=inp.project_id,
         kind=inp.kind,
         parent_run_id=inp.parent_run_id,
-        procedure_slug=inp.procedure_slug,
         client_session_id=token,
         metadata_json=metadata if metadata else None,
     )
@@ -286,55 +232,13 @@ async def _run_cost(inp: RunCostInput, ctx: MCPContext, _emit: ProgressEmitter) 
     return RunRepository(ctx.session).cost(inp.project_id, month=inp.month)
 
 
-async def _run_resume(
-    inp: RunResumeInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[RunOut]:
-    """Resume a procedure run without executing hidden writer work."""
-    runner = _resolve_runner(ctx)
-    envelope = await runner.resume(run_id=inp.run_id)
-    run = RunRepository(ctx.session).get(envelope["run_id"])
-    return WriteEnvelope[RunOut](
-        data=run, run_id=envelope["run_id"], project_id=envelope["project_id"]
-    )
-
-
-async def _run_fork(
-    inp: RunForkInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[RunOut]:
-    """Fork a caller-managed procedure run from a named step."""
-    runner = _resolve_runner(ctx)
-    # Resolve the named step to an index in the procedure's spec.
-    step_repo = ProcedureRunStepRepository(ctx.session)
-    steps = step_repo.list_steps(inp.run_id)
-    if not steps:
-        raise NotFoundError(
-            f"run {inp.run_id} has no procedure steps recorded",
-            data={"run_id": inp.run_id},
-        )
-    target_idx = next((s.step_index for s in steps if s.step_id == inp.from_step), None)
-    if target_idx is None:
-        raise NotFoundError(
-            f"step {inp.from_step!r} not found on run {inp.run_id}",
-            data={
-                "run_id": inp.run_id,
-                "from_step": inp.from_step,
-                "known_step_ids": [s.step_id for s in steps],
-            },
-        )
-    envelope = await runner.fork(run_id=inp.run_id, from_step_index=target_idx)
-    run = RunRepository(ctx.session).get(envelope["run_id"])
-    return WriteEnvelope[RunOut](
-        data=run, run_id=envelope["run_id"], project_id=envelope["project_id"]
-    )
-
-
 # ---------------------------------------------------------------------------
 # Run-step audit-grain tools.
 # ---------------------------------------------------------------------------
 
 
 class RunStepInsertInput(MCPInput):
-    """Insert a ``run_steps`` row — M8 procedure runner uses this."""
+    """Insert a ``run_steps`` row for run-plan or skill-level audit detail."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -359,7 +263,8 @@ class RunStepCallRecordInput(MCPInput):
     """Record a per-MCP-tool call inside a run step."""
 
     model_config = ConfigDict(
-        extra="forbid", json_schema_extra={"example": {"run_step_id": 1, "mcp_tool": "article.get"}}
+        extra="forbid",
+        json_schema_extra={"example": {"run_step_id": 1, "mcp_tool": "resource.get"}},
     )
 
     run_step_id: int
@@ -421,327 +326,12 @@ async def _run_step_call_list(
 
 
 # ---------------------------------------------------------------------------
-# procedure.* tools.
-# ---------------------------------------------------------------------------
-
-
-class ProcedureListInput(MCPInput):
-    """List registered procedure slugs."""
-
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {}})
-
-
-class ProcedureRunInput(MCPInput):
-    """Start a caller-managed procedure run.
-
-    The daemon pre-writes a ``runs`` row + the procedure's
-    ``procedure_run_steps`` skeleton and returns
-    ``{run_id, run_token, status_url}``. The current agent then claims
-    each step, follows the returned skill prompt, calls tools directly,
-    and records the step result.
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {"slug": "04-topic-to-published", "project_id": 1, "args": {"topic_id": 1}}
-        },
-    )
-
-    slug: str
-    project_id: int
-    # ``Field(default_factory=dict)`` avoids the mutable-default class-attribute
-    # pitfall (RUF012) while still letting the JSON wire shape default to {}.
-    args: dict[str, Any] = Field(default_factory=dict)
-    parent_run_id: int | None = None
-    variant: str | None = None
-
-
-class ProcedureRunOutput(BaseModel):
-    """Wire shape for ``procedure.run``."""
-
-    run_id: int
-    run_token: str
-    status_url: str
-    slug: str
-    project_id: int
-    started: bool
-    orchestration_mode: str = "agent-led"
-
-
-class ProcedureStatusInput(MCPInput):
-    """Read the procedure-step rows for a given run."""
-
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_id": 1}})
-
-    run_id: int
-
-
-class ProcedureStatusOutput(MCPOutput):
-    """Wire shape for ``procedure.status``."""
-
-    run: RunOut
-    steps: list[ProcedureRunStepOut]
-
-
-class ProcedureResumeInput(MCPInput):
-    """Resume an aborted / paused procedure run from the next pending step."""
-
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_id": 1}})
-
-    run_id: int
-
-
-class ProcedureForkInput(MCPInput):
-    """Fork a procedure run from a step index, copying prior outputs.
-
-    Forking is the canonical "redo from step N onward" pattern — used
-    by the content-refresher chain to roll a published article back
-    through the editor + EEAT-gate + publish steps without losing the
-    versions baked into the source run's audit trail.
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"run_id": 1, "from_step_index": 5}},
-    )
-
-    run_id: int
-    from_step_index: int
-
-
-class ProcedureCurrentStepInput(MCPInput):
-    """Return the current agent-managed procedure step package."""
-
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_id": 1}})
-
-    run_id: int
-
-
-class ProcedureClaimStepInput(MCPInput):
-    """Claim the current step and bind the run token to its skill grant."""
-
-    model_config = ConfigDict(
-        extra="forbid", json_schema_extra={"example": {"run_id": 1, "step_id": "outline"}}
-    )
-
-    run_id: int
-    step_id: str | None = None
-
-
-class ProcedureRecordStepInput(MCPInput):
-    """Record the current agent's procedure-step result."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "run_id": 1,
-                "step_id": "outline",
-                "status": "success",
-                "output_json": {"outline_id": 12},
-            }
-        },
-    )
-
-    run_id: int
-    step_id: str
-    status: ProcedureRunStepStatus
-    output_json: dict[str, Any] | None = None
-    error: str | None = None
-
-
-class ProcedureExecuteProgrammaticStepInput(MCPInput):
-    """Execute the current deterministic ``_programmatic/*`` step."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"run_id": 1, "step_id": "generate-topic-plan"}},
-    )
-
-    run_id: int
-    step_id: str | None = None
-
-
-class ProcedureStepContextOutput(MCPOutput):
-    """Agent-facing package for the next procedure step."""
-
-    run: RunOut
-    steps: list[ProcedureRunStepOut]
-    run_id: int
-    run_token: str
-    slug: str
-    project_id: int | None
-    orchestration_mode: str
-    procedure_args: dict[str, Any]
-    previous_outputs: dict[str, Any]
-    current_step: dict[str, Any] | None
-    next_action: str
-
-
-def _resolve_runner(ctx: MCPContext) -> ProcedureRunner:
-    """Pull the bound runner off the context, raising a typed error if missing."""
-    runner = ctx.procedure_runner
-    if runner is None:
-        raise ValidationError(
-            "procedure_runner not initialised — daemon lifespan did not run",
-            data={"hint": "this should never happen in production; tests must inject a runner"},
-        )
-    if not isinstance(runner, ProcedureRunner):
-        # Defensive — keeps mypy + tests honest if someone monkey-patches.
-        raise ValidationError(
-            f"procedure_runner is the wrong type: {type(runner).__name__}",
-            data={"hint": "ctx.procedure_runner must be a ProcedureRunner instance"},
-        )
-    return runner
-
-
-async def _procedure_list(
-    _inp: ProcedureListInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> list[str]:
-    """Return the registered procedure slug list.
-
-    M7.A: the runner exposes the slug catalogue; we proxy it.
-    """
-    runner = _resolve_runner(ctx)
-    return runner.list_procedures()
-
-
-async def _procedure_run(
-    inp: ProcedureRunInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[ProcedureRunOutput]:
-    """Open a procedure run for the current agent to manage."""
-    runner = _resolve_runner(ctx)
-    try:
-        envelope = await runner.start(
-            slug=inp.slug,
-            args=inp.args,
-            project_id=inp.project_id,
-            parent_run_id=inp.parent_run_id,
-            variant=inp.variant,
-        )
-    except NotFoundError:
-        raise
-    payload = ProcedureRunOutput(
-        run_id=envelope["run_id"],
-        run_token=envelope["run_token"],
-        status_url=envelope["status_url"],
-        slug=envelope["slug"],
-        project_id=envelope["project_id"],
-        started=envelope["started"],
-    )
-    return WriteEnvelope[ProcedureRunOutput](
-        data=payload, run_id=envelope["run_id"], project_id=envelope["project_id"]
-    )
-
-
-async def _procedure_status(
-    inp: ProcedureStatusInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> ProcedureStatusOutput:
-    """Return the run header + every procedure-step row for a run."""
-    run = RunRepository(ctx.session).get(inp.run_id)
-    steps = ProcedureRunStepRepository(ctx.session).list_steps(inp.run_id)
-    return ProcedureStatusOutput(run=run, steps=steps)
-
-
-async def _procedure_resume(
-    inp: ProcedureResumeInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[ProcedureRunOutput]:
-    """Resume an aborted / paused procedure run."""
-    runner = _resolve_runner(ctx)
-    envelope = await runner.resume(run_id=inp.run_id)
-    payload = ProcedureRunOutput(
-        run_id=envelope["run_id"],
-        run_token=envelope["run_token"],
-        status_url=envelope["status_url"],
-        slug=envelope["slug"],
-        project_id=envelope["project_id"],
-        started=envelope["started"],
-    )
-    return WriteEnvelope[ProcedureRunOutput](
-        data=payload, run_id=envelope["run_id"], project_id=envelope["project_id"]
-    )
-
-
-async def _procedure_fork(
-    inp: ProcedureForkInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[ProcedureRunOutput]:
-    """Fork a procedure run from a step index, copying prior outputs."""
-    runner = _resolve_runner(ctx)
-    envelope = await runner.fork(run_id=inp.run_id, from_step_index=inp.from_step_index)
-    payload = ProcedureRunOutput(
-        run_id=envelope["run_id"],
-        run_token=envelope["run_token"],
-        status_url=envelope["status_url"],
-        slug=envelope["slug"],
-        project_id=envelope["project_id"],
-        started=envelope["started"],
-    )
-    return WriteEnvelope[ProcedureRunOutput](
-        data=payload, run_id=envelope["run_id"], project_id=envelope["project_id"]
-    )
-
-
-async def _procedure_current_step(
-    inp: ProcedureCurrentStepInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> ProcedureStepContextOutput:
-    """Return the next step package without claiming it."""
-    runner = _resolve_runner(ctx)
-    return ProcedureStepContextOutput.model_validate(runner.current_step(run_id=inp.run_id))
-
-
-async def _procedure_claim_step(
-    inp: ProcedureClaimStepInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[ProcedureStepContextOutput]:
-    """Claim the next procedure step for caller-owned execution."""
-    runner = _resolve_runner(ctx)
-    payload = ProcedureStepContextOutput.model_validate(
-        runner.claim_step(run_id=inp.run_id, step_id=inp.step_id)
-    )
-    return WriteEnvelope[ProcedureStepContextOutput](
-        data=payload, run_id=payload.run_id, project_id=payload.project_id
-    )
-
-
-async def _procedure_record_step(
-    inp: ProcedureRecordStepInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[ProcedureStepContextOutput]:
-    """Persist a caller-owned step result and return the next package."""
-    runner = _resolve_runner(ctx)
-    payload = ProcedureStepContextOutput.model_validate(
-        runner.record_step(
-            run_id=inp.run_id,
-            step_id=inp.step_id,
-            status=inp.status,
-            output_json=inp.output_json,
-            error=inp.error,
-        )
-    )
-    return WriteEnvelope[ProcedureStepContextOutput](
-        data=payload, run_id=payload.run_id, project_id=payload.project_id
-    )
-
-
-async def _procedure_execute_programmatic_step(
-    inp: ProcedureExecuteProgrammaticStepInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[ProcedureStepContextOutput]:
-    """Execute a deterministic programmatic step on behalf of the current agent."""
-    runner = _resolve_runner(ctx)
-    payload = ProcedureStepContextOutput.model_validate(
-        await runner.execute_programmatic_step(run_id=inp.run_id, step_id=inp.step_id)
-    )
-    return WriteEnvelope[ProcedureStepContextOutput](
-        data=payload, run_id=payload.run_id, project_id=payload.project_id
-    )
-
-
-# ---------------------------------------------------------------------------
 # Registration.
 # ---------------------------------------------------------------------------
 
 
 def register(registry: ToolRegistry) -> None:
-    """Register every run.* / procedure.* tool."""
+    """Register every run.* tool."""
     # run.*
     registry.register(
         ToolSpec(
@@ -801,25 +391,6 @@ def register(registry: ToolRegistry) -> None:
             _run_cost,
         )
     )
-    registry.register(
-        ToolSpec(
-            "run.resume",
-            "Resume a paused procedure run.",
-            RunResumeInput,
-            WriteEnvelope[RunOut],
-            _run_resume,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "run.fork",
-            "Fork a procedure run from a named step.",
-            RunForkInput,
-            WriteEnvelope[RunOut],
-            _run_fork,
-        )
-    )
-
     # Run-step audit grain.
     registry.register(
         ToolSpec(
@@ -855,92 +426,6 @@ def register(registry: ToolRegistry) -> None:
             RunStepCallListInput,
             list[RunStepCallOut],
             _run_step_call_list,
-        )
-    )
-
-    # procedure.*
-    registry.register(
-        ToolSpec(
-            "procedure.list",
-            "List registered procedure slugs (empty at M3).",
-            ProcedureListInput,
-            list[str],
-            _procedure_list,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="procedure.run",
-            description=(
-                "Open an agent-led procedure run; returns {run_id, run_token, status_url}."
-            ),
-            input_model=ProcedureRunInput,
-            output_model=WriteEnvelope[ProcedureRunOutput],
-            handler=_procedure_run,
-            streaming=True,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "procedure.status",
-            "Read run header + procedure-step rows for a run.",
-            ProcedureStatusInput,
-            ProcedureStatusOutput,
-            _procedure_status,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "procedure.resume",
-            "Resume an aborted/paused procedure run from the next pending step.",
-            ProcedureResumeInput,
-            WriteEnvelope[ProcedureRunOutput],
-            _procedure_resume,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "procedure.fork",
-            "Fork a procedure run from a step index, copying prior outputs.",
-            ProcedureForkInput,
-            WriteEnvelope[ProcedureRunOutput],
-            _procedure_fork,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "procedure.currentStep",
-            "Return the next agent-led procedure step package without claiming it.",
-            ProcedureCurrentStepInput,
-            ProcedureStepContextOutput,
-            _procedure_current_step,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "procedure.claimStep",
-            "Claim the next procedure step and bind the run token to its skill grant.",
-            ProcedureClaimStepInput,
-            WriteEnvelope[ProcedureStepContextOutput],
-            _procedure_claim_step,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "procedure.recordStep",
-            "Record the current agent's step result and return the next step package.",
-            ProcedureRecordStepInput,
-            WriteEnvelope[ProcedureStepContextOutput],
-            _procedure_record_step,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "procedure.executeProgrammaticStep",
-            "Execute the current deterministic _programmatic/* step.",
-            ProcedureExecuteProgrammaticStepInput,
-            WriteEnvelope[ProcedureStepContextOutput],
-            _procedure_execute_programmatic_step,
         )
     )
 

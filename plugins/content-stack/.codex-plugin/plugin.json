@@ -1,26 +1,26 @@
 {
   "name": "content-stack",
   "version": "0.1.0",
-  "description": "Repo-agnostic SEO content operations for Codex, backed by the local content-stack daemon.",
+  "description": "Repo-agnostic StackOS project, plugin, workflow-template, run-plan, and action runtime for Codex.",
   "author": {
     "name": "content-stack",
     "url": "https://github.com/flowmonkey-io/content-stack"
   },
   "repository": "https://github.com/flowmonkey-io/content-stack",
   "license": "project-internal",
-  "keywords": ["seo", "content", "mcp", "publishing"],
+  "keywords": ["stackos", "plugins", "mcp", "workflow", "automation"],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "content-stack",
-    "shortDescription": "Manage SEO content pipelines from any website repo.",
-    "longDescription": "Run content-stack procedures from the current repository while the singleton local daemon owns projects, credentials, runs, and publishing audit trails.",
+    "shortDescription": "Manage StackOS projects and plugin run plans from any repo.",
+    "longDescription": "Use the local StackOS daemon for projects, plugin catalogs, credentials, reusable workflow templates, run plans, resources, actions, and audit trails.",
     "developerName": "content-stack",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
     "defaultPrompt": [
-      "Use content-stack to connect this repository to a project.",
-      "Use content-stack to run the next SEO content procedure from this repo."
+      "Use StackOS to connect this repository to a project.",
+      "Use StackOS workflow templates and run plans for the next project task."
     ],
     "brandColor": "#2563EB"
   }

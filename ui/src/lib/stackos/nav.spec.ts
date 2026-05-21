@@ -1,16 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { SchemaPluginOut } from '@/api'
-import {
-  compatibilityNavSection,
-  coreNavSections,
-  pluginContributionSections,
-} from './nav'
+import { coreNavSections, pluginContributionSections } from './nav'
 
 describe('StackOS nav contributions', () => {
-  it('keeps generic core nav separate from compatibility nav', () => {
+  it('keeps generic core nav focused on StackOS primitives', () => {
     const core = coreNavSections(7)
-    const compatibility = compatibilityNavSection(7)
 
     expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
       '/projects/7/workflow-templates',
@@ -18,7 +13,6 @@ describe('StackOS nav contributions', () => {
     expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
       '/projects/7/resources',
     )
-    expect(compatibility.items).toEqual([])
   })
 
   it('loads plugin nav contributions from sanitized manifest UI metadata', () => {
@@ -69,9 +63,17 @@ describe('StackOS nav contributions', () => {
           nav: {
             section: 'SEO',
             items: [
-              { key: 'seo.articles', label: 'Articles', to: 'articles', matchPrefix: true },
-              { key: 'seo.procedures', label: 'Legacy Procedures', to: 'procedures' },
-              { key: 'seo.eeat', label: 'EEAT', to: 'eeat' },
+              {
+                key: 'seo.resources',
+                label: 'SEO Resources',
+                to: 'resources?plugin_slug=seo',
+                matchPrefix: true,
+              },
+              {
+                key: 'seo.templates',
+                label: 'SEO Templates',
+                to: 'workflow-templates?plugin_slug=seo',
+              },
             ],
           },
         },
@@ -81,9 +83,8 @@ describe('StackOS nav contributions', () => {
     const sections = pluginContributionSections(7, [plugin])
     expect(sections[0].label).toBe('SEO')
     expect(sections[0].items.map((item) => item.to)).toEqual([
-      '/projects/7/articles',
-      '/projects/7/procedures',
-      '/projects/7/eeat',
+      '/projects/7/resources?plugin_slug=seo',
+      '/projects/7/workflow-templates?plugin_slug=seo',
     ])
 
     const disabled = { ...plugin, enabled_for_project: false } as SchemaPluginOut

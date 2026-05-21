@@ -48,7 +48,7 @@ def test_heartbeat_missing_run_is_idempotent(session: Session) -> None:
 
 def test_abort_cascade(session: Session, project_id: int) -> None:
     repo = RunRepository(session)
-    parent = repo.start(project_id=project_id, kind=RunKind.PROCEDURE).data
+    parent = repo.start(project_id=project_id, kind=RunKind.RUN_PLAN).data
     child1 = repo.start(project_id=project_id, kind=RunKind.SKILL_RUN, parent_run_id=parent.id).data
     child2 = repo.start(project_id=project_id, kind=RunKind.SKILL_RUN, parent_run_id=parent.id).data
     grandchild = repo.start(
@@ -81,24 +81,13 @@ def test_reap_stale_orphans(session: Session, project_id: int) -> None:
     assert repo.get(fresh.id).status == RunStatus.RUNNING
 
 
-def test_resume_and_fork_are_m8_stubs(session: Session, project_id: int) -> None:
-    """``run.resume`` / ``run.fork`` defer to M8 jobs/scheduling."""
-    repo = RunRepository(session)
-    env = repo.start(project_id=project_id, kind=RunKind.PROCEDURE).data
-    with pytest.raises(NotImplementedError) as exc1:
-        repo.resume(env.id)
-    assert "M8" in str(exc1.value)
-    with pytest.raises(NotImplementedError):
-        repo.fork(env.id, from_step="x")
-
-
 def test_cost_aggregation(session: Session, project_id: int) -> None:
     """Cost rollup sums run_steps.cost_cents per kind for a month."""
     from content_stack.db.models import RunStep, RunStepStatus
 
     repo = RunRepository(session)
     run_a = repo.start(project_id=project_id, kind=RunKind.SKILL_RUN).data
-    run_b = repo.start(project_id=project_id, kind=RunKind.GSC_PULL).data
+    run_b = repo.start(project_id=project_id, kind=RunKind.ACTION).data
 
     # Insert run_steps with cost.
     step1 = RunStep(
@@ -111,7 +100,7 @@ def test_cost_aggregation(session: Session, project_id: int) -> None:
     step2 = RunStep(
         run_id=run_b.id,
         step_index=0,
-        skill_name="gsc",
+        skill_name="action",
         status=RunStepStatus.SUCCESS,
         cost_cents=45,
     )
@@ -123,4 +112,4 @@ def test_cost_aggregation(session: Session, project_id: int) -> None:
     cost = repo.cost(project_id, month=month)
     assert cost["total_cents"] == 165
     assert cost["by_kind_cents"][RunKind.SKILL_RUN.value] == 120
-    assert cost["by_kind_cents"][RunKind.GSC_PULL.value] == 45
+    assert cost["by_kind_cents"][RunKind.ACTION.value] == 45

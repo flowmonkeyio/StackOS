@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "content-stack"
 version = "1.0.0"
-description = "Globally-installed Python daemon (FastAPI + SQLite/WAL + MCP Streamable HTTP) plus Vue UI giving any LLM client a stateful CRUD seam over multi-project SEO content pipelines."
+description = "Local StackOS daemon (FastAPI + SQLite/WAL + MCP Streamable HTTP) plus Vue UI for project-scoped tools, plugins, workflow templates, and run plans."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "content-stack contributors" }]
-keywords = ["mcp", "fastapi", "sqlite", "seo", "content", "daemon"]
+keywords = ["mcp", "fastapi", "sqlite", "agents", "plugins", "workflow", "daemon"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -62,21 +62,19 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["content_stack"]
 
-# Per audit P-G4: pipx-mode users get skills, procedures, and plugins bundled in
-# the wheel under `content_stack/_assets/` so the install console
-# script can copy them via `importlib.resources` without needing the
-# repo on disk. The committed `content_stack/ui_dist/` bundle is
-# already inside the package and ships automatically.
+# Pipx-mode users get skills and plugins bundled in the wheel under
+# `content_stack/_assets/` so the install console script can copy them via
+# `importlib.resources` without needing the repo on disk. The committed
+# `content_stack/ui_dist/` bundle is already inside the package and ships
+# automatically.
 [tool.hatch.build.targets.wheel.force-include]
 "skills" = "content_stack/_assets/skills"
-"procedures" = "content_stack/_assets/procedures"
 "plugins" = "content_stack/_assets/plugins"
 
 [tool.hatch.build.targets.sdist]
 include = [
     "content_stack",
     "skills",
-    "procedures",
     "plugins",
     "scripts",
     "Makefile",
@@ -138,18 +136,4 @@ asyncio_mode = "auto"
 addopts = ["-ra", "--strict-markers"]
 markers = [
     "benchmark: marks acceptance benchmarks (audit B-07 100x set_draft, etc.)",
-]
-# `schema_json` is the canonical PLAN.md L361 column name on the
-# `schema_emits` table; SQLModel's parent class exposes a `schema_json`
-# attribute that triggers this benign UserWarning at class-construction time.
-filterwarnings = [
-    "ignore:Field name \"schema_json\" in \"SchemaEmit\" shadows an attribute in parent \"SQLModel\":UserWarning",
-    "ignore:Field name \"schema_json\" in \"SchemaEmitOut\" shadows an attribute in parent \"BaseModel\":UserWarning",
-    "ignore:Field name \"schema_json\" in \"SchemaSetRequest\" shadows an attribute in parent \"BaseModel\":UserWarning",
-    "ignore:Field name \"schema_json\" in \"SchemaSetInput\" shadows an attribute in parent \"MCPInput\":UserWarning",
-    "ignore:Field name \"schema_json\" in \"Resource\" shadows an attribute in parent \"SQLModel\":UserWarning",
-    "ignore:Field name \"schema_json\" in \"ResourceOut\" shadows an attribute in parent \"BaseModel\":UserWarning",
-    "ignore:Field name \"schema\" in \"ResourceManifest\" shadows an attribute in parent \"BaseModel\":UserWarning",
-    "ignore:Field name \"schema_json\" in \"TemplateIOSpec\" shadows an attribute in parent \"BaseModel\":UserWarning",
-    "ignore:Field name \"schema_json\" in \"ResourceContractSpec\" shadows an attribute in parent \"BaseModel\":UserWarning",
 ]

@@ -1,11 +1,10 @@
-"""Per audit P-G4: the wheel must bundle skills, procedures, and plugins.
+"""Per audit P-G4: the wheel must bundle skills and plugins.
 
 A pipx-mode install has no checked-out repo on disk, so
 `content-stack install` resolves assets via `importlib.resources` from
-``content_stack/_assets/skills/``, ``content_stack/_assets/procedures/``,
-and ``content_stack/_assets/plugins/``.
+``content_stack/_assets/skills/`` and ``content_stack/_assets/plugins/``.
 We verify the wheel produced by `python -m build` contains those paths
-with the same skill / procedure counts as the source repo.
+with the same skill counts as the source repo.
 """
 
 from __future__ import annotations
@@ -54,23 +53,6 @@ def test_wheel_includes_assets_skills(built_wheel: Path) -> None:
     ]
     assert len(bundled) == expected, (
         f"wheel has {len(bundled)} SKILL.md files; source has {expected}"
-    )
-
-
-def test_wheel_includes_assets_procedures(built_wheel: Path) -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    # The wheel ships every procedure directory including `_template/`
-    # — the install scripts strip it on copy. We verify the wheel layout
-    # holds the source as-is so pipx-mode users mirror clone-mode.
-    expected = sum(1 for _ in (repo_root / "procedures").rglob("PROCEDURE.md"))
-    names = _wheel_names(built_wheel)
-    bundled = [
-        n
-        for n in names
-        if n.startswith("content_stack/_assets/procedures/") and n.endswith("/PROCEDURE.md")
-    ]
-    assert len(bundled) == expected, (
-        f"wheel has {len(bundled)} PROCEDURE.md files; source has {expected}"
     )
 
 

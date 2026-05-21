@@ -86,12 +86,6 @@ export default {
           fg:      'var(--color-neutral-fg)',
           border:  'var(--color-neutral-border)',
         },
-        eeat: {
-          DEFAULT: 'var(--color-eeat-default)',
-          subtle:  'var(--color-eeat-subtle)',
-          fg:      'var(--color-eeat-fg)',
-          border:  'var(--color-eeat-border)',
-        },
       },
       borderRadius: {
         xs:  '2px',

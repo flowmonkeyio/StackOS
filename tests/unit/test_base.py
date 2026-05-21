@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from content_stack.db.models import (
-    ARTICLE_STATUS_TRANSITIONS,
-    ArticleStatus,
+    RUN_STATUS_TRANSITIONS,
+    RunStatus,
 )
 from content_stack.repositories.base import (
     ConflictError,
@@ -33,28 +33,26 @@ def test_normalise_limit_rejects_zero() -> None:
 
 
 def test_validate_transition_legal() -> None:
-    # briefing → outlined is legal per the M1.A map.
     validate_transition(
-        ArticleStatus.BRIEFING,
-        ArticleStatus.OUTLINED,
-        ARTICLE_STATUS_TRANSITIONS,
-        label="article.status",
+        RunStatus.RUNNING,
+        RunStatus.SUCCESS,
+        RUN_STATUS_TRANSITIONS,
+        label="run.status",
     )
 
 
 def test_validate_transition_illegal_raises() -> None:
     with pytest.raises(ConflictError) as exc_info:
         validate_transition(
-            ArticleStatus.BRIEFING,
-            ArticleStatus.PUBLISHED,
-            ARTICLE_STATUS_TRANSITIONS,
-            label="article.status",
+            RunStatus.SUCCESS,
+            RunStatus.RUNNING,
+            RUN_STATUS_TRANSITIONS,
+            label="run.status",
         )
     assert exc_info.value.code == -32008
-    assert exc_info.value.data["current"] == "briefing"
-    assert exc_info.value.data["attempted"] == "published"
-    # Allowed list should be in the data.
-    assert "outlined" in exc_info.value.data["allowed"]
+    assert exc_info.value.data["current"] == "success"
+    assert exc_info.value.data["attempted"] == "running"
+    assert exc_info.value.data["allowed"] == []
 
 
 def test_envelope_roundtrip() -> None:

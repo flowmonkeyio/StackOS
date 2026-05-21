@@ -2,8 +2,7 @@
 #
 # content-stack plugin installer.
 #
-# Mirrors `plugins/content-stack/` into `${HOME}/.codex/plugins/content-stack/`, hydrates
-# it with the skill/procedure catalog, and upserts a home-local Codex-compatible
+# Mirrors `plugins/content-stack/` into `${HOME}/.codex/plugins/content-stack/` and upserts a home-local Codex plugin
 # marketplace entry at `${HOME}/.agents/plugins/marketplace.json`.
 # This keeps website repositories clean: the plugin is global/user-local, while
 # repo/project binding lives in the content-stack daemon DB.
@@ -34,16 +33,6 @@ if [[ "${ACTION}" == "install" ]]; then
         --exclude '.DS_Store' \
         --exclude '__pycache__' \
         "${REPO_ROOT}/plugins/content-stack/" "${TARGET}/"
-    mkdir -p "${TARGET}/skills/catalog" "${TARGET}/procedures"
-    rsync -a --delete \
-        --exclude '.DS_Store' \
-        --exclude '__pycache__' \
-        "${REPO_ROOT}/skills/" "${TARGET}/skills/catalog/"
-    rsync -a --delete \
-        --exclude '.DS_Store' \
-        --exclude '__pycache__' \
-        --exclude '_template' \
-        "${REPO_ROOT}/procedures/" "${TARGET}/procedures/"
     python3 - "${TARGET}" "${HOME_DIR}" "${PLUGIN_PYTHON}" <<'PYEOF'
 import json
 import os

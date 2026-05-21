@@ -19,11 +19,12 @@ test.describe('project detail — overview tab', () => {
 
     await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
     await expect(page.getByText('overview-project').first()).toBeVisible()
-    await expect(page.getByText('Project identity')).toBeVisible()
     await expect(page.getByText('Overview Project').first()).toBeVisible()
-    await expect(page.getByText('Recent activity')).toBeVisible()
-    await expect(page.getByText('Locale')).toBeVisible()
-    await expect(page.getByText('Niche')).toBeVisible()
+    await expect(page.getByRole('heading', { level: 3, name: 'Recent Runs' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { level: 3, name: 'Latest Resource Records' }),
+    ).toBeVisible()
+    await expect(page.getByText('en-US').first()).toBeVisible()
     errors.assertNone()
   })
 })

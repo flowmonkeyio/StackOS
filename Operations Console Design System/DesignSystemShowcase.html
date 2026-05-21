@@ -1,394 +1,85 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Operations Console — Design System Showcase</title>
+  <title>Operations Console Design System</title>
   <link rel="stylesheet" href="colors_and_type.css" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: ['class', '[data-theme="dark"]'],
-      theme: { extend: {
-        colors: {
-          'bg-app':'var(--color-bg-app)','bg-surface':'var(--color-bg-surface)','bg-surface-alt':'var(--color-bg-surface-alt)','bg-sunken':'var(--color-bg-sunken)','bg-inverse':'var(--color-bg-inverse)',
-          'fg-default':'var(--color-fg-default)','fg-strong':'var(--color-fg-strong)','fg-muted':'var(--color-fg-muted)','fg-subtle':'var(--color-fg-subtle)','fg-disabled':'var(--color-fg-disabled)','fg-inverse':'var(--color-fg-inverse)','fg-link':'var(--color-fg-link)','fg-on-accent':'var(--color-fg-on-accent)',
-          'border-default':'var(--color-border-default)','border-strong':'var(--color-border-strong)','border-subtle':'var(--color-border-subtle)','border-focus':'var(--color-border-focus)',
-          accent:{DEFAULT:'var(--color-accent-primary)',hover:'var(--color-accent-primary-hover)',subtle:'var(--color-accent-primary-subtle)',fg:'var(--color-accent-primary-fg)'},
-          success:{DEFAULT:'var(--color-success-default)',subtle:'var(--color-success-subtle)',fg:'var(--color-success-fg)',border:'var(--color-success-border)'},
-          warning:{DEFAULT:'var(--color-warning-default)',subtle:'var(--color-warning-subtle)',fg:'var(--color-warning-fg)',border:'var(--color-warning-border)'},
-          danger:{DEFAULT:'var(--color-danger-default)',subtle:'var(--color-danger-subtle)',fg:'var(--color-danger-fg)',border:'var(--color-danger-border)'},
-          info:{DEFAULT:'var(--color-info-default)',subtle:'var(--color-info-subtle)',fg:'var(--color-info-fg)',border:'var(--color-info-border)'},
-          neutral:{DEFAULT:'var(--color-neutral-default)',subtle:'var(--color-neutral-subtle)',fg:'var(--color-neutral-fg)',border:'var(--color-neutral-border)'},
-          eeat:{DEFAULT:'var(--color-eeat-default)',subtle:'var(--color-eeat-subtle)',fg:'var(--color-eeat-fg)',border:'var(--color-eeat-border)'},
-        },
-        fontFamily:{sans:['"Inter var"','Inter','system-ui','sans-serif'],mono:['"JetBrains Mono"','SF Mono','Menlo','monospace']},
-        fontSize:{'2xs':['11px','14px'],'xs':['12px','16px'],'sm':['13px','18px'],'base':['14px','20px'],'lg':['16px','24px'],'xl':['20px','28px'],'2xl':['24px','32px'],'3xl':['32px','40px']},
-      } }
-    }
-  </script>
   <style>
-    body{font-feature-settings:'cv11','ss01','ss03';}
-    .focus-ring:focus-visible{outline:2px solid var(--color-border-focus);outline-offset:2px;}
-    .swatch{position:relative;display:flex;flex-direction:column;border-radius:6px;overflow:hidden;border:1px solid var(--color-border-subtle);}
-    .swatch__chip{height:48px;}
-    .swatch__meta{padding:6px 8px;background:var(--color-bg-surface);font-size:11px;line-height:14px;}
-    .swatch__name{font-weight:600;color:var(--color-fg-default);}
-    .swatch__val{font-family:var(--font-mono);color:var(--color-fg-muted);}
-    .grid-checker{background-image:linear-gradient(45deg,#ddd 25%,transparent 25%),linear-gradient(-45deg,#ddd 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ddd 75%),linear-gradient(-45deg,transparent 75%,#ddd 75%);background-size:8px 8px;background-position:0 0,0 4px,4px -4px,-4px 0;}
-    /* mock control styles (visual only) */
-    .ctl{display:inline-flex;align-items:center;justify-content:center;font-weight:500;line-height:1;border-radius:4px;font-size:13px;height:32px;padding:0 12px;gap:8px;border:1px solid var(--color-border-default);background:var(--color-bg-surface);color:var(--color-fg-default);transition:all .12s;cursor:pointer;}
-    .ctl:hover{background:var(--color-bg-surface-alt);border-color:var(--color-border-strong);}
-    .ctl--primary{background:var(--color-accent-primary);border-color:var(--color-accent-primary);color:var(--color-fg-on-accent);}
-    .ctl--primary:hover{background:var(--color-accent-primary-hover);border-color:var(--color-accent-primary-hover);}
-    .ctl--ghost{background:transparent;border-color:transparent;}
-    .ctl--ghost:hover{background:var(--color-bg-surface-alt);}
-    .ctl--danger{background:var(--color-danger-default);border-color:var(--color-danger-default);color:var(--color-fg-on-accent);}
-    .ctl--sm{height:28px;padding:0 10px;font-size:13px;}
-    .ctl--lg{height:40px;padding:0 16px;font-size:14px;}
-    .input{height:32px;padding:0 10px;border:1px solid var(--color-border-default);border-radius:4px;font-size:13px;background:var(--color-bg-surface);color:var(--color-fg-default);width:100%;}
-    .input:focus{outline:2px solid var(--color-border-focus);outline-offset:2px;border-color:var(--color-border-focus);}
-    .input--invalid{border-color:var(--color-danger-default);}
-    .badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 6px;font-size:11px;font-weight:500;border-radius:2px;line-height:1;}
-    .badge--neutral{background:var(--color-neutral-subtle);color:var(--color-neutral-fg);}
-    .badge--info{background:var(--color-info-subtle);color:var(--color-info-fg);}
-    .badge--success{background:var(--color-success-subtle);color:var(--color-success-fg);}
-    .badge--warning{background:var(--color-warning-subtle);color:var(--color-warning-fg);}
-    .badge--danger{background:var(--color-danger-subtle);color:var(--color-danger-fg);}
-    .badge--eeat{background:var(--color-eeat-subtle);color:var(--color-eeat-fg);}
-    .dot{display:inline-block;width:6px;height:6px;border-radius:50%;}
-    table.dt{width:100%;border-collapse:collapse;font-size:13px;}
-    table.dt th{text-align:left;padding:8px 12px;background:var(--color-bg-surface-alt);color:var(--color-fg-subtle);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--color-border-default);}
-    table.dt td{padding:8px 12px;border-bottom:1px solid var(--color-border-subtle);color:var(--color-fg-default);}
-    table.dt tbody tr:hover{background:var(--color-bg-surface-alt);}
-    .card{background:var(--color-bg-surface);border:1px solid var(--color-border-default);border-radius:6px;box-shadow:var(--shadow-xs);}
-    .panel{background:var(--color-bg-surface-alt);border:1px solid var(--color-border-subtle);border-radius:6px;}
-    .pill-tab{display:inline-flex;align-items:center;height:32px;padding:0 12px;font-size:13px;font-weight:500;color:var(--color-fg-muted);border-bottom:2px solid transparent;cursor:pointer;}
-    .pill-tab:hover{color:var(--color-fg-default);}
-    .pill-tab--active{color:var(--color-fg-strong);border-bottom-color:var(--color-accent-primary);}
-    .kbd{display:inline-flex;align-items:center;padding:0 5px;height:18px;font-family:var(--font-mono);font-size:10px;color:var(--color-fg-muted);background:var(--color-bg-sunken);border:1px solid var(--color-border-default);border-bottom-width:2px;border-radius:3px;}
+    body { margin:0; font-family:Inter,system-ui,sans-serif; background:var(--color-bg-app); color:var(--color-fg-default); }
+    main { max-width:1120px; margin:0 auto; padding:32px; display:grid; gap:24px; }
+    section { background:var(--color-bg-surface); border:1px solid var(--color-border-default); border-radius:8px; box-shadow:var(--shadow-xs); padding:20px; }
+    h1 { margin:0; font-size:28px; line-height:36px; color:var(--color-fg-strong); }
+    h2 { margin:0 0 12px; font-size:16px; line-height:24px; color:var(--color-fg-strong); }
+    p { margin:4px 0 0; color:var(--color-fg-muted); font-size:13px; line-height:18px; }
+    .grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+    .card { border:1px solid var(--color-border-subtle); border-radius:6px; padding:12px; background:var(--color-bg-surface); }
+    .label { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--color-fg-subtle); font-weight:600; }
+    .value { font-size:24px; line-height:32px; font-weight:650; font-variant-numeric:tabular-nums; color:var(--color-fg-strong); }
+    .badge { display:inline-flex; align-items:center; gap:6px; height:22px; padding:0 8px; border-radius:3px; font-size:11px; font-weight:600; }
+    .dot { width:6px; height:6px; border-radius:50%; display:inline-block; }
+    .success { background:var(--color-success-subtle); color:var(--color-success-fg); }
+    .warning { background:var(--color-warning-subtle); color:var(--color-warning-fg); }
+    .danger { background:var(--color-danger-subtle); color:var(--color-danger-fg); }
+    .info { background:var(--color-info-subtle); color:var(--color-info-fg); }
+    .neutral { background:var(--color-neutral-subtle); color:var(--color-neutral-fg); }
+    table { width:100%; border-collapse:collapse; font-size:12px; }
+    th { text-align:left; padding:8px 10px; color:var(--color-fg-subtle); border-bottom:1px solid var(--color-border-default); font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
+    td { padding:9px 10px; border-bottom:1px solid var(--color-border-subtle); }
+    .mono { font-family:var(--font-mono); color:var(--color-fg-muted); font-size:11px; }
+    .timeline { display:grid; gap:0; border:1px solid var(--color-border-subtle); border-radius:6px; overflow:hidden; }
+    .step { display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid var(--color-border-subtle); }
+    .step:last-child { border-bottom:0; }
   </style>
 </head>
-<body class="bg-bg-app text-fg-default font-sans">
+<body>
+  <main>
+    <header>
+      <h1>Operations Console Design System</h1>
+      <p>Generic StackOS-style primitives for projects, plugins, runs, resources, actions, integrations, and budgets.</p>
+    </header>
 
-<!-- App shell -->
-<div class="min-h-screen flex flex-col">
-
-  <!-- Top bar -->
-  <header class="h-13 px-4 border-b border-border-subtle bg-bg-surface flex items-center gap-4" style="height:52px">
-    <div class="flex items-center gap-2">
-      <div class="w-6 h-6 rounded bg-accent text-fg-on-accent flex items-center justify-center font-semibold text-xs">O</div>
-      <span class="font-semibold text-fg-strong">ops console</span>
-      <span class="text-fg-disabled">/</span>
-      <button class="ctl ctl--ghost text-sm">acme-content<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
-    </div>
-    <div class="ml-auto flex items-center gap-2">
-      <button class="ctl ctl--ghost ctl--sm" aria-label="Search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Search <span class="kbd">⌘K</span></button>
-      <button id="theme-toggle" class="ctl ctl--sm" aria-label="Toggle theme">
-        <span data-theme-icon="light"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></span>
-      </button>
-    </div>
-  </header>
-
-  <div class="flex-1 max-w-content-wide w-full mx-auto px-6 py-6" style="max-width:1536px">
-
-    <!-- Page header -->
-    <div class="mb-6">
-      <p class="text-xs font-semibold uppercase tracking-widest text-fg-subtle">Design System</p>
-      <h1 class="text-2xl font-semibold text-fg-strong mt-1">Operations Console</h1>
-      <p class="text-sm text-fg-muted mt-1 max-w-prose">Tokens, primitives, and domain components for content-operations admin tooling. Calm, dense, keyboard-first. This page is the canonical visual reference — what's here ships; what's not, doesn't.</p>
-      <div class="mt-4 flex border-b border-border-subtle">
-        <a class="pill-tab pill-tab--active">Foundations</a>
-        <a class="pill-tab">Primitives</a>
-        <a class="pill-tab">Domain</a>
-        <a class="pill-tab">Patterns</a>
+    <section>
+      <h2>Metrics</h2>
+      <div class="grid">
+        <div class="card"><div class="label">Plugins</div><div class="value">7</div><p>enabled</p></div>
+        <div class="card"><div class="label">Runs</div><div class="value">128</div><p>this month</p></div>
+        <div class="card"><div class="label">Resources</div><div class="value">2,041</div><p>stored records</p></div>
+        <div class="card"><div class="label">Budget</div><div class="value">74%</div><p>monthly spend</p></div>
       </div>
-    </div>
+    </section>
 
-    <!-- Sections -->
-    <div class="grid grid-cols-1 gap-8">
+    <section>
+      <h2>Status Tones</h2>
+      <div>
+        <span class="badge success"><span class="dot" style="background:var(--color-success-default)"></span>Succeeded</span>
+        <span class="badge info"><span class="dot" style="background:var(--color-info-default)"></span>Running</span>
+        <span class="badge warning"><span class="dot" style="background:var(--color-warning-default)"></span>Needs review</span>
+        <span class="badge danger"><span class="dot" style="background:var(--color-danger-default)"></span>Failed</span>
+        <span class="badge neutral"><span class="dot" style="background:var(--color-neutral-default)"></span>Queued</span>
+      </div>
+    </section>
 
-      <!-- COLORS -->
-      <section>
-        <h2 class="text-lg font-semibold text-fg-strong">Semantic colors</h2>
-        <p class="text-sm text-fg-muted mt-0.5 mb-3">Components consume these — never raw palette values. Dark mode flips this layer only.</p>
+    <section>
+      <h2>Resource Records</h2>
+      <table>
+        <thead><tr><th>Record</th><th>Plugin</th><th>Status</th><th>Updated</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Keyword opportunity</strong><div class="mono">rec_2k4jd8a</div></td><td>seo</td><td><span class="badge info">Running</span></td><td class="mono">2 min</td></tr>
+          <tr><td><strong>Campaign brief</strong><div class="mono">rec_8a2k91f</div></td><td>media-buying</td><td><span class="badge warning">Needs review</span></td><td class="mono">17 min</td></tr>
+          <tr><td><strong>Learning summary</strong><div class="mono">rec_5ee2e02</div></td><td>core</td><td><span class="badge success">Ready</span></td><td class="mono">3d</td></tr>
+        </tbody>
+      </table>
+    </section>
 
-        <div class="card p-4 mb-3">
-          <p class="text-2xs font-semibold uppercase tracking-wider text-fg-subtle mb-2">Surface & Foreground</p>
-          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-            <div class="swatch"><div class="swatch__chip" style="background:var(--color-bg-app)"></div><div class="swatch__meta"><div class="swatch__name">bg.app</div><div class="swatch__val">page</div></div></div>
-            <div class="swatch"><div class="swatch__chip" style="background:var(--color-bg-surface)"></div><div class="swatch__meta"><div class="swatch__name">bg.surface</div><div class="swatch__val">cards</div></div></div>
-            <div class="swatch"><div class="swatch__chip" style="background:var(--color-bg-surface-alt)"></div><div class="swatch__meta"><div class="swatch__name">bg.surfaceAlt</div><div class="swatch__val">hover/alt rows</div></div></div>
-            <div class="swatch"><div class="swatch__chip" style="background:var(--color-bg-sunken)"></div><div class="swatch__meta"><div class="swatch__name">bg.sunken</div><div class="swatch__val">inputs/wells</div></div></div>
-            <div class="swatch"><div class="swatch__chip" style="background:var(--color-bg-inverse)"></div><div class="swatch__meta"><div class="swatch__name">bg.inverse</div><div class="swatch__val">tooltip</div></div></div>
-            <div class="swatch"><div class="swatch__chip grid-checker" style="background-color:var(--color-bg-overlay);background-blend-mode:multiply"></div><div class="swatch__meta"><div class="swatch__name">bg.overlay</div><div class="swatch__val">scrim</div></div></div>
-          </div>
-        </div>
-
-        <div class="card p-4 mb-3">
-          <p class="text-2xs font-semibold uppercase tracking-wider text-fg-subtle mb-2">Foreground</p>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <div class="swatch"><div class="swatch__chip" style="background:var(--color-bg-surface);color:var(--color-fg-strong);display:flex;align-items:center;justify-content:center;font-weight:600">Strong</div><div class="swatch__meta"><div class="swatch__name">fg.strong</div><div class="swatch__val">titles</div></div></div>
-            <div class="swatch"><div class="swatch__chip" style="background:var(--color-bg-surface);color:var(--color-fg-default);display:flex;align-items:center;justify-content:center">Default</div><div class="swatch__meta"><div class="swatch__name">fg.default</div><div class="swatch__val">body</div></div></div>
-            <div class="swatch"><div class="swatch__chip" style="background:var(--color-bg-surface);color:var(--color-fg-muted);display:flex;align-items:center;justify-content:center">Muted</div><div class="swatch__meta"><div class="swatch__name">fg.muted</div><div class="swatch__val">help</div></div></div>
-            <div class="swatch"><div class="swatch__chip" style="background:var(--color-bg-surface);color:var(--color-fg-subtle);display:flex;align-items:center;justify-content:center">Subtle</div><div class="swatch__meta"><div class="swatch__name">fg.subtle</div><div class="swatch__val">labels</div></div></div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div class="card p-4">
-            <p class="text-2xs font-semibold uppercase tracking-wider text-fg-subtle mb-2">Accent · primary</p>
-            <div class="grid grid-cols-3 gap-1.5">
-              <div class="swatch"><div class="swatch__chip" style="background:var(--color-accent-primary)"></div><div class="swatch__meta"><div class="swatch__val">primary</div></div></div>
-              <div class="swatch"><div class="swatch__chip" style="background:var(--color-accent-primary-hover)"></div><div class="swatch__meta"><div class="swatch__val">hover</div></div></div>
-              <div class="swatch"><div class="swatch__chip" style="background:var(--color-accent-primary-subtle)"></div><div class="swatch__meta"><div class="swatch__val">subtle</div></div></div>
-            </div>
-          </div>
-          <div class="card p-4">
-            <p class="text-2xs font-semibold uppercase tracking-wider text-fg-subtle mb-2">Status tones</p>
-            <div class="flex flex-wrap gap-1.5">
-              <span class="badge badge--success"><span class="dot" style="background:var(--color-success-default)"></span>success</span>
-              <span class="badge badge--warning"><span class="dot" style="background:var(--color-warning-default)"></span>warning</span>
-              <span class="badge badge--danger"><span class="dot" style="background:var(--color-danger-default)"></span>danger</span>
-              <span class="badge badge--info"><span class="dot" style="background:var(--color-info-default)"></span>info</span>
-              <span class="badge badge--neutral"><span class="dot" style="background:var(--color-neutral-default)"></span>neutral</span>
-              <span class="badge badge--eeat"><span class="dot" style="background:var(--color-eeat-default)"></span>eeat (reserved)</span>
-            </div>
-          </div>
-          <div class="card p-4">
-            <p class="text-2xs font-semibold uppercase tracking-wider text-fg-subtle mb-2">Borders</p>
-            <div class="flex flex-col gap-2">
-              <div class="h-6 rounded" style="border:1px solid var(--color-border-subtle)"><span class="text-2xs px-2 text-fg-muted">subtle</span></div>
-              <div class="h-6 rounded" style="border:1px solid var(--color-border-default)"><span class="text-2xs px-2 text-fg-muted">default</span></div>
-              <div class="h-6 rounded" style="border:1px solid var(--color-border-strong)"><span class="text-2xs px-2 text-fg-muted">strong</span></div>
-              <div class="h-6 rounded" style="border:2px solid var(--color-border-focus)"><span class="text-2xs px-2 text-fg-muted">focus</span></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- TYPE -->
-      <section>
-        <h2 class="text-lg font-semibold text-fg-strong">Typography</h2>
-        <p class="text-sm text-fg-muted mt-0.5 mb-3">Inter — body sits at 13px / 18px line-height. Operational density.</p>
-        <div class="card p-5 grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-3">
-          <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-2"><span class="t-display-lg">Display Lg</span><span class="text-2xs font-mono text-fg-subtle">32 / 40 · 600</span></div>
-          <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-2"><span class="t-display-md">Display Md</span><span class="text-2xs font-mono text-fg-subtle">24 / 32 · 600</span></div>
-          <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-2"><span class="t-h1">Heading 1</span><span class="text-2xs font-mono text-fg-subtle">20 / 28 · 600</span></div>
-          <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-2"><span class="t-h2">Heading 2</span><span class="text-2xs font-mono text-fg-subtle">16 / 24 · 600</span></div>
-          <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-2"><span class="t-h3">Heading 3</span><span class="text-2xs font-mono text-fg-subtle">14 / 20 · 600</span></div>
-          <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-2"><span class="t-body-lg">Body Lg — comfortable read</span><span class="text-2xs font-mono text-fg-subtle">14 / 20</span></div>
-          <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-2"><span class="t-body">Body — default for everything dense</span><span class="text-2xs font-mono text-fg-subtle">13 / 18</span></div>
-          <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-2"><span class="t-body-sm">Body Sm — captions, table cells</span><span class="text-2xs font-mono text-fg-subtle">12 / 16</span></div>
-          <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-2"><span class="t-overline">Overline</span><span class="text-2xs font-mono text-fg-subtle">11 · 600 · 0.08em</span></div>
-          <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-2"><span class="t-code">const x = useStatus()</span><span class="text-2xs font-mono text-fg-subtle">JetBrains Mono</span></div>
-        </div>
-      </section>
-
-      <!-- BUTTONS -->
-      <section>
-        <h2 class="text-lg font-semibold text-fg-strong">Buttons</h2>
-        <p class="text-sm text-fg-muted mt-0.5 mb-3">Variants × sizes × states. Loading, disabled, icon-only all supported.</p>
-        <div class="card p-4 flex flex-wrap items-end gap-x-6 gap-y-4">
-          <div class="flex flex-col gap-2"><span class="text-2xs uppercase tracking-wider text-fg-subtle font-semibold">primary</span><div class="flex gap-2"><button class="ctl ctl--primary ctl--sm">Run procedure</button><button class="ctl ctl--primary">Run procedure</button><button class="ctl ctl--primary ctl--lg">Run procedure</button></div></div>
-          <div class="flex flex-col gap-2"><span class="text-2xs uppercase tracking-wider text-fg-subtle font-semibold">secondary</span><div class="flex gap-2"><button class="ctl ctl--sm">Edit</button><button class="ctl">Edit</button><button class="ctl ctl--lg">Edit</button></div></div>
-          <div class="flex flex-col gap-2"><span class="text-2xs uppercase tracking-wider text-fg-subtle font-semibold">ghost</span><div class="flex gap-2"><button class="ctl ctl--ghost ctl--sm">Cancel</button><button class="ctl ctl--ghost">Cancel</button></div></div>
-          <div class="flex flex-col gap-2"><span class="text-2xs uppercase tracking-wider text-fg-subtle font-semibold">danger</span><div class="flex gap-2"><button class="ctl ctl--danger ctl--sm">Delete</button><button class="ctl ctl--danger">Delete</button></div></div>
-          <div class="flex flex-col gap-2"><span class="text-2xs uppercase tracking-wider text-fg-subtle font-semibold">disabled · loading · icon</span><div class="flex gap-2 items-center"><button class="ctl ctl--primary" disabled style="opacity:.5;cursor:not-allowed">Disabled</button><button class="ctl ctl--primary" style="position:relative;padding-left:30px"><svg style="position:absolute;left:10px;animation:spin 1s linear infinite" width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity=".25" stroke-width="3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>Saving</button><button class="ctl" aria-label="Settings" style="width:32px;padding:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button></div></div>
-        </div>
-      </section>
-
-      <!-- FORM -->
-      <section>
-        <h2 class="text-lg font-semibold text-fg-strong">Forms</h2>
-        <p class="text-sm text-fg-muted mt-0.5 mb-3">Calm, deliberate, with consistent label / help / error patterns.</p>
-        <div class="card p-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-          <div class="flex flex-col gap-1.5"><label class="text-xs font-medium text-fg-default">Project name <span class="text-danger">*</span></label><input class="input" value="acme-content" /><p class="text-xs text-fg-muted">Use kebab-case. Cannot be changed after creation.</p></div>
-          <div class="flex flex-col gap-1.5"><label class="text-xs font-medium text-fg-default">Default locale</label><select class="input"><option>en-US</option><option>en-GB</option><option>de-DE</option></select></div>
-          <div class="flex flex-col gap-1.5"><label class="text-xs font-medium text-fg-default">API key <span class="text-danger">*</span></label><div class="input flex items-center pr-1.5" style="padding:0 0 0 10px"><input type="password" value="sk_live_••••••••••••••••" class="flex-1 bg-transparent border-0 outline-none text-fg-default" /><button class="ctl ctl--ghost ctl--sm" aria-label="Reveal"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ctl ctl--ghost ctl--sm" aria-label="Copy"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button></div><p class="text-xs text-fg-muted">Stored encrypted at rest.</p></div>
-          <div class="flex flex-col gap-1.5"><label class="text-xs font-medium text-fg-default">Slug</label><input class="input input--invalid" value="bad slug!" /><p class="text-xs text-danger-fg flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>Slugs may only contain a-z, 0-9, and dashes.</p></div>
-          <div class="flex flex-col gap-1.5 md:col-span-2"><label class="text-xs font-medium text-fg-default">Brief</label><textarea rows="3" class="input" style="height:auto;padding:8px 10px">A weekly cooking column targeting home cooks who want restaurant-quality results without specialty equipment. Voice: warm but precise; never breathless.</textarea></div>
-          <div class="flex items-start gap-2"><input type="checkbox" checked class="mt-0.5" /><div><div class="text-sm">Auto-publish on approval</div><div class="text-xs text-fg-muted">Articles cleared by EEAT and Compliance go live immediately.</div></div></div>
-          <div class="flex items-center gap-2"><span class="text-sm">Drift monitoring</span><button role="switch" aria-checked="true" class="inline-flex items-center w-9 h-5 rounded-full bg-accent border border-accent"><span class="inline-block w-4 h-4 rounded-full bg-bg-surface ml-auto mr-0.5"></span></button><span class="text-2xs text-success-fg uppercase tracking-wider font-semibold">on</span></div>
-        </div>
-      </section>
-
-      <!-- BADGES / STATUS -->
-      <section>
-        <h2 class="text-lg font-semibold text-fg-strong">Status</h2>
-        <p class="text-sm text-fg-muted mt-0.5 mb-3">Domain status strings resolve via <span class="font-mono text-xs">design/status.ts</span>. UI never branches on raw strings.</p>
-        <div class="card p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div><p class="text-2xs font-semibold uppercase tracking-wider text-fg-subtle mb-2">Article</p><div class="flex flex-wrap gap-1.5"><span class="badge badge--neutral">Brief</span><span class="badge badge--info">Outline</span><span class="badge badge--info"><span class="dot" style="background:var(--color-info-default);animation:pulse 1.5s infinite"></span>Drafting</span><span class="badge badge--warning"><span class="dot" style="background:var(--color-warning-default)"></span>In review</span><span class="badge badge--success">Approved</span><span class="badge badge--success">Published</span><span class="badge badge--danger">Failed</span></div></div>
-          <div><p class="text-2xs font-semibold uppercase tracking-wider text-fg-subtle mb-2">Run</p><div class="flex flex-wrap gap-1.5"><span class="badge badge--neutral">Queued</span><span class="badge badge--info"><span class="dot" style="background:var(--color-info-default);animation:pulse 1.5s infinite"></span>Running</span><span class="badge badge--success">Succeeded</span><span class="badge badge--danger">Failed</span><span class="badge badge--warning">Partial</span><span class="badge badge--neutral">Canceled</span></div></div>
-          <div><p class="text-2xs font-semibold uppercase tracking-wider text-fg-subtle mb-2">EEAT verdict</p><div class="flex flex-wrap gap-1.5"><span class="badge badge--neutral">Unevaluated</span><span class="badge badge--danger">Failing</span><span class="badge badge--warning">Marginal</span><span class="badge badge--eeat">Passing</span><span class="badge badge--eeat">Exemplary</span></div></div>
-        </div>
-      </section>
-
-      <!-- CALLOUTS -->
-      <section>
-        <h2 class="text-lg font-semibold text-fg-strong">Callouts</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-          <div class="flex gap-3 rounded-md border p-3" style="background:var(--color-info-subtle);border-color:var(--color-info-border);color:var(--color-info-fg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><div><p class="font-semibold leading-tight">GSC sync delayed</p><p class="text-sm opacity-90 mt-0.5">Last refresh was 4h ago. Numbers may lag actual search performance.</p></div></div>
-          <div class="flex gap-3 rounded-md border p-3" style="background:var(--color-warning-subtle);border-color:var(--color-warning-border);color:var(--color-warning-fg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0 mt-0.5"><path d="M12 2 2 22h20L12 2zM12 9v4M12 17h.01"/></svg><div><p class="font-semibold leading-tight">Budget at 85%</p><p class="text-sm opacity-90 mt-0.5">$425 of $500 monthly cap consumed. Adjust scaling or raise the cap to avoid pause.</p></div></div>
-          <div class="flex gap-3 rounded-md border p-3" style="background:var(--color-danger-subtle);border-color:var(--color-danger-border);color:var(--color-danger-fg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg><div><p class="font-semibold leading-tight">3 publish failures</p><p class="text-sm opacity-90 mt-0.5">CMS rejected articles for missing meta description. Open run details to retry.</p></div></div>
-          <div class="flex gap-3 rounded-md border p-3" style="background:var(--color-success-subtle);border-color:var(--color-success-border);color:var(--color-success-fg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0 mt-0.5"><path d="m5 12 5 5 9-12"/></svg><div><p class="font-semibold leading-tight">Schema valid</p><p class="text-sm opacity-90 mt-0.5">All 24 articles passed schema.org validation against your project profile.</p></div></div>
-        </div>
-      </section>
-
-      <!-- METRICS + DATA TABLE -->
-      <section>
-        <h2 class="text-lg font-semibold text-fg-strong">Patterns · Articles list</h2>
-        <p class="text-sm text-fg-muted mt-0.5 mb-3">Filter bar + table + bulk action — the canonical list layout.</p>
-
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-          <div class="card p-3"><p class="t-overline text-fg-subtle">In production</p><p class="text-2xl font-semibold tabular-nums mt-1">128</p><p class="text-xs text-success-fg mt-1 inline-flex items-center gap-1">↑ 12 vs last week</p></div>
-          <div class="card p-3"><p class="t-overline text-fg-subtle">Published</p><p class="text-2xl font-semibold tabular-nums mt-1">2,041</p><p class="text-xs text-fg-muted mt-1">all-time</p></div>
-          <div class="card p-3"><p class="t-overline text-fg-subtle">EEAT passing</p><div class="flex items-center gap-3 mt-1"><svg width="48" height="48"><circle cx="24" cy="24" r="20" fill="none" stroke="var(--color-bg-sunken)" stroke-width="5"/><circle cx="24" cy="24" r="20" fill="none" stroke="var(--color-eeat-default)" stroke-width="5" stroke-linecap="round" stroke-dasharray="125.6" stroke-dashoffset="32" transform="rotate(-90 24 24)"/></svg><div><p class="text-xl font-semibold tabular-nums">74%</p><p class="text-xs text-fg-muted">94 of 128</p></div></div></div>
-          <div class="card p-3"><p class="t-overline text-fg-subtle">Spend MTD</p><p class="text-2xl font-semibold tabular-nums mt-1">$425<span class="text-sm text-fg-muted font-normal">/$500</span></p><div class="h-1.5 rounded-full bg-bg-sunken mt-2 overflow-hidden"><div class="h-full bg-warning rounded-full" style="width:85%"></div></div></div>
-        </div>
-
-        <div class="card overflow-hidden">
-          <div class="px-3 py-2 border-b border-border-subtle flex items-center gap-2 flex-wrap">
-            <div class="input flex items-center gap-1.5" style="width:240px;padding:0 8px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input class="flex-1 bg-transparent border-0 outline-none text-sm" placeholder="Search articles…" /></div>
-            <button class="ctl ctl--sm">Status: All <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
-            <button class="ctl ctl--sm">Cluster <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
-            <button class="ctl ctl--sm">EEAT ≥ 70</button>
-            <span class="badge badge--info">Status: Drafting<svg class="ml-1" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
-            <div class="ml-auto flex gap-2"><button class="ctl ctl--sm">Export</button><button class="ctl ctl--primary ctl--sm">+ New article</button></div>
-          </div>
-          <div class="px-3 py-2 border-b border-border-subtle flex items-center gap-3" style="background:var(--color-accent-primary-subtle)">
-            <span class="text-sm font-medium text-accent-fg">3 selected</span>
-            <button class="text-xs text-fg-link hover:underline">Select all 128</button>
-            <span class="text-fg-disabled">·</span>
-            <button class="text-xs text-fg-muted hover:text-fg-default">Clear</button>
-            <div class="ml-auto flex gap-2"><button class="ctl ctl--sm">Re-run brief</button><button class="ctl ctl--sm">Schedule…</button><button class="ctl ctl--sm" style="color:var(--color-danger-fg)">Archive</button></div>
-          </div>
-          <table class="dt">
-            <thead><tr><th style="width:32px"><input type="checkbox" /></th><th>Title</th><th>Status</th><th>Cluster</th><th>EEAT</th><th>Updated</th><th style="width:32px"></th></tr></thead>
-            <tbody>
-              <tr><td><input type="checkbox" checked /></td><td><div class="font-medium text-fg-strong">Best knife sets for home cooks under $200</div><div class="text-xs text-fg-muted font-mono">art_2k4j…d8a</div></td><td><span class="badge badge--info"><span class="dot" style="background:var(--color-info-default);animation:pulse 1.5s infinite"></span>Drafting</span></td><td>Knives</td><td><div class="flex items-center gap-2"><div class="h-1.5 w-16 rounded-full bg-bg-sunken overflow-hidden"><div class="h-full bg-eeat" style="width:78%"></div></div><span class="font-mono text-xs tabular-nums">78</span></div></td><td class="text-fg-muted text-xs">2 min ago</td><td><button class="ctl ctl--ghost ctl--sm" aria-label="Actions"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></td></tr>
-              <tr><td><input type="checkbox" checked /></td><td><div class="font-medium text-fg-strong">How to season a cast iron pan (and why most guides are wrong)</div><div class="text-xs text-fg-muted font-mono">art_8a2k…91f</div></td><td><span class="badge badge--warning"><span class="dot" style="background:var(--color-warning-default)"></span>In review</span></td><td>Cast iron</td><td><div class="flex items-center gap-2"><div class="h-1.5 w-16 rounded-full bg-bg-sunken overflow-hidden"><div class="h-full bg-eeat" style="width:91%"></div></div><span class="font-mono text-xs tabular-nums">91</span></div></td><td class="text-fg-muted text-xs">17 min</td><td></td></tr>
-              <tr><td><input type="checkbox" /></td><td><div class="font-medium text-fg-strong">Sharpening 101: from dull to scary in 12 minutes</div><div class="text-xs text-fg-muted font-mono">art_1xj9…44c</div></td><td><span class="badge badge--success">Approved</span></td><td>Knives</td><td><div class="flex items-center gap-2"><div class="h-1.5 w-16 rounded-full bg-bg-sunken overflow-hidden"><div class="h-full bg-success" style="width:84%"></div></div><span class="font-mono text-xs tabular-nums">84</span></div></td><td class="text-fg-muted text-xs">1 hr</td><td></td></tr>
-              <tr><td><input type="checkbox" /></td><td><div class="font-medium text-fg-strong">Induction vs gas: a buyer's actual decision tree</div><div class="text-xs text-fg-muted font-mono">art_5ee2…e02</div></td><td><span class="badge badge--success">Published</span></td><td>Ranges</td><td><div class="flex items-center gap-2"><div class="h-1.5 w-16 rounded-full bg-bg-sunken overflow-hidden"><div class="h-full bg-eeat" style="width:88%"></div></div><span class="font-mono text-xs tabular-nums">88</span></div></td><td class="text-fg-muted text-xs">3d</td><td></td></tr>
-              <tr><td><input type="checkbox" checked /></td><td><div class="font-medium text-fg-strong">A practical guide to mise en place for weeknight dinners</div><div class="text-xs text-fg-muted font-mono">art_9pq7…b1a</div></td><td><span class="badge badge--danger">Failed</span></td><td>Technique</td><td><div class="flex items-center gap-2"><div class="h-1.5 w-16 rounded-full bg-bg-sunken overflow-hidden"><div class="h-full bg-warning" style="width:52%"></div></div><span class="font-mono text-xs tabular-nums">52</span></div></td><td class="text-fg-muted text-xs">5d</td><td></td></tr>
-              <tr><td><input type="checkbox" /></td><td><div class="font-medium text-fg-strong">Sourdough hydration: stop measuring by feel</div><div class="text-xs text-fg-muted font-mono">art_3kl1…77e</div></td><td><span class="badge badge--neutral">Brief</span></td><td>Bread</td><td class="text-fg-disabled text-xs">—</td><td class="text-fg-muted text-xs">12h</td><td></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- RUN TIMELINE -->
-      <section>
-        <h2 class="text-lg font-semibold text-fg-strong">Run timeline</h2>
-        <p class="text-sm text-fg-muted mt-0.5 mb-3">Procedure execution rendered as a step accordion.</p>
-        <div class="card overflow-hidden">
-          <div class="px-4 py-3 border-b border-border-subtle flex items-center gap-3">
-            <div class="font-mono text-xs text-fg-muted">run_8a2k1f</div>
-            <span class="badge badge--info"><span class="dot" style="background:var(--color-info-default);animation:pulse 1.5s infinite"></span>Running</span>
-            <span class="text-xs text-fg-muted">Procedure: <span class="font-medium text-fg-default">research → outline → draft → eeat-gate</span></span>
-            <div class="ml-auto flex gap-2"><button class="ctl ctl--ghost ctl--sm">Pause</button><button class="ctl ctl--ghost ctl--sm" style="color:var(--color-danger-fg)">Cancel</button></div>
-          </div>
-          <div class="divide-y divide-border-subtle">
-            <div class="px-4 py-3 flex items-center gap-3"><div class="w-6 h-6 rounded-full bg-success-subtle flex items-center justify-center text-success-fg shrink-0"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-12"/></svg></div><div class="flex-1 min-w-0"><div class="text-sm font-medium">Research sources</div><div class="text-xs text-fg-muted">14 sources collected · 0 rejected</div></div><div class="text-xs text-fg-muted font-mono tabular-nums">2.4s</div></div>
-            <div class="px-4 py-3 flex items-center gap-3"><div class="w-6 h-6 rounded-full bg-success-subtle flex items-center justify-center text-success-fg shrink-0"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-12"/></svg></div><div class="flex-1 min-w-0"><div class="text-sm font-medium">Generate outline</div><div class="text-xs text-fg-muted">9 H2 sections · linked to 3 internal articles</div></div><div class="text-xs text-fg-muted font-mono tabular-nums">11.8s</div></div>
-            <div class="px-4 py-3 flex items-start gap-3 bg-info-subtle"><div class="w-6 h-6 rounded-full bg-info text-fg-on-accent flex items-center justify-center shrink-0"><svg class="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity=".3" stroke-width="3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></div><div class="flex-1 min-w-0"><div class="text-sm font-medium">Draft sections</div><div class="text-xs text-fg-muted">6 of 9 sections drafted</div><div class="mt-2 h-1.5 rounded-full bg-bg-sunken overflow-hidden"><div class="h-full bg-info rounded-full" style="width:67%"></div></div></div><div class="text-xs text-fg-muted font-mono tabular-nums">running</div></div>
-            <div class="px-4 py-3 flex items-center gap-3 opacity-60"><div class="w-6 h-6 rounded-full border border-dashed border-border-strong text-fg-subtle flex items-center justify-center shrink-0 text-2xs">4</div><div class="flex-1"><div class="text-sm">EEAT gate</div><div class="text-xs text-fg-muted">queued</div></div></div>
-          </div>
-        </div>
-      </section>
-
-      <!-- DIALOG -->
-      <section>
-        <h2 class="text-lg font-semibold text-fg-strong">Dialog (mock)</h2>
-        <p class="text-sm text-fg-muted mt-0.5 mb-3">Consistent header / body / footer chrome.</p>
-        <div class="relative h-[420px] rounded-md overflow-hidden" style="background:var(--color-bg-overlay)">
-          <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md card" style="box-shadow:var(--shadow-lg)">
-            <div class="flex items-start justify-between gap-3 px-5 py-4 border-b border-border-subtle">
-              <div><h3 class="text-base font-semibold text-fg-strong">Connect WordPress</h3><p class="text-sm text-fg-muted mt-0.5">Articles approved by EEAT will publish to this site.</p></div>
-              <button class="ctl ctl--ghost ctl--sm" aria-label="Close" style="width:28px;padding:0"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-            </div>
-            <div class="px-5 py-4 flex flex-col gap-3">
-              <div class="flex flex-col gap-1.5"><label class="text-xs font-medium">Site URL</label><input class="input" placeholder="https://example.com" /></div>
-              <div class="flex flex-col gap-1.5"><label class="text-xs font-medium">Application password</label><div class="input flex items-center pr-1.5" style="padding:0 0 0 10px"><input type="password" value="••••••••••••••••" class="flex-1 bg-transparent border-0 outline-none" /><button class="ctl ctl--ghost ctl--sm" aria-label="Reveal"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
-              <div class="flex gap-3 rounded-md border p-3" style="background:var(--color-info-subtle);border-color:var(--color-info-border);color:var(--color-info-fg)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><p class="text-sm">Generate an application password under <span class="font-medium">Users → Profile</span> in WP-Admin. We do not need your account password.</p></div>
-            </div>
-            <div class="flex justify-end gap-2 px-5 py-3 border-t border-border-subtle bg-bg-surface-alt rounded-b-md">
-              <button class="ctl ctl--ghost">Cancel</button>
-              <button class="ctl ctl--primary">Connect & test</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- FOUNDATIONS -->
-      <section>
-        <h2 class="text-lg font-semibold text-fg-strong">Spacing · Radii · Shadows · Motion</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
-          <div class="card p-4">
-            <p class="t-overline text-fg-subtle mb-2">Spacing · 4px grid</p>
-            <div class="flex flex-col gap-1.5">
-              <div class="flex items-center gap-2 text-xs"><span class="font-mono text-fg-muted w-8">1</span><div class="h-3 bg-accent" style="width:4px"></div><span class="text-fg-muted font-mono">4px</span></div>
-              <div class="flex items-center gap-2 text-xs"><span class="font-mono text-fg-muted w-8">2</span><div class="h-3 bg-accent" style="width:8px"></div><span class="text-fg-muted font-mono">8px</span></div>
-              <div class="flex items-center gap-2 text-xs"><span class="font-mono text-fg-muted w-8">3</span><div class="h-3 bg-accent" style="width:12px"></div><span class="text-fg-muted font-mono">12px</span></div>
-              <div class="flex items-center gap-2 text-xs"><span class="font-mono text-fg-muted w-8">4</span><div class="h-3 bg-accent" style="width:16px"></div><span class="text-fg-muted font-mono">16px</span></div>
-              <div class="flex items-center gap-2 text-xs"><span class="font-mono text-fg-muted w-8">6</span><div class="h-3 bg-accent" style="width:24px"></div><span class="text-fg-muted font-mono">24px</span></div>
-              <div class="flex items-center gap-2 text-xs"><span class="font-mono text-fg-muted w-8">8</span><div class="h-3 bg-accent" style="width:32px"></div><span class="text-fg-muted font-mono">32px</span></div>
-            </div>
-          </div>
-          <div class="card p-4">
-            <p class="t-overline text-fg-subtle mb-2">Radii (max 8px)</p>
-            <div class="flex flex-wrap gap-3">
-              <div class="text-center"><div class="w-12 h-12 bg-bg-surface-alt border border-border-default" style="border-radius:2px"></div><p class="text-2xs font-mono mt-1">xs · 2</p></div>
-              <div class="text-center"><div class="w-12 h-12 bg-bg-surface-alt border border-border-default" style="border-radius:4px"></div><p class="text-2xs font-mono mt-1">sm · 4</p></div>
-              <div class="text-center"><div class="w-12 h-12 bg-bg-surface-alt border border-border-default" style="border-radius:6px"></div><p class="text-2xs font-mono mt-1">md · 6</p></div>
-              <div class="text-center"><div class="w-12 h-12 bg-bg-surface-alt border border-border-default" style="border-radius:8px"></div><p class="text-2xs font-mono mt-1">lg · 8</p></div>
-              <div class="text-center"><div class="w-12 h-12 bg-bg-surface-alt border border-border-default" style="border-radius:9999px"></div><p class="text-2xs font-mono mt-1">full</p></div>
-            </div>
-          </div>
-          <div class="card p-4">
-            <p class="t-overline text-fg-subtle mb-2">Shadows (subtle)</p>
-            <div class="flex flex-wrap gap-4 items-center">
-              <div class="text-center"><div class="w-12 h-12 bg-bg-surface rounded-md" style="box-shadow:var(--shadow-xs)"></div><p class="text-2xs font-mono mt-1">xs</p></div>
-              <div class="text-center"><div class="w-12 h-12 bg-bg-surface rounded-md" style="box-shadow:var(--shadow-sm)"></div><p class="text-2xs font-mono mt-1">sm</p></div>
-              <div class="text-center"><div class="w-12 h-12 bg-bg-surface rounded-md" style="box-shadow:var(--shadow-md)"></div><p class="text-2xs font-mono mt-1">md</p></div>
-              <div class="text-center"><div class="w-12 h-12 bg-bg-surface rounded-md" style="box-shadow:var(--shadow-lg)"></div><p class="text-2xs font-mono mt-1">lg</p></div>
-              <div class="text-center"><div class="w-12 h-12 bg-bg-surface rounded-md" style="box-shadow:var(--shadow-xl)"></div><p class="text-2xs font-mono mt-1">xl</p></div>
-            </div>
-          </div>
-          <div class="card p-4">
-            <p class="t-overline text-fg-subtle mb-2">Motion</p>
-            <ul class="text-xs text-fg-muted space-y-1.5 font-mono">
-              <li><span class="text-fg-default">120ms</span> fast — micro state</li>
-              <li><span class="text-fg-default">180ms</span> base — most UI</li>
-              <li><span class="text-fg-default">260ms</span> slow — large surfaces</li>
-              <li class="pt-2 border-t border-border-subtle">cubic-bezier(.2 0 0 1) standard</li>
-              <li>cubic-bezier(0 0 .2 1) enter</li>
-              <li>cubic-bezier(.4 0 1 1) exit</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <footer class="mt-10 pt-6 border-t border-border-subtle text-xs text-fg-subtle flex justify-between">
-      <span>Operations Console Design System · v1.0</span>
-      <span class="font-mono">tokens.ts · status.ts · ui/ · domain/</span>
-    </footer>
-  </div>
-</div>
-
-<script>
-  const root = document.documentElement;
-  const btn = document.getElementById('theme-toggle');
-  btn?.addEventListener('click', () => {
-    const cur = root.getAttribute('data-theme');
-    root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
-  });
-</script>
-<style>
-  @keyframes spin { to { transform: rotate(360deg) } }
-  @keyframes pulse { 50% { opacity: .4 } }
-  .animate-spin { animation: spin 1s linear infinite; }
-</style>
+    <section>
+      <h2>Run Timeline</h2>
+      <div class="timeline">
+        <div class="step"><span class="badge success">1</span><div><strong>Load context</strong><p>5 filtered records</p></div><span class="mono" style="margin-left:auto">0.4s</span></div>
+        <div class="step"><span class="badge info">2</span><div><strong>Execute action</strong><p>provider call running</p></div><span class="mono" style="margin-left:auto">running</span></div>
+        <div class="step"><span class="badge neutral">3</span><div><strong>Record learning</strong><p>queued</p></div></div>
+      </div>
+    </section>
+  </main>
 </body>
 </html>

@@ -1,12 +1,10 @@
 """Install pipeline shared by clone-mode (bash scripts) and pipx-mode (`content-stack install`).
 
-Per PLAN.md "Distribution model" (~L1499): clone installs reach into
-``${REPO_ROOT}/skills`` and ``${REPO_ROOT}/procedures`` directly via the
-bash scripts under ``scripts/``. pipx installs cannot — there is no repo
-on disk, only a wheel — so the assets are bundled at
-``content_stack/_assets/skills``, ``content_stack/_assets/procedures``, and
-``content_stack/_assets/plugins``
-(audit P-G4) and resolved through ``importlib.resources``.
+Clone installs reach into ``${REPO_ROOT}/plugins`` and the optional
+``${REPO_ROOT}/skills`` asset directory when a project ships top-level skills.
+Pipx installs cannot use repo-relative paths, so those assets are bundled at
+``content_stack/_assets/skills`` and ``content_stack/_assets/plugins`` and
+resolved through ``importlib.resources``.
 
 The two install paths copy from different *sources* but write to the same
 *targets* and share the same idempotency contract (audit B-24): re-running
@@ -15,11 +13,9 @@ yields the same end state.
 Public surface:
 
 - :func:`detect_mode` — returns ``"clone"`` if the package import points at
-  a checked-out repo with ``skills/`` + ``procedures/`` siblings, else
-  ``"pipx"``.
-- :func:`copy_skills` / :func:`copy_procedures` / :func:`copy_plugins` —
-  mirror assets into ``~/.codex/...`` or ``~/.claude/...`` with
-  mtime-aware copy and
+  a checked-out repo with a ``plugins/`` sibling, else ``"pipx"``.
+- :func:`copy_skills` / :func:`copy_plugins` mirror assets into
+  ``~/.codex/...`` or ``~/.claude/...`` with mtime-aware copy and
   ``--delete``-style cleanup of stale files.
 - :func:`register_mcp_codex` / :func:`register_mcp_claude` — Python
   equivalents of the bash registration scripts. Used by ``content-stack
@@ -62,25 +58,23 @@ def _package_root() -> Path:
 def _repo_root_if_clone() -> Path | None:
     """Return the repo root iff the package import points at a clone.
 
-    Heuristic: the parent of the package directory contains a ``skills/``
-    folder with at least one ``SKILL.md`` and a ``pyproject.toml`` whose
-    ``name`` is ``content-stack``. We do NOT rely on the presence of
+    Heuristic: the parent of the package directory contains the StackOS plugin
+    manifest and a ``pyproject.toml`` whose ``name`` is ``content-stack``. We do
+    NOT rely on the presence of
     ``.git`` because users may install via ``uv pip install -e`` from a
     tarball checkout without ``.git``.
     """
     parent = _package_root().parent
     pyproj = parent / "pyproject.toml"
-    skills = parent / "skills"
-    procedures = parent / "procedures"
-    if not (pyproj.exists() and skills.is_dir() and procedures.is_dir()):
+    plugins = parent / "plugins"
+    plugin_manifest = plugins / "content-stack" / ".codex-plugin" / "plugin.json"
+    if not (pyproj.exists() and plugin_manifest.is_file()):
         return None
     try:
         text = pyproj.read_text(encoding="utf-8")
     except OSError:
         return None
     if 'name = "content-stack"' not in text:
-        return None
-    if not any(skills.rglob("SKILL.md")):
         return None
     return parent
 
@@ -105,7 +99,7 @@ def _bundled_assets_root() -> Traversable:
     return root
 
 
-def _resolve_source(kind: Literal["skills", "procedures", "plugins"]) -> Path | Traversable:
+def _resolve_source(kind: Literal["skills", "plugins"]) -> Path | Traversable:
     """Return the source root for ``kind`` based on detected mode.
 
     Returns a :class:`Path` in clone mode (so callers can use ``rsync`` /
@@ -248,22 +242,6 @@ def copy_skills(
     return target, count
 
 
-def copy_procedures(
-    runtime: Literal["codex", "claude"],
-    home: Path | None = None,
-) -> tuple[Path, int]:
-    """Mirror procedures into the runtime-specific path (excluding ``_template``)."""
-    home_dir = home if home is not None else Path.home()
-    target = _runtime_target(home_dir, runtime, "procedures")
-    source = _resolve_source("procedures")
-    if isinstance(source, Path):
-        _mirror_path(source, target, exclude_dirs=("_template",))
-    else:
-        _mirror_traversable(source, target, exclude_dirs=("_template",))
-    count = sum(1 for _ in target.rglob("PROCEDURE.md"))
-    return target, count
-
-
 def _plugin_mcp_payload() -> dict[str, object]:
     """Return a plugin-local MCP config that does not depend on shell PATH."""
     return {
@@ -315,20 +293,6 @@ def copy_plugins(home: Path | None = None) -> tuple[Path, int]:
         _mirror_path(source_root / "content-stack", target, exclude_dirs=())
     else:
         _mirror_traversable(source_root.joinpath("content-stack"), target, exclude_dirs=())
-
-    skills_source = _resolve_source("skills")
-    skills_target = target / "skills" / "catalog"
-    if isinstance(skills_source, Path):
-        _mirror_path(skills_source, skills_target, exclude_dirs=())
-    else:
-        _mirror_traversable(skills_source, skills_target, exclude_dirs=())
-
-    procedures_source = _resolve_source("procedures")
-    procedures_target = target / "procedures"
-    if isinstance(procedures_source, Path):
-        _mirror_path(procedures_source, procedures_target, exclude_dirs=("_template",))
-    else:
-        _mirror_traversable(procedures_source, procedures_target, exclude_dirs=("_template",))
 
     _write_plugin_mcp_config(target / ".mcp.json")
     _refresh_existing_plugin_cache(home_dir)
@@ -451,10 +415,9 @@ def register_mcp_codex(
     if _list_has() and not force:
         return "MCP 'content-stack' already registered with Codex CLI"
 
-    # Sanity-check that the auth token exists; the bash script does the
-    # same check before invoking codex.
+    # Sanity-check that the auth token exists; the bridge reads it at runtime
+    # and keeps it out of the agent-visible MCP registration.
     _read_token(home_dir)
-    token_env_var = os.environ.get("CONTENT_STACK_TOKEN_ENV_VAR", "CONTENT_STACK_TOKEN")
 
     if _list_has() and force:
         subprocess.run([codex_bin, "mcp", "remove", "content-stack"], check=False)
@@ -465,17 +428,15 @@ def register_mcp_codex(
             "mcp",
             "add",
             "content-stack",
-            "--url",
-            f"http://127.0.0.1:{port}/mcp",
-            "--bearer-token-env-var",
-            token_env_var,
+            "--",
+            sys.executable,
+            "-m",
+            "content_stack",
+            "mcp-bridge",
         ],
         check=True,
     )
-    return (
-        f"Registered MCP 'content-stack' with Codex CLI (port {port}); "
-        f"export {token_env_var} in your shell rc."
-    )
+    return "Registered MCP 'content-stack' with Codex CLI via mcp-bridge"
 
 
 def register_mcp_claude(
@@ -525,11 +486,11 @@ def register_mcp_claude(
         else:
             msg = f"MCP 'content-stack' not present in {target}; nothing to remove"
     else:
-        token = _read_token(home_dir)
+        _read_token(home_dir)
         servers["content-stack"] = {
-            "transport": "http",
-            "url": f"http://127.0.0.1:{port}/mcp",
-            "headers": {"Authorization": f"Bearer {token}"},
+            "transport": "stdio",
+            "command": sys.executable,
+            "args": ["-m", "content_stack", "mcp-bridge"],
         }
         msg = f"Registered MCP 'content-stack' with Claude Code -> {target}"
 
@@ -550,7 +511,6 @@ def register_mcp_claude(
 __all__ = [
     "InstallMode",
     "copy_plugins",
-    "copy_procedures",
     "copy_skills",
     "detect_mode",
     "register_mcp_claude",

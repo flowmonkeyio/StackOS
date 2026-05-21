@@ -140,7 +140,7 @@ class Envelope[T](BaseModel):
 
     PLAN.md L758-L763: ``{data, run_id, project_id}``. ``run_id`` is
     optional at the repository layer (None when called outside a run
-    context) — the M3 MCP layer wires it from the procedure runner.
+    context). The MCP layer wires it from run-plan and tool execution.
     """
 
     data: T
@@ -234,7 +234,7 @@ def validate_transition(
     """Raise ``ConflictError`` if ``current → next_status`` is illegal.
 
     The transition maps live in ``content_stack.db.models`` (one per
-    state-machine: articles, topics, runs, internal_links). Tests
+    state-machine: projects, runs, run plans, resources, and action calls). Tests
     defending the maps are in ``tests/unit/test_models.py``; tests for
     *this* helper live in ``tests/unit/test_base.py``.
     """

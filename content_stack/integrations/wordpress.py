@@ -88,26 +88,6 @@ class WordPressIntegration(BaseIntegration):
             auth=self._auth(),
         )
 
-    async def create_post(self, payload: dict[str, Any]) -> IntegrationCallResult:
-        """Create a post through ``POST /wp/v2/posts``."""
-        return await self.call(
-            op="create_post",
-            method="POST",
-            url=self._url("posts"),
-            json_body=payload,
-            auth=self._auth(),
-        )
-
-    async def update_post(self, post_id: int, payload: dict[str, Any]) -> IntegrationCallResult:
-        """Update a post through ``POST /wp/v2/posts/<id>``."""
-        return await self.call(
-            op="update_post",
-            method="POST",
-            url=self._url(f"posts/{post_id}"),
-            json_body=payload,
-            auth=self._auth(),
-        )
-
     async def test_credentials(self) -> dict[str, Any]:
         """Probe auth and return the REST user role shape."""
         result = await self.current_user()

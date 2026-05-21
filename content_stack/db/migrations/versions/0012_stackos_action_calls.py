@@ -89,8 +89,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Clean-cut pivot rule: this downgrade removes only D08-owned sidecar
-    # objects. Legacy SEO/procedure/content-stack tables remain untouched.
+    # Downgrade removes only the tables this revision owns.
     op.drop_index("ix_action_calls_project_idempotency", table_name="action_calls")
     op.drop_index("ix_action_calls_action", table_name="action_calls")
     op.drop_index("ix_action_calls_run_plan_step", table_name="action_calls")

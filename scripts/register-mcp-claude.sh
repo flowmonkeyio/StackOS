@@ -24,7 +24,11 @@ done
 HOME_DIR="${CONTENT_STACK_HOME:-${HOME}}"
 TARGET="${CONTENT_STACK_MCP_TARGET:-${HOME_DIR}/.claude/mcp.json}"
 TOKEN_PATH="${HOME_DIR}/.local/state/content-stack/auth.token"
-PORT="${CONTENT_STACK_PORT:-5180}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BRIDGE_PYTHON="${CONTENT_STACK_BRIDGE_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+if [[ ! -x "${BRIDGE_PYTHON}" ]]; then
+    BRIDGE_PYTHON="$(command -v python3)"
+fi
 
 mkdir -p "$(dirname "${TARGET}")"
 
@@ -37,21 +41,18 @@ if [[ "${ACTION}" == "register" ]]; then
         echo "auth token missing at ${TOKEN_PATH} — run \`make install\` or \`content-stack init\` first." >&2
         exit 1
     fi
-    TOKEN=$(cat "${TOKEN_PATH}")
-else
-    TOKEN=""
 fi
 
 # Use Python (already a hard dep — the daemon is Python) for the JSON
 # merge so we don't pull jq into the install floor. Atomic via tempfile
 # + os.replace, which is what `rename(2)` guarantees on POSIX.
-python3 - "${TARGET}" "${PORT}" "${TOKEN}" "${ACTION}" <<'PYEOF'
+python3 - "${TARGET}" "${BRIDGE_PYTHON}" "${ACTION}" <<'PYEOF'
 import json
 import os
 import sys
 import tempfile
 
-target, port, token, action = sys.argv[1:5]
+target, bridge_python, action = sys.argv[1:4]
 
 existing: dict[str, object] = {}
 if os.path.exists(target):
@@ -81,9 +82,9 @@ if action == "remove":
         msg = f"MCP 'content-stack' not present in {target}; nothing to remove"
 else:
     servers["content-stack"] = {
-        "transport": "http",
-        "url": f"http://127.0.0.1:{port}/mcp",
-        "headers": {"Authorization": f"Bearer {token}"},
+        "transport": "stdio",
+        "command": bridge_python,
+        "args": ["-m", "content_stack", "mcp-bridge"],
     }
     msg = f"Registered MCP 'content-stack' with Claude Code -> {target}"
 

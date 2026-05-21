@@ -6,13 +6,13 @@ import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy import or_
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from content_stack.artifacts import redact_secret_text, redact_secrets
 from content_stack.config import Settings
@@ -30,11 +30,8 @@ from content_stack.db.models import (
     Provider,
 )
 from content_stack.integrations import integration_class_for
-from content_stack.mcp.errors import IntegrationDownError
 from content_stack.repositories.base import ConflictError, Envelope, NotFoundError, ValidationError
 from content_stack.repositories.projects import IntegrationCredentialRepository
-
-_OAUTH_STATE_TTL_MINUTES = 30
 
 
 def _utcnow() -> datetime:
@@ -111,6 +108,10 @@ class AuthRevokeOut(BaseModel):
     status: str = "revoked"
 
 
+class AuthSecretSetOut(CredentialConnectionOut):
+    """Sanitized result for a local-admin credential secret write."""
+
+
 @dataclass(frozen=True)
 class ResolvedCredential:
     """Daemon-internal credential bundle for connector execution.
@@ -151,8 +152,8 @@ class AuthRepository:
         PluginRepository(self._s).sync_builtin_plugins()
         rows = self._s.exec(
             select(Provider, Plugin)
-            .join(Plugin, Provider.plugin_id == Plugin.id)
-            .order_by(Plugin.slug.asc(), Provider.key.asc())
+            .join(Plugin, col(Provider.plugin_id) == col(Plugin.id))
+            .order_by(col(Plugin.slug).asc(), col(Provider.key).asc())
         ).all()
         now = _utcnow()
         for provider, plugin in rows:
@@ -193,10 +194,12 @@ class AuthRepository:
 
     def list_providers(self, *, provider_key: str | None = None) -> list[AuthProviderOut]:
         self.sync_providers()
-        stmt = select(AuthProvider, Plugin).outerjoin(Plugin, AuthProvider.plugin_id == Plugin.id)
+        stmt = select(AuthProvider, Plugin).outerjoin(
+            Plugin, col(AuthProvider.plugin_id) == col(Plugin.id)
+        )
         if provider_key is not None:
-            stmt = stmt.where(AuthProvider.key == provider_key)
-        rows = self._s.exec(stmt.order_by(AuthProvider.key.asc())).all()
+            stmt = stmt.where(col(AuthProvider.key) == provider_key)
+        rows = self._s.exec(stmt.order_by(col(AuthProvider.key).asc())).all()
         return [self._provider_out(provider, plugin) for provider, plugin in rows]
 
     def status(
@@ -239,13 +242,8 @@ class AuthRepository:
     ) -> Envelope[AuthStartOut]:
         self._require_project(project_id)
         provider = self._get_provider(provider_key)
-        if provider.auth_type == "oauth" and provider.key == "gsc":
-            return self._start_gsc(
-                project_id=project_id,
-                provider=provider,
-                settings=settings,
-                redirect_uri=redirect_uri,
-            )
+        assert provider is not None
+        _ = redirect_uri
         setup_url = self._local_setup_url(
             settings=settings,
             project_id=project_id,
@@ -261,6 +259,44 @@ class AuthRepository:
             ),
             project_id=project_id,
         )
+
+    def store_secret(
+        self,
+        *,
+        project_id: int,
+        provider_key: str,
+        plaintext_payload: bytes,
+        config_json: dict[str, Any] | None = None,
+        expires_at: datetime | None = None,
+    ) -> Envelope[AuthSecretSetOut]:
+        self._require_project(project_id)
+        provider = self._get_provider(provider_key)
+        assert provider is not None
+        if config_json is not None and redact_secrets(config_json) != config_json:
+            raise ValidationError(
+                "config_json must not contain secret-like keys; put the secret in plaintext_payload"
+            )
+        env = IntegrationCredentialRepository(self._s).set(
+            project_id=project_id,
+            kind=provider.key,
+            plaintext_payload=plaintext_payload,
+            config_json=config_json,
+            expires_at=expires_at,
+        )
+        row = self._s.get(IntegrationCredential, env.data.id)
+        if row is None:
+            raise NotFoundError("stored credential row not found")
+        credential = self._ensure_credential(row, status="connected")
+        out = self._connection_out(credential, row)
+        self.record_usage_event(
+            credential=credential,
+            provider_key=provider.key,
+            operation="auth.secret.set",
+            status="connected",
+            metadata_json={"source": "local-admin"},
+        )
+        self._s.commit()
+        return Envelope(data=AuthSecretSetOut(**out.model_dump()), project_id=project_id)
 
     async def test(
         self,
@@ -280,7 +316,8 @@ class AuthRepository:
                 f"auth provider {row.kind!r} has no test wrapper",
                 data={"provider_key": row.kind, "credential_ref": credential.credential_ref},
             )
-        plaintext = IntegrationCredentialRepository(self._s).get_decrypted(int(row.id))
+        assert row.id is not None
+        plaintext = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
         extra = self._integration_extra(row)
         async with httpx.AsyncClient(timeout=30.0) as client:
             integration = integration_cls(
@@ -435,8 +472,8 @@ class AuthRepository:
             select(OAuthState).where(
                 OAuthState.provider_key == provider_key,
                 OAuthState.state == state,
-                OAuthState.consumed_at.is_(None),  # type: ignore[union-attr]
-                or_(OAuthState.expires_at.is_(None), OAuthState.expires_at > _utcnow()),  # type: ignore[union-attr]
+                col(OAuthState.consumed_at).is_(None),
+                or_(col(OAuthState.expires_at).is_(None), col(OAuthState.expires_at) > _utcnow()),
             )
         ).first()
         if row is None:
@@ -455,102 +492,10 @@ class AuthRepository:
         self._s.commit()
         return credential
 
-    def _start_gsc(
-        self,
-        *,
-        project_id: int,
-        provider: AuthProvider,
-        settings: Settings,
-        redirect_uri: str | None,
-    ) -> Envelope[AuthStartOut]:
-        from content_stack.integrations.gsc import build_authorize_url
-
-        missing = self._missing_gsc_oauth_env_vars()
-        if missing:
-            raise ValidationError(
-                "GSC OAuth client not configured",
-                data={
-                    "provider_key": "gsc",
-                    "missing": missing,
-                    "hint": self._gsc_oauth_setup_hint(),
-                },
-            )
-        state = secrets.token_urlsafe(32)
-        resolved_redirect_uri = redirect_uri or self.default_gsc_redirect_uri(settings)
-        try:
-            authorization_url = build_authorize_url(
-                state=state,
-                redirect_uri=resolved_redirect_uri,
-            )
-        except IntegrationDownError as exc:
-            raise ValidationError(
-                exc.detail,
-                data=redact_secrets(exc.data),
-            ) from exc
-        env = IntegrationCredentialRepository(self._s).set(
-            project_id=project_id,
-            kind="gsc",
-            plaintext_payload=b"{}",
-            config_json={"oauth_state": state, "redirect_uri": resolved_redirect_uri},
-        )
-        row = self._s.get(IntegrationCredential, env.data.id)
-        assert row is not None and row.id is not None
-        credential = self._ensure_credential(row, status="pending")
-        oauth_state = OAuthState(
-            project_id=project_id,
-            provider_key="gsc",
-            credential_id=credential.id,
-            integration_credential_id=row.id,
-            state=state,
-            redirect_uri=resolved_redirect_uri,
-            expires_at=_utcnow() + timedelta(minutes=_OAUTH_STATE_TTL_MINUTES),
-        )
-        self._s.add(oauth_state)
-        self.record_usage_event(
-            credential=credential,
-            provider_key="gsc",
-            operation="auth.start",
-            status="pending",
-            metadata_json={"redirect_uri": resolved_redirect_uri},
-        )
-        self._s.commit()
-        return Envelope(
-            data=AuthStartOut(
-                project_id=project_id,
-                provider_key="gsc",
-                auth_type=provider.auth_type,
-                status="pending",
-                authorization_url=authorization_url,
-                redirect_uri=resolved_redirect_uri,
-                state=state,
-                credential_ref=credential.credential_ref,
-                expires_at=oauth_state.expires_at,
-            ),
-            project_id=project_id,
-        )
-
-    @staticmethod
-    def default_gsc_redirect_uri(settings: Settings) -> str:
-        return f"http://{settings.host}:{settings.port}/api/v1/integrations/gsc/oauth/callback"
-
-    @staticmethod
-    def _missing_gsc_oauth_env_vars() -> list[str]:
-        import os
-
-        return [
-            name
-            for name in ("GSC_OAUTH_CLIENT_ID", "GSC_OAUTH_CLIENT_SECRET")
-            if not os.environ.get(name)
-        ]
-
-    @staticmethod
-    def _gsc_oauth_setup_hint() -> str:
-        return "Set GSC_OAUTH_CLIENT_ID and GSC_OAUTH_CLIENT_SECRET, then restart the daemon."
-
     def _local_setup_url(self, *, settings: Settings, project_id: int, provider_key: str) -> str:
         return (
             f"http://{settings.host}:{settings.port}"
-            f"/api/v1/projects/{project_id}/integrations?kind={provider_key}"
+            f"/projects/{project_id}/connections?provider_key={provider_key}"
         )
 
     def _integration_rows(
@@ -561,17 +506,17 @@ class AuthRepository:
     ) -> list[IntegrationCredential]:
         stmt = select(IntegrationCredential)
         if provider_key is not None:
-            stmt = stmt.where(IntegrationCredential.kind == provider_key)
+            stmt = stmt.where(col(IntegrationCredential.kind) == provider_key)
         if project_id is None:
-            stmt = stmt.where(IntegrationCredential.project_id.is_(None))  # type: ignore[union-attr]
+            stmt = stmt.where(col(IntegrationCredential.project_id).is_(None))
         else:
             stmt = stmt.where(
                 or_(
-                    IntegrationCredential.project_id == project_id,
-                    IntegrationCredential.project_id.is_(None),  # type: ignore[union-attr]
+                    col(IntegrationCredential.project_id) == project_id,
+                    col(IntegrationCredential.project_id).is_(None),
                 )
             )
-        return list(self._s.exec(stmt.order_by(IntegrationCredential.id.asc())).all())  # type: ignore[union-attr]
+        return list(self._s.exec(stmt.order_by(col(IntegrationCredential.id).asc())).all())
 
     def _credential_rows(
         self,
@@ -581,17 +526,17 @@ class AuthRepository:
     ) -> list[Credential]:
         stmt = select(Credential)
         if provider_key is not None:
-            stmt = stmt.where(Credential.provider_key == provider_key)
+            stmt = stmt.where(col(Credential.provider_key) == provider_key)
         if project_id is None:
-            stmt = stmt.where(Credential.project_id.is_(None))  # type: ignore[union-attr]
+            stmt = stmt.where(col(Credential.project_id).is_(None))
         else:
             stmt = stmt.where(
                 or_(
-                    Credential.project_id == project_id,
-                    Credential.project_id.is_(None),  # type: ignore[union-attr]
+                    col(Credential.project_id) == project_id,
+                    col(Credential.project_id).is_(None),
                 )
             )
-        return list(self._s.exec(stmt.order_by(Credential.id.asc())).all())  # type: ignore[union-attr]
+        return list(self._s.exec(stmt.order_by(col(Credential.id).asc())).all())
 
     def _ensure_credential(
         self,
@@ -681,8 +626,8 @@ class AuthRepository:
             return []
         rows = self._s.exec(
             select(CredentialScope)
-            .where(CredentialScope.credential_id == credential.id)
-            .order_by(CredentialScope.scope.asc())
+            .where(col(CredentialScope.credential_id) == credential.id)
+            .order_by(col(CredentialScope.scope).asc())
         ).all()
         return [row.scope for row in rows]
 
@@ -695,22 +640,22 @@ class AuthRepository:
     ) -> tuple[Credential, IntegrationCredential]:
         if credential_ref is not None:
             credential = self._s.exec(
-                select(Credential).where(Credential.credential_ref == credential_ref)
+                select(Credential).where(col(Credential.credential_ref) == credential_ref)
             ).first()
             if credential is None:
                 raise NotFoundError(f"credential ref {credential_ref!r} not found")
         elif provider_key is not None:
             row = self._s.exec(
                 select(IntegrationCredential).where(
-                    IntegrationCredential.kind == provider_key,
-                    IntegrationCredential.project_id == project_id,
+                    col(IntegrationCredential.kind) == provider_key,
+                    col(IntegrationCredential.project_id) == project_id,
                 )
             ).first()
             if row is None:
                 row = self._s.exec(
                     select(IntegrationCredential).where(
-                        IntegrationCredential.kind == provider_key,
-                        IntegrationCredential.project_id.is_(None),  # type: ignore[union-attr]
+                        col(IntegrationCredential.kind) == provider_key,
+                        col(IntegrationCredential.project_id).is_(None),
                     )
                 ).first()
             if row is None:
@@ -789,9 +734,7 @@ class AuthRepository:
             redact_secret_text(str(summary_value))
             if summary_value
             else (
-                f"{vendor} credentials are reachable"
-                if ok
-                else f"{vendor} credential test failed"
+                f"{vendor} credentials are reachable" if ok else f"{vendor} credential test failed"
             )
         )
         passthrough = {
@@ -829,7 +772,9 @@ class AuthRepository:
 
     def _get_provider(self, provider_key: str, *, required: bool = True) -> AuthProvider | None:
         self.sync_providers()
-        row = self._s.exec(select(AuthProvider).where(AuthProvider.key == provider_key)).first()
+        row = self._s.exec(
+            select(AuthProvider).where(col(AuthProvider.key) == provider_key)
+        ).first()
         if row is None and required:
             raise NotFoundError(f"auth provider {provider_key!r} not found")
         return row
@@ -864,6 +809,7 @@ __all__ = [
     "AuthProviderOut",
     "AuthRepository",
     "AuthRevokeOut",
+    "AuthSecretSetOut",
     "AuthStartOut",
     "AuthStatusOut",
     "AuthTestOut",

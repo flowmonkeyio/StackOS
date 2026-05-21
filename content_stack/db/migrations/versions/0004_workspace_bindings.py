@@ -1,7 +1,7 @@
 """add workspace bindings and agent sessions
 
 Revision ID: 0004_workspace_bindings
-Revises: 0003_internal_link_null_position_unique
+Revises: 0002_initial_schema
 Create Date: 2026-05-09
 
 """
@@ -16,7 +16,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0004_workspace_bindings"
-down_revision: str | None = "0003_internal_link_null_position_unique"
+down_revision: str | None = "0002_initial_schema"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

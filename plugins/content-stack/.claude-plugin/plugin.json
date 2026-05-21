@@ -1,7 +1,7 @@
 {
   "name": "content-stack",
   "version": "0.1.0",
-  "description": "Repo-agnostic SEO content operations for Claude Code, backed by the local content-stack daemon.",
+  "description": "Repo-agnostic StackOS project, plugin, workflow-template, run-plan, and action runtime for Claude Code.",
   "author": {
     "name": "content-stack",
     "url": "https://github.com/flowmonkey-io/content-stack"

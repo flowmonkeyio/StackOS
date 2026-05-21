@@ -123,6 +123,8 @@ class MCPClient:
         form so tests can assert on ``code`` / ``message`` / ``data``.
         """
         envelope = self.call_tool(name, arguments)
+        if "error" in envelope:
+            return envelope["error"]
         result = envelope.get("result", {})
         if result.get("isError"):
             return result.get("structuredContent") or {}
@@ -166,7 +168,7 @@ def mcp_client(mcp_app: Any, mcp_token: str) -> Iterator[MCPClient]:
 
 @pytest.fixture
 def seeded_project(mcp_client: MCPClient) -> dict[str, Any]:
-    """Create a fresh project + seed EEAT criteria; return its envelope.
+    """Create a fresh project and return its envelope.
 
     Used by tests that need a bound ``project_id`` without re-implementing
     the MCP-side boilerplate.

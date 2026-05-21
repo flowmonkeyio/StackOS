@@ -3,9 +3,8 @@
 # Register `content-stack` with the Codex CLI as an MCP server.
 #
 # Idempotent (audit B-24): if Codex already lists a `content-stack`
-# server we treat the script as a no-op. The token rotates only on
-# explicit `make rotate-token`, so re-running `make install` does NOT
-# need to re-register.
+# server we treat the script as a no-op. The registered server is the local
+# stdio bridge; the bearer token stays inside the bridge process.
 #
 # `--remove` unregisters the server (used by `make uninstall`).
 # `--force` re-registers even if already present (used after rotation).
@@ -29,7 +28,11 @@ fi
 
 HOME_DIR="${CONTENT_STACK_HOME:-${HOME}}"
 TOKEN_PATH="${HOME_DIR}/.local/state/content-stack/auth.token"
-PORT="${CONTENT_STACK_PORT:-5180}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BRIDGE_PYTHON="${CONTENT_STACK_BRIDGE_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+if [[ ! -x "${BRIDGE_PYTHON}" ]]; then
+    BRIDGE_PYTHON="$(command -v python3)"
+fi
 
 already_registered() {
     codex mcp list 2>/dev/null | grep -q '^content-stack[[:space:]]'
@@ -54,22 +57,12 @@ if [[ ! -f "${TOKEN_PATH}" ]]; then
     echo "auth token missing at ${TOKEN_PATH} — run \`make install\` or \`content-stack init\` first." >&2
     exit 1
 fi
-# Codex CLI's HTTP MCP server resolves the bearer token via an environment
-# variable name (rather than a literal header), so we register the server
-# with `--bearer-token-env-var CONTENT_STACK_TOKEN`. Operators must export
-# the variable in their shell before launching Codex; the install
-# documentation calls this out explicitly.
-TOKEN_ENV_VAR="${CONTENT_STACK_TOKEN_ENV_VAR:-CONTENT_STACK_TOKEN}"
-
 # `--force` removes-then-adds so the registration refreshes after rotation.
 if [[ "${ACTION}" == "force" ]] && already_registered; then
     codex mcp remove content-stack
 fi
 
 codex mcp add content-stack \
-    --url "http://127.0.0.1:${PORT}/mcp" \
-    --bearer-token-env-var "${TOKEN_ENV_VAR}"
+    -- "${BRIDGE_PYTHON}" -m content_stack mcp-bridge
 
-echo "Registered MCP 'content-stack' with Codex CLI (port ${PORT})"
-echo "Note: export ${TOKEN_ENV_VAR}=\$(cat ${TOKEN_PATH}) in your shell rc"
-echo "      so Codex picks up the token on launch."
+echo "Registered MCP 'content-stack' with Codex CLI via mcp-bridge"

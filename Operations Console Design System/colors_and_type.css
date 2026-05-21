@@ -13,26 +13,6 @@
  */
 
 /* ---------------------------------------------------------------------- */
-/* Fonts                                                                  */
-/* ---------------------------------------------------------------------- */
-
-@font-face {
-  font-family: 'Inter var';
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-  src: url('https://rsms.me/inter/font-files/InterVariable.woff2?v=4.0') format('woff2');
-}
-
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-weight: 400 700;
-  font-style: normal;
-  font-display: swap;
-  src: url('https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono/fonts/variable/JetBrainsMono[wght].woff2') format('woff2');
-}
-
-/* ---------------------------------------------------------------------- */
 /* Foundation — non-color tokens                                           */
 /* ---------------------------------------------------------------------- */
 
@@ -179,12 +159,6 @@
   --color-neutral-fg:      #374151;
   --color-neutral-border:  #dde2e8;
 
-  /* Reserved domain — EEAT (violet) */
-  --color-eeat-default:    #7c3aed;
-  --color-eeat-subtle:     #f5f3ff;
-  --color-eeat-fg:         #6d28d9;
-  --color-eeat-border:     #ddd6fe;
-
   /* Shadows — subtle */
   --shadow-xs:   0 1px 0 0 rgba(15, 23, 42, 0.04);
   --shadow-sm:   0 1px 2px 0 rgba(15, 23, 42, 0.04), 0 1px 3px 0 rgba(15, 23, 42, 0.06);
@@ -254,11 +228,6 @@
   --color-neutral-fg:      #c4ccd5;
   --color-neutral-border:  #374151;
 
-  --color-eeat-default:    #a78bfa;
-  --color-eeat-subtle:     rgba(139, 92, 246, 0.12);
-  --color-eeat-fg:         #c4b5fd;
-  --color-eeat-border:     rgba(139, 92, 246, 0.30);
-
   --shadow-xs:   0 1px 0 0 rgba(0, 0, 0, 0.3);
   --shadow-sm:   0 1px 2px 0 rgba(0, 0, 0, 0.4);
   --shadow-md:   0 4px 8px -2px rgba(0, 0, 0, 0.5);
@@ -273,10 +242,11 @@
 
 html {
   font-family: var(--font-sans);
-  font-size: var(--fs-sm);
+  font-size: 16px;
   line-height: var(--lh-sm);
   color: var(--color-fg-default);
   background: var(--color-bg-app);
+  scrollbar-gutter: stable;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -286,21 +256,23 @@ html {
 body {
   margin: 0;
   font-family: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
   color: inherit;
   background: inherit;
 }
 
-.t-display-lg { font-size: var(--fs-3xl); line-height: var(--lh-3xl); font-weight: var(--fw-semibold); letter-spacing: -0.02em; }
-.t-display-md { font-size: var(--fs-2xl); line-height: var(--lh-2xl); font-weight: var(--fw-semibold); letter-spacing: -0.015em; }
-.t-h1         { font-size: var(--fs-xl);  line-height: var(--lh-xl);  font-weight: var(--fw-semibold); letter-spacing: -0.01em; }
+.t-display-lg { font-size: var(--fs-3xl); line-height: var(--lh-3xl); font-weight: var(--fw-semibold); letter-spacing: 0; }
+.t-display-md { font-size: var(--fs-2xl); line-height: var(--lh-2xl); font-weight: var(--fw-semibold); letter-spacing: 0; }
+.t-h1         { font-size: var(--fs-xl);  line-height: var(--lh-xl);  font-weight: var(--fw-semibold); letter-spacing: 0; }
 .t-h2         { font-size: var(--fs-lg);  line-height: var(--lh-lg);  font-weight: var(--fw-semibold); }
 .t-h3         { font-size: var(--fs-base);line-height: var(--lh-base);font-weight: var(--fw-semibold); }
 .t-body-lg    { font-size: var(--fs-base);line-height: var(--lh-base);font-weight: var(--fw-regular);  }
 .t-body       { font-size: var(--fs-sm);  line-height: var(--lh-sm);  font-weight: var(--fw-regular);  }
 .t-body-sm    { font-size: var(--fs-xs);  line-height: var(--lh-xs);  font-weight: var(--fw-regular);  }
-.t-label      { font-size: var(--fs-xs);  line-height: var(--lh-xs);  font-weight: var(--fw-medium); letter-spacing: 0.01em; }
+.t-label      { font-size: var(--fs-xs);  line-height: var(--lh-xs);  font-weight: var(--fw-medium); letter-spacing: 0; }
 .t-caption    { font-size: var(--fs-2xs); line-height: var(--lh-2xs); font-weight: var(--fw-regular); }
-.t-overline   { font-size: var(--fs-2xs); line-height: var(--lh-2xs); font-weight: var(--fw-semibold); letter-spacing: 0.08em; text-transform: uppercase; }
+.t-overline   { font-size: var(--fs-2xs); line-height: var(--lh-2xs); font-weight: var(--fw-semibold); letter-spacing: 0; text-transform: uppercase; }
 .t-code       { font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-sm); }
 
 .fg-default  { color: var(--color-fg-default); }

@@ -757,7 +757,7 @@ def _count_expected_plugins(source: object) -> int:
     return count
 
 
-def _expected_asset_count(kind: Literal["skills", "procedures", "plugins"]) -> int | None:
+def _expected_asset_count(kind: Literal["skills", "plugins"]) -> int | None:
     """Return source asset count for doctor install checks."""
     try:
         from content_stack import install as installer
@@ -767,19 +767,15 @@ def _expected_asset_count(kind: Literal["skills", "procedures", "plugins"]) -> i
         return None
     if kind == "plugins":
         return _count_expected_plugins(source)
-    filename = "SKILL.md" if kind == "skills" else "PROCEDURE.md"
+    filename = "SKILL.md"
     if isinstance(source, Path):
-        paths = source.rglob(filename)
-        if kind == "procedures":
-            paths = (p for p in paths if "_template" not in p.parts)
-        return sum(1 for _ in paths)
-    exclude = frozenset({"_template"}) if kind == "procedures" else frozenset()
-    return _count_traversable_named(source, filename, exclude_dirs=exclude)
+        return sum(1 for _ in source.rglob(filename))
+    return _count_traversable_named(source, filename, exclude_dirs=frozenset())
 
 
 def _installed_asset_count(home: Path, runtime: Literal["codex", "claude"], kind: str) -> int:
-    """Count installed skills/procedures for one runtime target."""
-    filename = "SKILL.md" if kind == "skills" else "PROCEDURE.md"
+    """Count installed skills for one runtime target."""
+    filename = "SKILL.md"
     target = home / f".{runtime}" / kind / "content-stack"
     if not target.is_dir():
         return 0
@@ -815,24 +811,17 @@ def _plugin_marketplace_has_content_stack(home: Path) -> bool:
 def _check_installed_assets(home: Path) -> tuple[dict[str, bool], dict[str, object]]:
     """Return install mirror checks for plugin-first assets."""
     expected_skills = _expected_asset_count("skills")
-    expected_procedures = _expected_asset_count("procedures")
     expected_plugins = _expected_asset_count("plugins")
     checks: dict[str, bool] = {}
     details: dict[str, object] = {
         "expected_skills": expected_skills,
-        "expected_procedures": expected_procedures,
         "expected_plugins": expected_plugins,
     }
     for runtime in ("codex", "claude"):
         skills_count = _installed_asset_count(home, runtime, "skills")
-        procedures_count = _installed_asset_count(home, runtime, "procedures")
         details[f"{runtime}_skills_count"] = skills_count
-        details[f"{runtime}_procedures_count"] = procedures_count
-        details[f"{runtime}_legacy_skills_installed"] = (
+        details[f"{runtime}_skills_installed"] = (
             expected_skills is not None and skills_count == expected_skills
-        )
-        details[f"{runtime}_legacy_procedures_installed"] = (
-            expected_procedures is not None and procedures_count == expected_procedures
         )
     plugins_count = _installed_plugin_count(home)
     checks["plugins_installed"] = expected_plugins is not None and plugins_count == expected_plugins
@@ -841,7 +830,24 @@ def _check_installed_assets(home: Path) -> tuple[dict[str, bool], dict[str, obje
     return checks, details
 
 
-def _check_codex_mcp_registered(port: int) -> tuple[bool, dict[str, object]]:
+def _codex_mcp_line_is_bridge(line: str) -> bool:
+    normalized = line.strip()
+    if not normalized.startswith("content-stack"):
+        return False
+    lowered = normalized.lower()
+    forbidden = (
+        "/mcp",
+        "--url",
+        "--bearer-token-env-var",
+        "authorization",
+        "bearer",
+    )
+    if any(token in lowered for token in forbidden):
+        return False
+    return "stdio" in lowered or "mcp-bridge" in lowered
+
+
+def _check_codex_mcp_registered() -> tuple[bool, dict[str, object]]:
     """Best-effort read-only check for Codex MCP registration."""
     codex = shutil.which("codex")
     if codex is None:
@@ -856,16 +862,24 @@ def _check_codex_mcp_registered(port: int) -> tuple[bool, dict[str, object]]:
         )
     except Exception as exc:
         return False, {"available": True, "error": str(exc)}
-    expected = f"http://127.0.0.1:{port}/mcp"
-    ok = "content-stack" in result.stdout and expected in result.stdout
+    content_stack_lines = [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("content-stack")
+    ]
+    bridge_lines = [line for line in content_stack_lines if _codex_mcp_line_is_bridge(line)]
+    ok = bool(bridge_lines)
     return ok, {
         "available": True,
         "returncode": result.returncode,
-        "expected_url": expected,
+        "expected_transport": "stdio",
+        "expected_command": "python -m content_stack mcp-bridge",
+        "entries": content_stack_lines,
+        "bridge_entries": bridge_lines,
     }
 
 
-def _check_claude_mcp_registered(home: Path, port: int) -> tuple[bool, dict[str, object]]:
+def _check_claude_mcp_registered(home: Path) -> tuple[bool, dict[str, object]]:
     """Read the Claude MCP JSON target and look for the content-stack entry."""
     target = Path(os.environ.get("CONTENT_STACK_MCP_TARGET") or home / ".claude" / "mcp.json")
     if not target.exists():
@@ -876,9 +890,22 @@ def _check_claude_mcp_registered(home: Path, port: int) -> tuple[bool, dict[str,
         row = servers.get("content-stack") if isinstance(servers, dict) else None
     except Exception as exc:
         return False, {"target": str(target), "exists": True, "error": str(exc)}
-    expected = f"http://127.0.0.1:{port}/mcp"
-    ok = isinstance(row, dict) and row.get("url") == expected
-    return ok, {"target": str(target), "exists": True, "expected_url": expected}
+    ok = (
+        isinstance(row, dict)
+        and row.get("transport") == "stdio"
+        and isinstance(row.get("command"), str)
+        and row.get("args") == ["-m", "content_stack", "mcp-bridge"]
+        and "url" not in row
+        and "headers" not in row
+    )
+    return ok, {
+        "target": str(target),
+        "exists": True,
+        "expected_transport": "stdio",
+        "expected_args": ["-m", "content_stack", "mcp-bridge"],
+        "has_url": isinstance(row, dict) and "url" in row,
+        "has_headers": isinstance(row, dict) and "headers" in row,
+    }
 
 
 def _check_launchd_plist(home: Path) -> tuple[bool, dict[str, object]]:
@@ -928,8 +955,8 @@ def doctor(
     scheduler_ok, scheduler_job_count = _check_scheduler_jobs(settings)
     home = _doctor_home()
     install_checks, install_info = _check_installed_assets(home)
-    codex_mcp_ok, codex_mcp_info = _check_codex_mcp_registered(settings.port)
-    claude_mcp_ok, claude_mcp_info = _check_claude_mcp_registered(home, settings.port)
+    codex_mcp_ok, codex_mcp_info = _check_codex_mcp_registered()
+    claude_mcp_ok, claude_mcp_info = _check_claude_mcp_registered(home)
     launchd_ok, launchd_info = _check_launchd_plist(home)
 
     checks = {
@@ -1058,13 +1085,7 @@ def migrate() -> None:
 def install(
     skills_only: Annotated[
         bool,
-        typer.Option("--skills-only", help="Only mirror legacy loose skills/ into runtimes."),
-    ] = False,
-    procedures_only: Annotated[
-        bool,
-        typer.Option(
-            "--procedures-only", help="Only mirror legacy loose procedures/ into runtimes."
-        ),
+        typer.Option("--skills-only", help="Only mirror skills/ into runtimes."),
     ] = False,
     mcp_only: Annotated[
         bool,
@@ -1090,24 +1111,22 @@ def install(
     bundled assets via ``importlib.resources``). The two paths land at
     the same end state.
 
-    Re-running is idempotent (audit B-24): plugins are the default runtime
-    surface, MCP registration upserts existing entries, and legacy loose
-    skills/procedures remain available through explicit ``--*-only`` flags.
+    Re-running is idempotent: plugins are the default runtime surface, MCP
+    registration upserts existing entries, and loose skills remain available
+    through the explicit ``--skills-only`` flag.
     """
     from content_stack import install as installer
 
-    selectors = [skills_only, procedures_only, mcp_only, plugins_only]
+    selectors = [skills_only, mcp_only, plugins_only]
     if sum(1 for s in selectors if s) > 1:
         typer.echo(
-            "error: --skills-only, --procedures-only, --mcp-only, and --plugins-only "
-            "are mutually exclusive.",
+            "error: --skills-only, --mcp-only, and --plugins-only are mutually exclusive.",
             err=True,
         )
         raise typer.Exit(code=2)
     do_skills = skills_only
-    do_procedures = procedures_only
-    do_mcp = mcp_only or not (skills_only or procedures_only or plugins_only)
-    do_plugins = plugins_only or not (skills_only or procedures_only or mcp_only)
+    do_mcp = mcp_only or not (skills_only or plugins_only)
+    do_plugins = plugins_only or not (skills_only or mcp_only)
 
     mode = installer.detect_mode()
     typer.echo(f"==> Install mode: {mode}")
@@ -1127,11 +1146,6 @@ def install(
         for runtime in runtimes:
             target, count = installer.copy_skills(runtime, home=home)
             typer.echo(f"==> Installed {count} skills -> {target}")
-
-    if do_procedures:
-        for runtime in runtimes:
-            target, count = installer.copy_procedures(runtime, home=home)
-            typer.echo(f"==> Installed {count} procedures -> {target}")
 
     if do_plugins:
         target, count = installer.copy_plugins(home=home)
@@ -1265,22 +1279,20 @@ def rotate_token(
         bool,
         typer.Option(
             "--yes",
-            help="Required — rotating without confirmation invalidates every existing MCP config.",
+            help="Required — rotating without confirmation changes the daemon bearer token.",
         ),
     ] = False,
 ) -> None:
-    """Rotate the bearer auth token and re-register MCP configs.
+    """Rotate the daemon bearer token and refresh bridge MCP configs.
 
-    Per PLAN.md L1273: writes a fresh 32 bytes to ``auth.token`` (mode
-    0600) then re-registers Codex + Claude Code so their saved
-    Authorization headers match the new token. A daemon that is already
-    running keeps accepting the token it loaded at startup until it is
-    restarted.
+    Writes a fresh 32 bytes to ``auth.token`` (mode 0600), then re-registers
+    Codex + Claude Code so both clients keep using the local stdio bridge. The
+    token itself is not stored in agent MCP configs. A daemon that is already
+    running keeps accepting the token it loaded at startup until it is restarted.
     """
     if not yes:
         typer.echo(
-            "error: rotate-token requires --yes (rotating invalidates every existing "
-            "MCP config until the registration scripts re-run).",
+            "error: rotate-token requires --yes (rotating changes the daemon bearer token).",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -1304,7 +1316,7 @@ def rotate_token(
         f.write("\n")
     os.replace(str(token_path) + ".new", token_path)
 
-    # Re-register so saved Authorization headers refresh.
+    # Re-register to keep agent MCP clients on the stdio bridge path.
     msg = installer.register_mcp_codex(port=settings.port, force=True)
     typer.echo(msg)
     msg = installer.register_mcp_claude(port=settings.port)

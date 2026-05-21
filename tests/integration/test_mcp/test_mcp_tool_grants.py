@@ -1,118 +1,138 @@
-"""Tool-grant matrix enforcement per audit B-10."""
+"""Tool-grant matrix enforcement for StackOS run-plan tools."""
 
 from __future__ import annotations
 
 from .conftest import MCPClient
 
 
+def _start_resource_run_plan(mcp: MCPClient, project_id: int) -> str:
+    plan_json = {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "grant-check.run",
+        "title": "Grant check",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "write",
+                    "tool": "resource.upsert",
+                    "plugin_slug": "core",
+                    "resource_key": "learning",
+                }
+            ]
+        },
+        "steps": [{"id": "write", "title": "Write resource"}],
+    }
+    created = mcp.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": plan_json},
+    )
+    started = mcp.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    token = started["data"]["run_token"]
+    mcp.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "write",
+            "run_token": token,
+        },
+    )
+    return token
+
+
 def _start_run_for_skill(mcp: MCPClient, project_id: int, skill_name: str) -> str:
-    """Helper: start a run with the named skill and return its run_token."""
     env = mcp.call_tool_structured(
         "run.start",
         {
             "project_id": project_id,
-            "kind": "procedure",
-            "procedure_slug": skill_name,
+            "kind": "run-plan",
             "skill_name": skill_name,
         },
     )
     return env["data"]["run_token"]
 
 
-def _create_article_with_skill(mcp: MCPClient, project_id: int, slug: str) -> dict:
-    """Create an article through a real granted skill token."""
-    token = _start_run_for_skill(mcp, project_id, "01-research/content-brief")
-    return mcp.call_tool_structured(
-        "article.create",
-        {"project_id": project_id, "title": slug, "slug": slug, "run_token": token},
-    )
-
-
-def test_skill_with_grant_can_call_allowed_tool(
-    mcp_client: MCPClient, seeded_project: dict
+def test_run_plan_controller_can_call_step_grant_tool(
+    mcp_client: MCPClient,
+    seeded_project: dict,
 ) -> None:
-    """The ``_test_editor`` skill can call article.get."""
     pid = seeded_project["data"]["id"]
-    token = _start_run_for_skill(mcp_client, pid, "_test_editor")
-    art = _create_article_with_skill(mcp_client, pid, "t")
-    aid = art["data"]["id"]
-    # Now call article.get with the test_editor token — allowed.
-    got = mcp_client.call_tool_structured("article.get", {"article_id": aid, "run_token": token})
-    assert got["id"] == aid
+    token = _start_resource_run_plan(mcp_client, pid)
 
-
-def test_skill_without_grant_returns_forbidden(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """The ``_test_editor`` skill cannot call article.markPublished → -32007."""
-    pid = seeded_project["data"]["id"]
-    token = _start_run_for_skill(mcp_client, pid, "_test_editor")
-    err = mcp_client.call_tool_error(
-        "article.markPublished",
+    out = mcp_client.call_tool_structured(
+        "resource.upsert",
         {
-            "article_id": 1,
-            "expected_etag": "x",
-            "run_id": 1,
+            "project_id": pid,
+            "plugin_slug": "core",
+            "resource_key": "learning",
+            "title": "Grant check",
+            "data_json": {"body": "ok"},
             "run_token": token,
         },
     )
-    assert err["code"] == -32007
-    assert err["message"] == "ToolNotGrantedError"
-    assert err["data"]["tool"] == "article.markPublished"
-    assert err["data"]["skill"] == "_test_editor"
-    assert isinstance(err["data"]["allowed"], list)
+
+    assert out["data"]["resource_key"] == "learning"
 
 
 def test_unknown_skill_with_provisioned_token_is_forbidden(
-    mcp_client: MCPClient, seeded_project: dict
+    mcp_client: MCPClient,
+    seeded_project: dict,
 ) -> None:
-    """A known token whose skill name is not in the matrix → forbidden.
-
-    ``resolve_run_token`` reads the run row's ``metadata_json.skill_name``;
-    skills not present in ``SKILL_TOOL_GRANTS`` get an empty grant set,
-    so any tool call from such a token raises ToolNotGrantedError.
-    The escape hatch is the explicit ``__test__`` sentinel, which only
-    the test harness can bind.
-    """
     pid = seeded_project["data"]["id"]
     token = _start_run_for_skill(mcp_client, pid, "unknown-skill")
+
     err = mcp_client.call_tool_error(
-        "article.create",
-        {"project_id": pid, "title": "T", "slug": "t-unknown", "run_token": token},
+        "resource.upsert",
+        {
+            "project_id": pid,
+            "plugin_slug": "core",
+            "resource_key": "learning",
+            "data_json": {"body": "blocked"},
+            "run_token": token,
+        },
     )
+
     assert err["code"] == -32007
 
 
 def test_unmatched_token_is_forbidden(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """A run_token that doesn't match any row cannot call tools."""
     pid = seeded_project["data"]["id"]
+
     err = mcp_client.call_tool_error(
-        "article.create",
+        "resource.upsert",
         {
             "project_id": pid,
-            "title": "T",
-            "slug": "t-test-bypass",
+            "plugin_slug": "core",
+            "resource_key": "learning",
+            "data_json": {"body": "blocked"},
             "run_token": "totally-bogus-token-not-in-runs",
         },
     )
+
     assert err["code"] == -32007
     assert err["data"]["skill"] == "__invalid__"
 
 
-def test_no_run_token_can_operate_state_but_not_vendor(
-    mcp_client: MCPClient, seeded_project: dict
+def test_no_run_token_cannot_write_project_state_or_call_vendor(
+    mcp_client: MCPClient,
+    seeded_project: dict,
 ) -> None:
-    """No run_token is the agent-owned setup surface, not vendor access."""
     pid = seeded_project["data"]["id"]
-    run = mcp_client.call_tool_structured(
-        "run.start",
-        {"project_id": pid, "kind": "procedure", "skill_name": "_test_editor"},
-    )
-    assert run["data"]["run_token"]
 
-    art = mcp_client.call_tool_structured(
-        "article.create",
-        {"project_id": pid, "title": "T2", "slug": "t-sys"},
+    resource_err = mcp_client.call_tool_error(
+        "resource.upsert",
+        {
+            "project_id": pid,
+            "plugin_slug": "core",
+            "resource_key": "learning",
+            "title": "System grant",
+            "data_json": {"body": "ok"},
+        },
     )
-    assert art["data"]["slug"] == "t-sys"
+    assert resource_err["code"] == -32007
+    assert resource_err["data"]["skill"] == "__system__"
 
     err = mcp_client.call_tool_error(
         "dataforseo.serp",
@@ -120,30 +140,3 @@ def test_no_run_token_can_operate_state_but_not_vendor(
     )
     assert err["code"] == -32007
     assert err["data"]["skill"] == "__system__"
-
-
-def test_run_token_cannot_read_other_project_object(
-    mcp_client: MCPClient, seeded_project: dict
-) -> None:
-    """Object-id-only reads are checked against the resolved run's project."""
-    pid_1 = seeded_project["data"]["id"]
-    project_2 = mcp_client.call_tool_structured(
-        "project.create",
-        {
-            "slug": "second-project",
-            "name": "Second Project",
-            "domain": "second.example",
-            "locale": "en-US",
-        },
-    )
-    pid_2 = project_2["data"]["id"]
-    token_1 = _start_run_for_skill(mcp_client, pid_1, "_test_editor")
-    art_2 = _create_article_with_skill(mcp_client, pid_2, "other-project-article")
-
-    err = mcp_client.call_tool_error(
-        "article.get",
-        {"article_id": art_2["data"]["id"], "run_token": token_1},
-    )
-    assert err["code"] == -32007
-    assert err["data"]["run_project_id"] == pid_1
-    assert err["data"]["result_project_id"] == pid_2

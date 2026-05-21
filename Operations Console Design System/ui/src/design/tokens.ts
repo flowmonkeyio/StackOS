@@ -83,7 +83,6 @@ export const palette = {
     800: '#991b1b',
     900: '#7f1d1d',
   },
-  // Reserved for ONE semantic domain (e.g. EEAT). Not a theme color.
   violet: {
     50:  '#f5f3ff',
     100: '#ede9fe',
@@ -140,15 +139,13 @@ export const lightTheme = {
   danger:  { default: palette.red[600],     subtle: palette.red[50],      fg: palette.red[700],     border: palette.red[200]     },
   info:    { default: palette.blue[600],    subtle: palette.blue[50],     fg: palette.blue[700],    border: palette.blue[200]    },
   neutral: { default: palette.slate[600],   subtle: palette.slate[100],   fg: palette.slate[700],   border: palette.slate[200]   },
-  // Reserved — EEAT and similar dedicated domains only.
-  eeat:    { default: palette.violet[600],  subtle: palette.violet[50],   fg: palette.violet[700],  border: palette.violet[200]  },
 } as const;
 
 // ---------------------------------------------------------------------------
 // Semantic colors — dark theme (first-class)
 // ---------------------------------------------------------------------------
 
-export const darkTheme: typeof lightTheme = {
+export const darkTheme = {
   bg: {
     app:        palette.slate[950],
     surface:    palette.slate[900],
@@ -186,7 +183,6 @@ export const darkTheme: typeof lightTheme = {
   danger:  { default: palette.red[400],     subtle: 'rgba(239,68,68,0.12)',  fg: palette.red[300],     border: 'rgba(239,68,68,0.30)'  },
   info:    { default: palette.blue[400],    subtle: 'rgba(59,130,246,0.12)', fg: palette.blue[300],    border: 'rgba(59,130,246,0.30)' },
   neutral: { default: palette.slate[400],   subtle: 'rgba(148,163,184,0.10)',fg: palette.slate[300],   border: palette.slate[700]     },
-  eeat:    { default: palette.violet[400],  subtle: 'rgba(139,92,246,0.12)', fg: palette.violet[300],  border: 'rgba(139,92,246,0.30)' },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -248,12 +244,12 @@ export const fontWeight = {
 /** font-size / line-height pairs. Operational density — body sits at 13px. */
 export const typography = {
   // Display — sparing, used for empty states and dashboard-level headlines.
-  displayLg: { size: '32px', line: '40px', weight: 600, tracking: '-0.02em' },
-  displayMd: { size: '24px', line: '32px', weight: 600, tracking: '-0.015em' },
+  displayLg: { size: '32px', line: '40px', weight: 600, tracking: '0' },
+  displayMd: { size: '24px', line: '32px', weight: 600, tracking: '0' },
 
   // Headings
-  h1:        { size: '20px', line: '28px', weight: 600, tracking: '-0.01em' },
-  h2:        { size: '16px', line: '24px', weight: 600, tracking: '-0.005em' },
+  h1:        { size: '20px', line: '28px', weight: 600, tracking: '0' },
+  h2:        { size: '16px', line: '24px', weight: 600, tracking: '0' },
   h3:        { size: '14px', line: '20px', weight: 600, tracking: '0' },
 
   // Body
@@ -262,9 +258,9 @@ export const typography = {
   bodySm:    { size: '12px', line: '16px', weight: 400, tracking: '0' },
 
   // Utility
-  label:     { size: '12px', line: '16px', weight: 500, tracking: '0.01em' },
-  caption:   { size: '11px', line: '14px', weight: 400, tracking: '0.02em' },
-  overline:  { size: '11px', line: '14px', weight: 600, tracking: '0.08em' /* uppercase */ },
+  label:     { size: '12px', line: '16px', weight: 500, tracking: '0' },
+  caption:   { size: '11px', line: '14px', weight: 400, tracking: '0' },
+  overline:  { size: '11px', line: '14px', weight: 600, tracking: '0' /* uppercase */ },
 
   // Mono — for code, IDs, hashes, JSON.
   code:      { size: '12px', line: '18px', weight: 400, tracking: '0' },

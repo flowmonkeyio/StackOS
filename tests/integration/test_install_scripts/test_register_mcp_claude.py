@@ -22,6 +22,7 @@ def _run(
     scripts_dir: Path, home: Path, *args: str, target: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "CONTENT_STACK_HOME": str(home)}
+    env.pop("CONTENT_STACK_PORT", None)
     if target is not None:
         env["CONTENT_STACK_MCP_TARGET"] = str(target)
     return subprocess.run(
@@ -40,9 +41,9 @@ def test_creates_file_when_absent(sandbox_home: Path, scripts_dir: Path) -> None
     payload = json.loads(target.read_text(encoding="utf-8"))
     assert "mcpServers" in payload
     cs = payload["mcpServers"]["content-stack"]
-    assert cs["transport"] == "http"
-    assert cs["url"] == "http://127.0.0.1:5180/mcp"
-    assert cs["headers"]["Authorization"].startswith("Bearer ")
+    assert cs["transport"] == "stdio"
+    assert cs["args"] == ["-m", "content_stack", "mcp-bridge"]
+    assert "headers" not in cs
 
 
 def test_preserves_existing_other_server(sandbox_home: Path, scripts_dir: Path) -> None:
@@ -69,7 +70,7 @@ def test_preserves_existing_other_server(sandbox_home: Path, scripts_dir: Path) 
 
     assert "other-server" in payload["mcpServers"], "sibling server lost"
     assert payload["mcpServers"]["other-server"]["command"] == "/usr/local/bin/other-server"
-    assert payload["mcpServers"]["content-stack"]["url"] == "http://127.0.0.1:5180/mcp"
+    assert payload["mcpServers"]["content-stack"]["transport"] == "stdio"
     assert payload["extraTopLevelKey"] == "preserved", "top-level keys not preserved"
 
 

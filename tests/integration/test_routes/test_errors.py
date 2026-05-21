@@ -39,16 +39,3 @@ def test_project_slug_immutable_returns_422(api: TestClient, project_id: int) ->
     resp = api.patch(f"/api/v1/projects/{project_id}", json={"slug": "new-slug"})
     # The repo raises ValidationError → 422.
     assert resp.status_code == 422
-
-
-def test_eeat_core_floor_returns_409(api: TestClient, project_id: int) -> None:
-    """D7: deactivating a tier='core' EEAT criterion is refused."""
-    # Find a core criterion.
-    rows = api.get(f"/api/v1/projects/{project_id}/eeat").json()
-    core = next(r for r in rows if r["tier"] == "core")
-    resp = api.patch(
-        f"/api/v1/projects/{project_id}/eeat/{core['id']}",
-        json={"active": False},
-    )
-    assert resp.status_code == 409
-    assert resp.json()["code"] == -32008

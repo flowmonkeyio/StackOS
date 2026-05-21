@@ -54,17 +54,7 @@ def test_copy_skills_clone_mode(sandbox: Path) -> None:
     target, count = installer.copy_skills("codex", home=sandbox)
     assert target == sandbox / ".codex" / "skills" / "content-stack"
     assert target.is_dir()
-    assert count == 25
-    # Sanity check: a file we know exists in the source landed in the target.
-    assert (target / "01-research" / "keyword-discovery" / "SKILL.md").is_file()
-
-
-def test_copy_procedures_excludes_template(sandbox: Path) -> None:
-    target, count = installer.copy_procedures("claude", home=sandbox)
-    assert target == sandbox / ".claude" / "procedures" / "content-stack"
-    assert target.is_dir()
-    assert count == 8
-    assert not (target / "_template").exists(), "template must not be installed"
+    assert count == 0
 
 
 def test_copy_plugins_hydrates_catalogs(sandbox: Path) -> None:
@@ -79,11 +69,7 @@ def test_copy_plugins_hydrates_catalogs(sandbox: Path) -> None:
         "args": ["-m", "content_stack", "mcp-bridge"],
     }
     assert (target / "skills" / "content-stack" / "SKILL.md").is_file()
-    assert (
-        target / "skills" / "catalog" / "01-research" / "keyword-discovery" / "SKILL.md"
-    ).is_file()
-    assert (target / "procedures" / "04-topic-to-published" / "PROCEDURE.md").is_file()
-    assert not (target / "procedures" / "_template").exists()
+    assert not (target / "skills" / "catalog").exists()
 
 
 def test_copy_plugins_refreshes_existing_codex_cache(sandbox: Path) -> None:
@@ -186,7 +172,8 @@ def test_copy_skills_idempotent(sandbox: Path) -> None:
 def test_copy_skills_deletes_stale(sandbox: Path) -> None:
     installer.copy_skills("codex", home=sandbox)
     target = sandbox / ".codex" / "skills" / "content-stack"
-    stale = target / "01-research" / "stale.md"
+    stale = target / "legacy-seo-skill" / "stale.md"
+    stale.parent.mkdir(parents=True, exist_ok=True)
     stale.write_text("not in source\n", encoding="utf-8")
     installer.copy_skills("codex", home=sandbox)
     assert not stale.exists()
@@ -197,7 +184,10 @@ def test_register_mcp_claude_creates_file(sandbox: Path) -> None:
     msg = installer.register_mcp_claude(home=sandbox, target=target)
     assert "Registered" in msg
     payload = json.loads(target.read_text(encoding="utf-8"))
-    assert payload["mcpServers"]["content-stack"]["url"].endswith("/mcp")
+    server = payload["mcpServers"]["content-stack"]
+    assert server["transport"] == "stdio"
+    assert server["args"] == ["-m", "content_stack", "mcp-bridge"]
+    assert "headers" not in server
 
 
 def test_register_mcp_claude_preserves_other_servers(sandbox: Path) -> None:
@@ -251,20 +241,7 @@ def test_cli_install_skills_only_subcommand(sandbox: Path) -> None:
     assert result.exit_code == 0, result.stdout
     assert (sandbox / ".codex" / "skills" / "content-stack").is_dir()
     assert (sandbox / ".claude" / "skills" / "content-stack").is_dir()
-    # --skills-only should NOT install procedures.
-    assert not (sandbox / ".codex" / "procedures" / "content-stack").exists()
-
-
-def test_cli_install_procedures_only_subcommand(sandbox: Path) -> None:
-    runner = CliRunner()
-    result = runner.invoke(
-        app,
-        ["install", "--procedures-only", "--skip-doctor"],
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0, result.stdout
-    assert (sandbox / ".codex" / "procedures" / "content-stack").is_dir()
-    assert not (sandbox / ".codex" / "skills" / "content-stack").exists()
+    assert not (sandbox / ".codex" / "plugins" / "content-stack").exists()
 
 
 def test_cli_install_default_is_plugin_first(sandbox: Path) -> None:
@@ -279,14 +256,13 @@ def test_cli_install_default_is_plugin_first(sandbox: Path) -> None:
         sandbox / ".codex" / "plugins" / "content-stack" / ".codex-plugin" / "plugin.json"
     ).is_file()
     assert not (sandbox / ".codex" / "skills" / "content-stack").exists()
-    assert not (sandbox / ".codex" / "procedures" / "content-stack").exists()
 
 
 def test_cli_install_rejects_multiple_only_flags(sandbox: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(
         app,
-        ["install", "--skills-only", "--procedures-only", "--skip-doctor"],
+        ["install", "--skills-only", "--plugins-only", "--skip-doctor"],
     )
     assert result.exit_code == 2
     assert "mutually exclusive" in result.stderr if hasattr(result, "stderr") else result.output
@@ -337,13 +313,9 @@ def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
     try:
         with engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            templates = conn.execute(
-                text("SELECT count(*) FROM schema_emits WHERE article_id IS NULL")
-            ).scalar_one()
     finally:
         engine.dispose()
     assert version == "0012_stackos_action_calls"
-    assert templates >= 5
 
 
 def test_upgrade_to_head_works_outside_repo_cwd(
@@ -363,3 +335,14 @@ def test_cli_rotate_token_requires_yes(sandbox: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["rotate-token"])
     assert result.exit_code == 2
+
+
+def test_codex_mcp_doctor_accepts_bridge_entries_only() -> None:
+    assert cli_module._codex_mcp_line_is_bridge("content-stack stdio -")
+    assert cli_module._codex_mcp_line_is_bridge(
+        "content-stack /path/python -m content_stack mcp-bridge"
+    )
+    assert not cli_module._codex_mcp_line_is_bridge("content-stack http://127.0.0.1:5180/mcp")
+    assert not cli_module._codex_mcp_line_is_bridge(
+        "content-stack --url http://127.0.0.1:5180/mcp --bearer-token-env-var CONTENT_STACK_TOKEN"
+    )

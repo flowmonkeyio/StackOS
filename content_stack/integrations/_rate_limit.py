@@ -1,7 +1,7 @@
 """Token-bucket rate limiter for per-integration QPS caps (PLAN.md L1037-L1041).
 
-Each integration declares a default qps (DataForSEO 5, Firecrawl 2, GSC
-1, OpenAI Images 10, …); the ``IntegrationBudgets.qps`` column overrides
+Each integration declares a default qps (DataForSEO 5, Firecrawl 2,
+OpenAI Images 10, and so on); the ``IntegrationBudgets.qps`` column overrides
 per project. The bucket capacity equals the qps so a brief burst of N
 calls is allowed but sustained throughput is rate-limited.
 

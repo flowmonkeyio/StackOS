@@ -8,11 +8,9 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect, text
-from sqlmodel import Session
 
 from content_stack.config import Settings
 from content_stack.db.connection import make_engine
-from content_stack.db.seed import seed_schema_emits_templates
 
 
 @dataclass(frozen=True)
@@ -40,17 +38,21 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
     Early/dev installs can have a fully materialised schema from
     ``SQLModel.metadata.create_all`` but no ``alembic_version`` table. Running
     ``upgrade head`` from base would then fail on the first ``CREATE TABLE``.
-    When the current head-shaped tables are already present, seed the migration
-    templates that ``create_all`` does not cover and stamp the DB at head.
+    When the current head-shaped tables are already present, stamp the DB at
+    head.
     """
     if not settings.db_path.exists():
         return False
 
     required_tables = {
         "projects",
-        "articles",
         "runs",
-        "schema_emits",
+        "plugins",
+        "resources",
+        "auth_providers",
+        "workflow_templates",
+        "run_plans",
+        "action_calls",
         "workspace_bindings",
     }
     engine = make_engine(settings.db_path)
@@ -64,9 +66,6 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
                     return False
             if not required_tables <= set(inspector.get_table_names()):
                 return False
-
-        with Session(engine) as session:
-            seed_schema_emits_templates(session)
     finally:
         engine.dispose()
 
@@ -77,9 +76,9 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
 def upgrade_to_head(settings: Settings) -> MigrationResult:
     """Upgrade the configured database to Alembic head.
 
-    Handles the legacy create_all-shaped DB path before invoking Alembic's
-    normal upgrade machinery, so both fresh and existing local installs land on
-    a version-tracked schema.
+    Handles pre-Alembic create_all-shaped local databases before invoking
+    Alembic's normal upgrade machinery, so fresh and existing local installs
+    land on a version-tracked schema.
     """
     settings.ensure_dirs()
     cfg = alembic_config(settings)

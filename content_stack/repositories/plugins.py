@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from content_stack.db.models import (
     Action,
@@ -26,6 +27,12 @@ from content_stack.repositories.resources import ResourceOut
 
 def _utcnow() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+def _required_id(value: int | None) -> int:
+    if value is None:
+        raise RuntimeError("expected persisted row id")
+    return int(value)
 
 
 class PluginOut(BaseModel):
@@ -129,13 +136,13 @@ class PluginRepository:
     def list_plugins(self, *, project_id: int | None = None) -> list[PluginOut]:
         self.sync_builtin_plugins()
         enabled_by_plugin = self._enabled_map(project_id)
-        rows = self._s.exec(select(Plugin).order_by(Plugin.slug.asc())).all()
-        return [self._plugin_out(row, enabled_by_plugin.get(row.id)) for row in rows]
+        rows = self._s.exec(select(Plugin).order_by(col(Plugin.slug).asc())).all()
+        return [self._plugin_out(row, enabled_by_plugin.get(_required_id(row.id))) for row in rows]
 
     def get_plugin(self, slug: str, *, project_id: int | None = None) -> PluginOut:
         self.sync_builtin_plugins()
         row = self._get_plugin_row(slug)
-        enabled = self._enabled_map(project_id).get(row.id)
+        enabled = self._enabled_map(project_id).get(_required_id(row.id))
         return self._plugin_out(row, enabled)
 
     def enable(
@@ -205,10 +212,12 @@ class PluginRepository:
         project_id: int | None = None,
     ) -> list[CapabilityOut]:
         self.sync_builtin_plugins()
-        stmt = select(Capability, Plugin).join(Plugin, Capability.plugin_id == Plugin.id)
+        stmt = select(Capability, Plugin).join(Plugin, col(Capability.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
-            stmt = stmt.where(Plugin.slug == plugin_slug)
-        rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Capability.key.asc())).all()
+            stmt = stmt.where(col(Plugin.slug) == plugin_slug)
+        rows = list(
+            self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Capability.key).asc())).all()
+        )
         rows = self._filter_project_enabled(rows, project_id=project_id)
         return [self._capability_out(capability, plugin) for capability, plugin in rows]
 
@@ -230,10 +239,12 @@ class PluginRepository:
         project_id: int | None = None,
     ) -> list[ProviderOut]:
         self.sync_builtin_plugins()
-        stmt = select(Provider, Plugin).join(Plugin, Provider.plugin_id == Plugin.id)
+        stmt = select(Provider, Plugin).join(Plugin, col(Provider.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
-            stmt = stmt.where(Plugin.slug == plugin_slug)
-        rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Provider.key.asc())).all()
+            stmt = stmt.where(col(Plugin.slug) == plugin_slug)
+        rows = list(
+            self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Provider.key).asc())).all()
+        )
         rows = self._filter_project_enabled(rows, project_id=project_id)
         return [self._provider_out(provider, plugin) for provider, plugin in rows]
 
@@ -257,12 +268,14 @@ class PluginRepository:
         self.sync_builtin_plugins()
         stmt = (
             select(Action, Plugin, Provider)
-            .join(Plugin, Action.plugin_id == Plugin.id)
-            .outerjoin(Provider, Action.provider_id == Provider.id)
+            .join(Plugin, col(Action.plugin_id) == col(Plugin.id))
+            .outerjoin(Provider, col(Action.provider_id) == col(Provider.id))
         )
         if plugin_slug is not None:
-            stmt = stmt.where(Plugin.slug == plugin_slug)
-        rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Action.key.asc())).all()
+            stmt = stmt.where(col(Plugin.slug) == plugin_slug)
+        rows = list(
+            self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Action.key).asc())).all()
+        )
         rows = self._filter_project_enabled(rows, project_id=project_id)
         return [self._action_out(action, plugin, provider) for action, plugin, provider in rows]
 
@@ -284,10 +297,12 @@ class PluginRepository:
         project_id: int | None = None,
     ) -> list[ResourceOut]:
         self.sync_builtin_plugins()
-        stmt = select(Resource, Plugin).join(Plugin, Resource.plugin_id == Plugin.id)
+        stmt = select(Resource, Plugin).join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
-            stmt = stmt.where(Plugin.slug == plugin_slug)
-        rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Resource.key.asc())).all()
+            stmt = stmt.where(col(Plugin.slug) == plugin_slug)
+        rows = list(
+            self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Resource.key).asc())).all()
+        )
         rows = self._filter_project_enabled(rows, project_id=project_id)
         return [self._resource_out(resource, plugin) for resource, plugin in rows]
 
@@ -317,7 +332,7 @@ class PluginRepository:
     def _sync_manifest(self, manifest: PluginManifest) -> Plugin:
         now = _utcnow()
         row = self._s.exec(select(Plugin).where(Plugin.slug == manifest.slug)).first()
-        manifest_json = manifest.model_dump(mode="json")
+        manifest_json = manifest.model_dump(mode="json", by_alias=True)
         if row is None:
             row = Plugin(
                 slug=manifest.slug,
@@ -402,14 +417,14 @@ class PluginRepository:
                     key=resource_manifest.key,
                     name=resource_manifest.name,
                     description=resource_manifest.description,
-                    schema_json=resource_manifest.schema,
+                    schema_data=resource_manifest.schema_data,
                     ui_schema_json=resource_manifest.ui_schema,
                     config_json=resource_manifest.config,
                 )
             else:
                 resource.name = resource_manifest.name
                 resource.description = resource_manifest.description
-                resource.schema_json = resource_manifest.schema
+                resource.schema_data = resource_manifest.schema_data
                 resource.ui_schema_json = resource_manifest.ui_schema
                 resource.config_json = resource_manifest.config
                 resource.updated_at = now
@@ -468,7 +483,7 @@ class PluginRepository:
                 version = ActionVersion(
                     action_id=action.id,
                     version=manifest.version,
-                    manifest_json=action_manifest.model_dump(mode="json"),
+                    manifest_json=action_manifest.model_dump(mode="json", by_alias=True),
                 )
                 self._s.add(version)
         return row
@@ -498,21 +513,21 @@ class PluginRepository:
             row.plugin_id
             for row in self._s.exec(
                 select(ProjectPlugin).where(
-                    ProjectPlugin.project_id == project_id,
-                    ProjectPlugin.enabled.is_(False),  # type: ignore[union-attr]
+                    col(ProjectPlugin.project_id) == project_id,
+                    col(ProjectPlugin.enabled).is_(False),
                 )
             ).all()
         }
 
     def _filter_project_enabled(
         self,
-        rows: list[Any],
+        rows: Sequence[Any],
         *,
         project_id: int | None,
     ) -> list[Any]:
         disabled_plugin_ids = self._disabled_plugin_ids(project_id)
         if not disabled_plugin_ids:
-            return rows
+            return list(rows)
         return [row for row in rows if row[1].id not in disabled_plugin_ids]
 
     def _plugin_out(self, row: Plugin, enabled_for_project: bool | None) -> PluginOut:
@@ -570,7 +585,7 @@ class PluginRepository:
             key=row.key,
             name=row.name,
             description=row.description,
-            schema_json=row.schema_json,
+            schema_data=row.schema_data,
             ui_schema_json=row.ui_schema_json,
             config_json=row.config_json,
         )

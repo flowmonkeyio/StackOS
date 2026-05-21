@@ -1,6 +1,6 @@
 # Operations Console — Design System
 
-A generic, reusable design system for **content-operations / admin SaaS** consoles. Built around the kind of UI you find in dense operational tooling: project lists, run logs, integration cards, status badges, score meters, budgets, and timelines.
+A generic, reusable design system for **operations / admin SaaS** consoles. Built around dense operational tooling: project lists, run logs, plugin cards, resource records, integration cards, status badges, score meters, budgets, and timelines.
 
 This system is **product-agnostic**. It ships semantic tokens, primitive components, and domain-shape components with well-defined props — none of which are stitched to a specific codebase. Drop it into any Vue 3 + TS + Tailwind app.
 
@@ -15,11 +15,11 @@ This system is **product-agnostic**. It ships semantic tokens, primitive compone
 | `colors_and_type.css` | CSS vars (root) — copy/paste into any project. Light + dark themes. |
 | `DesignSystemShowcase.html` | Visual reference page: tokens, primitives, patterns, dialog mocks. |
 | `ui/src/design/tokens.ts` | Semantic color, spacing, radius, shadow, z-index, typography, layout tokens. |
-| `ui/src/design/status.ts` | Canonical status / severity → tone mappings (article, run, EEAT, drift, etc). |
+| `ui/src/design/status.ts` | Canonical status / severity → tone mappings for runs, steps, projects, integrations, and budgets. |
 | `ui/src/design/colors_and_type.css` | Same as root CSS file, project-local copy. |
 | `ui/tailwind.config.js` | Tailwind preset wiring tokens → classes. |
 | `ui/src/components/ui/` | 38 primitives (UiButton, UiInput, UiDialog, UiToast, UiDataTable…). |
-| `ui/src/components/domain/` | Domain shapes: ProjectHeader, RunTimeline, EeatScoreCard, BudgetMeter… |
+| `ui/src/components/domain/` | Generic domain shapes: ProjectHeader, RunTimeline, BudgetMeter, integration cards. |
 | `docs/ui-design-system.md` | Principles, tokens, layout rules, a11y, anti-patterns. |
 | `docs/ui-component-inventory.md` | Inventory + missing patterns + migration map. |
 | `preview/` | Static preview cards rendered in the Design System tab. |
@@ -57,7 +57,7 @@ This system is **product-agnostic**. It ships semantic tokens, primitive compone
 - **Neutral base, restrained accent.** UI is gray scrollkit; one blue accent (`#2563eb`) carries primary intent. Status tones (success, warning, danger, info) appear only when they mean something.
 - **Semantic only at component level.** Components consume `bg.surface`, `fg.muted`, `accent.primary` — never `slate-100` or `blue-600` directly.
 - **Dark mode** flips the semantic layer; component CSS does not branch.
-- **Purple is reserved** for the EEAT/quality domain. Do not use it as a primary brand color, gradient, or button.
+- Purple is not a product status or primary accent. Keep the system palette neutral, blue, and semantic status colors.
 
 ### Type
 
@@ -104,7 +104,7 @@ This system is **product-agnostic**. It ships semantic tokens, primitive compone
 ### Cards
 
 - 1px border + `xs` shadow + 6px radius. **Never nested.** A card inside a card means you should be using a panel + section, not two cards.
-- Cards are for *real things* — projects, articles, runs. Not every layout block.
+- Cards are for *real things* — projects, plugins, runs, resources, and integrations. Not every layout block.
 
 ### Layout
 
@@ -137,9 +137,9 @@ The showcase HTML uses inline SVGs to stay self-contained; in production code, u
 
 `UiButton`, `UiIconButton`, `UiButtonGroup`, `UiInput`, `UiTextarea`, `UiSelect`, `UiCheckbox`, `UiSwitch`, `UiRadioGroup`, `UiRange`, `UiSecretInput`, `UiFormField`, `UiDialog`, `UiConfirmDialog`, `UiSidePanel`, `UiDropdownMenu`, `UiPopover`, `UiTooltip`, `UiCard`, `UiPanel`, `UiCallout`, `UiEmptyState`, `UiLoadingState`, `UiSkeleton`, `UiToast`, `UiBadge`, `UiProgressBar`, `UiScoreMeter`, `UiCodeBlock`, `UiJsonBlock`, `UiDiffBlock`, `UiPageHeader`, `UiSectionHeader`, `UiToolbar`, `UiFilterBar`, `UiBulkActionBar`, `UiMetricCard`, `UiDescriptionList`.
 
-**Domain (7 shipped, more sketched in inventory)** — `ui/src/components/domain/`:
+**Domain (5 shipped, more sketched in inventory)** — `ui/src/components/domain/`:
 
-`ProjectHeader`, `ProjectStatusSummary`, `IntegrationProviderCard`, `RunTimeline`, `ArticleStatusStepper`, `EeatScoreCard`, `BudgetMeter`.
+`ProjectHeader`, `ProjectStatusSummary`, `IntegrationProviderCard`, `RunTimeline`, `BudgetMeter`.
 
 See `docs/ui-component-inventory.md` for the full list, including what's deferred.
 

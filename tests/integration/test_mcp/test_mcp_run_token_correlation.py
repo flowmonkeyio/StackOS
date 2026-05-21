@@ -17,23 +17,22 @@ def test_run_step_call_records_under_owning_run(
         "run.start",
         {
             "project_id": seeded_project["data"]["id"],
-            "kind": "procedure",
-            "procedure_slug": "test",
+            "kind": "run-plan",
         },
     )
     rid = env["data"]["run_id"]
     step_env = mcp_client.call_tool_structured(
         "run.insertStep",
-        {"run_id": rid, "step_index": 0, "skill_name": "outline"},
+        {"run_id": rid, "step_index": 0, "skill_name": "store-resource"},
     )
     step_id = step_env["data"]["id"]
     call_env = mcp_client.call_tool_structured(
         "run.recordStepCall",
         {
             "run_step_id": step_id,
-            "mcp_tool": "article.get",
-            "request_json": {"article_id": 1},
-            "response_json": {"id": 1, "title": "X"},
+            "mcp_tool": "resource.get",
+            "request_json": {"record_id": 1},
+            "response_json": {"record": {"id": 1, "title": "X"}},
         },
     )
     assert call_env["data"]["run_step_id"] == step_id
@@ -47,9 +46,8 @@ def test_run_token_resolves_to_correct_run(mcp_client: MCPClient, seeded_project
         "run.start",
         {
             "project_id": seeded_project["data"]["id"],
-            "kind": "procedure",
-            "procedure_slug": "test",
-            "skill_name": "_test_keyword_discovery",
+            "kind": "run-plan",
+            "skill_name": "stackos/run-plan-controller",
         },
     )
     token = env["data"]["run_token"]
@@ -57,10 +55,13 @@ def test_run_token_resolves_to_correct_run(mcp_client: MCPClient, seeded_project
     # Make a call carrying the token; the dispatcher resolves it and
     # logs the run_id (visible via run.get).
     mcp_client.call_tool_structured(
-        "topic.create",
+        "resource.upsert",
         {
             "project_id": seeded_project["data"]["id"],
-            "title": "Token-bound topic",
+            "plugin_slug": "core",
+            "resource_key": "learning",
+            "title": "Token-bound resource",
+            "data_json": {"body": "ok"},
             "run_token": token,
         },
     )

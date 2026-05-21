@@ -10,9 +10,9 @@ The base classes here enforce two project-wide invariants:
    with one of the mutating prefixes (PLAN.md L758-L763) MUST declare
    ``WriteEnvelope[...]`` as its output type. Read tools return the bare
    data type. The runtime registration check in
-   ``content_stack.mcp.server.assert_envelope_discipline`` enforces this
-   at daemon startup; the helper ``verb_is_mutating`` lives here so unit
-   tests can pin the verb list without booting the server.
+    ``content_stack.mcp.server.assert_envelope_discipline`` enforces this
+    at daemon startup; the helper ``verb_is_mutating`` lives here so unit
+    tests can pin the verb list without booting the server.
 
 The full mutating-verb list is the source of truth. Adding a new verb
 here is the single edit needed when M5/M7/M8 add new tools — the
@@ -68,31 +68,18 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "ingest",
         "bulkIngest",
         "test",
-        "testGsc",
         "validate",
         "abort",
-        "resume",
         "fork",
-        "activate",
         "setActive",
-        "setPrimary",
-        "setCanonical",
-        "recordPublish",
         "claimStep",
         "execute",
-        "executeProgrammaticStep",
         "recordStepCall",
         "recordStep",
         "record",
         "rotate",
         "refresh",
-        "refreshDue",
         "reapStale",
-        "createVersion",
-        "markRefreshDue",
-        "markDrafted",
-        "markEeatPassed",
-        "markPublished",
         "rollup",
         "repair",
         "delete",
@@ -101,8 +88,6 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "heartbeat",
         "insertStep",
         "suggest",
-        # Drift diff produces a WriteEnvelope and records comparison output;
-        # keep it under mutation/idempotency discipline even while deferred.
         "diff",
     }
 )
@@ -120,14 +105,11 @@ READ_VERBS: frozenset[str] = frozenset(
         "enums",
         "listVariants",
         "listVersions",
-        "listPublishes",
-        "listDueForRefresh",
         "children",
         "status",
         "preview",
         "queryProject",
         "queryAll",
-        "queryArticle",
         "getReport",
         "getActive",
         "lookup",
@@ -151,7 +133,7 @@ READ_ONLY_TOOL_NAMES: frozenset[str] = frozenset(
 def verb_is_mutating(name: str) -> bool:
     """Return ``True`` if a tool name's verb component is mutating.
 
-    Tool names are dotted: ``namespace.verb`` (e.g. ``article.setBrief``).
+    Tool names are dotted: ``namespace.verb`` (e.g. ``resource.upsert``).
     The verb after the last dot is matched against
     ``MUTATING_VERBS``. Names without a dot are treated as bare verbs so
     test fixtures can stress the helper without inventing namespaces.
@@ -161,8 +143,8 @@ def verb_is_mutating(name: str) -> bool:
     verb = name.rsplit(".", 1)[-1]
     if verb in MUTATING_VERBS:
         return True
-    # CamelCase aliases like setBrief / refreshDue should inherit the base
-    # mutating prefix. Require an uppercase boundary so read-ish verbs such
+    # CamelCase verbs inherit the base mutating prefix. Require an uppercase
+    # boundary so read-ish verbs such
     # as "getActive" stay controlled by the explicit read registry.
     return any(
         verb.startswith(prefix) and len(verb) > len(prefix) and verb[len(prefix)].isupper()
@@ -197,19 +179,17 @@ class MCPInput(BaseModel):
     # tool can declare or omit them. The registration-time discipline
     # check inspects subclass fields directly.
     idempotency_key: str | None = None
-    """24h dedup token per audit M-20 / PLAN.md L724-L727 — mutating tools only."""
+    """24h dedup token for mutating tools."""
 
     run_token: str | None = None
-    """Active-run correlation token returned by ``run.start``.
+    """Active-run correlation token returned by ``run.start`` or ``runPlan.start``.
 
-    Set by the procedure runner (M8) on every per-skill subprocess; the
-    server resolves it via ``permissions.resolve_run_token`` to enforce
-    the per-skill tool-grant matrix and link audit rows to the right
-    ``runs.id``.
+    The server resolves it via ``permissions.resolve_run_token`` to enforce
+    the tool-grant matrix and link audit rows to the right ``runs.id``.
     """
 
     expected_etag: str | None = None
-    """Optimistic-concurrency token for article fat-row mutating tools (audit B-07)."""
+    """Optimistic-concurrency token for mutating tools that support it."""
 
 
 class MCPOutput(BaseModel):

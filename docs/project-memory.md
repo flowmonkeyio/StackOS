@@ -21,8 +21,8 @@ decide which learning is true, which experiment won, or what to do next.
 - `metric_snapshots`: point-in-time metric values.
 
 These tables are additive sidecars. The clean-cut migration rule is that old
-SEO/procedure/content-stack tables remain in place; no pivot migration drops
-legacy history.
+Existing project data remains in place unless a signed-off schema cleanup
+explicitly removes it with backup/restore verification.
 
 ## Agent Retrieval
 

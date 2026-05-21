@@ -3,28 +3,26 @@
   Reads from src/design/status.ts so backend status strings resolve to
   consistent label + tone + icon across the app.
 
-  <StatusBadge domain="article" status="published" />
-  <StatusBadge domain="run"     status="running" />
+  <StatusBadge domain="run" status="running" />
+  <StatusBadge domain="project" status="active" />
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
 import UiBadge from './ui/UiBadge.vue';
 import { resolveStatus, type StatusDomain } from '../design/status';
 
-type LegacyKind = StatusDomain | 'job';
-
 export interface StatusBadgeProps {
   domain?: StatusDomain;
-  /** Backward-compatible alias used by the pre-design-system UI. */
-  kind?: LegacyKind;
+  /** Alias used by current tables. */
+  kind?: StatusDomain | 'job';
   status: string;
   /** Override label rendering. */
   label?: string;
   /** Force tone (rare — escape hatch). */
-  tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'eeat';
+  tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
   size?: 'sm' | 'md';
   variant?: 'subtle' | 'solid' | 'outline';
-  /** Backward-compatible small variant used by current tables. */
+  /** Compact rendering used by dense tables. */
   small?: boolean;
   /** Hide icon. */
   noIcon?: boolean;
@@ -43,8 +41,8 @@ const props = withDefaults(defineProps<StatusBadgeProps>(), {
 });
 
 const domain = computed<StatusDomain>(() => {
-  const value = props.domain ?? props.kind ?? 'topic';
-  return value === 'job' ? 'procedure' : value;
+  const value = props.domain ?? props.kind ?? 'run';
+  return value === 'job' ? 'step' : value;
 });
 
 const def = computed(() => resolveStatus(domain.value, props.status));

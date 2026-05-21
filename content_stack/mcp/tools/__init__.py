@@ -1,27 +1,14 @@
-"""MCP tool registry — every per-domain module exports a ``register`` callable.
-
-Per the M3 layout, tools are grouped by domain (projects, clusters,
-articles, …). Each module exports a ``register(registry)`` function
-that calls ``registry.register(ToolSpec(...))`` once per tool. The top-
-level ``register_all`` here just wires every per-domain registrar so
-``content_stack.mcp.server.register_mcp`` can stay agnostic of the
-catalog.
-"""
+"""MCP tool registry for the StackOS daemon catalog."""
 
 from __future__ import annotations
 
 from content_stack.mcp.server import ToolRegistry
 from content_stack.mcp.tools import (
     actions,
-    articles,
     artifacts,
     auth,
-    authors,
-    clusters,
     context,
     cost,
-    gsc,
-    interlinks,
     meta,
     plugins,
     projects,
@@ -35,17 +22,12 @@ from content_stack.mcp.tools import (
 
 
 def register_all(registry: ToolRegistry) -> None:
-    """Populate ``registry`` with every M3-shipped tool."""
+    """Populate ``registry`` with the core StackOS tool catalog."""
     actions.register(registry)
     projects.register(registry)
     auth.register(registry)
     context.register(registry)
-    clusters.register(registry)
-    articles.register(registry)
-    interlinks.register(registry)
     runs.register(registry)
-    gsc.register(registry)
-    authors.register(registry)
     cost.register(registry)
     meta.register(registry)
     plugins.register(registry)

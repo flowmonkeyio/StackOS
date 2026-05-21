@@ -26,16 +26,15 @@ make install
 
 `make install` re-syncs Python deps, runs migrations to head, rebuilds
 the UI bundle (no-op once committed), and re-runs the plugin, MCP, and
-doctor install steps. Legacy loose skill/procedure installers remain
-available as explicit make targets for compatibility.
+doctor install steps.
 
 ## What happens during upgrade
 
 | Step | Behaviour |
 |---|---|
 | Schema | `alembic upgrade head` runs at every daemon start. Down-migrations exist but are discouraged. |
-| Plugin | `rsync -a --delete` mirrors and hydrates `~/.codex/plugins/content-stack`. **Retired skills / procedures disappear** from the plugin catalog on the next install. |
-| MCP registration | Codex CLI: `codex mcp add` is a no-op when already registered (the script greps `mcp list` first). Claude Code: atomic JSON merge with `.bak` backup; sibling servers preserved. |
+| Plugin | `rsync -a --delete` mirrors and hydrates `~/.codex/plugins/content-stack`. Retired plugin assets disappear from the plugin catalog on the next install. |
+| MCP registration | Codex CLI: `codex mcp add` registers the local `mcp-bridge` stdio command and is a no-op when already registered (the script greps `mcp list` first). Claude Code: atomic JSON merge with `.bak` backup; sibling servers preserved. Neither registration stores a bearer token in client config. |
 | Auth token | **Does not rotate on upgrade.** Run `content-stack rotate-token --yes` or `make rotate-token` explicitly to rotate; registration refreshes saved configs. Restart any running daemon so middleware loads the new token. |
 | launchd plist | If the existing plist matches the generated one, it's a no-op. If different, `--force` overwrites with a `.bak` retained. |
 
@@ -44,7 +43,7 @@ available as explicit make targets for compatibility.
 Bump major version. Release notes call out manual migrations:
 
 - DB schema changes: covered by Alembic — no action required.
-- Skill / procedure removals: documented in the changelog; the install
+- Skill or plugin asset removals: documented in the changelog; the install
   step deletes them automatically via `rsync --delete`.
 - Auth token format change: would require an explicit `rotate-token`
   call; surfaced in release notes if it ever happens.
@@ -88,7 +87,8 @@ Migration of an install across machines requires copying:
 - `~/.local/state/content-stack/seed.bin` (encryption seed)
 - `~/.local/state/content-stack/auth.token` (bearer token)
 
-Without `seed.bin`, the daemon refuses to start and `doctor` emits a
-warning to run `content-stack reset-integrations` (clears the
-encrypted credentials and prompts for re-entry). The DB itself stays
-intact — only `integration_credentials` rows become unrecoverable.
+Without `seed.bin`, the daemon refuses to start and `doctor` reports a
+credential decrypt/seed problem. Restore the matching seed from backup, or
+recreate the affected provider credentials through the StackOS Connections UI.
+The DB itself stays intact, but encrypted credential payloads are unrecoverable
+without the original seed.

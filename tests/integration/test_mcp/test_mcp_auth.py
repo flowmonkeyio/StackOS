@@ -11,11 +11,10 @@ from .conftest import MCPClient
 
 def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> dict:
     response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/integrations",
+        f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
         json={
-            "kind": "firecrawl",
             "plaintext_payload": "fc-secret",
-            "config_json": {"api_key": "fc-secret"},
+            "config_json": {"label": "Primary Firecrawl"},
         },
         headers=mcp._headers(),
     )
@@ -67,17 +66,20 @@ def test_local_admin_auth_mutations_are_not_system_granted(
     for tool_name, arguments in [
         ("auth.start", {"project_id": project_id, "provider_key": "firecrawl"}),
         ("auth.revoke", {"project_id": project_id, "provider_key": "firecrawl"}),
-        (
-            "integration.set",
-            {
-                "project_id": project_id,
-                "kind": "firecrawl",
-                "plaintext_payload_b64": "ZmMtc2VjcmV0",
-            },
-        ),
-        ("integration.remove", {"credential_id": 1}),
-        ("gscOauth.start", {"project_id": project_id}),
     ]:
         err = mcp_client.call_tool_error(tool_name, arguments)
         assert err["code"] == -32007
         assert err["message"] == "ToolNotGrantedError"
+
+
+def test_removed_integration_secret_mcp_tools_are_not_registered(
+    mcp_client: MCPClient,
+) -> None:
+    for tool_name, arguments in [
+        ("integration.list", {"project_id": 1}),
+        ("integration.set", {"project_id": 1, "kind": "firecrawl", "plaintext_payload": "x"}),
+        ("integration.remove", {"credential_id": 1}),
+    ]:
+        err = mcp_client.call_tool_error(tool_name, arguments)
+        assert err["code"] == -32601
+        assert err["message"] == "MethodNotFoundError"

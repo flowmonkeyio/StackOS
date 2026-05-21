@@ -8,7 +8,7 @@ const ORIG_FETCH = globalThis.fetch
 const JOB = {
   id: 1,
   project_id: 1,
-  kind: 'gsc-pull',
+  kind: 'weekly-review',
   cron_expr: '0 2 * * *',
   next_run_at: '2026-05-06T02:00:00Z',
   last_run_at: '2026-05-05T02:00:00Z',

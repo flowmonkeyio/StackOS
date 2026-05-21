@@ -57,18 +57,6 @@ class Settings(BaseSettings):
     data_dir: Path = _default_data_dir()
     state_dir: Path = _default_state_dir()
 
-    # The maximum number of FIX-loop iterations the runner takes before
-    # asking the operator to take over. Per audit BLOCKER-09 the default
-    # of 3 stops editor + EEAT-gate remediation from looping endlessly
-    # when a draft cannot satisfy the gate.
-    procedure_runner_max_loop_iterations: int = 3
-
-    # Default ceiling on parallel runs of the same procedure. Each
-    # procedure can override via ``concurrency_limit:`` in its
-    # PROCEDURE.md frontmatter; this setting is the runtime fallback
-    # when a procedure doesn't declare its own.
-    procedure_runner_default_concurrency: int = 4
-
     @field_validator("host")
     @classmethod
     def _reject_non_loopback(cls, v: str) -> str:

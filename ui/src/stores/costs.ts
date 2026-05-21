@@ -12,7 +12,6 @@ export type IntegrationBudget = components['schemas']['IntegrationBudgetOut']
 export const INTEGRATION_KINDS = [
   'dataforseo',
   'firecrawl',
-  'gsc',
   'openai-images',
   'reddit',
   'google-paa',

@@ -9,7 +9,7 @@ export interface UiProgressBarProps {
   value?: number | null;
   max?: number;
   /** Tone of the fill. */
-  tone?: 'accent' | 'success' | 'warning' | 'danger' | 'eeat';
+  tone?: 'accent' | 'info' | 'success' | 'warning' | 'danger';
   size?: 'xs' | 'sm' | 'md';
   /** Show a numeric label alongside. */
   showLabel?: boolean;
@@ -19,9 +19,12 @@ export interface UiProgressBarProps {
 }
 
 const props = withDefaults(defineProps<UiProgressBarProps>(), {
+  value: null,
   max: 100,
   tone: 'accent',
   size: 'sm',
+  format: undefined,
+  ariaLabel: undefined,
 });
 
 const indeterminate = computed(() => props.value == null);
@@ -30,10 +33,10 @@ const percent = computed(() => indeterminate.value ? 0 : Math.max(0, Math.min(10
 const heightClass = computed(() => ({ xs: 'h-1', sm: 'h-1.5', md: 'h-2' }[props.size]));
 const fillBg = computed(() => ({
   accent:  'bg-accent',
+  info:    'bg-info',
   success: 'bg-success',
   warning: 'bg-warning',
   danger:  'bg-danger',
-  eeat:    'bg-eeat',
 }[props.tone]));
 </script>
 
@@ -57,7 +60,10 @@ const fillBg = computed(() => ({
         :class="['absolute inset-y-0 w-1/3 rounded-full ui-progressbar__indeterminate', fillBg]"
       />
     </div>
-    <span v-if="showLabel" class="text-2xs font-mono tabular-nums text-fg-muted shrink-0">
+    <span
+      v-if="showLabel"
+      class="text-2xs font-mono tabular-nums text-fg-muted shrink-0"
+    >
       {{ format ? format(value ?? 0, max) : indeterminate ? '…' : `${Math.round(percent)}%` }}
     </span>
   </div>

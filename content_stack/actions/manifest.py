@@ -118,9 +118,7 @@ def parse_action_manifest(
         raise ValidationError("action manifest operation must be a non-empty string")
     requires_credential = config.get("requires_credential")
     if requires_credential is None:
-        requires_credential = (
-            provider is not None and provider.auth_type not in {"none", "local"}
-        )
+        requires_credential = provider is not None and provider.auth_type not in {"none", "local"}
     if not isinstance(requires_credential, bool):
         raise ValidationError("action manifest requires_credential must be a boolean")
     allows_credential = config.get("allows_credential")
@@ -136,8 +134,8 @@ def parse_action_manifest(
     enforce_budget = config.get("enforce_budget", False)
     if not isinstance(enforce_budget, bool):
         raise ValidationError("action manifest enforce_budget must be a boolean")
-    resolved_budget_kind = budget_kind if budget_kind is not None else (
-        provider.key if provider else None
+    resolved_budget_kind = (
+        budget_kind if budget_kind is not None else (provider.key if provider else None)
     )
     return ExecutableActionManifest(
         schema_version=schema_version,

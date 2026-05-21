@@ -131,5 +131,5 @@ metadata:
     )
 
     assert template.context_requirements[0].filters_json == {"statuses": ["success"]}
-    assert template.outputs[0].schema_json == {"type": "object"}
+    assert template.outputs[0].schema_data == {"type": "object"}
     assert template.metadata_json == {"safe": True}

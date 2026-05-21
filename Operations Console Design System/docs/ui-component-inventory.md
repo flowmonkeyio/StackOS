@@ -11,7 +11,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiButtonGroup` | segmented |
 | `UiInput` | label/help/error wired via UiFormField |
 | `UiTextarea` | autosize optional |
-| `UiSelect` | native; UiDropdownMenu for rich |
+| `UiSelect` | custom listbox-style select; no native browser select chrome |
 | `UiCheckbox` | indeterminate supported |
 | `UiSwitch` | role="switch" |
 | `UiRadioGroup` | keyboard arrows |
@@ -24,7 +24,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiDropdownMenu` | keyboard arrows; sections |
 | `UiPopover` | floating-ui placement |
 | `UiTooltip` | hover + focus |
-| `UiCard` | padding sm/md/lg |
+| `UiCard` | density compact/comfortable; optional padding; no nested cards |
 | `UiPanel` | flat alt-surface; for sub-sections |
 | `UiCallout` | info/warning/danger/success |
 | `UiEmptyState` | icon + title + body + primary action |
@@ -41,7 +41,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiSectionHeader` | inside cards/panels |
 | `UiToolbar` | sticky action bar |
 | `UiFilterBar` | search + chips + filters |
-| `UiBulkActionBar` | replaces filter bar on selection |
+| `UiBulkActionBar` | generic primitive only; not used in observer-mode product views |
 | `UiMetricCard` | label + value + delta |
 | `UiDescriptionList` | label/value rows |
 
@@ -49,34 +49,34 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 
 | Component | Notes |
 |---|---|
-| `ProjectHeader` | name + slug + state + action slot |
-| `ProjectStatusSummary` | grid of UiMetricCard |
-| `IntegrationProviderCard` | provider + health + connect/configure/disconnect |
-| `RunTimeline` | step accordion with progress |
-| `ArticleStatusStepper` | 7-step linear stepper |
-| `EeatScoreCard` | radial + breakdown rows |
-| `BudgetMeter` | spend/cap + tone band |
+| `ProjectPageHeader` | project-aware title, breadcrumbs, read-only action slot, and route chrome |
 
-## Missing / sketched (priority order)
+## Shipped — StackOS renderers (`ui/src/components/renderers/`)
 
-These are described in the doc but not yet built. Ship them in this order:
+| Component | Notes |
+|---|---|
+| `PluginNavRenderer` | renders core/plugin nav sections from static route descriptors or plugin `manifest_json.ui.nav` contributions |
+| `TemplateRenderer` | renders reusable workflow template setup, contracts, context requirements, policies, approvals, and learning hooks |
+| `RunPlanRenderer` | renders concrete run-plan steps, allowed tools, approvals, run context, and redacted action calls |
+| `ActionSchemaRenderer` | renders action input/output schemas and connector config with defensive redaction |
+| `ResourceViewRenderer` | renders resource schemas or project resource records using explicit plugin/resource fields |
+| `ArtifactRenderer` | renders artifact metadata/provenance without inventing plugin ownership |
+| `ContextQueryRenderer` | renders bounded context query items with sanitized fields and provenance |
 
-1. `IntegrationSetupDialog` — wraps UiDialog with provider-specific form slots.
-2. `RunStepAccordion` — collapsible per-step output viewer (logs, JSON, diffs).
-3. `ArticleActionBar` — sticky bottom-of-page bar for article detail.
-4. `LinkSuggestionCard` — interlink candidate row with accept/reject.
-5. `GscOpportunityCard` — GSC keyword opportunity with delta + CTR.
-6. `DriftBaselineCard` — drift severity + last-known-good comparison.
-7. `ScheduleRuleCard` — cron + cap + next-run preview.
-8. `ProcedureCard` — list-row representation of a procedure.
-9. `SourceLedger` — citations + provenance rows.
-10. `SchemaEditorPanel` — JSON editor with schema.org type picker.
-11. `ComplianceRuleRow` — rule + state + last-checked.
-12. `EeatCriterionRow` — single criterion expandable.
-13. `PublishingTargetCard` — target + last publish + retry.
-14. `CredentialHealthBadge` — small alias of UiBadge with status.ts mapping.
-15. `ArticleAssetCard` — image/video preview with metadata.
-16. `MarkdownSectionEditor` — UiTextarea + toolbar + preview.
+These renderers are intentionally generic. New domains should contribute
+manifests/templates/resources/actions and let the renderer surface them; do not
+add workflow-specific UI unless the generic renderer is insufficient and the
+exception is signed off.
+
+Removed action-oriented demo components. They were removed from `ui/src`
+because they exposed or demonstrated domain mutations that now belong to the
+agent/MCP path.
+
+## Design-system showcase
+
+The `/__design-system` route was removed from the shipped app. Keep any future
+component demos outside the production router, and do not ship action-demo
+components into `ui/src/components/domain`.
 
 ## Inline duplication patterns to remove
 
@@ -99,26 +99,22 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 | View | Primary primitives | Domain components |
 |---|---|---|
 | Projects list | UiPageHeader, UiFilterBar, UiBadge, UiButton | (none) |
-| Project overview | UiPageHeader, UiCard, UiDescriptionList, UiMetricCard | ProjectHeader, ProjectStatusSummary, BudgetMeter |
-| Project integrations tab | UiCard, UiButton, UiCallout, UiDialog | IntegrationProviderCard, IntegrationSetupDialog* |
-| Articles list | UiFilterBar, UiBulkActionBar, DataTable, UiBadge | (none) |
-| Article detail | UiPageHeader, UiTabBar, UiCard | ArticleStatusStepper, EeatScoreCard, ArticleActionBar* |
-| Topics list | UiFilterBar, DataTable, UiBadge | (none) |
+| Project overview | UiPageHeader, UiDescriptionList, UiMetricCard, DataTable | ProjectPageHeader |
+| Project schedules tab | UiPanel, UiBadge, DataTable | ProjectPageHeader |
+| Project budget tab | UiPanel, UiMetricCard, DataTable | ProjectPageHeader |
 | Runs list | UiFilterBar, DataTable, UiBadge | (none) |
-| Run detail | UiPageHeader, UiCard, UiCodeBlock, UiJsonBlock | RunTimeline, RunStepAccordion* |
-| Procedures list | DataTable, UiBadge | ProcedureCard* |
-| GSC | DataTable, UiMetricCard | GscOpportunityCard* |
-| Drift | DataTable, UiBadge, UiDiffBlock | DriftBaselineCard* |
-
-`*` = not yet shipped, see priority list above.
+| Run detail | UiPageHeader, UiCodeBlock, UiJsonBlock, RunPlanRenderer, ArtifactRenderer | (none) |
+| Plugins | UiPanel, UiBadge, ActionSchemaRenderer | ProjectPageHeader |
+| Capabilities | DataTable, UiBadge, ActionSchemaRenderer | ProjectPageHeader |
+| Connections | DataTable, UiBadge, UiJsonBlock | ProjectPageHeader |
+| Workflow templates | DataTable, TemplateRenderer | ProjectPageHeader |
+| Project Data | UiSegmentedControl, DataTable, ArtifactRenderer | ProjectPageHeader |
+| Resource Explorer | DataTable, ResourceViewRenderer, ArtifactRenderer | ProjectPageHeader |
 
 ## Refactor priority
 
 If you're carving up the work:
 
-1. **Articles list** — highest reuse impact (filter bar + bulk + table + badges).
-2. **Article detail header/status area** — proves stepper + score card + action bar shapes.
-3. **Project integrations tab** — proves card + dialog modal-heavy flow.
-4. **Runs / Run detail** — proves timeline + accordion.
-5. **Topics list** — duplicate of articles patterns; should drop in trivially after #1.
-6. Everything else — incremental.
+1. Keep the observer-mode route audit green.
+2. Keep `read-only-ui.spec.ts` scanning product code for write calls.
+3. Add new domain components only when they display state without owning product mutations.

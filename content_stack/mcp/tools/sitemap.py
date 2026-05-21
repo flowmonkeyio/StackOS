@@ -1,14 +1,9 @@
-"""``sitemap.*`` — small daemon helper exposed for skill #5.
+"""``sitemap.*`` — daemon helper for URL discovery.
 
-Skill ``01-research/competitor-sitemap-shortcut`` walks a list of
-competitor sitemap URLs to derive a topic-discovery seed corpus. Rather
-than ask the LLM client to bring its own HTTP+XML stack, we expose
-``sitemap.fetch`` as an MCP tool that wraps
-``content_stack.integrations.sitemap.fetch_sitemap_entries``.
-
-The tool is read-shaped (no DB writes); skill #5 follows up with
-``topic.bulkCreate`` to persist the discovered URLs as topic
-candidates.
+Agents can use ``sitemap.fetch`` to inspect one or more sitemap URLs and then
+decide which plugin resource records, learnings, or external actions should be
+created. The tool is read-shaped: it never writes project state and carries no
+workflow decisions.
 """
 
 from __future__ import annotations

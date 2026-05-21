@@ -217,8 +217,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Clean-cut pivot rule: this downgrade removes only D07-owned sidecar
-    # objects. It does not drop or rewrite legacy SEO/procedure/run tables.
+    # Downgrade removes only the tables this revision owns.
     op.drop_index("ix_approval_requests_step", table_name="approval_requests")
     op.drop_index("ix_approval_requests_plan", table_name="approval_requests")
     op.drop_index(

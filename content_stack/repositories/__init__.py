@@ -1,30 +1,7 @@
-"""Repositories — transport-agnostic business logic (M1.B).
-
-Public re-exports keep the import surface flat for the M2 REST layer
-and M3 MCP layer. Each repository takes a SQLModel ``Session`` in its
-constructor; the session lifecycle is owned by the transport adapters
-(FastAPI dep / MCP run context).
-
-Errors all subclass ``RepositoryError``; transports map them to JSON-RPC
-codes per PLAN.md L745-L754.
-"""
+"""Repository re-exports for the StackOS core."""
 
 from __future__ import annotations
 
-from content_stack.repositories.articles import (
-    ArticleAssetOut,
-    ArticleAssetRepository,
-    ArticleOut,
-    ArticlePublishOut,
-    ArticlePublishRepository,
-    ArticleRepository,
-    ArticleVersionOut,
-    ResearchSourceOut,
-    ResearchSourceRepository,
-    SchemaEmitOut,
-    SchemaEmitRepository,
-)
-from content_stack.repositories.authors import AuthorOut, AuthorRepository
 from content_stack.repositories.base import (
     BudgetExceededError,
     ConflictError,
@@ -37,52 +14,15 @@ from content_stack.repositories.base import (
     cursor_paginate,
     validate_transition,
 )
-from content_stack.repositories.clusters import (
-    ClusterOut,
-    ClusterRepository,
-    TopicCreate,
-    TopicOut,
-    TopicRepository,
-)
-from content_stack.repositories.eeat import (
-    EeatEvaluationCreate,
-    EeatEvaluationOut,
-    EeatEvaluationRepository,
-    EeatScoreReport,
-)
-from content_stack.repositories.gsc import (
-    DriftBaselineOut,
-    DriftBaselineRepository,
-    GscMetricDailyOut,
-    GscMetricOut,
-    GscMetricRepository,
-    GscMetricsDailyRepository,
-    GscRow,
-    RedirectOut,
-    RedirectRepository,
-)
-from content_stack.repositories.interlinks import (
-    InterlinkRepository,
-    InterlinkSuggestion,
-    InternalLinkOut,
-)
 from content_stack.repositories.projects import (
-    ComplianceRuleOut,
-    ComplianceRuleRepository,
-    EeatCriteriaRepository,
-    EeatCriterionOut,
     IntegrationBudgetOut,
     IntegrationBudgetRepository,
     IntegrationCredentialOut,
     IntegrationCredentialRepository,
     ProjectOut,
     ProjectRepository,
-    PublishTargetOut,
-    PublishTargetRepository,
     ScheduledJobOut,
     ScheduledJobRepository,
-    VoiceProfileOut,
-    VoiceProfileRepository,
 )
 from content_stack.repositories.resources import (
     ArtifactOut,
@@ -96,8 +36,6 @@ from content_stack.repositories.resources import (
 from content_stack.repositories.runs import (
     IdempotencyKeyRepository,
     IdempotencyOut,
-    ProcedureRunStepOut,
-    ProcedureRunStepRepository,
     RunOut,
     RunRepository,
     RunStepCallOut,
@@ -114,37 +52,11 @@ from content_stack.repositories.workspaces import (
 
 __all__ = [
     "AgentSessionOut",
-    "ArticleAssetOut",
-    "ArticleAssetRepository",
-    "ArticleOut",
-    "ArticlePublishOut",
-    "ArticlePublishRepository",
-    "ArticleRepository",
-    "ArticleVersionOut",
     "ArtifactOut",
     "ArtifactRepository",
-    "AuthorOut",
-    "AuthorRepository",
     "BudgetExceededError",
-    "ClusterOut",
-    "ClusterRepository",
-    "ComplianceRuleOut",
-    "ComplianceRuleRepository",
     "ConflictError",
-    "DriftBaselineOut",
-    "DriftBaselineRepository",
-    "EeatCriteriaRepository",
-    "EeatCriterionOut",
-    "EeatEvaluationCreate",
-    "EeatEvaluationOut",
-    "EeatEvaluationRepository",
-    "EeatScoreReport",
     "Envelope",
-    "GscMetricDailyOut",
-    "GscMetricOut",
-    "GscMetricRepository",
-    "GscMetricsDailyRepository",
-    "GscRow",
     "IdempotencyKeyRepository",
     "IdempotencyOut",
     "IdempotencyReplayError",
@@ -152,22 +64,11 @@ __all__ = [
     "IntegrationBudgetRepository",
     "IntegrationCredentialOut",
     "IntegrationCredentialRepository",
-    "InterlinkRepository",
-    "InterlinkSuggestion",
-    "InternalLinkOut",
     "NotFoundError",
     "Page",
-    "ProcedureRunStepOut",
-    "ProcedureRunStepRepository",
     "ProjectOut",
     "ProjectRepository",
-    "PublishTargetOut",
-    "PublishTargetRepository",
-    "RedirectOut",
-    "RedirectRepository",
     "RepositoryError",
-    "ResearchSourceOut",
-    "ResearchSourceRepository",
     "ResourceGetOut",
     "ResourceOut",
     "ResourceQueryOut",
@@ -181,14 +82,7 @@ __all__ = [
     "RunStepRepository",
     "ScheduledJobOut",
     "ScheduledJobRepository",
-    "SchemaEmitOut",
-    "SchemaEmitRepository",
-    "TopicCreate",
-    "TopicOut",
-    "TopicRepository",
     "ValidationError",
-    "VoiceProfileOut",
-    "VoiceProfileRepository",
     "WorkspaceBindingOut",
     "WorkspaceRepository",
     "WorkspaceResolutionOut",

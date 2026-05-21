@@ -51,15 +51,6 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
   ]
 }
 
-export function compatibilityNavSection(projectId: number): StackOsNavSection {
-  void projectId
-  return {
-    key: 'compatibility',
-    label: 'Compatibility',
-    items: [],
-  }
-}
-
 export function setupNavSection(projectId: number): StackOsNavSection {
   const base = `/projects/${projectId}`
   return {

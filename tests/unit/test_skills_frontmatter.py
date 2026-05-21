@@ -4,17 +4,17 @@ Three invariants:
 
 1. Frontmatter parses as valid YAML and carries the seven contract
    keys named in PLAN.md L957-L968: ``name``, ``description``,
-   ``version``, ``runtime_compat``, ``derived_from``, ``license``,
+   ``version``, ``runtime_support``, ``derived_from``, ``license``,
    ``allowed_tools``.
 2. ``allowed_tools`` matches the corresponding entry in
    ``content_stack.mcp.permissions.SKILL_TOOL_GRANTS`` — the
    frontmatter is human-readable docs; the registry is the canonical
    enforcement (audit B-10), and the two MUST agree.
-3. Every skill links the shared operating contract + SEO quality
-   baseline so the operator-agent flow and SEO rules do not drift
-   between individual prompts.
+3. When repo-level skills exist, every skill links the shared operating
+   contract so operator-agent flow does not drift between prompts.
 
-Skip the tests when ``skills/`` is empty (pre-M6 clones).
+Skip the tests when ``skills/`` is empty; StackOS domain behavior now lives in
+plugin manifests and workflow templates.
 """
 
 from __future__ import annotations
@@ -30,12 +30,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILLS_ROOT = REPO_ROOT / "skills"
 SHARED_REFERENCE_PATHS: tuple[Path, ...] = (
     SKILLS_ROOT / "references" / "skill-operating-contract.md",
-    SKILLS_ROOT / "references" / "seo-quality-baseline.md",
 )
 SHARED_REFERENCE_MARKERS: tuple[str, ...] = (
     "## Shared operating contract",
     "../../references/skill-operating-contract.md",
-    "../../references/seo-quality-baseline.md",
 )
 
 REQUIRED_FRONTMATTER_KEYS: frozenset[str] = frozenset(
@@ -43,7 +41,7 @@ REQUIRED_FRONTMATTER_KEYS: frozenset[str] = frozenset(
         "name",
         "description",
         "version",
-        "runtime_compat",
+        "runtime_support",
         "derived_from",
         "license",
         "allowed_tools",
@@ -100,7 +98,7 @@ def test_frontmatter_required_keys_present() -> None:
     assert not failures, "\n".join(failures)
 
 
-def test_runtime_compat_lists_both_runtimes() -> None:
+def test_runtime_support_lists_both_runtimes() -> None:
     """Per PLAN.md the same SKILL.md ships to both ~/.codex and ~/.claude."""
     files = _iter_skill_files()
     if not files:
@@ -108,10 +106,10 @@ def test_runtime_compat_lists_both_runtimes() -> None:
 
     for path in files:
         fm = _parse_frontmatter(path)
-        runtimes = fm.get("runtime_compat", [])
-        assert isinstance(runtimes, list), f"{path}: runtime_compat must be a list"
-        assert "codex" in runtimes, f"{path}: runtime_compat must include 'codex'"
-        assert "claude-code" in runtimes, f"{path}: runtime_compat must include 'claude-code'"
+        runtimes = fm.get("runtime_support", [])
+        assert isinstance(runtimes, list), f"{path}: runtime_support must be a list"
+        assert "codex" in runtimes, f"{path}: runtime_support must include 'codex'"
+        assert "claude-code" in runtimes, f"{path}: runtime_support must include 'claude-code'"
 
 
 def test_allowed_tools_matches_permissions_matrix() -> None:

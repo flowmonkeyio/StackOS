@@ -76,7 +76,7 @@ class WorkspaceUpdateProfileInput(MCPInput):
             "example": {
                 "binding_id": 1,
                 "framework": "nuxt",
-                "content_model_json": {"article_table": "articles"},
+                "content_model_json": {"primary_resource": "content-piece"},
             }
         },
     )

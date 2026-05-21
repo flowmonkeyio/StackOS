@@ -1,19 +1,5 @@
 <script setup lang="ts">
-// RunDetail — single-run audit view with steps + children timeline.
-//
-// Per audit M-29 + PLAN.md L603. The wire shape exposes:
-//   - `GET /api/v1/runs/{id}`            → RunOut (no inline steps)
-//   - `GET /api/v1/runs/{id}/children`   → list of child RunOut rows
-//   - `GET /api/v1/procedures/runs/{id}` → {run, steps[]} (procedure runs only)
-//
-// IMPORTANT: there is NO `GET /api/v1/runs/{id}/steps` endpoint — `run_steps`
-// + `run_step_calls` are surfaced inline only for procedure-kind runs via
-// the procedures endpoint. PLAN.md L603 says the run get returns "step list
-// with run_steps + run_step_calls" but the M2 implementation only exposes
-// the run row itself. The view falls back to:
-//   - procedure-kind runs → procedure_run_steps (rich, has output_json)
-//   - other kinds        → metadata_json + the children panel
-// Documented in the M5.C report quality concerns.
+// RunDetail — single-run audit view with run plans, children, and linked data.
 
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -24,7 +10,6 @@ import RunPlanRenderer from '@/components/renderers/RunPlanRenderer.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
   UiAdvancedJsonPanel,
-  UiCallout,
   UiEmptyState,
   UiJsonBlock,
   UiPanel,
@@ -52,7 +37,6 @@ import type {
   SchemaPageResponseRunPlanSummaryOut,
   SchemaRunPlanOut,
 } from '@/api'
-import type { ProcedureRunStep } from '@/stores/procedures'
 
 const props = defineProps<{
   runId: number
@@ -64,7 +48,6 @@ const toasts = useToastsStore()
 
 const run = ref<Run | null>(null)
 const children = ref<Run[]>([])
-const procedureSteps = ref<ProcedureRunStep[]>([])
 const runPlans = ref<SchemaRunPlanOut[]>([])
 const actionCalls = ref<SchemaActionCallAuditOut[]>([])
 const contextSnapshots = ref<SchemaContextSnapshotOut[]>([])
@@ -73,7 +56,6 @@ const decisions = ref<SchemaDecisionOut[]>([])
 const learnings = ref<SchemaLearningOut[]>([])
 const experiments = ref<SchemaExperimentOut[]>([])
 const artifacts = ref<SchemaArtifactOut[]>([])
-const expandedStep = ref<number | null>(null)
 const loading = ref(false)
 
 async function load(): Promise<void> {
@@ -82,7 +64,6 @@ async function load(): Promise<void> {
     run.value = await runsStore.get(props.runId)
     const [
       kids,
-      proc,
       planRows,
       actionCallPage,
       snapshotPage,
@@ -93,7 +74,6 @@ async function load(): Promise<void> {
       artifactPage,
     ] = await Promise.all([
       runsStore.children(props.runId),
-      runsStore.getProcedureRunSteps(props.runId),
       fetchRunPlans(),
       apiFetch<SchemaPageResponseActionCallAuditOut>(
         `/api/v1/projects/${props.projectId}/action-calls?run_id=${props.runId}&limit=50`,
@@ -118,7 +98,6 @@ async function load(): Promise<void> {
       ),
     ])
     children.value = kids
-    procedureSteps.value = proc?.steps ?? []
     runPlans.value = planRows
     actionCalls.value = actionCallPage.items
     contextSnapshots.value = snapshotPage.items
@@ -159,7 +138,6 @@ const summary = computed<KvItem[]>(() => {
       value: run.value.parent_run_id !== null ? `#${run.value.parent_run_id}` : '—',
     },
     { key: 'last_step', label: 'Last step', value: run.value.last_step ?? '—' },
-    { key: 'procedure_slug', label: 'Procedure slug', value: run.value.procedure_slug ?? '—' },
     { key: 'error', label: 'Error', value: run.value.error ?? '—' },
   ]
 })
@@ -215,10 +193,6 @@ function durationOf(r: Run): string {
   return s < 60 ? `${s}s` : `${Math.round(s / 60)}m`
 }
 
-function toggleStep(idx: number): void {
-  expandedStep.value = expandedStep.value === idx ? null : idx
-}
-
 function valueLinksRun(value: unknown, runId: number): boolean {
   if (Array.isArray(value)) return value.some((item) => valueLinksRun(item, runId))
   if (typeof value !== 'object' || value === null) return value === runId
@@ -242,7 +216,7 @@ watch(() => props.runId, load)
   <UiEmptyState
     v-if="loading && !run"
     :title="`Loading run #${runId}`"
-    description="Fetching run metadata, children, and procedure steps."
+    description="Fetching run metadata, run plans, children, and linked project data."
     size="md"
   />
   <UiEmptyState
@@ -274,87 +248,6 @@ watch(() => props.runId, load)
         :items="summary"
         :two-column="true"
       />
-    </UiPanel>
-
-    <UiPanel
-      aria-labelledby="cs-run-steps-title"
-      class="p-4"
-    >
-      <UiSectionHeader
-        id="cs-run-steps-title"
-        title="Steps timeline"
-      />
-      <div
-        v-if="procedureSteps.length === 0"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
-      >
-        Step details appear for procedure runs. For other run kinds, inspect child runs and advanced metadata.
-      </div>
-      <ol
-        v-else
-        class="space-y-2"
-      >
-        <li
-          v-for="(step, idx) in procedureSteps"
-          :key="step.id"
-          class="rounded-md border border-default bg-bg-surface"
-        >
-          <button
-            type="button"
-            class="focus-ring flex w-full items-center justify-between gap-3 p-3 text-left text-sm hover:bg-bg-surface-alt"
-            :aria-expanded="expandedStep === idx"
-            :aria-controls="`cs-run-step-panel-${idx}`"
-            @click="toggleStep(idx)"
-          >
-            <span class="flex flex-wrap items-center gap-2">
-              <span class="font-mono text-xs text-fg-muted">
-                #{{ step.step_index }}
-              </span>
-              <span class="font-medium text-fg-default">{{ step.step_id }}</span>
-              <StatusBadge
-                :status="step.status"
-                kind="job"
-                :small="true"
-              />
-            </span>
-            <span class="text-xs text-fg-muted">
-              {{ step.started_at ? new Date(step.started_at).toLocaleTimeString() : 'Not started' }}
-              {{ step.ended_at ? '→ ' + new Date(step.ended_at).toLocaleTimeString() : '' }}
-              <span aria-hidden="true">{{ expandedStep === idx ? '▴' : '▾' }}</span>
-            </span>
-          </button>
-          <div
-            v-if="expandedStep === idx"
-            :id="`cs-run-step-panel-${idx}`"
-            class="border-t border-subtle bg-bg-surface-alt p-3 text-xs"
-          >
-            <UiCallout
-              v-if="step.error"
-              tone="danger"
-              density="compact"
-              class="mb-2"
-            >
-              {{ step.error }}
-            </UiCallout>
-            <div v-if="step.output_json && Object.keys(step.output_json).length > 0">
-              <h3 class="mb-1 font-semibold">
-                output_json
-              </h3>
-              <UiJsonBlock
-                :data="sanitizeForDisplay(step.output_json)"
-                density="compact"
-                max-height="16rem"
-              />
-            </div>
-            <p
-              v-else
-              class="text-fg-muted"
-            >
-              No output recorded.
-            </p>
-          </div>
-        </li>
-      </ol>
     </UiPanel>
 
     <section

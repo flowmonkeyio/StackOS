@@ -3,8 +3,7 @@
 These tools are registered in the daemon MCP catalog so the bridge can
 describe/call them through ``toolbox.describe`` and ``toolbox.call``. They
 must stay out of the plugin's direct visible tool list; agents should see them
-only when setup grants or the current procedure step's ``allowed_tools`` expose
-them.
+only when setup grants or a run-plan step grant exposes them.
 """
 
 from __future__ import annotations
@@ -20,7 +19,6 @@ from content_stack.integrations.ahrefs import AhrefsIntegration
 from content_stack.integrations.dataforseo import DataForSeoIntegration
 from content_stack.integrations.firecrawl import FirecrawlIntegration
 from content_stack.integrations.google_paa import GooglePaaIntegration
-from content_stack.integrations.gsc import GscIntegration
 from content_stack.integrations.jina_reader import JinaReaderIntegration
 from content_stack.integrations.openai_images import OpenAIImagesIntegration
 from content_stack.integrations.reddit import RedditIntegration
@@ -149,7 +147,7 @@ class OpenAIImagesGenerateInput(VendorToolInput):
         json_schema_extra={
             "example": {
                 "project_id": 1,
-                "prompt": "Editorial hero image for an article about technical SEO",
+                "prompt": "Utility product image for a campaign brief",
             }
         },
     )
@@ -226,69 +224,6 @@ class AhrefsTopBacklinksInput(VendorToolInput):
     target: str
     mode: str = "domain"
     limit: int = Field(default=100, ge=1, le=1000)
-
-
-class GscSearchAnalyticsInput(VendorToolInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "site_url": "sc-domain:example.com",
-                "start_date": "2026-05-01",
-                "end_date": "2026-05-07",
-                "dimensions": ["page", "query"],
-            }
-        },
-    )
-
-    site_url: str
-    start_date: str
-    end_date: str
-    dimensions: list[str] | None = None
-    row_limit: int = Field(default=1000, ge=1, le=25000)
-
-
-class GscInspectUrlInput(VendorToolInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "site_url": "sc-domain:example.com",
-                "inspection_url": "https://example.com/blog/post",
-            }
-        },
-    )
-
-    site_url: str
-    inspection_url: str
-
-
-class GscBulkInspectInput(VendorToolInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "site_url": "sc-domain:example.com",
-                "urls": ["https://example.com/blog/post"],
-            }
-        },
-    )
-
-    site_url: str
-    urls: list[str] = Field(min_length=1, max_length=100)
-
-
-class GscPagespeedInput(VendorToolInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"project_id": 1, "url": "https://example.com"}},
-    )
-
-    url: str
-    strategy: str = "mobile"
 
 
 def _result_payload(
@@ -395,7 +330,7 @@ def _openai_images(
 
 
 def _generated_assets_dir(ctx: MCPContext) -> Path:
-    settings = getattr(getattr(ctx, "procedure_runner", None), "_settings", None)
+    settings = ctx.extras.get("settings")
     if settings is not None:
         return settings.generated_assets_dir
     return Settings().generated_assets_dir
@@ -452,32 +387,6 @@ def _ahrefs(
 ) -> tuple[int, AhrefsIntegration]:
     credential_id, payload, _config = _credential(ctx, project_id=project_id, kind="ahrefs")
     return credential_id, AhrefsIntegration(
-        payload=payload,
-        project_id=project_id,
-        http=http,
-        budget_repo=IntegrationBudgetRepository(ctx.session),
-        run_step_call_repo=_run_step_call_repo(ctx, run_step_id),
-        run_step_id=run_step_id,
-        run_id=ctx.run_id,
-    )
-
-
-def _gsc(
-    ctx: MCPContext,
-    *,
-    project_id: int,
-    run_step_id: int | None,
-    http: httpx.AsyncClient,
-    require_credential: bool = True,
-) -> tuple[int | None, GscIntegration]:
-    try:
-        credential_id, payload, _config = _credential(ctx, project_id=project_id, kind="gsc")
-    except NotFoundError:
-        if require_credential:
-            raise
-        credential_id = None
-        payload = b'{"access_token":""}'
-    return credential_id, GscIntegration(
         payload=payload,
         project_id=project_id,
         http=http,
@@ -812,87 +721,6 @@ async def _ahrefs_top_backlinks(
     )
 
 
-async def _gsc_search_analytics(
-    inp: GscSearchAnalyticsInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=60.0) as http:
-        credential_id, client = _gsc(
-            ctx, project_id=inp.project_id, run_step_id=inp.run_step_id, http=http
-        )
-        result = await client.search_analytics(
-            site_url=inp.site_url,
-            start_date=inp.start_date,
-            end_date=inp.end_date,
-            dimensions=inp.dimensions,
-            row_limit=inp.row_limit,
-        )
-    return _result_payload(
-        vendor="gsc",
-        credential_id=credential_id,
-        data=result.data,
-        cost_usd=result.cost_usd,
-        duration_ms=result.duration_ms,
-    )
-
-
-async def _gsc_inspect_url(
-    inp: GscInspectUrlInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=60.0) as http:
-        credential_id, client = _gsc(
-            ctx, project_id=inp.project_id, run_step_id=inp.run_step_id, http=http
-        )
-        result = await client.inspect_url(
-            site_url=inp.site_url,
-            inspection_url=inp.inspection_url,
-        )
-    return _result_payload(
-        vendor="gsc",
-        credential_id=credential_id,
-        data=result.data,
-        cost_usd=result.cost_usd,
-        duration_ms=result.duration_ms,
-    )
-
-
-async def _gsc_bulk_inspect(
-    inp: GscBulkInspectInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=60.0) as http:
-        credential_id, client = _gsc(
-            ctx, project_id=inp.project_id, run_step_id=inp.run_step_id, http=http
-        )
-        results = await client.bulk_inspect(site_url=inp.site_url, urls=inp.urls)
-    return _result_payload(
-        vendor="gsc",
-        credential_id=credential_id,
-        data=[result.data for result in results],
-        cost_usd=sum(result.cost_usd for result in results),
-        duration_ms=sum(result.duration_ms for result in results),
-    )
-
-
-async def _gsc_pagespeed(
-    inp: GscPagespeedInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=60.0) as http:
-        credential_id, client = _gsc(
-            ctx,
-            project_id=inp.project_id,
-            run_step_id=inp.run_step_id,
-            http=http,
-            require_credential=False,
-        )
-        result = await client.pagespeed(url=inp.url, strategy=inp.strategy)
-    return _result_payload(
-        vendor="gsc",
-        credential_id=credential_id,
-        data=result.data,
-        cost_usd=result.cost_usd,
-        duration_ms=result.duration_ms,
-    )
-
-
 def register(registry: ToolRegistry) -> None:
     """Register hidden vendor-operation tools."""
     registry.register(
@@ -979,7 +807,7 @@ def register(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             "openaiImages.generate",
-            "Generate article images via the OpenAI Images API.",
+            "Generate image artifacts via the OpenAI Images API.",
             OpenAIImagesGenerateInput,
             dict[str, Any],
             _openai_images_generate,
@@ -1037,42 +865,6 @@ def register(registry: ToolRegistry) -> None:
             AhrefsTopBacklinksInput,
             dict[str, Any],
             _ahrefs_top_backlinks,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "gsc.searchAnalytics",
-            "Fetch Search Console performance rows for a verified property.",
-            GscSearchAnalyticsInput,
-            dict[str, Any],
-            _gsc_search_analytics,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "gsc.inspectUrl",
-            "Inspect one URL with the Search Console URL Inspection API.",
-            GscInspectUrlInput,
-            dict[str, Any],
-            _gsc_inspect_url,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "gsc.bulkInspect",
-            "Inspect multiple URLs with the Search Console URL Inspection API.",
-            GscBulkInspectInput,
-            dict[str, Any],
-            _gsc_bulk_inspect,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "gsc.pagespeed",
-            "Fetch PageSpeed Insights data for one URL.",
-            GscPagespeedInput,
-            dict[str, Any],
-            _gsc_pagespeed,
         )
     )
 

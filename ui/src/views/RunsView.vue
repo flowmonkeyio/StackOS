@@ -140,7 +140,7 @@ watch(runId, () => {
       :description="
         runId !== null
           ? 'Inspect run metadata, steps, heartbeats, and execution output.'
-          : 'Audit procedure, skill, and tool runs with status, kind, parent, and date filters.'
+          : 'Audit run plans, skills, and tool runs with status, kind, parent, and date filters.'
       "
       :breadcrumbs="
         runId !== null

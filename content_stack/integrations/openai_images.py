@@ -10,7 +10,7 @@ Operation:
 
 The current OpenAI Image API returns base64 for GPT Image models. This
 wrapper persists those bytes into the daemon's generated-assets directory
-and returns local URLs, keeping ``article_assets.url`` short and publishable.
+and returns local artifact URLs.
 
 Cost: the table below is a rough budget guardrail. The operator should
 reconcile actual invoices against OpenAI's current pricing page.

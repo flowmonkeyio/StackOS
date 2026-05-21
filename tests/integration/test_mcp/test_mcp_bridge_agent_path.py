@@ -101,7 +101,6 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert names[: len(_AGENT_VISIBLE_TOOL_ORDER)] == list(_AGENT_VISIBLE_TOOL_ORDER)
     assert "toolbox.describe" in names
     assert "toolbox.call" in names
-    assert "project.activate" not in names
     assert "schedule.remove" not in names
     assert "integration.set" not in names
     assert "context.query" in names
@@ -129,10 +128,10 @@ def test_bridge_describes_setup_tools_and_denies_vendor_tools(mcp_client: MCPCli
         "toolbox.describe",
         {
             "tool_names": [
-                "project.activate",
+                "project.setActive",
                 "schedule.remove",
-                "integration.test",
-                "integration.set",
+                "auth.test",
+                "auth.start",
                 "dataforseo.serp",
             ]
         },
@@ -141,15 +140,15 @@ def test_bridge_describes_setup_tools_and_denies_vendor_tools(mcp_client: MCPCli
     payload = _structured(envelope)
 
     assert [tool["name"] for tool in payload["described_tools"]] == [
-        "project.activate",
+        "project.setActive",
         "schedule.remove",
-        "integration.test",
+        "auth.test",
     ]
-    assert payload["denied_tool_names"] == ["integration.set", "dataforseo.serp"]
+    assert payload["denied_tool_names"] == ["auth.start", "dataforseo.serp"]
     assert "admin_gated_tool_names" not in payload
 
 
-def test_bridge_toolbox_operates_former_ui_actions(
+def test_bridge_toolbox_operates_setup_actions(
     mcp_client: MCPClient,
     httpx_mock: HTTPXMock,
 ) -> None:
@@ -179,34 +178,13 @@ def test_bridge_toolbox_operates_former_ui_actions(
             client,
             "toolbox.call",
             {
-                "tool_name": "project.activate",
+                "tool_name": "project.setActive",
                 "arguments": {"project_id": project_id},
             },
             request_id="project-activate",
         )
     )
     assert activated["data"]["is_active"] is True
-
-    target = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "toolbox.call",
-            {
-                "tool_name": "target.add",
-                "arguments": {
-                    "project_id": project_id,
-                    "kind": "wordpress",
-                    "config_json": {"wp_url": "https://wp.example"},
-                    "is_primary": True,
-                    "is_active": True,
-                },
-            },
-            request_id="target-add",
-        )
-    )
-    assert target["data"]["kind"] == "wordpress"
-    assert target["data"]["is_primary"] is True
 
     budget = _structured(
         _tool_call(
@@ -235,7 +213,7 @@ def test_bridge_toolbox_operates_former_ui_actions(
                 "tool_name": "schedule.set",
                 "arguments": {
                     "project_id": project_id,
-                    "kind": "drift-watch",
+                    "kind": "weekly-review",
                     "cron_expr": "0 4 * * *",
                     "enabled": True,
                 },
@@ -263,26 +241,32 @@ def test_bridge_toolbox_operates_former_ui_actions(
         json={"data": {"markdown": "# ok"}},
     )
     credential_resp = mcp_client.test_client.post(
-        f"/api/v1/projects/{project_id}/integrations",
-        json={"kind": "firecrawl", "plaintext_payload": "fc-key"},
+        f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
+        json={"plaintext_payload": "fc-key"},
         headers=mcp_client._headers(),
     )
     credential_resp.raise_for_status()
-    credential = credential_resp.json()
+    status = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "auth.status",
+            {"project_id": project_id, "provider_key": "firecrawl"},
+            request_id="auth-status",
+        )
+    )
+    credential_ref = status["connections"][0]["credential_ref"]
     tested = _structured(
         _tool_call(
             proxy,
             client,
-            "toolbox.call",
-            {
-                "tool_name": "integration.test",
-                "arguments": {"credential_id": credential["data"]["id"]},
-            },
-            request_id="integration-test",
+            "auth.test",
+            {"project_id": project_id, "credential_ref": credential_ref},
+            request_id="auth-test",
         )
     )
     assert tested["data"]["ok"] is True
-    assert tested["data"]["vendor"] == "firecrawl"
+    assert tested["data"]["provider_key"] == "firecrawl"
 
 
 def test_bridge_allows_started_run_plan_controller_tools(mcp_client: MCPClient) -> None:
@@ -557,8 +541,8 @@ def test_bridge_executes_run_plan_granted_action_with_injected_token(
     )
     project_id = created_project["data"]["id"]
     cred_resp = mcp_client.test_client.post(
-        f"/api/v1/projects/{project_id}/integrations",
-        json={"kind": "openai-images", "plaintext_payload": "sk-openai"},
+        f"/api/v1/projects/{project_id}/auth/openai-images/credentials",
+        json={"plaintext_payload": "sk-openai"},
         headers=mcp_client._headers(),
     )
     cred_resp.raise_for_status()

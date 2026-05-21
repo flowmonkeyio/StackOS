@@ -9,7 +9,7 @@ export interface UiProgressBarProps {
   value?: number | null;
   max?: number;
   /** Tone of the fill. */
-  tone?: 'accent' | 'info' | 'success' | 'warning' | 'danger' | 'eeat';
+  tone?: 'accent' | 'info' | 'success' | 'warning' | 'danger';
   size?: 'xs' | 'sm' | 'md';
   /** Show a numeric label alongside. */
   showLabel?: boolean;
@@ -37,7 +37,6 @@ const fillBg = computed(() => ({
   success: 'bg-success',
   warning: 'bg-warning',
   danger:  'bg-danger',
-  eeat:    'bg-eeat',
 }[props.tone]));
 </script>
 

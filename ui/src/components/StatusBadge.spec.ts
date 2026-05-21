@@ -11,28 +11,18 @@ describe('StatusBadge', () => {
     expect(w.attributes('data-kind')).toBe('run')
   })
 
-  it('uses the topic palette for topic statuses', () => {
-    const w = mount(StatusBadge, { props: { status: 'queued', kind: 'topic' } })
-    expect(w.classes()).toContain('bg-neutral-subtle')
-  })
-
-  it('uses the article palette for article statuses', () => {
-    const w = mount(StatusBadge, { props: { status: 'published', domain: 'article' } })
-    expect(w.classes()).toContain('bg-success-subtle')
-  })
-
   it('uses the run palette for run statuses', () => {
     const w = mount(StatusBadge, { props: { status: 'failed', kind: 'run' } })
     expect(w.classes()).toContain('bg-danger-subtle')
   })
 
-  it('uses the interlink palette for interlink statuses', () => {
-    const w = mount(StatusBadge, { props: { status: 'broken', kind: 'interlink' } })
-    expect(w.classes()).toContain('bg-danger-subtle')
+  it('uses the project palette for project statuses', () => {
+    const w = mount(StatusBadge, { props: { status: 'active', domain: 'project' } })
+    expect(w.classes()).toContain('bg-success-subtle')
   })
 
   it('falls back to neutral grey for unknown statuses', () => {
-    const w = mount(StatusBadge, { props: { status: 'made-up', kind: 'topic' } })
+    const w = mount(StatusBadge, { props: { status: 'made-up', kind: 'run' } })
     expect(w.classes()).toContain('bg-neutral-subtle')
   })
 

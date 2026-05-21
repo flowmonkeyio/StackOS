@@ -1,6 +1,6 @@
 <!--
   UiScoreMeter — circular or linear score display.
-  Use for EEAT scores, content quality, opportunity strength.
+  Use for quality scores, opportunity strength, and budget health.
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
@@ -10,7 +10,7 @@ export interface UiScoreMeterProps {
   value: number;
   max?: number;
   /** When `auto`, tone is chosen by score band (red/amber/emerald). */
-  tone?: 'auto' | 'accent' | 'success' | 'warning' | 'danger' | 'eeat';
+  tone?: 'auto' | 'accent' | 'success' | 'warning' | 'danger';
   variant?: 'circular' | 'linear';
   size?: 'sm' | 'md' | 'lg';
   /** Override the displayed label. */
@@ -44,7 +44,6 @@ const stroke = computed(() => ({
   success: 'var(--color-success-default)',
   warning: 'var(--color-warning-default)',
   danger:  'var(--color-danger-default)',
-  eeat:    'var(--color-eeat-default)',
   auto:    '',
 }[resolvedTone.value]));
 

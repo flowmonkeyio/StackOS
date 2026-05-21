@@ -18,7 +18,7 @@ defineProps<{
   lines: DiffLine[];
   /** Hide line numbers. */
   noNumbers?: boolean;
-  /** Title shown above the diff (e.g. "article.md"). */
+  /** Title shown above the diff (e.g. "template.yaml"). */
   filename?: string;
   /** Wrap long lines. */
   wrap?: boolean;

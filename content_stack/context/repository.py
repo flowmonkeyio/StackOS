@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_
 from sqlalchemy import select as sa_select
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from content_stack.artifacts import redact_secret_text, redact_secrets
 from content_stack.db.models import (
@@ -57,6 +57,12 @@ def _scalar_count(session: Session, statement: Any) -> int:
     except (KeyError, TypeError):
         pass
     return int(raw)
+
+
+def _required_id(value: int | None) -> int:
+    if value is None:
+        raise RuntimeError("expected persisted row id")
+    return int(value)
 
 
 def _safe_text(value: str | None) -> str | None:
@@ -255,7 +261,7 @@ class MetricSnapshotOut(BaseModel):
 
 
 _DEFAULT_FIELDS: dict[str, tuple[str, ...]] = {
-    "runs": ("kind", "status", "procedure_slug", "last_step", "metadata_json"),
+    "runs": ("kind", "status", "last_step", "metadata_json"),
     "events": ("event_type", "title", "summary", "tags", "metadata_json"),
     "index": ("source_type", "source_id", "title", "summary", "domain", "status", "tags"),
     "snapshots": ("name", "query_json", "selected_sources_json", "summary_json"),
@@ -271,7 +277,6 @@ _FIELD_MAP: dict[str, frozenset[str]] = {
             "id",
             "kind",
             "status",
-            "procedure_slug",
             "started_at",
             "ended_at",
             "last_step",
@@ -378,23 +383,19 @@ class ContextRepository:
     ) -> Page[ProjectEventOut]:
         self._require_project(project_id)
         n = _normalise_limit(limit)
-        filters = [ProjectEvent.project_id == project_id]
+        filters: list[Any] = [col(ProjectEvent.project_id) == project_id]
         if event_type is not None:
-            filters.append(ProjectEvent.event_type == event_type)
+            filters.append(col(ProjectEvent.event_type) == event_type)
         total = _scalar_count(
             self._s,
             sa_select(func.count()).select_from(ProjectEvent).where(*filters),
         )
         stmt = select(ProjectEvent).where(*filters)
         if after_id is not None:
-            stmt = stmt.where(ProjectEvent.id > after_id)
-        rows = list(
-            self._s.exec(
-                stmt.order_by(ProjectEvent.id.asc()).limit(n + 1)  # type: ignore[union-attr]
-            ).all()
-        )
+            stmt = stmt.where(col(ProjectEvent.id) > after_id)
+        rows = list(self._s.exec(stmt.order_by(col(ProjectEvent.id).asc()).limit(n + 1)).all())
         page_rows = rows[:n]
-        next_cursor = int(page_rows[-1].id) if len(rows) > n and page_rows else None
+        next_cursor = _required_id(page_rows[-1].id) if len(rows) > n and page_rows else None
         return Page(
             items=[self._event_out(row) for row in page_rows],
             next_cursor=next_cursor,
@@ -419,23 +420,19 @@ class ContextRepository:
                 "unsupported fields for context source",
                 data={"source": "events", "fields": invalid},
             )
-        filters = [ProjectEvent.project_id == project_id]
+        filters = [col(ProjectEvent.project_id) == project_id]
         if event_type is not None:
-            filters.append(ProjectEvent.event_type == event_type)
+            filters.append(col(ProjectEvent.event_type) == event_type)
         total = _scalar_count(
             self._s,
             sa_select(func.count()).select_from(ProjectEvent).where(*filters),
         )
         stmt = select(ProjectEvent).where(*filters)
         if after_id is not None:
-            stmt = stmt.where(ProjectEvent.id > after_id)
-        rows = list(
-            self._s.exec(
-                stmt.order_by(ProjectEvent.id.asc()).limit(n + 1)  # type: ignore[union-attr]
-            ).all()
-        )
+            stmt = stmt.where(col(ProjectEvent.id) > after_id)
+        rows = list(self._s.exec(stmt.order_by(col(ProjectEvent.id).asc()).limit(n + 1)).all())
         page_rows = rows[:n]
-        next_cursor = int(page_rows[-1].id) if len(rows) > n and page_rows else None
+        next_cursor = _required_id(page_rows[-1].id) if len(rows) > n and page_rows else None
         return ContextPageOut(
             items=[self._item_from_event(row, requested) for row in page_rows],
             next_cursor=next_cursor,
@@ -497,23 +494,19 @@ class ContextRepository:
     ) -> Page[ContextSnapshotOut]:
         self._require_project(project_id)
         n = _normalise_limit(limit)
-        filters = [ContextSnapshot.project_id == project_id]
+        filters = [col(ContextSnapshot.project_id) == project_id]
         if run_id is not None:
-            filters.append(ContextSnapshot.run_id == run_id)
+            filters.append(col(ContextSnapshot.run_id) == run_id)
         total = _scalar_count(
             self._s,
             sa_select(func.count()).select_from(ContextSnapshot).where(*filters),
         )
         stmt = select(ContextSnapshot).where(*filters)
         if after_id is not None:
-            stmt = stmt.where(ContextSnapshot.id > after_id)
-        rows = list(
-            self._s.exec(
-                stmt.order_by(ContextSnapshot.id.asc()).limit(n + 1)  # type: ignore[union-attr]
-            ).all()
-        )
+            stmt = stmt.where(col(ContextSnapshot.id) > after_id)
+        rows = list(self._s.exec(stmt.order_by(col(ContextSnapshot.id).asc()).limit(n + 1)).all())
         page_rows = rows[:n]
-        next_cursor = int(page_rows[-1].id) if len(rows) > n and page_rows else None
+        next_cursor = _required_id(page_rows[-1].id) if len(rows) > n and page_rows else None
         return Page(
             items=[self._snapshot_out(row) for row in page_rows],
             next_cursor=next_cursor,
@@ -533,21 +526,21 @@ class ContextRepository:
     ) -> Page[LearningOut]:
         self._require_project(project_id)
         n = _normalise_limit(limit)
-        filters = [Learning.project_id == project_id]
+        filters = [col(Learning.project_id) == project_id]
         if domain is not None:
-            filters.append(Learning.domain == domain)
+            filters.append(col(Learning.domain) == domain)
         if status is not None:
-            filters.append(Learning.status == status)
+            filters.append(col(Learning.status) == status)
         if review_state is not None:
-            filters.append(Learning.review_state == review_state)
+            filters.append(col(Learning.review_state) == review_state)
         stmt = select(Learning).where(*filters)
         if after_id is not None:
-            stmt = stmt.where(Learning.id > after_id)
+            stmt = stmt.where(col(Learning.id) > after_id)
         tag_filter = _normalise_tags(tags)
-        all_rows = list(self._s.exec(stmt.order_by(Learning.id.asc())).all())
+        all_rows = list(self._s.exec(stmt.order_by(col(Learning.id).asc())).all())
         filtered = [row for row in all_rows if _has_all_tags(row.tags_json, tag_filter)]
         page_rows = filtered[:n]
-        next_cursor = int(page_rows[-1].id) if len(filtered) > n and page_rows else None
+        next_cursor = _required_id(page_rows[-1].id) if len(filtered) > n and page_rows else None
         return Page(
             items=[self._learning_out(row) for row in page_rows],
             next_cursor=next_cursor,
@@ -705,23 +698,21 @@ class ContextRepository:
     ) -> Page[ExperimentOut]:
         self._require_project(project_id)
         n = _normalise_limit(limit)
-        filters = [Experiment.project_id == project_id]
+        filters = [col(Experiment.project_id) == project_id]
         if domain is not None:
-            filters.append(Experiment.domain == domain)
+            filters.append(col(Experiment.domain) == domain)
         if status is not None:
-            filters.append(Experiment.status == status)
+            filters.append(col(Experiment.status) == status)
         stmt = select(Experiment).where(*filters)
         if after_id is not None:
-            stmt = stmt.where(Experiment.id > after_id)
+            stmt = stmt.where(col(Experiment.id) > after_id)
         tag_filter = _normalise_tags(tags)
-        rows = list(self._s.exec(stmt.order_by(Experiment.id.asc())).all())
+        rows = list(self._s.exec(stmt.order_by(col(Experiment.id).asc())).all())
         filtered = [
-            row
-            for row in rows
-            if _has_all_tags((row.metadata_json or {}).get("tags"), tag_filter)
+            row for row in rows if _has_all_tags((row.metadata_json or {}).get("tags"), tag_filter)
         ]
         page_rows = filtered[:n]
-        next_cursor = int(page_rows[-1].id) if len(filtered) > n and page_rows else None
+        next_cursor = _required_id(page_rows[-1].id) if len(filtered) > n and page_rows else None
         return Page(
             items=[self._experiment_out(row) for row in page_rows],
             next_cursor=next_cursor,
@@ -802,7 +793,7 @@ class ContextRepository:
                 raise ValidationError("experiment variant key is required")
             self._s.add(
                 ExperimentVariant(
-                    experiment_id=int(row.id),
+                    experiment_id=_required_id(row.id),
                     key=str(variant["key"]),
                     name=variant.get("name"),
                     resources_json=_safe_json(variant.get("resources_json"))
@@ -886,25 +877,23 @@ class ContextRepository:
     ) -> Page[ExperimentObservationOut]:
         self._require_project(project_id)
         n = _normalise_limit(limit)
-        filters = [ExperimentObservation.project_id == project_id]
+        filters = [col(ExperimentObservation.project_id) == project_id]
         if experiment_id is not None:
-            filters.append(ExperimentObservation.experiment_id == experiment_id)
+            filters.append(col(ExperimentObservation.experiment_id) == experiment_id)
         if run_id is not None:
-            filters.append(ExperimentObservation.run_id == run_id)
+            filters.append(col(ExperimentObservation.run_id) == run_id)
         total = _scalar_count(
             self._s,
             sa_select(func.count()).select_from(ExperimentObservation).where(*filters),
         )
         stmt = select(ExperimentObservation).where(*filters)
         if after_id is not None:
-            stmt = stmt.where(ExperimentObservation.id > after_id)
+            stmt = stmt.where(col(ExperimentObservation.id) > after_id)
         rows = list(
-            self._s.exec(
-                stmt.order_by(ExperimentObservation.id.asc()).limit(n + 1)  # type: ignore[union-attr]
-            ).all()
+            self._s.exec(stmt.order_by(col(ExperimentObservation.id).asc()).limit(n + 1)).all()
         )
         page_rows = rows[:n]
-        next_cursor = int(page_rows[-1].id) if len(rows) > n and page_rows else None
+        next_cursor = _required_id(page_rows[-1].id) if len(rows) > n and page_rows else None
         return Page(
             items=[self._observation_out(row) for row in page_rows],
             next_cursor=next_cursor,
@@ -959,21 +948,21 @@ class ContextRepository:
     ) -> Page[DecisionOut]:
         self._require_project(project_id)
         n = _normalise_limit(limit)
-        filters = [Decision.project_id == project_id]
+        filters = [col(Decision.project_id) == project_id]
         if experiment_id is not None:
-            filters.append(Decision.experiment_id == experiment_id)
+            filters.append(col(Decision.experiment_id) == experiment_id)
         if run_id is not None:
-            filters.append(Decision.run_id == run_id)
+            filters.append(col(Decision.run_id) == run_id)
         if status is not None:
-            filters.append(Decision.status == status)
+            filters.append(col(Decision.status) == status)
         stmt = select(Decision).where(*filters)
         if after_id is not None:
-            stmt = stmt.where(Decision.id > after_id)
+            stmt = stmt.where(col(Decision.id) > after_id)
         tag_filter = _normalise_tags(tags)
-        rows = list(self._s.exec(stmt.order_by(Decision.id.asc())).all())
+        rows = list(self._s.exec(stmt.order_by(col(Decision.id).asc())).all())
         filtered = [row for row in rows if _has_all_tags(row.tags_json, tag_filter)]
         page_rows = filtered[:n]
-        next_cursor = int(page_rows[-1].id) if len(filtered) > n and page_rows else None
+        next_cursor = _required_id(page_rows[-1].id) if len(filtered) > n and page_rows else None
         return Page(
             items=[self._decision_out(row) for row in page_rows],
             next_cursor=next_cursor,
@@ -1025,27 +1014,23 @@ class ContextRepository:
     ) -> Page[MetricSnapshotOut]:
         self._require_project(project_id)
         n = _normalise_limit(limit)
-        filters = [MetricSnapshot.project_id == project_id]
+        filters = [col(MetricSnapshot.project_id) == project_id]
         if metric_key is not None:
-            filters.append(MetricSnapshot.metric_key == metric_key)
+            filters.append(col(MetricSnapshot.metric_key) == metric_key)
         if source_type is not None:
-            filters.append(MetricSnapshot.source_type == source_type)
+            filters.append(col(MetricSnapshot.source_type) == source_type)
         if source_id is not None:
-            filters.append(MetricSnapshot.source_id == source_id)
+            filters.append(col(MetricSnapshot.source_id) == source_id)
         total = _scalar_count(
             self._s,
             sa_select(func.count()).select_from(MetricSnapshot).where(*filters),
         )
         stmt = select(MetricSnapshot).where(*filters)
         if after_id is not None:
-            stmt = stmt.where(MetricSnapshot.id > after_id)
-        rows = list(
-            self._s.exec(
-                stmt.order_by(MetricSnapshot.id.asc()).limit(n + 1)  # type: ignore[union-attr]
-            ).all()
-        )
+            stmt = stmt.where(col(MetricSnapshot.id) > after_id)
+        rows = list(self._s.exec(stmt.order_by(col(MetricSnapshot.id).asc()).limit(n + 1)).all())
         page_rows = rows[:n]
-        next_cursor = int(page_rows[-1].id) if len(rows) > n and page_rows else None
+        next_cursor = _required_id(page_rows[-1].id) if len(rows) > n and page_rows else None
         return Page(
             items=[self._metric_out(row) for row in page_rows],
             next_cursor=next_cursor,
@@ -1143,11 +1128,11 @@ class ContextRepository:
                 if _has_all_tags(row.tags_json, tags)
             ][: limit * _FETCH_MULTIPLIER]
         if source == "index":
-            conditions = []
+            conditions: list[Any] = []
             if domain is not None:
-                conditions.append(ContextIndexEntry.domain == domain)
+                conditions.append(col(ContextIndexEntry.domain) == domain)
             if statuses:
-                conditions.append(ContextIndexEntry.status.in_(statuses))  # type: ignore[attr-defined]
+                conditions.append(col(ContextIndexEntry.status).in_(statuses))
             rows = self._project_rows(
                 ContextIndexEntry,
                 project_id=project_id,
@@ -1168,12 +1153,12 @@ class ContextRepository:
         if source == "learnings":
             conditions = []
             if domain is not None:
-                conditions.append(Learning.domain == domain)
+                conditions.append(col(Learning.domain) == domain)
             if statuses:
                 conditions.append(
                     or_(
-                        Learning.status.in_(statuses),  # type: ignore[attr-defined]
-                        Learning.review_state.in_(statuses),  # type: ignore[attr-defined]
+                        col(Learning.status).in_(statuses),
+                        col(Learning.review_state).in_(statuses),
                     )
                 )
             rows = self._project_rows(
@@ -1238,12 +1223,12 @@ class ContextRepository:
     ) -> list[Any]:
         stmt = (
             select(model)
-            .where(model.project_id == project_id, *(conditions or []))
-            .order_by(model.id.desc())
+            .where(col(model.project_id) == project_id, *(conditions or []))
+            .order_by(col(model.id).desc())
         )
         if not unbounded:
             stmt = stmt.limit(limit * _FETCH_MULTIPLIER)
-        return list(self._s.exec(stmt).all())  # type: ignore[union-attr]
+        return list(self._s.exec(stmt).all())
 
     def _run_items(
         self,
@@ -1253,13 +1238,11 @@ class ContextRepository:
         limit: int,
         statuses: list[str] | None,
     ) -> list[ContextItemOut]:
-        stmt = select(Run).where(Run.project_id == project_id)
+        stmt = select(Run).where(col(Run.project_id) == project_id)
         if statuses:
-            stmt = stmt.where(Run.status.in_(statuses))  # type: ignore[attr-defined]
+            stmt = stmt.where(col(Run.status).in_(statuses))
         rows = list(
-            self._s.exec(
-                stmt.order_by(Run.id.desc()).limit(limit * _FETCH_MULTIPLIER)
-            ).all()
+            self._s.exec(stmt.order_by(col(Run.id).desc()).limit(limit * _FETCH_MULTIPLIER)).all()
         )
         return [self._item_from_run(row, fields) for row in rows]
 
@@ -1279,7 +1262,7 @@ class ContextRepository:
             source="runs",
             id=row.id,
             project_id=row.project_id,
-            title=row.procedure_slug or row.kind.value,
+            title=row.kind.value,
             occurred_at=row.started_at,
             fields=data,
             provenance={"table": "runs", "id": row.id},
@@ -1553,12 +1536,12 @@ class ContextRepository:
         assert experiment.id is not None
         rows = self._s.exec(
             select(ExperimentVariant)
-            .where(ExperimentVariant.experiment_id == experiment.id)
-            .order_by(ExperimentVariant.id.asc())
+            .where(col(ExperimentVariant.experiment_id) == experiment.id)
+            .order_by(col(ExperimentVariant.id).asc())
         ).all()
         return [
             ExperimentVariantOut(
-                id=int(row.id),
+                id=_required_id(row.id),
                 experiment_id=row.experiment_id,
                 key=row.key,
                 name=row.name,

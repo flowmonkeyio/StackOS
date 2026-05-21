@@ -52,8 +52,8 @@ def test_action_validate_rejects_raw_secret_payloads(mcp_client: MCPClient) -> N
 
 def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
-        f"/api/v1/projects/{project_id}/integrations",
-        json={"kind": "openai-images", "plaintext_payload": "sk-openai"},
+        f"/api/v1/projects/{project_id}/auth/openai-images/credentials",
+        json={"plaintext_payload": "sk-openai"},
         headers=mcp._headers(),
     )
     response.raise_for_status()
@@ -159,7 +159,7 @@ def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(
         json={"kind": "openai-images", "monthly_budget_usd": 10.0},
         headers={"authorization": f"Bearer {mcp_client.auth_token}"},
     )
-    assert budget_resp.status_code == 201
+    assert budget_resp.status_code == 200
     created = mcp_client.call_tool_structured(
         "runPlan.create",
         {"project_id": project_id, "run_plan_json": _image_action_plan_json()},

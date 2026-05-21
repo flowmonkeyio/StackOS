@@ -1,408 +1,178 @@
 <script setup lang="ts">
-// OverviewTab — project operator dashboard.
-
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import {
-  UiButton,
-  UiCallout,
-  UiMetricCard,
-  UiPanel,
-  UiSectionHeader,
-} from '@/components/ui'
-import { apiFetch } from '@/lib/client'
-import { useProjectsStore } from '@/stores/projects'
-import type { components } from '@/api'
+import { UiBadge, UiButton, UiCallout, UiMetricCard, UiPanel, UiSectionHeader } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
-
-type Article = components['schemas']['ArticleOut']
-type ArticlesPage = components['schemas']['PageResponse_ArticleOut_']
-type ComplianceRule = components['schemas']['ComplianceRuleOut']
-type EeatCriterion = components['schemas']['EeatCriterionOut']
-type Integration = components['schemas']['IntegrationCredentialOut']
-type Run = components['schemas']['RunOut']
-type RunsPage = components['schemas']['PageResponse_RunOut_']
-type Schedule = components['schemas']['ScheduledJobOut']
-type Target = components['schemas']['PublishTargetOut']
-type Topic = components['schemas']['TopicOut']
-type TopicsPage = components['schemas']['PageResponse_TopicOut_']
-type VoicesPage = components['schemas']['PageResponse_VoiceProfileOut_']
-
-interface Page<T> {
-  items: T[]
-  total_estimate?: number | null
-  next_cursor?: number | null
-}
-
-interface ReadinessItem {
-  key: string
-  label: string
-  detail: string
-  ready: boolean
-  to: string
-}
-
-interface NextAction {
-  label: string
-  detail: string
-  to: string
-  variant?: 'primary' | 'secondary'
-}
+import { apiFetch, formatApiError } from '@/lib/client'
+import { formatDateTime } from '@/lib/stackos/json'
+import type {
+  SchemaAuthStatusOut,
+  SchemaIntegrationBudgetOut,
+  SchemaPageResponseResourceRecordOut,
+  SchemaPageResponseRunOut,
+  SchemaPluginOut,
+  SchemaResourceRecordOut,
+  SchemaRunOut,
+  SchemaScheduledJobOut,
+  SchemaWorkflowTemplateListOut,
+} from '@/api'
 
 const route = useRoute()
 const router = useRouter()
-const projects = useProjectsStore()
 
-const projectId = computed<number>(() => Number.parseInt(route.params.id as string, 10))
-const project = computed(() => projects.getById(projectId.value))
-
+const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const loading = ref(false)
-const warnings = ref<string[]>([])
-const runs = ref<Run[]>([])
-const topics = ref<Topic[]>([])
-const articles = ref<Article[]>([])
-const targets = ref<Target[]>([])
-const integrations = ref<Integration[]>([])
-const schedules = ref<Schedule[]>([])
-const voiceTotal = ref(0)
-const compliance = ref<ComplianceRule[]>([])
-const eeat = ref<EeatCriterion[]>([])
+const error = ref<string | null>(null)
+const plugins = ref<SchemaPluginOut[]>([])
+const templates = ref(0)
+const runPlans = ref(0)
+const resourceRecords = ref<SchemaResourceRecordOut[]>([])
+const runs = ref<SchemaRunOut[]>([])
+const connections = ref(0)
+const schedules = ref<SchemaScheduledJobOut[]>([])
+const budgets = ref<SchemaIntegrationBudgetOut[]>([])
 
-const runColumns: DataTableColumn<Run>[] = [
+const enabledPlugins = computed(() =>
+  plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
+)
+const activeSchedules = computed(() => schedules.value.filter((schedule) => schedule.enabled))
+const activeBudgets = computed(() => budgets.value.filter((budget) => budget.monthly_budget_usd > 0))
+const runningRuns = computed(() => runs.value.filter((run) => run.status === 'running'))
+const failedRuns = computed(() =>
+  runs.value.filter((run) => run.status === 'failed' || run.status === 'aborted'),
+)
+
+const runColumns: DataTableColumn<SchemaRunOut>[] = [
   { key: 'kind', label: 'Kind' },
   { key: 'status', label: 'Status' },
-  {
-    key: 'started_at',
-    label: 'Started',
-    format: (v) => (v ? new Date(String(v)).toLocaleString() : ''),
-  },
-  {
-    key: 'last_step',
-    label: 'Last step',
-    format: (v) => (v ? String(v) : '—'),
-  },
+  { key: 'last_step', label: 'Last step', format: (value) => String(value ?? '-') },
+  { key: 'started_at', label: 'Started', format: (value) => formatDateTime(String(value)) },
 ]
 
-function emptyPage<T>(): Page<T> {
-  return { items: [], total_estimate: 0, next_cursor: null }
-}
+const resourceColumns: DataTableColumn<SchemaResourceRecordOut>[] = [
+  { key: 'plugin_slug', label: 'Plugin' },
+  { key: 'resource_key', label: 'Resource' },
+  { key: 'title', label: 'Title', format: (value) => String(value ?? '-') },
+  { key: 'updated_at', label: 'Updated', format: (value) => formatDateTime(String(value)) },
+]
 
-async function fetchOr<T>(label: string, path: string, fallback: T): Promise<T> {
+async function fetchOr<T>(path: string, fallback: T): Promise<T> {
   try {
     return await apiFetch<T>(path)
-  } catch (err) {
-    warnings.value.push(`${label}: ${err instanceof Error ? err.message : 'request failed'}`)
+  } catch {
     return fallback
   }
 }
 
-async function loadDashboard(): Promise<void> {
+async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
   loading.value = true
-  warnings.value = []
+  error.value = null
   try {
-    if (projects.items.length === 0) {
-      await projects.refresh()
-    }
-
     const id = projectId.value
-    const [
-      runsPage,
-      topicsPage,
-      articlesPage,
-      targetRows,
-      integrationRows,
-      scheduleRows,
-      voicesPage,
-      complianceRows,
-      eeatRows,
-    ] = await Promise.all([
-      fetchOr<RunsPage>('Runs', `/api/v1/projects/${id}/runs?limit=10&sort=-started_at`, emptyPage<Run>() as RunsPage),
-      fetchOr<TopicsPage>('Topics', `/api/v1/projects/${id}/topics?limit=200&sort=priority`, emptyPage<Topic>() as TopicsPage),
-      fetchOr<ArticlesPage>('Articles', `/api/v1/projects/${id}/articles?limit=200`, emptyPage<Article>() as ArticlesPage),
-      fetchOr<Target[]>('Publish targets', `/api/v1/projects/${id}/publish-targets`, []),
-      fetchOr<Integration[]>('Integrations', `/api/v1/projects/${id}/integrations`, []),
-      fetchOr<Schedule[]>('Schedules', `/api/v1/projects/${id}/schedules`, []),
-      fetchOr<VoicesPage>('Voice profiles', `/api/v1/projects/${id}/voice/variants?limit=200`, emptyPage() as VoicesPage),
-      fetchOr<ComplianceRule[]>('Compliance rules', `/api/v1/projects/${id}/compliance`, []),
-      fetchOr<EeatCriterion[]>('EEAT criteria', `/api/v1/projects/${id}/eeat`, []),
-    ])
-
-    runs.value = runsPage.items ?? []
-    topics.value = topicsPage.items ?? []
-    articles.value = articlesPage.items ?? []
-    targets.value = targetRows
-    integrations.value = integrationRows
+    const [pluginRows, templateRows, runPage, resourcePage, authStatus, scheduleRows, budgetRows] =
+      await Promise.all([
+        apiFetch<SchemaPluginOut[]>(`/api/v1/plugins?project_id=${id}`),
+        fetchOr<SchemaWorkflowTemplateListOut>(
+          `/api/v1/projects/${id}/workflow-templates`,
+          { templates: [], include_shadowed: false },
+        ),
+        fetchOr<SchemaPageResponseRunOut>(
+          `/api/v1/projects/${id}/runs?limit=8`,
+          { items: [], next_cursor: null, total_estimate: 0 },
+        ),
+        fetchOr<SchemaPageResponseResourceRecordOut>(
+          `/api/v1/projects/${id}/resource-records?limit=8`,
+          { items: [], next_cursor: null, total_estimate: 0 },
+        ),
+        fetchOr<SchemaAuthStatusOut>(
+          `/api/v1/projects/${id}/auth/status`,
+          { project_id: id, provider_key: null, providers: [], connections: [] },
+        ),
+        fetchOr<SchemaScheduledJobOut[]>(`/api/v1/projects/${id}/schedules`, []),
+        fetchOr<SchemaIntegrationBudgetOut[]>(`/api/v1/projects/${id}/budgets`, []),
+      ])
+    plugins.value = pluginRows
+    templates.value = templateRows.templates.length
+    runs.value = runPage.items
+    runPlans.value = runs.value.filter((run) => run.kind === 'run-plan').length
+    resourceRecords.value = resourcePage.items
+    connections.value = authStatus.connections.filter(
+      (connection) => connection.status !== 'revoked',
+    ).length
     schedules.value = scheduleRows
-    voiceTotal.value = voicesPage.total_estimate ?? voicesPage.items?.length ?? 0
-    compliance.value = complianceRows
-    eeat.value = eeatRows
+    budgets.value = budgetRows
+  } catch (err) {
+    error.value = formatApiError(err, 'failed to load project overview')
   } finally {
     loading.value = false
   }
 }
 
-type StatusCounts = { [Status in string]: number }
-
-function countByStatus<T extends { status: string }>(items: T[]): StatusCounts {
-  return items.reduce<StatusCounts>((acc, item) => {
-    acc[item.status] = (acc[item.status] ?? 0) + 1
-    return acc
-  }, {})
+function go(path: string): void {
+  void router.push(`/projects/${projectId.value}/${path}`)
 }
 
-const topicCounts = computed(() => countByStatus(topics.value))
-const articleCounts = computed(() => countByStatus(articles.value))
-
-const failedRuns = computed(() =>
-  runs.value.filter((r) => r.status === 'failed' || r.status === 'aborted'),
-)
-
-const runningRuns = computed(() =>
-  runs.value.filter((r) => r.status === 'running'),
-)
-
-const primaryTarget = computed(() =>
-  targets.value.find((t) => t.is_primary && t.is_active) ?? null,
-)
-
-const activeSchedules = computed(() => schedules.value.filter((s) => s.enabled))
-const activeCompliance = computed(() => compliance.value.filter((r) => r.is_active))
-const activeEeat = computed(() => eeat.value.filter((r) => r.active))
-const activeIntegrations = computed(() => integrations.value.length)
-
-const readinessItems = computed<ReadinessItem[]>(() => [
-  {
-    key: 'project',
-    label: 'Project',
-    ready: project.value?.is_active === true,
-    detail: project.value?.is_active ? 'Active' : 'Inactive',
-    to: '/projects',
-  },
-  {
-    key: 'voice',
-    label: 'Voice',
-    ready: voiceTotal.value > 0,
-    detail: voiceTotal.value > 0 ? `${voiceTotal.value} profile${voiceTotal.value === 1 ? '' : 's'}` : 'No voice profile',
-    to: `/projects/${projectId.value}/voice`,
-  },
-  {
-    key: 'compliance',
-    label: 'Compliance',
-    ready: activeCompliance.value.length > 0,
-    detail: activeCompliance.value.length > 0 ? `${activeCompliance.value.length} active rule${activeCompliance.value.length === 1 ? '' : 's'}` : 'No active rules',
-    to: `/projects/${projectId.value}/compliance`,
-  },
-  {
-    key: 'eeat',
-    label: 'EEAT',
-    ready: activeEeat.value.length > 0,
-    detail: activeEeat.value.length > 0 ? `${activeEeat.value.length} active ${activeEeat.value.length === 1 ? 'criterion' : 'criteria'}` : 'No active criteria',
-    to: `/projects/${projectId.value}/eeat`,
-  },
-  {
-    key: 'targets',
-    label: 'Publishing',
-    ready: primaryTarget.value !== null,
-    detail: primaryTarget.value ? `${primaryTarget.value.kind} primary target` : 'No active primary target',
-    to: `/projects/${projectId.value}/targets`,
-  },
-  {
-    key: 'integrations',
-    label: 'Integrations',
-    ready: activeIntegrations.value > 0,
-    detail: activeIntegrations.value > 0 ? `${activeIntegrations.value} configured` : 'No credentials configured',
-    to: `/projects/${projectId.value}/integrations`,
-  },
-  {
-    key: 'schedules',
-    label: 'Schedules',
-    ready: activeSchedules.value.length > 0,
-    detail: activeSchedules.value.length > 0 ? `${activeSchedules.value.length} enabled` : 'No enabled schedules',
-    to: `/projects/${projectId.value}/schedules`,
-  },
-])
-
-const readinessReadyCount = computed(() =>
-  readinessItems.value.filter((item) => item.ready).length,
-)
-
-const readinessLabel = computed(() =>
-  `${readinessReadyCount.value}/${readinessItems.value.length}`,
-)
-
-const articleInProduction = computed(() =>
-  articles.value.filter((a) => !['published', 'refresh_due'].includes(a.status)).length,
-)
-
-const publishReadyArticles = computed(() => articleCounts.value.eeat_passed ?? 0)
-
-const nextAction = computed<NextAction>(() => {
-  const missingSetup = readinessItems.value.find((item) => !item.ready)
-  if (failedRuns.value.length > 0) {
-    return {
-      label: 'Failed runs',
-      detail: `${failedRuns.value.length} recent run${failedRuns.value.length === 1 ? '' : 's'} need attention before starting more work.`,
-      to: `/projects/${projectId.value}/runs`,
-    }
-  }
-  if (missingSetup) {
-    return {
-      label: missingSetup.label,
-      detail: missingSetup.detail,
-      to: missingSetup.to,
-    }
-  }
-  if ((topicCounts.value.queued ?? 0) > 0) {
-    return {
-      label: 'Queued topics',
-      detail: `${topicCounts.value.queued} topic${topicCounts.value.queued === 1 ? '' : 's'} waiting for approval.`,
-      to: `/projects/${projectId.value}/topics`,
-    }
-  }
-  if ((topicCounts.value.approved ?? 0) > 0) {
-    return {
-      label: 'Approved topics',
-      detail: `${topicCounts.value.approved} approved topic${topicCounts.value.approved === 1 ? '' : 's'} waiting for an agent article run.`,
-      to: `/projects/${projectId.value}/topics`,
-    }
-  }
-  if (publishReadyArticles.value > 0) {
-    return {
-      label: 'Ready articles',
-      detail: `${publishReadyArticles.value} article${publishReadyArticles.value === 1 ? '' : 's'} passed EEAT and awaits an agent publish run.`,
-      to: `/projects/${projectId.value}/articles`,
-    }
-  }
-  return {
-    label: 'Topic queue',
-    detail: 'The project is ready. New topic intake is agent-owned.',
-    to: `/projects/${projectId.value}/topics`,
-  }
-})
-
-function goTo(to: string): void {
-  void router.push(to)
-}
-
-onMounted(loadDashboard)
-watch(projectId, loadDashboard)
+onMounted(load)
+watch(projectId, load)
 </script>
 
 <template>
-  <section class="space-y-4">
+  <div class="space-y-4">
     <UiCallout
-      v-if="warnings.length > 0"
-      tone="warning"
-      density="compact"
+      v-if="error"
+      tone="danger"
     >
-      Some dashboard data could not be loaded. The rest of the project remains usable.
+      {{ error }}
     </UiCallout>
 
-    <UiPanel class="p-4">
-      <UiSectionHeader
-        title="Suggested view"
-        :description="nextAction.detail"
-      >
-        <template #actions>
-          <UiButton
-            size="sm"
-            :variant="nextAction.variant ?? 'secondary'"
-            @click="goTo(nextAction.to)"
-          >
-            {{ nextAction.label }}
-          </UiButton>
-        </template>
-      </UiSectionHeader>
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <UiMetricCard
-          label="Setup ready"
-          :value="readinessLabel"
-          :loading="loading"
-          delta-tone="neutral"
-          :delta="`${readinessReadyCount} ready`"
-        />
-        <UiMetricCard
-          label="Queued topics"
-          :value="topicCounts.queued ?? 0"
-          :loading="loading"
-          :delta="topicCounts.approved ?? 0"
-          delta-label="approved"
-          delta-tone="neutral"
-        />
-        <UiMetricCard
-          label="Articles in production"
-          :value="articleInProduction"
-          :loading="loading"
-          :delta="publishReadyArticles"
-          delta-label="ready to publish"
-          delta-tone="neutral"
-        />
-        <UiMetricCard
-          label="Recent blockers"
-          :value="failedRuns.length"
-          :loading="loading"
-          :delta="runningRuns.length"
-          delta-label="running"
-          :delta-tone="failedRuns.length > 0 ? 'negative' : 'neutral'"
-        />
-      </div>
-    </UiPanel>
+    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <UiMetricCard
+        label="Enabled plugins"
+        :value="enabledPlugins.length"
+      />
+      <UiMetricCard
+        label="Workflow templates"
+        :value="templates"
+      />
+      <UiMetricCard
+        label="Resource records"
+        :value="resourceRecords.length"
+      />
+      <UiMetricCard
+        label="Connections"
+        :value="connections"
+      />
+    </div>
 
-    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+    <div class="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
       <UiPanel class="p-4">
         <UiSectionHeader
-          title="Setup readiness"
-          description="The minimum operating surface for reliable content work."
-        />
-        <ul class="divide-y divide-border-subtle rounded-md border border-subtle bg-bg-surface">
-          <li
-            v-for="item in readinessItems"
-            :key="item.key"
-            class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-          >
-            <div class="min-w-0">
-              <p class="font-medium text-fg-default">
-                {{ item.label }}
-              </p>
-              <p class="truncate text-xs text-fg-muted">
-                {{ item.detail }}
-              </p>
-            </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <StatusBadge
-                :status="item.ready ? 'active' : 'inactive'"
-                kind="project"
-                :small="true"
-              />
-              <UiButton
-                v-if="!item.ready"
-                size="sm"
-                variant="secondary"
-                @click="goTo(item.to)"
-              >
-                Open
-              </UiButton>
-            </div>
-          </li>
-        </ul>
-      </UiPanel>
-
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Recent activity"
-          description="Latest project runs, with failed and running work visible from the dashboard."
+          title="Recent Runs"
+          as="h3"
         >
           <template #actions>
+            <UiBadge
+              v-if="runningRuns.length"
+              tone="info"
+            >
+              {{ runningRuns.length }} running
+            </UiBadge>
+            <UiBadge
+              v-if="failedRuns.length"
+              tone="danger"
+            >
+              {{ failedRuns.length }} need review
+            </UiBadge>
             <UiButton
               size="sm"
               variant="secondary"
-              @click="goTo(`/projects/${projectId}/runs`)"
+              @click="go('runs')"
             >
-              All runs
+              Open
             </UiButton>
           </template>
         </UiSectionHeader>
@@ -410,61 +180,99 @@ watch(projectId, loadDashboard)
           :items="runs"
           :columns="runColumns"
           :loading="loading"
-          empty-message="No runs yet."
           aria-label="Recent runs"
+          empty-message="No runs yet."
         >
-          <template #cell:status="{ row }">
+          <template #cell:status="{ value }">
             <StatusBadge
-              :status="(row as Run).status"
+              :status="String(value)"
               kind="run"
             />
           </template>
         </DataTable>
       </UiPanel>
+
+      <UiPanel class="p-4">
+        <UiSectionHeader
+          title="Setup"
+          as="h3"
+        >
+          <template #actions>
+            <UiButton
+              size="sm"
+              variant="secondary"
+              @click="go('connections')"
+            >
+              Connections
+            </UiButton>
+          </template>
+        </UiSectionHeader>
+        <dl class="grid gap-3 text-sm">
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-fg-muted">Active schedules</dt>
+            <dd class="font-medium">{{ activeSchedules.length }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-fg-muted">Budgets</dt>
+            <dd class="font-medium">{{ activeBudgets.length }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-fg-muted">Run-plan audit rows</dt>
+            <dd class="font-medium">{{ runPlans }}</dd>
+          </div>
+        </dl>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <UiButton
+            size="sm"
+            variant="secondary"
+            @click="go('plugins')"
+          >
+            Plugins
+          </UiButton>
+          <UiButton
+            size="sm"
+            variant="secondary"
+            @click="go('workflow-templates')"
+          >
+            Templates
+          </UiButton>
+          <UiButton
+            size="sm"
+            variant="secondary"
+            @click="go('resources')"
+          >
+            Resources
+          </UiButton>
+        </div>
+      </UiPanel>
     </div>
 
-    <UiPanel
-      v-if="project"
-      class="p-4"
-    >
+    <UiPanel class="p-4">
       <UiSectionHeader
-        title="Project identity"
-        description="The project selected in the operator console."
-      />
-      <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <p class="text-xs text-fg-muted">
-            Name
-          </p>
-          <p class="font-medium text-fg-default">
-            {{ project.name }}
-          </p>
-        </div>
-        <div>
-          <p class="text-xs text-fg-muted">
-            Domain
-          </p>
-          <p class="font-medium text-fg-default">
-            {{ project.domain }}
-          </p>
-        </div>
-        <div>
-          <p class="text-xs text-fg-muted">
-            Locale
-          </p>
-          <p class="font-medium text-fg-default">
-            {{ project.locale }}
-          </p>
-        </div>
-        <div>
-          <p class="text-xs text-fg-muted">
-            Niche
-          </p>
-          <p class="font-medium text-fg-default">
-            {{ project.niche ?? '—' }}
-          </p>
-        </div>
-      </div>
+        title="Latest Resource Records"
+        as="h3"
+      >
+        <template #actions>
+          <UiButton
+            size="sm"
+            variant="secondary"
+            @click="go('resources')"
+          >
+            Open
+          </UiButton>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="resourceRecords"
+        :columns="resourceColumns"
+        :loading="loading"
+        aria-label="Latest resource records"
+        empty-message="No resource records yet."
+      >
+        <template #cell:plugin_slug="{ value }">
+          <UiBadge tone="accent">{{ value }}</UiBadge>
+        </template>
+      </DataTable>
     </UiPanel>
-  </section>
+  </div>
 </template>

@@ -1,6 +1,6 @@
 <!--
   UiScoreMeter — circular or linear score display.
-  Use for EEAT scores, content quality, opportunity strength.
+  Use for quality scores, opportunity strength, and budget health.
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
@@ -10,7 +10,7 @@ export interface UiScoreMeterProps {
   value: number;
   max?: number;
   /** When `auto`, tone is chosen by score band (red/amber/emerald). */
-  tone?: 'auto' | 'accent' | 'success' | 'warning' | 'danger' | 'eeat';
+  tone?: 'auto' | 'accent' | 'success' | 'warning' | 'danger';
   variant?: 'circular' | 'linear';
   size?: 'sm' | 'md' | 'lg';
   /** Override the displayed label. */
@@ -26,6 +26,7 @@ const props = withDefaults(defineProps<UiScoreMeterProps>(), {
   tone: 'auto',
   variant: 'circular',
   size: 'md',
+  label: undefined,
   thresholds: () => ({ warning: 40, success: 70 }),
 });
 
@@ -43,7 +44,6 @@ const stroke = computed(() => ({
   success: 'var(--color-success-default)',
   warning: 'var(--color-warning-default)',
   danger:  'var(--color-danger-default)',
-  eeat:    'var(--color-eeat-default)',
   auto:    '',
 }[resolvedTone.value]));
 
@@ -70,7 +70,11 @@ const offset = computed(() => circumference.value * (1 - percent.value / 100));
     class="ui-score-meter inline-flex items-center justify-center relative"
     :style="{ width: sizes.box + 'px', height: sizes.box + 'px' }"
   >
-    <svg :width="sizes.box" :height="sizes.box" :viewBox="`0 0 ${sizes.box} ${sizes.box}`">
+    <svg
+      :width="sizes.box"
+      :height="sizes.box"
+      :viewBox="`0 0 ${sizes.box} ${sizes.box}`"
+    >
       <circle
         :cx="sizes.box / 2"
         :cy="sizes.box / 2"
@@ -93,17 +97,26 @@ const offset = computed(() => circumference.value * (1 - percent.value / 100));
         style="transition: stroke-dashoffset var(--duration-base) var(--easing-standard)"
       />
     </svg>
-    <span v-if="!noLabel" :class="['absolute font-semibold tabular-nums text-fg-strong', sizes.font]">
+    <span
+      v-if="!noLabel"
+      :class="['absolute font-semibold tabular-nums text-fg-strong', sizes.font]"
+    >
       {{ label ?? value }}
     </span>
   </div>
-  <div v-else class="ui-score-meter ui-score-meter--linear flex items-center gap-2 text-sm">
+  <div
+    v-else
+    class="ui-score-meter ui-score-meter--linear flex items-center gap-2 text-sm"
+  >
     <div class="flex-1 h-1.5 rounded-full bg-bg-sunken overflow-hidden">
       <div
         class="h-full rounded-full transition-all duration-base ease-standard"
         :style="{ width: percent + '%', background: stroke }"
       />
     </div>
-    <span v-if="!noLabel" class="font-mono tabular-nums text-fg-muted">{{ label ?? `${value}/${max}` }}</span>
+    <span
+      v-if="!noLabel"
+      class="font-mono tabular-nums text-fg-muted"
+    >{{ label ?? `${value}/${max}` }}</span>
   </div>
 </template>

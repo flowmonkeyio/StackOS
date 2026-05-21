@@ -11,10 +11,7 @@ from content_stack.db.models import (
     Credential,
     CredentialRefreshEvent,
     CredentialUsageEvent,
-    OAuthState,
 )
-from content_stack.mcp.context import MCPContext
-from content_stack.mcp.tools.projects import GscOauthStartInput, _gsc_oauth_start
 from content_stack.repositories.projects import IntegrationCredentialRepository
 
 
@@ -22,12 +19,16 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
     session: Session,
     project_id: int,
 ) -> None:
-    integration = IntegrationCredentialRepository(session).set(
-        project_id=project_id,
-        kind="firecrawl",
-        plaintext_payload=b"fc-secret",
-        config_json={"api_key": "fc-secret", "label": "Primary Firecrawl"},
-    ).data
+    integration = (
+        IntegrationCredentialRepository(session)
+        .set(
+            project_id=project_id,
+            kind="firecrawl",
+            plaintext_payload=b"fc-secret",
+            config_json={"api_key": "fc-secret", "label": "Primary Firecrawl"},
+        )
+        .data
+    )
 
     status = AuthRepository(session).status(project_id=project_id, provider_key="firecrawl")
 
@@ -123,32 +124,3 @@ def test_auth_test_redacts_vendor_controlled_text_fields(
     assert out.summary == "Authorization: Bearer [redacted]"
     assert out.next_action == "rotate refresh_token=[redacted]"
     assert out.metadata == {"access_token": "[redacted]"}
-
-
-def test_legacy_gsc_oauth_start_delegates_to_auth_provider_boundary(
-    session: Session,
-    project_id: int,
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv("GSC_OAUTH_CLIENT_ID", "client-id-fake")
-    monkeypatch.setenv("GSC_OAUTH_CLIENT_SECRET", "client-secret-fake")
-    ctx = MCPContext(
-        session=session,
-        request_id="test",
-        project_id=project_id,
-        extras={},
-    )
-
-    out = asyncio.run(
-        _gsc_oauth_start(
-            GscOauthStartInput(project_id=project_id),
-            ctx,
-            None,  # type: ignore[arg-type]
-        )
-    )
-
-    state = session.exec(select(OAuthState).where(OAuthState.state == out.data.state)).one()
-    assert state.project_id == project_id
-    assert state.provider_key == "gsc"
-    assert state.consumed_at is None
-    assert out.data.authorization_url.startswith("https://accounts.google.com/o/oauth2/v2/auth")

@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy import select as sa_select
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from content_stack.artifacts import redact_secrets
 from content_stack.db.models import (
@@ -58,8 +58,14 @@ def _scalar_count(session: Session, statement: Any) -> int:
     return int(raw)
 
 
+def _required_id(value: int | None) -> int:
+    if value is None:
+        raise RuntimeError("expected persisted row id")
+    return int(value)
+
+
 class ResourceOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: int
     plugin_id: int
@@ -67,7 +73,10 @@ class ResourceOut(BaseModel):
     key: str
     name: str
     description: str
-    schema_json: dict[str, Any]
+    schema_data: dict[str, Any] = Field(
+        validation_alias=AliasChoices("schema_json", "schema_data"),
+        serialization_alias="schema_json",
+    )
     ui_schema_json: dict[str, Any] | None
     config_json: dict[str, Any] | None
 
@@ -144,9 +153,9 @@ class ResourceRepository:
         self._sync_catalog()
         row = self._s.exec(
             select(ResourceRecord, Resource, Plugin)
-            .join(Resource, ResourceRecord.resource_id == Resource.id)
-            .join(Plugin, Resource.plugin_id == Plugin.id)
-            .where(ResourceRecord.id == record_id)
+            .join(Resource, col(ResourceRecord.resource_id) == col(Resource.id))
+            .join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
+            .where(col(ResourceRecord.id) == record_id)
         ).first()
         if row is None:
             raise NotFoundError(f"resource record {record_id} not found")
@@ -164,43 +173,38 @@ class ResourceRepository:
     ) -> Page[ResourceRecordOut]:
         self._sync_catalog()
         n = _normalise_limit(limit)
-        filters = [ResourceRecord.project_id == project_id]
+        filters: list[Any] = [col(ResourceRecord.project_id) == project_id]
         disabled_plugin_ids = self._disabled_plugin_ids(project_id)
         if disabled_plugin_ids:
-            filters.append(Plugin.id.not_in(disabled_plugin_ids))  # type: ignore[attr-defined]
+            filters.append(col(Plugin.id).not_in(disabled_plugin_ids))
         if plugin_slug is not None:
-            filters.append(Plugin.slug == plugin_slug)
+            filters.append(col(Plugin.slug) == plugin_slug)
         if resource_key is not None:
-            filters.append(Resource.key == resource_key)
+            filters.append(col(Resource.key) == resource_key)
 
         count_stmt = (
             sa_select(func.count())
             .select_from(ResourceRecord)
-            .join(Resource, ResourceRecord.resource_id == Resource.id)
-            .join(Plugin, Resource.plugin_id == Plugin.id)
+            .join(Resource, col(ResourceRecord.resource_id) == col(Resource.id))
+            .join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
             .where(*filters)
         )
         total = _scalar_count(self._s, count_stmt)
 
         stmt = (
             select(ResourceRecord, Resource, Plugin)
-            .join(Resource, ResourceRecord.resource_id == Resource.id)
-            .join(Plugin, Resource.plugin_id == Plugin.id)
+            .join(Resource, col(ResourceRecord.resource_id) == col(Resource.id))
+            .join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
             .where(*filters)
         )
         if after_id is not None:
-            stmt = stmt.where(ResourceRecord.id > after_id)
-        rows = list(
-            self._s.exec(
-                stmt.order_by(ResourceRecord.id.asc()).limit(n + 1)  # type: ignore[union-attr]
-            ).all()
-        )
+            stmt = stmt.where(col(ResourceRecord.id) > after_id)
+        rows = list(self._s.exec(stmt.order_by(col(ResourceRecord.id).asc()).limit(n + 1)).all())
         page_rows = rows[:n]
-        next_cursor = int(page_rows[-1][0].id) if len(rows) > n and page_rows else None
+        next_cursor = _required_id(page_rows[-1][0].id) if len(rows) > n and page_rows else None
         return Page(
             items=[
-                self._record_out(record, resource, plugin)
-                for record, resource, plugin in page_rows
+                self._record_out(record, resource, plugin) for record, resource, plugin in page_rows
             ],
             next_cursor=next_cursor,
             total_estimate=total,
@@ -251,7 +255,7 @@ class ResourceRepository:
         resource, plugin = self._get_resource_pair(key=resource_key, plugin_slug=plugin_slug)
         row = self._find_record(
             project_id=project_id,
-            resource_id=int(resource.id),
+            resource_id=_required_id(resource.id),
             record_id=record_id,
             external_id=external_id,
         )
@@ -261,7 +265,7 @@ class ResourceRepository:
         if row is None:
             row = ResourceRecord(
                 project_id=project_id,
-                resource_id=int(resource.id),
+                resource_id=_required_id(resource.id),
                 external_id=external_id,
                 title=title,
                 data_json=clean_data,
@@ -314,10 +318,12 @@ class ResourceRepository:
         ).first()
 
     def _resource_rows(self, *, plugin_slug: str | None = None) -> list[tuple[Resource, Plugin]]:
-        stmt = select(Resource, Plugin).join(Plugin, Resource.plugin_id == Plugin.id)
+        stmt = select(Resource, Plugin).join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
-            stmt = stmt.where(Plugin.slug == plugin_slug)
-        return list(self._s.exec(stmt.order_by(Plugin.slug.asc(), Resource.key.asc())).all())
+            stmt = stmt.where(col(Plugin.slug) == plugin_slug)
+        return list(
+            self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Resource.key).asc())).all()
+        )
 
     def _get_resource_pair(
         self,
@@ -348,7 +354,7 @@ class ResourceRepository:
             key=row.key,
             name=row.name,
             description=row.description,
-            schema_json=row.schema_json,
+            schema_data=row.schema_data,
             ui_schema_json=row.ui_schema_json,
             config_json=row.config_json,
         )
@@ -392,8 +398,8 @@ class ResourceRepository:
             row.plugin_id
             for row in self._s.exec(
                 select(ProjectPlugin).where(
-                    ProjectPlugin.project_id == project_id,
-                    ProjectPlugin.enabled.is_(False),  # type: ignore[union-attr]
+                    col(ProjectPlugin.project_id) == project_id,
+                    col(ProjectPlugin.enabled).is_(False),
                 )
             ).all()
         }
@@ -408,9 +414,7 @@ class ResourceRepository:
         if not disabled_plugin_ids:
             return rows
         return [
-            (resource, plugin)
-            for resource, plugin in rows
-            if plugin.id not in disabled_plugin_ids
+            (resource, plugin) for resource, plugin in rows if plugin.id not in disabled_plugin_ids
         ]
 
 
@@ -492,34 +496,32 @@ class ArtifactRepository:
     ) -> Page[ArtifactOut]:
         self._sync_catalog()
         n = _normalise_limit(limit)
-        filters = []
+        filters: list[Any] = []
         if project_id is not None:
-            filters.append(Artifact.project_id == project_id)
+            filters.append(col(Artifact.project_id) == project_id)
         if resource_record_id is not None:
-            filters.append(Artifact.resource_record_id == resource_record_id)
+            filters.append(col(Artifact.resource_record_id) == resource_record_id)
         if kind is not None:
-            filters.append(Artifact.kind == kind)
+            filters.append(col(Artifact.kind) == kind)
         if plugin_slug is not None:
-            filters.append(Plugin.slug == plugin_slug)
+            filters.append(col(Plugin.slug) == plugin_slug)
 
         count_stmt = (
             sa_select(func.count())
             .select_from(Artifact)
-            .outerjoin(Plugin, Artifact.plugin_id == Plugin.id)
+            .outerjoin(Plugin, col(Artifact.plugin_id) == col(Plugin.id))
             .where(*filters)
         )
         total = _scalar_count(self._s, count_stmt)
 
-        stmt = select(Artifact, Plugin).outerjoin(Plugin, Artifact.plugin_id == Plugin.id)
+        stmt = select(Artifact, Plugin).outerjoin(Plugin, col(Artifact.plugin_id) == col(Plugin.id))
         if filters:
             stmt = stmt.where(*filters)
         if after_id is not None:
-            stmt = stmt.where(Artifact.id > after_id)
-        rows = list(
-            self._s.exec(stmt.order_by(Artifact.id.asc()).limit(n + 1)).all()  # type: ignore[union-attr]
-        )
+            stmt = stmt.where(col(Artifact.id) > after_id)
+        rows = list(self._s.exec(stmt.order_by(col(Artifact.id).asc()).limit(n + 1)).all())
         page_rows = rows[:n]
-        next_cursor = int(page_rows[-1][0].id) if len(rows) > n and page_rows else None
+        next_cursor = _required_id(page_rows[-1][0].id) if len(rows) > n and page_rows else None
         return Page(
             items=[self._artifact_out(artifact, plugin) for artifact, plugin in page_rows],
             next_cursor=next_cursor,

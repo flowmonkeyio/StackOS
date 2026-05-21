@@ -52,17 +52,16 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
 
     seo = repo.catalog(plugin_slug="seo").plugins[0]
     assert {cap.key for cap in seo.capabilities} >= {"seo-content", "seo-research"}
-    assert {provider.key for provider in seo.providers} >= {"stackos-seo-compat", "gsc"}
+    assert {provider.key for provider in seo.providers} >= {"dataforseo", "ahrefs"}
     assert {action.key for action in seo.actions} >= {
-        "topic.bulk-create",
-        "publish.record",
-        "gsc.query-project",
+        "keyword.research",
+        "serp.analyze",
+        "competitor.keywords",
     }
     assert {resource.key for resource in seo.resources} >= {
-        "cluster",
-        "topic",
-        "article",
-        "internal-link",
+        "keyword-opportunity",
+        "content-piece",
+        "content-refresh",
     }
 
 
@@ -95,6 +94,6 @@ def test_disabled_plugin_is_filtered_from_project_catalog(
     assert "seo-content" not in {
         capability.key for capability in repo.list_capabilities(project_id=project_id)
     }
-    assert "article" not in {
+    assert "content-piece" not in {
         resource.key for resource in repo.list_resources(project_id=project_id)
     }

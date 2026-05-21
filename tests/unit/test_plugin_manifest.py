@@ -30,7 +30,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         for manifest in BUILTIN_PLUGIN_MANIFESTS
     }
     assert resources_by_plugin["core"] >= {"learning", "experiment"}
-    assert resources_by_plugin["seo"] >= {"article", "article-asset"}
+    assert resources_by_plugin["seo"] >= {"keyword-opportunity", "content-piece"}
     assert resources_by_plugin["utils"] >= {"generated-image", "web-document"}
 
 
@@ -43,30 +43,27 @@ def test_seo_plugin_yaml_facade_validates() -> None:
     assert {capability.key for capability in manifest.capabilities} >= {
         "seo-content",
         "seo-research",
-        "seo-publishing",
-        "search-console",
+        "seo-measurement",
     }
     assert {provider.key for provider in manifest.providers} >= {
-        "stackos-seo-compat",
         "dataforseo",
-        "gsc",
-        "wordpress",
-        "ghost",
+        "ahrefs",
     }
     assert {resource.key for resource in manifest.resources} >= {
-        "cluster",
-        "topic",
-        "article",
-        "research-source",
-        "article-asset",
-        "internal-link",
-        "gsc-metric",
-        "drift-baseline",
+        "keyword-opportunity",
+        "serp-snapshot",
+        "content-brief",
+        "content-piece",
+        "content-refresh",
+        "search-performance-snapshot",
     }
     actions = {action.key: action for action in manifest.actions}
-    assert actions["topic.bulk-create"].config == {"legacy_tool": "topic.bulkCreate"}
-    assert actions["publish.record"].config == {
-        "legacy_tools": ["publish.recordPublish", "publish.recordExternal"]
+    assert actions["keyword.research"].config == {
+        "schema_version": "stackos.action.v1",
+        "operation": "keyword.research",
+        "requires_credential": True,
+        "budget_kind": "dataforseo",
+        "enforce_budget": True,
     }
 
 

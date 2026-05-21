@@ -6,7 +6,7 @@ Per PLAN.md L529-L539: cursor pagination on ``id ASC``. Query params
 
 We mirror the repository's ``Page[T]`` rather than reuse it directly so
 the OpenAPI generator emits a per-resource ``PageResponse[Resource]``
-(``ProjectsPage``, ``ArticlesPage``, …) the TypeScript codegen can map
+(``ProjectsPage``, ``RunsPage``, …) the TypeScript codegen can map
 to discriminated types. Conversion is one-to-one in ``page_response``.
 """
 

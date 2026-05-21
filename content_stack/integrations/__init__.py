@@ -7,7 +7,7 @@ budget pre-emption + reconciliation, retry/backoff on 429/5xx, run-step
 audit trail, request/response sanitisation.
 
 The ``REGISTRY`` dict maps the ``integration_credentials.kind`` value to
-its wrapper class so the MCP/REST ``integration.test`` dispatcher can
+its wrapper class so the auth-provider boundary and REST admin routes can
 look up the right vendor without an enum-to-class switch on every call.
 """
 
@@ -21,7 +21,6 @@ from content_stack.integrations.dataforseo import DataForSeoIntegration
 from content_stack.integrations.firecrawl import FirecrawlIntegration
 from content_stack.integrations.ghost import GhostIntegration
 from content_stack.integrations.google_paa import GooglePaaIntegration
-from content_stack.integrations.gsc import GscIntegration
 from content_stack.integrations.jina_reader import JinaReaderIntegration
 from content_stack.integrations.openai_images import OpenAIImagesIntegration
 from content_stack.integrations.reddit import RedditIntegration
@@ -34,7 +33,6 @@ if TYPE_CHECKING:
 REGISTRY: dict[str, type[BaseIntegration]] = {
     "dataforseo": DataForSeoIntegration,
     "firecrawl": FirecrawlIntegration,
-    "gsc": GscIntegration,
     "openai-images": OpenAIImagesIntegration,
     "reddit": RedditIntegration,
     "google-paa": GooglePaaIntegration,
@@ -49,9 +47,8 @@ def integration_class_for(kind: str) -> type[BaseIntegration] | None:
     """Resolve the wrapper class for an ``integration_credentials.kind``.
 
     Returns ``None`` if no wrapper is registered. Runtime LLM keys for
-    the current operator agent live outside content-stack; the daemon
-    should not register prose-generation wrappers just to spawn hidden
-    procedure writers.
+    the current operator agent live outside StackOS; the daemon should not
+    register prose-generation wrappers or spawn hidden writer sessions.
     """
     return REGISTRY.get(kind)
 
@@ -64,7 +61,6 @@ __all__ = [
     "FirecrawlIntegration",
     "GhostIntegration",
     "GooglePaaIntegration",
-    "GscIntegration",
     "IntegrationCallResult",
     "JinaReaderIntegration",
     "OpenAIImagesIntegration",

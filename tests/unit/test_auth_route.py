@@ -32,15 +32,6 @@ def test_ui_token_is_in_auth_whitelist() -> None:
     assert requires_auth("/api/v1/auth/ui-token") is False
 
 
-def test_gsc_oauth_callback_is_in_auth_whitelist() -> None:
-    """Google's browser redirect cannot send the SPA bearer header."""
-    from content_stack.auth import WHITELIST_PREFIXES, requires_auth
-
-    path = "/api/v1/integrations/gsc/oauth/callback"
-    assert path in WHITELIST_PREFIXES
-    assert requires_auth(path) is False
-
-
 def test_ui_token_rejects_non_loopback_host(client: TestClient) -> None:
     """HostHeaderMiddleware still runs for whitelisted paths — non-loopback → 421."""
     resp = client.get(
@@ -109,8 +100,8 @@ def test_ui_token_cannot_access_mcp(client: TestClient, auth_token: str) -> None
     assert "read-only" in resp.json()["detail"]
 
 
-def test_agent_token_can_still_mutate_rest_data(client: TestClient, auth_token: str) -> None:
-    """The daemon token remains the write-capable token for agent operations."""
+def test_daemon_token_can_still_mutate_rest_data(client: TestClient, auth_token: str) -> None:
+    """The daemon token remains the write-capable local-admin token."""
     resp = client.post(
         "/api/v1/projects",
         headers={"authorization": f"Bearer {auth_token}"},

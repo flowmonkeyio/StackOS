@@ -294,8 +294,7 @@ class RunPlanSpec(BaseModel):
             for approval_ref in step.approval_refs:
                 if approval_ref not in approval_keys:
                     raise ValueError(
-                        f"step {step.id!r} approval_refs references unknown item "
-                        f"{approval_ref!r}"
+                        f"step {step.id!r} approval_refs references unknown item {approval_ref!r}"
                     )
 
         for approval in self.approvals:
@@ -393,20 +392,16 @@ def run_plan_from_template(
     ]
     grants = {
         "capability_requirements": [
-            item.model_dump(mode="json", exclude_none=True)
-            for item in spec.capability_requirements
+            item.model_dump(mode="json", exclude_none=True) for item in spec.capability_requirements
         ],
         "auth_requirements": [
-            item.model_dump(mode="json", exclude_none=True)
-            for item in spec.auth_requirements
+            item.model_dump(mode="json", exclude_none=True) for item in spec.auth_requirements
         ],
         "action_contracts": [
-            item.model_dump(mode="json", exclude_none=True)
-            for item in spec.action_contracts
+            item.model_dump(mode="json", exclude_none=True) for item in spec.action_contracts
         ],
         "resource_contracts": [
-            item.model_dump(mode="json", exclude_none=True)
-            for item in spec.resource_contracts
+            item.model_dump(mode="json", exclude_none=True) for item in spec.resource_contracts
         ],
     }
     return RunPlanSpec(
@@ -427,20 +422,13 @@ def run_plan_from_template(
         },
         grant_snapshot_json=grants,
         policy_snapshot_json={
-            "policies": [
-                item.model_dump(mode="json", exclude_none=True)
-                for item in spec.policies
-            ],
+            "policies": [item.model_dump(mode="json", exclude_none=True) for item in spec.policies],
             "approval_gates": [
-                item.model_dump(mode="json", exclude_none=True)
-                for item in spec.approval_gates
+                item.model_dump(mode="json", exclude_none=True) for item in spec.approval_gates
             ],
         },
         output_contract_json={
-            "outputs": [
-                item.model_dump(mode="json", exclude_none=True)
-                for item in spec.outputs
-            ]
+            "outputs": [item.model_dump(mode="json", exclude_none=True) for item in spec.outputs]
         },
         steps=steps,
         approvals=approvals,

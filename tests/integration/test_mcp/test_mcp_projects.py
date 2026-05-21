@@ -1,4 +1,4 @@
-"""project.* + voice.* + eeat.* exercise via MCP, including D7 invariant."""
+"""project.*, budget.*, and schedule.* exercise via MCP."""
 
 from __future__ import annotations
 
@@ -56,58 +56,6 @@ def test_project_set_active_writes_envelope(mcp_client: MCPClient, seeded_projec
     assert env["data"]["is_active"] is True
 
 
-def test_project_activate_alias_writes_envelope(
-    mcp_client: MCPClient, seeded_project: dict
-) -> None:
-    """project.activate remains callable for agents that use REST wording."""
-    pid = seeded_project["data"]["id"]
-    env = mcp_client.call_tool_structured("project.activate", {"project_id": pid})
-    assert env["project_id"] == pid
-    assert env["data"]["is_active"] is True
-
-
-def test_eeat_seed_present_after_project_create(
-    mcp_client: MCPClient, seeded_project: dict
-) -> None:
-    """80 EEAT criteria seeded; D7 ``tier='core'`` items present."""
-    pid = seeded_project["data"]["id"]
-    rows = mcp_client.call_tool_structured("eeat.list", {"project_id": pid})
-    assert isinstance(rows, dict)  # wrapped by _result_to_json into {"items": [...]}
-    items = rows["items"]
-    assert len(items) >= 80, f"got {len(items)} criteria"
-    core_codes = {r["code"] for r in items if r["tier"] == "core"}
-    assert {"T04", "C01", "R10"} <= core_codes
-
-
-def test_eeat_toggle_core_floor_is_protected(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """eeat.toggle on a tier='core' criterion with active=False → -32008."""
-    pid = seeded_project["data"]["id"]
-    rows = mcp_client.call_tool_structured("eeat.list", {"project_id": pid})["items"]
-    core_row = next(r for r in rows if r["tier"] == "core")
-    err = mcp_client.call_tool_error(
-        "eeat.toggle", {"criterion_id": core_row["id"], "active": False}
-    )
-    assert err["code"] == -32008  # ConflictError
-    assert err["message"] == "ConflictError"
-
-
-def test_voice_set_and_set_active(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """voice.set + voice.setActive form a working pair."""
-    pid = seeded_project["data"]["id"]
-    env = mcp_client.call_tool_structured(
-        "voice.set",
-        {
-            "project_id": pid,
-            "name": "default",
-            "voice_md": "# Voice profile\n",
-            "is_default": True,
-        },
-    )
-    voice_id = env["data"]["id"]
-    activated = mcp_client.call_tool_structured("voice.setActive", {"voice_id": voice_id})
-    assert activated["data"]["is_default"] is True
-
-
 def test_schedule_set_toggle_and_remove(mcp_client: MCPClient, seeded_project: dict) -> None:
     """schedule.remove mirrors REST DELETE by disabling the scheduled job."""
     pid = seeded_project["data"]["id"]
@@ -115,7 +63,7 @@ def test_schedule_set_toggle_and_remove(mcp_client: MCPClient, seeded_project: d
         "schedule.set",
         {
             "project_id": pid,
-            "kind": "gsc-pull",
+            "kind": "weekly-review",
             "cron_expr": "15 3 * * *",
             "enabled": True,
         },

@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 import content_stack
 from content_stack.db.models import (
@@ -455,15 +455,15 @@ class WorkflowTemplateLoader:
             select(WorkflowTemplate, WorkflowTemplateVersion)
             .join(
                 ProjectWorkflowTemplate,
-                ProjectWorkflowTemplate.template_id == WorkflowTemplate.id,
+                col(ProjectWorkflowTemplate.template_id) == col(WorkflowTemplate.id),
             )
             .join(
                 WorkflowTemplateVersion,
-                ProjectWorkflowTemplate.active_version_id == WorkflowTemplateVersion.id,
+                col(ProjectWorkflowTemplate.active_version_id) == col(WorkflowTemplateVersion.id),
             )
             .where(
-                WorkflowTemplate.project_id == project_id,
-                ProjectWorkflowTemplate.enabled.is_(True),  # type: ignore[union-attr]
+                col(WorkflowTemplate.project_id) == project_id,
+                col(ProjectWorkflowTemplate.enabled).is_(True),
             )
         )
         rows = self._s.exec(stmt).all()

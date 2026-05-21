@@ -46,18 +46,22 @@ def test_resource_catalog_and_record_upsert(session: Session, project_id: int) -
 
 
 def test_artifact_create_query_and_redaction(session: Session, project_id: int) -> None:
-    artifact = ArtifactRepository(session).create(
-        project_id=project_id,
-        plugin_slug="utils",
-        kind="image",
-        uri="/generated-assets/example.png",
-        metadata_json={
-            "width": 1024,
-            "api_key": "secret-value",
-            "nested": {"authorization": "Bearer nope"},
-        },
-        provenance_json={"provider": "openai-images", "access_token": "tok"},
-    ).data
+    artifact = (
+        ArtifactRepository(session)
+        .create(
+            project_id=project_id,
+            plugin_slug="utils",
+            kind="image",
+            uri="/generated-assets/example.png",
+            metadata_json={
+                "width": 1024,
+                "api_key": "secret-value",
+                "nested": {"authorization": "Bearer nope"},
+            },
+            provenance_json={"provider": "openai-images", "access_token": "tok"},
+        )
+        .data
+    )
 
     assert artifact.plugin_slug == "utils"
     assert artifact.metadata_json == {

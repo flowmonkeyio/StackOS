@@ -12,15 +12,19 @@ from content_stack.repositories.run_plans import RunPlanRepository
 def _seed_run_plan(api: TestClient, project_id: int) -> int:
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
-        plan = RunPlanRepository(session).create(
-            project_id=project_id,
-            run_plan_json={
-                "schema_version": "stackos.run-plan.v1",
-                "key": "ops.review.run",
-                "title": "Review",
-                "steps": [{"id": "review", "title": "Review"}],
-            },
-        ).data
+        plan = (
+            RunPlanRepository(session)
+            .create(
+                project_id=project_id,
+                run_plan_json={
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "ops.review.run",
+                    "title": "Review",
+                    "steps": [{"id": "review", "title": "Review"}],
+                },
+            )
+            .data
+        )
         return plan.id
 
 

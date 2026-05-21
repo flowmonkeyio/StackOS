@@ -62,8 +62,8 @@ class _FakeClient:
                     "id": body["id"],
                     "result": {
                         "tools": [
-                            _tool("article.get"),
-                            _tool("integration.test"),
+                            _tool("resource.query"),
+                            _tool("budget.set"),
                             _tool("resource.upsert"),
                             _tool("runPlan.get"),
                         ]
@@ -71,20 +71,6 @@ class _FakeClient:
                 }
             )
         tool_name = body["params"]["name"]
-        if tool_name == "procedure.currentStep":
-            return _Response(
-                {
-                    "jsonrpc": "2.0",
-                    "id": body["id"],
-                    "result": {
-                        "structuredContent": {
-                            "run_id": 7,
-                            "run_token": "tok",
-                            "current_step": {"allowed_tools": ["article.get"]},
-                        }
-                    },
-                }
-            )
         if tool_name == "runPlan.get":
             return _Response(
                 {
@@ -125,8 +111,7 @@ class _FakeClient:
 def test_bridge_tools_list_hides_daemon_internals() -> None:
     daemon_tools = [
         *[_tool(name) for name in _AGENT_VISIBLE_TOOL_ORDER],
-        _tool("article.get"),
-        _tool("integration.set"),
+        _tool("auth.start"),
         _tool("plugin.enable"),
         _tool("resource.upsert"),
         _tool("artifact.create"),
@@ -141,8 +126,7 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
     assert names[: len(_AGENT_VISIBLE_TOOL_ORDER)] == list(_AGENT_VISIBLE_TOOL_ORDER)
     assert "toolbox.describe" in names
     assert "toolbox.call" in names
-    assert "article.get" not in names
-    assert "integration.set" not in names
+    assert "auth.start" not in names
     assert "plugin.enable" not in names
     assert "resource.upsert" not in names
     assert "artifact.create" not in names
@@ -154,15 +138,15 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     catalog = {
         name: _tool(name)
         for name in [
-            "integration.test",
-            "integration.set",
-            "article.get",
+            "auth.start",
+            "resource.upsert",
+            "action.execute",
             "dataforseo.serp",
             "cost.queryProject",
             "openaiImages.generate",
         ]
     }
-    allowed_by_run = {7: {"article.get", "dataforseo.serp"}}
+    allowed_by_run = {7: {"resource.upsert", "action.execute"}}
 
     response = _bridge_toolbox_describe(
         42,
@@ -170,9 +154,10 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
         arguments={
             "run_id": 7,
             "tool_names": [
-                "integration.set",
+                "auth.start",
                 "integration.test",
-                "article.get",
+                "resource.upsert",
+                "action.execute",
                 "dataforseo.serp",
                 "cost.queryProject",
                 "openaiImages.generate",
@@ -185,14 +170,17 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     payload = _structured(response)
 
     assert [tool["name"] for tool in payload["described_tools"]] == [
-        "integration.test",
-        "article.get",
-        "dataforseo.serp",
+        "resource.upsert",
+        "action.execute",
         "cost.queryProject",
     ]
-    assert payload["current_step_tool_names"] == ["article.get", "dataforseo.serp"]
-    assert payload["denied_tool_names"] == ["integration.set", "openaiImages.generate"]
-    assert payload["unknown_tool_names"] == ["missing"]
+    assert payload["active_step_tool_names"] == ["action.execute", "resource.upsert"]
+    assert set(payload["denied_tool_names"]) == {
+        "dataforseo.serp",
+        "auth.start",
+        "openaiImages.generate",
+    }
+    assert payload["unknown_tool_names"] == ["integration.test", "missing"]
     assert "admin_gated_tool_names" not in payload
 
 
@@ -203,11 +191,12 @@ def test_bridge_caches_run_token_and_step_grants() -> None:
             "id": 1,
             "result": {
                 "structuredContent": {
-                    "run_id": 7,
-                    "run_token": "tok",
-                    "current_step": {
-                        "allowed_tools": ["article.get", "voice.get", 123, ""],
-                    },
+                    "data": {
+                        "run_id": 7,
+                        "run_token": "tok",
+                        "step_id": "write",
+                        "allowed_tools": ["resource.upsert", "action.execute", 123, ""],
+                    }
                 }
             },
         }
@@ -222,7 +211,9 @@ def test_bridge_caches_run_token_and_step_grants() -> None:
     )
 
     assert tokens_by_run == {7: "tok"}
-    assert allowed_by_run == {7: {"article.get", "voice.get"}}
+    assert allowed_by_run == {
+        7: set(_AGENT_STEP_GATED_TOOL_NAMES) | {"action.execute", "resource.upsert"}
+    }
 
 
 def test_bridge_caches_run_plan_controller_grants() -> None:
@@ -319,10 +310,10 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "resource.upsert" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "artifact.create" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "integration.set" not in _AGENT_BASE_TOOLBOX_NAMES
-    assert "integration.test" in _AGENT_BASE_TOOLBOX_NAMES
-    assert "article.setDraft" in _AGENT_BASE_TOOLBOX_NAMES
+    assert "integration.test" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "integration.list" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "integration.remove" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "cost.queryProject" in _AGENT_BASE_TOOLBOX_NAMES
-    assert "publish.recordPublish" in _AGENT_BASE_TOOLBOX_NAMES
     assert "plugin.enable" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "plugin.disable" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "resource.upsert" not in _AGENT_BASE_TOOLBOX_NAMES
@@ -337,9 +328,6 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert {
         "auth.revoke",
         "auth.start",
-        "gscOauth.start",
-        "integration.remove",
-        "integration.set",
         "plugin.enable",
         "plugin.disable",
         "runPlan.update",
@@ -367,73 +355,19 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "action.execute" not in _AGENT_BASE_TOOLBOX_NAMES
 
 
-def test_bridge_setup_surface_covers_observer_ui_mutations() -> None:
-    observer_ui_mutations = {
-        "procedure.run",
-        "procedure.resume",
-        "procedure.fork",
-        "procedure.executeProgrammaticStep",
-        "topic.create",
-        "topic.bulkCreate",
-        "article.create",
-        "article.bulkCreate",
-        "article.setBrief",
-        "article.setOutline",
-        "article.setDraft",
-        "article.setEdited",
-        "article.markDrafted",
-        "article.markEeatPassed",
-        "article.markPublished",
-        "article.markRefreshDue",
-        "article.createVersion",
-        "asset.create",
-        "asset.update",
-        "asset.remove",
+def test_bridge_setup_surface_covers_core_setup_mutations() -> None:
+    core_setup_mutations = {
         "budget.set",
         "budget.update",
-        "cluster.create",
         "project.create",
         "project.update",
-        "project.activate",
         "project.setActive",
-        "compliance.add",
-        "compliance.update",
-        "compliance.remove",
-        "drift.snapshot",
-        "drift.diff",
-        "eeat.bulkSet",
-        "eeat.toggle",
-        "gsc.rollup",
-        "gsc.bulkIngest",
-        "integration.test",
-        "interlink.apply",
-        "interlink.bulkApply",
-        "interlink.dismiss",
-        "interlink.repair",
-        "interlink.suggest",
-        "publish.recordExternal",
-        "publish.recordPublish",
-        "publish.setCanonical",
-        "redirect.create",
         "schedule.remove",
         "schedule.set",
         "schedule.toggle",
-        "schema.set",
-        "schema.validate",
-        "source.add",
-        "source.update",
-        "target.add",
-        "target.update",
-        "target.remove",
-        "target.setPrimary",
-        "topic.approve",
-        "topic.reject",
-        "topic.bulkUpdateStatus",
-        "voice.set",
-        "voice.setActive",
     }
 
-    assert observer_ui_mutations <= _AGENT_BASE_TOOLBOX_NAMES
+    assert core_setup_mutations <= _AGENT_BASE_TOOLBOX_NAMES
 
 
 def test_bridge_agent_operation_surface_matches_registered_daemon_tools() -> None:
@@ -445,7 +379,11 @@ def test_bridge_agent_operation_surface_matches_registered_daemon_tools() -> Non
 
 
 def test_bridge_system_grant_matches_agent_operation_surface() -> None:
-    assert SKILL_TOOL_GRANTS[SYSTEM_SKILL] == _AGENT_BASE_TOOLBOX_NAMES
+    system_tools = SKILL_TOOL_GRANTS[SYSTEM_SKILL]
+    assert system_tools >= _AGENT_BASE_TOOLBOX_NAMES
+    direct_safe_reads = {"context.query"}
+    assert (_AGENT_RUN_PLAN_GATED_TOOL_NAMES - direct_safe_reads).isdisjoint(system_tools)
+    assert _AGENT_ADMIN_GATED_TOOL_NAMES.isdisjoint(system_tools)
 
 
 def test_registered_product_mutations_are_agent_reachable() -> None:
@@ -486,6 +424,8 @@ def test_bridge_setup_surface_is_bootstrap_granted() -> None:
 
 def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:
     proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.tokens_by_run[7] = "tok"
+    proxy.allowed_by_run[7] = {"resource.upsert"}
     client = _FakeClient()
     payload = {
         "jsonrpc": "2.0",
@@ -494,9 +434,14 @@ def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:
         "params": {
             "name": "toolbox.call",
             "arguments": {
-                "tool_name": "article.get",
+                "tool_name": "resource.upsert",
                 "run_id": 7,
-                "arguments": {"article_id": 12},
+                "arguments": {
+                    "project_id": 1,
+                    "plugin_slug": "core",
+                    "resource_key": "learning",
+                    "data_json": {"body": "ok"},
+                },
             },
         },
     }
@@ -504,9 +449,9 @@ def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:
     response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=99)
     structured = _structured(response)
 
-    assert structured["tool"] == "article.get"
-    assert structured["arguments"] == {"article_id": 12, "run_token": "tok"}
-    assert [call["method"] for call in client.calls] == ["tools/list", "tools/call", "tools/call"]
+    assert structured["tool"] == "resource.upsert"
+    assert structured["arguments"]["run_token"] == "tok"
+    assert [call["method"] for call in client.calls] == ["tools/list", "tools/call"]
 
 
 def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
@@ -519,9 +464,13 @@ def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
         "params": {
             "name": "toolbox.call",
             "arguments": {
-                "tool_name": "integration.test",
+                "tool_name": "budget.set",
                 "run_id": 7,
-                "arguments": {"credential_id": 1},
+                "arguments": {
+                    "project_id": 1,
+                    "kind": "firecrawl",
+                    "monthly_budget_usd": 25.0,
+                },
             },
         },
     }
@@ -529,8 +478,12 @@ def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
     response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=101)
     structured = _structured(response)
 
-    assert structured["tool"] == "integration.test"
-    assert structured["arguments"] == {"credential_id": 1}
+    assert structured["tool"] == "budget.set"
+    assert structured["arguments"] == {
+        "project_id": 1,
+        "kind": "firecrawl",
+        "monthly_budget_usd": 25.0,
+    }
 
 
 def test_bridge_proxy_injects_run_plan_token_for_granted_tool() -> None:
@@ -571,7 +524,7 @@ def test_bridge_proxy_rejects_hidden_direct_tool_calls() -> None:
         "jsonrpc": "2.0",
         "id": 100,
         "method": "tools/call",
-        "params": {"name": "article.get", "arguments": {"article_id": 12}},
+        "params": {"name": "dataforseo.serp", "arguments": {"project_id": 1, "keyword": "crm"}},
     }
 
     response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=100)

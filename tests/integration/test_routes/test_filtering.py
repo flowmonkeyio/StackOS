@@ -58,9 +58,3 @@ def test_parse_sort_unknown_column() -> None:
     with pytest.raises(HTTPException) as exc_info:
         parse_sort("unknown", {"id"})
     assert exc_info.value.status_code == 422
-
-
-def test_topics_invalid_sort_returns_422(api: TestClient, project_id: int) -> None:
-    """Unknown sort key on topics returns 422."""
-    resp = api.get(f"/api/v1/projects/{project_id}/topics?sort=unknown")
-    assert resp.status_code == 422

@@ -43,12 +43,7 @@ def codex_stub(tmp_path: Path) -> Path:
     log = tmp_path / "invocations.log"
     state = tmp_path / "registered"
     script = bin_dir / "codex"
-    list_line = (
-        '  "mcp list")'
-        ' if [[ -f "$STATE" ]];'
-        ' then echo "content-stack http://127.0.0.1:5180/mcp -";'
-        " fi ;;\n"
-    )
+    list_line = '  "mcp list") if [[ -f "$STATE" ]]; then echo "content-stack stdio -"; fi ;;\n'
     script.write_text(
         "#!/usr/bin/env bash\n"
         f'echo "$@" >> "{log}"\n'
@@ -97,6 +92,8 @@ def test_register_then_idempotent(sandbox_home: Path, scripts_dir: Path, codex_s
     invocations_after_first = log.read_text(encoding="utf-8").splitlines()
     add_calls = [line for line in invocations_after_first if line.startswith("mcp add")]
     assert len(add_calls) == 1, "first run should call `mcp add` exactly once"
+    assert "--url" not in add_calls[0]
+    assert "mcp-bridge" in add_calls[0]
 
     second = _run(scripts_dir / "register-mcp-codex.sh", sandbox_home, codex_stub)
     assert second.returncode == 0

@@ -1,0 +1,161 @@
+schema_version: stackos.workflow-template.v1
+key: seo.keyword-research
+name: SEO Keyword Research
+version: 0.1.0
+description: Reusable research template for turning a business goal into SEO opportunity resources.
+domain: seo
+owner:
+  team: StackOS
+when_to_use:
+  - A project needs SEO opportunities from seed terms, competitors, or an agent-defined research angle.
+when_not_to_use:
+  - The user already has a reviewed opportunity set and only needs execution.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: seed_terms
+    name: Seed Terms
+    type: array
+    required: false
+  - key: competitor_domains
+    name: Competitor Domains
+    type: array
+    required: false
+context_requirements:
+  - id: recent_seo_research
+    source: resources
+    purpose: Avoid repeating recent SEO research and reuse known opportunities.
+    filters:
+      plugin_slug: seo
+      resource_keys:
+        - keyword-opportunity
+        - serp-snapshot
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 20
+  - id: accepted_learnings
+    source: learnings
+    purpose: Pull project-level lessons tagged with SEO before choosing research direction.
+    filters:
+      tags:
+        - seo
+    fields:
+      - statement
+      - confidence
+      - tags
+      - evidence_json
+    max_items: 10
+capability_requirements:
+  - key: seo-research
+    required: true
+    preferred_providers:
+      - dataforseo
+      - ahrefs
+auth_requirements:
+  - key: dataforseo
+    provider: dataforseo
+    auth_type: api-key
+    optional: true
+  - key: ahrefs
+    provider: ahrefs
+    auth_type: api-key
+    optional: true
+action_contracts:
+  - key: keyword_research
+    action: keyword.research
+    capability: seo-research
+    provider: dataforseo
+    risk_level: cost
+    auth_ref: dataforseo
+  - key: serp_analysis
+    action: serp.analyze
+    capability: seo-research
+    provider: dataforseo
+    risk_level: cost
+    auth_ref: dataforseo
+  - key: competitor_keywords
+    action: competitor.keywords
+    capability: seo-research
+    provider: ahrefs
+    risk_level: cost
+    auth_ref: ahrefs
+resource_contracts:
+  - key: opportunities
+    resource: keyword-opportunity
+    purpose: Store reviewed opportunities with evidence, priority, and next-step notes.
+  - key: serp_snapshots
+    resource: serp-snapshot
+    purpose: Store compact SERP evidence the agent can reuse later.
+policies:
+  - key: no_secret_exposure
+    kind: auth
+    description: Agents may reference provider keys and credential refs but never receive secret values.
+  - key: agent_decides_scope
+    kind: execution
+    description: The template defines contracts; the run plan chooses exact queries, providers, and records.
+approval_gates:
+  - key: operator_cost_review
+    description: Required when the run plan expects material provider spend.
+    required_when: estimated_cost_above_project_threshold
+steps:
+  - id: orient
+    title: Orient From History
+    purpose: Read recent research, learnings, and the current project goal.
+    input_refs:
+      - goal
+      - seed_terms
+      - competitor_domains
+    context_refs:
+      - recent_seo_research
+      - accepted_learnings
+    policy_refs:
+      - agent_decides_scope
+  - id: collect_evidence
+    title: Collect Evidence
+    purpose: Execute only the provider calls the run plan grants and the agent still needs.
+    action_refs:
+      - keyword_research
+      - serp_analysis
+      - competitor_keywords
+    policy_refs:
+      - no_secret_exposure
+    approval_refs:
+      - operator_cost_review
+    depends_on:
+      - orient
+  - id: store_opportunities
+    title: Store Opportunities
+    purpose: Persist the selected opportunities and evidence as SEO resources.
+    resource_refs:
+      - opportunities
+      - serp_snapshots
+    depends_on:
+      - collect_evidence
+  - id: capture_learning
+    title: Capture Learning
+    purpose: Record reusable lessons or rejected patterns for future runs.
+    context_refs:
+      - accepted_learnings
+    depends_on:
+      - store_opportunities
+outputs:
+  - key: opportunity_summary
+    name: Opportunity Summary
+    type: object
+learning_hooks:
+  - key: research_reuse
+    prompt: Record only durable SEO research lessons with evidence and project provenance.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan
+  step_ids:
+    - orient
+    - collect_evidence
+    - store_opportunities
+    - capture_learning

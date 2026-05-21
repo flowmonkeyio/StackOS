@@ -21,8 +21,8 @@ const { enabledPlugins } = storeToRefs(catalogStore)
 const { resources, records, artifacts, loading, error } = storeToRefs(resourcesStore)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
-const pluginSlug = ref('')
-const resourceKey = ref('')
+const pluginSlug = ref(String(route.query.plugin_slug ?? ''))
+const resourceKey = ref(String(route.query.resource_key ?? ''))
 
 const pluginOptions = computed(() => [
   { value: '', label: 'All plugins' },
@@ -72,6 +72,14 @@ function onResource(value: string | number | null): void {
 
 onMounted(load)
 watch(projectId, load)
+watch(
+  () => route.query,
+  () => {
+    pluginSlug.value = String(route.query.plugin_slug ?? '')
+    resourceKey.value = String(route.query.resource_key ?? '')
+    void load()
+  },
+)
 </script>
 
 <template>

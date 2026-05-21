@@ -35,7 +35,6 @@ context_requirements:
     fields:
       - kind
       - status
-      - procedure_slug
       - last_step
       - metadata_json
     max_items: 10

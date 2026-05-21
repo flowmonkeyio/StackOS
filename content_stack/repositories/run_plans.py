@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import secrets
 from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from content_stack.db.models import (
     APPROVAL_REQUEST_STATUS_TRANSITIONS,
@@ -38,6 +39,7 @@ from content_stack.repositories.base import (
 from content_stack.repositories.runs import RunOut, RunRepository
 from content_stack.workflows.run_plan_grants import allowed_tools_for_run_plan_step
 from content_stack.workflows.run_plan_schema import (
+    RunPlanIssue,
     RunPlanValidationOut,
     find_run_plan_secret_paths,
     parse_run_plan_obj,
@@ -55,6 +57,12 @@ def _utcnow() -> datetime:
 
 def _token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def _required_id(value: int | None) -> int:
+    if value is None:
+        raise RuntimeError("expected persisted row id")
+    return int(value)
 
 
 def _jsonable(value: Any) -> Any:
@@ -175,8 +183,8 @@ class RunPlanStartOut(BaseModel):
 class RunPlanRepository:
     """Concrete run-plan storage and lifecycle.
 
-    This repository owns StackOS sidecar rows only. It links to ``runs`` when a
-    plan starts, but it does not replace or mutate procedure-run history.
+    This repository owns StackOS run-plan rows. It links to ``runs`` when a
+    plan starts so execution has a generic audit row.
     """
 
     def __init__(self, session: Session) -> None:
@@ -198,11 +206,11 @@ class RunPlanRepository:
             return RunPlanValidationOut(
                 valid=False,
                 errors=[
-                    {
-                        "path": "$",
-                        "message": "run_plan_json or template_key is required",
-                        "code": "missing_plan",
-                    }
+                    RunPlanIssue(
+                        path="$",
+                        message="run_plan_json or template_key is required",
+                        code="missing_plan",
+                    )
                 ],
             )
         try:
@@ -217,7 +225,7 @@ class RunPlanRepository:
         except Exception as exc:
             return RunPlanValidationOut(
                 valid=False,
-                errors=[{"path": "$", "message": str(exc), "code": "template_error"}],
+                errors=[RunPlanIssue(path="$", message=str(exc), code="template_error")],
             )
         return RunPlanValidationOut(valid=True, plan=plan)
 
@@ -424,7 +432,7 @@ class RunPlanRepository:
         token = _token()
         env = RunRepository(self._s).start(
             project_id=row.project_id,
-            kind=RunKind.SKILL_RUN,
+            kind=RunKind.RUN_PLAN,
             client_session_id=token,
             metadata_json={
                 "stackos_type": "run-plan",
@@ -821,13 +829,13 @@ class RunPlanRepository:
         approval_refs: set[str],
         *,
         step_pk: int | None,
-    ) -> list[ApprovalRequest]:
+    ) -> builtins.list[ApprovalRequest]:
         if not approval_refs and step_pk is None:
             return []
         rows = self._s.exec(
             select(ApprovalRequest).where(
-                ApprovalRequest.run_plan_id == run_plan_id,
-                ApprovalRequest.status != ApprovalRequestStatus.APPROVED,
+                col(ApprovalRequest.run_plan_id) == run_plan_id,
+                col(ApprovalRequest.status) != ApprovalRequestStatus.APPROVED,
             )
         ).all()
         return [
@@ -836,25 +844,25 @@ class RunPlanRepository:
             if row.approval_key in approval_refs or row.run_plan_step_id == step_pk
         ]
 
-    def _step_rows(self, run_plan_id: int | None) -> list[RunPlanStep]:
+    def _step_rows(self, run_plan_id: int | None) -> builtins.list[RunPlanStep]:
         if run_plan_id is None:
             return []
         return list(
             self._s.exec(
                 select(RunPlanStep)
-                .where(RunPlanStep.run_plan_id == run_plan_id)
-                .order_by(RunPlanStep.position.asc())  # type: ignore[union-attr]
+                .where(col(RunPlanStep.run_plan_id) == run_plan_id)
+                .order_by(col(RunPlanStep.position).asc())
             ).all()
         )
 
-    def _approval_rows(self, run_plan_id: int | None) -> list[ApprovalRequest]:
+    def _approval_rows(self, run_plan_id: int | None) -> builtins.list[ApprovalRequest]:
         if run_plan_id is None:
             return []
         return list(
             self._s.exec(
                 select(ApprovalRequest)
-                .where(ApprovalRequest.run_plan_id == run_plan_id)
-                .order_by(ApprovalRequest.id.asc())  # type: ignore[union-attr]
+                .where(col(ApprovalRequest.run_plan_id) == run_plan_id)
+                .order_by(col(ApprovalRequest.id).asc())
             ).all()
         )
 

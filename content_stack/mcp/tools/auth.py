@@ -21,7 +21,7 @@ from content_stack.mcp.streaming import ProgressEmitter
 class AuthStatusInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"project_id": 1, "provider_key": "gsc"}},
+        json_schema_extra={"example": {"project_id": 1, "provider_key": "firecrawl"}},
     )
 
     project_id: int
@@ -31,7 +31,7 @@ class AuthStatusInput(MCPInput):
 class AuthStartInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"project_id": 1, "provider_key": "gsc"}},
+        json_schema_extra={"example": {"project_id": 1, "provider_key": "firecrawl"}},
     )
 
     project_id: int

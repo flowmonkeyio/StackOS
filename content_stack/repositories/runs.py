@@ -1,12 +1,9 @@
-"""Runs / procedure-run / idempotency-keys repository module.
+"""Runs and idempotency-keys repository module.
 
 Implements the audit-trail layer plus crash-recovery (audit B-13) and
-idempotency (audit M-20). The procedure runner (M8) drives ``RunRepository``
-methods; the per-MCP-call grain feeds ``RunStepCallRepository`` so the
-UI's ``RunsView`` can show the full timeline.
-
-Resume / fork orchestration lives in ``content_stack.procedures.runner``;
-this repository owns the run rows, audit rows, and stale-run recovery.
+idempotency (audit M-20). Run plans drive ``RunRepository`` rows, while
+``RunStepRepository`` / ``RunStepCallRepository`` keep audit grain for
+agent and tool activity.
 """
 
 from __future__ import annotations
@@ -20,8 +17,6 @@ from sqlmodel import Session, select
 from content_stack.db.models import (
     RUN_STATUS_TRANSITIONS,
     IdempotencyKey,
-    ProcedureRunStep,
-    ProcedureRunStepStatus,
     Run,
     RunKind,
     RunStatus,
@@ -56,7 +51,6 @@ class RunOut(BaseModel):
     project_id: int | None
     kind: RunKind
     parent_run_id: int | None
-    procedure_slug: str | None
     client_session_id: str | None
     started_at: datetime
     ended_at: datetime | None
@@ -66,20 +60,6 @@ class RunOut(BaseModel):
     last_step: str | None
     last_step_at: datetime | None
     metadata_json: dict[str, Any] | None
-
-
-class ProcedureRunStepOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    run_id: int
-    step_index: int
-    step_id: str
-    status: ProcedureRunStepStatus
-    started_at: datetime | None
-    ended_at: datetime | None
-    output_json: dict[str, Any] | None
-    error: str | None
 
 
 class RunStepOut(BaseModel):
@@ -141,7 +121,6 @@ class RunRepository:
         project_id: int | None,
         kind: RunKind,
         parent_run_id: int | None = None,
-        procedure_slug: str | None = None,
         client_session_id: str | None = None,
         metadata_json: dict[str, Any] | None = None,
     ) -> Envelope[RunOut]:
@@ -151,7 +130,6 @@ class RunRepository:
             project_id=project_id,
             kind=kind,
             parent_run_id=parent_run_id,
-            procedure_slug=procedure_slug,
             client_session_id=client_session_id,
             started_at=now,
             heartbeat_at=now,
@@ -361,24 +339,9 @@ class RunRepository:
             row.ended_at = _utcnow()
             self._s.add(row)
             assert row.id is not None
-            self._fail_active_procedure_steps(row.id, error="daemon-restart-orphan")
             self._cascade_abort(row.id)
         self._s.commit()
         return len(rows)
-
-    # -------- Resume / fork — M8 (jobs/scheduling) --------
-
-    def resume(self, run_id: int) -> Envelope[RunOut]:
-        """Resume a procedure run from its last successful step."""
-        raise NotImplementedError(
-            "M8: procedure resume — requires the procedure runner (M7) + APScheduler (M8)"
-        )
-
-    def fork(self, run_id: int, *, from_step: str) -> Envelope[RunOut]:
-        """Fork a procedure run from a named step."""
-        raise NotImplementedError(
-            "M8: procedure fork — requires the procedure runner (M7) + APScheduler (M8)"
-        )
 
     # -------- Internal --------
 
@@ -405,101 +368,7 @@ class RunRepository:
                 c.ended_at = _utcnow()
                 self._s.add(c)
                 if c.id is not None:
-                    self._fail_active_procedure_steps(c.id, error=c.error or "parent-aborted")
                     frontier.append(c.id)
-
-    def _fail_active_procedure_steps(self, run_id: int, *, error: str) -> None:
-        """Mark crashed in-flight procedure steps as retryable failures.
-
-        We do not touch pending rows: explicit resume should re-run from the
-        crashed active step, then proceed through the pending tail.
-        """
-        rows = self._s.exec(
-            select(ProcedureRunStep).where(
-                ProcedureRunStep.run_id == run_id,
-                ProcedureRunStep.status == ProcedureRunStepStatus.RUNNING,
-            )
-        ).all()
-        for row in rows:
-            row.status = ProcedureRunStepStatus.FAILED
-            row.error = error
-            row.ended_at = _utcnow()
-            self._s.add(row)
-
-
-# ---------------------------------------------------------------------------
-# ProcedureRunStepRepository.
-# ---------------------------------------------------------------------------
-
-
-class ProcedureRunStepRepository:
-    """One row per declared procedure step."""
-
-    def __init__(self, session: Session) -> None:
-        self._s = session
-
-    def insert_step(
-        self,
-        *,
-        run_id: int,
-        step_index: int,
-        step_id: str,
-        status: ProcedureRunStepStatus = ProcedureRunStepStatus.PENDING,
-    ) -> Envelope[ProcedureRunStepOut]:
-        """Insert a procedure-step row."""
-        row = ProcedureRunStep(
-            run_id=run_id,
-            step_index=step_index,
-            step_id=step_id,
-            status=status,
-        )
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
-        return Envelope(data=ProcedureRunStepOut.model_validate(row), run_id=run_id)
-
-    def advance_step(
-        self,
-        step_pk: int,
-        *,
-        status: ProcedureRunStepStatus,
-        output_json: dict[str, Any] | None = None,
-        error: str | None = None,
-    ) -> Envelope[ProcedureRunStepOut]:
-        """Update a step's status + output."""
-        row = self._s.get(ProcedureRunStep, step_pk)
-        if row is None:
-            raise NotFoundError(f"procedure step {step_pk} not found")
-        now = _utcnow()
-        if (
-            row.status == ProcedureRunStepStatus.PENDING
-            and status == ProcedureRunStepStatus.RUNNING
-        ):
-            row.started_at = now
-        if status in (
-            ProcedureRunStepStatus.SUCCESS,
-            ProcedureRunStepStatus.FAILED,
-            ProcedureRunStepStatus.SKIPPED,
-        ):
-            row.ended_at = now
-        row.status = status
-        if output_json is not None:
-            row.output_json = output_json
-        if error is not None:
-            row.error = error
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
-        return Envelope(data=ProcedureRunStepOut.model_validate(row), run_id=row.run_id)
-
-    def list_steps(self, run_id: int) -> list[ProcedureRunStepOut]:
-        """All procedure steps for a run, ordered by step_index."""
-        rows = self._s.exec(
-            select(ProcedureRunStep)
-            .where(ProcedureRunStep.run_id == run_id)
-            .order_by(ProcedureRunStep.step_index.asc())  # type: ignore[union-attr,attr-defined]
-        ).all()
-        return [ProcedureRunStepOut.model_validate(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +377,7 @@ class ProcedureRunStepRepository:
 
 
 class RunStepRepository:
-    """Per-skill audit grain inside a procedure step."""
+    """Per-agent/tool audit grain inside a run."""
 
     def __init__(self, session: Session) -> None:
         self._s = session
@@ -734,8 +603,6 @@ RunStepCallOutType = RunStepCallOut
 __all__ = [
     "IdempotencyKeyRepository",
     "IdempotencyOut",
-    "ProcedureRunStepOut",
-    "ProcedureRunStepRepository",
     "RunOut",
     "RunRepository",
     "RunStepCallOut",

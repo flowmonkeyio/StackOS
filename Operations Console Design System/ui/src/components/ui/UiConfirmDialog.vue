@@ -3,8 +3,8 @@
 
   <UiConfirmDialog
     v-model="open"
-    title="Delete topic?"
-    description="This removes the topic and 12 linked articles."
+    title="Delete resource?"
+    description="This removes the selected record and its attached artifacts."
     confirm-label="Delete"
     tone="danger"
     @confirm="onConfirm"

@@ -10,55 +10,36 @@ from __future__ import annotations
 
 from .conftest import MCPClient
 
-# Per-namespace expected counts — derived from the registrations in
-# ``content_stack.mcp.tools``. Update intentionally when adding tools.
+# Per-namespace expected counts — derived from the clean StackOS core catalog.
+# Update intentionally when adding generic tools or vendor operations.
 EXPECTED_NAMESPACE_COUNTS = {
     "action": 3,
     "ahrefs": 2,
-    "article": 18,
     "artifact": 3,
-    "asset": 4,
     "auth": 4,
-    "author": 5,
     "budget": 4,
     "catalog": 2,
     "capability": 2,
-    "cluster": 3,
-    "compliance": 4,
     "context": 3,
     "cost": 2,
     "dataforseo": 5,
     "decision": 2,
-    "drift": 4,
-    "eeat": 8,
     "experiment": 4,
     "firecrawl": 4,
     "googlePaa": 1,
-    "gsc": 9,
-    "gscOauth": 2,
-    "integration": 5,
-    "interlink": 6,
     "jina": 1,
     "learning": 3,
     "meta": 1,
     "openaiImages": 1,
     "plugin": 3,
-    "procedure": 9,
-    "project": 8,
+    "project": 7,
     "provider": 2,
-    "publish": 4,
-    "redirect": 3,
     "reddit": 2,
     "resource": 3,
-    "run": 14,
+    "run": 12,
     "runPlan": 8,
     "schedule": 4,
-    "schema": 4,
     "sitemap": 1,
-    "source": 3,
-    "target": 5,
-    "topic": 8,
-    "voice": 4,
     "workflowTemplate": 5,
     "workspace": 5,
 }
@@ -66,6 +47,25 @@ EXPECTED_NAMESPACE_COUNTS = {
 # Total = sum of values; locked here to flag accidental drops.
 EXPECTED_TOTAL = sum(EXPECTED_NAMESPACE_COUNTS.values())
 # Total follows EXPECTED_NAMESPACE_COUNTS; update intentionally when adding tools.
+FORBIDDEN_LEGACY_NAMESPACES = {
+    "article",
+    "asset",
+    "author",
+    "cluster",
+    "compliance",
+    "drift",
+    "eeat",
+    "gsc",
+    "gscOauth",
+    "interlink",
+    "publish",
+    "redirect",
+    "schema",
+    "source",
+    "target",
+    "topic",
+    "voice",
+}
 
 
 def test_initialize_handshake_succeeds(mcp_client: MCPClient) -> None:
@@ -73,7 +73,7 @@ def test_initialize_handshake_succeeds(mcp_client: MCPClient) -> None:
     result = mcp_client.initialize()
     assert "result" in result
     server_info = result["result"]["serverInfo"]
-    assert server_info["name"] == "content-stack"
+    assert server_info["name"] == "stackos"
 
 
 def test_tools_list_returns_full_catalog(mcp_client: MCPClient) -> None:
@@ -90,6 +90,7 @@ def test_tools_list_namespace_counts_are_stable(mcp_client: MCPClient) -> None:
         ns = t["name"].split(".", 1)[0]
         counts[ns] = counts.get(ns, 0) + 1
     assert counts == EXPECTED_NAMESPACE_COUNTS
+    assert FORBIDDEN_LEGACY_NAMESPACES.isdisjoint(counts)
 
 
 def test_every_tool_has_well_formed_input_schema(mcp_client: MCPClient) -> None:
@@ -125,14 +126,8 @@ def test_every_tool_has_description(mcp_client: MCPClient) -> None:
         assert len(t["description"]) > 5, f"{t['name']!r} description is too short"
 
 
-def test_streaming_tools_declare_streaming_meta(mcp_client: MCPClient) -> None:
-    """The four streaming tools per audit M-21 declare ``streaming=true``."""
+def test_streaming_meta_matches_registered_core_tools(mcp_client: MCPClient) -> None:
+    """No removed SEO/content streaming tool remains advertised."""
     tools = mcp_client.list_tools()
     streaming_names = {t["name"] for t in tools if (t.get("_meta") or {}).get("streaming") is True}
-    expected_streaming = {
-        "topic.bulkCreate",
-        "gsc.bulkIngest",
-        "interlink.suggest",
-        "procedure.run",
-    }
-    assert expected_streaming <= streaming_names
+    assert not streaming_names

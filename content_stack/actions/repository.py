@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from content_stack.actions.connectors import (
     DEFAULT_ACTION_CONNECTORS,
@@ -642,9 +642,9 @@ class ActionRepository:
         )
         stmt = (
             select(Action, Plugin, Provider)
-            .join(Plugin, Action.plugin_id == Plugin.id)
-            .outerjoin(Provider, Action.provider_id == Provider.id)
-            .where(Plugin.slug == resolved_plugin, Action.key == resolved_action)
+            .join(Plugin, col(Action.plugin_id) == col(Plugin.id))
+            .outerjoin(Provider, col(Action.provider_id) == col(Provider.id))
+            .where(col(Plugin.slug) == resolved_plugin, col(Action.key) == resolved_action)
         )
         row = self._s.exec(stmt).first()
         if row is None:

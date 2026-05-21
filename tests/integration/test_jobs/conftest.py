@@ -25,14 +25,8 @@ def _crypto_seed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
 
 def _emit_partial_indexes(engine: object) -> None:
     statements = [
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_internal_links_unique "
-        "ON internal_links(from_article_id, to_article_id, anchor_text, position) "
-        "WHERE status != 'dismissed'",
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_publish_targets_primary "
-        "ON publish_targets(project_id) WHERE is_primary = 1",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_idempotency "
         "ON idempotency_keys(project_id, tool_name, idempotency_key)",
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_article_slug ON articles(project_id, slug)",
     ]
     with engine.begin() as conn:  # type: ignore[attr-defined]
         for s in statements:

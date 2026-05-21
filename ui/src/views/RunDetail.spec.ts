@@ -10,16 +10,15 @@ const ORIG_FETCH = globalThis.fetch
 const run = {
   id: 7,
   project_id: 1,
-  kind: 'procedure',
+  kind: 'skill-run',
   parent_run_id: null,
-  procedure_slug: 'legacy.procedure',
   client_session_id: null,
   started_at: '2026-05-05T00:00:00Z',
   ended_at: null,
   status: 'running',
   error: null,
   heartbeat_at: '2026-05-05T00:00:30Z',
-  last_step: 'legacy-step',
+  last_step: 'run-plan-step',
   last_step_at: '2026-05-05T00:00:25Z',
   metadata_json: { api_key: 'metadata-secret', credential_ref: 'cred_123' },
 }
@@ -38,7 +37,7 @@ describe('RunDetail', () => {
     vi.restoreAllMocks()
   })
 
-  it('sanitizes procedure output and raw run metadata panels', async () => {
+  it('sanitizes raw run metadata panels', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
       if (url.includes('/api/v1/runs/7/children')) {
@@ -46,24 +45,6 @@ describe('RunDetail', () => {
       }
       if (url.includes('/api/v1/runs/7')) {
         return json(run)
-      }
-      if (url.includes('/api/v1/procedures/runs/7')) {
-        return json({
-          run,
-          steps: [
-            {
-              id: 11,
-              run_id: 7,
-              step_index: 0,
-              step_id: 'legacy-step',
-              status: 'success',
-              started_at: '2026-05-05T00:00:01Z',
-              ended_at: '2026-05-05T00:00:02Z',
-              output_json: { token: 'step-secret', body: 'ok' },
-              error: null,
-            },
-          ],
-        })
       }
       return json(page())
     }) as typeof fetch
@@ -79,12 +60,11 @@ describe('RunDetail', () => {
       props: { runId: 7, projectId: 1 },
       global: { plugins: [router] },
     })
-    await vi.waitFor(() => expect(w.text()).toContain('legacy-step'))
+    await vi.waitFor(() => expect(w.text()).toContain('run-plan-step'))
 
     expect(w.text()).toContain('[redacted]')
     expect(w.text()).toContain('cred_123')
     expect(w.text()).not.toContain('metadata-secret')
-    expect(w.text()).not.toContain('step-secret')
   })
 })
 

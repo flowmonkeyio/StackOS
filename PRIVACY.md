@@ -19,18 +19,18 @@ encrypted integration credentials cannot be decrypted.
 ## Outbound Calls
 
 content-stack only contacts external services when you configure and run
-the corresponding integration or procedure. Those calls may include:
+the corresponding integration, action, job, or run plan. Those calls may
+include:
 
 - DataForSEO for keyword and SERP data.
 - Firecrawl and Jina for crawl/read operations.
 - Google Search Console and Google OAuth endpoints for Search Console
   data and token refresh.
 - OpenAI Images for generated image assets.
-- OpenAI or Anthropic for daemon-side procedure runner sessions.
 - Reddit or Ahrefs when those integrations are configured.
 
 Live vendor calls are operator-triggered through configured credentials,
-scheduled jobs, or procedure runs. The daemon does not send local project
+scheduled jobs, or granted run-plan actions. The daemon does not send local project
 data to any vendor outside those explicit integration paths.
 
 ## Browser UI
@@ -47,7 +47,7 @@ secret tokens are not intentionally written to logs.
 
 ## Removing Data
 
-`make uninstall` removes installed skills, procedures, MCP entries, and
+`make uninstall` removes installed skills, MCP entries, and
 the optional launchd plist, but intentionally preserves the database,
 seed, and auth token. Delete the XDG data/state directories manually only
 when you are sure you no longer need the content or encrypted credentials.

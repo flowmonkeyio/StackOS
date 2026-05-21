@@ -30,7 +30,7 @@ def test_workspace_connect_list_and_start_session(
             "normalized_repo_name": "org/site",
             "last_known_root": "/tmp/site",
             "framework": "nuxt",
-            "content_model_json": {"articles_dir": "content/articles"},
+            "content_model_json": {"primary_resource": "content-piece"},
         },
     )
     bindings_payload = mcp_client.call_tool_structured(

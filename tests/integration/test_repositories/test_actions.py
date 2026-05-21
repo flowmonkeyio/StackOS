@@ -390,22 +390,30 @@ def test_action_call_step_scope_requires_parent_project_match(
 
     _seed_action(session)
     _seed_noauth_action(session)
-    other_project_id = ProjectRepository(session).create(
-        slug="other-project",
-        name="Other Project",
-        domain="other.example",
-        locale="en-US",
-    ).data.id
+    other_project_id = (
+        ProjectRepository(session)
+        .create(
+            slug="other-project",
+            name="Other Project",
+            domain="other.example",
+            locale="en-US",
+        )
+        .data.id
+    )
     assert other_project_id is not None
-    other_plan = RunPlanRepository(session).create(
-        project_id=other_project_id,
-        run_plan_json={
-            "schema_version": "stackos.run-plan.v1",
-            "key": "other.scope.run",
-            "title": "Other scope run",
-            "steps": [{"id": "step", "title": "Step"}],
-        },
-    ).data
+    other_plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=other_project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "other.scope.run",
+                "title": "Other scope run",
+                "steps": [{"id": "step", "title": "Step"}],
+            },
+        )
+        .data
+    )
     other_step_id = other_plan.steps[0].id
     registry = ActionConnectorRegistry()
     registry.register(_NoAuthConnector())
@@ -442,22 +450,30 @@ def test_idempotency_replay_still_enforces_step_scope(
         )
     )
 
-    other_project_id = ProjectRepository(session).create(
-        slug="third-project",
-        name="Third Project",
-        domain="third.example",
-        locale="en-US",
-    ).data.id
+    other_project_id = (
+        ProjectRepository(session)
+        .create(
+            slug="third-project",
+            name="Third Project",
+            domain="third.example",
+            locale="en-US",
+        )
+        .data.id
+    )
     assert other_project_id is not None
-    other_plan = RunPlanRepository(session).create(
-        project_id=other_project_id,
-        run_plan_json={
-            "schema_version": "stackos.run-plan.v1",
-            "key": "third.scope.run",
-            "title": "Third scope run",
-            "steps": [{"id": "step", "title": "Step"}],
-        },
-    ).data
+    other_plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=other_project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "third.scope.run",
+                "title": "Third scope run",
+                "steps": [{"id": "step", "title": "Step"}],
+            },
+        )
+        .data
+    )
 
     with pytest.raises(NotFoundError):
         asyncio.run(

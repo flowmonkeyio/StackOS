@@ -1,179 +1,106 @@
-# StackOS agent notes
+# StackOS Agent Notes
 
-StackOS is the working direction for this repository. The historical
-`content-stack` / SEO implementation remains important compatibility surface,
-but new work should treat SEO as a first-party plugin domain, not as the core
-product identity.
+StackOS is a project-scoped tool and plugin runtime. It stores configuration,
+context, workflow templates, run plans, resources, artifacts, auth references,
+and audit records. The agent decides what to do; StackOS persists the setup and
+executes explicit tool calls.
 
-## Product Boundary
+## Product Boundaries
 
-StackOS is a local tool runtime for agents and humans:
+- **Core**: projects, plugins, capabilities, providers, auth provider refs,
+  resources, artifacts, workflow templates, run plans, context, learnings,
+  experiments, decisions, action calls, and audit runs.
+- **Plugins**: domain packages such as SEO, media buying, GTM, and shared utils.
+  Domain-specific resources and actions belong in plugin manifests and plugin
+  workflow templates.
+- **Tools**: static callable operations. Tools validate input, resolve auth
+  server-side, call local or external systems, and return structured output.
+  Tools must not decide strategy or invent workflow logic.
+- **Agents**: plan, choose templates, create run plans, request context, select
+  tools, interpret results, and record learnings.
 
-- Agents and humans decide strategy, interpret results, choose next actions,
-  and write decisions/learnings.
-- StackOS stores, retrieves, schema-checks, enforces auth/grants/budgets,
-  executes external actions, redacts, persists, and audits.
-- StackOS must not contain domain strategy logic such as "pick the winner",
-  "optimize the campaign", "choose the next SEO topic", or "decide what to
-  publish".
-- StackOS tools should be static operations: set data, retrieve data, validate
-  input, trigger external tools, and record auditable outputs.
+## Execution Model
 
-No secrets to agents. Credentials, tokens, refresh tokens, API keys, OAuth
-grants, and provider secrets stay inside the daemon/auth provider layer.
-Agent-facing results must use opaque credential refs, setup URLs, sanitized
-status, redacted logs, and artifact/resource references.
+The runtime layers are:
 
-## Target Architecture
+1. **Project**: durable workspace, plugin enablement, credentials, resources,
+   artifacts, history, learnings, experiments, and decisions.
+2. **Workflow template**: reusable setup for a class of work. A template may
+   include instructions, inputs, context requirements, policy boundaries,
+   approval gates, tool/action requirements, expected outputs, and default run
+   plan steps.
+3. **Run plan**: a concrete execution instance created from a template or by an
+   agent. It has ordered steps, scoped tool grants, status, output, and audit
+   history.
 
-The target model is:
+Context retrieval is filtered. Templates and run plans should ask for the
+minimum useful history, for example recent runs with selected fields, active
+experiments for the same domain, accepted learnings by tag, and relevant
+artifacts by resource key.
 
-```text
-StackOS core
-  local daemon, database, MCP/REST surfaces, auth boundary, grant enforcement,
-  generic resources/artifacts/context/learnings/experiments, workflow templates,
-  run plans, runs, audit, generic UI renderers
+## Auth Boundary
 
-Plugins
-  SEO, media buying, GTM, utils, and private/company domains. Plugins contribute
-  manifests, capabilities, provider/action schemas, resource schemas, workflow
-  templates, UI navigation/resource-view configs, and local instructions.
+Agents never receive secrets. Each provider owns its auth type and credential
+storage:
 
-Agents / humans
-  customize templates, create concrete run plans, select context, decide what
-  actions to take, call granted tools, and record outcomes/learnings.
-```
+- API keys, OAuth tokens, and account metadata are stored server-side.
+- Agents receive provider/account ids, status, scopes, and safe diagnostics.
+- `action.execute` and provider-specific tools resolve credentials inside the
+  daemon process.
+- Credential usage events should be recorded for auditability.
 
-Current SEO procedures, skills, article tables, vendor wrappers, and UI pages
-are legacy/current-state implementation. Move or wrap them incrementally behind
-the StackOS plugin/generic model. Preserve existing SEO behavior until a task
-explicitly scopes its migration or removal.
+## MCP Surface
 
-Clean-cut migration rule: add new StackOS primitives as sidecars and route new
-code through them. Do not add Alembic migrations that drop old SEO/procedure/
-content-stack tables during this pivot. Physical destructive cleanup requires a
-separate explicitly signed-off task with backup/restore and verification plans.
-For current pivot deliverables, prefer links from new StackOS sidecar tables to
-existing rows over modifying legacy/current tables. A migration may only remove
-tables or indexes that the same deliverable created, never previous SEO,
-procedure, article, run, or integration history.
+The agent-visible MCP surface should stay small and generic:
 
-## Workflows
+- bootstrap/setup: workspace/project selection and project config
+- plugin/catalog/capability/provider/resource/artifact discovery
+- safe auth status/test by reference
+- workflow template list/describe/validate
+- run plan create/validate/start/get/list
+- context/query/timeline and learning/experiment/decision reads
+- action describe/validate
 
-Procedures are legacy compatibility. New workflow work should use:
+Bootstrap/setup calls may exist before a run token so an agent can create a
+project and start the first run plan. Workflow execution writes are different:
+`resource.upsert`, `artifact.create`, `learning.create`, `experiment.*`,
+`decision.record`, and `action.execute` require a started run plan, one running
+step, and an explicit grant in the run-plan snapshot.
 
-- **Workflow Template**: reusable, editable setup for a class of work. It can
-  contain purpose, inputs, context requirements, instructions, action/resource
-  contracts, policies, approval gates, output contracts, and extension points.
-- **Run Plan**: a concrete agent-authored execution plan derived from a
-  template for one run. It freezes selected steps, grants, inputs, context
-  filters, budgets, approval gates, and expected outputs.
-- **Run**: auditable execution state and history for a run plan.
-
-Templates should not contain one-size-fits-all hard-coded business logic. They
-provide a base contract that agents can adapt in a project/repo context.
-Template precedence is repo/company `.stackos/workflows` over project/user DB
-templates over plugin defaults in `plugins/<plugin>/workflows`.
-
-Project-level context, learnings, experiments, decisions, artifacts, and metric
-snapshots are data stores. StackOS can filter and retrieve them; agents decide
-what they mean.
-
-## Tooling And MCP Boundary
-
-The daemon owns the full internal MCP catalog for the UI, tests, jobs, and
-automation. The installable agent plugin/bridge must expose a deliberately
-small surface.
-
-Target exposure levels:
-
-- **Direct/discovery tools**: workspace/project navigation, plugin/catalog/
-  capability/provider discovery, sanitized auth status, workflow-template
-  list/describe/validate, run-plan create/validate/start/get/list, run status.
-- **Setup/admin-gated tools**: project plugin enable/disable and auth
-  start/revoke. These are human/local-admin/project-owner setup operations, not
-  normal agent-facing mutations.
-- **Step-scoped/gated tools**: action execution, mutating resource/artifact
-  calls, context fields beyond safe metadata, and learning/experiment/decision
-  writes. These require explicit run-plan grants.
-- **Compatibility tools**: `procedure.*`, existing SEO/vendor tools, and old
-  setup helpers remain only as compatibility surfaces until migrated.
-
-Do not add operational/domain/vendor tools to the direct agent list. Vendor
-actions belong behind the generic action/toolbox path with grants, credential
-refs, budgets, redaction, and audit.
-
-Run-plan grants are static configuration in `run_plans.grant_snapshot_json`.
-The bridge may cache and describe the active step's granted tools for agent UX,
-but the daemon-side MCP dispatcher is authoritative. It must require a
-`stackos/run-plan-controller` token, a started plan, exactly one running step,
-matching `project_id`, and an explicit grant before any generic mutation,
-advanced `context.query`, or `action.execute` runs. Direct context reads are
-limited to the safe field set; fields outside that set require explicit
-`sources` and `fields` in the run-plan grant. `action.execute` grants require
-explicit `action_refs`, and the active step must declare the same action ref.
-Admin/setup tools are not run-plan grantable until their signed-off delivery
-adds that surface.
-
-## Existing Content-Stack Compatibility
-
-While the migration is underway, the current implementation still uses:
-
-- `content_stack/mcp/tools/*` for the daemon's internal tool catalog.
-- `content_stack/mcp/bridge.py` for the filtered agent bridge.
-- `content_stack/mcp/permissions.py` for grant checks.
-- `toolbox.describe` and `toolbox.call` for hidden daemon tools.
-- `procedures/*` and `skills/**/SKILL.md` for existing SEO procedure flows.
-- `content_stack/integrations/*` for vendor wrappers.
-
-When changing any current SEO/procedure flow before it is migrated, keep these
-in sync:
-
-1. Daemon tool or integration wrapper.
-2. Bridge visibility: direct only for navigation/setup; hidden/gated for
-   operations.
-3. Permission grant in `content_stack/mcp/permissions.py`.
-4. Skill frontmatter `allowed_tools`.
-5. Skill/procedure prompt text naming real tools.
-6. Focused tests proving hidden tools are not advertised directly and are
-   available only when granted.
-
-External integrations such as DataForSEO, Firecrawl, GSC, OpenAI Images,
-Reddit, Jina, Ahrefs, WordPress, Ghost, Meta, Taboola, or Outbrain must keep
-auth, retries, rate limits, budget checks, cost logging, request shaping,
-normalization, and redaction inside daemon-side wrappers/connectors. Agents
-must not call vendor SDKs directly or receive raw secrets.
+Hidden vendor operations stay behind grants and action execution. Do not expose
+vendor-specific write operations directly to normal agents unless the operation
+is intentionally part of the generic StackOS contract.
 
 ## UI Direction
 
-Generic UI should become simpler and renderer-driven:
+The UI should render generic StackOS objects rather than one bespoke screen per
+workflow:
 
-- Core views: Plugins, Capabilities, Auth/Connections, Workflow Templates,
-  Runs, Project Data, Resource Explorer.
-- Generic renderers: template, run plan, action schema, resource view, context
-  query, plugin navigation.
-- SEO/media-buying/GTM views should be plugin contributions or generic
-  resource views, not permanent bespoke workflow pages.
-- Group context snapshots, learnings, experiments, decisions, artifacts,
-  metrics, and timeline under Project Data.
-- Raw JSON panels may show sanitized server payloads only.
+- project dashboard
+- plugin catalog and enabled plugins
+- workflow template list/detail
+- run plan list/detail with generic step rendering
+- resource and artifact browsers
+- auth providers and credential status
+- action call history
+- context, learnings, experiments, and decisions
 
-Do not add new per-workflow UI unless a signed-off task explicitly scopes it.
+SEO remains a first-party plugin domain, not the core product shape.
 
-## Delivery Discipline
+## Change Checklist
 
-Follow `docs/stackos-deliverable-task-plan.md`.
+When changing an execution or tool flow, update these together:
 
-- One deliverable equals one coherent commit after verification and signoff.
-- Preserve existing SEO flows unless the task explicitly migrates/removes them.
-- Keep migrations additive for the pivot; no dropping legacy tables/history
-  without a separate destructive-cleanup ticket and signoff.
-- Add tests proportional to the blast radius.
-- Any task touching auth, actions, context, logs, or audit needs redaction
-  tests.
-- Any task adding agent-visible tools must prove the direct/gated/compatibility
-  boundary with tests.
-- Keep docs updated when behavior or architecture changes.
+1. data model and repository invariant
+2. MCP tool schema and bridge visibility
+3. permission grant and no-secret auth boundary
+4. plugin manifest or workflow template metadata
+5. generic UI rendering path
+6. tests for direct visibility, grants, auth, and run-plan audit records
+7. documentation that names the current StackOS model
+
+Do not add support shims for removed flows. If a flow is replaced, delete the old
+route, tool registration, docs, tests, and install asset in the same delivery.
 
 ## TPF Token Proxy Filter
 
@@ -192,17 +119,13 @@ Do not wrap redirections, logical OR, background jobs, or subshells.
 
 ## Serena MCP
 
-Use this project's dedicated Serena MCP server, not the shared/global `serena`
-server:
+Use this project's dedicated Serena MCP server:
 
 - Codex MCP name: `serena-content-stack`
 - URL: `http://localhost:9123/mcp`
 - launchd label: `com.oraios.serena-mcp.content-stack`
-- launchd plist: `~/Library/LaunchAgents/com.oraios.serena-mcp-content-stack.plist`
 - project: `/Users/sergeyrura/Bin/content-stack`
 - log: `~/Library/Logs/serena-mcp-content-stack.log`
 
-Do not call `activate_project` on the shared `serena` MCP to switch it to
-content-stack. That server is used by other projects and can expose stale
-project memory. Do not write, rename, edit, or delete Serena memories unless
-the user explicitly asks.
+Do not call `activate_project` on the shared/global `serena` MCP. Do not write,
+rename, edit, or delete Serena memories unless the user explicitly asks.

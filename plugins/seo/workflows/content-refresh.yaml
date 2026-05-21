@@ -1,0 +1,160 @@
+schema_version: stackos.workflow-template.v1
+key: seo.content-refresh
+name: SEO Content Refresh
+version: 0.1.0
+description: Reusable template for diagnosing and executing a content refresh without assuming one universal content workflow.
+domain: seo
+owner:
+  team: StackOS
+when_to_use:
+  - Existing content needs a refresh diagnosis, evidence gathering, and recorded follow-through.
+when_not_to_use:
+  - The user needs new content creation rather than updating existing work.
+inputs:
+  - key: content_ref
+    name: Content Ref
+    type: string
+    required: true
+  - key: refresh_goal
+    name: Refresh Goal
+    type: string
+    required: true
+context_requirements:
+  - id: recent_refreshes
+    source: resources
+    purpose: Understand prior refresh actions for the same or similar content.
+    filters:
+      plugin_slug: seo
+      resource_keys:
+        - content-refresh
+        - content-piece
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 20
+  - id: related_experiments
+    source: experiments
+    purpose: Include active SEO experiments before proposing a change.
+    filters:
+      domain: seo
+      statuses:
+        - active
+        - planned
+    fields:
+      - name
+      - hypothesis
+      - status
+      - metric_targets_json
+      - variants
+    max_items: 10
+  - id: relevant_decisions
+    source: decisions
+    purpose: Keep prior project decisions visible without flooding the context window.
+    filters:
+      tags:
+        - seo
+    fields:
+      - title
+      - decision
+      - rationale
+      - status
+      - tags
+    max_items: 10
+capability_requirements:
+  - key: seo-content
+    required: true
+  - key: seo-measurement
+    required: false
+auth_requirements:
+  - key: dataforseo
+    provider: dataforseo
+    auth_type: api-key
+    optional: true
+action_contracts:
+  - key: serp_analysis
+    action: serp.analyze
+    capability: seo-research
+    provider: dataforseo
+    risk_level: cost
+    auth_ref: dataforseo
+resource_contracts:
+  - key: content_piece
+    resource: content-piece
+    purpose: Store the content work item and links to external files or systems.
+  - key: refresh_record
+    resource: content-refresh
+    purpose: Store diagnosis, action taken, expected effect, and follow-up timing.
+  - key: performance_snapshot
+    resource: search-performance-snapshot
+    purpose: Store imported or summarized metrics used as evidence.
+policies:
+  - key: no_secret_exposure
+    kind: auth
+    description: Secrets stay in daemon-side credential storage and are never included in run-plan steps.
+  - key: explicit_change_record
+    kind: audit
+    description: Every material change must be recorded as a resource, learning, decision, or experiment observation.
+approval_gates:
+  - key: operator_change_review
+    description: Required before applying changes outside StackOS storage.
+    required_when: external_system_change
+steps:
+  - id: read_history
+    title: Read History
+    input_refs:
+      - content_ref
+      - refresh_goal
+    context_refs:
+      - recent_refreshes
+      - related_experiments
+      - relevant_decisions
+    policy_refs:
+      - explicit_change_record
+  - id: diagnose
+    title: Diagnose Refresh Need
+    action_refs:
+      - serp_analysis
+    resource_refs:
+      - content_piece
+      - performance_snapshot
+    policy_refs:
+      - no_secret_exposure
+    depends_on:
+      - read_history
+  - id: execute_change
+    title: Execute Change
+    purpose: Agent performs the chosen external or repository work using tools available in the current environment.
+    approval_refs:
+      - operator_change_review
+    policy_refs:
+      - explicit_change_record
+    depends_on:
+      - diagnose
+  - id: record_outcome
+    title: Record Outcome
+    resource_refs:
+      - refresh_record
+      - content_piece
+      - performance_snapshot
+    output_refs:
+      - refresh_summary
+    depends_on:
+      - execute_change
+outputs:
+  - key: refresh_summary
+    name: Refresh Summary
+    type: object
+learning_hooks:
+  - key: refresh_learning
+    prompt: Record reusable SEO refresh lessons only when supported by evidence.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan
+  step_ids:
+    - read_history
+    - diagnose
+    - execute_change
+    - record_outcome
