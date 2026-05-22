@@ -230,6 +230,7 @@ watch(runId, () => {
         :next-cursor="nextCursor"
         aria-label="Runs"
         empty-message="No runs match the filters."
+        interactive
         :sort-key="runsStore.sort.replace(/^-/, '')"
         :sort-dir="runsStore.sort.startsWith('-') ? 'desc' : 'asc'"
         @row-click="onRowClick"

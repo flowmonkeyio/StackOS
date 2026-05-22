@@ -92,15 +92,45 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 
 <template>
   <div class="flex min-h-screen flex-col bg-bg-app text-fg-default md:flex-row">
-    <button
-      type="button"
-      class="m-3 inline-flex items-center justify-center rounded-md border border-default bg-bg-surface px-3 py-2 text-sm font-medium text-fg-default shadow-xs hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:hidden"
-      :aria-expanded="drawerOpen"
-      aria-controls="cs-sidebar"
-      @click="drawerOpen = !drawerOpen"
-    >
-      Menu
-    </button>
+    <div class="sticky top-0 z-sticky flex items-center justify-between border-b border-default bg-bg-surface px-3 py-2 md:hidden">
+      <div class="flex min-w-0 items-center gap-2">
+        <span
+          class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-bg-inverse font-mono text-xs font-bold text-fg-inverse"
+          aria-hidden="true"
+        >OS</span>
+        <div class="min-w-0">
+          <div class="truncate text-sm font-semibold leading-tight text-fg-strong">
+            StackOS
+          </div>
+          <div class="truncate text-xs text-fg-muted">
+            {{ activeProject?.name ?? 'Projects' }}
+          </div>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-default bg-bg-surface text-fg-default shadow-xs hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        :aria-expanded="drawerOpen"
+        aria-controls="cs-sidebar"
+        aria-label="Toggle navigation"
+        @click="drawerOpen = !drawerOpen"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path d="M4 7h16" />
+          <path d="M4 12h16" />
+          <path d="M4 17h16" />
+        </svg>
+      </button>
+    </div>
 
     <aside
       id="cs-sidebar"
@@ -109,7 +139,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
       aria-label="Primary navigation"
     >
       <div class="flex h-full flex-col">
-        <div class="border-b border-subtle px-4 py-4">
+        <div class="hidden border-b border-subtle px-4 py-4 md:block">
           <div class="flex items-center gap-3">
             <span
               class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-bg-inverse font-mono text-sm font-bold text-fg-inverse"
@@ -176,7 +206,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
       </div>
     </aside>
 
-    <main class="relative min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
+    <main class="relative min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
       <ul
         v-if="toastItems.length > 0"
         class="pointer-events-none fixed inset-x-4 top-3 z-50 mx-auto flex max-w-md flex-col gap-2 sm:left-auto sm:right-4 sm:mx-0"

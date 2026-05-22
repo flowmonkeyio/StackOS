@@ -33,6 +33,8 @@ interface Props {
   ariaLabel?: string
   /** Optional rowKey override; defaults to `row.id`. */
   rowKey?: (row: T) => T['id']
+  /** Makes rows keyboard/click navigable. */
+  interactive?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -44,6 +46,7 @@ const props = withDefaults(defineProps<Props>(), {
   selection: undefined,
   ariaLabel: 'Data table',
   rowKey: undefined,
+  interactive: false,
 })
 
 const emit = defineEmits<{
@@ -125,14 +128,14 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
   } else if (e.key === ' ' || e.key === 'Spacebar') {
     e.preventDefault()
     toggleSelection(row)
-  } else if (e.key === 'Enter') {
+  } else if (props.interactive && e.key === 'Enter') {
     e.preventDefault()
     emit('row-click', row)
   }
 }
 
 function onCardKeydown(e: KeyboardEvent, row: T): void {
-  if (e.key === 'Enter') {
+  if (props.interactive && e.key === 'Enter') {
     e.preventDefault()
     emit('row-click', row)
   } else if (e.key === ' ' || e.key === 'Spacebar') {
@@ -198,13 +201,14 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
           <tr
             v-for="(row, idx) in displayItems"
             :key="String(keyOf(row))"
-            tabindex="0"
-            class="cursor-pointer hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus"
+            :tabindex="interactive || selection ? 0 : undefined"
+            class="hover:bg-bg-surface-alt"
             :class="{
               'bg-accent-subtle': isSelected(row),
+              'cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus': interactive || selection,
             }"
             :aria-selected="isSelected(row)"
-            @click="emit('row-click', row)"
+            @click="interactive && emit('row-click', row)"
             @keydown="onKeydown($event, row, idx)"
             @focus="focusedIndex = idx"
           >
@@ -238,7 +242,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
           <tr v-if="!loading && displayItems.length === 0">
             <td
               :colspan="columns.length + (selection ? 1 : 0)"
-              class="px-3 py-12 text-center text-fg-muted"
+              class="px-3 py-8 text-center text-fg-muted"
             >
               {{ emptyMessage }}
             </td>
@@ -246,7 +250,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
           <tr v-if="loading && displayItems.length === 0">
             <td
               :colspan="columns.length + (selection ? 1 : 0)"
-              class="px-3 py-12 text-center text-fg-muted"
+              class="px-3 py-8 text-center text-fg-muted"
             >
               Loading…
             </td>
@@ -262,12 +266,12 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
       <article
         v-for="row in displayItems"
         :key="`mobile-${String(keyOf(row))}`"
-        role="button"
-        tabindex="0"
-        class="rounded-md border border-default bg-bg-surface p-3 shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        :role="interactive ? 'button' : undefined"
+        :tabindex="interactive || selection ? 0 : undefined"
+        class="rounded-md border border-default bg-bg-surface p-3 shadow-xs"
         :class="{ 'bg-accent-subtle': isSelected(row) }"
         :aria-selected="isSelected(row)"
-        @click="emit('row-click', row)"
+        @click="interactive && emit('row-click', row)"
         @keydown="onCardKeydown($event, row)"
       >
         <div
@@ -327,7 +331,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
     >
       <button
         type="button"
-        class="rounded-sm border border-default px-3 py-1 text-sm text-fg-default hover:bg-bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
+        class="h-8 rounded-sm border border-default bg-bg-surface px-3 text-sm font-medium text-fg-default hover:bg-bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="loading"
         @click="emit('load-more')"
       >

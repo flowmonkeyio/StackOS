@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { SchemaPluginOut } from '@/api'
-import { coreNavSections, pluginContributionSections } from './nav'
+import { coreNavSections, isStackOsNavItemActive, pluginContributionSections } from './nav'
 
 describe('StackOS nav contributions', () => {
   it('keeps generic core nav focused on StackOS primitives', () => {
@@ -89,5 +89,38 @@ describe('StackOS nav contributions', () => {
 
     const disabled = { ...plugin, enabled_for_project: false } as SchemaPluginOut
     expect(pluginContributionSections(7, [disabled])).toEqual([])
+  })
+
+  it('keeps plugin-scoped nav active state separate from generic pages', () => {
+    const genericResources = { to: '/projects/7/resources' }
+    const seoResources = {
+      to: '/projects/7/resources?plugin_slug=seo',
+      matchPrefix: true,
+    }
+    const genericTemplates = { to: '/projects/7/workflow-templates' }
+    const seoTemplates = { to: '/projects/7/workflow-templates?plugin_slug=seo' }
+
+    expect(
+      isStackOsNavItemActive(genericResources, '/projects/7/resources', {}),
+    ).toBe(true)
+    expect(
+      isStackOsNavItemActive(genericResources, '/projects/7/resources', { plugin_slug: 'seo' }),
+    ).toBe(false)
+    expect(
+      isStackOsNavItemActive(seoResources, '/projects/7/resources', { plugin_slug: 'seo' }),
+    ).toBe(true)
+    expect(
+      isStackOsNavItemActive(seoResources, '/projects/7/resources', { plugin_slug: 'core' }),
+    ).toBe(false)
+    expect(
+      isStackOsNavItemActive(genericTemplates, '/projects/7/workflow-templates', {
+        plugin_slug: 'seo',
+      }),
+    ).toBe(false)
+    expect(
+      isStackOsNavItemActive(seoTemplates, '/projects/7/workflow-templates', {
+        plugin_slug: 'seo',
+      }),
+    ).toBe(true)
   })
 })

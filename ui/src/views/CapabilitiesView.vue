@@ -56,59 +56,75 @@ watch(projectId, load)
       {{ error }}
     </UiCallout>
 
-    <div class="grid gap-4 xl:grid-cols-2">
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Capabilities"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge>{{ capabilities.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <DataTable
-          :items="capabilities"
-          :columns="capabilityColumns"
-          :loading="loading"
-          aria-label="Capabilities"
-          empty-message="No capabilities."
-        >
-          <template #cell:plugin_slug="{ value }">
-            <UiBadge tone="accent">{{ value }}</UiBadge>
-          </template>
-        </DataTable>
-      </UiPanel>
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Capabilities"
+        as="h3"
+      >
+        <template #actions>
+          <UiBadge>{{ capabilities.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="capabilities"
+        :columns="capabilityColumns"
+        :loading="loading"
+        aria-label="Capabilities"
+        empty-message="No capabilities."
+      >
+        <template #cell:plugin_slug="{ value }">
+          <UiBadge tone="accent">{{ value }}</UiBadge>
+        </template>
+      </DataTable>
+    </UiPanel>
 
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Providers"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge>{{ providers.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <DataTable
-          :items="providers"
-          :columns="providerColumns"
-          :loading="loading"
-          aria-label="Providers"
-          empty-message="No providers."
-        >
-          <template #cell:plugin_slug="{ value }">
-            <UiBadge tone="accent">{{ value }}</UiBadge>
-          </template>
-        </DataTable>
-      </UiPanel>
-    </div>
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Providers"
+        as="h3"
+      >
+        <template #actions>
+          <UiBadge>{{ providers.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="providers"
+        :columns="providerColumns"
+        :loading="loading"
+        aria-label="Providers"
+        empty-message="No providers."
+      >
+        <template #cell:plugin_slug="{ value }">
+          <UiBadge tone="accent">{{ value }}</UiBadge>
+        </template>
+      </DataTable>
+    </UiPanel>
 
-    <section class="space-y-3">
-      <UiSectionHeader title="Action Contracts" />
-      <ActionSchemaRenderer
-        v-for="action in actions"
-        :key="`${action.plugin_slug}.${action.key}`"
-        :action="action"
-      />
-    </section>
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Action Contracts"
+        as="h3"
+      >
+        <template #actions>
+          <UiBadge>{{ actions.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <p
+        v-if="!loading && actions.length === 0"
+        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
+      >
+        No action contracts.
+      </p>
+      <div
+        v-else
+        class="space-y-2"
+      >
+        <ActionSchemaRenderer
+          v-for="action in actions"
+          :key="`${action.plugin_slug}.${action.key}`"
+          :action="action"
+        />
+      </div>
+    </UiPanel>
   </UiPageShell>
 </template>

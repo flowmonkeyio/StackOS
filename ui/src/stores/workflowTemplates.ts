@@ -14,12 +14,15 @@ export const useWorkflowTemplatesStore = defineStore('workflowTemplates', () => 
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  async function refresh(projectId: number): Promise<void> {
+  async function refresh(projectId: number, pluginSlug?: string | null): Promise<void> {
     loading.value = true
     error.value = null
     try {
+      const params = new URLSearchParams()
+      if (pluginSlug) params.set('plugin_slug', pluginSlug)
+      const suffix = params.toString() ? `?${params.toString()}` : ''
       const body = await apiFetch<SchemaWorkflowTemplateListOut>(
-        `/api/v1/projects/${projectId}/workflow-templates`,
+        `/api/v1/projects/${projectId}/workflow-templates${suffix}`,
       )
       items.value = body.templates
       if (!selected.value && body.templates.length > 0) {

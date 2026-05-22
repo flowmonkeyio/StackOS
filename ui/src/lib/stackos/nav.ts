@@ -14,6 +14,8 @@ export interface StackOsNavSection {
   items: StackOsNavItem[]
 }
 
+export type StackOsRouteQuery = Record<string, unknown>
+
 interface PluginNavContribution {
   section?: string
   items?: Array<{
@@ -98,10 +100,43 @@ export function pluginContributionSections(
   return sections
 }
 
+export function isStackOsNavItemActive(
+  item: Pick<StackOsNavItem, 'to' | 'matchPrefix'>,
+  currentPath: string,
+  currentQuery: StackOsRouteQuery = {},
+): boolean {
+  const [targetPath, targetSearch = ''] = item.to.split('?')
+  const pathActive = item.matchPrefix
+    ? currentPath === targetPath || currentPath.startsWith(`${targetPath}/`)
+    : currentPath === targetPath
+  if (!pathActive) return false
+
+  const targetParams = new URLSearchParams(targetSearch)
+  const targetKeys = Array.from(new Set(Array.from(targetParams.keys())))
+  if (targetKeys.length > 0) {
+    return targetKeys.every((key) =>
+      queryValueMatches(currentQuery[key], targetParams.getAll(key)),
+    )
+  }
+
+  return currentQuery.plugin_slug === undefined || currentQuery.plugin_slug === null
+}
+
 function isPluginNav(value: unknown): value is PluginNavContribution {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function queryValueMatches(
+  current: unknown,
+  expected: string[],
+): boolean {
+  if (expected.length === 0) return current === undefined || current === null
+  if (Array.isArray(current)) {
+    return expected.every((value) => current.map(String).includes(value))
+  }
+  return expected.includes(String(current ?? ''))
 }

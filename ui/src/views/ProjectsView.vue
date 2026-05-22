@@ -7,7 +7,7 @@ import { useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { UiBreadcrumbs, UiEmptyState, UiPageHeader, UiPageShell } from '@/components/ui'
+import { UiEmptyState, UiPageHeader, UiPageShell } from '@/components/ui'
 import { useProjectsStore } from '@/stores/projects'
 import type { DataTableColumn } from '@/components/types'
 import type { Project } from '@/stores/projects'
@@ -59,12 +59,8 @@ onMounted(async () => {
   <UiPageShell>
     <UiPageHeader
       title="Projects"
-      description="Read-only inventory of sites configured for agent-run research, publishing, and monitoring."
-    >
-      <template #breadcrumbs>
-        <UiBreadcrumbs :items="[{ label: 'Projects' }]" />
-      </template>
-    </UiPageHeader>
+      description="Configured workspaces for plugins, runs, resources, and project memory."
+    />
 
     <UiEmptyState
       v-if="empty"
@@ -81,6 +77,7 @@ onMounted(async () => {
       :next-cursor="nextCursor"
       aria-label="Projects"
       empty-message="No projects yet"
+      interactive
       @row-click="openDetail"
       @load-more="loadMore"
     >

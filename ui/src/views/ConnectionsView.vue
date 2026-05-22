@@ -58,73 +58,72 @@ watch(projectId, load)
       {{ error }}
     </UiCallout>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Credential Refs"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge>{{ connections.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <DataTable
-          :items="connections"
-          :columns="columns"
-          :loading="loading"
-          aria-label="Connections"
-          empty-message="No credentials connected."
-        >
-          <template #cell:provider_key="{ value }">
-            <UiBadge tone="accent">{{ value }}</UiBadge>
-          </template>
-          <template #cell:status="{ value, row }">
-            <UiBadge :tone="(row as ConnectionRow).setup_required ? 'warning' : 'success'">
-              {{ value }}
-            </UiBadge>
-          </template>
-        </DataTable>
-      </UiPanel>
-
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Providers"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge>{{ authProviders.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <ul class="space-y-2">
-          <li
-            v-for="provider in authProviders"
-            :key="provider.key"
-            class="rounded-md border border-subtle bg-bg-surface p-3"
-          >
-            <div class="mb-1 flex items-center justify-between gap-2">
-              <span class="font-medium">{{ provider.name }}</span>
-              <UiBadge>{{ provider.auth_type }}</UiBadge>
-            </div>
-            <p class="text-sm text-fg-muted">{{ provider.key }}</p>
-          </li>
-        </ul>
-      </UiPanel>
-    </div>
-
-    <UiPanel
-      v-if="authStatus"
-      class="p-4"
-    >
+    <UiPanel class="p-4">
       <UiSectionHeader
-        title="Status Payload"
+        title="Credential Refs"
         as="h3"
-      />
-      <UiJsonBlock
-        :data="sanitizeForDisplay(authStatus)"
-        density="compact"
-        max-height="18rem"
-        wrap
-      />
+      >
+        <template #actions>
+          <UiBadge>{{ connections.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="connections"
+        :columns="columns"
+        :loading="loading"
+        aria-label="Connections"
+        empty-message="No credentials connected."
+      >
+        <template #cell:provider_key="{ value }">
+          <UiBadge tone="accent">{{ value }}</UiBadge>
+        </template>
+        <template #cell:status="{ value, row }">
+          <UiBadge :tone="(row as ConnectionRow).setup_required ? 'warning' : 'success'">
+            {{ value }}
+          </UiBadge>
+        </template>
+      </DataTable>
     </UiPanel>
+
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Providers"
+        as="h3"
+      >
+        <template #actions>
+          <UiBadge>{{ authProviders.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <ul class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        <li
+          v-for="provider in authProviders"
+          :key="provider.key"
+          class="rounded-md border border-subtle bg-bg-surface p-3"
+        >
+          <div class="mb-1 flex items-center justify-between gap-2">
+            <span class="font-medium">{{ provider.name }}</span>
+            <UiBadge>{{ provider.auth_type }}</UiBadge>
+          </div>
+          <p class="text-sm text-fg-muted">{{ provider.key }}</p>
+        </li>
+      </ul>
+    </UiPanel>
+
+    <details
+      v-if="authStatus"
+      class="rounded-md border border-default bg-bg-surface shadow-xs"
+    >
+      <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-fg-strong focus-ring">
+        Diagnostics
+      </summary>
+      <div class="border-t border-subtle p-3">
+        <UiJsonBlock
+          :data="sanitizeForDisplay(authStatus)"
+          density="compact"
+          max-height="18rem"
+          wrap
+        />
+      </div>
+    </details>
   </UiPageShell>
 </template>

@@ -122,46 +122,55 @@ watch(
       </div>
     </UiPanel>
 
-    <div class="grid gap-4 xl:grid-cols-2">
-      <UiPanel class="p-4">
-        <UiSectionHeader title="Schemas" as="h3" />
-        <DataTable
-          :items="resources"
-          :columns="resourceColumns"
-          :loading="loading"
-          aria-label="Resource schemas"
-          empty-message="No resource schemas."
-        >
-          <template #cell:plugin_slug="{ value }">
-            <UiBadge tone="accent">{{ value }}</UiBadge>
-          </template>
-        </DataTable>
-      </UiPanel>
-
-      <UiPanel class="p-4">
-        <UiSectionHeader title="Records" as="h3" />
-        <DataTable
-          :items="records"
-          :columns="recordColumns"
-          :loading="loading"
-          aria-label="Resource records"
-          empty-message="No resource records."
-        >
-          <template #cell:plugin_slug="{ value }">
-            <UiBadge tone="accent">{{ value }}</UiBadge>
-          </template>
-        </DataTable>
-      </UiPanel>
-    </div>
-
-    <section class="space-y-3">
-      <UiSectionHeader title="Record Details" />
-      <p
-        v-if="records.length === 0"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Schemas"
+        as="h3"
       >
-        No record details.
-      </p>
+        <template #actions>
+          <UiBadge>{{ resources.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="resources"
+        :columns="resourceColumns"
+        :loading="loading"
+        aria-label="Resource schemas"
+        empty-message="No resource schemas."
+      >
+        <template #cell:plugin_slug="{ value }">
+          <UiBadge tone="accent">{{ value }}</UiBadge>
+        </template>
+      </DataTable>
+    </UiPanel>
+
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Records"
+        as="h3"
+      >
+        <template #actions>
+          <UiBadge>{{ records.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="records"
+        :columns="recordColumns"
+        :loading="loading"
+        aria-label="Resource records"
+        empty-message="No resource records."
+      >
+        <template #cell:plugin_slug="{ value }">
+          <UiBadge tone="accent">{{ value }}</UiBadge>
+        </template>
+      </DataTable>
+    </UiPanel>
+
+    <section
+      v-if="records.length > 0"
+      class="space-y-3"
+    >
+      <UiSectionHeader title="Record Details" />
       <ResourceViewRenderer
         v-for="record in records.slice(0, 8)"
         :key="record.id"
@@ -169,14 +178,11 @@ watch(
       />
     </section>
 
-    <section class="space-y-3">
+    <section
+      v-if="artifacts.length > 0"
+      class="space-y-3"
+    >
       <UiSectionHeader title="Artifacts" />
-      <p
-        v-if="artifacts.length === 0"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
-      >
-        No artifacts.
-      </p>
       <ArtifactRenderer
         v-for="artifact in artifacts"
         :key="artifact.id"

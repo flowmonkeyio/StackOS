@@ -9,6 +9,8 @@ defineProps<{
   eyebrow?: string;
   /** Subtitle / lede beneath the title. Keep short. */
   description?: string;
+  /** Allows wrapper components to define a conditional breadcrumb slot. */
+  showBreadcrumbs?: boolean;
   /** When true, sticks to the top under the app shell (z-sticky). */
   sticky?: boolean;
   /** Reduce vertical padding. */
@@ -27,7 +29,7 @@ defineProps<{
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
       <div class="min-w-0 flex-1">
         <nav
-          v-if="$slots.breadcrumbs"
+          v-if="showBreadcrumbs !== false && $slots.breadcrumbs"
           aria-label="Breadcrumb"
           class="mb-1 text-xs text-fg-muted"
         >

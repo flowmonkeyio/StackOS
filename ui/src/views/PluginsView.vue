@@ -46,7 +46,7 @@ watch(projectId, load)
       Loading plugins.
     </p>
 
-    <div class="grid gap-4 xl:grid-cols-3">
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <UiPanel
         v-for="plugin in plugins"
         :key="plugin.slug"
@@ -89,13 +89,31 @@ watch(projectId, load)
       </UiPanel>
     </div>
 
-    <section class="space-y-3">
-      <UiSectionHeader title="Action Schemas" />
-      <ActionSchemaRenderer
-        v-for="action in catalogStore.actions"
-        :key="`${action.plugin_slug}.${action.key}`"
-        :action="action"
-      />
-    </section>
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Action Contracts"
+        as="h3"
+      >
+        <template #actions>
+          <UiBadge>{{ catalogStore.actions.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <p
+        v-if="!loading && catalogStore.actions.length === 0"
+        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
+      >
+        No action contracts.
+      </p>
+      <div
+        v-else
+        class="space-y-2"
+      >
+        <ActionSchemaRenderer
+          v-for="action in catalogStore.actions"
+          :key="`${action.plugin_slug}.${action.key}`"
+          :action="action"
+        />
+      </div>
+    </UiPanel>
   </UiPageShell>
 </template>

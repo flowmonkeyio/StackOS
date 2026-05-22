@@ -22,12 +22,14 @@ const props = withDefaults(defineProps<{
   breadcrumbs?: BreadcrumbItem[];
   showProjectMeta?: boolean;
   showProjectStatus?: boolean;
+  showBreadcrumbs?: boolean;
 }>(), {
   title: undefined,
   description: undefined,
   breadcrumbs: () => [],
   showProjectMeta: true,
   showProjectStatus: false,
+  showBreadcrumbs: false,
 })
 
 const projectsStore = useProjectsStore()
@@ -57,8 +59,13 @@ watch(() => props.projectId, ensureProject)
   <UiPageHeader
     :title="titleText"
     :description="description"
+    :eyebrow="project?.name"
+    :show-breadcrumbs="showBreadcrumbs"
   >
-    <template #breadcrumbs>
+    <template
+      v-if="showBreadcrumbs"
+      #breadcrumbs
+    >
       <UiBreadcrumbs :items="breadcrumbItems" />
     </template>
 

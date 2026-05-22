@@ -60,11 +60,20 @@ describe('DataTable', () => {
   })
 
   it('emits row-click on click', async () => {
-    const w = mount(DataTable, { props: { items: rows, columns: columns as never } })
+    const w = mount(DataTable, {
+      props: { items: rows, columns: columns as never, interactive: true },
+    })
     const tbodyRows = w.findAll('tbody tr')
     await tbodyRows[1].trigger('click')
     expect(w.emitted('row-click')).toBeTruthy()
     expect((w.emitted('row-click')![0][0] as Row).name).toBe('banana')
+  })
+
+  it('does not emit row-click for read-only rows', async () => {
+    const w = mount(DataTable, { props: { items: rows, columns: columns as never } })
+    const tbodyRows = w.findAll('tbody tr')
+    await tbodyRows[1].trigger('click')
+    expect(w.emitted('row-click')).toBeUndefined()
   })
 
   it('renders the empty message when items is empty and not loading', () => {
@@ -93,7 +102,7 @@ describe('DataTable', () => {
 
   it('navigates rows with ArrowDown', async () => {
     const w = mount(DataTable, {
-      props: { items: rows, columns: columns as never },
+      props: { items: rows, columns: columns as never, interactive: true },
       attachTo: document.body,
     })
     const tbodyRows = w.findAll('tbody tr')
