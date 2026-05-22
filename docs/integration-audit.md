@@ -227,20 +227,23 @@ The agent should not see `dataforseo.serp` or `firecrawl.scrape` as a direct
 tool name. It should call `seo.serp.analyze`, `utils.web.scrape`, or another
 plugin action ref selected by the run plan.
 
-### 4. Auth UI Needs Local-Admin Controls
+### 4. Auth UI Boundary Is Wired
 
-The backend supports secret storage, testing, and revocation. The UI currently
-shows provider status and credential refs only.
+The backend and UI now support the baseline local-admin credential flow:
 
-Needed UI controls:
+- provider cards render from generic auth-provider metadata
+- secret inputs are write-only and clear after successful save
+- safe labels can be stored in `config_json`
+- credential status and refs refresh after store/test/revoke
+- secret setup stays out of the agent-visible MCP bridge
 
-- choose provider
-- enter or paste secret in a local-only secret input
-- enter safe config fields such as account label, login, site URL, base URL, or scopes
-- store credential
-- test credential
-- revoke credential
-- show provider account metadata when available
+Remaining auth UI depth is provider setup breadth, not the core boundary:
+
+- OAuth/start-flow providers need a generic start/return UI path.
+- Providers with non-secret safe config such as login, site URL, base URL, or
+  scope selection need schema-driven setup fields instead of only a label.
+- Provider account metadata should be displayed when wrappers return safe
+  account details.
 
 This must remain local-admin UI. The agent can inspect status and test results,
 but should never see secret values.
@@ -357,7 +360,6 @@ These are needed before adding many new domains:
 | Google PAA action contract | Decide whether it is a DataForSEO action, Firecrawl-derived utility action, or SEO action that depends on Firecrawl. |
 | WordPress publishing connector | Current wrapper only tests credentials. Publishing needs post/media actions. |
 | Ghost publishing connector | Current wrapper only tests credentials. Publishing needs post/image actions. |
-| Credential setup UI | Backend exists; operators need a clean local-admin setup screen. |
 | Custom HTTP/Webhook connector | Allows user-owned internal tools to become StackOS actions without hard-coding each one into core. |
 
 ### P1: Utilities Plugin Expansion
@@ -580,11 +582,12 @@ The UI should stay generic:
 Avoid per-workflow pages. Plugin nav should point into generic pages with
 filters such as `plugin_slug`, `resource_key`, `template_key`, or `action_ref`.
 
-The biggest UI integration gap is local-admin credential setup. Action calls are
-already visible in run detail and through the project action-call API, and the
-catalog now exposes action availability signals: executable, missing connector,
-missing credential, disabled plugin, disabled provider, missing budget, and
-budget blocked.
+Credential setup, action readiness, and run detail action-call visibility are
+now wired through generic UI surfaces. The next UI integration gap is broader
+generic browsing and filtering for action-call audit history across a project,
+without adding workflow-specific pages. The catalog already exposes action
+availability signals: executable, missing connector, missing credential,
+disabled plugin, disabled provider, missing budget, and budget blocked.
 
 ## Cleanup And Refactor Map
 
@@ -592,7 +595,8 @@ budget blocked.
 2. Add connector config whenever a plugin action becomes executable.
 3. Tighten schemas for each executable action.
 4. Keep `auth.status` and `auth.test` agent-visible; keep secret setup local-admin only.
-5. Add credential setup/test/revoke UI using existing REST routes.
+5. Maintain credential setup/test/revoke UI as a local-admin exception; do not
+   expose secret setup through agent MCP tools.
 6. Keep removed vendor MCP names unknown to MCP clients.
 7. Decide whether `integration_credentials` remains only an internal encrypted blob store or is migrated into the new credential model.
 8. Promote WordPress and Ghost from credential-test wrappers to publishing actions.
@@ -616,8 +620,11 @@ Jina, Reddit, DataForSEO, and Ahrefs. Remaining Phase 1 cleanup:
 
 ### Phase 2: Credential Setup UX
 
-Deliver generic local-admin controls for provider credential setup, test, and
-revoke. This unlocks real operator use without agent secret exposure.
+Complete for the baseline API-key/local-admin path. Connections now provides
+generic store/test/revoke controls, uses the REST-only UI console token for the
+narrow setup lane, and clears secret input after save. Remaining work belongs
+to provider-specific breadth: OAuth start/return flows, schema-driven safe
+config fields, and richer account metadata display.
 
 ### Phase 3: Publishing Plugin
 

@@ -49,7 +49,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 
 | Component | Notes |
 |---|---|
-| `ProjectPageHeader` | project-aware title, breadcrumbs, read-only action slot, and route chrome |
+| `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 
 ## Shipped — StackOS renderers (`ui/src/components/renderers/`)
 
