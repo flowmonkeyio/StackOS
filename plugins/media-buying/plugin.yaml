@@ -43,7 +43,7 @@ providers:
           placeholder: v23.0
   - key: google-ads
     name: Google Ads
-    description: Google Ads API provider contract for campaigns, ad groups, ads, audiences, and reporting.
+    description: Google Ads API provider contract for customers, budgets, campaigns, ad groups, assets, ads, reporting, and conversions.
     auth_type: oauth
     config:
       setup_fields:
@@ -52,21 +52,40 @@ providers:
           type: text
           required: false
           placeholder: safe manager account reference
+        - key: customer_ref
+          label: Customer Ref
+          type: text
+          required: false
+          placeholder: safe customer account reference
   - key: outbrain
     name: Outbrain
-    description: Outbrain campaign and reporting provider contract.
+    description: Outbrain Amplify provider contract. OB-TOKEN-V1 generation, storage, expiry checks, and rotation stay daemon-side.
     auth_type: api-key
     config:
+      token_lifecycle:
+        model: daemon-managed-ob-token-v1
+        max_age_days: 30
+        stores_secrets_in_manifest: false
       setup_fields:
         - key: account_ref
           label: Account Ref
           type: text
           required: false
           placeholder: safe account reference
+        - key: marketer_ref
+          label: Marketer Ref
+          type: text
+          required: false
+          placeholder: safe marketer reference
+        - key: token_status_ref
+          label: Token Status Ref
+          type: text
+          required: false
+          placeholder: safe daemon token status reference
   - key: taboola
     name: Taboola
-    description: Taboola campaign and reporting provider contract.
-    auth_type: api-key
+    description: Taboola Backstage API provider contract for account-scoped campaigns, items, reports, and conversion rules.
+    auth_type: oauth
     config:
       setup_fields:
         - key: account_ref
@@ -191,7 +210,7 @@ actions:
     input_schema: *campaign_ref_input
     output_schema: *object_schema
     config: *contract_only_config
-  - key: meta.ad-set.create
+  - key: meta.ad_set.create
     name: Create Meta Ad Set
     description: Create a Meta ad set from explicit targeting, placement, budget, and schedule input.
     provider: meta-ads
@@ -229,7 +248,7 @@ actions:
                 type: string
     output_schema: *object_schema
     config: *contract_only_config
-  - key: meta.ad-set.update
+  - key: meta.ad_set.update
     name: Update Meta Ad Set
     description: Update a Meta ad set from an explicit change object.
     provider: meta-ads
@@ -249,9 +268,9 @@ actions:
           additionalProperties: true
     output_schema: *object_schema
     config: *contract_only_config
-  - key: meta.creative.create
-    name: Create Meta Creative
-    description: Create a Meta creative record from explicit copy, asset refs, and destination metadata.
+  - key: meta.ad_creative.create
+    name: Create Meta Ad Creative
+    description: Create a Meta AdCreative object from explicit copy, asset refs, and destination metadata.
     provider: meta-ads
     capability: creative-operations
     risk_level: write
@@ -279,6 +298,37 @@ actions:
             destination:
               type: object
               additionalProperties: true
+            review_notes:
+              type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.asset.upload
+    name: Upload Meta Asset
+    description: Upload or register a Meta creative asset from safe asset refs before AdCreative creation.
+    provider: meta-ads
+    capability: creative-operations
+    risk_level: write
+    input_schema: &asset_upload_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - asset
+      properties:
+        account_ref:
+          type: string
+        asset:
+          type: object
+          additionalProperties: true
+          required:
+            - asset_ref
+          properties:
+            asset_ref:
+              type: string
+            media_type:
+              type: string
+            usage:
+              type: string
             review_notes:
               type: string
     output_schema: *object_schema
@@ -336,7 +386,7 @@ actions:
           additionalProperties: true
     output_schema: *object_schema
     config: *contract_only_config
-  - key: meta.insight.fetch
+  - key: meta.insights.fetch
     name: Fetch Meta Insights
     description: Fetch a bounded Meta performance snapshot for an agent-selected scope.
     provider: meta-ads
@@ -365,9 +415,9 @@ actions:
             type: string
     output_schema: *object_schema
     config: *contract_only_config
-  - key: meta.budget.update
-    name: Update Meta Budget
-    description: Apply an explicit budget change to a Meta campaign or ad set reference.
+  - key: meta.campaign_budget.update
+    name: Update Meta Campaign Budget
+    description: Apply an explicit campaign-budget-optimization budget change to a Meta campaign reference.
     provider: meta-ads
     capability: campaign-management
     risk_level: write
@@ -375,25 +425,404 @@ actions:
       type: object
       additionalProperties: false
       required:
-        - target_ref
+        - campaign_ref
         - budget
       properties:
-        target_ref:
+        campaign_ref:
           type: string
         budget:
           type: object
-          additionalProperties: true
+          additionalProperties: false
+          required:
+            - amount
+            - currency
+            - period
+          properties:
+            amount:
+              type: number
+            currency:
+              type: string
+            period:
+              type: string
+            delivery_model:
+              type: string
         reason:
           type: string
     output_schema: *object_schema
     config: *contract_only_config
+  - key: meta.ad_set_budget.update
+    name: Update Meta Ad Set Budget
+    description: Apply an explicit ad set budget change to a Meta ad set reference.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &ad_set_budget_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - ad_set_ref
+        - budget
+      properties:
+        ad_set_ref:
+          type: string
+        budget:
+          type: object
+          additionalProperties: false
+          required:
+            - amount
+            - currency
+            - period
+          properties:
+            amount:
+              type: number
+            currency:
+              type: string
+            period:
+              type: string
+            delivery_model:
+              type: string
+        reason:
+          type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.conversions.send
+    name: Send Meta Conversion Events
+    description: Send approved Meta conversion events using daemon-side normalization and hashing provenance.
+    provider: meta-ads
+    capability: media-measurement
+    risk_level: write
+    input_schema: &conversion_event_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - conversion_event_ref
+        - hashing_policy_ref
+        - events
+      properties:
+        account_ref:
+          type: string
+        conversion_event_ref:
+          type: string
+        hashing_policy_ref:
+          type: string
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        test_event:
+          type: boolean
+        consent:
+          type: object
+          additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google.customer.list
+    name: List Google Ads Customers
+    description: Read accessible Google Ads customer metadata for the configured credential.
+    provider: google-ads
+    capability: campaign-management
+    risk_level: read
+    input_schema: *account_list_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google.campaign_budget.create
+    name: Create Google Campaign Budget
+    description: Create a Google Ads campaign budget from explicit budget fields and safe customer refs.
+    provider: google-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &google_campaign_budget_input
+      type: object
+      additionalProperties: false
+      required:
+        - customer_ref
+        - budget
+      properties:
+        customer_ref:
+          type: string
+        budget:
+          type: object
+          additionalProperties: false
+          required:
+            - name
+            - amount_micros
+          properties:
+            name:
+              type: string
+            amount_micros:
+              type: integer
+            delivery_method:
+              type: string
+            explicit_shared:
+              type: boolean
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google.campaign_budget.update
+    name: Update Google Campaign Budget
+    description: Update a Google Ads campaign budget from explicit budget changes.
+    provider: google-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &google_campaign_budget_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - customer_ref
+        - campaign_budget_ref
+        - changes
+      properties:
+        customer_ref:
+          type: string
+        campaign_budget_ref:
+          type: string
+        changes:
+          type: object
+          additionalProperties: false
+          properties:
+            amount_micros:
+              type: integer
+            delivery_method:
+              type: string
+            explicit_shared:
+              type: boolean
+        reason:
+          type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google.campaign.create
+    name: Create Google Campaign
+    description: Create a Google Ads campaign from an explicit campaign object and campaign budget ref.
+    provider: google-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &google_campaign_input
+      type: object
+      additionalProperties: false
+      required:
+        - customer_ref
+        - campaign_budget_ref
+        - campaign
+      properties:
+        customer_ref:
+          type: string
+        campaign_budget_ref:
+          type: string
+        campaign:
+          type: object
+          additionalProperties: true
+          required:
+            - name
+            - advertising_channel_type
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google.ad_group.create
+    name: Create Google Ad Group
+    description: Create a Google Ads ad group from explicit bidding, targeting, and status fields.
+    provider: google-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &google_ad_group_input
+      type: object
+      additionalProperties: false
+      required:
+        - customer_ref
+        - campaign_ref
+        - ad_group
+      properties:
+        customer_ref:
+          type: string
+        campaign_ref:
+          type: string
+        ad_group:
+          type: object
+          additionalProperties: true
+          required:
+            - name
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google.asset.create
+    name: Create Google Asset
+    description: Create a Google Ads asset from a safe source asset ref and explicit asset metadata.
+    provider: google-ads
+    capability: creative-operations
+    risk_level: write
+    input_schema: &google_asset_input
+      type: object
+      additionalProperties: false
+      required:
+        - customer_ref
+        - asset
+      properties:
+        customer_ref:
+          type: string
+        asset:
+          type: object
+          additionalProperties: true
+          required:
+            - asset_ref
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google.ad_group_ad.create
+    name: Create Google Ad Group Ad
+    description: Create a Google Ads ad group ad from explicit ad content and safe asset refs.
+    provider: google-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &google_ad_group_ad_input
+      type: object
+      additionalProperties: false
+      required:
+        - customer_ref
+        - ad_group_ref
+        - ad
+      properties:
+        customer_ref:
+          type: string
+        ad_group_ref:
+          type: string
+        ad:
+          type: object
+          additionalProperties: true
+          required:
+            - name
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google.report.search
+    name: Search Google Ads Report
+    description: Run a bounded Google Ads reporting search from explicit GAQL or query parts and paging controls.
+    provider: google-ads
+    capability: media-measurement
+    risk_level: read
+    input_schema: &google_report_input
+      type: object
+      additionalProperties: false
+      required:
+        - customer_ref
+        - report
+      properties:
+        customer_ref:
+          type: string
+        report:
+          type: object
+          additionalProperties: false
+          required:
+            - date_range
+            - query_ref
+            - fields
+            - max_rows
+          properties:
+            query_ref:
+              type: string
+            date_range:
+              type: object
+              additionalProperties: false
+              required:
+                - start_date
+                - end_date
+              properties:
+                start_date:
+                  type: string
+                end_date:
+                  type: string
+            fields:
+              type: array
+              items:
+                type: string
+            filters:
+              type: object
+              additionalProperties: true
+            max_rows:
+              type: integer
+        page:
+          type: object
+          additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google.conversion_action.create
+    name: Create Google Conversion Action
+    description: Create a Google Ads conversion action from explicit tracking and attribution fields.
+    provider: google-ads
+    capability: media-measurement
+    risk_level: write
+    input_schema: &google_conversion_action_input
+      type: object
+      additionalProperties: false
+      required:
+        - customer_ref
+        - conversion_action
+      properties:
+        customer_ref:
+          type: string
+        conversion_action:
+          type: object
+          additionalProperties: false
+          required:
+            - name
+            - type
+            - category
+          properties:
+            name:
+              type: string
+            type:
+              type: string
+            category:
+              type: string
+            attribution_model_ref:
+              type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google.conversion_upload.clicks
+    name: Upload Google Click Conversions
+    description: Upload approved Google Ads click conversions from safe event refs and daemon-side PII handling.
+    provider: google-ads
+    capability: media-measurement
+    risk_level: write
+    input_schema: &google_conversion_upload_input
+      type: object
+      additionalProperties: false
+      required:
+        - customer_ref
+        - conversion_event_ref
+        - pii_handling_ref
+        - conversions
+      properties:
+        customer_ref:
+          type: string
+        conversion_event_ref:
+          type: string
+        pii_handling_ref:
+          type: string
+        conversions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        partial_failure:
+          type: boolean
+    output_schema: *object_schema
+    config: *contract_only_config
   - key: outbrain.campaign.create
     name: Create Outbrain Campaign
-    description: Create an Outbrain campaign from an explicit campaign object.
+    description: Create an Outbrain campaign from an explicit marketer-scoped campaign object.
     provider: outbrain
     capability: campaign-management
     risk_level: write
-    input_schema: *campaign_create_input
+    input_schema: &outbrain_campaign_create_input
+      type: object
+      additionalProperties: false
+      required:
+        - marketer_ref
+        - campaign
+      properties:
+        marketer_ref:
+          type: string
+        campaign:
+          type: object
+          additionalProperties: true
+          required:
+            - name
     output_schema: *object_schema
     config: *contract_only_config
   - key: outbrain.campaign.update
@@ -402,11 +831,128 @@ actions:
     provider: outbrain
     capability: campaign-management
     risk_level: write
-    input_schema: *campaign_update_input
+    input_schema: &outbrain_campaign_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - marketer_ref
+        - campaign_ref
+        - changes
+      properties:
+        marketer_ref:
+          type: string
+        campaign_ref:
+          type: string
+        changes:
+          type: object
+          additionalProperties: true
     output_schema: *object_schema
     config: *contract_only_config
-  - key: outbrain.insight.fetch
-    name: Fetch Outbrain Insights
+  - key: outbrain.campaign.pause
+    name: Pause Outbrain Campaign
+    description: Pause an Outbrain campaign by safe campaign reference.
+    provider: outbrain
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_ref_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: outbrain.campaign.resume
+    name: Resume Outbrain Campaign
+    description: Resume an Outbrain campaign by safe campaign reference.
+    provider: outbrain
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_ref_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: outbrain.marketer.list
+    name: List Outbrain Marketers
+    description: Read Outbrain marketer metadata available to the configured credential.
+    provider: outbrain
+    capability: campaign-management
+    risk_level: read
+    input_schema: *account_list_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: outbrain.budget.update
+    name: Update Outbrain Budget
+    description: Update an Outbrain budget from explicit marketer, campaign, or budget refs.
+    provider: outbrain
+    capability: campaign-management
+    risk_level: write
+    input_schema: &outbrain_budget_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - marketer_ref
+        - budget_ref
+        - budget
+      properties:
+        marketer_ref:
+          type: string
+        budget_ref:
+          type: string
+        campaign_ref:
+          type: string
+        budget:
+          type: object
+          additionalProperties: true
+        reason:
+          type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: outbrain.promoted_link.create
+    name: Create Outbrain Promoted Link
+    description: Create an Outbrain promoted link from explicit destination, asset, and campaign refs.
+    provider: outbrain
+    capability: creative-operations
+    risk_level: write
+    input_schema: &outbrain_promoted_link_input
+      type: object
+      additionalProperties: false
+      required:
+        - marketer_ref
+        - campaign_ref
+        - promoted_link
+      properties:
+        marketer_ref:
+          type: string
+        campaign_ref:
+          type: string
+        promoted_link:
+          type: object
+          additionalProperties: true
+          required:
+            - title
+            - url_ref
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: outbrain.promoted_link.update
+    name: Update Outbrain Promoted Link
+    description: Update an Outbrain promoted link from an explicit change object.
+    provider: outbrain
+    capability: creative-operations
+    risk_level: write
+    input_schema: &outbrain_promoted_link_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - marketer_ref
+        - promoted_link_ref
+        - changes
+      properties:
+        marketer_ref:
+          type: string
+        promoted_link_ref:
+          type: string
+        changes:
+          type: object
+          additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: outbrain.report.fetch
+    name: Fetch Outbrain Report
     description: Fetch a bounded Outbrain performance snapshot for an agent-selected scope.
     provider: outbrain
     capability: media-measurement
@@ -416,11 +962,24 @@ actions:
     config: *contract_only_config
   - key: taboola.campaign.create
     name: Create Taboola Campaign
-    description: Create a Taboola campaign from an explicit campaign object.
+    description: Create a Taboola account-scoped campaign from an explicit campaign object.
     provider: taboola
     capability: campaign-management
     risk_level: write
-    input_schema: *campaign_create_input
+    input_schema: &taboola_campaign_create_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - campaign
+      properties:
+        account_ref:
+          type: string
+        campaign:
+          type: object
+          additionalProperties: true
+          required:
+            - name
     output_schema: *object_schema
     config: *contract_only_config
   - key: taboola.campaign.update
@@ -429,11 +988,101 @@ actions:
     provider: taboola
     capability: campaign-management
     risk_level: write
-    input_schema: *campaign_update_input
+    input_schema: &taboola_campaign_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - campaign_ref
+        - changes
+      properties:
+        account_ref:
+          type: string
+        campaign_ref:
+          type: string
+        changes:
+          type: object
+          additionalProperties: true
     output_schema: *object_schema
     config: *contract_only_config
-  - key: taboola.insight.fetch
-    name: Fetch Taboola Insights
+  - key: taboola.campaign.pause
+    name: Pause Taboola Campaign
+    description: Pause a Taboola campaign by setting the provider-supported active state.
+    provider: taboola
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_ref_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: taboola.campaign.resume
+    name: Resume Taboola Campaign
+    description: Resume a Taboola campaign by setting the provider-supported active state.
+    provider: taboola
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_ref_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: taboola.account.get
+    name: Get Taboola Account
+    description: Read Taboola account metadata for a safe account reference.
+    provider: taboola
+    capability: campaign-management
+    risk_level: read
+    input_schema: *account_list_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: taboola.item.create
+    name: Create Taboola Item
+    description: Create a Taboola campaign item from explicit creative and destination refs.
+    provider: taboola
+    capability: creative-operations
+    risk_level: write
+    input_schema: &taboola_item_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - campaign_ref
+        - item
+      properties:
+        account_ref:
+          type: string
+        campaign_ref:
+          type: string
+        item:
+          type: object
+          additionalProperties: true
+          required:
+            - title
+            - url_ref
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: taboola.item.update
+    name: Update Taboola Item
+    description: Update a Taboola campaign item from an explicit change object.
+    provider: taboola
+    capability: creative-operations
+    risk_level: write
+    input_schema: &taboola_item_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - item_ref
+        - changes
+      properties:
+        account_ref:
+          type: string
+        item_ref:
+          type: string
+        changes:
+          type: object
+          additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: taboola.report.fetch
+    name: Fetch Taboola Report
     description: Fetch a bounded Taboola performance snapshot for an agent-selected scope.
     provider: taboola
     capability: media-measurement
@@ -441,8 +1090,53 @@ actions:
     input_schema: *insight_input
     output_schema: *object_schema
     config: *contract_only_config
-  - key: webhook.campaign.create
-    name: Create Campaign Through Webhook
+  - key: taboola.conversion_rule.create
+    name: Create Taboola Conversion Rule
+    description: Create a Taboola conversion rule from explicit conversion event and attribution fields.
+    provider: taboola
+    capability: media-measurement
+    risk_level: write
+    input_schema: &taboola_conversion_rule_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - conversion_rule
+      properties:
+        account_ref:
+          type: string
+        conversion_rule:
+          type: object
+          additionalProperties: true
+          required:
+            - name
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: taboola.conversion_rule.update
+    name: Update Taboola Conversion Rule
+    description: Update a Taboola conversion rule from an explicit change object.
+    provider: taboola
+    capability: media-measurement
+    risk_level: write
+    input_schema: &taboola_conversion_rule_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - conversion_rule_ref
+        - changes
+      properties:
+        account_ref:
+          type: string
+        conversion_rule_ref:
+          type: string
+        changes:
+          type: object
+          additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: webhook.media_campaign.create
+    name: Create Media Campaign Through Webhook
     description: Contract for user-owned campaign tooling. Project-local plugins should provide static HTTP connector config before execution.
     provider: media-buying-webhook
     capability: campaign-management
@@ -450,8 +1144,8 @@ actions:
     input_schema: *campaign_create_input
     output_schema: *object_schema
     config: *contract_only_config
-  - key: webhook.campaign.update
-    name: Update Campaign Through Webhook
+  - key: webhook.media_campaign.update
+    name: Update Media Campaign Through Webhook
     description: Contract for user-owned campaign tooling. Project-local plugins should provide static HTTP connector config before execution.
     provider: media-buying-webhook
     capability: campaign-management
@@ -459,8 +1153,8 @@ actions:
     input_schema: *campaign_update_input
     output_schema: *object_schema
     config: *contract_only_config
-  - key: webhook.performance.fetch
-    name: Fetch Performance Through Webhook
+  - key: webhook.media_performance.fetch
+    name: Fetch Media Performance Through Webhook
     description: Contract for user-owned reporting tools exposed through project-local static HTTP actions.
     provider: media-buying-webhook
     capability: media-measurement
@@ -468,13 +1162,28 @@ actions:
     input_schema: *insight_input
     output_schema: *object_schema
     config: *contract_only_config
-  - key: webhook.budget.update
-    name: Update Budget Through Webhook
+  - key: webhook.media_budget.update
+    name: Update Media Budget Through Webhook
     description: Contract for user-owned budget tooling exposed through project-local static HTTP actions.
     provider: media-buying-webhook
     capability: campaign-management
     risk_level: write
-    input_schema: *budget_update_input
+    input_schema: &media_budget_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - budget_surface_ref
+        - budget
+      properties:
+        budget_surface_ref:
+          type: string
+        provider:
+          type: string
+        budget:
+          type: object
+          additionalProperties: true
+        reason:
+          type: string
     output_schema: *object_schema
     config: *contract_only_config
 resources:
@@ -488,11 +1197,11 @@ resources:
     schema: *object_schema
   - key: ad-set
     name: Ad Set
-    description: Ad set or channel-equivalent grouping with targeting, schedule, and budget metadata.
+    description: Meta ad set grouping with targeting, schedule, and budget metadata.
     schema: *object_schema
   - key: ad-group
     name: Ad Group
-    description: Search or channel-equivalent ad group with targeting and bidding metadata.
+    description: Google ad group structure with targeting and bidding metadata.
     schema: *object_schema
   - key: ad
     name: Ad

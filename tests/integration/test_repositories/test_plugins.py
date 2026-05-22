@@ -17,11 +17,21 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
 
     plugins = repo.list_plugins()
 
-    assert [p.slug for p in plugins] == ["core", "media-buying", "publishing", "seo", "utils"]
+    assert [p.slug for p in plugins] == [
+        "core",
+        "gtm",
+        "media-buying",
+        "publishing",
+        "seo",
+        "utils",
+    ]
     seo = repo.get_plugin("seo")
     assert seo.name == "SEO"
     assert seo.enabled_for_project is None
     assert seo.manifest_json["ui"]["nav"]["section"] == "SEO"
+    gtm = repo.get_plugin("gtm")
+    assert gtm.name == "GTM And RevOps"
+    assert gtm.manifest_json["ui"]["nav"]["section"] == "GTM"
     media = repo.get_plugin("media-buying")
     assert media.name == "Media Buying"
     assert media.manifest_json["ui"]["nav"]["section"] == "Media Buying"
@@ -89,6 +99,42 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "content-refresh",
     }
 
+    gtm = repo.catalog(plugin_slug="gtm").plugins[0]
+    assert {cap.key for cap in gtm.capabilities} >= {
+        "account-research",
+        "lead-management",
+        "crm-operations",
+        "pipeline-management",
+    }
+    assert {provider.key for provider in gtm.providers} >= {
+        "hubspot",
+        "salesforce",
+        "apollo",
+        "outreach",
+        "gtm-webhook",
+    }
+    assert {action.key for action in gtm.actions} >= {
+        "hubspot.crm.companies.batch_upsert",
+        "salesforce.lead.upsert_by_external_id",
+        "apollo.people.enrich",
+        "outreach.sequence_state.create",
+        "webhook.pipeline.fetch",
+    }
+    gtm_actions = {action.key: action for action in gtm.actions}
+    company_upsert = gtm_actions["hubspot.crm.companies.batch_upsert"]
+    assert company_upsert.connector_key is None
+    assert company_upsert.operation == "hubspot.crm.companies.batch_upsert"
+    assert company_upsert.requires_credential is True
+    assert company_upsert.availability.status == "not_executable"
+    assert company_upsert.availability.reasons[0] == "connector_not_configured"
+    assert {resource.key for resource in gtm.resources} >= {
+        "account",
+        "lead",
+        "sequence",
+        "enrichment-record",
+        "pipeline-snapshot",
+    }
+
     media = repo.catalog(plugin_slug="media-buying").plugins[0]
     assert {cap.key for cap in media.capabilities} >= {
         "campaign-management",
@@ -97,17 +143,21 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     }
     assert {provider.key for provider in media.providers} >= {
         "meta-ads",
+        "google-ads",
         "outbrain",
         "taboola",
         "media-buying-webhook",
     }
     assert {action.key for action in media.actions} >= {
         "meta.campaign.create",
-        "meta.ad-set.create",
-        "meta.creative.create",
+        "meta.ad_set.create",
+        "meta.ad_creative.create",
+        "google.campaign.create",
+        "outbrain.promoted_link.create",
+        "taboola.item.create",
         "outbrain.campaign.create",
         "taboola.campaign.create",
-        "webhook.campaign.create",
+        "webhook.media_campaign.create",
     }
     media_actions = {action.key: action for action in media.actions}
     campaign_create = media_actions["meta.campaign.create"]

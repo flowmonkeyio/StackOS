@@ -19,7 +19,7 @@ from content_stack.plugins.manifest import (
 def test_builtin_plugin_manifests_validate() -> None:
     slugs = [manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS]
 
-    assert slugs == ["core", "media-buying", "publishing", "seo", "utils"]
+    assert slugs == ["core", "gtm", "media-buying", "publishing", "seo", "utils"]
     for manifest in BUILTIN_PLUGIN_MANIFESTS:
         assert manifest.capabilities
         assert manifest.resources
@@ -30,6 +30,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         for manifest in BUILTIN_PLUGIN_MANIFESTS
     }
     assert resources_by_plugin["core"] >= {"learning", "experiment"}
+    assert resources_by_plugin["gtm"] >= {"account", "lead", "pipeline-snapshot"}
     assert resources_by_plugin["media-buying"] >= {"campaign", "creative"}
     assert resources_by_plugin["publishing"] >= {"published-post", "publish-target"}
     assert resources_by_plugin["seo"] >= {"keyword-opportunity", "content-piece"}
@@ -68,6 +69,74 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert utils_actions["reddit.search-subreddit"].config["connector"] == "reddit"
 
 
+def test_gtm_plugin_yaml_facade_validates() -> None:
+    manifest = load_plugin_manifest_file(Path("plugins/gtm/plugin.yaml"))
+
+    assert manifest.slug == "gtm"
+    assert manifest.ui is not None
+    assert manifest.ui["nav"]["section"] == "GTM"
+    assert {capability.key for capability in manifest.capabilities} >= {
+        "account-research",
+        "lead-management",
+        "crm-operations",
+        "outbound-operations",
+        "pipeline-management",
+        "enrichment",
+    }
+    assert {provider.key for provider in manifest.providers} >= {
+        "hubspot",
+        "salesforce",
+        "apollo",
+        "clay",
+        "outreach",
+        "salesloft",
+        "gtm-webhook",
+    }
+    providers = {provider.key: provider for provider in manifest.providers}
+    assert providers["hubspot"].config["setup_fields"][0]["key"] == "portal_ref"
+    assert providers["gtm-webhook"].config["setup_fields"][0]["key"] == "tool_owner"
+    actions = {action.key: action for action in manifest.actions}
+    assert actions["hubspot.crm.companies.batch_upsert"].provider == "hubspot"
+    assert actions["hubspot.crm.companies.batch_upsert"].risk_level == "write"
+    assert actions["hubspot.crm.companies.batch_upsert"].input_schema["required"] == [
+        "id_property",
+        "inputs",
+    ]
+    assert actions["salesforce.lead.upsert_by_external_id"].provider == "salesforce"
+    assert actions["salesforce.lead.upsert_by_external_id"].input_schema["required"] == [
+        "external_id_policy_ref",
+        "lead",
+        "update_only",
+    ]
+    assert actions["apollo.people.enrich"].capability == "enrichment"
+    assert actions["outreach.sequence_state.create"].provider == "outreach"
+    assert actions["webhook.pipeline.fetch"].provider == "gtm-webhook"
+    for action_key in [
+        "hubspot.crm.companies.batch_upsert",
+        "salesforce.lead.upsert_by_external_id",
+        "apollo.people.enrich",
+        "outreach.sequence_state.create",
+        "webhook.pipeline.fetch",
+    ]:
+        assert actions[action_key].config == {
+            "schema_version": "stackos.action.v1",
+            "execution_mode": "contract-only",
+        }
+    assert {resource.key for resource in manifest.resources} >= {
+        "account",
+        "company",
+        "contact",
+        "lead",
+        "opportunity",
+        "deal",
+        "sequence",
+        "task",
+        "touchpoint",
+        "enrichment-record",
+        "pipeline-snapshot",
+    }
+
+
 def test_media_buying_plugin_yaml_facade_validates() -> None:
     manifest = load_plugin_manifest_file(Path("plugins/media-buying/plugin.yaml"))
 
@@ -97,13 +166,14 @@ def test_media_buying_plugin_yaml_facade_validates() -> None:
         "account_ref",
         "campaign",
     ]
-    assert actions["webhook.campaign.create"].provider == "media-buying-webhook"
-    assert actions["webhook.performance.fetch"].capability == "media-measurement"
+    assert actions["webhook.media_campaign.create"].provider == "media-buying-webhook"
+    assert actions["webhook.media_performance.fetch"].capability == "media-measurement"
     for action_key in [
         "meta.campaign.create",
+        "google.campaign.create",
         "outbrain.campaign.create",
         "taboola.campaign.create",
-        "webhook.campaign.create",
+        "webhook.media_campaign.create",
     ]:
         assert actions[action_key].config == {
             "schema_version": "stackos.action.v1",
@@ -229,3 +299,22 @@ def test_manifest_rejects_unknown_fields() -> None:
 def test_manifest_rejects_invalid_identifier() -> None:
     with pytest.raises(ValidationError):
         PluginManifest.model_validate({"slug": "Bad Plugin", "name": "Bad"})
+
+
+def test_manifest_accepts_provider_native_snake_segments() -> None:
+    manifest = PluginManifest.model_validate(
+        {
+            "slug": "media-buying",
+            "name": "Media Buying",
+            "actions": [
+                {
+                    "key": "meta.ad_set.create",
+                    "name": "Create Meta Ad Set",
+                    "provider": "meta-ads",
+                    "capability": "campaign-management",
+                }
+            ],
+        }
+    )
+
+    assert manifest.actions[0].key == "meta.ad_set.create"

@@ -26,6 +26,11 @@ class GhostIntegration(BaseIntegration):
     vendor = "ghost"
     default_qps = 2.0
 
+    # Official refs:
+    # https://docs.ghost.org/admin-api/
+    # https://docs.ghost.org/admin-api/posts/creating-a-post
+    # https://docs.ghost.org/admin-api/images/uploading-an-image
+
     def __init__(
         self,
         *,
@@ -82,6 +87,7 @@ class GhostIntegration(BaseIntegration):
         return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
     def _jwt(self) -> str:
+        # Ghost Admin API JWTs use aud="/admin/" and a short expiration.
         now = int(time.time())
         header = {"alg": "HS256", "typ": "JWT", "kid": self._key_id}
         payload = {"iat": now, "exp": now + 300, "aud": "/admin/"}
@@ -99,6 +105,7 @@ class GhostIntegration(BaseIntegration):
         return f"{header_payload}.{self._b64url(signature)}"
 
     def _headers(self) -> dict[str, str]:
+        # Accept-Version pins the Admin API contract this connector targets.
         return {
             "Authorization": f"Ghost {self._jwt()}",
             "Accept-Version": self._api_version,

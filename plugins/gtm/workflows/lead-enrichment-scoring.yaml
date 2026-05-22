@@ -1,0 +1,243 @@
+schema_version: stackos.workflow-template.v1
+key: gtm.lead-enrichment-scoring
+name: GTM Lead Enrichment And Scoring
+version: 0.1.0
+description: Reusable template for enriching and scoring leads from bounded records, project learnings, and explicit provider contracts.
+domain: gtm
+owner:
+  team: StackOS
+when_to_use:
+  - A lead or account list needs enrichment, qualification, or scoring before CRM or outbound work.
+when_not_to_use:
+  - Leads are already enriched, reviewed, and ready for CRM or sequence actions.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: lead_refs
+    name: Lead Refs
+    type: array
+    required: false
+  - key: scoring_policy
+    name: Scoring Policy
+    type: object
+    required: false
+  - key: enrichment_fields
+    name: Enrichment Fields
+    type: array
+    required: false
+context_requirements:
+  - id: lead_context
+    source: resources
+    purpose: Retrieve lead, contact, company, account, and enrichment records before requesting more data.
+    filters:
+      plugin_slug: gtm
+      resource_keys:
+        - lead
+        - contact
+        - company
+        - account
+        - enrichment-record
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 30
+    return_mode: compact
+  - id: scoring_learnings
+    source: learnings
+    purpose: Pull accepted lead-quality and enrichment lessons.
+    filters:
+      tags:
+        - gtm
+        - lead-quality
+      statuses:
+        - active
+    fields:
+      - statement
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+capability_requirements:
+  - key: enrichment
+    required: true
+    preferred_providers:
+      - apollo
+      - clay
+      - clearbit-by-hubspot
+      - gtm-webhook
+  - key: lead-management
+    required: true
+auth_requirements:
+  - key: apollo
+    provider: apollo
+    auth_type: api-key
+    optional: true
+  - key: clay
+    provider: clay
+    auth_type: api-key
+    optional: true
+  - key: clearbit_by_hubspot
+    provider: clearbit-by-hubspot
+    auth_type: api-key
+    optional: true
+  - key: gtm_webhook
+    provider: gtm-webhook
+    auth_type: api-key
+    optional: true
+action_contracts:
+  - key: apollo_people_enrich
+    action: apollo.people.enrich
+    capability: enrichment
+    provider: apollo
+    risk_level: cost
+    auth_ref: apollo
+    approval_ref: cost_review
+  - key: apollo_people_bulk_enrich
+    action: apollo.people.bulk_enrich
+    capability: enrichment
+    provider: apollo
+    risk_level: cost
+    auth_ref: apollo
+    approval_ref: cost_review
+  - key: apollo_organization_enrich
+    action: apollo.organization.enrich
+    capability: enrichment
+    provider: apollo
+    risk_level: cost
+    auth_ref: apollo
+    approval_ref: cost_review
+  - key: apollo_organization_bulk_enrich
+    action: apollo.organization.bulk_enrich
+    capability: enrichment
+    provider: apollo
+    risk_level: cost
+    auth_ref: apollo
+    approval_ref: cost_review
+  - key: clay_table_webhook_submit
+    action: clay.table.webhook.submit
+    capability: enrichment
+    provider: clay
+    risk_level: cost
+    auth_ref: clay
+    approval_ref: cost_review
+  - key: clay_workflow_result_ingest
+    action: clay.workflow.result.ingest
+    capability: enrichment
+    provider: clay
+    risk_level: write
+    auth_ref: clay
+    approval_ref: cost_review
+  - key: clearbit_by_hubspot_enrichment
+    action: clearbit-by-hubspot.enrichment.run
+    capability: enrichment
+    provider: clearbit-by-hubspot
+    risk_level: cost
+    auth_ref: clearbit_by_hubspot
+    approval_ref: cost_review
+  - key: webhook_enrichment
+    action: webhook.enrichment.run
+    capability: enrichment
+    provider: gtm-webhook
+    risk_level: cost
+    auth_ref: gtm_webhook
+    approval_ref: cost_review
+resource_contracts:
+  - key: leads
+    resource: lead
+    purpose: Store reviewed leads, scores, qualification notes, and source refs.
+  - key: contacts
+    resource: contact
+    purpose: Store contact attributes and safe CRM/source refs.
+  - key: companies
+    resource: company
+    purpose: Store company attributes and firmographic evidence.
+  - key: enrichment_records
+    resource: enrichment-record
+    purpose: Store enrichment results, confidence, source, and fields updated.
+policies:
+  - key: no_secret_exposure
+    kind: auth
+    description: Enrichment credentials remain daemon-side.
+  - key: scoring_is_agent_owned
+    kind: boundary
+    description: StackOS stores enrichment and scoring records; the agent defines scoring rationale and review notes.
+approval_gates:
+  - key: cost_review
+    description: Review expected enrichment cost before provider calls.
+    required_when: estimated_cost_above_project_threshold
+steps:
+  - id: orient
+    title: Orient From Lead Context
+    purpose: Read existing lead records, enrichment state, scoring policy, and prior lessons.
+    input_refs:
+      - goal
+      - lead_refs
+      - scoring_policy
+      - enrichment_fields
+    context_refs:
+      - lead_context
+      - scoring_learnings
+    policy_refs:
+      - scoring_is_agent_owned
+    output_refs:
+      - enrichment_plan
+  - id: run_enrichment
+    title: Run Enrichment
+    purpose: Execute only the provider enrichment actions granted by the concrete run plan.
+    action_refs:
+      - apollo_people_enrich
+      - apollo_people_bulk_enrich
+      - apollo_organization_enrich
+      - apollo_organization_bulk_enrich
+      - clay_table_webhook_submit
+      - clay_workflow_result_ingest
+      - clearbit_by_hubspot_enrichment
+      - webhook_enrichment
+    policy_refs:
+      - no_secret_exposure
+    approval_refs:
+      - cost_review
+    depends_on:
+      - orient
+    output_refs:
+      - enrichment_summary
+  - id: score_and_store
+    title: Score And Store
+    purpose: Persist enrichment records, lead scores, qualification notes, and provenance.
+    resource_refs:
+      - leads
+      - contacts
+      - companies
+      - enrichment_records
+    depends_on:
+      - run_enrichment
+    output_refs:
+      - scored_leads
+outputs:
+  - key: enrichment_plan
+    name: Enrichment Plan
+    type: object
+  - key: enrichment_summary
+    name: Enrichment Summary
+    type: object
+  - key: scored_leads
+    name: Scored Leads
+    type: object
+    required: true
+learning_hooks:
+  - key: lead_quality_learning
+    prompt: Capture reusable lead quality lessons only with evidence and provenance.
+    tags:
+      - gtm
+      - lead-quality
+failure_handling:
+  - If enrichment providers are unavailable, score from stored fields and list missing attributes.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

@@ -30,6 +30,9 @@ class AhrefsIntegration(BaseIntegration):
 
     kind = "ahrefs"
     vendor = "ahrefs"
+    # Official refs: https://docs.ahrefs.com/en/api/docs/introduction and
+    # https://docs.ahrefs.com/api/docs/limits-consumption. Ahrefs bills in API
+    # units; TODO: record unit-cost headers before treating budget as monetary.
     default_qps = 1.0
 
     BASE_URL = "https://api.ahrefs.com/v3"
@@ -70,6 +73,8 @@ class AhrefsIntegration(BaseIntegration):
         date_: str | None = None,
     ) -> IntegrationCallResult:
         """Keyword inventory for the target domain."""
+        # Endpoint ref:
+        # https://docs.ahrefs.com/api/reference/site-explorer/get-organic-keywords
         params = {
             "target": target,
             "country": country,
@@ -93,6 +98,8 @@ class AhrefsIntegration(BaseIntegration):
         limit: int = 100,
     ) -> IntegrationCallResult:
         """Top inbound backlinks; ``mode`` is ``domain`` or ``exact``."""
+        # Endpoint ref:
+        # https://docs.ahrefs.com/api/reference/site-explorer/get-all-backlinks
         params = {
             "target": target,
             "mode": mode,

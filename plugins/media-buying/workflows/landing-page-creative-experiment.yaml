@@ -101,6 +101,10 @@ auth_requirements:
     provider: media-buying-webhook
     auth_type: api-key
     optional: true
+  - key: google_ads
+    provider: google-ads
+    auth_type: oauth
+    optional: true
 action_contracts:
   - key: meta_ad_update
     action: meta.ad.update
@@ -109,8 +113,15 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: experiment_launch_review
-  - key: webhook_campaign_update
-    action: webhook.campaign.update
+  - key: google_ad_group_ad_create
+    action: google.ad_group_ad.create
+    capability: campaign-management
+    provider: google-ads
+    risk_level: write
+    auth_ref: google_ads
+    approval_ref: experiment_launch_review
+  - key: webhook_media_campaign_update
+    action: webhook.media_campaign.update
     capability: campaign-management
     provider: media-buying-webhook
     risk_level: write
@@ -188,7 +199,8 @@ steps:
     purpose: Execute approved campaign or ad updates only when granted by the concrete run plan.
     action_refs:
       - meta_ad_update
-      - webhook_campaign_update
+      - google_ad_group_ad_create
+      - webhook_media_campaign_update
     policy_refs:
       - approval_before_campaign_change
       - no_secret_exposure

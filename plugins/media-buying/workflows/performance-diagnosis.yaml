@@ -88,6 +88,7 @@ capability_requirements:
     required: true
     preferred_providers:
       - meta-ads
+      - google-ads
       - outbrain
       - taboola
       - media-buying-webhook
@@ -100,9 +101,13 @@ auth_requirements:
     provider: outbrain
     auth_type: api-key
     optional: true
+  - key: google_ads
+    provider: google-ads
+    auth_type: oauth
+    optional: true
   - key: taboola
     provider: taboola
-    auth_type: api-key
+    auth_type: oauth
     optional: true
   - key: media_webhook
     provider: media-buying-webhook
@@ -110,25 +115,31 @@ auth_requirements:
     optional: true
 action_contracts:
   - key: meta_insights
-    action: meta.insight.fetch
+    action: meta.insights.fetch
     capability: media-measurement
     provider: meta-ads
     risk_level: read
     auth_ref: meta_ads
-  - key: outbrain_insights
-    action: outbrain.insight.fetch
+  - key: google_report
+    action: google.report.search
+    capability: media-measurement
+    provider: google-ads
+    risk_level: read
+    auth_ref: google_ads
+  - key: outbrain_report
+    action: outbrain.report.fetch
     capability: media-measurement
     provider: outbrain
     risk_level: read
     auth_ref: outbrain
-  - key: taboola_insights
-    action: taboola.insight.fetch
+  - key: taboola_report
+    action: taboola.report.fetch
     capability: media-measurement
     provider: taboola
     risk_level: read
     auth_ref: taboola
-  - key: webhook_performance
-    action: webhook.performance.fetch
+  - key: webhook_media_performance
+    action: webhook.media_performance.fetch
     capability: media-measurement
     provider: media-buying-webhook
     risk_level: read
@@ -179,9 +190,10 @@ steps:
     purpose: Execute only approved read actions that the concrete run plan grants for missing evidence.
     action_refs:
       - meta_insights
-      - outbrain_insights
-      - taboola_insights
-      - webhook_performance
+      - google_report
+      - outbrain_report
+      - taboola_report
+      - webhook_media_performance
     policy_refs:
       - no_secret_exposure
     approval_refs:

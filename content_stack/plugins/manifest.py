@@ -11,12 +11,12 @@ from typing import Any
 import yaml
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
-_KEY_RE = re.compile(r"^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$")
+_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
 
 
 def _validate_key(value: str) -> str:
     if not _KEY_RE.match(value):
-        raise ValueError("must be lowercase kebab/dotted identifier")
+        raise ValueError("must be lowercase snake/kebab/dotted identifier")
     return value
 
 
@@ -384,14 +384,34 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
             ProviderManifest(
                 key="jina",
                 name="Jina Reader",
-                description="Readable web document extraction provider.",
+                description=(
+                    "Readable web document extraction provider; API key is optional "
+                    "for higher quota."
+                ),
                 auth_type="api-key",
+                config={
+                    "setup_note": (
+                        "Jina Reader can run without a key; add a daemon-held API key "
+                        "only when higher quota is needed."
+                    ),
+                },
             ),
             ProviderManifest(
                 key="reddit",
                 name="Reddit",
-                description="Reddit research provider.",
-                auth_type="api-key",
+                description="Reddit research provider using OAuth client credentials.",
+                auth_type="oauth-client-credentials",
+                config={
+                    "credential_payload": {
+                        "format": "json",
+                        "required_keys": ["client_id", "client_secret", "user_agent"],
+                        "secret_keys": ["client_secret"],
+                    },
+                    "setup_note": (
+                        "Store the OAuth app JSON in the encrypted payload; do not "
+                        "persist access tokens in agent-visible state."
+                    ),
+                },
             ),
         ],
         actions=[

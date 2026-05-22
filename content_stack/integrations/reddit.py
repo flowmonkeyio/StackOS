@@ -67,6 +67,8 @@ class RedditIntegration(BaseIntegration):
         """Lazy-acquire (or refresh) the application-only bearer token."""
         if self._token is not None and time.time() < self._token_expiry - 60:
             return self._token
+        # Official ref: https://github.com/reddit-archive/reddit/wiki/oauth2
+        # Application-only OAuth uses client_credentials with HTTP Basic auth.
         # Reddit returns 401 on expired token, so we refresh proactively.
         resp = await self._http.post(
             self.AUTH_BASE,
@@ -104,6 +106,8 @@ class RedditIntegration(BaseIntegration):
         limit: int = 25,
     ) -> IntegrationCallResult:
         """Search a subreddit; ``q`` is the search term."""
+        # API ref: https://www.reddit.com/dev/api/#GET_search. Listing
+        # pagination uses after/before/count; expose it only with schema tests.
         params = {
             "q": query,
             "restrict_sr": "true",
@@ -126,6 +130,8 @@ class RedditIntegration(BaseIntegration):
         limit: int = 50,
     ) -> IntegrationCallResult:
         """Return top posts; caller filters for question-shaped titles."""
+        # API ref: https://www.reddit.com/dev/api/#GET_{sort}. This wrapper
+        # returns the raw listing; question filtering belongs to callers today.
         params = {"t": time_filter, "limit": str(limit)}
         return await self.call(
             op="top_questions",

@@ -9,6 +9,7 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
     plugins = mcp_client.call_tool_structured("plugin.list", {})["items"]
     assert [p["slug"] for p in plugins] == [
         "core",
+        "gtm",
         "media-buying",
         "publishing",
         "seo",
@@ -27,13 +28,32 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
     ]
     assert {cap["key"] for cap in capabilities} >= {"seo-content", "seo-research"}
 
+    gtm = mcp_client.call_tool_structured(
+        "catalog.describe",
+        {"plugin_slug": "gtm"},
+    )
+    assert {a["key"] for a in gtm["plugins"][0]["actions"]} >= {
+        "hubspot.crm.companies.batch_upsert",
+        "outreach.sequence_state.create",
+        "webhook.pipeline.fetch",
+    }
+    gtm_action = next(
+        action
+        for action in gtm["plugins"][0]["actions"]
+        if action["key"] == "hubspot.crm.companies.batch_upsert"
+    )
+    assert gtm_action["connector_key"] is None
+    assert gtm_action["availability"]["status"] == "not_executable"
+
     media = mcp_client.call_tool_structured(
         "catalog.describe",
         {"plugin_slug": "media-buying"},
     )
     assert {a["key"] for a in media["plugins"][0]["actions"]} >= {
         "meta.campaign.create",
-        "webhook.campaign.create",
+        "meta.ad_set.create",
+        "google.campaign.create",
+        "webhook.media_campaign.create",
     }
     media_action = next(
         action

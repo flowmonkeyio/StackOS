@@ -7,8 +7,8 @@ Operations:
 
 - ``scrape(url, formats)`` — single-URL scrape returning markdown +
   HTML.
-- ``crawl(url, max_depth, limit)`` — multi-page crawl that returns a
-  job id then polls.
+- ``crawl(url, max_depth, limit)`` — submit a multi-page crawl and
+  return Firecrawl's job id/status URL.
 - ``map(url, search)`` — return every URL found on a domain.
 - ``extract(url, schema, prompt)`` — structured-data extraction with
   schema-bound JSON output.
@@ -35,6 +35,9 @@ class FirecrawlIntegration(BaseIntegration):
 
     BASE_URL = "https://api.firecrawl.dev/v2"
 
+    # Official refs: https://docs.firecrawl.dev/api-reference/v2-introduction
+    # and https://docs.firecrawl.dev/rate-limits. Firecrawl does not return
+    # per-call spend, so these remain StackOS pre-call estimates.
     _ESTIMATED_COSTS: ClassVar[dict[str, float]] = {
         "scrape": 0.001,
         "map": 0.001,
@@ -68,6 +71,7 @@ class FirecrawlIntegration(BaseIntegration):
         only_main_content: bool = True,
     ) -> IntegrationCallResult:
         """Scrape a single URL; returns ``markdown`` + optional HTML."""
+        # Endpoint ref: https://docs.firecrawl.dev/api-reference/v2-endpoint/scrape
         body: dict[str, Any] = {
             "url": url,
             "formats": formats or ["markdown"],
@@ -89,6 +93,10 @@ class FirecrawlIntegration(BaseIntegration):
         limit: int = 25,
     ) -> IntegrationCallResult:
         """Submit a crawl job; the response includes a polling ``id``."""
+        # Endpoint refs:
+        # POST https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-post
+        # GET status https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-get
+        # TODO: expose a crawl-status action before templates assume crawl content.
         body: dict[str, Any] = {
             "url": url,
             "limit": limit,
@@ -113,6 +121,7 @@ class FirecrawlIntegration(BaseIntegration):
         search: str | None = None,
     ) -> IntegrationCallResult:
         """List every URL Firecrawl can discover on the domain."""
+        # Endpoint ref: https://docs.firecrawl.dev/api-reference/v2-endpoint/map
         body: dict[str, Any] = {"url": url}
         if search:
             body["search"] = search
@@ -132,6 +141,7 @@ class FirecrawlIntegration(BaseIntegration):
         prompt: str | None = None,
     ) -> IntegrationCallResult:
         """Structured-data extraction with optional JSON schema."""
+        # Endpoint ref: https://docs.firecrawl.dev/api-reference/v2-endpoint/extract
         body: dict[str, Any] = {"urls": [url]}
         if schema is not None:
             body["schema"] = schema

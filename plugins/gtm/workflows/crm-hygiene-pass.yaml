@@ -1,0 +1,219 @@
+schema_version: stackos.workflow-template.v1
+key: gtm.crm-hygiene-pass
+name: GTM CRM Hygiene Pass
+version: 0.1.0
+description: Reusable template for reviewing CRM records, identifying hygiene issues, and optionally applying approved CRM updates.
+domain: gtm
+owner:
+  team: StackOS
+when_to_use:
+  - CRM records need cleanup, deduping notes, field updates, or task creation.
+when_not_to_use:
+  - A trusted import or migration process already owns the cleanup.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: crm_scope
+    name: CRM Scope
+    type: object
+    required: false
+  - key: hygiene_policy
+    name: Hygiene Policy
+    type: object
+    required: false
+context_requirements:
+  - id: crm_records
+    source: resources
+    purpose: Retrieve CRM-adjacent records and prior enrichment before deciding cleanup work.
+    filters:
+      plugin_slug: gtm
+      resource_keys:
+        - account
+        - company
+        - contact
+        - lead
+        - task
+        - enrichment-record
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 30
+    return_mode: compact
+  - id: hygiene_learnings
+    source: learnings
+    purpose: Pull reusable CRM hygiene lessons and known field conventions.
+    filters:
+      tags:
+        - gtm
+        - crm-hygiene
+      statuses:
+        - active
+    fields:
+      - statement
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+capability_requirements:
+  - key: crm-operations
+    required: true
+    preferred_providers:
+      - hubspot
+      - salesforce
+auth_requirements:
+  - key: hubspot
+    provider: hubspot
+    auth_type: oauth
+    optional: true
+  - key: salesforce
+    provider: salesforce
+    auth_type: oauth
+    optional: true
+action_contracts:
+  - key: hubspot_companies_batch_upsert
+    action: hubspot.crm.companies.batch_upsert
+    capability: crm-operations
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: crm_update_review
+  - key: hubspot_contacts_batch_upsert
+    action: hubspot.crm.contacts.batch_upsert
+    capability: crm-operations
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: crm_update_review
+  - key: hubspot_note_create
+    action: hubspot.crm.notes.create
+    capability: crm-operations
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: crm_update_review
+  - key: hubspot_task_create
+    action: hubspot.crm.tasks.create
+    capability: crm-operations
+    provider: hubspot
+    risk_level: write
+    auth_ref: hubspot
+    approval_ref: crm_update_review
+  - key: salesforce_account_upsert_by_external_id
+    action: salesforce.account.upsert_by_external_id
+    capability: crm-operations
+    provider: salesforce
+    risk_level: write
+    auth_ref: salesforce
+    approval_ref: crm_update_review
+  - key: salesforce_contact_upsert_by_external_id
+    action: salesforce.contact.upsert_by_external_id
+    capability: crm-operations
+    provider: salesforce
+    risk_level: write
+    auth_ref: salesforce
+    approval_ref: crm_update_review
+  - key: salesforce_task_create
+    action: salesforce.task.create
+    capability: crm-operations
+    provider: salesforce
+    risk_level: write
+    auth_ref: salesforce
+    approval_ref: crm_update_review
+resource_contracts:
+  - key: accounts
+    resource: account
+    purpose: Store cleaned account records and review notes.
+  - key: companies
+    resource: company
+    purpose: Store cleaned company records and mapping notes.
+  - key: contacts
+    resource: contact
+    purpose: Store cleaned contact records and consent/status notes.
+  - key: leads
+    resource: lead
+    purpose: Store lead cleanup notes and qualification state.
+  - key: tasks
+    resource: task
+    purpose: Store follow-up tasks created or recommended by the pass.
+policies:
+  - key: review_before_crm_mutation
+    kind: approval
+    description: CRM writes require review of fields, provenance, and expected side effects.
+  - key: no_secret_exposure
+    kind: auth
+    description: CRM credentials stay daemon-side.
+approval_gates:
+  - key: crm_update_review
+    description: Review CRM updates before any external write.
+    required_when: external_write
+steps:
+  - id: orient
+    title: Orient From CRM Context
+    purpose: Read scope, policy, stored records, and prior hygiene lessons.
+    input_refs:
+      - goal
+      - crm_scope
+      - hygiene_policy
+    context_refs:
+      - crm_records
+      - hygiene_learnings
+    output_refs:
+      - hygiene_plan
+  - id: prepare_cleanup
+    title: Prepare Cleanup
+    purpose: Identify field updates, notes, tasks, duplicates, and records requiring human review.
+    resource_refs:
+      - accounts
+      - companies
+      - contacts
+      - leads
+      - tasks
+    depends_on:
+      - orient
+    output_refs:
+      - hygiene_plan
+  - id: optional_apply_cleanup
+    title: Optional Apply Cleanup
+    purpose: Execute approved CRM write actions only when granted by the concrete run plan.
+    action_refs:
+      - hubspot_companies_batch_upsert
+      - hubspot_contacts_batch_upsert
+      - hubspot_note_create
+      - hubspot_task_create
+      - salesforce_account_upsert_by_external_id
+      - salesforce_contact_upsert_by_external_id
+      - salesforce_task_create
+    policy_refs:
+      - review_before_crm_mutation
+      - no_secret_exposure
+    approval_refs:
+      - crm_update_review
+    depends_on:
+      - prepare_cleanup
+    output_refs:
+      - hygiene_summary
+outputs:
+  - key: hygiene_plan
+    name: Hygiene Plan
+    type: object
+    required: true
+  - key: hygiene_summary
+    name: Hygiene Summary
+    type: object
+learning_hooks:
+  - key: crm_hygiene_learning
+    prompt: Capture reusable CRM hygiene lessons only with explicit field evidence and provenance.
+    tags:
+      - gtm
+      - crm-hygiene
+failure_handling:
+  - If approval is missing, store the hygiene plan without changing CRM state.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

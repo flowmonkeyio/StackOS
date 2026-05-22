@@ -85,6 +85,9 @@ capability_requirements:
     required: true
     preferred_providers:
       - meta-ads
+      - google-ads
+      - outbrain
+      - taboola
       - media-buying-webhook
 auth_requirements:
   - key: meta_ads
@@ -95,28 +98,79 @@ auth_requirements:
     provider: media-buying-webhook
     auth_type: api-key
     optional: true
+  - key: google_ads
+    provider: google-ads
+    auth_type: oauth
+    optional: true
+  - key: outbrain
+    provider: outbrain
+    auth_type: api-key
+    optional: true
+  - key: taboola
+    provider: taboola
+    auth_type: oauth
+    optional: true
 action_contracts:
   - key: meta_insights
-    action: meta.insight.fetch
+    action: meta.insights.fetch
     capability: media-measurement
     provider: meta-ads
     risk_level: read
     auth_ref: meta_ads
-  - key: meta_budget_update
-    action: meta.budget.update
+  - key: meta_campaign_budget_update
+    action: meta.campaign_budget.update
     capability: campaign-management
     provider: meta-ads
     risk_level: write
     auth_ref: meta_ads
     approval_ref: budget_change_review
-  - key: webhook_performance
-    action: webhook.performance.fetch
+  - key: meta_ad_set_budget_update
+    action: meta.ad_set_budget.update
+    capability: campaign-management
+    provider: meta-ads
+    risk_level: write
+    auth_ref: meta_ads
+    approval_ref: budget_change_review
+  - key: google_report_search
+    action: google.report.search
+    capability: media-measurement
+    provider: google-ads
+    risk_level: read
+    auth_ref: google_ads
+  - key: google_campaign_budget_update
+    action: google.campaign_budget.update
+    capability: campaign-management
+    provider: google-ads
+    risk_level: write
+    auth_ref: google_ads
+    approval_ref: budget_change_review
+  - key: outbrain_report
+    action: outbrain.report.fetch
+    capability: media-measurement
+    provider: outbrain
+    risk_level: read
+    auth_ref: outbrain
+  - key: outbrain_budget_update
+    action: outbrain.budget.update
+    capability: campaign-management
+    provider: outbrain
+    risk_level: write
+    auth_ref: outbrain
+    approval_ref: budget_change_review
+  - key: taboola_report
+    action: taboola.report.fetch
+    capability: media-measurement
+    provider: taboola
+    risk_level: read
+    auth_ref: taboola
+  - key: webhook_media_performance
+    action: webhook.media_performance.fetch
     capability: media-measurement
     provider: media-buying-webhook
     risk_level: read
     auth_ref: media_webhook
-  - key: webhook_budget_update
-    action: webhook.budget.update
+  - key: webhook_media_budget_update
+    action: webhook.media_budget.update
     capability: campaign-management
     provider: media-buying-webhook
     risk_level: write
@@ -168,7 +222,10 @@ steps:
     purpose: Use granted read actions only when stored evidence is insufficient.
     action_refs:
       - meta_insights
-      - webhook_performance
+      - google_report_search
+      - outbrain_report
+      - taboola_report
+      - webhook_media_performance
     policy_refs:
       - no_secret_exposure
     depends_on:
@@ -191,8 +248,11 @@ steps:
     title: Optional Apply Changes
     purpose: Execute approved budget update actions only when granted by the concrete run plan.
     action_refs:
-      - meta_budget_update
-      - webhook_budget_update
+      - meta_campaign_budget_update
+      - meta_ad_set_budget_update
+      - google_campaign_budget_update
+      - outbrain_budget_update
+      - webhook_media_budget_update
     resource_refs:
       - budget_changes
     policy_refs:

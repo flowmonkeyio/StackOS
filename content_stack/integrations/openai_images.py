@@ -37,7 +37,9 @@ class OpenAIImagesIntegration(BaseIntegration):
 
     BASE_URL = "https://api.openai.com/v1"
 
-    # Per-image USD cost (rough guardrail only; reconcile with OpenAI billing).
+    # Official refs: https://platform.openai.com/docs/api-reference/images and
+    # https://platform.openai.com/docs/models/gpt-image-1.5. Keep this rough
+    # guardrail in sync with pricing audits; OpenAI billing remains canonical.
     _IMAGE_COSTS: ClassVar[dict[tuple[str, str], float]] = {
         ("1024x1024", "low"): 0.02,
         ("1024x1024", "medium"): 0.04,
@@ -107,6 +109,8 @@ class OpenAIImagesIntegration(BaseIntegration):
             "n": n,
             "model": model,
         }
+        # DALL-E keeps legacy size/quality names while GPT Image models use
+        # low/medium/high quality and output_format.
         if model in self._DALL_E_MODELS:
             body["size"] = _dalle_size(size)
             body["quality"] = _dalle_quality(quality)

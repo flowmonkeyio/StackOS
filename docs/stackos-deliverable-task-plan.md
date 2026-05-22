@@ -81,7 +81,8 @@ Work:
   actions, and workflow templates. Current state: first contract-only scaffold
   is in place; provider connectors remain a separate delivery.
 - Add a minimal GTM plugin manifest with providers, resources, actions, and
-  workflow templates.
+  workflow templates. Current state: first contract-only scaffold is in place;
+  provider connectors remain a separate delivery.
 - Keep utility actions available across domains.
 - Add catalog and UI tests proving generic renderers handle the new domains.
 

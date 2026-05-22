@@ -25,6 +25,11 @@ class WordPressIntegration(BaseIntegration):
     vendor = "wordpress"
     default_qps = 2.0
 
+    # Official refs:
+    # https://developer.wordpress.org/rest-api/using-the-rest-api/authentication/
+    # https://developer.wordpress.org/rest-api/reference/application-passwords/
+    # https://developer.wordpress.org/rest-api/reference/posts/
+
     def __init__(self, *, site_url: str | None = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._site_url = (site_url or "").rstrip("/")
@@ -90,6 +95,8 @@ class WordPressIntegration(BaseIntegration):
 
     async def create_post(self, *, post: dict[str, Any]) -> IntegrationCallResult:
         """Create a post from an explicit WordPress REST payload."""
+        # TODO: surface create_posts capability in setup checks before templates
+        # promise publish flows beyond this single create-post action.
         return await self.call(
             op="post.create",
             method="POST",

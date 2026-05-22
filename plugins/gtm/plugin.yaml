@@ -1,0 +1,879 @@
+slug: gtm
+name: GTM And RevOps
+version: 0.1.0
+description: First-party StackOS domain package for go-to-market and RevOps provider contracts, resource schemas, and reusable workflow templates.
+source: builtin
+capabilities:
+  - key: account-research
+    name: Account Research
+    description: Store account, company, contact, and market context for go-to-market workflows.
+    kind: domain
+  - key: lead-management
+    name: Lead Management
+    description: Import, score, enrich, and qualify leads from explicit agent inputs.
+    kind: domain
+  - key: crm-operations
+    name: CRM Operations
+    description: Upsert CRM records, create notes, and create tasks from explicit agent inputs.
+    kind: domain
+  - key: outbound-operations
+    name: Outbound Operations
+    description: Prepare sequences, touches, and follow-up records without deciding messaging strategy inside tools.
+    kind: domain
+  - key: pipeline-management
+    name: Pipeline Management
+    description: Read and store pipeline snapshots, deal risks, and follow-up recommendations.
+    kind: domain
+  - key: enrichment
+    name: Enrichment
+    description: Run enrichment contracts through configured providers and store normalized records.
+    kind: domain
+providers:
+  - key: hubspot
+    name: HubSpot
+    description: HubSpot CRM provider contract for companies, contacts, notes, tasks, and pipeline reads.
+    auth_type: oauth
+    config:
+      setup_fields:
+        - key: portal_ref
+          label: Portal Ref
+          type: text
+          required: false
+          placeholder: safe portal reference
+        - key: scope_policy_ref
+          label: Scope Policy Ref
+          type: text
+          required: false
+          placeholder: safe scope policy reference
+        - key: field_mapping_ref
+          label: Field Mapping Ref
+          type: text
+          required: false
+          placeholder: safe CRM property mapping reference
+  - key: salesforce
+    name: Salesforce
+    description: Salesforce provider contract for accounts, leads, contacts, opportunities, notes, tasks, and pipeline reads.
+    auth_type: oauth
+    config:
+      setup_fields:
+        - key: org_ref
+          label: Org Ref
+          type: text
+          required: false
+          placeholder: safe org reference
+        - key: environment_ref
+          label: Environment Ref
+          type: text
+          required: false
+          placeholder: production or sandbox reference
+        - key: instance_ref
+          label: Instance Ref
+          type: text
+          required: false
+          placeholder: safe instance or My Domain reference
+        - key: api_version_ref
+          label: API Version Ref
+          type: text
+          required: false
+          placeholder: safe API version policy reference
+        - key: external_id_policy_ref
+          label: External ID Policy Ref
+          type: text
+          required: false
+          placeholder: safe external ID mapping reference
+  - key: pipedrive
+    name: Pipedrive
+    description: Pipedrive CRM provider contract for organizations, people, deals, activities, and notes.
+    auth_type: oauth
+    config:
+      setup_fields:
+        - key: company_ref
+          label: Company Ref
+          type: text
+          required: false
+          placeholder: safe company reference
+        - key: account_ref
+          label: Account Ref
+          type: text
+          required: false
+          placeholder: safe Pipedrive account reference
+        - key: field_mapping_ref
+          label: Field Mapping Ref
+          type: text
+          required: false
+          placeholder: safe custom field mapping reference
+  - key: apollo
+    name: Apollo
+    description: Apollo provider contract for people search and endpoint-specific enrichment.
+    auth_type: api-key
+    config:
+      setup_fields:
+        - key: workspace_ref
+          label: Workspace Ref
+          type: text
+          required: false
+          placeholder: safe workspace reference
+        - key: credit_budget_ref
+          label: Credit Budget Ref
+          type: text
+          required: false
+          placeholder: safe enrichment credit budget reference
+        - key: api_plan_ref
+          label: API Plan Ref
+          type: text
+          required: false
+          placeholder: safe API plan reference
+  - key: clay
+    name: Clay
+    description: Clay enrichment and workflow provider contract.
+    auth_type: api-key
+    config:
+      setup_fields:
+        - key: workspace_ref
+          label: Workspace Ref
+          type: text
+          required: false
+          placeholder: safe workspace reference
+  - key: clearbit-by-hubspot
+    name: Clearbit By HubSpot
+    description: Clearbit by HubSpot enrichment provider contract.
+    auth_type: api-key
+    config:
+      setup_fields:
+        - key: hubspot_portal_ref
+          label: HubSpot Portal Ref
+          type: text
+          required: false
+          placeholder: safe portal reference
+        - key: credit_budget_ref
+          label: Credit Budget Ref
+          type: text
+          required: false
+          placeholder: safe enrichment credit budget reference
+        - key: field_mapping_ref
+          label: Field Mapping Ref
+          type: text
+          required: false
+          placeholder: safe enrichment field mapping reference
+  - key: outreach
+    name: Outreach
+    description: Outreach sequence provider contract.
+    auth_type: oauth
+    config:
+      setup_fields:
+        - key: instance_ref
+          label: Instance Ref
+          type: text
+          required: false
+          placeholder: safe instance reference
+        - key: oauth_app_ref
+          label: OAuth App Ref
+          type: text
+          required: false
+          placeholder: safe OAuth app reference
+        - key: scopes_ref
+          label: Scopes Ref
+          type: text
+          required: false
+          placeholder: safe scope set reference
+        - key: mailbox_policy_ref
+          label: Mailbox Policy Ref
+          type: text
+          required: false
+          placeholder: safe mailbox policy reference
+  - key: salesloft
+    name: Salesloft
+    description: Salesloft cadence provider contract.
+    auth_type: oauth
+    config:
+      setup_fields:
+        - key: instance_ref
+          label: Instance Ref
+          type: text
+          required: false
+          placeholder: safe instance reference
+        - key: oauth_app_ref
+          label: OAuth App Ref
+          type: text
+          required: false
+          placeholder: safe OAuth app reference
+        - key: scopes_ref
+          label: Scopes Ref
+          type: text
+          required: false
+          placeholder: safe scope set reference
+        - key: cadence_policy_ref
+          label: Cadence Policy Ref
+          type: text
+          required: false
+          placeholder: safe cadence policy reference
+  - key: google-workspace
+    name: Google Workspace
+    description: Gmail send and Google Calendar event provider contract.
+    auth_type: oauth
+    config:
+      setup_fields:
+        - key: workspace_ref
+          label: Workspace Ref
+          type: text
+          required: false
+          placeholder: safe workspace reference
+        - key: send_policy_ref
+          label: Send Policy Ref
+          type: text
+          required: false
+          placeholder: safe send policy reference
+  - key: microsoft-365
+    name: Microsoft 365
+    description: Microsoft Graph mail send and calendar event provider contract.
+    auth_type: oauth
+    config:
+      setup_fields:
+        - key: tenant_ref
+          label: Tenant Ref
+          type: text
+          required: false
+          placeholder: safe tenant reference
+        - key: permission_mode_ref
+          label: Permission Mode Ref
+          type: text
+          required: false
+          placeholder: delegated or application permission reference
+  - key: gtm-webhook
+    name: GTM Webhook
+    description: User-owned GTM or RevOps tooling exposed through project-local static HTTP actions.
+    auth_type: api-key
+    config:
+      setup_fields:
+        - key: tool_owner
+          label: Tool Owner
+          type: text
+          required: false
+          placeholder: team or system name
+actions:
+  - key: hubspot.crm.companies.batch_upsert
+    name: Batch Upsert HubSpot Companies
+    description: Batch upsert HubSpot companies using an approved id_property and explicit input rows.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: write
+    input_schema: &company_upsert_input
+      type: object
+      additionalProperties: false
+      required:
+        - id_property
+        - inputs
+      properties:
+        id_property:
+          type: string
+        inputs:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - properties
+            properties:
+              properties:
+                type: object
+                additionalProperties: true
+              account_ref:
+                type: string
+              provenance:
+                type: object
+                additionalProperties: true
+    output_schema: &object_schema
+      type: object
+      additionalProperties: true
+    config: &contract_only_config
+      schema_version: stackos.action.v1
+      execution_mode: contract-only
+  - key: hubspot.crm.contacts.batch_upsert
+    name: Batch Upsert HubSpot Contacts
+    description: Batch upsert HubSpot contacts using email or an approved unique property.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: write
+    input_schema: &contact_upsert_input
+      type: object
+      additionalProperties: false
+      required:
+        - id_property
+        - inputs
+      properties:
+        id_property:
+          type: string
+        inputs:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - properties
+            properties:
+              properties:
+                type: object
+                additionalProperties: true
+              email_ref:
+                type: string
+              company_ref:
+                type: string
+              provenance:
+                type: object
+                additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: hubspot.crm.notes.create
+    name: Create HubSpot CRM Note
+    description: Create a HubSpot note from explicit note content and safe record refs.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: write
+    input_schema: &note_input
+      type: object
+      additionalProperties: false
+      required:
+        - note
+      properties:
+        note:
+          type: object
+          additionalProperties: true
+          required:
+            - body
+          properties:
+            body:
+              type: string
+            record_refs:
+              type: array
+              items:
+                type: string
+            tags:
+              type: array
+              items:
+                type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: hubspot.crm.tasks.create
+    name: Create HubSpot Task
+    description: Create a HubSpot task from explicit task input.
+    provider: hubspot
+    capability: crm-operations
+    risk_level: write
+    input_schema: &task_input
+      type: object
+      additionalProperties: false
+      required:
+        - task
+      properties:
+        task:
+          type: object
+          additionalProperties: true
+          required:
+            - title
+          properties:
+            title:
+              type: string
+            due_at:
+              type: string
+            owner_ref:
+              type: string
+            record_refs:
+              type: array
+              items:
+                type: string
+            instructions:
+              type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: hubspot.crm.deals.search
+    name: Search HubSpot Deals
+    description: Search bounded HubSpot deal records for an agent-selected scope.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: &pipeline_fetch_input
+      type: object
+      additionalProperties: false
+      properties:
+        scope:
+          type: object
+          additionalProperties: true
+        fields:
+          type: array
+          items:
+            type: string
+        limit:
+          type: integer
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: hubspot.crm.deals.list
+    name: List HubSpot Deals
+    description: List bounded HubSpot deal records for an agent-selected scope.
+    provider: hubspot
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *pipeline_fetch_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: salesforce.account.upsert_by_external_id
+    name: Upsert Salesforce Account By External ID
+    description: Upsert a Salesforce Account using an approved external ID field and safe refs.
+    provider: salesforce
+    capability: crm-operations
+    risk_level: write
+    input_schema: &account_upsert_input
+      type: object
+      additionalProperties: false
+      required:
+        - external_id_policy_ref
+        - account
+        - update_only
+      properties:
+        external_id_policy_ref:
+          type: string
+        account:
+          type: object
+          additionalProperties: true
+          required:
+            - properties
+          properties:
+            properties:
+              type: object
+              additionalProperties: true
+            provenance:
+              type: object
+              additionalProperties: true
+        update_only:
+          type: boolean
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: salesforce.lead.upsert_by_external_id
+    name: Upsert Salesforce Lead By External ID
+    description: Upsert a Salesforce Lead using an approved external ID field and safe refs.
+    provider: salesforce
+    capability: lead-management
+    risk_level: write
+    input_schema: &salesforce_lead_upsert_input
+      type: object
+      additionalProperties: false
+      required:
+        - external_id_policy_ref
+        - lead
+        - update_only
+      properties:
+        external_id_policy_ref:
+          type: string
+        lead:
+          type: object
+          additionalProperties: true
+          required:
+            - properties
+          properties:
+            properties:
+              type: object
+              additionalProperties: true
+            provenance:
+              type: object
+              additionalProperties: true
+        update_only:
+          type: boolean
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: apollo.people.search
+    name: Search Apollo People
+    description: Search Apollo people from explicit criteria and source refs.
+    provider: apollo
+    capability: lead-management
+    risk_level: cost
+    input_schema: &lead_import_input
+      type: object
+      additionalProperties: false
+      required:
+        - leads
+      properties:
+        leads:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        source_ref:
+          type: string
+        scoring:
+          type: object
+          additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: salesforce.contact.upsert_by_external_id
+    name: Upsert Salesforce Contact By External ID
+    description: Upsert a Salesforce Contact using an approved external ID field and safe refs.
+    provider: salesforce
+    capability: crm-operations
+    risk_level: write
+    input_schema: &salesforce_contact_upsert_input
+      type: object
+      additionalProperties: false
+      required:
+        - external_id_policy_ref
+        - contact
+        - update_only
+      properties:
+        external_id_policy_ref:
+          type: string
+        contact:
+          type: object
+          additionalProperties: true
+          required:
+            - properties
+          properties:
+            properties:
+              type: object
+              additionalProperties: true
+            provenance:
+              type: object
+              additionalProperties: true
+        update_only:
+          type: boolean
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: salesforce.task.create
+    name: Create Salesforce Task
+    description: Create a Salesforce task from explicit task input.
+    provider: salesforce
+    capability: crm-operations
+    risk_level: write
+    input_schema: *task_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: salesforce.opportunities.query
+    name: Query Salesforce Opportunities
+    description: Query bounded Salesforce Opportunity records through allowlisted query templates.
+    provider: salesforce
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *pipeline_fetch_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: pipedrive.deals.list
+    name: List Pipedrive Deals
+    description: List bounded Pipedrive deal context for pipeline review.
+    provider: pipedrive
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *pipeline_fetch_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: pipedrive.deals.search
+    name: Search Pipedrive Deals
+    description: Search bounded Pipedrive deal context for pipeline review.
+    provider: pipedrive
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *pipeline_fetch_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: apollo.people.enrich
+    name: Enrich Apollo Person
+    description: Run Apollo person enrichment for explicit contact or lead refs.
+    provider: apollo
+    capability: enrichment
+    risk_level: cost
+    input_schema: &enrichment_input
+      type: object
+      additionalProperties: false
+      required:
+        - records
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        fields:
+          type: array
+          items:
+            type: string
+        purpose:
+          type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: apollo.people.bulk_enrich
+    name: Bulk Enrich Apollo People
+    description: Run Apollo bulk person enrichment for explicit contact or lead refs.
+    provider: apollo
+    capability: enrichment
+    risk_level: cost
+    input_schema: *enrichment_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: apollo.organization.enrich
+    name: Enrich Apollo Organization
+    description: Run Apollo organization enrichment for explicit company or account refs.
+    provider: apollo
+    capability: enrichment
+    risk_level: cost
+    input_schema: *enrichment_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: apollo.organization.bulk_enrich
+    name: Bulk Enrich Apollo Organizations
+    description: Run Apollo bulk organization enrichment for explicit company or account refs.
+    provider: apollo
+    capability: enrichment
+    risk_level: cost
+    input_schema: *enrichment_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: clay.table.webhook.submit
+    name: Submit Clay Table Webhook
+    description: Submit explicit rows to a Clay table webhook contract for asynchronous enrichment.
+    provider: clay
+    capability: enrichment
+    risk_level: cost
+    input_schema: *enrichment_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: clay.workflow.result.ingest
+    name: Ingest Clay Workflow Result
+    description: Ingest asynchronous Clay workflow results into StackOS enrichment records.
+    provider: clay
+    capability: enrichment
+    risk_level: write
+    input_schema: *enrichment_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: clearbit-by-hubspot.enrichment.run
+    name: Run Clearbit By HubSpot Enrichment
+    description: Run Clearbit by HubSpot enrichment for explicit company or contact refs.
+    provider: clearbit-by-hubspot
+    capability: enrichment
+    risk_level: cost
+    input_schema: *enrichment_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: outreach.sequence_state.create
+    name: Create Outreach Sequence State
+    description: Create an Outreach sequence state linking an approved prospect, sequence, and mailbox.
+    provider: outreach
+    capability: outbound-operations
+    risk_level: write
+    input_schema: &outreach_sequence_state_input
+      type: object
+      additionalProperties: false
+      required:
+        - sequence_ref
+        - prospect_ref
+        - mailbox_ref
+      properties:
+        sequence_ref:
+          type: string
+        prospect_ref:
+          type: string
+        mailbox_ref:
+          type: string
+        schedule_ref:
+          type: string
+        provenance:
+          type: object
+          additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: salesloft.cadence_membership.create
+    name: Create Salesloft Cadence Membership
+    description: Add an explicit person to a Salesloft cadence after approval.
+    provider: salesloft
+    capability: outbound-operations
+    risk_level: write
+    input_schema: &salesloft_cadence_membership_input
+      type: object
+      additionalProperties: false
+      required:
+        - cadence_ref
+        - person_ref
+      properties:
+        cadence_ref:
+          type: string
+        person_ref:
+          type: string
+        user_ref:
+          type: string
+        schedule:
+          type: object
+          additionalProperties: true
+        notes:
+          type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google-workspace.gmail.message.send
+    name: Send Google Workspace Gmail Message
+    description: Send an approved Gmail message from explicit mail input and safe refs.
+    provider: google-workspace
+    capability: outbound-operations
+    risk_level: write
+    input_schema: &touchpoint_input
+      type: object
+      additionalProperties: false
+      required:
+        - touchpoint
+      properties:
+        touchpoint:
+          type: object
+          additionalProperties: true
+          required:
+            - kind
+          properties:
+            kind:
+              type: string
+            subject:
+              type: string
+            body_ref:
+              type: string
+            participant_refs:
+              type: array
+              items:
+                type: string
+            occurred_at:
+              type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: google-workspace.calendar.event.create
+    name: Create Google Workspace Calendar Event
+    description: Create an approved Google Calendar event from explicit event input and safe refs.
+    provider: google-workspace
+    capability: outbound-operations
+    risk_level: write
+    input_schema: *touchpoint_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: microsoft-365.graph.mail.send
+    name: Send Microsoft Graph Mail
+    description: Submit an approved Microsoft Graph mail send from explicit mail input and safe refs.
+    provider: microsoft-365
+    capability: outbound-operations
+    risk_level: write
+    input_schema: *touchpoint_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: microsoft-365.graph.calendar.event.create
+    name: Create Microsoft Graph Calendar Event
+    description: Create an approved Microsoft Graph calendar event from explicit event input and safe refs.
+    provider: microsoft-365
+    capability: outbound-operations
+    risk_level: write
+    input_schema: *touchpoint_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: webhook.lead.import
+    name: Import Leads Through Webhook
+    description: Contract for user-owned GTM tooling. Project-local plugins should provide static HTTP connector config before execution.
+    provider: gtm-webhook
+    capability: lead-management
+    risk_level: write
+    input_schema: *lead_import_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: webhook.enrichment.run
+    name: Run Enrichment Through Webhook
+    description: Contract for user-owned enrichment tooling exposed through project-local static HTTP actions.
+    provider: gtm-webhook
+    capability: enrichment
+    risk_level: cost
+    input_schema: *enrichment_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: webhook.sequence.add
+    name: Add Sequence Through Webhook
+    description: Contract for user-owned outbound tooling exposed through project-local static HTTP actions.
+    provider: gtm-webhook
+    capability: outbound-operations
+    risk_level: write
+    input_schema: &webhook_sequence_input
+      type: object
+      additionalProperties: false
+      required:
+        - sequence_ref
+        - participant_refs
+      properties:
+        sequence_ref:
+          type: string
+        participant_refs:
+          type: array
+          items:
+            type: string
+        send_policy_ref:
+          type: string
+        notes:
+          type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: webhook.pipeline.fetch
+    name: Fetch Pipeline Through Webhook
+    description: Contract for user-owned reporting tools exposed through project-local static HTTP actions.
+    provider: gtm-webhook
+    capability: pipeline-management
+    risk_level: read
+    input_schema: *pipeline_fetch_input
+    output_schema: *object_schema
+    config: *contract_only_config
+resources:
+  - key: account
+    name: Account
+    description: Target account record, safe external refs, ownership, and research summary.
+    schema: *object_schema
+  - key: company
+    name: Company
+    description: Company profile, firmographics, source refs, and CRM mapping notes.
+    schema: *object_schema
+  - key: contact
+    name: Contact
+    description: Contact profile, role context, source refs, consent notes, and CRM mapping notes.
+    schema: *object_schema
+  - key: lead
+    name: Lead
+    description: Lead record, qualification notes, score, source refs, and status.
+    schema: *object_schema
+  - key: opportunity
+    name: Opportunity
+    description: Opportunity or deal reference with stage, amount range, risk notes, and next steps.
+    schema: *object_schema
+  - key: deal
+    name: Deal
+    description: CRM deal record or safe deal summary for pipeline analysis.
+    schema: *object_schema
+  - key: sequence
+    name: Sequence
+    description: Outbound sequence or cadence plan with audience, copy refs, and approval state.
+    schema: *object_schema
+  - key: task
+    name: Task
+    description: Follow-up task, owner ref, due date, and related record refs.
+    schema: *object_schema
+  - key: touchpoint
+    name: Touchpoint
+    description: Email, call, meeting, social, or other interaction record.
+    schema: *object_schema
+  - key: enrichment-record
+    name: Enrichment Record
+    description: Normalized enrichment result, provenance, confidence, and fields updated.
+    schema: *object_schema
+  - key: pipeline-snapshot
+    name: Pipeline Snapshot
+    description: Imported or summarized pipeline metrics, stage movement, risk, and forecast notes.
+    schema: *object_schema
+ui:
+  nav:
+    section: GTM
+    items:
+      - key: gtm.resources
+        label: GTM Resources
+        to: resources?plugin_slug=gtm
+        matchPrefix: true
+      - key: gtm.templates
+        label: GTM Templates
+        to: workflow-templates?plugin_slug=gtm
+config:
+  schema_version: stackos.plugin.v1
+  provider_connectors:
+    status: planned
+    note: GTM and RevOps provider connectors are intentionally not configured until real daemon adapters exist.

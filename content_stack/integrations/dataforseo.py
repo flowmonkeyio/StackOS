@@ -36,6 +36,9 @@ class DataForSeoIntegration(BaseIntegration):
 
     kind = "dataforseo"
     vendor = "dataforseo"
+    # Official rate note: Google Ads Live endpoints allow 12 requests/minute;
+    # see https://docs.dataforseo.com/v3/keywords_data-google_ads-overview/.
+    # TODO: add endpoint-specific throttles before expanding batch actions.
     default_qps = 5.0
 
     BASE_URL = "https://api.dataforseo.com/v3"
@@ -104,6 +107,7 @@ class DataForSeoIntegration(BaseIntegration):
 
         Returns the raw DataForSEO ``tasks_post`` response body.
         """
+        # Endpoint ref: https://docs.dataforseo.com/v3/serp-se-type-live-advanced/
         payload = [
             {
                 "keyword": keyword,
@@ -128,6 +132,9 @@ class DataForSeoIntegration(BaseIntegration):
         language: str = "en",
     ) -> IntegrationCallResult:
         """Monthly search volume + CPC for a keyword list."""
+        # Endpoint ref:
+        # https://docs.dataforseo.com/v3/keywords_data-google_ads-search_volume-live/
+        # Docs cap Google Ads Live search-volume tasks at 1000 keywords/request.
         payload = [
             {
                 "keywords": keywords,
@@ -151,6 +158,8 @@ class DataForSeoIntegration(BaseIntegration):
         language: str = "en",
     ) -> IntegrationCallResult:
         """Keyword intersection across competitor domains."""
+        # Endpoint ref:
+        # https://docs.dataforseo.com/v3/dataforseo_labs-google-domain_intersection-live/
         if len(domains) != 2:
             raise ValueError("DataForSEO domain_intersection expects exactly two domains")
         payload = [
@@ -177,6 +186,8 @@ class DataForSeoIntegration(BaseIntegration):
         language: str = "en",
     ) -> IntegrationCallResult:
         """All keywords ranking for ``target`` domain."""
+        # Endpoint ref:
+        # https://docs.dataforseo.com/v3/dataforseo_labs-google-keywords_for_site-live/
         payload = [
             {
                 "target": target,
@@ -200,6 +211,7 @@ class DataForSeoIntegration(BaseIntegration):
         language: str = "en",
     ) -> IntegrationCallResult:
         """People-Also-Ask boxes for ``keyword``."""
+        # Uses the same live advanced SERP endpoint as serp().
         payload = [
             {
                 "keyword": keyword,

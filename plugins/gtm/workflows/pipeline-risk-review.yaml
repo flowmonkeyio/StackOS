@@ -1,0 +1,222 @@
+schema_version: stackos.workflow-template.v1
+key: gtm.pipeline-risk-review
+name: GTM Pipeline Risk Review
+version: 0.1.0
+description: Reusable template for reviewing pipeline snapshots, opportunity risks, tasks, and follow-up recommendations.
+domain: gtm
+owner:
+  team: StackOS
+when_to_use:
+  - A pipeline, segment, opportunity set, or forecast needs a bounded risk review.
+when_not_to_use:
+  - The operator already approved CRM updates and only needs mutation.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: review_scope
+    name: Review Scope
+    type: object
+    required: false
+  - key: metric_targets
+    name: Metric Targets
+    type: object
+    required: false
+context_requirements:
+  - id: pipeline_context
+    source: resources
+    purpose: Retrieve pipeline snapshots, opportunities, deals, accounts, touchpoints, and tasks.
+    filters:
+      plugin_slug: gtm
+      resource_keys:
+        - pipeline-snapshot
+        - opportunity
+        - deal
+        - account
+        - touchpoint
+        - task
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 30
+    return_mode: compact
+  - id: pipeline_learnings
+    source: learnings
+    purpose: Pull prior pipeline and deal-risk lessons before interpreting evidence.
+    filters:
+      tags:
+        - gtm
+        - pipeline
+      statuses:
+        - active
+    fields:
+      - statement
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+  - id: recent_decisions
+    source: decisions
+    purpose: Read prior pipeline decisions and forecasting constraints.
+    filters:
+      tags:
+        - gtm
+        - pipeline
+    fields:
+      - title
+      - decision
+      - rationale
+      - status
+      - tags
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: pipeline-management
+    required: true
+    preferred_providers:
+      - hubspot
+      - salesforce
+      - pipedrive
+      - gtm-webhook
+auth_requirements:
+  - key: hubspot
+    provider: hubspot
+    auth_type: oauth
+    optional: true
+  - key: salesforce
+    provider: salesforce
+    auth_type: oauth
+    optional: true
+  - key: pipedrive
+    provider: pipedrive
+    auth_type: oauth
+    optional: true
+  - key: gtm_webhook
+    provider: gtm-webhook
+    auth_type: api-key
+    optional: true
+action_contracts:
+  - key: hubspot_pipeline_fetch
+    action: hubspot.crm.deals.search
+    capability: pipeline-management
+    provider: hubspot
+    risk_level: read
+    auth_ref: hubspot
+  - key: salesforce_pipeline_fetch
+    action: salesforce.opportunities.query
+    capability: pipeline-management
+    provider: salesforce
+    risk_level: read
+    auth_ref: salesforce
+  - key: pipedrive_deal_fetch
+    action: pipedrive.deals.list
+    capability: pipeline-management
+    provider: pipedrive
+    risk_level: read
+    auth_ref: pipedrive
+  - key: webhook_pipeline_fetch
+    action: webhook.pipeline.fetch
+    capability: pipeline-management
+    provider: gtm-webhook
+    risk_level: read
+    auth_ref: gtm_webhook
+resource_contracts:
+  - key: pipeline_snapshots
+    resource: pipeline-snapshot
+    purpose: Store imported or summarized pipeline evidence.
+  - key: opportunities
+    resource: opportunity
+    purpose: Store opportunity risk notes and follow-up state.
+  - key: deals
+    resource: deal
+    purpose: Store deal risk notes and safe CRM refs.
+  - key: tasks
+    resource: task
+    purpose: Store follow-up task recommendations.
+  - key: touchpoints
+    resource: touchpoint
+    purpose: Store recent activity context relevant to risk.
+policies:
+  - key: read_only_by_default
+    kind: execution
+    description: Pipeline review reads and records recommendations; CRM writes belong in a separate approved run.
+  - key: no_secret_exposure
+    kind: auth
+    description: Pipeline provider credentials stay daemon-side.
+approval_gates:
+  - key: cost_review
+    description: Review expected provider cost before high-volume pipeline reads.
+    required_when: estimated_cost_above_project_threshold
+steps:
+  - id: orient
+    title: Orient From Pipeline Context
+    purpose: Read review scope, targets, stored snapshots, learnings, and decisions.
+    input_refs:
+      - goal
+      - review_scope
+      - metric_targets
+    context_refs:
+      - pipeline_context
+      - pipeline_learnings
+      - recent_decisions
+    policy_refs:
+      - read_only_by_default
+    output_refs:
+      - risk_review
+  - id: fetch_metric_gaps
+    title: Fetch Metric Gaps
+    purpose: Use granted read actions only when stored pipeline evidence is insufficient.
+    action_refs:
+      - hubspot_pipeline_fetch
+      - salesforce_pipeline_fetch
+      - pipedrive_deal_fetch
+      - webhook_pipeline_fetch
+    policy_refs:
+      - no_secret_exposure
+    approval_refs:
+      - cost_review
+    depends_on:
+      - orient
+    output_refs:
+      - metric_gap_report
+  - id: diagnose_risks
+    title: Diagnose Risks
+    purpose: Separate likely stage, activity, account, deal, ownership, and timing risks.
+    resource_refs:
+      - pipeline_snapshots
+      - opportunities
+      - deals
+      - tasks
+      - touchpoints
+    depends_on:
+      - fetch_metric_gaps
+    output_refs:
+      - risk_review
+      - followup_plan
+outputs:
+  - key: risk_review
+    name: Risk Review
+    type: object
+    required: true
+  - key: metric_gap_report
+    name: Metric Gap Report
+    type: object
+  - key: followup_plan
+    name: Followup Plan
+    type: object
+learning_hooks:
+  - key: pipeline_learning
+    prompt: Capture reusable pipeline lessons only with explicit metric or activity evidence.
+    tags:
+      - gtm
+      - pipeline
+failure_handling:
+  - If provider reads are unavailable, diagnose from stored snapshots and list missing evidence.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

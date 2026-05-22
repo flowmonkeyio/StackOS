@@ -30,8 +30,10 @@ providers:
           placeholder: login@example.com
   - key: ahrefs
     name: Ahrefs
-    description: Organic keyword and backlink research provider.
+    description: Organic keyword and backlink research provider; requires eligible API access and API units.
     auth_type: api-key
+    config:
+      setup_note: Ahrefs API v3 usage consumes API units; confirm the plan, key limits, and remaining units before high-volume runs.
 actions:
   - key: keyword.research
     name: Research Keywords

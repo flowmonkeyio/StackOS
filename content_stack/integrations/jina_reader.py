@@ -25,6 +25,8 @@ class JinaReaderIntegration(BaseIntegration):
     vendor = "jina"
     default_qps = 5.0
 
+    # Official Reader ref: https://jina.ai/en-US/reader/. Auth is optional;
+    # a bearer key raises quota while unauthenticated calls use public limits.
     BASE_URL = "https://r.jina.ai"
 
     def __init__(self, **kwargs: Any) -> None:

@@ -1,0 +1,238 @@
+schema_version: stackos.workflow-template.v1
+key: gtm.outbound-sequence-preparation
+name: GTM Outbound Sequence Preparation
+version: 0.1.0
+description: Reusable template for preparing outbound sequences from reviewed leads, account context, approvals, and explicit sequence contracts.
+domain: gtm
+owner:
+  team: StackOS
+when_to_use:
+  - A reviewed lead or account set should be prepared for Outreach, Salesloft, or user-owned sequence tooling.
+when_not_to_use:
+  - The sequence and prospect list are already approved and only need execution.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: lead_refs
+    name: Lead Refs
+    type: array
+    required: false
+  - key: messaging_brief
+    name: Messaging Brief
+    type: object
+    required: false
+  - key: send_policy
+    name: Send Policy
+    type: object
+    required: false
+context_requirements:
+  - id: outbound_context
+    source: resources
+    purpose: Retrieve leads, contacts, companies, accounts, sequences, and touchpoints before preparing outreach.
+    filters:
+      plugin_slug: gtm
+      resource_keys:
+        - lead
+        - contact
+        - company
+        - account
+        - sequence
+        - touchpoint
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 30
+    return_mode: compact
+  - id: outbound_learnings
+    source: learnings
+    purpose: Pull durable outbound and messaging lessons before sequence preparation.
+    filters:
+      tags:
+        - gtm
+        - outbound
+      statuses:
+        - active
+    fields:
+      - statement
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+capability_requirements:
+  - key: outbound-operations
+    required: true
+    preferred_providers:
+      - outreach
+      - salesloft
+      - google-workspace
+      - microsoft-365
+      - gtm-webhook
+  - key: lead-management
+    required: true
+auth_requirements:
+  - key: outreach
+    provider: outreach
+    auth_type: oauth
+    optional: true
+  - key: salesloft
+    provider: salesloft
+    auth_type: oauth
+    optional: true
+  - key: google_workspace
+    provider: google-workspace
+    auth_type: oauth
+    optional: true
+  - key: microsoft_365
+    provider: microsoft-365
+    auth_type: oauth
+    optional: true
+  - key: gtm_webhook
+    provider: gtm-webhook
+    auth_type: api-key
+    optional: true
+action_contracts:
+  - key: outreach_sequence_state_create
+    action: outreach.sequence_state.create
+    capability: outbound-operations
+    provider: outreach
+    risk_level: write
+    auth_ref: outreach
+    approval_ref: sequence_review
+  - key: salesloft_cadence_membership_create
+    action: salesloft.cadence_membership.create
+    capability: outbound-operations
+    provider: salesloft
+    risk_level: write
+    auth_ref: salesloft
+    approval_ref: sequence_review
+  - key: webhook_sequence_add
+    action: webhook.sequence.add
+    capability: outbound-operations
+    provider: gtm-webhook
+    risk_level: write
+    auth_ref: gtm_webhook
+    approval_ref: sequence_review
+  - key: google_workspace_mail_send
+    action: google-workspace.gmail.message.send
+    capability: outbound-operations
+    provider: google-workspace
+    risk_level: write
+    auth_ref: google_workspace
+    approval_ref: sequence_review
+  - key: google_workspace_calendar_event_create
+    action: google-workspace.calendar.event.create
+    capability: outbound-operations
+    provider: google-workspace
+    risk_level: write
+    auth_ref: google_workspace
+    approval_ref: sequence_review
+  - key: microsoft_365_mail_send
+    action: microsoft-365.graph.mail.send
+    capability: outbound-operations
+    provider: microsoft-365
+    risk_level: write
+    auth_ref: microsoft_365
+    approval_ref: sequence_review
+  - key: microsoft_365_calendar_event_create
+    action: microsoft-365.graph.calendar.event.create
+    capability: outbound-operations
+    provider: microsoft-365
+    risk_level: write
+    auth_ref: microsoft_365
+    approval_ref: sequence_review
+resource_contracts:
+  - key: sequences
+    resource: sequence
+    purpose: Store sequence plans, audience, copy refs, approval state, and provider refs.
+  - key: leads
+    resource: lead
+    purpose: Store sequence readiness and disqualification notes.
+  - key: touchpoints
+    resource: touchpoint
+    purpose: Store planned or recorded touchpoints and provenance.
+policies:
+  - key: no_secret_exposure
+    kind: auth
+    description: Sequence provider credentials stay daemon-side.
+  - key: review_before_sequence_mutation
+    kind: approval
+    description: External sequence, mail, or calendar mutation requires review of audience, copy refs, and send policy.
+  - key: agent_owns_messaging
+    kind: boundary
+    description: StackOS stores sequence records and executes approved actions; the agent defines messaging and fit rationale.
+approval_gates:
+  - key: sequence_review
+    description: Review audience, messaging refs, send policy, and risk before external outbound mutation.
+    required_when: external_write
+steps:
+  - id: orient
+    title: Orient From Outbound Context
+    purpose: Read lead context, prior sequences, touchpoints, send policy, and outbound lessons.
+    input_refs:
+      - goal
+      - lead_refs
+      - messaging_brief
+      - send_policy
+    context_refs:
+      - outbound_context
+      - outbound_learnings
+    policy_refs:
+      - agent_owns_messaging
+    output_refs:
+      - sequence_plan
+  - id: prepare_sequence
+    title: Prepare Sequence
+    purpose: Prepare reviewed prospect groups, messaging refs, task needs, and approval notes.
+    resource_refs:
+      - sequences
+      - leads
+      - touchpoints
+    depends_on:
+      - orient
+    output_refs:
+      - sequence_plan
+  - id: optional_sequence_add
+    title: Optional Outbound Actions
+    purpose: Execute approved provider sequence, mail, or calendar actions only when granted by the concrete run plan.
+    action_refs:
+      - outreach_sequence_state_create
+      - salesloft_cadence_membership_create
+      - webhook_sequence_add
+      - google_workspace_mail_send
+      - google_workspace_calendar_event_create
+      - microsoft_365_mail_send
+      - microsoft_365_calendar_event_create
+    policy_refs:
+      - no_secret_exposure
+      - review_before_sequence_mutation
+    approval_refs:
+      - sequence_review
+    depends_on:
+      - prepare_sequence
+    output_refs:
+      - sequence_summary
+outputs:
+  - key: sequence_plan
+    name: Sequence Plan
+    type: object
+    required: true
+  - key: sequence_summary
+    name: Sequence Summary
+    type: object
+learning_hooks:
+  - key: outbound_learning
+    prompt: Capture reusable outbound lessons only after evidence or reviewed outcomes exist.
+    tags:
+      - gtm
+      - outbound
+failure_handling:
+  - If approval is missing, store the sequence plan without changing provider state.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

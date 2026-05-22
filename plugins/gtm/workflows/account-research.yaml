@@ -1,0 +1,208 @@
+schema_version: stackos.workflow-template.v1
+key: gtm.account-research
+name: GTM Account Research
+version: 0.1.0
+description: Reusable template for researching target accounts from bounded project context, stored GTM records, and optional web retrieval.
+domain: gtm
+owner:
+  team: StackOS
+when_to_use:
+  - A project needs account or company research before enrichment, outbound, CRM updates, or pipeline review.
+  - The agent should reuse prior account context and learnings before collecting more evidence.
+when_not_to_use:
+  - The target account set and reviewed context already exist.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: account_refs
+    name: Account Refs
+    type: array
+    required: false
+  - key: company_domains
+    name: Company Domains
+    type: array
+    required: false
+  - key: research_angle
+    name: Research Angle
+    type: string
+    required: false
+context_requirements:
+  - id: recent_gtm_records
+    source: resources
+    purpose: Reuse prior account, company, contact, lead, and touchpoint records.
+    filters:
+      plugin_slug: gtm
+      resource_keys:
+        - account
+        - company
+        - contact
+        - lead
+        - touchpoint
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 25
+    return_mode: compact
+  - id: accepted_gtm_learnings
+    source: learnings
+    purpose: Pull durable go-to-market lessons with evidence and provenance.
+    filters:
+      tags:
+        - gtm
+      statuses:
+        - active
+    fields:
+      - statement
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+  - id: recent_decisions
+    source: decisions
+    purpose: Read prior account selection or messaging decisions that constrain research.
+    filters:
+      tags:
+        - gtm
+    fields:
+      - title
+      - decision
+      - rationale
+      - status
+      - tags
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: account-research
+    required: true
+  - key: web-retrieval
+    required: false
+    preferred_providers:
+      - jina
+      - firecrawl
+auth_requirements:
+  - key: jina
+    provider: jina
+    auth_type: api-key
+    optional: true
+  - key: firecrawl
+    provider: firecrawl
+    auth_type: api-key
+    optional: true
+action_contracts:
+  - key: web_read
+    action: web.read
+    capability: web-retrieval
+    provider: jina
+    risk_level: read
+    auth_ref: jina
+  - key: web_scrape
+    action: web.scrape
+    capability: web-retrieval
+    provider: firecrawl
+    risk_level: read
+    auth_ref: firecrawl
+    approval_ref: cost_review
+resource_contracts:
+  - key: accounts
+    resource: account
+    purpose: Store target account records, safe refs, and account research notes.
+  - key: companies
+    resource: company
+    purpose: Store company profile evidence, firmographics, and provenance.
+  - key: contacts
+    resource: contact
+    purpose: Store contact context discovered during account research.
+  - key: web_documents
+    resource: web-document
+    purpose: Store retrieved source document refs when web retrieval is granted.
+policies:
+  - key: no_secret_exposure
+    kind: auth
+    description: Provider credentials stay daemon-side; agents see only provider keys and credential refs.
+  - key: agent_decides_research_angle
+    kind: boundary
+    description: StackOS retrieves and stores evidence; the agent chooses research direction and interpretation.
+approval_gates:
+  - key: cost_review
+    description: Review expected provider cost before high-volume retrieval.
+    required_when: estimated_cost_above_project_threshold
+steps:
+  - id: orient
+    title: Orient From Account History
+    purpose: Read existing records, learnings, decisions, and the current research goal.
+    input_refs:
+      - goal
+      - account_refs
+      - company_domains
+      - research_angle
+    context_refs:
+      - recent_gtm_records
+      - accepted_gtm_learnings
+      - recent_decisions
+    policy_refs:
+      - agent_decides_research_angle
+    output_refs:
+      - research_plan
+  - id: collect_evidence
+    title: Collect Evidence
+    purpose: Use granted retrieval actions only for evidence gaps the agent identifies.
+    action_refs:
+      - web_read
+      - web_scrape
+    resource_refs:
+      - web_documents
+    policy_refs:
+      - no_secret_exposure
+    approval_refs:
+      - cost_review
+    depends_on:
+      - orient
+    output_refs:
+      - evidence_summary
+  - id: store_research
+    title: Store Research
+    purpose: Persist reviewed account, company, and contact context with provenance.
+    resource_refs:
+      - accounts
+      - companies
+      - contacts
+      - web_documents
+    depends_on:
+      - collect_evidence
+    output_refs:
+      - account_research_summary
+  - id: capture_learning
+    title: Capture Learning
+    purpose: Record reusable GTM lessons only when evidence is explicit.
+    context_refs:
+      - accepted_gtm_learnings
+    depends_on:
+      - store_research
+outputs:
+  - key: research_plan
+    name: Research Plan
+    type: object
+  - key: evidence_summary
+    name: Evidence Summary
+    type: object
+  - key: account_research_summary
+    name: Account Research Summary
+    type: object
+    required: true
+learning_hooks:
+  - key: account_research_learning
+    prompt: Capture reusable account research lessons with evidence and provenance.
+    tags:
+      - gtm
+      - account-research
+failure_handling:
+  - If web retrieval is unavailable, work from stored records and list missing evidence.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

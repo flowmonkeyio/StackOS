@@ -66,6 +66,11 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
 
     listing = repo.list_templates(plugin_slug="core")
     described = repo.describe_template(key="core.project-memory-review")
+    gtm_listing = repo.list_templates(plugin_slug="gtm")
+    gtm_described = repo.describe_template(
+        key="gtm.account-research",
+        plugin_slug="gtm",
+    )
     media_listing = repo.list_templates(plugin_slug="media-buying")
     media_described = repo.describe_template(
         key="media-buying.campaign-launch",
@@ -76,6 +81,16 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert described.summary.source == "plugin"
     assert described.spec.context_requirements
     assert described.spec.steps[0].id == "clarify-goal"
+    assert [item.key for item in gtm_listing.templates] == [
+        "gtm.account-research",
+        "gtm.crm-hygiene-pass",
+        "gtm.lead-enrichment-scoring",
+        "gtm.outbound-sequence-preparation",
+        "gtm.pipeline-risk-review",
+    ]
+    assert gtm_described.summary.plugin_slug == "gtm"
+    assert gtm_described.spec.action_contracts[0].action == "web.read"
+    assert all("payload" not in step.model_dump_json() for step in gtm_described.spec.steps)
     assert [item.key for item in media_listing.templates] == [
         "media-buying.budget-reallocation-review",
         "media-buying.campaign-launch",

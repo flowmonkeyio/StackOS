@@ -30,6 +30,11 @@ _SECRET_HEADER_PARTS = {
     "token",
 }
 
+# Static plugin config follows RFC 9110 HTTP semantics. Auth credentials are
+# injected at execution using RFC 6750 bearer, RFC 7617 basic, or a configured
+# header; static headers reject secret-looking names so manifests stay secret-free.
+# TODO: return redacted RFC 9457-style error bodies once retry/audit semantics exist.
+
 
 def _issue(path: str, message: str, code: str = "validation_error") -> ActionValidationIssue:
     return ActionValidationIssue(path=path, message=message, code=code)

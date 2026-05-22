@@ -11,28 +11,32 @@ capabilities:
 providers:
   - key: wordpress
     name: WordPress
-    description: WordPress REST API publishing provider.
-    auth_type: api-key
+    description: WordPress REST API publishing provider using Application Passwords.
+    auth_type: application-password
     config:
+      credential_payload: JSON {"username":"...","application_password":"..."} or username:application-password.
+      setup_note: Use the HTTPS WordPress site root and a user with permission to create posts.
       setup_fields:
         - key: wp_url
-          label: Site URL
+          label: HTTPS Site URL
           type: url
           required: true
           placeholder: https://example.com
   - key: ghost
     name: Ghost
-    description: Ghost Admin API publishing provider.
-    auth_type: api-key
+    description: Ghost Admin API publishing provider using an Admin API key.
+    auth_type: admin-api-key
     config:
+      credential_payload: JSON {"admin_api_key":"id:hex_secret"} or id:hex_secret.
+      setup_note: Enter the Ghost site/admin domain root; the connector appends /ghost/api/admin/ paths and pins Accept-Version.
       setup_fields:
         - key: ghost_url
-          label: Admin URL
+          label: Site/Admin Root URL
           type: url
           required: true
           placeholder: https://example.com
         - key: api_version
-          label: API Version
+          label: Admin API Version
           type: text
           required: false
           placeholder: v5.0

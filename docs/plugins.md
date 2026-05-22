@@ -44,6 +44,7 @@ actions:
 ## Built-In Plugins
 
 - `core`: project memory, learnings, experiments, decisions, and shared context.
+- `gtm`: go-to-market and RevOps provider contracts, resources, and templates.
 - `media-buying`: paid media provider contracts, resources, and templates.
 - `publishing`: CMS publishing providers, post actions, and publication records.
 - `seo`: SEO content/search resources, providers, actions, and templates.

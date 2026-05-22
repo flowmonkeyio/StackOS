@@ -33,9 +33,15 @@ and opaque `credential_ref` values.
 Files:
 
 - `content_stack/plugins/manifest.py`
+- `plugins/gtm/plugin.yaml`
 - `plugins/media-buying/plugin.yaml`
 - `plugins/publishing/plugin.yaml`
 - `plugins/seo/plugin.yaml`
+- `plugins/gtm/workflows/account-research.yaml`
+- `plugins/gtm/workflows/lead-enrichment-scoring.yaml`
+- `plugins/gtm/workflows/outbound-sequence-preparation.yaml`
+- `plugins/gtm/workflows/crm-hygiene-pass.yaml`
+- `plugins/gtm/workflows/pipeline-risk-review.yaml`
 - `plugins/media-buying/workflows/campaign-launch.yaml`
 - `plugins/media-buying/workflows/creative-variant-generation.yaml`
 - `plugins/media-buying/workflows/performance-diagnosis.yaml`
@@ -51,6 +57,7 @@ Current built-in plugins:
 | --- | --- | --- |
 | `core` | Local daemon provider, catalog primitives, project data resources, project memory review template | Good generic foundation. |
 | `utils` | OpenAI Images, Firecrawl, Jina, Reddit providers; image generation, web retrieval, and community research actions | Core utility connectors are now executable through the generic action path. |
+| `gtm` | HubSpot, Salesforce, Pipedrive, Apollo, Clay, Clearbit, Outreach, Salesloft, Google Workspace, Microsoft 365, and internal GTM provider contracts; GTM resources; five reusable templates | Catalog and template layer is in place. Provider actions are contract-only until real connectors are built. |
 | `media-buying` | Meta Ads, Google Ads, Outbrain, Taboola, and internal campaign-tool provider contracts; paid media resources; five reusable templates | Catalog and template layer is in place. Provider actions are contract-only until real connectors are built. |
 | `publishing` | WordPress and Ghost providers, CMS publishing actions, and generic publishing resources | First post-create connector path is wired. Media/upload/update actions and templates are still needed. |
 | `seo` | DataForSEO and Ahrefs providers, SEO actions, SEO resource schemas, two SEO templates | First SEO connector path is wired, including PAA extraction through DataForSEO. More templates and richer provider actions are still needed. |
@@ -58,6 +65,11 @@ Current built-in plugins:
 Current templates are intentionally small and reusable, but the library is thin:
 
 - `core.project-memory-review`
+- `gtm.account-research`
+- `gtm.crm-hygiene-pass`
+- `gtm.lead-enrichment-scoring`
+- `gtm.outbound-sequence-preparation`
+- `gtm.pipeline-risk-review`
 - `media-buying.budget-reallocation-review`
 - `media-buying.campaign-launch`
 - `media-buying.creative-variant-generation`
@@ -306,11 +318,14 @@ Microsoft Ads, or a user's internal campaign tool.
 The clean model is provider-specific action refs with shared resource schemas:
 
 - `media-buying.meta.campaign.create`
-- `media-buying.meta.ad-set.create`
-- `media-buying.meta.creative.upload`
+- `media-buying.meta.ad_set.create`
+- `media-buying.meta.ad_creative.create`
+- `media-buying.google.campaign.create`
 - `media-buying.outbrain.campaign.create`
+- `media-buying.outbrain.promoted_link.create`
 - `media-buying.taboola.campaign.create`
-- `media-buying.local.campaign.create`
+- `media-buying.taboola.item.create`
+- `media-buying.webhook.media_campaign.create`
 
 The shared `campaign`, `ad-group`, `creative`, `audience`, and `performance`
 resources can store normalized durable records. The provider-specific actions
@@ -454,11 +469,12 @@ be provider-specific so schemas, constraints, and outputs are precise.
 
 Current state: the first media-buying scaffold is committed as contract-only
 plugin metadata. It defines provider-specific action contracts such as
-`meta.campaign.create`, `meta.ad-set.create`, `meta.creative.create`,
-`outbrain.campaign.create`, `taboola.campaign.create`, and user-owned
-`webhook.*` contracts. None of these first-party entries has connector config
-yet, so catalog availability correctly reports `not_executable` until a real
-daemon connector or project-local static HTTP action is provided.
+`meta.campaign.create`, `meta.ad_set.create`, `meta.ad_creative.create`,
+`google.campaign.create`, `outbrain.promoted_link.create`,
+`taboola.item.create`, and user-owned `webhook.media_*` contracts. None of
+these first-party entries has connector config yet, so catalog availability
+correctly reports `not_executable` until a real daemon connector or
+project-local static HTTP action is provided.
 
 ### P1: GTM And RevOps Plugin
 
@@ -492,15 +508,14 @@ Resource schemas:
 
 Action groups:
 
-- lead.import
-- contact.upsert
-- company.upsert
-- enrichment.run
-- sequence.add
-- task.create
-- crm.note.create
-- pipeline.fetch
-- touchpoint.record
+- provider-native CRM upserts or creates, such as `hubspot.crm.companies.batch_upsert`
+- provider-native lead/prospect reads, such as `apollo.people.search`
+- provider-native enrichment, such as `apollo.people.enrich` and `clay.table.webhook.submit`
+- provider-native outbound enrollment, such as `outreach.sequence_state.create`
+- provider-native cadence membership, such as `salesloft.cadence_membership.create`
+- provider-native mail/calendar sends through Google Workspace and Microsoft 365
+- provider-native pipeline reads, such as `salesforce.opportunities.query`
+- user-owned GTM webhooks, such as `webhook.pipeline.fetch`
 
 Templates:
 
@@ -509,6 +524,15 @@ Templates:
 - outbound sequence preparation
 - CRM hygiene pass
 - pipeline risk review
+
+Current state: the first GTM/RevOps scaffold is committed as contract-only
+plugin metadata. It defines provider-specific action contracts such as
+`hubspot.crm.companies.batch_upsert`,
+`salesforce.lead.upsert_by_external_id`, `apollo.people.enrich`,
+`outreach.sequence_state.create`, and `webhook.pipeline.fetch`. None of these
+first-party entries has connector config yet, so catalog availability correctly
+reports `not_executable` until a real daemon connector or project-local static
+HTTP action is provided.
 
 ### P1: Analytics And Measurement Plugin
 

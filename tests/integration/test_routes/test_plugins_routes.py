@@ -10,6 +10,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     assert plugins.status_code == 200
     assert [p["slug"] for p in plugins.json()] == [
         "core",
+        "gtm",
         "media-buying",
         "publishing",
         "seo",
@@ -66,6 +67,38 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "content-refresh",
     }
 
+    gtm_catalog = api.get("/api/v1/catalog/gtm")
+    assert gtm_catalog.status_code == 200
+    assert gtm_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == "GTM"
+    assert {p["key"] for p in gtm_catalog.json()["providers"]} >= {
+        "hubspot",
+        "salesforce",
+        "apollo",
+        "outreach",
+        "gtm-webhook",
+    }
+    assert {a["key"] for a in gtm_catalog.json()["actions"]} >= {
+        "hubspot.crm.companies.batch_upsert",
+        "salesforce.lead.upsert_by_external_id",
+        "apollo.people.enrich",
+        "outreach.sequence_state.create",
+        "webhook.pipeline.fetch",
+    }
+    assert {r["key"] for r in gtm_catalog.json()["resources"]} >= {
+        "account",
+        "lead",
+        "sequence",
+        "pipeline-snapshot",
+    }
+
+    gtm_action = api.get(
+        "/api/v1/actions/hubspot.crm.companies.batch_upsert",
+        params={"plugin_slug": "gtm"},
+    )
+    assert gtm_action.status_code == 200
+    assert gtm_action.json()["connector_key"] is None
+    assert gtm_action.json()["availability"]["status"] == "not_executable"
+
     media_catalog = api.get("/api/v1/catalog/media-buying")
     assert media_catalog.status_code == 200
     assert media_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == (
@@ -73,16 +106,20 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     )
     assert {p["key"] for p in media_catalog.json()["providers"]} >= {
         "meta-ads",
+        "google-ads",
         "outbrain",
         "taboola",
         "media-buying-webhook",
     }
     assert {a["key"] for a in media_catalog.json()["actions"]} >= {
         "meta.campaign.create",
-        "meta.creative.create",
+        "meta.ad_creative.create",
+        "google.campaign.create",
+        "outbrain.promoted_link.create",
+        "taboola.item.create",
         "outbrain.campaign.create",
         "taboola.campaign.create",
-        "webhook.campaign.create",
+        "webhook.media_campaign.create",
     }
     assert {r["key"] for r in media_catalog.json()["resources"]} >= {
         "campaign",
