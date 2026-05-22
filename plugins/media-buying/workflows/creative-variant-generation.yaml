@@ -1,0 +1,253 @@
+schema_version: stackos.workflow-template.v1
+key: media-buying.creative-variant-generation
+name: Media Buying Creative Variant Generation
+version: 0.1.0
+description: Reusable template for creating candidate paid media creative sets from project history, offer constraints, and optional utility actions.
+domain: media-buying
+owner:
+  team: StackOS
+when_to_use:
+  - A campaign needs new candidate creative concepts, copy angles, or generated assets.
+  - The agent should combine historical learnings with explicit creative constraints.
+when_not_to_use:
+  - The operator already provided final creative assets and only needs upload or campaign wiring.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: offer
+    name: Offer
+    type: object
+    required: true
+  - key: audience_hypotheses
+    name: Audience Hypotheses
+    type: array
+    required: false
+  - key: creative_constraints
+    name: Creative Constraints
+    type: object
+    required: false
+  - key: channel_preferences
+    name: Channel Preferences
+    type: array
+    required: false
+context_requirements:
+  - id: recent_creatives
+    source: resources
+    purpose: Reuse or avoid prior creative patterns based on stored evidence.
+    filters:
+      plugin_slug: media-buying
+      resource_keys:
+        - creative
+        - ad
+        - landing-page
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 25
+    return_mode: compact
+  - id: creative_learnings
+    source: learnings
+    purpose: Pull evidence-backed creative and audience lessons before generating candidate sets.
+    filters:
+      tags:
+        - media-buying
+        - creative
+      statuses:
+        - active
+    fields:
+      - statement
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+  - id: active_experiments
+    source: experiments
+    purpose: Avoid overlapping with active tests and reuse current metric targets.
+    filters:
+      domain: media-buying
+      statuses:
+        - planned
+        - running
+        - pending-decision
+    fields:
+      - name
+      - hypothesis
+      - status
+      - metric_targets_json
+      - variants
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: creative-operations
+    required: true
+    preferred_providers:
+      - meta-ads
+      - media-buying-webhook
+  - key: image-generation
+    required: false
+    preferred_providers:
+      - openai-images
+auth_requirements:
+  - key: meta_ads
+    provider: meta-ads
+    auth_type: oauth
+    optional: true
+  - key: media_webhook
+    provider: media-buying-webhook
+    auth_type: api-key
+    optional: true
+  - key: openai_images
+    provider: openai-images
+    auth_type: api-key
+    optional: true
+action_contracts:
+  - key: image_generate
+    action: image.generate
+    capability: image-generation
+    provider: openai-images
+    risk_level: cost
+    auth_ref: openai_images
+    approval_ref: cost_review
+  - key: meta_creative_create
+    action: meta.creative.create
+    capability: creative-operations
+    provider: meta-ads
+    risk_level: write
+    auth_ref: meta_ads
+    approval_ref: creative_upload_review
+  - key: webhook_campaign_update
+    action: webhook.campaign.update
+    capability: campaign-management
+    provider: media-buying-webhook
+    risk_level: write
+    auth_ref: media_webhook
+    approval_ref: creative_upload_review
+resource_contracts:
+  - key: creatives
+    resource: creative
+    purpose: Store candidate creative concepts, copy, asset refs, and review notes.
+  - key: audiences
+    resource: audience
+    purpose: Store audience hypotheses used to shape candidate creative sets.
+  - key: landing_pages
+    resource: landing-page
+    purpose: Store destination alignment notes and asset dependencies.
+  - key: media_experiments
+    resource: media-experiment
+    purpose: Store proposed creative test setup and metric targets.
+  - key: generated_images
+    resource: generated-image
+    purpose: Store utility-generated image artifact refs when image generation is granted.
+policies:
+  - key: no_secret_exposure
+    kind: auth
+    description: Agents may request image or provider actions only through credential refs; secrets stay daemon-side.
+  - key: agent_owns_creative_reasoning
+    kind: boundary
+    description: StackOS stores candidate sets and calls actions; the agent defines angles, constraints, and review notes.
+  - key: review_before_external_upload
+    kind: approval
+    description: External creative upload or campaign mutation requires review.
+approval_gates:
+  - key: cost_review
+    description: Review expected utility provider spend before generating many assets.
+    required_when: estimated_cost_above_project_threshold
+  - key: creative_upload_review
+    description: Review candidate creative set before external upload or campaign attachment.
+    required_when: external_write
+steps:
+  - id: orient
+    title: Orient From Creative History
+    purpose: Read recent creatives, learnings, active experiments, and constraints.
+    input_refs:
+      - goal
+      - offer
+      - audience_hypotheses
+      - creative_constraints
+      - channel_preferences
+    context_refs:
+      - recent_creatives
+      - creative_learnings
+      - active_experiments
+    policy_refs:
+      - agent_owns_creative_reasoning
+    output_refs:
+      - creative_direction
+  - id: define_candidate_set
+    title: Define Candidate Set
+    purpose: Create explicit candidate angles, copy needs, asset needs, and review criteria.
+    resource_refs:
+      - creatives
+      - audiences
+      - landing_pages
+      - media_experiments
+    depends_on:
+      - orient
+    output_refs:
+      - variant_set
+  - id: generate_or_attach_assets
+    title: Generate Or Attach Assets
+    purpose: Use granted utility actions or existing asset refs to create the candidate asset set.
+    action_refs:
+      - image_generate
+    resource_refs:
+      - generated_images
+      - creatives
+    policy_refs:
+      - no_secret_exposure
+    approval_refs:
+      - cost_review
+    depends_on:
+      - define_candidate_set
+    output_refs:
+      - variant_set
+  - id: store_reviewed_creatives
+    title: Store Reviewed Creatives
+    purpose: Persist reviewed candidate creative records and their provenance.
+    resource_refs:
+      - creatives
+      - generated_images
+    depends_on:
+      - generate_or_attach_assets
+    output_refs:
+      - creative_records
+  - id: optional_external_upload
+    title: Optional External Upload
+    purpose: Execute approved provider upload or campaign update actions only when granted by the concrete run plan.
+    action_refs:
+      - meta_creative_create
+      - webhook_campaign_update
+    policy_refs:
+      - review_before_external_upload
+    approval_refs:
+      - creative_upload_review
+    depends_on:
+      - store_reviewed_creatives
+outputs:
+  - key: creative_direction
+    name: Creative Direction
+    type: object
+  - key: variant_set
+    name: Candidate Variant Set
+    type: object
+  - key: creative_records
+    name: Creative Records
+    type: object
+learning_hooks:
+  - key: creative_generation_learning
+    prompt: Capture reusable creative lessons only when tied to explicit inputs, artifacts, or later performance evidence.
+    tags:
+      - media-buying
+      - creative
+failure_handling:
+  - If image generation is unavailable, continue with text concepts and existing asset refs.
+  - If external upload approval is missing, store candidate records without mutating provider state.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

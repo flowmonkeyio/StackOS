@@ -78,7 +78,8 @@ Goal: prove the plugin model beyond SEO.
 Work:
 
 - Add a minimal media-buying plugin manifest with providers, resources,
-  actions, and workflow templates.
+  actions, and workflow templates. Current state: first contract-only scaffold
+  is in place; provider connectors remain a separate delivery.
 - Add a minimal GTM plugin manifest with providers, resources, actions, and
   workflow templates.
 - Keep utility actions available across domains.

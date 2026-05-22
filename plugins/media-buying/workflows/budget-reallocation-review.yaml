@@ -1,0 +1,228 @@
+schema_version: stackos.workflow-template.v1
+key: media-buying.budget-reallocation-review
+name: Media Buying Budget Reallocation Review
+version: 0.1.0
+description: Reusable template for reviewing paid media budget movement using project policy, performance evidence, approvals, and explicit update actions.
+domain: media-buying
+owner:
+  team: StackOS
+when_to_use:
+  - A project needs to evaluate budget changes across campaigns, channels, audiences, or creative sets.
+  - The agent should separate recommendation, approval, and optional external mutation.
+when_not_to_use:
+  - No performance evidence or budget policy is available.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: budget_policy
+    name: Budget Policy
+    type: object
+    required: true
+  - key: review_scope
+    name: Review Scope
+    type: object
+    required: false
+  - key: review_window
+    name: Review Window
+    type: object
+    required: false
+context_requirements:
+  - id: performance_context
+    source: resources
+    purpose: Retrieve recent performance, campaign, and budget-change records before proposing movement.
+    filters:
+      plugin_slug: media-buying
+      resource_keys:
+        - performance-snapshot
+        - campaign
+        - ad-set
+        - budget-change
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 30
+    return_mode: compact
+  - id: budget_learnings
+    source: learnings
+    purpose: Pull durable lessons about spend caps, scale limits, and prior reallocation outcomes.
+    filters:
+      tags:
+        - media-buying
+        - budget
+      statuses:
+        - active
+    fields:
+      - statement
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+  - id: recent_decisions
+    source: decisions
+    purpose: Read prior budget decisions that may constrain the review.
+    filters:
+      tags:
+        - media-buying
+        - budget
+    fields:
+      - title
+      - decision
+      - rationale
+      - status
+      - tags
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: media-measurement
+    required: true
+  - key: campaign-management
+    required: true
+    preferred_providers:
+      - meta-ads
+      - media-buying-webhook
+auth_requirements:
+  - key: meta_ads
+    provider: meta-ads
+    auth_type: oauth
+    optional: true
+  - key: media_webhook
+    provider: media-buying-webhook
+    auth_type: api-key
+    optional: true
+action_contracts:
+  - key: meta_insights
+    action: meta.insight.fetch
+    capability: media-measurement
+    provider: meta-ads
+    risk_level: read
+    auth_ref: meta_ads
+  - key: meta_budget_update
+    action: meta.budget.update
+    capability: campaign-management
+    provider: meta-ads
+    risk_level: write
+    auth_ref: meta_ads
+    approval_ref: budget_change_review
+  - key: webhook_performance
+    action: webhook.performance.fetch
+    capability: media-measurement
+    provider: media-buying-webhook
+    risk_level: read
+    auth_ref: media_webhook
+  - key: webhook_budget_update
+    action: webhook.budget.update
+    capability: campaign-management
+    provider: media-buying-webhook
+    risk_level: write
+    auth_ref: media_webhook
+    approval_ref: budget_change_review
+resource_contracts:
+  - key: performance_snapshots
+    resource: performance-snapshot
+    purpose: Store metrics used in the budget review.
+  - key: budget_changes
+    resource: budget-change
+    purpose: Store proposed and applied budget changes with rationale and approval state.
+  - key: campaigns
+    resource: campaign
+    purpose: Store campaign context and post-change observation notes.
+policies:
+  - key: recommendation_before_mutation
+    kind: boundary
+    description: The agent prepares a recommendation before any external budget update can be executed.
+  - key: no_secret_exposure
+    kind: auth
+    description: Provider secrets stay inside daemon-side connector execution.
+  - key: approval_before_budget_change
+    kind: approval
+    description: Approved budget changes must be explicit before external mutation.
+approval_gates:
+  - key: budget_change_review
+    description: Review proposed budget changes, expected risk, and rollback notes before external mutation.
+    required_when: external_budget_write
+steps:
+  - id: orient
+    title: Orient From Budget History
+    purpose: Read budget policy, recent performance, prior budget changes, learnings, and decisions.
+    input_refs:
+      - goal
+      - budget_policy
+      - review_scope
+      - review_window
+    context_refs:
+      - performance_context
+      - budget_learnings
+      - recent_decisions
+    policy_refs:
+      - recommendation_before_mutation
+    output_refs:
+      - budget_review
+  - id: fetch_metric_gaps
+    title: Fetch Metric Gaps
+    purpose: Use granted read actions only when stored evidence is insufficient.
+    action_refs:
+      - meta_insights
+      - webhook_performance
+    policy_refs:
+      - no_secret_exposure
+    depends_on:
+      - orient
+    output_refs:
+      - budget_review
+  - id: propose_changes
+    title: Propose Changes
+    purpose: Produce a bounded reallocation recommendation with rationale, risk, and observation plan.
+    resource_refs:
+      - performance_snapshots
+      - budget_changes
+      - campaigns
+    depends_on:
+      - fetch_metric_gaps
+    output_refs:
+      - budget_review
+      - observation_plan
+  - id: optional_apply_changes
+    title: Optional Apply Changes
+    purpose: Execute approved budget update actions only when granted by the concrete run plan.
+    action_refs:
+      - meta_budget_update
+      - webhook_budget_update
+    resource_refs:
+      - budget_changes
+    policy_refs:
+      - approval_before_budget_change
+    approval_refs:
+      - budget_change_review
+    depends_on:
+      - propose_changes
+    output_refs:
+      - applied_change_summary
+outputs:
+  - key: budget_review
+    name: Budget Review
+    type: object
+    required: true
+  - key: observation_plan
+    name: Observation Plan
+    type: object
+  - key: applied_change_summary
+    name: Applied Change Summary
+    type: object
+learning_hooks:
+  - key: budget_reallocation_learning
+    prompt: Capture reusable budget movement lessons only after evidence and observation notes exist.
+    tags:
+      - media-buying
+      - budget
+failure_handling:
+  - If approval is missing, store the recommendation and do not execute budget updates.
+  - If metric evidence is insufficient, return the missing evidence list and preserve the review draft.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

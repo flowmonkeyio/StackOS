@@ -115,6 +115,12 @@ Registered first-party connectors now cover the migrated clean path for:
 - `ghost`: `publishing.ghost.post.create`
 - `http`: static custom HTTP/Webhook actions declared by installed plugins
 
+The media-buying plugin already contributes provider-specific campaign,
+creative, insight, and budget action contracts, but these are intentionally
+contract-only until real provider connectors are implemented. Their connector
+field is omitted, so catalog availability reports `not_executable` instead of
+pretending a Meta, Outbrain, Taboola, or internal campaign operation can run.
+
 The OpenAI Images connector persists base64 image bytes under generated assets
 and returns local artifact URLs with no `b64_json` payload. Other connectors
 normalize wrapper results into action output JSON and record the provider,

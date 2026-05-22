@@ -19,7 +19,7 @@ from content_stack.plugins.manifest import (
 def test_builtin_plugin_manifests_validate() -> None:
     slugs = [manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS]
 
-    assert slugs == ["core", "publishing", "seo", "utils"]
+    assert slugs == ["core", "media-buying", "publishing", "seo", "utils"]
     for manifest in BUILTIN_PLUGIN_MANIFESTS:
         assert manifest.capabilities
         assert manifest.resources
@@ -30,6 +30,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         for manifest in BUILTIN_PLUGIN_MANIFESTS
     }
     assert resources_by_plugin["core"] >= {"learning", "experiment"}
+    assert resources_by_plugin["media-buying"] >= {"campaign", "creative"}
     assert resources_by_plugin["publishing"] >= {"published-post", "publish-target"}
     assert resources_by_plugin["seo"] >= {"keyword-opportunity", "content-piece"}
     assert resources_by_plugin["utils"] >= {"generated-image", "web-document"}
@@ -65,6 +66,61 @@ def test_builtin_plugin_manifests_validate() -> None:
         "allows_credential": False,
     }
     assert utils_actions["reddit.search-subreddit"].config["connector"] == "reddit"
+
+
+def test_media_buying_plugin_yaml_facade_validates() -> None:
+    manifest = load_plugin_manifest_file(Path("plugins/media-buying/plugin.yaml"))
+
+    assert manifest.slug == "media-buying"
+    assert manifest.ui is not None
+    assert manifest.ui["nav"]["section"] == "Media Buying"
+    assert {capability.key for capability in manifest.capabilities} >= {
+        "campaign-management",
+        "creative-operations",
+        "media-measurement",
+        "media-experimentation",
+    }
+    assert {provider.key for provider in manifest.providers} >= {
+        "meta-ads",
+        "google-ads",
+        "outbrain",
+        "taboola",
+        "media-buying-webhook",
+    }
+    providers = {provider.key: provider for provider in manifest.providers}
+    assert providers["meta-ads"].config["setup_fields"][0]["key"] == "business_ref"
+    assert providers["media-buying-webhook"].config["setup_fields"][0]["key"] == "tool_owner"
+    actions = {action.key: action for action in manifest.actions}
+    assert actions["meta.campaign.create"].provider == "meta-ads"
+    assert actions["meta.campaign.create"].risk_level == "write"
+    assert actions["meta.campaign.create"].input_schema["required"] == [
+        "account_ref",
+        "campaign",
+    ]
+    assert actions["webhook.campaign.create"].provider == "media-buying-webhook"
+    assert actions["webhook.performance.fetch"].capability == "media-measurement"
+    for action_key in [
+        "meta.campaign.create",
+        "outbrain.campaign.create",
+        "taboola.campaign.create",
+        "webhook.campaign.create",
+    ]:
+        assert actions[action_key].config == {
+            "schema_version": "stackos.action.v1",
+            "execution_mode": "contract-only",
+        }
+    assert {resource.key for resource in manifest.resources} >= {
+        "ad-account",
+        "campaign",
+        "ad-set",
+        "ad",
+        "creative",
+        "audience",
+        "landing-page",
+        "performance-snapshot",
+        "budget-change",
+        "media-experiment",
+    }
 
 
 def test_seo_plugin_yaml_facade_validates() -> None:

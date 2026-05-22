@@ -28,8 +28,8 @@ resources:
       type: object
       additionalProperties: true
 actions:
-  - key: campaign.create
-    name: Create Campaign
+  - key: meta.campaign.create
+    name: Create Meta Campaign
     provider: meta-ads
     capability: campaign-management
     risk_level: write
@@ -44,6 +44,7 @@ actions:
 ## Built-In Plugins
 
 - `core`: project memory, learnings, experiments, decisions, and shared context.
+- `media-buying`: paid media provider contracts, resources, and templates.
 - `publishing`: CMS publishing providers, post actions, and publication records.
 - `seo`: SEO content/search resources, providers, actions, and templates.
 - `utils`: reusable utility actions such as image generation and web retrieval.
@@ -64,9 +65,9 @@ An action should include:
 - output schema
 - static config such as a local tool reference or vendor operation key
 
-Actions should not decide strategy. For example, `campaign.create` creates the
-campaign structure the agent passes in; it does not decide which campaign should
-exist.
+Actions should not decide strategy. For example, `meta.campaign.create` creates
+the campaign structure the agent passes in for Meta; it does not decide which
+campaign should exist.
 
 Providers may include safe `config.setup_fields` for local-admin setup values
 such as site URLs or API versions. These fields are stored in credential
@@ -93,6 +94,12 @@ config:
 The URL and auth mode are static plugin configuration. The agent supplies only
 the action input JSON allowed by the action schema, and the daemon injects the
 credential inside the connector process.
+
+If a first-party provider connector is not implemented yet, keep the action as
+a contract-only catalog entry by omitting `config.connector`. The action remains
+visible for planning, templating, auth setup, and resource design, but
+`availability.status` is `not_executable` until a real daemon connector is
+added.
 
 ## Resources
 

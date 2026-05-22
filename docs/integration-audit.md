@@ -33,8 +33,14 @@ and opaque `credential_ref` values.
 Files:
 
 - `content_stack/plugins/manifest.py`
+- `plugins/media-buying/plugin.yaml`
 - `plugins/publishing/plugin.yaml`
 - `plugins/seo/plugin.yaml`
+- `plugins/media-buying/workflows/campaign-launch.yaml`
+- `plugins/media-buying/workflows/creative-variant-generation.yaml`
+- `plugins/media-buying/workflows/performance-diagnosis.yaml`
+- `plugins/media-buying/workflows/budget-reallocation-review.yaml`
+- `plugins/media-buying/workflows/landing-page-creative-experiment.yaml`
 - `plugins/core/workflows/project-memory-review.yaml`
 - `plugins/seo/workflows/keyword-research.yaml`
 - `plugins/seo/workflows/content-refresh.yaml`
@@ -45,12 +51,18 @@ Current built-in plugins:
 | --- | --- | --- |
 | `core` | Local daemon provider, catalog primitives, project data resources, project memory review template | Good generic foundation. |
 | `utils` | OpenAI Images, Firecrawl, Jina, Reddit providers; image generation, web retrieval, and community research actions | Core utility connectors are now executable through the generic action path. |
+| `media-buying` | Meta Ads, Google Ads, Outbrain, Taboola, and internal campaign-tool provider contracts; paid media resources; five reusable templates | Catalog and template layer is in place. Provider actions are contract-only until real connectors are built. |
 | `publishing` | WordPress and Ghost providers, CMS publishing actions, and generic publishing resources | First post-create connector path is wired. Media/upload/update actions and templates are still needed. |
 | `seo` | DataForSEO and Ahrefs providers, SEO actions, SEO resource schemas, two SEO templates | First SEO connector path is wired, including PAA extraction through DataForSEO. More templates and richer provider actions are still needed. |
 
 Current templates are intentionally small and reusable, but the library is thin:
 
 - `core.project-memory-review`
+- `media-buying.budget-reallocation-review`
+- `media-buying.campaign-launch`
+- `media-buying.creative-variant-generation`
+- `media-buying.landing-page-creative-experiment`
+- `media-buying.performance-diagnosis`
 - `seo.keyword-research`
 - `seo.content-refresh`
 
@@ -388,7 +400,7 @@ contract.
 
 ### P1: Media Buying Plugin
 
-Start as `plugins/media-buying/plugin.yaml`.
+Started as `plugins/media-buying/plugin.yaml`.
 
 Providers to plan:
 
@@ -439,6 +451,14 @@ Templates:
 Important rule: do not expose one generic `campaign.create` action unless it is
 a local abstraction configured by the user. First-party provider actions should
 be provider-specific so schemas, constraints, and outputs are precise.
+
+Current state: the first media-buying scaffold is committed as contract-only
+plugin metadata. It defines provider-specific action contracts such as
+`meta.campaign.create`, `meta.ad-set.create`, `meta.creative.create`,
+`outbrain.campaign.create`, `taboola.campaign.create`, and user-owned
+`webhook.*` contracts. None of these first-party entries has connector config
+yet, so catalog availability correctly reports `not_executable` until a real
+daemon connector or project-local static HTTP action is provided.
 
 ### P1: GTM And RevOps Plugin
 

@@ -59,10 +59,20 @@ outputs:
         if item["key"] == "core.project-memory-review"
     }
     assert sources == {"plugin", "repo"}
+    assert "media-buying.campaign-launch" in {item["key"] for item in listing["templates"]}
     assert described["summary"]["source"] == "repo"
     assert described["summary"]["name"] == "Repo Project Memory Review"
     assert validation["valid"] is True
     assert validation["template"]["key"] == "company.review"
+
+    media_listing = mcp_client.call_tool_structured(
+        "workflowTemplate.list",
+        {"plugin_slug": "media-buying"},
+    )
+    assert {item["key"] for item in media_listing["templates"]} >= {
+        "media-buying.campaign-launch",
+        "media-buying.performance-diagnosis",
+    }
 
 
 def test_workflow_template_validate_rejects_secrets(mcp_client: MCPClient) -> None:

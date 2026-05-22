@@ -66,11 +66,26 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
 
     listing = repo.list_templates(plugin_slug="core")
     described = repo.describe_template(key="core.project-memory-review")
+    media_listing = repo.list_templates(plugin_slug="media-buying")
+    media_described = repo.describe_template(
+        key="media-buying.campaign-launch",
+        plugin_slug="media-buying",
+    )
 
     assert [item.key for item in listing.templates] == ["core.project-memory-review"]
     assert described.summary.source == "plugin"
     assert described.spec.context_requirements
     assert described.spec.steps[0].id == "clarify-goal"
+    assert [item.key for item in media_listing.templates] == [
+        "media-buying.budget-reallocation-review",
+        "media-buying.campaign-launch",
+        "media-buying.creative-variant-generation",
+        "media-buying.landing-page-creative-experiment",
+        "media-buying.performance-diagnosis",
+    ]
+    assert media_described.summary.plugin_slug == "media-buying"
+    assert media_described.spec.action_contracts[0].action == "meta.campaign.create"
+    assert all("payload" not in step.model_dump_json() for step in media_described.spec.steps)
 
 
 def test_repo_templates_override_plugin_templates(session: Session, tmp_path: Path) -> None:

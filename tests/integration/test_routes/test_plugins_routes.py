@@ -8,7 +8,13 @@ from fastapi.testclient import TestClient
 def test_plugin_catalog_routes(api: TestClient) -> None:
     plugins = api.get("/api/v1/plugins")
     assert plugins.status_code == 200
-    assert [p["slug"] for p in plugins.json()] == ["core", "publishing", "seo", "utils"]
+    assert [p["slug"] for p in plugins.json()] == [
+        "core",
+        "media-buying",
+        "publishing",
+        "seo",
+        "utils",
+    ]
 
     catalog = api.get("/api/v1/catalog/utils")
     assert catalog.status_code == 200
@@ -59,6 +65,39 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "content-piece",
         "content-refresh",
     }
+
+    media_catalog = api.get("/api/v1/catalog/media-buying")
+    assert media_catalog.status_code == 200
+    assert media_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == (
+        "Media Buying"
+    )
+    assert {p["key"] for p in media_catalog.json()["providers"]} >= {
+        "meta-ads",
+        "outbrain",
+        "taboola",
+        "media-buying-webhook",
+    }
+    assert {a["key"] for a in media_catalog.json()["actions"]} >= {
+        "meta.campaign.create",
+        "meta.creative.create",
+        "outbrain.campaign.create",
+        "taboola.campaign.create",
+        "webhook.campaign.create",
+    }
+    assert {r["key"] for r in media_catalog.json()["resources"]} >= {
+        "campaign",
+        "creative",
+        "performance-snapshot",
+        "media-experiment",
+    }
+
+    media_action = api.get(
+        "/api/v1/actions/meta.campaign.create",
+        params={"plugin_slug": "media-buying"},
+    )
+    assert media_action.status_code == 200
+    assert media_action.json()["connector_key"] is None
+    assert media_action.json()["availability"]["status"] == "not_executable"
 
     publishing_catalog = api.get("/api/v1/catalog/publishing")
     assert publishing_catalog.status_code == 200

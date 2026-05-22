@@ -1,0 +1,544 @@
+slug: media-buying
+name: Media Buying
+version: 0.1.0
+description: First-party StackOS domain package for paid media provider contracts, resource schemas, and reusable workflow templates.
+source: builtin
+capabilities:
+  - key: campaign-management
+    name: Campaign Management
+    description: Create, update, pause, resume, and inspect paid media campaign structures from explicit agent inputs.
+    kind: domain
+  - key: creative-operations
+    name: Creative Operations
+    description: Store, assemble, upload, and relate creative assets and candidate variant sets.
+    kind: domain
+  - key: media-measurement
+    name: Media Measurement
+    description: Import or summarize campaign performance snapshots for agent analysis.
+    kind: domain
+  - key: audience-management
+    name: Audience Management
+    description: Describe audience records, targeting notes, and sync contracts.
+    kind: domain
+  - key: media-experimentation
+    name: Media Experimentation
+    description: Plan and record paid media experiments without hard-coding outcomes.
+    kind: domain
+providers:
+  - key: meta-ads
+    name: Meta Ads
+    description: Meta Marketing API provider contract for ad accounts, campaigns, ad sets, ads, creatives, and insights.
+    auth_type: oauth
+    config:
+      setup_fields:
+        - key: business_ref
+          label: Business Ref
+          type: text
+          required: false
+          placeholder: business or portfolio reference
+        - key: api_version
+          label: API Version
+          type: text
+          required: false
+          placeholder: v23.0
+  - key: google-ads
+    name: Google Ads
+    description: Google Ads API provider contract for campaigns, ad groups, ads, audiences, and reporting.
+    auth_type: oauth
+    config:
+      setup_fields:
+        - key: manager_account_ref
+          label: Manager Account Ref
+          type: text
+          required: false
+          placeholder: safe manager account reference
+  - key: outbrain
+    name: Outbrain
+    description: Outbrain campaign and reporting provider contract.
+    auth_type: api-key
+    config:
+      setup_fields:
+        - key: account_ref
+          label: Account Ref
+          type: text
+          required: false
+          placeholder: safe account reference
+  - key: taboola
+    name: Taboola
+    description: Taboola campaign and reporting provider contract.
+    auth_type: api-key
+    config:
+      setup_fields:
+        - key: account_ref
+          label: Account Ref
+          type: text
+          required: false
+          placeholder: safe account reference
+  - key: media-buying-webhook
+    name: Media Buying Webhook
+    description: User-owned campaign tooling exposed through project-local static HTTP actions.
+    auth_type: api-key
+    config:
+      setup_fields:
+        - key: tool_owner
+          label: Tool Owner
+          type: text
+          required: false
+          placeholder: team or system name
+actions:
+  - key: meta.account.list
+    name: List Meta Ad Accounts
+    description: Read Meta ad account metadata available to the configured credential.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: read
+    input_schema: &account_list_input
+      type: object
+      additionalProperties: false
+      properties:
+        filters:
+          type: object
+          additionalProperties: true
+    output_schema: &object_schema
+      type: object
+      additionalProperties: true
+    config: &contract_only_config
+      schema_version: stackos.action.v1
+      execution_mode: contract-only
+  - key: meta.campaign.create
+    name: Create Meta Campaign
+    description: Create a Meta campaign from an explicit agent-supplied campaign object.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &campaign_create_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - campaign
+      properties:
+        account_ref:
+          type: string
+        campaign:
+          type: object
+          additionalProperties: true
+          required:
+            - name
+            - objective
+          properties:
+            name:
+              type: string
+            objective:
+              type: string
+            status:
+              type: string
+            budget:
+              type: object
+              additionalProperties: true
+            attribution:
+              type: object
+              additionalProperties: true
+            constraints:
+              type: object
+              additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.campaign.update
+    name: Update Meta Campaign
+    description: Update a Meta campaign from an explicit change object.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &campaign_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_ref
+        - changes
+      properties:
+        campaign_ref:
+          type: string
+        changes:
+          type: object
+          additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.campaign.pause
+    name: Pause Meta Campaign
+    description: Pause a Meta campaign by safe campaign reference.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &campaign_ref_input
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_ref
+      properties:
+        campaign_ref:
+          type: string
+        reason:
+          type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.campaign.resume
+    name: Resume Meta Campaign
+    description: Resume a Meta campaign by safe campaign reference.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_ref_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.ad-set.create
+    name: Create Meta Ad Set
+    description: Create a Meta ad set from explicit targeting, placement, budget, and schedule input.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &ad_set_input
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_ref
+        - ad_set
+      properties:
+        campaign_ref:
+          type: string
+        ad_set:
+          type: object
+          additionalProperties: true
+          required:
+            - name
+          properties:
+            name:
+              type: string
+            targeting:
+              type: object
+              additionalProperties: true
+            budget:
+              type: object
+              additionalProperties: true
+            schedule:
+              type: object
+              additionalProperties: true
+            placements:
+              type: array
+              items:
+                type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.ad-set.update
+    name: Update Meta Ad Set
+    description: Update a Meta ad set from an explicit change object.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &ad_set_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - ad_set_ref
+        - changes
+      properties:
+        ad_set_ref:
+          type: string
+        changes:
+          type: object
+          additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.creative.create
+    name: Create Meta Creative
+    description: Create a Meta creative record from explicit copy, asset refs, and destination metadata.
+    provider: meta-ads
+    capability: creative-operations
+    risk_level: write
+    input_schema: &creative_input
+      type: object
+      additionalProperties: false
+      required:
+        - creative
+      properties:
+        creative:
+          type: object
+          additionalProperties: true
+          required:
+            - name
+          properties:
+            name:
+              type: string
+            text:
+              type: object
+              additionalProperties: true
+            asset_refs:
+              type: array
+              items:
+                type: string
+            destination:
+              type: object
+              additionalProperties: true
+            review_notes:
+              type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.ad.create
+    name: Create Meta Ad
+    description: Create a Meta ad by connecting an ad set ref and creative ref.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &ad_input
+      type: object
+      additionalProperties: false
+      required:
+        - ad_set_ref
+        - creative_ref
+        - ad
+      properties:
+        ad_set_ref:
+          type: string
+        creative_ref:
+          type: string
+        ad:
+          type: object
+          additionalProperties: true
+          required:
+            - name
+          properties:
+            name:
+              type: string
+            status:
+              type: string
+            tracking:
+              type: object
+              additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.ad.update
+    name: Update Meta Ad
+    description: Update a Meta ad from an explicit change object.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &ad_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - ad_ref
+        - changes
+      properties:
+        ad_ref:
+          type: string
+        changes:
+          type: object
+          additionalProperties: true
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.insight.fetch
+    name: Fetch Meta Insights
+    description: Fetch a bounded Meta performance snapshot for an agent-selected scope.
+    provider: meta-ads
+    capability: media-measurement
+    risk_level: read
+    input_schema: &insight_input
+      type: object
+      additionalProperties: false
+      required:
+        - scope
+        - time_range
+      properties:
+        scope:
+          type: object
+          additionalProperties: true
+        time_range:
+          type: object
+          additionalProperties: true
+        metrics:
+          type: array
+          items:
+            type: string
+        breakdowns:
+          type: array
+          items:
+            type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: meta.budget.update
+    name: Update Meta Budget
+    description: Apply an explicit budget change to a Meta campaign or ad set reference.
+    provider: meta-ads
+    capability: campaign-management
+    risk_level: write
+    input_schema: &budget_update_input
+      type: object
+      additionalProperties: false
+      required:
+        - target_ref
+        - budget
+      properties:
+        target_ref:
+          type: string
+        budget:
+          type: object
+          additionalProperties: true
+        reason:
+          type: string
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: outbrain.campaign.create
+    name: Create Outbrain Campaign
+    description: Create an Outbrain campaign from an explicit campaign object.
+    provider: outbrain
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_create_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: outbrain.campaign.update
+    name: Update Outbrain Campaign
+    description: Update an Outbrain campaign from an explicit change object.
+    provider: outbrain
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_update_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: outbrain.insight.fetch
+    name: Fetch Outbrain Insights
+    description: Fetch a bounded Outbrain performance snapshot for an agent-selected scope.
+    provider: outbrain
+    capability: media-measurement
+    risk_level: read
+    input_schema: *insight_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: taboola.campaign.create
+    name: Create Taboola Campaign
+    description: Create a Taboola campaign from an explicit campaign object.
+    provider: taboola
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_create_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: taboola.campaign.update
+    name: Update Taboola Campaign
+    description: Update a Taboola campaign from an explicit change object.
+    provider: taboola
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_update_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: taboola.insight.fetch
+    name: Fetch Taboola Insights
+    description: Fetch a bounded Taboola performance snapshot for an agent-selected scope.
+    provider: taboola
+    capability: media-measurement
+    risk_level: read
+    input_schema: *insight_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: webhook.campaign.create
+    name: Create Campaign Through Webhook
+    description: Contract for user-owned campaign tooling. Project-local plugins should provide static HTTP connector config before execution.
+    provider: media-buying-webhook
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_create_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: webhook.campaign.update
+    name: Update Campaign Through Webhook
+    description: Contract for user-owned campaign tooling. Project-local plugins should provide static HTTP connector config before execution.
+    provider: media-buying-webhook
+    capability: campaign-management
+    risk_level: write
+    input_schema: *campaign_update_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: webhook.performance.fetch
+    name: Fetch Performance Through Webhook
+    description: Contract for user-owned reporting tools exposed through project-local static HTTP actions.
+    provider: media-buying-webhook
+    capability: media-measurement
+    risk_level: read
+    input_schema: *insight_input
+    output_schema: *object_schema
+    config: *contract_only_config
+  - key: webhook.budget.update
+    name: Update Budget Through Webhook
+    description: Contract for user-owned budget tooling exposed through project-local static HTTP actions.
+    provider: media-buying-webhook
+    capability: campaign-management
+    risk_level: write
+    input_schema: *budget_update_input
+    output_schema: *object_schema
+    config: *contract_only_config
+resources:
+  - key: ad-account
+    name: Ad Account
+    description: Safe account metadata and provider references for paid media work.
+    schema: *object_schema
+  - key: campaign
+    name: Campaign
+    description: Paid media campaign record, launch state, and safe external references.
+    schema: *object_schema
+  - key: ad-set
+    name: Ad Set
+    description: Ad set or channel-equivalent grouping with targeting, schedule, and budget metadata.
+    schema: *object_schema
+  - key: ad-group
+    name: Ad Group
+    description: Search or channel-equivalent ad group with targeting and bidding metadata.
+    schema: *object_schema
+  - key: ad
+    name: Ad
+    description: Ad record connecting creative, placement, and campaign structure.
+    schema: *object_schema
+  - key: creative
+    name: Creative
+    description: Creative concept, copy, asset refs, and review metadata.
+    schema: *object_schema
+  - key: audience
+    name: Audience
+    description: Targeting, segment, audience hypothesis, or synced audience metadata.
+    schema: *object_schema
+  - key: landing-page
+    name: Landing Page
+    description: Destination page reference, offer alignment notes, and test metadata.
+    schema: *object_schema
+  - key: conversion-event
+    name: Conversion Event
+    description: Conversion event definition, mapping notes, and measurement status.
+    schema: *object_schema
+  - key: performance-snapshot
+    name: Performance Snapshot
+    description: Imported or summarized media performance metrics for bounded scopes and windows.
+    schema: *object_schema
+  - key: budget-change
+    name: Budget Change
+    description: Proposed or applied budget change with rationale, approval, and observed result.
+    schema: *object_schema
+  - key: media-experiment
+    name: Media Experiment
+    description: Paid media experiment setup, variants, metric targets, observations, and decision refs.
+    schema: *object_schema
+ui:
+  nav:
+    section: Media Buying
+    items:
+      - key: media-buying.resources
+        label: Media Resources
+        to: resources?plugin_slug=media-buying
+        matchPrefix: true
+      - key: media-buying.templates
+        label: Media Templates
+        to: workflow-templates?plugin_slug=media-buying
+config:
+  schema_version: stackos.plugin.v1
+  provider_connectors:
+    status: planned
+    note: Provider-specific campaign connectors are intentionally not configured until real daemon adapters exist.

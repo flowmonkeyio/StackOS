@@ -1,0 +1,218 @@
+schema_version: stackos.workflow-template.v1
+key: media-buying.landing-page-creative-experiment
+name: Landing Page And Creative Experiment
+version: 0.1.0
+description: Reusable template for planning a paid media experiment that relates landing pages, creative candidate sets, metric targets, and follow-up observations.
+domain: media-buying
+owner:
+  team: StackOS
+when_to_use:
+  - The agent needs to design a paid media experiment involving landing page and creative combinations.
+  - The project needs a durable experiment record before campaign changes are made.
+when_not_to_use:
+  - The operator only needs a one-off creative upload without experiment tracking.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: hypothesis
+    name: Hypothesis
+    type: string
+    required: false
+  - key: landing_page_refs
+    name: Landing Page Refs
+    type: array
+    required: false
+  - key: creative_refs
+    name: Creative Refs
+    type: array
+    required: false
+  - key: metric_targets
+    name: Metric Targets
+    type: object
+    required: false
+context_requirements:
+  - id: experiment_history
+    source: experiments
+    purpose: Read active and recent experiments before proposing a new setup.
+    filters:
+      domain: media-buying
+      statuses:
+        - planned
+        - running
+        - pending-decision
+        - completed
+    fields:
+      - name
+      - hypothesis
+      - status
+      - metric_targets_json
+      - variants
+    max_items: 20
+    return_mode: compact
+  - id: relevant_resources
+    source: resources
+    purpose: Retrieve landing page, creative, campaign, and performance context for experiment design.
+    filters:
+      plugin_slug: media-buying
+      resource_keys:
+        - landing-page
+        - creative
+        - campaign
+        - performance-snapshot
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 30
+    return_mode: compact
+  - id: experiment_learnings
+    source: learnings
+    purpose: Pull prior test lessons that should shape the new experiment.
+    filters:
+      tags:
+        - media-buying
+        - experiment
+      statuses:
+        - active
+    fields:
+      - statement
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+capability_requirements:
+  - key: media-experimentation
+    required: true
+  - key: creative-operations
+    required: true
+  - key: campaign-management
+    required: false
+auth_requirements:
+  - key: meta_ads
+    provider: meta-ads
+    auth_type: oauth
+    optional: true
+  - key: media_webhook
+    provider: media-buying-webhook
+    auth_type: api-key
+    optional: true
+action_contracts:
+  - key: meta_ad_update
+    action: meta.ad.update
+    capability: campaign-management
+    provider: meta-ads
+    risk_level: write
+    auth_ref: meta_ads
+    approval_ref: experiment_launch_review
+  - key: webhook_campaign_update
+    action: webhook.campaign.update
+    capability: campaign-management
+    provider: media-buying-webhook
+    risk_level: write
+    auth_ref: media_webhook
+    approval_ref: experiment_launch_review
+resource_contracts:
+  - key: media_experiments
+    resource: media-experiment
+    purpose: Store experiment setup, variant set, metric targets, observation windows, and review state.
+  - key: landing_pages
+    resource: landing-page
+    purpose: Store destination refs, page notes, and experiment dependencies.
+  - key: creatives
+    resource: creative
+    purpose: Store creative refs and relationship to the experiment setup.
+  - key: performance_snapshots
+    resource: performance-snapshot
+    purpose: Store observation snapshots after launch.
+policies:
+  - key: project_level_experiment_memory
+    kind: context
+    description: Experiment records live at project level and can link to media resources without belonging to one run only.
+  - key: approval_before_campaign_change
+    kind: approval
+    description: Campaign or ad mutation requires operator review.
+  - key: no_secret_exposure
+    kind: auth
+    description: Provider credentials stay daemon-side during optional external updates.
+approval_gates:
+  - key: experiment_launch_review
+    description: Review experiment setup, metric targets, traffic allocation, and rollback notes before external changes.
+    required_when: external_write
+steps:
+  - id: orient
+    title: Orient From Experiment History
+    purpose: Read existing experiments, related resources, prior lessons, and current inputs.
+    input_refs:
+      - goal
+      - hypothesis
+      - landing_page_refs
+      - creative_refs
+      - metric_targets
+    context_refs:
+      - experiment_history
+      - relevant_resources
+      - experiment_learnings
+    policy_refs:
+      - project_level_experiment_memory
+    output_refs:
+      - experiment_plan
+  - id: define_experiment_setup
+    title: Define Experiment Setup
+    purpose: Define the variant set, metric targets, observation windows, and stopping rules.
+    resource_refs:
+      - media_experiments
+      - landing_pages
+      - creatives
+    depends_on:
+      - orient
+    output_refs:
+      - experiment_plan
+  - id: record_experiment
+    title: Record Experiment
+    purpose: Persist the experiment setup before any campaign or ad changes.
+    resource_refs:
+      - media_experiments
+      - landing_pages
+      - creatives
+    depends_on:
+      - define_experiment_setup
+    output_refs:
+      - experiment_records
+  - id: optional_launch_update
+    title: Optional Launch Update
+    purpose: Execute approved campaign or ad updates only when granted by the concrete run plan.
+    action_refs:
+      - meta_ad_update
+      - webhook_campaign_update
+    policy_refs:
+      - approval_before_campaign_change
+      - no_secret_exposure
+    approval_refs:
+      - experiment_launch_review
+    depends_on:
+      - record_experiment
+outputs:
+  - key: experiment_plan
+    name: Experiment Plan
+    type: object
+    required: true
+  - key: experiment_records
+    name: Experiment Records
+    type: object
+learning_hooks:
+  - key: experiment_setup_learning
+    prompt: Capture reusable experiment setup lessons after observation evidence exists.
+    tags:
+      - media-buying
+      - experiment
+failure_handling:
+  - If approval is missing, store the experiment plan without changing external provider state.
+  - If context conflicts with an active experiment, return the conflict and stop before mutation.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

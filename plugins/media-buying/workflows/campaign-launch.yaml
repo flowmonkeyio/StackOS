@@ -1,0 +1,310 @@
+schema_version: stackos.workflow-template.v1
+key: media-buying.campaign-launch
+name: Media Buying Campaign Launch
+version: 0.1.0
+description: Reusable setup for planning and launching paid media campaigns from bounded project context and explicit action contracts.
+domain: media-buying
+owner:
+  team: StackOS
+when_to_use:
+  - A project needs to launch a paid media campaign across one or more configured channels.
+  - The agent needs history, learnings, approvals, resources, and provider contracts before creating campaign structures.
+when_not_to_use:
+  - The campaign structure is already created and the agent only needs a performance review.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: offer
+    name: Offer
+    type: object
+    required: true
+  - key: target_markets
+    name: Target Markets
+    type: array
+    required: false
+  - key: budget_policy
+    name: Budget Policy
+    type: object
+    required: false
+  - key: channel_preferences
+    name: Channel Preferences
+    type: array
+    required: false
+  - key: landing_page_refs
+    name: Landing Page Refs
+    type: array
+    required: false
+context_requirements:
+  - id: recent_media_runs
+    source: runs
+    purpose: Reuse recent launch outcomes and avoid repeating recently rejected channel paths.
+    filters:
+      domain: media-buying
+      statuses:
+        - success
+        - failed
+        - aborted
+    fields:
+      - kind
+      - status
+      - last_step
+      - metadata_json
+      - completed_at
+    max_items: 10
+    return_mode: compact
+  - id: media_resources
+    source: resources
+    purpose: Read recent campaign, creative, audience, landing page, and conversion-event records.
+    filters:
+      plugin_slug: media-buying
+      resource_keys:
+        - campaign
+        - creative
+        - audience
+        - landing-page
+        - conversion-event
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 25
+    return_mode: compact
+  - id: accepted_media_learnings
+    source: learnings
+    purpose: Pull durable paid media lessons with evidence before choosing launch shape.
+    filters:
+      tags:
+        - media-buying
+      statuses:
+        - active
+    fields:
+      - statement
+      - domain
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+  - id: active_media_experiments
+    source: experiments
+    purpose: Avoid launching work that conflicts with active paid media experiments.
+    filters:
+      domain: media-buying
+      statuses:
+        - planned
+        - running
+        - pending-decision
+    fields:
+      - name
+      - hypothesis
+      - status
+      - metric_targets_json
+      - variants
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: campaign-management
+    required: true
+    preferred_providers:
+      - meta-ads
+      - outbrain
+      - taboola
+      - media-buying-webhook
+  - key: creative-operations
+    required: true
+  - key: media-measurement
+    required: false
+auth_requirements:
+  - key: meta_ads
+    provider: meta-ads
+    auth_type: oauth
+    optional: true
+  - key: outbrain
+    provider: outbrain
+    auth_type: api-key
+    optional: true
+  - key: taboola
+    provider: taboola
+    auth_type: api-key
+    optional: true
+  - key: media_webhook
+    provider: media-buying-webhook
+    auth_type: api-key
+    optional: true
+action_contracts:
+  - key: meta_campaign_create
+    action: meta.campaign.create
+    capability: campaign-management
+    provider: meta-ads
+    risk_level: write
+    auth_ref: meta_ads
+    approval_ref: launch_review
+  - key: meta_ad_set_create
+    action: meta.ad-set.create
+    capability: campaign-management
+    provider: meta-ads
+    risk_level: write
+    auth_ref: meta_ads
+    approval_ref: launch_review
+  - key: meta_creative_create
+    action: meta.creative.create
+    capability: creative-operations
+    provider: meta-ads
+    risk_level: write
+    auth_ref: meta_ads
+    approval_ref: launch_review
+  - key: outbrain_campaign_create
+    action: outbrain.campaign.create
+    capability: campaign-management
+    provider: outbrain
+    risk_level: write
+    auth_ref: outbrain
+    approval_ref: launch_review
+  - key: taboola_campaign_create
+    action: taboola.campaign.create
+    capability: campaign-management
+    provider: taboola
+    risk_level: write
+    auth_ref: taboola
+    approval_ref: launch_review
+  - key: webhook_campaign_create
+    action: webhook.campaign.create
+    capability: campaign-management
+    provider: media-buying-webhook
+    risk_level: write
+    auth_ref: media_webhook
+    approval_ref: launch_review
+resource_contracts:
+  - key: campaigns
+    resource: campaign
+    purpose: Store launch state, channel, safe campaign refs, and next measurement notes.
+  - key: ad_sets
+    resource: ad-set
+    purpose: Store targeting, placement, budget, and schedule structures.
+  - key: creatives
+    resource: creative
+    purpose: Store creative refs, copy variants, asset refs, and review notes.
+  - key: landing_pages
+    resource: landing-page
+    purpose: Store destination refs and offer alignment notes.
+  - key: performance_snapshots
+    resource: performance-snapshot
+    purpose: Store first measurement window requirements and later imported snapshots.
+policies:
+  - key: no_secret_exposure
+    kind: auth
+    description: Agents may reference providers and credential refs but must never receive secret values.
+  - key: agent_decides_channel_path
+    kind: boundary
+    description: The template defines contracts; the agent chooses provider, scope, and exact records in the run plan.
+  - key: approval_before_spend
+    kind: approval
+    description: External creation or material spend changes require operator approval before execution.
+approval_gates:
+  - key: launch_review
+    description: Review campaign structure, budget, destination, tracking, and expected risk before external creation.
+    required_when: external_write_or_spend
+  - key: budget_review
+    description: Review budget policy and spend limits before launch.
+    required_when: material_budget_change
+steps:
+  - id: orient
+    title: Orient From History
+    purpose: Read recent work, resources, learnings, experiments, and the current goal.
+    input_refs:
+      - goal
+      - offer
+      - target_markets
+      - budget_policy
+      - channel_preferences
+      - landing_page_refs
+    context_refs:
+      - recent_media_runs
+      - media_resources
+      - accepted_media_learnings
+      - active_media_experiments
+    policy_refs:
+      - agent_decides_channel_path
+    output_refs:
+      - launch_plan
+  - id: prepare_launch_shape
+    title: Prepare Launch Shape
+    purpose: Define the channel path, campaign structure, creative needs, measurement window, and open risks.
+    resource_refs:
+      - campaigns
+      - ad_sets
+      - creatives
+      - landing_pages
+    approval_refs:
+      - budget_review
+    depends_on:
+      - orient
+    output_refs:
+      - launch_plan
+  - id: create_external_structures
+    title: Create External Structures
+    purpose: Execute only approved provider actions granted by the concrete run plan.
+    action_refs:
+      - meta_campaign_create
+      - meta_ad_set_create
+      - meta_creative_create
+      - outbrain_campaign_create
+      - taboola_campaign_create
+      - webhook_campaign_create
+    policy_refs:
+      - no_secret_exposure
+      - approval_before_spend
+    approval_refs:
+      - launch_review
+    depends_on:
+      - prepare_launch_shape
+    output_refs:
+      - campaign_records
+  - id: record_launch_state
+    title: Record Launch State
+    purpose: Persist campaign, creative, landing page, and initial measurement records.
+    resource_refs:
+      - campaigns
+      - ad_sets
+      - creatives
+      - landing_pages
+      - performance_snapshots
+    depends_on:
+      - create_external_structures
+    output_refs:
+      - campaign_records
+      - followup_measurement_plan
+  - id: capture_learning
+    title: Capture Learning
+    purpose: Record reusable setup lessons with evidence and provenance.
+    context_refs:
+      - accepted_media_learnings
+    depends_on:
+      - record_launch_state
+outputs:
+  - key: launch_plan
+    name: Launch Plan
+    type: object
+    required: true
+  - key: campaign_records
+    name: Campaign Records
+    type: object
+  - key: followup_measurement_plan
+    name: Followup Measurement Plan
+    type: object
+learning_hooks:
+  - key: campaign_launch_learning
+    prompt: Record durable media launch lessons only when supported by explicit evidence and provenance.
+    tags:
+      - media-buying
+      - launch
+failure_handling:
+  - If required provider setup is missing, return setup gaps and store no external changes.
+  - If approval is missing, stop before external writes and preserve the prepared launch plan.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

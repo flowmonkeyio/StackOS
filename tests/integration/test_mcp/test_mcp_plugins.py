@@ -7,7 +7,13 @@ from .conftest import MCPClient
 
 def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
     plugins = mcp_client.call_tool_structured("plugin.list", {})["items"]
-    assert [p["slug"] for p in plugins] == ["core", "publishing", "seo", "utils"]
+    assert [p["slug"] for p in plugins] == [
+        "core",
+        "media-buying",
+        "publishing",
+        "seo",
+        "utils",
+    ]
 
     catalog = mcp_client.call_tool_structured("catalog.describe", {"plugin_slug": "utils"})
     assert catalog["plugins"][0]["plugin"]["slug"] == "utils"
@@ -20,6 +26,22 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
         "items"
     ]
     assert {cap["key"] for cap in capabilities} >= {"seo-content", "seo-research"}
+
+    media = mcp_client.call_tool_structured(
+        "catalog.describe",
+        {"plugin_slug": "media-buying"},
+    )
+    assert {a["key"] for a in media["plugins"][0]["actions"]} >= {
+        "meta.campaign.create",
+        "webhook.campaign.create",
+    }
+    media_action = next(
+        action
+        for action in media["plugins"][0]["actions"]
+        if action["key"] == "meta.campaign.create"
+    )
+    assert media_action["connector_key"] is None
+    assert media_action["availability"]["status"] == "not_executable"
 
     provider = mcp_client.call_tool_structured(
         "provider.describe",

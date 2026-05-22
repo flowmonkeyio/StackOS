@@ -48,16 +48,16 @@ Actions are static tool definitions:
 
 ```yaml
 actions:
-  - key: campaign.create
-    name: Create Campaign
+  - key: meta.campaign.create
+    name: Create Meta Campaign
     provider: meta-ads
-    capability: media-buying
+    capability: campaign-management
     risk_level: write
     input_schema:
       type: object
-      required: [account_id, campaign]
+      required: [account_ref, campaign]
       properties:
-        account_id: { type: string }
+        account_ref: { type: string }
         campaign: { type: object }
     output_schema:
       type: object
@@ -85,7 +85,8 @@ config:
 ```
 
 The endpoint remains static configuration. The action's `input_schema` defines
-the payload the agent may pass, and the daemon injects the provider credential.
+the explicit input body the agent may pass, and the daemon injects the provider
+credential.
 
 ## Add A Resource
 
@@ -110,12 +111,12 @@ Create `plugins/<slug>/workflows/<template-key>.yaml`:
 
 ```yaml
 schema_version: stackos.workflow-template.v1
-key: media-buying.launch-campaign
-name: Launch Campaign
+key: media-buying.campaign-launch
+name: Media Buying Campaign Launch
 version: 0.1.0
 domain: media-buying
 inputs:
-  - key: objective
+  - key: goal
     type: string
     required: true
 context_requirements:
@@ -133,9 +134,9 @@ steps:
   - id: execute-approved-actions
     title: Execute Approved Actions
     instructions: Call only validated actions after required approvals.
-expected_outputs:
-  - launch_summary
-  - action_call_ids
+outputs:
+  - key: launch_summary
+    type: object
 ```
 
 Templates should define the reusable setup and constraints. Concrete action

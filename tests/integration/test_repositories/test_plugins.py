@@ -17,11 +17,14 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
 
     plugins = repo.list_plugins()
 
-    assert [p.slug for p in plugins] == ["core", "publishing", "seo", "utils"]
+    assert [p.slug for p in plugins] == ["core", "media-buying", "publishing", "seo", "utils"]
     seo = repo.get_plugin("seo")
     assert seo.name == "SEO"
     assert seo.enabled_for_project is None
     assert seo.manifest_json["ui"]["nav"]["section"] == "SEO"
+    media = repo.get_plugin("media-buying")
+    assert media.name == "Media Buying"
+    assert media.manifest_json["ui"]["nav"]["section"] == "Media Buying"
     publishing = repo.get_plugin("publishing")
     assert publishing.name == "Publishing"
     assert publishing.manifest_json["ui"]["nav"]["section"] == "Publishing"
@@ -84,6 +87,41 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "keyword-opportunity",
         "content-piece",
         "content-refresh",
+    }
+
+    media = repo.catalog(plugin_slug="media-buying").plugins[0]
+    assert {cap.key for cap in media.capabilities} >= {
+        "campaign-management",
+        "creative-operations",
+        "media-measurement",
+    }
+    assert {provider.key for provider in media.providers} >= {
+        "meta-ads",
+        "outbrain",
+        "taboola",
+        "media-buying-webhook",
+    }
+    assert {action.key for action in media.actions} >= {
+        "meta.campaign.create",
+        "meta.ad-set.create",
+        "meta.creative.create",
+        "outbrain.campaign.create",
+        "taboola.campaign.create",
+        "webhook.campaign.create",
+    }
+    media_actions = {action.key: action for action in media.actions}
+    campaign_create = media_actions["meta.campaign.create"]
+    assert campaign_create.connector_key is None
+    assert campaign_create.operation == "meta.campaign.create"
+    assert campaign_create.requires_credential is True
+    assert campaign_create.availability.status == "not_executable"
+    assert campaign_create.availability.reasons[0] == "connector_not_configured"
+    assert {resource.key for resource in media.resources} >= {
+        "campaign",
+        "creative",
+        "performance-snapshot",
+        "budget-change",
+        "media-experiment",
     }
 
     publishing = repo.catalog(plugin_slug="publishing").plugins[0]
