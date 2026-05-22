@@ -37,6 +37,49 @@ class CapabilityManifest(BaseModel):
         return _validate_key(value)
 
 
+class AuthFieldManifest(BaseModel):
+    """One field in a provider-owned credential setup contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=160)
+    label: str = Field(min_length=1, max_length=200)
+    type: str = Field(default="text", max_length=40)
+    secret: bool = False
+    required: bool = False
+    placeholder: str | None = None
+    description: str | None = None
+    options: list[dict[str, str]] | None = None
+
+    @field_validator("key")
+    @classmethod
+    def _key(cls, value: str) -> str:
+        return _validate_key(value)
+
+
+class AuthMethodManifest(BaseModel):
+    """Credential setup method contributed by a provider."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=160)
+    label: str = Field(min_length=1, max_length=200)
+    auth_type: str = Field(default="none", max_length=80)
+    description: str = ""
+    interactive: bool = False
+    payload_format: str = Field(default="json", max_length=40)
+    payload_field: str | None = Field(default=None, max_length=160)
+    fields: list[AuthFieldManifest] = Field(default_factory=list)
+    config: dict[str, Any] | None = None
+
+    @field_validator("key", "payload_field")
+    @classmethod
+    def _keys(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_key(value)
+
+
 class ProviderManifest(BaseModel):
     """Provider metadata contributed by a plugin."""
 
@@ -46,6 +89,7 @@ class ProviderManifest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
     auth_type: str = Field(default="none", max_length=80)
+    auth_methods: list[AuthMethodManifest] = Field(default_factory=list)
     config: dict[str, Any] | None = None
 
     @field_validator("key")
@@ -309,6 +353,14 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 name="Local StackOS Daemon",
                 description="Local storage, validation, grant enforcement, and audit provider.",
                 auth_type="local",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="local",
+                        label="Local daemon",
+                        auth_type="local",
+                        payload_format="none",
+                    )
+                ],
             )
         ],
         actions=[
@@ -374,12 +426,50 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 name="OpenAI Images",
                 description="Image generation provider.",
                 auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                                placeholder="sk-...",
+                            )
+                        ],
+                    )
+                ],
             ),
             ProviderManifest(
                 key="firecrawl",
                 name="Firecrawl",
                 description="Web crawling and scraping provider.",
                 auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                                placeholder="fc-...",
+                            )
+                        ],
+                    )
+                ],
             ),
             ProviderManifest(
                 key="jina",
@@ -389,6 +479,24 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "for higher quota."
                 ),
                 auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="API Key",
+                                type="secret",
+                                secret=True,
+                                required=False,
+                            )
+                        ],
+                    )
+                ],
                 config={
                     "setup_note": (
                         "Jina Reader can run without a key; add a daemon-held API key "
@@ -401,6 +509,37 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 name="Reddit",
                 description="Reddit research provider using OAuth client credentials.",
                 auth_type="oauth-client-credentials",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="client_credentials",
+                        label="Client credentials",
+                        auth_type="oauth-client-credentials",
+                        payload_format="json",
+                        fields=[
+                            AuthFieldManifest(
+                                key="client_id",
+                                label="Client ID",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            ),
+                            AuthFieldManifest(
+                                key="client_secret",
+                                label="Client Secret",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            ),
+                            AuthFieldManifest(
+                                key="user_agent",
+                                label="User Agent",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            ),
+                        ],
+                    )
+                ],
                 config={
                     "credential_payload": {
                         "format": "json",

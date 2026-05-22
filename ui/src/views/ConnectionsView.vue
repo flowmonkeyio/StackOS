@@ -16,6 +16,7 @@ import {
   UiPanel,
   UiSecretInput,
   UiSectionHeader,
+  UiSelect,
 } from '@/components/ui'
 import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
 import type { DataTableColumn } from '@/components/types'
@@ -24,23 +25,19 @@ import { sanitizeForDisplay } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 
 type ConnectionRow = SchemaCredentialConnectionOut & { id: string }
-type SetupField = {
-  key: string
-  label: string
-  type?: 'text' | 'url'
-  required?: boolean
-  placeholder?: string
-  description?: string
-}
+type AuthMethod = NonNullable<SchemaAuthProviderOut['auth_methods']>[number]
+type AuthField = NonNullable<AuthMethod['fields']>[number]
 
 const route = useRoute()
 const catalogStore = useStackOsCatalogStore()
 const { authProviders, authStatus, loading, error } = storeToRefs(catalogStore)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
-const secretByProvider = ref<Record<string, string>>({})
-const labelByProvider = ref<Record<string, string>>({})
-const configByProvider = ref<Record<string, Record<string, string>>>({})
+const selectedMethodByProvider = ref<Record<string, string>>({})
+const selectedConnectionByProvider = ref<Record<string, string>>({})
+const labelByForm = ref<Record<string, string>>({})
+const profileByForm = ref<Record<string, string>>({})
+const fieldsByForm = ref<Record<string, Record<string, string>>>({})
 const busyAction = ref<string | null>(null)
 const providerMessages = ref<Record<string, { tone: 'success' | 'danger' | 'info'; text: string }>>(
   {},
@@ -54,8 +51,10 @@ const connections = computed<ConnectionRow[]>(() =>
 
 const columns: DataTableColumn<ConnectionRow>[] = [
   { key: 'provider_key', label: 'Provider' },
+  { key: 'profile_key', label: 'Profile', widthClass: 'w-32' },
   { key: 'status', label: 'Status', widthClass: 'w-32' },
-  { key: 'auth_type', label: 'Auth', widthClass: 'w-28' },
+  { key: 'auth_method_key', label: 'Method', widthClass: 'w-36' },
+  { key: 'label', label: 'Label', format: (value) => String(value ?? '-') },
   { key: 'credential_ref', label: 'Credential ref' },
   { key: 'expires_at', label: 'Expires', format: (value) => String(value ?? '-') },
 ]
@@ -65,50 +64,93 @@ async function load(): Promise<void> {
   await catalogStore.refreshAuth(projectId.value)
 }
 
-function supportsSecret(provider: SchemaAuthProviderOut): boolean {
-  return !['none', 'local'].includes(provider.auth_type)
+function authMethods(provider: SchemaAuthProviderOut): AuthMethod[] {
+  return provider.auth_methods ?? []
 }
 
-function setupFields(provider: SchemaAuthProviderOut): SetupField[] {
-  const fields = provider.config_json?.setup_fields
-  if (!Array.isArray(fields)) return []
-  return fields.filter(isSetupField)
+function selectedMethodKey(provider: SchemaAuthProviderOut): string {
+  return selectedMethodByProvider.value[provider.key] ?? authMethods(provider)[0]?.key ?? ''
 }
 
-function isSetupField(value: unknown): value is SetupField {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-  const field = value as Record<string, unknown>
-  return typeof field.key === 'string' && typeof field.label === 'string'
+function selectedMethod(provider: SchemaAuthProviderOut): AuthMethod | null {
+  const key = selectedMethodKey(provider)
+  return authMethods(provider).find((method) => method.key === key) ?? authMethods(provider)[0] ?? null
 }
 
-function inputType(field: SetupField): 'text' | 'url' {
-  return field.type === 'url' ? 'url' : 'text'
+function setSelectedMethod(providerKey: string, value: string | number | null): void {
+  selectedMethodByProvider.value = {
+    ...selectedMethodByProvider.value,
+    [providerKey]: String(value ?? ''),
+  }
 }
 
-function configFieldValue(providerKey: string, fieldKey: string): string {
-  return configByProvider.value[providerKey]?.[fieldKey] ?? ''
+function formKey(providerKey: string, methodKey: string): string {
+  return `${providerKey}:${methodKey}`
 }
 
-function setConfigField(
+function supportsCredential(provider: SchemaAuthProviderOut): boolean {
+  return authMethods(provider).some(
+    (method) =>
+      method.payload_format !== 'none' || (method.fields ?? []).length > 0 || method.interactive,
+  )
+}
+
+function inputType(field: AuthField): 'text' | 'url' | 'number' {
+  if (field.type === 'url') return 'url'
+  if (field.type === 'number') return 'number'
+  return 'text'
+}
+
+function isSecretField(field: AuthField): boolean {
+  return field.secret || ['secret', 'password'].includes(field.type)
+}
+
+function fieldValue(providerKey: string, methodKey: string, fieldKey: string): string {
+  return fieldsByForm.value[formKey(providerKey, methodKey)]?.[fieldKey] ?? ''
+}
+
+function setFieldValue(
   providerKey: string,
+  methodKey: string,
   fieldKey: string,
   value: string | number | null,
 ): void {
-  configByProvider.value = {
-    ...configByProvider.value,
-    [providerKey]: {
-      ...(configByProvider.value[providerKey] ?? {}),
+  const key = formKey(providerKey, methodKey)
+  fieldsByForm.value = {
+    ...fieldsByForm.value,
+    [key]: {
+      ...(fieldsByForm.value[key] ?? {}),
       [fieldKey]: value === null ? '' : String(value),
     },
   }
 }
 
-function connectionFor(providerKey: string): SchemaCredentialConnectionOut | null {
-  return (
-    (authStatus.value?.connections ?? []).find(
-      (connection) => connection.provider_key === providerKey && connection.revoked_at === null,
-    ) ?? null
+function activeConnectionsFor(providerKey: string): SchemaCredentialConnectionOut[] {
+  return (authStatus.value?.connections ?? []).filter(
+    (connection) => connection.provider_key === providerKey && connection.revoked_at === null,
   )
+}
+
+function selectedConnectionFor(providerKey: string): SchemaCredentialConnectionOut | null {
+  const active = activeConnectionsFor(providerKey)
+  const selectedRef = selectedConnectionByProvider.value[providerKey]
+  return (
+    active.find((connection) => connection.credential_ref === selectedRef) ?? active[0] ?? null
+  )
+}
+
+function setSelectedConnection(providerKey: string, value: string | number | null): void {
+  selectedConnectionByProvider.value = {
+    ...selectedConnectionByProvider.value,
+    [providerKey]: String(value ?? ''),
+  }
+}
+
+function connectionLabel(connection: SchemaCredentialConnectionOut): string {
+  const parts = [connection.profile_key]
+  if (connection.label) parts.push(connection.label)
+  parts.push(connection.credential_ref)
+  return parts.join(' · ')
 }
 
 function actionKey(providerKey: string, action: string): string {
@@ -130,38 +172,40 @@ function setProviderMessage(
   }
 }
 
-function credentialConfig(provider: SchemaAuthProviderOut): Record<string, string> | null {
-  const config: Record<string, string> = {}
-  const label = (labelByProvider.value[provider.key] ?? '').trim()
-  if (label) config.label = label
-  for (const field of setupFields(provider)) {
-    const value = configFieldValue(provider.key, field.key).trim()
+function credentialFields(provider: SchemaAuthProviderOut, method: AuthMethod): Record<string, string> | null {
+  const fields: Record<string, string> = {}
+  for (const field of method.fields ?? []) {
+    const value = fieldValue(provider.key, method.key, field.key).trim()
     if (field.required && !value) {
       setProviderMessage(provider.key, 'danger', `${field.label} is required.`)
       return null
     }
-    if (value) config[field.key] = value
+    if (value) fields[field.key] = value
   }
-  return config
+  return fields
 }
 
 async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
-  if (!supportsSecret(provider)) return
-  const secret = (secretByProvider.value[provider.key] ?? '').trim()
-  if (!secret) {
-    setProviderMessage(provider.key, 'danger', 'Secret is required.')
+  const method = selectedMethod(provider)
+  if (!method || method.payload_format === 'none') return
+  const fields = credentialFields(provider, method)
+  if (fields === null) return
+  const key = formKey(provider.key, method.key)
+  const profileKey = (profileByForm.value[key] ?? 'default').trim() || 'default'
+  const label = (labelByForm.value[key] ?? '').trim()
+  if (Object.keys(fields).length === 0 && (method.fields ?? []).some((field) => field.secret)) {
+    setProviderMessage(provider.key, 'danger', 'Credential fields are required.')
     return
   }
-  const config = credentialConfig(provider)
-  if (config === null) return
   busyAction.value = actionKey(provider.key, 'save')
   try {
     const response = await catalogStore.storeCredential(projectId.value, provider.key, {
-      plaintext_payload: secret,
-      payload_encoding: 'plain',
-      config_json: Object.keys(config).length > 0 ? config : null,
+      auth_method_key: method.key,
+      profile_key: profileKey,
+      label: label || null,
+      fields,
     })
-    secretByProvider.value = { ...secretByProvider.value, [provider.key]: '' }
+    fieldsByForm.value = { ...fieldsByForm.value, [key]: {} }
     setProviderMessage(provider.key, 'success', `Stored ${response.data.credential_ref}.`)
   } catch (err) {
     setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to store credential'))
@@ -170,8 +214,30 @@ async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
   }
 }
 
+async function startProvider(provider: SchemaAuthProviderOut): Promise<void> {
+  const method = selectedMethod(provider)
+  if (!method) return
+  busyAction.value = actionKey(provider.key, 'start')
+  try {
+    const response = await catalogStore.startCredential(projectId.value, provider.key, {
+      auth_method_key: method.key,
+      redirect_uri: null,
+    })
+    const url = response.data.authorization_url ?? response.data.setup_url
+    setProviderMessage(
+      provider.key,
+      'info',
+      url ? `Setup URL ready: ${url}` : `Started ${response.data.status}.`,
+    )
+  } catch (err) {
+    setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to start auth flow'))
+  } finally {
+    busyAction.value = null
+  }
+}
+
 async function testProvider(provider: SchemaAuthProviderOut): Promise<void> {
-  const connection = connectionFor(provider.key)
+  const connection = selectedConnectionFor(provider.key)
   if (!connection) return
   busyAction.value = actionKey(provider.key, 'test')
   try {
@@ -191,7 +257,7 @@ async function testProvider(provider: SchemaAuthProviderOut): Promise<void> {
 }
 
 async function revokeProvider(provider: SchemaAuthProviderOut): Promise<void> {
-  const connection = connectionFor(provider.key)
+  const connection = selectedConnectionFor(provider.key)
   if (!connection) return
   busyAction.value = actionKey(provider.key, 'revoke')
   try {
@@ -275,27 +341,46 @@ watch(projectId, load)
           <div class="flex flex-wrap items-center gap-1.5 text-sm text-fg-muted">
             <span>{{ provider.key }}</span>
             <UiBadge
-              v-if="connectionFor(provider.key)"
+              v-if="activeConnectionsFor(provider.key).length > 0"
               tone="success"
             >
-              {{ connectionFor(provider.key)?.status }}
+              {{ activeConnectionsFor(provider.key).length }} connected
             </UiBadge>
           </div>
 
           <div
-            v-if="supportsSecret(provider)"
+            v-if="supportsCredential(provider) && selectedMethod(provider)"
             class="mt-3 grid gap-2"
           >
-            <UiFormField label="Secret">
+            <UiFormField
+              v-if="authMethods(provider).length > 1"
+              label="Auth Method"
+            >
               <template #default="{ id, describedBy, invalid }">
-                <UiSecretInput
+                <UiSelect
                   :id="id"
-                  v-model="secretByProvider[provider.key]"
+                  :model-value="selectedMethodKey(provider)"
+                  :options="
+                    authMethods(provider).map((method) => ({
+                      value: method.key,
+                      label: method.label,
+                    }))
+                  "
                   :aria-describedby="describedBy"
                   :invalid="invalid"
-                  no-copy
-                  no-reveal
-                  placeholder="Paste credential"
+                  size="sm"
+                  @update:model-value="setSelectedMethod(provider.key, $event)"
+                />
+              </template>
+            </UiFormField>
+            <UiFormField label="Profile">
+              <template #default="{ id, describedBy, invalid }">
+                <UiInput
+                  :id="id"
+                  v-model="profileByForm[formKey(provider.key, selectedMethod(provider)?.key ?? '')]"
+                  :aria-describedby="describedBy"
+                  :invalid="invalid"
+                  placeholder="default"
                   size="sm"
                 />
               </template>
@@ -304,7 +389,7 @@ watch(projectId, load)
               <template #default="{ id, describedBy, invalid }">
                 <UiInput
                   :id="id"
-                  v-model="labelByProvider[provider.key]"
+                  v-model="labelByForm[formKey(provider.key, selectedMethod(provider)?.key ?? '')]"
                   :aria-describedby="describedBy"
                   :invalid="invalid"
                   placeholder="Primary"
@@ -313,32 +398,85 @@ watch(projectId, load)
               </template>
             </UiFormField>
             <UiFormField
-              v-for="field in setupFields(provider)"
+              v-for="field in selectedMethod(provider)?.fields ?? []"
               :key="field.key"
               :label="field.label"
-              :help="field.description"
+              :help="field.description ?? undefined"
               :required="field.required"
             >
               <template #default="{ id, describedBy, invalid }">
-                <UiInput
+                <UiSecretInput
+                  v-if="isSecretField(field)"
                   :id="id"
-                  :model-value="configFieldValue(provider.key, field.key)"
+                  :model-value="
+                    fieldValue(provider.key, selectedMethod(provider)?.key ?? '', field.key)
+                  "
+                  :aria-describedby="describedBy"
+                  :invalid="invalid"
+                  no-copy
+                  no-reveal
+                  :placeholder="field.placeholder ?? ''"
+                  size="sm"
+                  @update:model-value="
+                    setFieldValue(provider.key, selectedMethod(provider)?.key ?? '', field.key, $event)
+                  "
+                />
+                <UiInput
+                  v-else
+                  :id="id"
+                  :model-value="
+                    fieldValue(provider.key, selectedMethod(provider)?.key ?? '', field.key)
+                  "
                   :type="inputType(field)"
                   :aria-describedby="describedBy"
                   :invalid="invalid"
-                  :placeholder="field.placeholder"
+                  :placeholder="field.placeholder ?? undefined"
                   size="sm"
-                  @update:model-value="setConfigField(provider.key, field.key, $event)"
+                  @update:model-value="
+                    setFieldValue(provider.key, selectedMethod(provider)?.key ?? '', field.key, $event)
+                  "
                 />
               </template>
             </UiFormField>
             <div class="flex flex-wrap gap-2">
+              <UiFormField
+                v-if="activeConnectionsFor(provider.key).length > 0"
+                label="Credential Profile"
+                class="basis-full"
+              >
+                <template #default="{ id, describedBy, invalid }">
+                  <UiSelect
+                    :id="id"
+                    :model-value="selectedConnectionFor(provider.key)?.credential_ref ?? null"
+                    :options="
+                      activeConnectionsFor(provider.key).map((connection) => ({
+                        value: connection.credential_ref,
+                        label: connectionLabel(connection),
+                      }))
+                    "
+                    :aria-describedby="describedBy"
+                    :invalid="invalid"
+                    size="sm"
+                    @update:model-value="setSelectedConnection(provider.key, $event)"
+                  />
+                </template>
+              </UiFormField>
+              <UiButton
+                v-if="selectedMethod(provider)?.interactive"
+                size="sm"
+                variant="secondary"
+                icon-left="external-link"
+                :loading="isBusy(provider.key, 'start')"
+                @click="startProvider(provider)"
+              >
+                Start
+              </UiButton>
               <UiButton
                 size="sm"
                 variant="primary"
                 icon-left="save"
                 :loading="isBusy(provider.key, 'save')"
-                :disabled="!secretByProvider[provider.key]?.trim()"
+                :disabled="selectedMethod(provider)?.payload_format === 'none'"
                 @click="saveCredential(provider)"
               >
                 Save
@@ -347,7 +485,7 @@ watch(projectId, load)
                 size="sm"
                 icon-left="plug-zap"
                 :loading="isBusy(provider.key, 'test')"
-                :disabled="!connectionFor(provider.key)"
+                :disabled="!selectedConnectionFor(provider.key)"
                 @click="testProvider(provider)"
               >
                 Test
@@ -357,7 +495,7 @@ watch(projectId, load)
                 variant="danger"
                 icon-left="ban"
                 :loading="isBusy(provider.key, 'revoke')"
-                :disabled="!connectionFor(provider.key)"
+                :disabled="!selectedConnectionFor(provider.key)"
                 @click="revokeProvider(provider)"
               >
                 Revoke

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 from datetime import datetime
 from typing import Any
 
@@ -13,16 +12,15 @@ from sqlmodel import Session
 from content_stack.api.deps import get_session, get_settings
 from content_stack.api.envelopes import WriteResponse, write_response
 from content_stack.auth_providers import (
+    AuthCredentialSetOut,
     AuthProviderOut,
     AuthRepository,
     AuthRevokeOut,
-    AuthSecretSetOut,
     AuthStartOut,
     AuthStatusOut,
     AuthTestOut,
 )
 from content_stack.config import Settings
-from content_stack.repositories.base import ValidationError
 
 router = APIRouter(prefix="/api/v1", tags=["auth-providers"])
 
@@ -30,54 +28,57 @@ router = APIRouter(prefix="/api/v1", tags=["auth-providers"])
 class AuthStartRequest(BaseModel):
     """Local-admin setup request. It never carries a secret."""
 
-    model_config = ConfigDict(json_schema_extra={"example": {"redirect_uri": None}})
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"auth_method_key": "oauth2", "redirect_uri": None}},
+    )
 
+    auth_method_key: str | None = None
     redirect_uri: str | None = None
 
 
 class AuthTestRequest(BaseModel):
-    """Sanitized auth test request using an opaque ref or provider key."""
+    """Sanitized auth test request using an opaque credential ref."""
 
-    model_config = ConfigDict(json_schema_extra={"example": {"provider_key": "firecrawl"}})
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"credential_ref": "cred_..."}},
+    )
 
-    credential_ref: str | None = None
-    provider_key: str | None = None
+    credential_ref: str
 
 
 class AuthRevokeRequest(BaseModel):
-    """Local-admin revoke request using an opaque ref or provider key."""
-
-    model_config = ConfigDict(json_schema_extra={"example": {"credential_ref": "cred_..."}})
-
-    credential_ref: str | None = None
-    provider_key: str | None = None
-
-
-class AuthSecretSetRequest(BaseModel):
-    """Local-admin secret write. The response never includes the secret."""
+    """Local-admin revoke request using an opaque credential ref."""
 
     model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "plaintext_payload": "provider-secret",
-                "config_json": {"label": "Primary"},
-            }
-        }
+        extra="forbid",
+        json_schema_extra={"example": {"credential_ref": "cred_..."}},
     )
 
-    plaintext_payload: str
-    payload_encoding: str = Field(default="plain", pattern="^(plain|base64)$")
-    config_json: dict[str, Any] | None = None
+    credential_ref: str
+
+
+class AuthCredentialSetRequest(BaseModel):
+    """Local-admin credential profile write. The response never includes secrets."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "auth_method_key": "api_key",
+                "profile_key": "primary",
+                "label": "Primary",
+                "fields": {"api_key": "provider-secret"},
+            }
+        },
+    )
+
+    auth_method_key: str | None = None
+    profile_key: str = Field(default="default", min_length=1, max_length=120)
+    label: str | None = Field(default=None, max_length=200)
+    fields: dict[str, Any] = Field(default_factory=dict)
     expires_at: datetime | None = None
-
-
-def _payload_bytes(body: AuthSecretSetRequest) -> bytes:
-    if body.payload_encoding == "base64":
-        try:
-            return base64.b64decode(body.plaintext_payload, validate=True)
-        except ValueError as exc:
-            raise ValidationError("plaintext_payload is not valid base64") from exc
-    return body.plaintext_payload.encode("utf-8")
 
 
 @router.get("/auth/providers", response_model=list[AuthProviderOut])
@@ -117,6 +118,7 @@ async def auth_start(
             project_id=project_id,
             provider_key=provider_key,
             settings=settings,
+            auth_method_key=body.auth_method_key if body is not None else None,
             redirect_uri=body.redirect_uri if body is not None else None,
         )
     )
@@ -124,22 +126,24 @@ async def auth_start(
 
 @router.post(
     "/projects/{project_id}/auth/{provider_key}/credentials",
-    response_model=WriteResponse[AuthSecretSetOut],
+    response_model=WriteResponse[AuthCredentialSetOut],
     status_code=status.HTTP_201_CREATED,
 )
-async def auth_store_secret(
+async def auth_store_credential(
     project_id: int,
     provider_key: str,
-    body: AuthSecretSetRequest,
+    body: AuthCredentialSetRequest,
     session: Session = Depends(get_session),
-) -> WriteResponse[AuthSecretSetOut]:
-    """Store a provider secret through the local-admin auth surface."""
+) -> WriteResponse[AuthCredentialSetOut]:
+    """Store a provider credential profile through the local-admin auth surface."""
     return write_response(
-        AuthRepository(session).store_secret(
+        AuthRepository(session).store_credential(
             project_id=project_id,
             provider_key=provider_key,
-            plaintext_payload=_payload_bytes(body),
-            config_json=body.config_json,
+            auth_method_key=body.auth_method_key,
+            profile_key=body.profile_key,
+            label=body.label,
+            fields=body.fields,
             expires_at=body.expires_at,
         )
     )
@@ -159,7 +163,6 @@ async def auth_test(
         await AuthRepository(session).test(
             project_id=project_id,
             credential_ref=body.credential_ref,
-            provider_key=body.provider_key,
         )
     )
 
@@ -178,7 +181,6 @@ async def auth_revoke(
         AuthRepository(session).revoke(
             project_id=project_id,
             credential_ref=body.credential_ref,
-            provider_key=body.provider_key,
         )
     )
 

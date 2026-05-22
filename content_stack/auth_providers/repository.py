@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -33,6 +35,8 @@ from content_stack.integrations import integration_class_for
 from content_stack.repositories.base import ConflictError, Envelope, NotFoundError, ValidationError
 from content_stack.repositories.projects import IntegrationCredentialRepository
 
+_PROFILE_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,119}$")
+
 
 def _utcnow() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
@@ -40,6 +44,29 @@ def _utcnow() -> datetime:
 
 def _credential_ref() -> str:
     return f"cred_{secrets.token_urlsafe(18)}"
+
+
+class AuthFieldOut(BaseModel):
+    key: str
+    label: str
+    type: str = "text"
+    secret: bool = False
+    required: bool = False
+    placeholder: str | None = None
+    description: str | None = None
+    options: list[dict[str, str]] | None = None
+
+
+class AuthMethodOut(BaseModel):
+    key: str
+    label: str
+    auth_type: str
+    description: str = ""
+    interactive: bool = False
+    payload_format: str = "json"
+    payload_field: str | None = None
+    fields: list[AuthFieldOut] = Field(default_factory=list)
+    config: dict[str, Any] | None = None
 
 
 class AuthProviderOut(BaseModel):
@@ -50,6 +77,7 @@ class AuthProviderOut(BaseModel):
     name: str
     description: str
     auth_type: str
+    auth_methods: list[AuthMethodOut] = Field(default_factory=list)
     scopes: list[str]
     config_json: dict[str, Any] | None
 
@@ -59,6 +87,9 @@ class CredentialConnectionOut(BaseModel):
     project_id: int | None
     provider_key: str
     auth_type: str
+    auth_method_key: str
+    profile_key: str
+    label: str | None = None
     status: str
     expires_at: datetime | None
     last_tested_at: datetime | None
@@ -79,6 +110,7 @@ class AuthStartOut(BaseModel):
     project_id: int
     provider_key: str
     auth_type: str
+    auth_method_key: str
     status: str
     setup_url: str | None = None
     authorization_url: str | None = None
@@ -108,22 +140,22 @@ class AuthRevokeOut(BaseModel):
     status: str = "revoked"
 
 
-class AuthSecretSetOut(CredentialConnectionOut):
-    """Sanitized result for a local-admin credential secret write."""
+class AuthCredentialSetOut(CredentialConnectionOut):
+    """Sanitized result for a local-admin credential profile write."""
 
 
 @dataclass(frozen=True)
 class ResolvedCredential:
     """Daemon-internal credential bundle for connector execution.
 
-    The plaintext payload is intentionally not a Pydantic model field and is
-    hidden from repr; callers must never serialize this object into MCP/REST
+    The secret payload is intentionally not a Pydantic model field and is hidden
+    from repr; callers must never serialize this object into MCP/REST
     responses or audit JSON.
     """
 
     credential: Credential
     integration: IntegrationCredential
-    plaintext_payload: bytes = dataclass_field(repr=False)
+    secret_payload: bytes = dataclass_field(repr=False)
     config_json: dict[str, Any] | None = dataclass_field(default=None, repr=False)
 
     @property
@@ -174,20 +206,14 @@ class AuthRepository:
                     description=provider.description,
                     auth_type=provider.auth_type,
                     scopes_json=scopes,
-                    config_json=redact_secrets(provider.config_json)
-                    if provider.config_json is not None
-                    else None,
+                    config_json=self._safe_provider_config(provider.config_json),
                 )
             else:
                 row.name = provider.name
                 row.description = provider.description
                 row.auth_type = provider.auth_type
                 row.scopes_json = scopes
-                row.config_json = (
-                    redact_secrets(provider.config_json)
-                    if provider.config_json is not None
-                    else None
-                )
+                row.config_json = self._safe_provider_config(provider.config_json)
                 row.updated_at = now
             self._s.add(row)
         self._s.commit()
@@ -238,78 +264,96 @@ class AuthRepository:
         project_id: int,
         provider_key: str,
         settings: Settings,
+        auth_method_key: str | None = None,
         redirect_uri: str | None = None,
     ) -> Envelope[AuthStartOut]:
         self._require_project(project_id)
         provider = self._get_provider(provider_key)
         assert provider is not None
+        method = self._get_auth_method(provider, auth_method_key)
         _ = redirect_uri
         setup_url = self._local_setup_url(
             settings=settings,
             project_id=project_id,
             provider_key=provider_key,
         )
+        setup_required = provider.auth_type not in {"none", "local"}
+        status = "not-required"
+        if setup_required and method.interactive:
+            status = "requires-oauth"
+        elif setup_required:
+            status = "requires-local-credential"
         return Envelope(
             data=AuthStartOut(
                 project_id=project_id,
                 provider_key=provider.key,
-                auth_type=provider.auth_type,
-                status="requires-local-secret" if provider.auth_type != "none" else "not-required",
-                setup_url=setup_url if provider.auth_type != "none" else None,
+                auth_type=method.auth_type,
+                auth_method_key=method.key,
+                status=status,
+                setup_url=setup_url if setup_required else None,
+                authorization_url=self._authorization_url(method),
             ),
             project_id=project_id,
         )
 
-    def store_secret(
+    def store_credential(
         self,
         *,
         project_id: int,
         provider_key: str,
-        plaintext_payload: bytes,
-        config_json: dict[str, Any] | None = None,
+        fields: dict[str, Any],
+        auth_method_key: str | None = None,
+        profile_key: str = "default",
+        label: str | None = None,
         expires_at: datetime | None = None,
-    ) -> Envelope[AuthSecretSetOut]:
+    ) -> Envelope[AuthCredentialSetOut]:
         self._require_project(project_id)
         provider = self._get_provider(provider_key)
         assert provider is not None
-        if config_json is not None and redact_secrets(config_json) != config_json:
-            raise ValidationError(
-                "config_json must not contain secret-like keys; put the secret in plaintext_payload"
-            )
-        self._validate_setup_fields(provider=provider, config_json=config_json)
+        method = self._get_auth_method(provider, auth_method_key)
+        profile_key = self._normalize_profile_key(profile_key)
+        secret_values, safe_config = self._split_credential_fields(method=method, fields=fields)
+        safe_config["auth_method_key"] = method.key
+        safe_config["profile_key"] = profile_key
+        if label is not None and label.strip():
+            safe_config["label"] = label.strip()
+        secret_payload = self._serialize_secret_payload(method=method, values=secret_values)
         env = IntegrationCredentialRepository(self._s).set(
             project_id=project_id,
             kind=provider.key,
-            plaintext_payload=plaintext_payload,
-            config_json=config_json,
+            secret_payload=secret_payload,
+            profile_key=profile_key,
+            config_json=safe_config,
             expires_at=expires_at,
         )
         row = self._s.get(IntegrationCredential, env.data.id)
         if row is None:
             raise NotFoundError("stored credential row not found")
-        credential = self._ensure_credential(row, status="connected")
+        credential = self._ensure_credential(row, status="connected", method=method)
         out = self._connection_out(credential, row)
         self.record_usage_event(
             credential=credential,
             provider_key=provider.key,
-            operation="auth.secret.set",
+            operation="auth.credential.set",
             status="connected",
-            metadata_json={"source": "local-admin"},
+            metadata_json={
+                "source": "local-admin",
+                "auth_method_key": method.key,
+                "profile_key": profile_key,
+            },
         )
         self._s.commit()
-        return Envelope(data=AuthSecretSetOut(**out.model_dump()), project_id=project_id)
+        return Envelope(data=AuthCredentialSetOut(**out.model_dump()), project_id=project_id)
 
     async def test(
         self,
         *,
         project_id: int,
-        credential_ref: str | None = None,
-        provider_key: str | None = None,
+        credential_ref: str,
     ) -> Envelope[AuthTestOut]:
         credential, row = self._resolve_credential(
             project_id=project_id,
             credential_ref=credential_ref,
-            provider_key=provider_key,
         )
         integration_cls = integration_class_for(row.kind)
         if integration_cls is None:
@@ -318,11 +362,11 @@ class AuthRepository:
                 data={"provider_key": row.kind, "credential_ref": credential.credential_ref},
             )
         assert row.id is not None
-        plaintext = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
+        secret_payload = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
         extra = self._integration_extra(row)
         async with httpx.AsyncClient(timeout=30.0) as client:
             integration = integration_cls(
-                payload=plaintext,
+                payload=secret_payload,
                 project_id=project_id,
                 http=client,
                 **extra,
@@ -365,7 +409,6 @@ class AuthRepository:
         credential, row = self._resolve_credential(
             project_id=project_id,
             credential_ref=credential_ref,
-            provider_key=provider_key,
         )
         if provider_key is not None and credential.provider_key != provider_key:
             raise ValidationError(
@@ -377,7 +420,7 @@ class AuthRepository:
                 },
             )
         assert row.id is not None
-        plaintext = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
+        secret_payload = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
         self.record_usage_event(
             credential=credential,
             provider_key=credential.provider_key,
@@ -388,7 +431,7 @@ class AuthRepository:
         return ResolvedCredential(
             credential=credential,
             integration=row,
-            plaintext_payload=plaintext,
+            secret_payload=secret_payload,
             config_json=row.config_json,
         )
 
@@ -396,13 +439,11 @@ class AuthRepository:
         self,
         *,
         project_id: int,
-        credential_ref: str | None = None,
-        provider_key: str | None = None,
+        credential_ref: str,
     ) -> Envelope[AuthRevokeOut]:
         credential, row = self._resolve_credential(
             project_id=project_id,
             credential_ref=credential_ref,
-            provider_key=provider_key,
         )
         now = _utcnow()
         if row.id is not None:
@@ -517,7 +558,15 @@ class AuthRepository:
                     col(IntegrationCredential.project_id).is_(None),
                 )
             )
-        return list(self._s.exec(stmt.order_by(col(IntegrationCredential.id).asc())).all())
+        return list(
+            self._s.exec(
+                stmt.order_by(
+                    col(IntegrationCredential.kind).asc(),
+                    col(IntegrationCredential.project_id).desc(),
+                    col(IntegrationCredential.profile_key).asc(),
+                )
+            ).all()
+        )
 
     def _credential_rows(
         self,
@@ -544,14 +593,29 @@ class AuthRepository:
         row: IntegrationCredential,
         *,
         status: str | None = None,
+        method: AuthMethodOut | None = None,
     ) -> Credential:
         assert row.id is not None
         provider = self._get_provider(row.kind, required=False)
+        if method is None and provider is not None:
+            method = self._get_auth_method(
+                provider,
+                (row.config_json or {}).get("auth_method_key"),
+                required=False,
+            )
         credential = self._s.exec(
             select(Credential).where(Credential.integration_credential_id == row.id)
         ).first()
         now = _utcnow()
         resolved_status = status or self._status_for_integration(row)
+        auth_type = (
+            method.auth_type
+            if method is not None
+            else provider.auth_type
+            if provider is not None
+            else "unknown"
+        )
+        auth_method_key = method.key if method is not None else "default"
         if credential is None:
             credential = Credential(
                 project_id=row.project_id,
@@ -559,7 +623,9 @@ class AuthRepository:
                 integration_credential_id=row.id,
                 credential_ref=_credential_ref(),
                 provider_key=row.kind,
-                auth_type=provider.auth_type if provider is not None else "unknown",
+                auth_type=auth_type,
+                auth_method_key=auth_method_key,
+                profile_key=row.profile_key,
                 status=resolved_status,
                 expires_at=row.expires_at,
                 config_json=self._safe_config(row.config_json),
@@ -570,9 +636,9 @@ class AuthRepository:
                 provider.id if provider is not None else credential.auth_provider_id
             )
             credential.provider_key = row.kind
-            credential.auth_type = (
-                provider.auth_type if provider is not None else credential.auth_type
-            )
+            credential.auth_type = auth_type
+            credential.auth_method_key = auth_method_key
+            credential.profile_key = row.profile_key
             credential.status = resolved_status if credential.revoked_at is None else "revoked"
             credential.expires_at = row.expires_at
             credential.config_json = self._safe_config(row.config_json)
@@ -599,6 +665,9 @@ class AuthRepository:
             project_id=credential.project_id,
             provider_key=credential.provider_key,
             auth_type=credential.auth_type,
+            auth_method_key=credential.auth_method_key,
+            profile_key=credential.profile_key,
+            label=self._credential_label(credential),
             status=credential.status if row is not None else "revoked",
             expires_at=credential.expires_at,
             last_tested_at=credential.last_tested_at,
@@ -607,6 +676,11 @@ class AuthRepository:
             account=self._account_for_credential(credential),
             setup_required=row is None or credential.status in {"pending", "expired", "revoked"},
         )
+
+    def _credential_label(self, credential: Credential) -> str | None:
+        config = credential.config_json or {}
+        label = config.get("label")
+        return str(label) if label is not None and str(label).strip() else None
 
     def _account_for_credential(self, credential: Credential) -> dict[str, Any] | None:
         if credential.id is None:
@@ -637,36 +711,14 @@ class AuthRepository:
         *,
         project_id: int,
         credential_ref: str | None,
-        provider_key: str | None,
     ) -> tuple[Credential, IntegrationCredential]:
-        if credential_ref is not None:
-            credential = self._s.exec(
-                select(Credential).where(col(Credential.credential_ref) == credential_ref)
-            ).first()
-            if credential is None:
-                raise NotFoundError(f"credential ref {credential_ref!r} not found")
-        elif provider_key is not None:
-            row = self._s.exec(
-                select(IntegrationCredential).where(
-                    col(IntegrationCredential.kind) == provider_key,
-                    col(IntegrationCredential.project_id) == project_id,
-                )
-            ).first()
-            if row is None:
-                row = self._s.exec(
-                    select(IntegrationCredential).where(
-                        col(IntegrationCredential.kind) == provider_key,
-                        col(IntegrationCredential.project_id).is_(None),
-                    )
-                ).first()
-            if row is None:
-                raise NotFoundError(
-                    f"credential not found for project={project_id} provider={provider_key!r}",
-                    data={"project_id": project_id, "provider_key": provider_key},
-                )
-            credential = self._ensure_credential(row)
-        else:
-            raise ValidationError("credential_ref or provider_key is required")
+        if credential_ref is None:
+            raise ValidationError("credential_ref is required")
+        credential = self._s.exec(
+            select(Credential).where(col(Credential.credential_ref) == credential_ref)
+        ).first()
+        if credential is None:
+            raise NotFoundError(f"credential ref {credential_ref!r} not found")
 
         if credential.revoked_at is not None or credential.integration_credential_id is None:
             raise ConflictError(
@@ -780,36 +832,199 @@ class AuthRepository:
             raise NotFoundError(f"auth provider {provider_key!r} not found")
         return row
 
-    def _validate_setup_fields(
+    def _normalize_profile_key(self, profile_key: str) -> str:
+        normalized = profile_key.strip().lower().replace(" ", "-")
+        if not _PROFILE_KEY_RE.match(normalized):
+            raise ValidationError(
+                "profile_key must start with a letter and contain only lowercase letters, "
+                "numbers, underscores, or hyphens",
+                data={"profile_key": profile_key},
+            )
+        return normalized
+
+    def _auth_methods(self, provider: AuthProvider) -> list[AuthMethodOut]:
+        raw_methods = (provider.config_json or {}).get("auth_methods")
+        methods: list[AuthMethodOut] = []
+        if isinstance(raw_methods, list):
+            for raw_method in raw_methods:
+                if not isinstance(raw_method, dict):
+                    continue
+                fields = [
+                    AuthFieldOut(**raw_field)
+                    for raw_field in raw_method.get("fields", [])
+                    if isinstance(raw_field, dict)
+                ]
+                methods.append(
+                    AuthMethodOut(
+                        key=str(raw_method.get("key") or provider.auth_type or "default"),
+                        label=str(raw_method.get("label") or provider.name),
+                        auth_type=str(raw_method.get("auth_type") or provider.auth_type),
+                        description=str(raw_method.get("description") or ""),
+                        interactive=bool(raw_method.get("interactive")),
+                        payload_format=str(raw_method.get("payload_format") or "json"),
+                        payload_field=(
+                            str(raw_method["payload_field"])
+                            if raw_method.get("payload_field") is not None
+                            else None
+                        ),
+                        fields=fields,
+                        config=(
+                            dict(raw_method["config"])
+                            if isinstance(raw_method.get("config"), dict)
+                            else None
+                        ),
+                    )
+                )
+        if methods:
+            return methods
+        if provider.auth_type in {"none", "local"}:
+            return [
+                AuthMethodOut(
+                    key=provider.auth_type,
+                    label=provider.auth_type.replace("-", " ").title(),
+                    auth_type=provider.auth_type,
+                    payload_format="none",
+                )
+            ]
+        raise ValidationError(
+            f"auth provider {provider.key!r} does not declare auth_methods",
+            data={"provider_key": provider.key},
+        )
+
+    def _get_auth_method(
+        self,
+        provider: AuthProvider,
+        auth_method_key: str | Any | None,
+        *,
+        required: bool = True,
+    ) -> AuthMethodOut | None:
+        methods = self._auth_methods(provider)
+        if auth_method_key is None:
+            return methods[0] if methods else None
+        auth_method_key = str(auth_method_key)
+        for method in methods:
+            if method.key == auth_method_key:
+                return method
+        if required:
+            raise ValidationError(
+                f"auth method {auth_method_key!r} not found for provider {provider.key!r}",
+                data={"provider_key": provider.key, "auth_method_key": auth_method_key},
+            )
+        return None
+
+    def _split_credential_fields(
         self,
         *,
-        provider: AuthProvider,
-        config_json: dict[str, Any] | None,
-    ) -> None:
-        config = config_json or {}
-        setup_fields = (provider.config_json or {}).get("setup_fields")
-        if not isinstance(setup_fields, list):
-            return
-        for raw_field in setup_fields:
-            if not isinstance(raw_field, dict):
-                continue
-            key = raw_field.get("key")
-            if not isinstance(key, str) or not key:
-                continue
-            value = config.get(key)
-            label = str(raw_field.get("label") or key)
-            if bool(raw_field.get("required")) and (
-                not isinstance(value, str) or not value.strip()
-            ):
+        method: AuthMethodOut,
+        fields: dict[str, Any],
+    ) -> tuple[dict[str, str], dict[str, Any]]:
+        declared = {field.key: field for field in method.fields}
+        unknown = sorted(set(fields) - set(declared))
+        if unknown:
+            raise ValidationError(
+                "credential fields include keys not declared by the provider auth method",
+                data={"unknown_fields": unknown, "auth_method_key": method.key},
+            )
+        secret_values: dict[str, str] = {}
+        safe_config: dict[str, Any] = {}
+        for field in method.fields:
+            raw = fields.get(field.key)
+            is_blank = raw is None or (isinstance(raw, str) and not raw.strip())
+            if field.required and is_blank:
                 raise ValidationError(
-                    f"{provider.key} credential missing config_json.{key}",
-                    data={"provider_key": provider.key, "field": key, "label": label},
+                    f"{method.key} credential missing {field.key}",
+                    data={"auth_method_key": method.key, "field": field.key},
                 )
-            if value is not None and not isinstance(value, str):
+            if is_blank:
+                continue
+            if field.secret:
+                secret_values[field.key] = self._secret_field_value(field=field, raw=raw)
+            else:
+                safe_config[field.key] = self._safe_field_value(field=field, raw=raw)
+        if redact_secrets(safe_config) != safe_config:
+            raise ValidationError(
+                "non-secret credential fields include secret-like keys; mark them as secret "
+                "in the provider auth method",
+                data={"auth_method_key": method.key},
+            )
+        return secret_values, safe_config
+
+    def _secret_field_value(self, *, field: AuthFieldOut, raw: Any) -> str:
+        value = raw.strip() if isinstance(raw, str) else str(raw).strip()
+        if not value:
+            raise ValidationError(
+                f"secret credential field {field.key} must be a non-empty string",
+                data={"field": field.key},
+            )
+        return value
+
+    def _safe_field_value(self, *, field: AuthFieldOut, raw: Any) -> Any:
+        if field.type == "number":
+            if isinstance(raw, int | float) and not isinstance(raw, bool):
+                return raw
+            if isinstance(raw, str):
+                text = raw.strip()
+                try:
+                    return int(text) if text.isdigit() else float(text)
+                except ValueError as exc:
+                    raise ValidationError(
+                        f"credential field {field.key} must be numeric",
+                        data={"field": field.key},
+                    ) from exc
+            raise ValidationError(
+                f"credential field {field.key} must be numeric",
+                data={"field": field.key},
+            )
+        if field.type == "boolean":
+            if isinstance(raw, bool):
+                return raw
+            if isinstance(raw, str):
+                text = raw.strip().lower()
+                if text in {"true", "1", "yes", "on"}:
+                    return True
+                if text in {"false", "0", "no", "off"}:
+                    return False
+            raise ValidationError(
+                f"credential field {field.key} must be boolean",
+                data={"field": field.key},
+            )
+        return raw.strip() if isinstance(raw, str) else raw
+
+    def _serialize_secret_payload(self, *, method: AuthMethodOut, values: dict[str, str]) -> bytes:
+        if method.payload_format == "none":
+            if values:
                 raise ValidationError(
-                    f"{provider.key} credential config_json.{key} must be a string",
-                    data={"provider_key": provider.key, "field": key, "label": label},
+                    "auth method does not accept secret fields",
+                    data={"auth_method_key": method.key},
                 )
+            return b""
+        if method.payload_format == "raw":
+            field_key = method.payload_field
+            if field_key is None:
+                if len(values) != 1:
+                    raise ValidationError(
+                        "raw credential payloads require one secret field or payload_field",
+                        data={"auth_method_key": method.key},
+                    )
+                field_key = next(iter(values))
+            value = values.get(field_key)
+            if value is None:
+                raise ValidationError(
+                    f"raw credential payload missing {field_key}",
+                    data={"auth_method_key": method.key, "payload_field": field_key},
+                )
+            return value.encode("utf-8")
+        if method.payload_format != "json":
+            raise ValidationError(
+                f"unsupported auth method payload_format {method.payload_format!r}",
+                data={"auth_method_key": method.key},
+            )
+        return json.dumps(values, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+    def _authorization_url(self, method: AuthMethodOut) -> str | None:
+        config = method.config or {}
+        value = config.get("authorization_url") or config.get("authorize_url")
+        return str(value) if value is not None and str(value).strip() else None
 
     def _provider_out(self, row: AuthProvider, plugin: Plugin | None) -> AuthProviderOut:
         assert row.id is not None
@@ -821,8 +1036,9 @@ class AuthRepository:
             name=row.name,
             description=row.description,
             auth_type=row.auth_type,
+            auth_methods=self._auth_methods(row),
             scopes=list(row.scopes_json or []),
-            config_json=row.config_json,
+            config_json=self._provider_public_config(row.config_json),
         )
 
     def _safe_config(self, config_json: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -832,16 +1048,34 @@ class AuthRepository:
         safe.pop("oauth_state", None)
         return safe
 
+    def _safe_provider_config(self, config_json: dict[str, Any] | None) -> dict[str, Any] | None:
+        if config_json is None:
+            return None
+        visible_config = {key: value for key, value in config_json.items() if key != "auth_methods"}
+        safe = redact_secrets(visible_config)
+        if "auth_methods" in config_json:
+            safe["auth_methods"] = config_json["auth_methods"]
+        return safe or None
+
+    def _provider_public_config(self, config_json: dict[str, Any] | None) -> dict[str, Any] | None:
+        if config_json is None:
+            return None
+        public = dict(config_json)
+        public.pop("auth_methods", None)
+        return public or None
+
     def _require_project(self, project_id: int) -> None:
         if self._s.get(Project, project_id) is None:
             raise NotFoundError(f"project {project_id} not found")
 
 
 __all__ = [
+    "AuthCredentialSetOut",
+    "AuthFieldOut",
+    "AuthMethodOut",
     "AuthProviderOut",
     "AuthRepository",
     "AuthRevokeOut",
-    "AuthSecretSetOut",
     "AuthStartOut",
     "AuthStatusOut",
     "AuthTestOut",

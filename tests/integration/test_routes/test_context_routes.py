@@ -149,6 +149,6 @@ def test_context_query_route_enforces_limit_and_field_projection(
 
     bad_field = api.post(
         f"/api/v1/projects/{project_id}/context/query",
-        json={"sources": ["learnings"], "fields": ["statement", "plaintext_payload"]},
+        json={"sources": ["learnings"], "fields": ["statement", "secret_payload"]},
     )
     assert bad_field.status_code == 422

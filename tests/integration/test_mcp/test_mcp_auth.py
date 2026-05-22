@@ -13,8 +13,9 @@ def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> dict:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
         json={
-            "plaintext_payload": "fc-secret",
-            "config_json": {"label": "Primary Firecrawl"},
+            "auth_method_key": "api_key",
+            "label": "Primary Firecrawl",
+            "fields": {"api_key": "fc-secret"},
         },
         headers=mcp._headers(),
     )
@@ -40,7 +41,7 @@ def test_auth_status_and_test_return_sanitized_refs(
     rendered_status = json.dumps(status)
     assert "fc-secret" not in rendered_status
     assert "encrypted_payload" not in rendered_status
-    assert "plaintext_payload" not in rendered_status
+    assert "secret_payload" not in rendered_status
 
     httpx_mock.add_response(
         method="POST",
@@ -65,7 +66,7 @@ def test_local_admin_auth_mutations_are_not_system_granted(
     project_id = seeded_project["data"]["id"]
     for tool_name, arguments in [
         ("auth.start", {"project_id": project_id, "provider_key": "firecrawl"}),
-        ("auth.revoke", {"project_id": project_id, "provider_key": "firecrawl"}),
+        ("auth.revoke", {"project_id": project_id, "credential_ref": "cred_missing"}),
     ]:
         err = mcp_client.call_tool_error(tool_name, arguments)
         assert err["code"] == -32007
@@ -77,7 +78,7 @@ def test_removed_integration_secret_mcp_tools_are_not_registered(
 ) -> None:
     for tool_name, arguments in [
         ("integration.list", {"project_id": 1}),
-        ("integration.set", {"project_id": 1, "kind": "firecrawl", "plaintext_payload": "x"}),
+        ("integration.set", {"project_id": 1, "kind": "firecrawl", "secret_payload": "x"}),
         ("integration.remove", {"credential_id": 1}),
     ]:
         err = mcp_client.call_tool_error(tool_name, arguments)

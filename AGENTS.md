@@ -40,11 +40,13 @@ artifacts by resource key.
 
 ## Auth Boundary
 
-Agents never receive secrets. Each provider owns its auth type and credential
-storage:
+Agents never receive secrets. Each provider owns its auth methods and
+credential storage:
 
-- API keys, OAuth tokens, and account metadata are stored server-side.
-- Agents receive provider/account ids, status, scopes, and safe diagnostics.
+- API keys, OAuth tokens, SMTP passwords, app passwords, and account metadata
+  are stored server-side through typed provider auth methods.
+- Agents receive provider/account ids, profile keys, auth method keys, status,
+  scopes, and safe diagnostics.
 - `action.execute` resolves credentials inside the daemon process.
 - Credential usage events should be recorded for auditability.
 

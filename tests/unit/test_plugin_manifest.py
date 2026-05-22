@@ -11,9 +11,18 @@ import content_stack.plugins.manifest as manifest_module
 from content_stack.plugins.manifest import (
     BUILTIN_PLUGIN_MANIFESTS,
     PluginManifest,
+    ProviderManifest,
     load_plugin_manifest_file,
     load_plugin_manifest_files,
 )
+
+
+def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) -> list[str]:
+    methods = provider.auth_methods
+    if method_key is not None:
+        methods = [method for method in methods if method.key == method_key]
+    assert methods
+    return [field.key for field in methods[0].fields]
 
 
 def test_builtin_plugin_manifests_validate() -> None:
@@ -93,8 +102,8 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
         "gtm-webhook",
     }
     providers = {provider.key: provider for provider in manifest.providers}
-    assert providers["hubspot"].config["setup_fields"][0]["key"] == "portal_ref"
-    assert providers["gtm-webhook"].config["setup_fields"][0]["key"] == "tool_owner"
+    assert _auth_field_keys(providers["hubspot"])[:2] == ["access_token", "portal_ref"]
+    assert _auth_field_keys(providers["gtm-webhook"]) == ["api_key", "tool_owner"]
     actions = {action.key: action for action in manifest.actions}
     assert actions["hubspot.crm.companies.batch_upsert"].provider == "hubspot"
     assert actions["hubspot.crm.companies.batch_upsert"].risk_level == "write"
@@ -151,8 +160,8 @@ def test_media_buying_plugin_yaml_facade_validates() -> None:
         "media-buying-webhook",
     }
     providers = {provider.key: provider for provider in manifest.providers}
-    assert providers["meta-ads"].config["setup_fields"][0]["key"] == "business_ref"
-    assert providers["media-buying-webhook"].config["setup_fields"][0]["key"] == "tool_owner"
+    assert _auth_field_keys(providers["meta-ads"])[:2] == ["access_token", "business_ref"]
+    assert _auth_field_keys(providers["media-buying-webhook"]) == ["api_key", "tool_owner"]
     actions = {action.key: action for action in manifest.actions}
     assert actions["meta.campaign.create"].provider == "meta-ads"
     assert actions["meta.campaign.create"].risk_level == "write"
@@ -197,7 +206,7 @@ def test_seo_plugin_yaml_facade_validates() -> None:
         "ahrefs",
     }
     providers = {provider.key: provider for provider in manifest.providers}
-    assert providers["dataforseo"].config["setup_fields"][0]["key"] == "login"
+    assert _auth_field_keys(providers["dataforseo"]) == ["login", "password"]
     assert {resource.key for resource in manifest.resources} >= {
         "keyword-opportunity",
         "serp-snapshot",
@@ -238,8 +247,12 @@ def test_publishing_plugin_yaml_facade_validates() -> None:
     assert manifest.ui["nav"]["section"] == "Publishing"
     assert {provider.key for provider in manifest.providers} == {"wordpress", "ghost"}
     providers = {provider.key: provider for provider in manifest.providers}
-    assert providers["wordpress"].config["setup_fields"][0]["key"] == "wp_url"
-    assert providers["ghost"].config["setup_fields"][0]["key"] == "ghost_url"
+    assert _auth_field_keys(providers["wordpress"]) == [
+        "username",
+        "application_password",
+        "wp_url",
+    ]
+    assert _auth_field_keys(providers["ghost"])[:2] == ["admin_api_key", "ghost_url"]
     actions = {action.key: action for action in manifest.actions}
     assert actions["wordpress.post.create"].provider == "wordpress"
     assert actions["wordpress.post.create"].risk_level == "write"

@@ -36,18 +36,18 @@ class AuthStartInput(MCPInput):
 
     project_id: int
     provider_key: str
+    auth_method_key: str | None = None
     redirect_uri: str | None = None
 
 
 class AuthTestInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"project_id": 1, "provider_key": "firecrawl"}},
+        json_schema_extra={"example": {"project_id": 1, "credential_ref": "cred_..."}},
     )
 
     project_id: int
-    credential_ref: str | None = None
-    provider_key: str | None = None
+    credential_ref: str
 
 
 class AuthRevokeInput(MCPInput):
@@ -57,8 +57,7 @@ class AuthRevokeInput(MCPInput):
     )
 
     project_id: int
-    credential_ref: str | None = None
-    provider_key: str | None = None
+    credential_ref: str
 
 
 def _settings_from_context(ctx: MCPContext) -> Settings:
@@ -88,6 +87,7 @@ async def _auth_start(
         project_id=inp.project_id,
         provider_key=inp.provider_key,
         settings=_settings_from_context(ctx),
+        auth_method_key=inp.auth_method_key,
         redirect_uri=inp.redirect_uri,
     )
     return WriteEnvelope[AuthStartOut](
@@ -105,7 +105,6 @@ async def _auth_test(
     env = await AuthRepository(ctx.session).test(
         project_id=inp.project_id,
         credential_ref=inp.credential_ref,
-        provider_key=inp.provider_key,
     )
     return WriteEnvelope[AuthTestOut](
         data=env.data,
@@ -122,7 +121,6 @@ async def _auth_revoke(
     env = AuthRepository(ctx.session).revoke(
         project_id=inp.project_id,
         credential_ref=inp.credential_ref,
-        provider_key=inp.provider_key,
     )
     return WriteEnvelope[AuthRevokeOut](
         data=env.data,

@@ -19,30 +19,24 @@ def test_set_then_get_decrypted_round_trips_payload(session: Session, project_id
     out = repo.set(
         project_id=project_id,
         kind="dataforseo",
-        plaintext_payload=b"sk-original",
+        secret_payload=b"sk-original",
         config_json={"login": "alice"},
     )
     plaintext = repo.get_decrypted(out.data.id)
     assert plaintext == b"sk-original"
 
 
-def test_get_decrypted_for_resolves_project_then_global(session: Session, project_id: int) -> None:
-    """Project-scoped row wins over a same-kind global row (PLAN.md L1100-L1102)."""
+def test_get_decrypted_requires_explicit_row_id_for_each_scope(
+    session: Session, project_id: int
+) -> None:
+    """Decrypting credential material does not resolve by provider kind/profile."""
     repo = IntegrationCredentialRepository(session)
-    repo.set(project_id=None, kind="firecrawl", plaintext_payload=b"GLOBAL")
-    repo.set(project_id=project_id, kind="firecrawl", plaintext_payload=b"PROJECT")
+    global_row = repo.set(project_id=None, kind="firecrawl", secret_payload=b"GLOBAL")
+    project_row = repo.set(project_id=project_id, kind="firecrawl", secret_payload=b"PROJECT")
 
-    cred_id, plaintext = repo.get_decrypted_for(project_id=project_id, kind="firecrawl")
-    assert plaintext == b"PROJECT"
-    assert cred_id is not None
-
-    # Falls back to global when project_id has no row.
-    other_repo = IntegrationCredentialRepository(session)
-    cred_id_global, plaintext_global = other_repo.get_decrypted_for(
-        project_id=None, kind="firecrawl"
-    )
-    assert plaintext_global == b"GLOBAL"
-    assert cred_id_global != cred_id
+    assert repo.get_decrypted(project_row.data.id) == b"PROJECT"
+    assert repo.get_decrypted(global_row.data.id) == b"GLOBAL"
+    assert project_row.data.id != global_row.data.id
 
 
 def test_set_overwrites_existing_row_for_same_project_and_kind(
@@ -50,8 +44,8 @@ def test_set_overwrites_existing_row_for_same_project_and_kind(
 ) -> None:
     """Re-setting the same (project_id, kind) updates ciphertext + nonce."""
     repo = IntegrationCredentialRepository(session)
-    out_a = repo.set(project_id=project_id, kind="firecrawl", plaintext_payload=b"first")
-    out_b = repo.set(project_id=project_id, kind="firecrawl", plaintext_payload=b"second")
+    out_a = repo.set(project_id=project_id, kind="firecrawl", secret_payload=b"first")
+    out_b = repo.set(project_id=project_id, kind="firecrawl", secret_payload=b"second")
     # Same row id (upsert), but new payload bytes.
     assert out_a.data.id == out_b.data.id
     assert repo.get_decrypted(out_b.data.id) == b"second"
@@ -77,7 +71,7 @@ def test_cross_machine_seed_swap_breaks_decryption(
     from content_stack.crypto.seed import ensure_seed_file
 
     repo = IntegrationCredentialRepository(session)
-    out = repo.set(project_id=project_id, kind="firecrawl", plaintext_payload=b"original")
+    out = repo.set(project_id=project_id, kind="firecrawl", secret_payload=b"original")
     cred_id = out.data.id
 
     # Swap to a fresh seed file. The old credential was encrypted under

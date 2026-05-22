@@ -28,8 +28,20 @@ describe('ConnectionsView', () => {
 
       if (url === '/api/v1/auth/providers') {
         return json([
-          authProvider('firecrawl', 'Firecrawl', 'api-key'),
-          authProvider('local-files', 'Local Files', 'local'),
+          authProvider('firecrawl', 'Firecrawl', 'api-key', apiKeyMethod('fc-...')),
+          authProvider('local-files', 'Local Files', 'local', [
+            {
+              key: 'local',
+              label: 'Local daemon',
+              auth_type: 'local',
+              description: '',
+              interactive: false,
+              payload_format: 'none',
+              payload_field: null,
+              fields: [],
+              config: null,
+            },
+          ]),
         ])
       }
       if (url === '/api/v1/projects/1/auth/status') {
@@ -91,7 +103,7 @@ describe('ConnectionsView', () => {
     expect(wrapper.find('[aria-label="Reveal value"]').exists()).toBe(false)
     expect(wrapper.find('[aria-label="Copy value"]').exists()).toBe(false)
 
-    const secretInput = wrapper.find<HTMLInputElement>('input[placeholder="Paste credential"]')
+    const secretInput = wrapper.find<HTMLInputElement>('input[placeholder="fc-..."]')
     await secretInput.setValue('fc-secret')
     await wrapper.find('input[placeholder="Primary"]').setValue('Primary')
     await clickButton(wrapper, 'Save')
@@ -102,9 +114,10 @@ describe('ConnectionsView', () => {
     expect(wrapper.text()).not.toContain('fc-secret')
     expect(wrapper.html()).not.toContain('fc-secret')
     expect(postedBodies).toContainEqual({
-      plaintext_payload: 'fc-secret',
-      payload_encoding: 'plain',
-      config_json: { label: 'Primary' },
+      auth_method_key: 'api_key',
+      profile_key: 'default',
+      label: 'Primary',
+      fields: { api_key: 'fc-secret' },
     })
 
     await clickButton(wrapper, 'Test')
@@ -113,12 +126,12 @@ describe('ConnectionsView', () => {
 
     await clickButton(wrapper, 'Revoke')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Revoked cred_firecrawl.'))
-    expect(JSON.stringify(postedBodies.filter((body) => !hasPlaintextPayload(body)))).not.toContain(
+    expect(JSON.stringify(postedBodies.filter((body) => !hasCredentialFields(body)))).not.toContain(
       'fc-secret',
     )
   })
 
-  it('stores safe provider setup fields with the credential payload', async () => {
+  it('stores safe auth method fields with the credential payload', async () => {
     const postedBodies: unknown[] = []
 
     globalThis.fetch = vi.fn(async (input, init) => {
@@ -127,17 +140,44 @@ describe('ConnectionsView', () => {
 
       if (url === '/api/v1/auth/providers') {
         return json([
-          authProvider('wordpress', 'WordPress', 'api-key', {
-            setup_fields: [
-              {
-                key: 'wp_url',
-                label: 'Site URL',
-                type: 'url',
-                required: true,
-                placeholder: 'https://example.com',
-              },
-            ],
-          }),
+          authProvider('wordpress', 'WordPress', 'application-password', [
+            {
+              key: 'application_password',
+              label: 'Application password',
+              auth_type: 'application-password',
+              description: '',
+              interactive: false,
+              payload_format: 'json',
+              payload_field: null,
+              config: null,
+              fields: [
+                {
+                  key: 'username',
+                  label: 'Username',
+                  type: 'secret',
+                  secret: true,
+                  required: true,
+                  placeholder: 'editor',
+                },
+                {
+                  key: 'application_password',
+                  label: 'Application Password',
+                  type: 'secret',
+                  secret: true,
+                  required: true,
+                  placeholder: 'xxxx xxxx',
+                },
+                {
+                  key: 'wp_url',
+                  label: 'Site URL',
+                  type: 'url',
+                  secret: false,
+                  required: true,
+                  placeholder: 'https://example.com',
+                },
+              ],
+            },
+          ]),
         ])
       }
       if (url === '/api/v1/projects/1/auth/status') {
@@ -173,19 +213,20 @@ describe('ConnectionsView', () => {
     const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
     await vi.waitFor(() => expect(wrapper.text()).toContain('WordPress'))
 
-    await wrapper.find<HTMLInputElement>('input[placeholder="Paste credential"]').setValue(
-      '{"username":"editor","application_password":"app pass"}',
-    )
+    await wrapper.find<HTMLInputElement>('input[placeholder="editor"]').setValue('editor')
+    await wrapper.find<HTMLInputElement>('input[placeholder="xxxx xxxx"]').setValue('app pass')
     await wrapper.find('input[placeholder="Primary"]').setValue('Editorial')
     await wrapper.find('input[placeholder="https://example.com"]').setValue('https://wp.example')
     await clickButton(wrapper, 'Save')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('Stored cred_wordpress.'))
     expect(postedBodies).toContainEqual({
-      plaintext_payload: '{"username":"editor","application_password":"app pass"}',
-      payload_encoding: 'plain',
-      config_json: {
-        label: 'Editorial',
+      auth_method_key: 'application_password',
+      profile_key: 'default',
+      label: 'Editorial',
+      fields: {
+        username: 'editor',
+        application_password: 'app pass',
         wp_url: 'https://wp.example',
       },
     })
@@ -197,7 +238,7 @@ function authProvider(
   key: string,
   name: string,
   authType: string,
-  configJson: Record<string, unknown> | null = null,
+  authMethods: unknown[] = apiKeyMethod(),
 ) {
   return {
     id: key === 'firecrawl' ? 1 : 2,
@@ -207,8 +248,9 @@ function authProvider(
     name,
     description: '',
     auth_type: authType,
+    auth_methods: authMethods,
     scopes: [],
-    config_json: configJson,
+    config_json: { auth_methods: authMethods },
   }
 }
 
@@ -218,6 +260,9 @@ function authConnection({ revokedAt }: { revokedAt: string | null }) {
     project_id: 1,
     provider_key: 'firecrawl',
     auth_type: 'api-key',
+    auth_method_key: 'api_key',
+    profile_key: 'default',
+    label: 'Primary Firecrawl',
     status: revokedAt ? 'revoked' : 'connected',
     expires_at: null,
     last_tested_at: null,
@@ -228,8 +273,33 @@ function authConnection({ revokedAt }: { revokedAt: string | null }) {
   }
 }
 
-function hasPlaintextPayload(body: unknown): boolean {
-  return typeof body === 'object' && body !== null && 'plaintext_payload' in body
+function apiKeyMethod(placeholder = 'sk-...') {
+  return [
+    {
+      key: 'api_key',
+      label: 'API key',
+      auth_type: 'api-key',
+      description: '',
+      interactive: false,
+      payload_format: 'raw',
+      payload_field: 'api_key',
+      fields: [
+        {
+          key: 'api_key',
+          label: 'API Key',
+          type: 'secret',
+          secret: true,
+          required: true,
+          placeholder,
+        },
+      ],
+      config: null,
+    },
+  ]
+}
+
+function hasCredentialFields(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && 'fields' in body
 }
 
 async function clickButton(wrapper: ReturnType<typeof mount>, label: string): Promise<void> {

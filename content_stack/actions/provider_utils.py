@@ -96,7 +96,7 @@ def int_range(
 def credential_payload(request: ActionConnectorRequest) -> JsonObject:
     if request.credential is None:
         raise ValidationError(f"{request.provider_key or request.action_ref} requires a credential")
-    text = request.credential.plaintext_payload.decode("utf-8").strip()
+    text = request.credential.secret_payload.decode("utf-8").strip()
     if not text:
         raise ValidationError(f"{request.provider_key or request.action_ref} credential is empty")
     try:

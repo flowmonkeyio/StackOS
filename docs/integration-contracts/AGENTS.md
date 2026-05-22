@@ -33,7 +33,7 @@ Each contract review should include:
 
 - provider docs ledger with official links
 - auth and setup implications
-- proposed provider keys and safe setup fields
+- proposed provider keys and safe auth method fields
 - action refs, risk levels, and executable status
 - input/output contract principles
 - resource mapping

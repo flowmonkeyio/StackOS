@@ -29,79 +29,150 @@ providers:
     name: Meta Ads
     description: Meta Marketing API provider contract for ad accounts, campaigns, ad sets, ads, creatives, and insights.
     auth_type: oauth
-    config:
-      setup_fields:
+    auth_methods:
+      - key: oauth2_token
+        label: OAuth2 access token
+        auth_type: oauth
+        payload_format: json
+        fields:
+        - key: access_token
+          label: Access Token
+          type: secret
+          secret: true
+          required: true
         - key: business_ref
           label: Business Ref
           type: text
+          secret: false
           required: false
           placeholder: business or portfolio reference
         - key: api_version
           label: API Version
           type: text
+          secret: false
           required: false
           placeholder: v25.0
   - key: google-ads
     name: Google Ads
     description: Google Ads API provider contract for customers, budgets, campaigns, ad groups, assets, ads, reporting, and conversions.
     auth_type: oauth
-    config:
-      setup_fields:
+    auth_methods:
+      - key: oauth2_refresh_token
+        label: OAuth2 refresh token
+        auth_type: oauth
+        payload_format: json
+        fields:
+        - key: developer_token
+          label: Developer Token
+          type: secret
+          secret: true
+          required: true
+        - key: client_id
+          label: Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: refresh_token
+          label: Refresh Token
+          type: secret
+          secret: true
+          required: true
         - key: manager_account_ref
           label: Manager Account Ref
           type: text
+          secret: false
           required: false
           placeholder: safe manager account reference
         - key: customer_ref
           label: Customer Ref
           type: text
+          secret: false
           required: false
           placeholder: safe customer account reference
   - key: outbrain
     name: Outbrain
     description: Outbrain Amplify provider contract. OB-TOKEN-V1 generation, storage, expiry checks, and rotation stay daemon-side.
     auth_type: api-key
-    config:
-      token_lifecycle:
-        model: daemon-managed-ob-token-v1
-        max_age_days: 30
-        stores_secrets_in_manifest: false
-      setup_fields:
+    auth_methods:
+      - key: ob_token_v1
+        label: OB-TOKEN-V1
+        auth_type: api-key
+        payload_format: raw
+        payload_field: token
+        fields:
+        - key: token
+          label: OB-TOKEN-V1
+          type: secret
+          secret: true
+          required: true
         - key: account_ref
           label: Account Ref
           type: text
+          secret: false
           required: false
           placeholder: safe account reference
         - key: marketer_ref
           label: Marketer Ref
           type: text
+          secret: false
           required: false
           placeholder: safe marketer reference
-        - key: token_status_ref
-          label: Token Status Ref
-          type: text
-          required: false
-          placeholder: safe daemon token status reference
+    config:
+      token_lifecycle:
+        model: daemon-managed-ob-token-v1
+        max_age_days: 30
+        stores_secrets_in_manifest: false
   - key: taboola
     name: Taboola
     description: Taboola Backstage API provider contract for account-scoped campaigns, items, reports, and conversion rules.
     auth_type: oauth
-    config:
-      setup_fields:
+    auth_methods:
+      - key: client_credentials
+        label: Client credentials
+        auth_type: oauth-client-credentials
+        payload_format: json
+        fields:
+        - key: client_id
+          label: Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: Client Secret
+          type: secret
+          secret: true
+          required: true
         - key: account_ref
           label: Account Ref
           type: text
+          secret: false
           required: false
           placeholder: safe account reference
   - key: media-buying-webhook
     name: Media Buying Webhook
     description: User-owned campaign tooling exposed through project-local static HTTP actions.
     auth_type: api-key
-    config:
-      setup_fields:
+    auth_methods:
+      - key: api_key
+        label: API key
+        auth_type: api-key
+        payload_format: raw
+        payload_field: api_key
+        fields:
+        - key: api_key
+          label: API Key
+          type: secret
+          secret: true
+          required: true
         - key: tool_owner
           label: Tool Owner
           type: text
+          secret: false
           required: false
           placeholder: team or system name
 actions:

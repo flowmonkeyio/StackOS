@@ -71,7 +71,7 @@ class DataForSeoActionConnector:
         payload = request.input_json
         async with httpx.AsyncClient(timeout=60.0) as http:
             client = DataForSeoIntegration(
-                payload=request.credential.plaintext_payload,
+                payload=request.credential.secret_payload,
                 project_id=request.project_id,
                 http=http,
                 login=login,

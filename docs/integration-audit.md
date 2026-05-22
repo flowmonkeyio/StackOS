@@ -274,7 +274,7 @@ Remaining auth UI depth is provider setup breadth, not the core boundary:
 
 - OAuth/start-flow providers need a generic start/return UI path.
 - Providers with non-secret safe config such as login, site URL, base URL, or
-  scope selection should declare schema-driven setup fields instead of relying
+  scope selection should declare schema-driven auth method fields instead of relying
   on ad hoc UI controls.
 - Provider account metadata should be displayed when wrappers return safe
   account details.
@@ -673,7 +673,7 @@ Jina, Reddit, DataForSEO, Ahrefs, WordPress, and Ghost. Remaining Phase 1 cleanu
 ### Phase 2: Credential Setup UX
 
 Complete for the baseline API-key/local-admin path. Connections now provides
-generic store/test/revoke controls, renders schema-driven safe setup fields,
+generic store/test/revoke controls, renders schema-driven safe auth method fields,
 uses the REST-only UI console token for the narrow setup lane, and clears
 secret input after save. Remaining work belongs to provider-specific breadth:
 OAuth start/return flows and richer account metadata display.

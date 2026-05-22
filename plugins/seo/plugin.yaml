@@ -21,17 +21,40 @@ providers:
     name: DataForSEO
     description: SERP, keyword volume, and competitor research provider.
     auth_type: api-key
-    config:
-      setup_fields:
+    auth_methods:
+      - key: basic
+        label: Login and password
+        auth_type: basic
+        payload_format: raw
+        payload_field: password
+        fields:
         - key: login
           label: API Login
           type: text
+          secret: false
           required: true
           placeholder: login@example.com
+        - key: password
+          label: API Password
+          type: secret
+          secret: true
+          required: true
   - key: ahrefs
     name: Ahrefs
     description: Organic keyword and backlink research provider; requires eligible API access and API units.
     auth_type: api-key
+    auth_methods:
+      - key: api_key
+        label: API key
+        auth_type: api-key
+        payload_format: raw
+        payload_field: api_key
+        fields:
+        - key: api_key
+          label: API Key
+          type: secret
+          secret: true
+          required: true
     config:
       setup_note: Ahrefs API v3 usage consumes API units; confirm the plan, key limits, and remaining units before high-volume runs.
 actions:

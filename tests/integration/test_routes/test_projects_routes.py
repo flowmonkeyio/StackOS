@@ -87,12 +87,12 @@ def test_auth_status_includes_global_and_project_credentials(
         IntegrationCredentialRepository(session).set(
             project_id=None,
             kind="anthropic",
-            plaintext_payload=b"global-key",
+            secret_payload=b"global-key",
         )
 
     created = api.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
-        json={"plaintext_payload": "project-key"},
+        json={"auth_method_key": "api_key", "fields": {"api_key": "project-key"}},
     )
     assert created.status_code == 201
 

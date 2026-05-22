@@ -433,10 +433,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Auth Store Secret
-         * @description Store a provider secret through the local-admin auth surface.
+         * Auth Store Credential
+         * @description Store a provider credential profile through the local-admin auth surface.
          */
-        post: operations["auth_store_secret_api_v1_projects__project_id__auth__provider_key__credentials_post"];
+        post: operations["auth_store_credential_api_v1_projects__project_id__auth__provider_key__credentials_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1162,8 +1162,12 @@ export interface components {
             credential_refs?: string[];
             /** Credential State */
             credential_state: string;
+            /** Deferred Reason */
+            deferred_reason?: string | null;
             /** Executable */
             executable: boolean;
+            /** Execution Mode */
+            execution_mode?: string | null;
             /** Operation */
             operation: string;
             /** Reasons */
@@ -1491,8 +1495,140 @@ export interface components {
             /** Uri */
             uri: string;
         };
+        /**
+         * AuthCredentialSetOut
+         * @description Sanitized result for a local-admin credential profile write.
+         */
+        AuthCredentialSetOut: {
+            /** Account */
+            account?: {
+                [key: string]: unknown;
+            } | null;
+            /** Auth Method Key */
+            auth_method_key: string;
+            /** Auth Type */
+            auth_type: string;
+            /** Credential Ref */
+            credential_ref: string;
+            /** Expires At */
+            expires_at: string | null;
+            /** Label */
+            label?: string | null;
+            /** Last Tested At */
+            last_tested_at: string | null;
+            /** Profile Key */
+            profile_key: string;
+            /** Project Id */
+            project_id: number | null;
+            /** Provider Key */
+            provider_key: string;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Scopes */
+            scopes: string[];
+            /**
+             * Setup Required
+             * @default false
+             */
+            setup_required: boolean;
+            /** Status */
+            status: string;
+        };
+        /**
+         * AuthCredentialSetRequest
+         * @description Local-admin credential profile write. The response never includes secrets.
+         * @example {
+         *       "auth_method_key": "api_key",
+         *       "fields": {
+         *         "api_key": "provider-secret"
+         *       },
+         *       "label": "Primary",
+         *       "profile_key": "primary"
+         *     }
+         */
+        AuthCredentialSetRequest: {
+            /** Auth Method Key */
+            auth_method_key?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Fields */
+            fields?: {
+                [key: string]: unknown;
+            };
+            /** Label */
+            label?: string | null;
+            /**
+             * Profile Key
+             * @default default
+             */
+            profile_key: string;
+        };
+        /** AuthFieldOut */
+        AuthFieldOut: {
+            /** Description */
+            description?: string | null;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Options */
+            options?: {
+                [key: string]: string;
+            }[] | null;
+            /** Placeholder */
+            placeholder?: string | null;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /**
+             * Secret
+             * @default false
+             */
+            secret: boolean;
+            /**
+             * Type
+             * @default text
+             */
+            type: string;
+        };
+        /** AuthMethodOut */
+        AuthMethodOut: {
+            /** Auth Type */
+            auth_type: string;
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Fields */
+            fields?: components["schemas"]["AuthFieldOut"][];
+            /**
+             * Interactive
+             * @default false
+             */
+            interactive: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Payload Field */
+            payload_field?: string | null;
+            /**
+             * Payload Format
+             * @default json
+             */
+            payload_format: string;
+        };
         /** AuthProviderOut */
         AuthProviderOut: {
+            /** Auth Methods */
+            auth_methods?: components["schemas"]["AuthMethodOut"][];
             /** Auth Type */
             auth_type: string;
             /** Config Json */
@@ -1562,77 +1698,19 @@ export interface components {
         };
         /**
          * AuthRevokeRequest
-         * @description Local-admin revoke request using an opaque ref or provider key.
+         * @description Local-admin revoke request using an opaque credential ref.
          * @example {
          *       "credential_ref": "cred_..."
          *     }
          */
         AuthRevokeRequest: {
             /** Credential Ref */
-            credential_ref?: string | null;
-            /** Provider Key */
-            provider_key?: string | null;
-        };
-        /**
-         * AuthSecretSetOut
-         * @description Sanitized result for a local-admin credential secret write.
-         */
-        AuthSecretSetOut: {
-            /** Account */
-            account?: {
-                [key: string]: unknown;
-            } | null;
-            /** Auth Type */
-            auth_type: string;
-            /** Credential Ref */
             credential_ref: string;
-            /** Expires At */
-            expires_at: string | null;
-            /** Last Tested At */
-            last_tested_at: string | null;
-            /** Project Id */
-            project_id: number | null;
-            /** Provider Key */
-            provider_key: string;
-            /** Revoked At */
-            revoked_at: string | null;
-            /** Scopes */
-            scopes: string[];
-            /**
-             * Setup Required
-             * @default false
-             */
-            setup_required: boolean;
-            /** Status */
-            status: string;
-        };
-        /**
-         * AuthSecretSetRequest
-         * @description Local-admin secret write. The response never includes the secret.
-         * @example {
-         *       "config_json": {
-         *         "label": "Primary"
-         *       },
-         *       "plaintext_payload": "provider-secret"
-         *     }
-         */
-        AuthSecretSetRequest: {
-            /** Config Json */
-            config_json?: {
-                [key: string]: unknown;
-            } | null;
-            /** Expires At */
-            expires_at?: string | null;
-            /**
-             * Payload Encoding
-             * @default plain
-             */
-            payload_encoding: string;
-            /** Plaintext Payload */
-            plaintext_payload: string;
         };
         /** AuthStartOut */
         AuthStartOut: {
+            /** Auth Method Key */
+            auth_method_key: string;
             /** Auth Type */
             auth_type: string;
             /** Authorization Url */
@@ -1657,9 +1735,13 @@ export interface components {
         /**
          * AuthStartRequest
          * @description Local-admin setup request. It never carries a secret.
-         * @example {}
+         * @example {
+         *       "auth_method_key": "oauth2"
+         *     }
          */
         AuthStartRequest: {
+            /** Auth Method Key */
+            auth_method_key?: string | null;
             /** Redirect Uri */
             redirect_uri?: string | null;
         };
@@ -1702,16 +1784,14 @@ export interface components {
         };
         /**
          * AuthTestRequest
-         * @description Sanitized auth test request using an opaque ref or provider key.
+         * @description Sanitized auth test request using an opaque credential ref.
          * @example {
-         *       "provider_key": "firecrawl"
+         *       "credential_ref": "cred_..."
          *     }
          */
         AuthTestRequest: {
             /** Credential Ref */
-            credential_ref?: string | null;
-            /** Provider Key */
-            provider_key?: string | null;
+            credential_ref: string;
         };
         /** BudgetUpsertRequest */
         BudgetUpsertRequest: {
@@ -1953,14 +2033,20 @@ export interface components {
             account?: {
                 [key: string]: unknown;
             } | null;
+            /** Auth Method Key */
+            auth_method_key: string;
             /** Auth Type */
             auth_type: string;
             /** Credential Ref */
             credential_ref: string;
             /** Expires At */
             expires_at: string | null;
+            /** Label */
+            label?: string | null;
             /** Last Tested At */
             last_tested_at: string | null;
+            /** Profile Key */
+            profile_key: string;
             /** Project Id */
             project_id: number | null;
             /** Provider Key */
@@ -3678,6 +3764,19 @@ export interface components {
             run_id?: number | null;
         };
         /**
+         * WriteResponse[AuthCredentialSetOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_AuthCredentialSetOut_: {
+            data: components["schemas"]["AuthCredentialSetOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
          * WriteResponse[AuthRevokeOut]
          * @example {
          *       "project_id": 1
@@ -3685,19 +3784,6 @@ export interface components {
          */
         WriteResponse_AuthRevokeOut_: {
             data: components["schemas"]["AuthRevokeOut"];
-            /** Project Id */
-            project_id?: number | null;
-            /** Run Id */
-            run_id?: number | null;
-        };
-        /**
-         * WriteResponse[AuthSecretSetOut]
-         * @example {
-         *       "project_id": 1
-         *     }
-         */
-        WriteResponse_AuthSecretSetOut_: {
-            data: components["schemas"]["AuthSecretSetOut"];
             /** Project Id */
             project_id?: number | null;
             /** Run Id */
@@ -3887,12 +3973,14 @@ export type SchemaApprovalGateSpec = components['schemas']['ApprovalGateSpec'];
 export type SchemaApprovalRequestOut = components['schemas']['ApprovalRequestOut'];
 export type SchemaArtifactCreateRequest = components['schemas']['ArtifactCreateRequest'];
 export type SchemaArtifactOut = components['schemas']['ArtifactOut'];
+export type SchemaAuthCredentialSetOut = components['schemas']['AuthCredentialSetOut'];
+export type SchemaAuthCredentialSetRequest = components['schemas']['AuthCredentialSetRequest'];
+export type SchemaAuthFieldOut = components['schemas']['AuthFieldOut'];
+export type SchemaAuthMethodOut = components['schemas']['AuthMethodOut'];
 export type SchemaAuthProviderOut = components['schemas']['AuthProviderOut'];
 export type SchemaAuthRequirementSpec = components['schemas']['AuthRequirementSpec'];
 export type SchemaAuthRevokeOut = components['schemas']['AuthRevokeOut'];
 export type SchemaAuthRevokeRequest = components['schemas']['AuthRevokeRequest'];
-export type SchemaAuthSecretSetOut = components['schemas']['AuthSecretSetOut'];
-export type SchemaAuthSecretSetRequest = components['schemas']['AuthSecretSetRequest'];
 export type SchemaAuthStartOut = components['schemas']['AuthStartOut'];
 export type SchemaAuthStartRequest = components['schemas']['AuthStartRequest'];
 export type SchemaAuthStatusOut = components['schemas']['AuthStatusOut'];
@@ -3975,8 +4063,8 @@ export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTempl
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
 export type SchemaWriteResponseArtifactOut = components['schemas']['WriteResponse_ArtifactOut_'];
+export type SchemaWriteResponseAuthCredentialSetOut = components['schemas']['WriteResponse_AuthCredentialSetOut_'];
 export type SchemaWriteResponseAuthRevokeOut = components['schemas']['WriteResponse_AuthRevokeOut_'];
-export type SchemaWriteResponseAuthSecretSetOut = components['schemas']['WriteResponse_AuthSecretSetOut_'];
 export type SchemaWriteResponseAuthStartOut = components['schemas']['WriteResponse_AuthStartOut_'];
 export type SchemaWriteResponseAuthTestOut = components['schemas']['WriteResponse_AuthTestOut_'];
 export type SchemaWriteResponseContextSnapshotOut = components['schemas']['WriteResponse_ContextSnapshotOut_'];
@@ -4781,7 +4869,7 @@ export interface operations {
             };
         };
     };
-    auth_store_secret_api_v1_projects__project_id__auth__provider_key__credentials_post: {
+    auth_store_credential_api_v1_projects__project_id__auth__provider_key__credentials_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4793,7 +4881,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AuthSecretSetRequest"];
+                "application/json": components["schemas"]["AuthCredentialSetRequest"];
             };
         };
         responses: {
@@ -4803,7 +4891,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WriteResponse_AuthSecretSetOut_"];
+                    "application/json": components["schemas"]["WriteResponse_AuthCredentialSetOut_"];
                 };
             };
             /** @description Validation Error */

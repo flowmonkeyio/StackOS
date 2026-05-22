@@ -158,7 +158,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
 def test_single_action_describe_can_be_project_aware(api: TestClient, project_id: int) -> None:
     credential = api.post(
         f"/api/v1/projects/{project_id}/auth/openai-images/credentials",
-        json={"plaintext_payload": "sk-test"},
+        json={"auth_method_key": "api_key", "fields": {"api_key": "sk-test"}},
     )
     assert credential.status_code == 201
     budget = api.post(

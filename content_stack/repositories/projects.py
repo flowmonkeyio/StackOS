@@ -52,6 +52,7 @@ class IntegrationCredentialOut(BaseModel):
     id: int
     project_id: int | None
     kind: str
+    profile_key: str
     expires_at: datetime | None
     last_refreshed_at: datetime | None
     config_json: dict[str, Any] | None
@@ -227,7 +228,8 @@ class IntegrationCredentialRepository:
         *,
         project_id: int | None,
         kind: str,
-        plaintext_payload: bytes,
+        secret_payload: bytes,
+        profile_key: str = "default",
         config_json: dict[str, Any] | None = None,
         expires_at: datetime | None = None,
     ) -> Envelope[IntegrationCredentialOut]:
@@ -236,20 +238,24 @@ class IntegrationCredentialRepository:
         if config_json is not None and redact_secrets(config_json) != config_json:
             raise ValidationError(
                 "credential config_json must not contain secret-like keys; "
-                "put secrets in plaintext_payload"
+                "put secrets in the encrypted credential payload"
             )
-        existing_stmt = select(IntegrationCredential).where(IntegrationCredential.kind == kind)
+        existing_stmt = select(IntegrationCredential).where(
+            IntegrationCredential.kind == kind,
+            IntegrationCredential.profile_key == profile_key,
+        )
         if project_id is None:
             existing_stmt = existing_stmt.where(IntegrationCredential.project_id.is_(None))  # type: ignore[union-attr]
         else:
             existing_stmt = existing_stmt.where(IntegrationCredential.project_id == project_id)
         row = self._s.exec(existing_stmt).first()
-        ciphertext, nonce = _crypto_encrypt(plaintext_payload, project_id=project_id, kind=kind)
+        ciphertext, nonce = _crypto_encrypt(secret_payload, project_id=project_id, kind=kind)
         now = _utcnow()
         if row is None:
             row = IntegrationCredential(
                 project_id=project_id,
                 kind=kind,
+                profile_key=profile_key,
                 encrypted_payload=ciphertext,
                 nonce=nonce,
                 expires_at=expires_at,
@@ -281,32 +287,6 @@ class IntegrationCredentialRepository:
             nonce=row.nonce,
             project_id=row.project_id,
             kind=row.kind,
-        )
-
-    def get_decrypted_for(self, project_id: int | None, kind: str) -> tuple[int, bytes]:
-        from content_stack.crypto.aes_gcm import decrypt as _crypto_decrypt
-
-        candidates: list[int | None] = []
-        if project_id is not None:
-            candidates.append(project_id)
-        candidates.append(None)
-        for candidate_project_id in candidates:
-            stmt = select(IntegrationCredential).where(IntegrationCredential.kind == kind)
-            if candidate_project_id is None:
-                stmt = stmt.where(IntegrationCredential.project_id.is_(None))  # type: ignore[union-attr]
-            else:
-                stmt = stmt.where(IntegrationCredential.project_id == candidate_project_id)
-            row = self._s.exec(stmt).first()
-            if row is not None and row.id is not None:
-                return row.id, _crypto_decrypt(
-                    row.encrypted_payload,
-                    nonce=row.nonce,
-                    project_id=row.project_id,
-                    kind=row.kind,
-                )
-        raise NotFoundError(
-            f"credential not found for project={project_id} kind={kind!r}",
-            data={"project_id": project_id, "kind": kind},
         )
 
     def mark_refreshed(self, credential_id: int) -> None:

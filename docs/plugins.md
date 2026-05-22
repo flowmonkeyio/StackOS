@@ -70,9 +70,13 @@ Actions should not decide strategy. For example, `meta.campaign.create` creates
 the campaign structure the agent passes in for Meta; it does not decide which
 campaign should exist.
 
-Providers may include safe `config.setup_fields` for local-admin setup values
-such as site URLs or API versions. These fields are stored in credential
-`config_json`; secrets still belong only in the encrypted credential payload.
+Providers declare `auth_methods` for local-admin setup. Each method lists the
+fields the UI should render, marks secret fields, and declares how the daemon
+serializes the encrypted payload (`raw`, `json`, or `none`). Safe fields such
+as site URLs, account refs, API versions, or SMTP host/port values are stored
+as credential config; secret fields such as API keys, passwords, client
+secrets, refresh tokens, and bearer tokens stay only in the encrypted backing
+payload.
 
 Custom internal tools can use the generic HTTP/Webhook connector by declaring a
 static action config:

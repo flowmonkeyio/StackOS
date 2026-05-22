@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from content_stack.auth_providers.repository import (
+    AuthCredentialSetOut,
+    AuthFieldOut,
+    AuthMethodOut,
     AuthProviderOut,
     AuthRepository,
     AuthRevokeOut,
-    AuthSecretSetOut,
     AuthStartOut,
     AuthStatusOut,
     AuthTestOut,
@@ -15,10 +17,12 @@ from content_stack.auth_providers.repository import (
 )
 
 __all__ = [
+    "AuthCredentialSetOut",
+    "AuthFieldOut",
+    "AuthMethodOut",
     "AuthProviderOut",
     "AuthRepository",
     "AuthRevokeOut",
-    "AuthSecretSetOut",
     "AuthStartOut",
     "AuthStatusOut",
     "AuthTestOut",

@@ -3,18 +3,20 @@ import { defineStore } from 'pinia'
 
 import type {
   SchemaActionOut,
+  SchemaAuthCredentialSetRequest,
   SchemaAuthProviderOut,
   SchemaAuthRevokeRequest,
+  SchemaAuthStartRequest,
   SchemaAuthStatusOut,
-  SchemaAuthSecretSetRequest,
   SchemaAuthTestRequest,
   SchemaCapabilityOut,
   SchemaCatalogOut,
   SchemaPluginOut,
   SchemaProviderOut,
   SchemaResourceOut,
+  SchemaWriteResponseAuthCredentialSetOut,
   SchemaWriteResponseAuthRevokeOut,
-  SchemaWriteResponseAuthSecretSetOut,
+  SchemaWriteResponseAuthStartOut,
   SchemaWriteResponseAuthTestOut,
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
@@ -82,11 +84,29 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   async function storeCredential(
     projectId: number,
     providerKey: string,
-    body: SchemaAuthSecretSetRequest,
-  ): Promise<SchemaWriteResponseAuthSecretSetOut> {
+    body: SchemaAuthCredentialSetRequest,
+  ): Promise<SchemaWriteResponseAuthCredentialSetOut> {
     error.value = null
-    const response = await apiFetch<SchemaWriteResponseAuthSecretSetOut>(
+    const response = await apiFetch<SchemaWriteResponseAuthCredentialSetOut>(
       `/api/v1/projects/${projectId}/auth/${providerKey}/credentials`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    )
+    await refreshAuth(projectId)
+    return response
+  }
+
+  async function startCredential(
+    projectId: number,
+    providerKey: string,
+    body: SchemaAuthStartRequest,
+  ): Promise<SchemaWriteResponseAuthStartOut> {
+    error.value = null
+    const response = await apiFetch<SchemaWriteResponseAuthStartOut>(
+      `/api/v1/projects/${projectId}/auth/${providerKey}/start`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -162,6 +182,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     refresh,
     refreshAuth,
     storeCredential,
+    startCredential,
     testCredential,
     revokeCredential,
     actionsFor,

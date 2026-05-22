@@ -384,6 +384,11 @@ class PluginRepository:
 
         providers_by_key: dict[str, Provider] = {}
         for provider_manifest in manifest.providers:
+            provider_config = dict(provider_manifest.config or {})
+            if provider_manifest.auth_methods:
+                provider_config["auth_methods"] = [
+                    method.model_dump(mode="json") for method in provider_manifest.auth_methods
+                ]
             provider = self._s.exec(
                 select(Provider).where(
                     Provider.plugin_id == row.id,
@@ -397,13 +402,13 @@ class PluginRepository:
                     name=provider_manifest.name,
                     description=provider_manifest.description,
                     auth_type=provider_manifest.auth_type,
-                    config_json=provider_manifest.config,
+                    config_json=provider_config or None,
                 )
             else:
                 provider.name = provider_manifest.name
                 provider.description = provider_manifest.description
                 provider.auth_type = provider_manifest.auth_type
-                provider.config_json = provider_manifest.config
+                provider.config_json = provider_config or None
                 provider.updated_at = now
             self._s.add(provider)
             self._s.flush()

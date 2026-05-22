@@ -208,7 +208,7 @@ def test_project_catalog_reports_action_availability(session: Session, project_i
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="firecrawl",
-        plaintext_payload=b"firecrawl-key",
+        secret_payload=b"firecrawl-key",
     )
     AuthRepository(session).status(project_id=project_id, provider_key="firecrawl")
     IntegrationBudgetRepository(session).set(

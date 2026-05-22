@@ -24,7 +24,7 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
         .set(
             project_id=project_id,
             kind="firecrawl",
-            plaintext_payload=b"fc-secret",
+            secret_payload=b"fc-secret",
             config_json={"label": "Primary Firecrawl"},
         )
         .data
@@ -54,7 +54,7 @@ def test_usage_and_refresh_events_redact_secret_metadata(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="firecrawl",
-        plaintext_payload=b"fc-secret",
+        secret_payload=b"fc-secret",
     )
     repo = AuthRepository(session)
     status = repo.status(project_id=project_id, provider_key="firecrawl")
@@ -109,15 +109,19 @@ def test_auth_test_redacts_vendor_controlled_text_fields(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="firecrawl",
-        plaintext_payload=b"fc-secret",
+        secret_payload=b"fc-secret",
     )
     monkeypatch.setattr(
         "content_stack.auth_providers.repository.integration_class_for",
         lambda kind: _TextLeakIntegration if kind == "firecrawl" else None,
     )
+    status = AuthRepository(session).status(project_id=project_id, provider_key="firecrawl")
 
     out = asyncio.run(
-        AuthRepository(session).test(project_id=project_id, provider_key="firecrawl")
+        AuthRepository(session).test(
+            project_id=project_id,
+            credential_ref=status.connections[0].credential_ref,
+        )
     ).data
 
     assert out.status == "failed api_key=[redacted]"

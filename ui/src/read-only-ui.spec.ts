@@ -42,10 +42,11 @@ describe('restricted UI write contract', () => {
       .map((match) => match[0])
       .filter((block) => /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/.test(block))
 
-    expect(methodBlocks.length).toBe(3)
+    expect(methodBlocks.length).toBe(4)
     expect(methodBlocks.every((block) => /method:\s*'POST'/.test(block))).toBe(true)
     expect(methodBlocks.map((block) => block.match(/`([^`]+)`/)?.[1])).toEqual([
       '/api/v1/projects/${projectId}/auth/${providerKey}/credentials',
+      '/api/v1/projects/${projectId}/auth/${providerKey}/start',
       '/api/v1/projects/${projectId}/auth/test',
       '/api/v1/projects/${projectId}/auth/revoke',
     ])

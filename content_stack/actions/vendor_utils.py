@@ -140,7 +140,7 @@ def credential_payload(request: ActionConnectorRequest, *, required: bool = True
             target = request.provider_key or request.action_ref
             raise ValidationError(f"{target} requires a credential")
         return b""
-    return request.credential.plaintext_payload
+    return request.credential.secret_payload
 
 
 def credential_config_str(

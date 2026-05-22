@@ -62,43 +62,43 @@ Official sources used:
 Apollo:
 
 - Auth: API key/Bearer token. Some operations require a master API key, including People API Search.
-- Safe setup fields: `workspace_ref`, `api_plan_ref`, `master_key_allowed` boolean, `credit_budget_ref`, `default_page_size`.
+- Safe auth method fields: `workspace_ref`, `api_plan_ref`, `master_key_allowed` boolean, `credit_budget_ref`, `default_page_size`.
 - Do not store Apollo keys or raw usage responses in templates. Daemon-held credentials only.
 
 Clay:
 
 - Auth/setup: documented broad path is webhook endpoint per table plus optional outbound HTTP action from Clay. Enterprise People/Company API requires a customer-specific contract.
-- Safe setup fields: `workspace_ref`, `table_ref`, `webhook_endpoint_ref`, `return_destination_ref`, `auto_delete_enabled`, `enterprise_api_enabled`.
+- Safe auth method fields: `workspace_ref`, `table_ref`, `webhook_endpoint_ref`, `return_destination_ref`, `auto_delete_enabled`, `enterprise_api_enabled`.
 - Do not model Clay as a generic API-key enrichment service unless the project has enterprise endpoint docs and auth details.
 
 Clearbit/Clearbit by HubSpot:
 
 - Auth/setup: legacy Clearbit enrichment uses Clearbit platform credentials; many current customers are Clearbit by HubSpot/Breeze Intelligence with credits and HubSpot account linkage. HubSpot API calls have HubSpot rate and error behavior.
-- Safe setup fields: `hubspot_portal_ref`, `clearbit_workspace_ref`, `credit_budget_ref`, `field_mapping_ref`, `processed_at_field_enabled`.
+- Safe auth method fields: `hubspot_portal_ref`, `clearbit_workspace_ref`, `credit_budget_ref`, `field_mapping_ref`, `processed_at_field_enabled`.
 - Provider naming must disclose which contract is active: legacy Clearbit, Clearbit by HubSpot, or HubSpot-native enrichment.
 
 Outreach:
 
 - Auth: OAuth 2.0 authorization code for normal REST API access. Outreach production OAuth credentials require app publishing/review; development credentials are limited and should not be used for end users.
-- Safe setup fields: `instance_ref`, `oauth_app_ref`, `scopes_ref`, `sequence_ref`, `mailbox_policy_ref`, `throttle_policy_ref`.
+- Safe auth method fields: `instance_ref`, `oauth_app_ref`, `scopes_ref`, `sequence_ref`, `mailbox_policy_ref`, `throttle_policy_ref`.
 - Tokens and refresh tokens remain daemon-held. Templates should only carry safe refs.
 
 Salesloft:
 
 - Auth: OAuth authorization code is preferred/required for partners. API keys are customer-only and are not approved for partner apps. Salesloft also documents client credentials for private admin-enabled app use.
-- Safe setup fields: `team_ref`, `oauth_app_ref`, `scopes_ref`, `cadence_ref`, `user_ref`, `send_policy_ref`.
+- Safe auth method fields: `team_ref`, `oauth_app_ref`, `scopes_ref`, `cadence_ref`, `user_ref`, `send_policy_ref`.
 - Store only safe refs. Note refresh-token rotation: a refresh response revokes old refresh tokens, so connector credential storage must be atomic.
 
 Google Workspace:
 
 - Auth: OAuth with least-privilege scopes. Gmail send can use `gmail.send`; Calendar event insert can use `calendar.events` or narrower eligible scopes depending on the app model.
-- Safe setup fields: `workspace_ref`, `user_ref`, `calendar_ref`, `send_as_ref`, `oauth_client_ref`, `domain_wide_delegation_ref`, `quota_project_ref`.
+- Safe auth method fields: `workspace_ref`, `user_ref`, `calendar_ref`, `send_as_ref`, `oauth_client_ref`, `domain_wide_delegation_ref`, `quota_project_ref`.
 - Domain-wide delegation is a separate admin-approved setup and must be explicit.
 
 Microsoft 365:
 
 - Auth: Microsoft Graph OAuth with delegated or application permissions. `Mail.Send` is least-privileged for `sendMail`; `Calendars.ReadWrite` is needed for user calendar event creation.
-- Safe setup fields: `tenant_ref`, `user_ref`, `mailbox_ref`, `calendar_ref`, `app_registration_ref`, `permission_mode`, `national_cloud_ref`.
+- Safe auth method fields: `tenant_ref`, `user_ref`, `mailbox_ref`, `calendar_ref`, `app_registration_ref`, `permission_mode`, `national_cloud_ref`.
 - Application permissions can send/create on behalf of users at much higher blast radius and should require explicit approval gates.
 
 ## Operation Contract Review
@@ -242,5 +242,5 @@ Recommended refs before execution:
 - Split `google-workspace.touchpoint.record` into `google-workspace.gmail.message.send` and `google-workspace.calendar.event.create`; keep `touchpoint` persistence as an internal StackOS resource operation.
 - Split `microsoft-365.touchpoint.record` into `microsoft-365.graph.mail.send` and `microsoft-365.graph.calendar.event.create`; represent Graph `202 Accepted` as accepted/submitted, not delivered.
 - Use `outreach.sequence_state.create` for Outreach sequence enrollment; it mirrors the verified JSON:API `sequenceStates` resource instead of a generic sequence-add abstraction.
-- Add setup fields for budgets and policies: `credit_budget_ref`, `send_policy_ref`, `suppression_list_ref`, `mailbox_policy_ref`, `throttle_policy_ref`, and `approval_policy_ref`.
+- Add auth method fields for budgets and policies: `credit_budget_ref`, `send_policy_ref`, `suppression_list_ref`, `mailbox_policy_ref`, `throttle_policy_ref`, and `approval_policy_ref`.
 - Update outbound templates so provider actions are optional execution steps behind review gates, while agent-authored sequence strategy remains in artifacts/resources and not inside tools.

@@ -30,17 +30,19 @@ describe('StackOS catalog store auth controls', () => {
 
     const store = useStackOsCatalogStore()
     const response = await store.storeCredential(1, 'firecrawl', {
-      plaintext_payload: 'fc-secret',
-      payload_encoding: 'plain',
-      config_json: { label: 'Primary' },
+      auth_method_key: 'api_key',
+      profile_key: 'default',
+      label: 'Primary',
+      fields: { api_key: 'fc-secret' },
     })
 
     const write = calls.find((call) => call.url.endsWith('/auth/firecrawl/credentials'))
     expect(write?.init?.method).toBe('POST')
     expect(JSON.parse(String(write?.init?.body))).toEqual({
-      plaintext_payload: 'fc-secret',
-      payload_encoding: 'plain',
-      config_json: { label: 'Primary' },
+      auth_method_key: 'api_key',
+      profile_key: 'default',
+      label: 'Primary',
+      fields: { api_key: 'fc-secret' },
     })
     expect(response.data.credential_ref).toBe('cred_firecrawl')
     expect(store.authStatus?.connections[0].credential_ref).toBe('cred_firecrawl')
@@ -101,6 +103,27 @@ function authProvider() {
     name: 'Firecrawl',
     description: 'Web crawling and scraping provider.',
     auth_type: 'api-key',
+    auth_methods: [
+      {
+        key: 'api_key',
+        label: 'API key',
+        auth_type: 'api-key',
+        description: '',
+        interactive: false,
+        payload_format: 'raw',
+        payload_field: 'api_key',
+        fields: [
+          {
+            key: 'api_key',
+            label: 'API Key',
+            type: 'secret',
+            secret: true,
+            required: true,
+          },
+        ],
+        config: null,
+      },
+    ],
     scopes: [],
     config_json: null,
   }
@@ -112,6 +135,9 @@ function authConnection() {
     project_id: 1,
     provider_key: 'firecrawl',
     auth_type: 'api-key',
+    auth_method_key: 'api_key',
+    profile_key: 'default',
+    label: 'Primary',
     status: 'connected',
     expires_at: null,
     last_tested_at: null,

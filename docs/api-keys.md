@@ -12,13 +12,14 @@ Recommended setup flow:
    ``http://localhost:5180/projects/1/connections?provider_key=dataforseo``.
 4. Connect vendors from the named cards. Do not paste secrets into agent
    chat and do not add vendor keys to the website repository.
-5. Return to the agent. The agent should run `auth.test` with the opaque
-   `credential_ref` or provider key before continuing.
+5. Return to the agent. The agent should run `auth.test` with the selected
+   opaque `credential_ref` before continuing.
 
-`integration_credentials` is still the encrypted backing table, but agents use
-the generic auth-provider boundary. `auth.status` and `auth.test` return
-sanitized provider state and credential refs; local UI/REST setup is the only
-place plaintext keys or OAuth secrets are accepted.
+Providers define typed `auth_methods`. The local UI renders those schemas and
+stores one or more named credential profiles per provider. Secret fields are
+encrypted in `integration_credentials`; safe fields are stored as redacted
+credential config. `auth.status` and `auth.test` return sanitized provider
+state and credential refs only.
 
 ---
 
@@ -31,9 +32,9 @@ connector when that optional provider is enabled.
 1. Sign up at <https://app.dataforseo.com>.
 2. Top up a small balance (~$5 covers thousands of test queries).
 3. From the dashboard copy your **API login** + **API password**.
-4. In the StackOS Connections screen pick "DataForSEO", paste the API password
-   into the secret field, and fill the safe "API Login" setup field. The login
-   lands in ``config_json.login``; the password lands in the encrypted payload.
+4. In the StackOS Connections screen pick "DataForSEO", choose the
+   `basic` method, enter the API login and API password, and save the profile.
+   The login is safe config; the password is encrypted.
 
 Cost notes: ~$0.001-$0.003 per SERP call; the wrapper reads the
 vendor's ``tasks[].cost`` value back into the budget so the cap stays

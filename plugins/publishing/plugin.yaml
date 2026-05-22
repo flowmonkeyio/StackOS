@@ -13,33 +13,61 @@ providers:
     name: WordPress
     description: WordPress REST API publishing provider using Application Passwords.
     auth_type: application-password
-    config:
-      credential_payload: JSON {"username":"...","application_password":"..."} or username:application-password.
-      setup_note: Use the HTTPS WordPress site root and a user with permission to create posts.
-      setup_fields:
+    auth_methods:
+      - key: application_password
+        label: Application password
+        auth_type: application-password
+        payload_format: json
+        fields:
+        - key: username
+          label: Username
+          type: secret
+          secret: true
+          required: true
+        - key: application_password
+          label: Application Password
+          type: secret
+          secret: true
+          required: true
         - key: wp_url
           label: HTTPS Site URL
           type: url
+          secret: false
           required: true
           placeholder: https://example.com
+    config:
+      setup_note: Use the HTTPS WordPress site root and a user with permission to create posts.
   - key: ghost
     name: Ghost
     description: Ghost Admin API publishing provider using an Admin API key.
     auth_type: admin-api-key
-    config:
-      credential_payload: JSON {"admin_api_key":"id:hex_secret"} or id:hex_secret.
-      setup_note: Enter the Ghost site/admin domain root; the connector appends /ghost/api/admin/ paths and pins Accept-Version.
-      setup_fields:
+    auth_methods:
+      - key: admin_api_key
+        label: Admin API key
+        auth_type: admin-api-key
+        payload_format: raw
+        payload_field: admin_api_key
+        fields:
+        - key: admin_api_key
+          label: Admin API Key
+          type: secret
+          secret: true
+          required: true
+          placeholder: id:hex_secret
         - key: ghost_url
           label: Site/Admin Root URL
           type: url
+          secret: false
           required: true
           placeholder: https://example.com
         - key: api_version
           label: Admin API Version
           type: text
+          secret: false
           required: false
           placeholder: v5.0
+    config:
+      setup_note: Enter the Ghost site/admin domain root; the connector appends /ghost/api/admin/ paths and pins Accept-Version.
 actions:
   - key: wordpress.post.create
     name: Create WordPress Post

@@ -131,7 +131,7 @@ def _auth_config(config: dict[str, Any]) -> dict[str, Any]:
 def _credential_text(request: ActionConnectorRequest) -> str:
     if request.credential is None:
         raise ValidationError(f"{request.action_ref} requires a resolved credential")
-    text = request.credential.plaintext_payload.decode("utf-8").strip()
+    text = request.credential.secret_payload.decode("utf-8").strip()
     if not text:
         raise ValidationError(f"{request.action_ref} credential payload is empty")
     return text

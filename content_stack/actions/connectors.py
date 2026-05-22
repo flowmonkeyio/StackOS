@@ -25,7 +25,7 @@ class ActionValidationIssue(BaseModel):
 class ActionConnectorRequest:
     """In-process request sent to a connector adapter.
 
-    ``credential`` may contain plaintext. It is deliberately kept as a
+    ``credential`` may contain decrypted secret material. It is deliberately kept as a
     dataclass field instead of JSON so it cannot accidentally become an agent
     response through Pydantic serialization.
     """

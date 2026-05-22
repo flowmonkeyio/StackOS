@@ -17,12 +17,27 @@ def _create_integration_credential(
     payload: bytes,
     config_json: dict | None = None,
 ) -> dict:
+    text_payload = payload.decode("utf-8")
+    if kind == "wordpress":
+        parsed = json.loads(text_payload)
+        fields = {
+            "username": parsed["username"],
+            "application_password": parsed["application_password"],
+            "wp_url": str((config_json or {})["wp_url"]),
+        }
+        body = {"auth_method_key": "application_password", "fields": fields}
+    elif kind == "ghost":
+        fields = {
+            "admin_api_key": text_payload,
+            "ghost_url": str((config_json or {})["ghost_url"]),
+            "api_version": str((config_json or {}).get("api_version") or "v5.0"),
+        }
+        body = {"auth_method_key": "admin_api_key", "fields": fields}
+    else:
+        body = {"auth_method_key": "api_key", "fields": {"api_key": text_payload}}
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/{kind}/credentials",
-        json={
-            "plaintext_payload": payload.decode("utf-8"),
-            "config_json": config_json,
-        },
+        json=body,
         headers=mcp._headers(),
     )
     response.raise_for_status()
@@ -141,7 +156,7 @@ def test_auth_test_validates_unknown_kind(
     project_id = seeded_project["data"]["id"]
     response = mcp_client.test_client.post(
         f"/api/v1/projects/{project_id}/auth/unknown-vendor/credentials",
-        json={"plaintext_payload": "x"},
+        json={"auth_method_key": "api_key", "fields": {"api_key": "x"}},
         headers=mcp_client._headers(),
     )
 
@@ -170,7 +185,7 @@ def test_removed_integration_mcp_tools_are_not_registered(
         ("integration.list", {"project_id": project_id}),
         (
             "integration.set",
-            {"project_id": project_id, "kind": "firecrawl", "plaintext_payload": "x"},
+            {"project_id": project_id, "kind": "firecrawl", "secret_payload": "x"},
         ),
         ("integration.test", {"project_id": project_id, "credential_id": 1}),
         ("integration.remove", {"credential_id": 1}),

@@ -38,10 +38,10 @@ Provider credentials are daemon-owned. Agents may inspect sanitized auth status
 and run daemon-side health probes, but they do not receive raw API keys, OAuth
 tokens, refresh tokens, encrypted payloads, or local setup secrets.
 
-`integration_credentials` is the encrypted backing store for provider secrets
-until the generic auth-provider tables are promoted. OAuth state rows remain
-generic infrastructure for future provider flows, not a hard-coded product
-integration.
+`credentials` are the public, opaque profile records. `integration_credentials`
+is the encrypted backing store keyed by project, provider, and profile; it is
+not an agent-facing credential API. OAuth state rows remain generic
+infrastructure for provider flows, not a hard-coded product integration.
 
 The agent-facing MCP bridge exposes `auth.status` and `auth.test` only. Local
 human/admin REST operations such as `auth.start`, `auth.revoke`, and
@@ -49,6 +49,11 @@ human/admin REST operations such as `auth.start`, `auth.revoke`, and
 tools. When a tool needs a credential, the agent passes an opaque
 `credential_ref`; the daemon resolves and decrypts the backing secret inside
 the vendor wrapper process.
+
+Provider manifests declare typed `auth_methods`. The UI renders those methods
+directly, so an API-key system, SMTP system, OAuth2 system, and custom webhook
+system each get the right fields without exposing secrets to agents or storing
+credential material in plugin config.
 
 Every auth usage/refresh audit payload is passed through the shared redactor
 before persistence. Secret-like keys such as `api_key`, `access_token`,

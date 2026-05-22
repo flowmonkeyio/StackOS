@@ -97,7 +97,7 @@ class OpenAIImagesActionConnector:
         asset_dir = request.asset_dir or Settings().generated_assets_dir
         async with httpx.AsyncClient(timeout=60.0) as http:
             client = OpenAIImagesIntegration(
-                payload=request.credential.plaintext_payload,
+                payload=request.credential.secret_payload,
                 project_id=request.project_id,
                 http=http,
                 asset_dir=asset_dir,

@@ -113,7 +113,7 @@ Gaps/mismatches:
 
 Recommended corrections:
 
-- Add safe setup fields for `client_id` and `user_agent`, with `client_secret` in encrypted payload. Do not store the OAuth access token in agent-visible state.
+- Add safe auth method fields for `client_id` and `user_agent`, with `client_secret` in encrypted payload. Do not store the OAuth access token in agent-visible state.
 - Constrain `sort` and `time_filter` enums and add optional `after` pagination input/output.
 - Rewrite the `top_questions` description or implement deterministic filtering in the wrapper; current wording over-promises.
 
@@ -164,7 +164,7 @@ Gaps/mismatches:
 
 Recommended corrections:
 
-- Clarify provider setup fields: site root URL over HTTPS, username, application password.
+- Clarify provider auth method fields: site root URL over HTTPS, username, application password.
 - Add docs links in wrapper comments to Application Passwords and Posts.
 - Add capability warnings to manifest/template docs before offering publish flows beyond create-post.
 
@@ -228,7 +228,7 @@ Recommended corrections:
 ## Gaps Before Expanding Actions
 
 1. Add exact provider doc links near wrapper methods before adding options. This prevents “old docs by memory” drift.
-2. Tighten setup fields for Reddit, WordPress, Ghost, and Ahrefs so operators know what credential shape is expected.
+2. Tighten auth method fields for Reddit, WordPress, Ghost, and Ahrefs so operators know what credential shape is expected.
 3. Add pagination/status actions before expanding crawl, listing, backlinks, posts, or keyword inventories.
 4. Normalize provider errors into safe, structured action-call metadata without exposing secrets or raw stack traces.
 5. Make budget semantics honest: use actual costs/headers where available, or mark budget as call-count/approval-only instead of monetary.
@@ -243,7 +243,7 @@ Recommended corrections:
 - `content_stack/plugins/manifest.py`: rename/describe `utils.web.crawl` as submit-only unless a crawl-status action is added.
 - `content_stack/integrations/jina_reader.py`: link Reader API and validate absolute target URL shape before path concatenation.
 - `content_stack/plugins/manifest.py`: add optional-auth setup copy for Jina.
-- `content_stack/plugins/manifest.py`: add Reddit setup fields for `client_id` and `user_agent`; keep `client_secret` daemon-side.
+- `content_stack/plugins/manifest.py`: add Reddit auth method fields for `client_id` and `user_agent`; keep `client_secret` daemon-side.
 - `content_stack/integrations/reddit.py`: link OAuth2/Data API docs and document listing pagination headers/fields.
 - `content_stack/integrations/dataforseo.py`: link exact endpoint docs above each method; note keyword volume 12 RPM and task-size limits.
 - `plugins/seo/plugin.yaml`: add DataForSEO keyword count/depth/limit constraints once confirmed against endpoint docs.

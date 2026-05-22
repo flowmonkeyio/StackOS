@@ -961,6 +961,8 @@ class Credential(SQLModel, table=True):
     credential_ref: str = Field(max_length=120)
     provider_key: str = Field(max_length=160)
     auth_type: str = Field(default="none", max_length=80)
+    auth_method_key: str = Field(default="default", max_length=160)
+    profile_key: str = Field(default="default", max_length=160)
     status: str = Field(default="connected", max_length=40)
     expires_at: datetime | None = Field(default=None)
     last_tested_at: datetime | None = Field(default=None)
@@ -1511,7 +1513,7 @@ class Run(SQLModel, table=True):
 
 
 class IntegrationCredential(SQLModel, table=True):
-    """API keys per integration (PLAN.md L367).
+    """Encrypted provider credential profile backing daemon-side execution.
 
     ``project_id`` is nullable for global credentials. ``encrypted_payload`` +
     ``nonce`` are AES-256-GCM ciphertext; AAD is composed at the repository
@@ -1523,9 +1525,16 @@ class IntegrationCredential(SQLModel, table=True):
         UniqueConstraint(
             "project_id",
             "kind",
-            name="uq_integration_credentials_project_kind",
+            "profile_key",
+            name="uq_integration_credentials_project_kind_profile",
         ),
         Index("ix_integration_credentials_project", "project_id"),
+        Index(
+            "ix_integration_credentials_project_kind_profile",
+            "project_id",
+            "kind",
+            "profile_key",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -1537,6 +1546,7 @@ class IntegrationCredential(SQLModel, table=True):
         ),
     )
     kind: str = Field(max_length=120)
+    profile_key: str = Field(default="default", max_length=160)
     encrypted_payload: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
     nonce: bytes = Field(sa_column=Column(LargeBinary(12), nullable=False))
     expires_at: datetime | None = Field(default=None)

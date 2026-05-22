@@ -77,7 +77,7 @@ def test_action_validate_rejects_raw_secret_payloads(mcp_client: MCPClient) -> N
 def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/openai-images/credentials",
-        json={"plaintext_payload": "sk-openai"},
+        json={"auth_method_key": "api_key", "fields": {"api_key": "sk-openai"}},
         headers=mcp._headers(),
     )
     response.raise_for_status()
@@ -91,7 +91,7 @@ def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
 def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
-        json={"plaintext_payload": "fc-key"},
+        json={"auth_method_key": "api_key", "fields": {"api_key": "fc-key"}},
         headers=mcp._headers(),
     )
     response.raise_for_status()
@@ -106,8 +106,8 @@ def _create_dataforseo_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/dataforseo/credentials",
         json={
-            "plaintext_payload": "password",
-            "config_json": {"login": "login@example.com"},
+            "auth_method_key": "basic",
+            "fields": {"login": "login@example.com", "password": "password"},
         },
         headers=mcp._headers(),
     )
@@ -123,10 +123,12 @@ def _create_wordpress_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/wordpress/credentials",
         json={
-            "plaintext_payload": json.dumps(
-                {"username": "editor", "application_password": "app pass"}
-            ),
-            "config_json": {"wp_url": "https://wp.example"},
+            "auth_method_key": "application_password",
+            "fields": {
+                "username": "editor",
+                "application_password": "app pass",
+                "wp_url": "https://wp.example",
+            },
         },
         headers=mcp._headers(),
     )
@@ -142,8 +144,12 @@ def _create_ghost_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/ghost/credentials",
         json={
-            "plaintext_payload": "keyid:00112233445566778899aabbccddeeff",
-            "config_json": {"ghost_url": "https://ghost.example", "api_version": "v5.0"},
+            "auth_method_key": "admin_api_key",
+            "fields": {
+                "admin_api_key": "keyid:00112233445566778899aabbccddeeff",
+                "ghost_url": "https://ghost.example",
+                "api_version": "v5.0",
+            },
         },
         headers=mcp._headers(),
     )
@@ -605,13 +611,7 @@ def test_action_execute_dataforseo_paa_grant_uses_generic_connector(
             "tasks": [
                 {
                     "cost": 0.001,
-                    "result": [
-                        {
-                            "items": [
-                                {"type": "people_also_ask", "title": "What is SEO?"}
-                            ]
-                        }
-                    ],
+                    "result": [{"items": [{"type": "people_also_ask", "title": "What is SEO?"}]}],
                 }
             ]
         },
@@ -636,10 +636,7 @@ def test_action_execute_dataforseo_paa_grant_uses_generic_connector(
     assert data["credential_ref"] == credential_ref
     assert data["action_call"]["provider_key"] == "dataforseo"
     assert data["action_call"]["connector_key"] == "dataforseo"
-    assert (
-        data["output_json"]["tasks"][0]["result"][0]["items"][0]["title"]
-        == "What is SEO?"
-    )
+    assert data["output_json"]["tasks"][0]["result"][0]["items"][0]["title"] == "What is SEO?"
     assert "password" not in rendered
     assert "login@example.com" not in rendered
 

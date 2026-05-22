@@ -245,7 +245,7 @@ def test_bridge_toolbox_operates_setup_actions(
     )
     credential_resp = mcp_client.test_client.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
-        json={"plaintext_payload": "fc-key"},
+        json={"auth_method_key": "api_key", "fields": {"api_key": "fc-key"}},
         headers=mcp_client._headers(),
     )
     credential_resp.raise_for_status()
@@ -545,7 +545,7 @@ def test_bridge_executes_run_plan_granted_action_with_injected_token(
     project_id = created_project["data"]["id"]
     cred_resp = mcp_client.test_client.post(
         f"/api/v1/projects/{project_id}/auth/openai-images/credentials",
-        json={"plaintext_payload": "sk-openai"},
+        json={"auth_method_key": "api_key", "fields": {"api_key": "sk-openai"}},
         headers=mcp_client._headers(),
     )
     cred_resp.raise_for_status()

@@ -28,7 +28,7 @@ Before adding or changing `config.connector` on any action:
 
 1. Link official provider docs in the relevant contract review.
 2. Use provider-specific action refs and schemas.
-3. Define safe setup fields and daemon-only credential handling.
+3. Define safe auth method fields and daemon-only credential handling.
 4. Add connector code with doc links near provider-specific calls.
 5. Add validation, redaction, audit, rate-limit/error, pagination, and budget
    tests as appropriate.

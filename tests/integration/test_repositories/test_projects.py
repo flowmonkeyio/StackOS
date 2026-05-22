@@ -60,7 +60,7 @@ def test_integration_credential_set_round_trip_and_remove(
     out = repo.set(
         project_id=project_id,
         kind="dataforseo",
-        plaintext_payload=b"API_KEY",
+        secret_payload=b"API_KEY",
         config_json={"login": "user@example.com"},
     )
 
@@ -78,7 +78,7 @@ def test_integration_credential_aad_tamper_fails(session: Session, project_id: i
     from content_stack.crypto.aes_gcm import CryptoError, decrypt
 
     repo = IntegrationCredentialRepository(session)
-    env = repo.set(project_id=project_id, kind="firecrawl", plaintext_payload=b"secret")
+    env = repo.set(project_id=project_id, kind="firecrawl", secret_payload=b"secret")
     row = repo.fetch_row(env.data.id)
 
     with pytest.raises(CryptoError):

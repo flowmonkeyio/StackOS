@@ -38,7 +38,7 @@ class _FakeConnector:
 
     def __init__(self) -> None:
         self.calls = 0
-        self.saw_plaintext: bytes | None = None
+        self.saw_secret: bytes | None = None
 
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
         if "name" not in request.input_json:
@@ -57,7 +57,7 @@ class _FakeConnector:
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         self.calls += 1
         assert request.credential is not None
-        self.saw_plaintext = request.credential.plaintext_payload
+        self.saw_secret = request.credential.secret_payload
         return ActionConnectorResult(
             output_json={
                 "echo": request.input_json,
@@ -101,6 +101,29 @@ SITEMAP_URLSET = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+def _api_key_auth_methods() -> dict:
+    return {
+        "auth_methods": [
+            {
+                "key": "api_key",
+                "label": "API key",
+                "auth_type": "api-key",
+                "payload_format": "raw",
+                "payload_field": "api_key",
+                "fields": [
+                    {
+                        "key": "api_key",
+                        "label": "API Key",
+                        "type": "secret",
+                        "secret": True,
+                        "required": True,
+                    }
+                ],
+            }
+        ]
+    }
+
+
 def _seed_action(session: Session) -> None:
     plugin = Plugin(
         slug="test-actions",
@@ -118,6 +141,7 @@ def _seed_action(session: Session) -> None:
         key="fake-provider",
         name="Fake Provider",
         auth_type="api-key",
+        config_json=_api_key_auth_methods(),
     )
     session.add(provider)
     session.flush()
@@ -181,6 +205,7 @@ def _seed_http_action(session: Session) -> None:
         key="internal-webhook",
         name="Internal Webhook",
         auth_type="api-key",
+        config_json=_api_key_auth_methods(),
     )
     session.add(provider)
     session.flush()
@@ -223,7 +248,7 @@ def _credential_ref(session: Session, project_id: int) -> str:
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="fake-provider",
-        plaintext_payload=b"daemon-only-secret",
+        secret_payload=b"daemon-only-secret",
         config_json={"label": "Fake"},
     )
     from content_stack.auth_providers import AuthRepository
@@ -260,7 +285,7 @@ def test_action_execute_resolves_secret_internally_and_redacts_audit(
     ).data
 
     assert fake.calls == 1
-    assert fake.saw_plaintext == b"daemon-only-secret"
+    assert fake.saw_secret == b"daemon-only-secret"
     assert out.output_json == {
         "echo": {"name": "Ada"},
         "authorization": "[redacted]",
@@ -514,15 +539,20 @@ def test_custom_http_action_executes_static_webhook_with_daemon_side_auth(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="internal-webhook",
-        plaintext_payload=b"webhook-token",
+        secret_payload=b"webhook-token",
         config_json={"label": "Internal webhook"},
     )
     from content_stack.auth_providers import AuthRepository
 
-    credential_ref = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="internal-webhook",
-    ).connections[0].credential_ref
+    credential_ref = (
+        AuthRepository(session)
+        .status(
+            project_id=project_id,
+            provider_key="internal-webhook",
+        )
+        .connections[0]
+        .credential_ref
+    )
     httpx_mock.add_response(
         method="POST",
         url="https://hooks.example/internal/run",
@@ -566,14 +596,19 @@ def test_hubspot_builtin_company_upsert_sends_documented_batch_body(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="hubspot",
-        plaintext_payload=json.dumps({"access_token": "hubspot-secret"}).encode("utf-8"),
+        secret_payload=json.dumps({"access_token": "hubspot-secret"}).encode("utf-8"),
     )
     from content_stack.auth_providers import AuthRepository
 
-    credential_ref = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="hubspot",
-    ).connections[0].credential_ref
+    credential_ref = (
+        AuthRepository(session)
+        .status(
+            project_id=project_id,
+            provider_key="hubspot",
+        )
+        .connections[0]
+        .credential_ref
+    )
     httpx_mock.add_response(
         method="POST",
         url="https://api.hubapi.com/crm/objects/2026-03/companies/batch/upsert",
@@ -624,15 +659,20 @@ def test_meta_builtin_campaign_create_resolves_account_ref_and_sends_form_body(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="meta-ads",
-        plaintext_payload=json.dumps({"access_token": "meta-secret"}).encode("utf-8"),
+        secret_payload=json.dumps({"access_token": "meta-secret"}).encode("utf-8"),
         config_json={"api_version": "v25.0", "accounts": {"primary": "act_123"}},
     )
     from content_stack.auth_providers import AuthRepository
 
-    credential_ref = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="meta-ads",
-    ).connections[0].credential_ref
+    credential_ref = (
+        AuthRepository(session)
+        .status(
+            project_id=project_id,
+            provider_key="meta-ads",
+        )
+        .connections[0]
+        .credential_ref
+    )
     httpx_mock.add_response(
         method="POST",
         url="https://graph.facebook.com/v25.0/act_123/campaigns",
@@ -677,7 +717,7 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="google-ads",
-        plaintext_payload=json.dumps(
+        secret_payload=json.dumps(
             {"access_token": "google-access", "developer_token": "google-dev"}
         ).encode("utf-8"),
         config_json={
@@ -688,10 +728,15 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
     )
     from content_stack.auth_providers import AuthRepository
 
-    credential_ref = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="google-ads",
-    ).connections[0].credential_ref
+    credential_ref = (
+        AuthRepository(session)
+        .status(
+            project_id=project_id,
+            provider_key="google-ads",
+        )
+        .connections[0]
+        .credential_ref
+    )
     httpx_mock.add_response(
         method="POST",
         url="https://googleads.googleapis.com/v22/customers/4445556666/googleAds:search",
@@ -734,15 +779,20 @@ def test_taboola_builtin_campaign_create_uses_backstage_account_endpoint(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="taboola",
-        plaintext_payload=json.dumps({"access_token": "taboola-access"}).encode("utf-8"),
+        secret_payload=json.dumps({"access_token": "taboola-access"}).encode("utf-8"),
         config_json={"accounts": {"main": "demo-account"}},
     )
     from content_stack.auth_providers import AuthRepository
 
-    credential_ref = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="taboola",
-    ).connections[0].credential_ref
+    credential_ref = (
+        AuthRepository(session)
+        .status(
+            project_id=project_id,
+            provider_key="taboola",
+        )
+        .connections[0]
+        .credential_ref
+    )
     httpx_mock.add_response(
         method="POST",
         url="https://backstage.taboola.com/backstage/api/1.0/demo-account/campaigns/",
@@ -807,7 +857,7 @@ def test_salesforce_builtin_account_upsert_uses_external_id_endpoint(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="salesforce",
-        plaintext_payload=json.dumps({"access_token": "sf-secret"}).encode("utf-8"),
+        secret_payload=json.dumps({"access_token": "sf-secret"}).encode("utf-8"),
         config_json={
             "instance_url": "https://example.my.salesforce.com",
             "api_version": "v61.0",
@@ -854,7 +904,7 @@ def test_apollo_builtin_people_enrich_sends_single_record_params(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="apollo",
-        plaintext_payload=json.dumps({"api_key": "apollo-secret"}).encode("utf-8"),
+        secret_payload=json.dumps({"api_key": "apollo-secret"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "apollo")
     httpx_mock.add_response(method="POST", json={"person": {"id": "p1"}})
@@ -884,7 +934,7 @@ def test_pipedrive_builtin_deal_search_uses_search_whitelist(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="pipedrive",
-        plaintext_payload=json.dumps({"api_token": "pd-secret"}).encode("utf-8"),
+        secret_payload=json.dumps({"api_token": "pd-secret"}).encode("utf-8"),
         config_json={"company_domain": "acme", "organizations": {"org": 42}},
     )
     credential_ref = _provider_credential_ref(session, project_id, "pipedrive")
@@ -923,7 +973,7 @@ def test_clay_builtin_table_webhook_submits_configured_rows(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="clay",
-        plaintext_payload=json.dumps({}).encode("utf-8"),
+        secret_payload=json.dumps({}).encode("utf-8"),
         config_json={"webhooks": {"leads": "https://hooks.clay.com/t/leads"}},
     )
     credential_ref = _provider_credential_ref(session, project_id, "clay")
@@ -940,9 +990,7 @@ def test_clay_builtin_table_webhook_submits_configured_rows(
 
     request = httpx_mock.get_requests()[0]
     assert str(request.url) == "https://hooks.clay.com/t/leads"
-    assert json.loads(request.content.decode("utf-8")) == {
-        "rows": [{"email": "ada@example.com"}]
-    }
+    assert json.loads(request.content.decode("utf-8")) == {"rows": [{"email": "ada@example.com"}]}
     assert out.action_call.connector_key == "clay"
 
 
@@ -954,7 +1002,7 @@ def test_outreach_builtin_sequence_state_posts_json_api_relationships(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="outreach",
-        plaintext_payload=json.dumps({"access_token": "outreach-secret"}).encode("utf-8"),
+        secret_payload=json.dumps({"access_token": "outreach-secret"}).encode("utf-8"),
         config_json={
             "sequences": {"seq": 1},
             "prospects": {"prospect": 2},
@@ -995,7 +1043,7 @@ def test_salesloft_builtin_cadence_membership_posts_ids(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="salesloft",
-        plaintext_payload=json.dumps({"access_token": "salesloft-secret"}).encode("utf-8"),
+        secret_payload=json.dumps({"access_token": "salesloft-secret"}).encode("utf-8"),
         config_json={"cadences": {"cadence": 10}, "persons": {"person": 20}},
     )
     credential_ref = _provider_credential_ref(session, project_id, "salesloft")
@@ -1029,7 +1077,7 @@ def test_google_workspace_builtin_gmail_send_posts_raw_message(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="google-workspace",
-        plaintext_payload=json.dumps({"access_token": "workspace-secret"}).encode("utf-8"),
+        secret_payload=json.dumps({"access_token": "workspace-secret"}).encode("utf-8"),
     )
     credential_ref = _provider_credential_ref(session, project_id, "google-workspace")
     httpx_mock.add_response(method="POST", json={"id": "msg-1"})
@@ -1059,7 +1107,7 @@ def test_microsoft_graph_builtin_mail_send_requires_user_for_application_auth(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="microsoft-365",
-        plaintext_payload=json.dumps({"access_token": "graph-secret"}).encode("utf-8"),
+        secret_payload=json.dumps({"access_token": "graph-secret"}).encode("utf-8"),
         config_json={"auth_mode": "application", "users": {"primary": "ada@example.com"}},
     )
     credential_ref = _provider_credential_ref(session, project_id, "microsoft-365")
@@ -1096,7 +1144,7 @@ def test_firecrawl_action_executes_through_generic_connector(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="firecrawl",
-        plaintext_payload=b"fc-key",
+        secret_payload=b"fc-key",
     )
     IntegrationBudgetRepository(session).set(
         project_id=project_id,
@@ -1105,10 +1153,15 @@ def test_firecrawl_action_executes_through_generic_connector(
     )
     from content_stack.auth_providers import AuthRepository
 
-    credential_ref = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="firecrawl",
-    ).connections[0].credential_ref
+    credential_ref = (
+        AuthRepository(session)
+        .status(
+            project_id=project_id,
+            provider_key="firecrawl",
+        )
+        .connections[0]
+        .credential_ref
+    )
     httpx_mock.add_response(
         method="POST",
         url="https://api.firecrawl.dev/v2/scrape",
@@ -1137,7 +1190,7 @@ def test_dataforseo_action_executes_with_daemon_side_login_config(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="dataforseo",
-        plaintext_payload=b"password",
+        secret_payload=b"password",
         config_json={"login": "login@example.com"},
     )
     IntegrationBudgetRepository(session).set(
@@ -1147,10 +1200,15 @@ def test_dataforseo_action_executes_with_daemon_side_login_config(
     )
     from content_stack.auth_providers import AuthRepository
 
-    credential_ref = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="dataforseo",
-    ).connections[0].credential_ref
+    credential_ref = (
+        AuthRepository(session)
+        .status(
+            project_id=project_id,
+            provider_key="dataforseo",
+        )
+        .connections[0]
+        .credential_ref
+    )
     httpx_mock.add_response(
         method="POST",
         url="https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
@@ -1182,7 +1240,7 @@ def test_dataforseo_paa_action_uses_explicit_action_contract(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="dataforseo",
-        plaintext_payload=b"password",
+        secret_payload=b"password",
         config_json={"login": "login@example.com"},
     )
     IntegrationBudgetRepository(session).set(
@@ -1192,10 +1250,15 @@ def test_dataforseo_paa_action_uses_explicit_action_contract(
     )
     from content_stack.auth_providers import AuthRepository
 
-    credential_ref = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="dataforseo",
-    ).connections[0].credential_ref
+    credential_ref = (
+        AuthRepository(session)
+        .status(
+            project_id=project_id,
+            provider_key="dataforseo",
+        )
+        .connections[0]
+        .credential_ref
+    )
     httpx_mock.add_response(
         method="POST",
         url="https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
@@ -1203,13 +1266,7 @@ def test_dataforseo_paa_action_uses_explicit_action_contract(
             "tasks": [
                 {
                     "cost": 0.001,
-                    "result": [
-                        {
-                            "items": [
-                                {"type": "people_also_ask", "title": "What is SEO?"}
-                            ]
-                        }
-                    ],
+                    "result": [{"items": [{"type": "people_also_ask", "title": "What is SEO?"}]}],
                 }
             ]
         },
@@ -1230,10 +1287,7 @@ def test_dataforseo_paa_action_uses_explicit_action_contract(
     assert request_body[0]["people_also_ask_click_depth"] == 1
     assert out.action_call.provider_key == "dataforseo"
     assert out.action_call.connector_key == "dataforseo"
-    assert (
-        out.output_json["tasks"][0]["result"][0]["items"][0]["title"]
-        == "What is SEO?"
-    )
+    assert out.output_json["tasks"][0]["result"][0]["items"][0]["title"] == "What is SEO?"
     assert "password" not in rendered
     assert "login@example.com" not in rendered
 
@@ -1246,17 +1300,22 @@ def test_wordpress_post_create_action_uses_daemon_side_site_config(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="wordpress",
-        plaintext_payload=json.dumps(
+        secret_payload=json.dumps(
             {"username": "editor", "application_password": "app pass"}
         ).encode("utf-8"),
         config_json={"wp_url": "https://wp.example"},
     )
     from content_stack.auth_providers import AuthRepository
 
-    credential_ref = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="wordpress",
-    ).connections[0].credential_ref
+    credential_ref = (
+        AuthRepository(session)
+        .status(
+            project_id=project_id,
+            provider_key="wordpress",
+        )
+        .connections[0]
+        .credential_ref
+    )
     httpx_mock.add_response(
         method="POST",
         url="https://wp.example/wp-json/wp/v2/posts",
@@ -1300,15 +1359,20 @@ def test_ghost_post_create_action_uses_daemon_side_admin_config(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="ghost",
-        plaintext_payload=b"keyid:00112233445566778899aabbccddeeff",
+        secret_payload=b"keyid:00112233445566778899aabbccddeeff",
         config_json={"ghost_url": "https://ghost.example", "api_version": "v5.0"},
     )
     from content_stack.auth_providers import AuthRepository
 
-    credential_ref = AuthRepository(session).status(
-        project_id=project_id,
-        provider_key="ghost",
-    ).connections[0].credential_ref
+    credential_ref = (
+        AuthRepository(session)
+        .status(
+            project_id=project_id,
+            provider_key="ghost",
+        )
+        .connections[0]
+        .credential_ref
+    )
     httpx_mock.add_response(
         method="POST",
         url="https://ghost.example/ghost/api/admin/posts/?source=html",

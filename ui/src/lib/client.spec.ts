@@ -5,25 +5,25 @@ import { ApiError, formatApiError } from './client'
 describe('client error formatting', () => {
   it('uses backend error detail and hint from the standard envelope', () => {
     const err = new ApiError('fallback', 422, {
-      detail: 'plaintext_payload is required to rotate a credential',
+      detail: 'api_key is required to rotate a credential',
       code: -32602,
       retryable: false,
       hint: 'Paste the secret again before saving.',
     })
 
-    expect(err.detail).toBe('plaintext_payload is required to rotate a credential')
+    expect(err.detail).toBe('api_key is required to rotate a credential')
     expect(formatApiError(err)).toContain('Paste the secret again before saving.')
   })
 
   it('unwraps FastAPI HTTPException detail envelopes', () => {
     const err = new ApiError('fallback', 422, {
-      detail: {
-        detail: 'dataforseo credential missing config_json.login',
+        detail: {
+        detail: 'dataforseo credential missing login',
         code: -32602,
       },
     })
 
-    expect(formatApiError(err)).toBe('dataforseo credential missing config_json.login')
+    expect(formatApiError(err)).toBe('dataforseo credential missing login')
   })
 
   it('summarizes budget failure data for operator toasts', () => {

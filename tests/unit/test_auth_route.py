@@ -79,7 +79,11 @@ def test_ui_token_can_manage_provider_auth_setup(client: TestClient, auth_token:
     created = client.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
         headers={"authorization": f"Bearer {ui_token}"},
-        json={"plaintext_payload": "fc-secret", "config_json": {"label": "Primary"}},
+        json={
+            "auth_method_key": "api_key",
+            "label": "Primary",
+            "fields": {"api_key": "fc-secret"},
+        },
     )
     assert created.status_code == 201, created.text
     credential_ref = created.json()["data"]["credential_ref"]

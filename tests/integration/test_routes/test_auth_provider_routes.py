@@ -12,8 +12,10 @@ def _create_firecrawl_credential(api: TestClient, project_id: int) -> dict:
     response = api.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
         json={
-            "plaintext_payload": "fc-secret",
-            "config_json": {"label": "Primary Firecrawl"},
+            "auth_method_key": "api_key",
+            "profile_key": "primary",
+            "label": "Primary Firecrawl",
+            "fields": {"api_key": "fc-secret"},
         },
     )
     assert response.status_code == 201, response.text
@@ -31,7 +33,11 @@ def test_auth_status_returns_opaque_refs_and_no_secrets(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["providers"][0]["key"] == "firecrawl"
+    assert body["providers"][0]["auth_methods"][0]["key"] == "api_key"
     assert body["connections"][0]["credential_ref"].startswith("cred_")
+    assert body["connections"][0]["profile_key"] == "primary"
+    assert body["connections"][0]["auth_method_key"] == "api_key"
+    assert body["connections"][0]["label"] == "Primary Firecrawl"
     assert body["connections"][0]["status"] == "connected"
     rendered = json.dumps(body)
     assert "fc-secret" not in rendered
@@ -47,7 +53,8 @@ def test_auth_start_for_api_key_returns_local_setup_url_only(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["data"]["status"] == "requires-local-secret"
+    assert body["data"]["status"] == "requires-local-credential"
+    assert body["data"]["auth_method_key"] == "api_key"
     assert body["data"]["setup_url"].endswith(
         f"/projects/{project_id}/connections?provider_key=firecrawl"
     )
@@ -55,12 +62,12 @@ def test_auth_start_for_api_key_returns_local_setup_url_only(
     assert body["data"]["credential_ref"] is None
 
 
-def test_auth_test_uses_provider_key_and_returns_sanitized_result(
+def test_auth_test_uses_credential_ref_and_returns_sanitized_result(
     api: TestClient,
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    _create_firecrawl_credential(api, project_id)
+    credential = _create_firecrawl_credential(api, project_id)
     httpx_mock.add_response(
         method="POST",
         url="https://api.firecrawl.dev/v2/scrape",
@@ -69,7 +76,7 @@ def test_auth_test_uses_provider_key_and_returns_sanitized_result(
 
     response = api.post(
         f"/api/v1/projects/{project_id}/auth/test",
-        json={"provider_key": "firecrawl"},
+        json={"credential_ref": credential["credential_ref"]},
     )
 
     assert response.status_code == 200, response.text
@@ -107,45 +114,48 @@ def test_auth_revoke_removes_backing_secret_and_preserves_redacted_history(
     assert connection["setup_required"] is True
 
 
-def test_auth_secret_setup_rejects_secret_like_config(
+def test_auth_credential_setup_rejects_legacy_top_level_secret_fields(
     api: TestClient,
     project_id: int,
 ) -> None:
     response = api.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
         json={
-            "plaintext_payload": "fc-secret",
-            "config_json": {"api_key": "fc-secret"},
+            "auth_method_key": "api_key",
+            "fields": {"api_key": "fc-secret"},
+            "plaintext_payload": "legacy-secret",
         },
     )
 
     assert response.status_code == 422, response.text
 
 
-def test_auth_secret_setup_requires_manifest_setup_fields(
+def test_auth_credential_setup_requires_method_fields(
     api: TestClient,
     project_id: int,
 ) -> None:
     missing = api.post(
         f"/api/v1/projects/{project_id}/auth/wordpress/credentials",
         json={
-            "plaintext_payload": json.dumps(
-                {"username": "editor", "application_password": "app pass"}
-            ),
-            "config_json": {"label": "Editorial"},
+            "auth_method_key": "application_password",
+            "label": "Editorial",
+            "fields": {"username": "editor", "application_password": "app pass"},
         },
     )
 
     assert missing.status_code == 422, missing.text
-    assert "config_json.wp_url" in missing.json()["detail"]
+    assert "wp_url" in missing.json()["detail"]
 
     stored = api.post(
         f"/api/v1/projects/{project_id}/auth/wordpress/credentials",
         json={
-            "plaintext_payload": json.dumps(
-                {"username": "editor", "application_password": "app pass"}
-            ),
-            "config_json": {"label": "Editorial", "wp_url": "https://wp.example"},
+            "auth_method_key": "application_password",
+            "label": "Editorial",
+            "fields": {
+                "username": "editor",
+                "application_password": "app pass",
+                "wp_url": "https://wp.example",
+            },
         },
     )
 
@@ -153,3 +163,27 @@ def test_auth_secret_setup_requires_manifest_setup_fields(
     body = stored.json()
     assert body["data"]["provider_key"] == "wordpress"
     assert "app pass" not in json.dumps(body)
+
+
+def test_auth_test_rejects_provider_key_selector(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    for profile_key in ("primary", "secondary"):
+        response = api.post(
+            f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
+            json={
+                "auth_method_key": "api_key",
+                "profile_key": profile_key,
+                "fields": {"api_key": f"fc-{profile_key}"},
+            },
+        )
+        assert response.status_code == 201, response.text
+
+    response = api.post(
+        f"/api/v1/projects/{project_id}/auth/test",
+        json={"provider_key": "firecrawl"},
+    )
+
+    assert response.status_code == 422, response.text
+    assert "credential_ref" in response.text
