@@ -32,12 +32,26 @@ actions:
     provider: dataforseo
     capability: seo-research
     risk_level: cost
-    input_schema: &object_schema
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - keywords
+      properties:
+        keywords:
+          type: array
+          items:
+            type: string
+        location:
+          type: string
+        language:
+          type: string
+    output_schema: &object_schema
       type: object
       additionalProperties: true
-    output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
+      connector: dataforseo
       operation: keyword.research
       requires_credential: true
       budget_kind: dataforseo
@@ -48,10 +62,24 @@ actions:
     provider: dataforseo
     capability: seo-research
     risk_level: cost
-    input_schema: *object_schema
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - keyword
+      properties:
+        keyword:
+          type: string
+        location:
+          type: string
+        language:
+          type: string
+        depth:
+          type: integer
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
+      connector: dataforseo
       operation: serp.analyze
       requires_credential: true
       budget_kind: dataforseo
@@ -62,10 +90,24 @@ actions:
     provider: ahrefs
     capability: seo-research
     risk_level: cost
-    input_schema: *object_schema
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - target
+      properties:
+        target:
+          type: string
+        country:
+          type: string
+        limit:
+          type: integer
+        date:
+          type: string
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
+      connector: ahrefs
       operation: competitor.keywords
       requires_credential: true
       budget_kind: ahrefs
@@ -76,10 +118,22 @@ actions:
     provider: ahrefs
     capability: seo-research
     risk_level: cost
-    input_schema: *object_schema
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - target
+      properties:
+        target:
+          type: string
+        mode:
+          type: string
+        limit:
+          type: integer
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
+      connector: ahrefs
       operation: backlink.research
       requires_credential: true
       budget_kind: ahrefs

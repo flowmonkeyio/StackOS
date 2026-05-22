@@ -32,6 +32,19 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert resources_by_plugin["core"] >= {"learning", "experiment"}
     assert resources_by_plugin["seo"] >= {"keyword-opportunity", "content-piece"}
     assert resources_by_plugin["utils"] >= {"generated-image", "web-document"}
+    utils = next(manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "utils")
+    utils_actions = {action.key: action for action in utils.actions}
+    assert utils_actions["web.scrape"].config["connector"] == "firecrawl"
+    assert utils_actions["web.read"].config == {
+        "schema_version": "stackos.action.v1",
+        "connector": "jina",
+        "operation": "read",
+        "requires_credential": False,
+        "allows_credential": True,
+        "budget_kind": "jina",
+        "enforce_budget": False,
+    }
+    assert utils_actions["reddit.search-subreddit"].config["connector"] == "reddit"
 
 
 def test_seo_plugin_yaml_facade_validates() -> None:
@@ -60,11 +73,16 @@ def test_seo_plugin_yaml_facade_validates() -> None:
     actions = {action.key: action for action in manifest.actions}
     assert actions["keyword.research"].config == {
         "schema_version": "stackos.action.v1",
+        "connector": "dataforseo",
         "operation": "keyword.research",
         "requires_credential": True,
         "budget_kind": "dataforseo",
         "enforce_budget": True,
     }
+    assert actions["serp.analyze"].config["connector"] == "dataforseo"
+    assert actions["competitor.keywords"].config["connector"] == "ahrefs"
+    assert actions["backlink.research"].config["connector"] == "ahrefs"
+    assert actions["keyword.research"].input_schema["required"] == ["keywords"]
 
 
 def test_plugin_manifest_loader_reads_bundled_assets_when_repo_plugins_absent(

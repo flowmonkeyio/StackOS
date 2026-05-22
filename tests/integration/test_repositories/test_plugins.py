@@ -49,6 +49,10 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert {provider.key for provider in utils.providers} >= {"openai-images", "firecrawl"}
     assert {action.key for action in utils.actions} >= {"image.generate", "web.scrape"}
     assert {resource.key for resource in utils.resources} >= {"generated-image", "web-document"}
+    utils_actions = {action.key: action for action in utils.actions}
+    assert utils_actions["web.scrape"].config_json["connector"] == "firecrawl"
+    assert utils_actions["web.read"].config_json["connector"] == "jina"
+    assert utils_actions["web.read"].config_json["requires_credential"] is False
 
     seo = repo.catalog(plugin_slug="seo").plugins[0]
     assert {cap.key for cap in seo.capabilities} >= {"seo-content", "seo-research"}
@@ -58,6 +62,11 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "serp.analyze",
         "competitor.keywords",
     }
+    seo_actions = {action.key: action for action in seo.actions}
+    assert seo_actions["keyword.research"].config_json["connector"] == "dataforseo"
+    assert seo_actions["serp.analyze"].config_json["connector"] == "dataforseo"
+    assert seo_actions["competitor.keywords"].config_json["connector"] == "ahrefs"
+    assert seo_actions["backlink.research"].config_json["connector"] == "ahrefs"
     assert {resource.key for resource in seo.resources} >= {
         "keyword-opportunity",
         "content-piece",

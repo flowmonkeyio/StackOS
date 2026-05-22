@@ -64,6 +64,20 @@ def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
     return status["connections"][0]["credential_ref"]
 
 
+def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
+        json={"plaintext_payload": "fc-key"},
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "firecrawl"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _image_action_plan_json() -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",
@@ -83,6 +97,30 @@ def _image_action_plan_json() -> dict:
                 "id": "generate-image",
                 "title": "Generate image",
                 "action_refs": ["utils.image.generate"],
+            }
+        ],
+    }
+
+
+def _firecrawl_action_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "utils.firecrawl-action.run",
+        "title": "Firecrawl action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "scrape-page",
+                    "tool": "action.execute",
+                    "action_refs": ["utils.web.scrape"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "scrape-page",
+                "title": "Scrape page",
+                "action_refs": ["utils.web.scrape"],
             }
         ],
     }
@@ -204,7 +242,65 @@ def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(
     assert data["action_call"]["run_plan_step_id"] == claimed["data"]["id"]
     assert item["url"].startswith("/generated-assets/openai-images/openai-")
     assert "b64_json" not in item
+    assert "credential_id" not in rendered
     assert "sk-openai" not in rendered
     assert "Authorization" not in rendered
     path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
     assert path.read_bytes() == b"webp"
+
+
+def test_action_execute_firecrawl_grant_uses_generic_connector(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_firecrawl_credential(mcp_client, project_id)
+    budget_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "firecrawl", "monthly_budget_usd": 10.0},
+        headers={"authorization": f"Bearer {mcp_client.auth_token}"},
+    )
+    assert budget_resp.status_code == 200
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _firecrawl_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "scrape-page",
+            "run_token": run_token,
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.firecrawl.dev/v2/scrape",
+        json={"data": {"markdown": "# Hello"}},
+    )
+
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.web.scrape",
+            "input_json": {"url": "https://example.com"},
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+
+    data = out["data"]
+    rendered = json.dumps(data)
+    assert data["credential_ref"] == credential_ref
+    assert data["output_json"] == {"data": {"markdown": "# Hello"}}
+    assert data["action_call"]["provider_key"] == "firecrawl"
+    assert data["action_call"]["connector_key"] == "firecrawl"
+    assert "credential_id" not in rendered
+    assert "fc-key" not in rendered

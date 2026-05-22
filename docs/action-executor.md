@@ -58,6 +58,10 @@ Every internal execution writes an `action_calls` sidecar row with:
 - redacted request/response/metadata
 - status, dry-run flag, duration, cost, error, and idempotency key
 
+`action.execute` returns the public action-call audit shape. Internal database
+identifiers such as `credential_id`, `action_id`, and replay-only
+`idempotency_key` stay in storage and are not returned to agents.
+
 The table is part of the clean StackOS core. Domain plugins store their durable
 objects in resources/artifacts; the core action executor does not preserve
 legacy workflow tables for compatibility.
@@ -79,10 +83,20 @@ started run plan, exactly one active claimed step, an explicit
 `action_refs`. The active step must also declare the same action ref in
 `action_refs`.
 
-The first registered connector is `openai-images` for `utils.image.generate`.
-It resolves the opaque credential ref inside the daemon, calls the existing
-OpenAI Images wrapper, persists base64 image bytes under generated assets, and
-returns local artifact URLs with no `b64_json` payload.
+Registered first-party connectors now cover the migrated clean path for:
+
+- `openai-images`: `utils.image.generate`
+- `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`,
+  `utils.web.extract`
+- `jina`: `utils.web.read` with optional credentials
+- `reddit`: `utils.reddit.search-subreddit`, `utils.reddit.top-questions`
+- `dataforseo`: `seo.keyword.research`, `seo.serp.analyze`
+- `ahrefs`: `seo.competitor.keywords`, `seo.backlink.research`
+
+The OpenAI Images connector persists base64 image bytes under generated assets
+and returns local artifact URLs with no `b64_json` payload. Other connectors
+normalize wrapper results into action output JSON and record the provider,
+operation, cost, status, and redacted payloads in `action_calls`.
 
 ## Boundary
 

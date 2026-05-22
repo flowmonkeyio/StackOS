@@ -281,7 +281,7 @@ class ActionValidationOut(BaseModel):
 
 
 class ActionExecutionOut(BaseModel):
-    action_call: ActionCallOut
+    action_call: ActionCallAuditOut
     output_json: dict[str, Any]
     metadata_json: dict[str, Any] | None = None
     cost_cents: int = 0
@@ -529,7 +529,7 @@ class ActionRepository:
             )
             return Envelope(
                 data=ActionExecutionOut(
-                    action_call=ActionCallOut.model_validate(row),
+                    action_call=self._call_audit_out(row),
                     output_json=row.response_json or {},
                     metadata_json=row.metadata_json,
                     cost_cents=row.cost_cents,
@@ -616,7 +616,7 @@ class ActionRepository:
         )
         return Envelope(
             data=ActionExecutionOut(
-                action_call=ActionCallOut.model_validate(row),
+                action_call=self._call_audit_out(row),
                 output_json=row.response_json or {},
                 metadata_json=row.metadata_json,
                 cost_cents=row.cost_cents,
@@ -960,7 +960,7 @@ class ActionRepository:
                 },
             )
         return ActionExecutionOut(
-            action_call=ActionCallOut.model_validate(row),
+            action_call=self._call_audit_out(row),
             output_json=row.response_json or {},
             metadata_json=row.metadata_json,
             cost_cents=row.cost_cents,

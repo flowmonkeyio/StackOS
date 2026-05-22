@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from content_stack.workflows.run_plan_schema import RunPlanSpec, validate_run_plan_obj
 
 
@@ -95,18 +97,19 @@ def test_run_plan_schema_requires_action_execute_refs() -> None:
     assert "action_refs" in result.errors[0].message
 
 
-def test_run_plan_schema_accepts_action_execute_with_refs() -> None:
+@pytest.mark.parametrize("action_ref", ["utils.web.scrape", "seo.serp.analyze"])
+def test_run_plan_schema_accepts_action_execute_with_refs(action_ref: str) -> None:
     data = _plan_dict()
     data["grants"] = {
         "mcp_tool_grants": [
             {
                 "step_id": "create-campaign",
                 "tool": "action.execute",
-                "action_refs": ["utils.image.generate"],
+                "action_refs": [action_ref],
             }
         ],
     }
-    data["steps"][0]["action_refs"] = ["utils.image.generate"]
+    data["steps"][0]["action_refs"] = [action_ref]
 
     result = validate_run_plan_obj(data)
 

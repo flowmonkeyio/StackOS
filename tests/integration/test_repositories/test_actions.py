@@ -6,6 +6,7 @@ import asyncio
 import json
 
 import pytest
+from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
 from content_stack.actions import (
@@ -24,7 +25,10 @@ from content_stack.db.models import (
     Provider,
 )
 from content_stack.repositories.base import ConflictError, NotFoundError, ValidationError
-from content_stack.repositories.projects import IntegrationCredentialRepository
+from content_stack.repositories.projects import (
+    IntegrationBudgetRepository,
+    IntegrationCredentialRepository,
+)
 from content_stack.repositories.run_plans import RunPlanRepository
 
 
@@ -201,10 +205,10 @@ def test_action_execute_resolves_secret_internally_and_redacts_audit(
         "refresh_token": "[redacted]",
     }
     assert out.action_call.credential_ref == credential_ref
-    assert out.action_call.credential_id is not None
     assert out.action_call.request_json == {"name": "Ada"}
     assert out.action_call.response_json == out.output_json
     assert out.cost_cents == 34
+    assert "credential_id" not in out.model_dump(mode="json")["action_call"]
     assert "daemon-only-secret" not in json.dumps(out.model_dump(mode="json"))
 
     call = session.exec(select(ActionCall)).one()
@@ -251,6 +255,145 @@ def test_action_execute_idempotency_replays_without_second_connector_call(
     assert second.replayed is True
     assert second.action_call.id == first.action_call.id
     assert len(session.exec(select(ActionCall)).all()) == 1
+
+
+def test_builtin_action_connectors_describe_as_executable(session: Session) -> None:
+    action_refs = {
+        "utils.web.scrape": ("firecrawl", True),
+        "utils.web.read": ("jina", False),
+        "utils.reddit.search-subreddit": ("reddit", True),
+        "seo.keyword.research": ("dataforseo", True),
+        "seo.serp.analyze": ("dataforseo", True),
+        "seo.competitor.keywords": ("ahrefs", True),
+        "seo.backlink.research": ("ahrefs", True),
+    }
+    repo = ActionRepository(session)
+
+    for action_ref, (connector, requires_credential) in action_refs.items():
+        described = repo.describe(action_ref=action_ref)
+
+        assert described.connector_registered is True
+        assert described.execution_available is True
+        assert described.manifest.connector_key == connector
+        assert described.manifest.requires_credential is requires_credential
+
+
+def test_jina_action_preserves_optional_credentials(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.web.read",
+        input_json={"url": "https://example.com"},
+    )
+    assert validation.valid is True
+    assert validation.credential_ref is None
+
+    httpx_mock.add_response(
+        method="GET",
+        url="https://r.jina.ai/https://example.com",
+        text="# Example",
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="utils.web.read",
+            input_json={"url": "https://example.com"},
+        )
+    ).data
+
+    assert out.output_json == {"data": "# Example"}
+    assert out.credential_ref is None
+    assert out.action_call.credential_ref is None
+
+
+def test_firecrawl_action_executes_through_generic_connector(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="firecrawl",
+        plaintext_payload=b"fc-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="firecrawl",
+        monthly_budget_usd=10.0,
+    )
+    from content_stack.auth_providers import AuthRepository
+
+    credential_ref = AuthRepository(session).status(
+        project_id=project_id,
+        provider_key="firecrawl",
+    ).connections[0].credential_ref
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.firecrawl.dev/v2/scrape",
+        json={"data": {"markdown": "# Hello"}},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="utils.web.scrape",
+            input_json={"url": "https://example.com"},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json == {"data": {"markdown": "# Hello"}}
+    assert out.action_call.provider_key == "firecrawl"
+    assert out.action_call.connector_key == "firecrawl"
+
+
+def test_dataforseo_action_executes_with_daemon_side_login_config(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="dataforseo",
+        plaintext_payload=b"password",
+        config_json={"login": "login@example.com"},
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="dataforseo",
+        monthly_budget_usd=10.0,
+    )
+    from content_stack.auth_providers import AuthRepository
+
+    credential_ref = AuthRepository(session).status(
+        project_id=project_id,
+        provider_key="dataforseo",
+    ).connections[0].credential_ref
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
+        json={"tasks": [{"cost": 0.002, "result": [{"title": "Example"}]}]},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="seo.serp.analyze",
+            input_json={"keyword": "stackos", "depth": 10},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert out.action_call.provider_key == "dataforseo"
+    assert out.action_call.connector_key == "dataforseo"
+    assert out.output_json["tasks"][0]["result"][0]["title"] == "Example"
+    assert "password" not in rendered
+    assert "login@example.com" not in rendered
 
 
 def test_action_validate_reports_schema_connector_and_credential_issues(

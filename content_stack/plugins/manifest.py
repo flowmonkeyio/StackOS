@@ -193,6 +193,72 @@ _ARTIFACT_RESOURCE_SCHEMA = {
     },
     "required": ["uri"],
 }
+_WEB_SCRAPE_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url"],
+    "properties": {
+        "url": {"type": "string"},
+        "formats": {"type": "array", "items": {"type": "string"}},
+        "only_main_content": {"type": "boolean"},
+    },
+}
+_WEB_CRAWL_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url"],
+    "properties": {
+        "url": {"type": "string"},
+        "max_depth": {"type": "integer"},
+        "limit": {"type": "integer"},
+    },
+}
+_WEB_MAP_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url"],
+    "properties": {
+        "url": {"type": "string"},
+        "search": {"type": "string"},
+    },
+}
+_WEB_EXTRACT_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url"],
+    "properties": {
+        "url": {"type": "string"},
+        "schema": {"type": "object", "additionalProperties": True},
+        "prompt": {"type": "string"},
+    },
+}
+_WEB_READ_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url"],
+    "properties": {"url": {"type": "string"}},
+}
+_REDDIT_SEARCH_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["subreddit", "query"],
+    "properties": {
+        "subreddit": {"type": "string"},
+        "query": {"type": "string"},
+        "sort": {"type": "string"},
+        "limit": {"type": "integer"},
+    },
+}
+_REDDIT_TOP_QUESTIONS_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["subreddit"],
+    "properties": {
+        "subreddit": {"type": "string"},
+        "time_filter": {"type": "string"},
+        "limit": {"type": "integer"},
+    },
+}
 
 _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
     PluginManifest(
@@ -279,6 +345,12 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 description="Read, scrape, and normalize external web content.",
                 kind="utility",
             ),
+            CapabilityManifest(
+                key="community-research",
+                name="Community Research",
+                description="Retrieve community discussions and question signals.",
+                kind="utility",
+            ),
         ],
         providers=[
             ProviderManifest(
@@ -350,8 +422,121 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 provider="firecrawl",
                 capability="web-retrieval",
                 risk_level="read",
-                input_schema=_OBJECT_SCHEMA,
+                input_schema=_WEB_SCRAPE_INPUT_SCHEMA,
                 output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "firecrawl",
+                    "operation": "scrape",
+                    "requires_credential": True,
+                    "budget_kind": "firecrawl",
+                    "enforce_budget": True,
+                },
+            ),
+            ActionManifest(
+                key="web.crawl",
+                name="Crawl Website",
+                description="Start a bounded Firecrawl crawl for an agent-selected site.",
+                provider="firecrawl",
+                capability="web-retrieval",
+                risk_level="cost",
+                input_schema=_WEB_CRAWL_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "firecrawl",
+                    "operation": "crawl",
+                    "requires_credential": True,
+                    "budget_kind": "firecrawl",
+                    "enforce_budget": True,
+                },
+            ),
+            ActionManifest(
+                key="web.map",
+                name="Map Website URLs",
+                description="Discover URLs from an agent-selected site.",
+                provider="firecrawl",
+                capability="web-retrieval",
+                risk_level="cost",
+                input_schema=_WEB_MAP_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "firecrawl",
+                    "operation": "map",
+                    "requires_credential": True,
+                    "budget_kind": "firecrawl",
+                    "enforce_budget": True,
+                },
+            ),
+            ActionManifest(
+                key="web.extract",
+                name="Extract Web Data",
+                description="Run structured extraction on an agent-selected URL.",
+                provider="firecrawl",
+                capability="web-retrieval",
+                risk_level="cost",
+                input_schema=_WEB_EXTRACT_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "firecrawl",
+                    "operation": "extract",
+                    "requires_credential": True,
+                    "budget_kind": "firecrawl",
+                    "enforce_budget": True,
+                },
+            ),
+            ActionManifest(
+                key="web.read",
+                name="Read Web Page",
+                description="Fetch a readable Markdown view of a URL through Jina Reader.",
+                provider="jina",
+                capability="web-retrieval",
+                risk_level="read",
+                input_schema=_WEB_READ_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "jina",
+                    "operation": "read",
+                    "requires_credential": False,
+                    "allows_credential": True,
+                    "budget_kind": "jina",
+                    "enforce_budget": False,
+                },
+            ),
+            ActionManifest(
+                key="reddit.search-subreddit",
+                name="Search Subreddit",
+                description="Search posts in a configured subreddit.",
+                provider="reddit",
+                capability="community-research",
+                risk_level="read",
+                input_schema=_REDDIT_SEARCH_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "reddit",
+                    "operation": "search_subreddit",
+                    "requires_credential": True,
+                },
+            ),
+            ActionManifest(
+                key="reddit.top-questions",
+                name="Top Reddit Questions",
+                description="Fetch top question-shaped Reddit posts from a subreddit.",
+                provider="reddit",
+                capability="community-research",
+                risk_level="read",
+                input_schema=_REDDIT_TOP_QUESTIONS_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "reddit",
+                    "operation": "top_questions",
+                    "requires_credential": True,
+                },
             ),
         ],
         resources=[

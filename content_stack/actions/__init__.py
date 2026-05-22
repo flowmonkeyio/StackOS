@@ -24,8 +24,20 @@ from content_stack.actions.repository import (
     ActionRepository,
     ActionValidationOut,
 )
+from content_stack.actions.vendor_connectors import (
+    AhrefsActionConnector,
+    DataForSeoActionConnector,
+    FirecrawlActionConnector,
+    JinaActionConnector,
+    RedditActionConnector,
+)
 
 DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(DataForSeoActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(AhrefsActionConnector())
 
 __all__ = [
     "ACTION_MANIFEST_SCHEMA_VERSION",
@@ -41,7 +53,12 @@ __all__ = [
     "ActionRepository",
     "ActionValidationIssue",
     "ActionValidationOut",
+    "AhrefsActionConnector",
+    "DataForSeoActionConnector",
     "ExecutableActionManifest",
+    "FirecrawlActionConnector",
+    "JinaActionConnector",
     "OpenAIImagesActionConnector",
+    "RedditActionConnector",
     "parse_action_manifest",
 ]

@@ -43,8 +43,8 @@ Current built-in plugins:
 | Plugin | What It Provides | Current State |
 | --- | --- | --- |
 | `core` | Local daemon provider, catalog primitives, project data resources, project memory review template | Good generic foundation. |
-| `utils` | OpenAI Images, Firecrawl, Jina, Reddit providers; image generation and web retrieval capabilities | Partially wired. `utils.image.generate` is executable through the generic action path. `utils.web.scrape` is catalog-only today. |
-| `seo` | DataForSEO and Ahrefs providers, SEO actions, SEO resource schemas, two SEO templates | Good domain package shape, but its actions are not yet executable through the generic connector path. |
+| `utils` | OpenAI Images, Firecrawl, Jina, Reddit providers; image generation, web retrieval, and community research actions | Core utility connectors are now executable through the generic action path. |
+| `seo` | DataForSEO and Ahrefs providers, SEO actions, SEO resource schemas, two SEO templates | First SEO connector path is wired. More templates and richer provider actions are still needed. |
 
 Current templates are intentionally small and reusable, but the library is thin:
 
@@ -132,16 +132,15 @@ Current executable connector registry:
 | Connector | Action Ref | Provider | Status |
 | --- | --- | --- | --- |
 | `openai-images` | `utils.image.generate` | `openai-images` | Ready and connected to generic `action.execute`. |
+| `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`, `utils.web.extract` | `firecrawl` | Ready through generic `action.execute`. |
+| `jina` | `utils.web.read` | `jina` | Ready with optional credentials. |
+| `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `reddit` | Ready through generic `action.execute`. |
+| `dataforseo` | `seo.keyword.research`, `seo.serp.analyze` | `dataforseo` | Ready for the first SEO research actions. |
+| `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `ahrefs` | Ready for the first SEO research actions. |
 
-Everything else is either catalog-only or still exposed through hidden vendor
-MCP tools.
-
-Important response-shape gap: `ActionCallAuditOut` correctly hides internal
-`credential_id`, but `ActionCallOut` still includes it and is used in the
-`action.execute` response. Since `action.execute` is agent-callable inside
-run-plan grants, that result should return the public audit shape or otherwise
-omit internal database identifiers. Agents should see `credential_ref`, not
-internal credential primary keys.
+`action.execute` now returns the public action-call audit shape. Internal
+database identifiers such as `credential_id`, `action_id`, and replay-only
+`idempotency_key` stay in storage and are not returned to agents.
 
 ### Hidden Vendor MCP Tools
 
@@ -200,11 +199,11 @@ Wrapper inventory:
 | Provider | Wrapper Operations | Current Exposure | Readiness |
 | --- | --- | --- | --- |
 | `openai-images` | `generate`, `test_credentials` | Generic action connector and hidden vendor tool | Ready, but hidden duplicate should be removed after migration. |
-| `dataforseo` | SERP, keyword volume, domain intersection, keywords for site, PAA, credential test | SEO plugin actions plus hidden vendor MCP tools | Partial. Needs action connector and tighter schemas. |
-| `ahrefs` | keywords for site, top backlinks, credential test | SEO plugin actions plus hidden vendor MCP tools | Partial. Needs action connector and tighter schemas. |
-| `firecrawl` | scrape, crawl, map, extract, credential test | Utils provider plus hidden vendor MCP tools | Partial. `utils.web.scrape` lacks connector config. |
-| `jina` | read URL, credential test | Utils provider plus hidden vendor MCP tool | Partial. Needs action manifest, connector, and explicit optional-auth semantics. |
-| `reddit` | search subreddit, top questions, credential test | Utils provider plus hidden vendor MCP tools | Partial. Needs action manifests and connector. |
+| `dataforseo` | SERP, keyword volume, domain intersection, keywords for site, PAA, credential test | SEO plugin actions plus hidden vendor MCP tools | First connector path ready for `keyword.research` and `serp.analyze`; remaining wrapper operations need action contracts. |
+| `ahrefs` | keywords for site, top backlinks, credential test | SEO plugin actions plus hidden vendor MCP tools | First connector path ready for competitor keywords and backlink research. |
+| `firecrawl` | scrape, crawl, map, extract, credential test | Utils actions plus hidden vendor MCP tools | Ready through generic utility actions. |
+| `jina` | read URL, credential test | Utils action plus hidden vendor MCP tool | Ready through `utils.web.read` with optional auth. |
+| `reddit` | search subreddit, top questions, credential test | Utils actions plus hidden vendor MCP tools | Ready through generic community research actions. |
 | `google-paa` | PAA extraction through Firecrawl | Hidden vendor MCP tool only | Partial. No provider/action manifest; dependency on Firecrawl should be explicit. |
 | `wordpress` | current user, credential test | Wrapper registered only; no plugin provider manifest | Not setup-ready. Needs publishing plugin provider manifest, post/media actions, and connector. |
 | `ghost` | users, credential test | Wrapper registered only; no plugin provider manifest | Not setup-ready. Needs publishing plugin provider manifest, post/image actions, and connector. |
@@ -212,29 +211,29 @@ Wrapper inventory:
 
 ## Key Gaps
 
-### 1. Connector Coverage Is Too Narrow
+### 1. Remaining Connector Coverage
 
-Only OpenAI Images is on the generic connector path. DataForSEO, Ahrefs,
-Firecrawl, Jina, Reddit, Google PAA, WordPress, and Ghost still need connector
-adapters so agents can call them through `action.execute` with explicit
-`action_refs`.
+The first utility and SEO wrappers are now on the generic connector path. The
+remaining connector gaps are:
 
-### 2. SEO Actions Are Catalog Contracts, Not Executable Tools Yet
+- Google PAA needs an explicit action contract and dependency decision.
+- WordPress and Ghost need provider manifests, publishing actions, and connectors.
+- Sitemap fetch should either stay a setup utility or also become a run-plan action.
+- User-owned tools need a custom HTTP/Webhook connector.
+- Hidden vendor MCP tools should be retired or quarantined once no templates depend on them.
 
-`plugins/seo/plugin.yaml` defines:
+### 2. SEO Actions Need Broader Coverage
 
-- `keyword.research`
-- `serp.analyze`
-- `competitor.keywords`
-- `backlink.research`
+The first SEO actions are executable:
 
-Those actions have `operation`, credential, and budget config, but no
-`connector`. The action executor will currently report "action has no connector
-configured for execution" for these actions.
+- `seo.keyword.research`
+- `seo.serp.analyze`
+- `seo.competitor.keywords`
+- `seo.backlink.research`
 
-The input and output schemas are also broad objects. That is acceptable for a
-first catalog pass, but not for reliable tool execution. Each action should
-define required fields, allowed fields, and normalized outputs.
+The remaining gap is breadth, not basic executability. DataForSEO domain
+intersection, keywords-for-site, PAA, GSC, GA4, crawl imports, and CMS publishing
+still need explicit plugin actions, schemas, templates, and tests.
 
 ### 3. Hidden Vendor Tools Duplicate The New Model
 
@@ -294,11 +293,10 @@ For a clean plugin system, every external provider should have matching:
 - tests
 - docs
 
-Jina also exposes an auth modeling issue. The utils plugin declares `jina` as an
-`api-key` provider, while the current hidden wrapper can run without a
-credential. The clean action path should either model Jina as optional auth or
-set each Jina action to `requires_credential: false` and `allows_credential:
-true` so agents are not blocked when no key is configured.
+Jina's generic action now preserves the wrapper's optional-auth behavior by
+setting `requires_credential: false` and `allows_credential: true`. Future
+optional-auth providers should follow that explicit manifest shape so agents are
+not blocked when a public/no-key mode is valid.
 
 ### 6. Campaign And Variant Operations Need Provider-Specific Depth
 
@@ -345,8 +343,8 @@ availability, but the UI does not yet surface action status such as:
 - provider disabled
 - budget blocked
 
-This is important while the repo contains a mix of migrated actions and
-catalog-only contracts.
+This is important while the repo contains a mix of migrated actions,
+setup-only utilities, and wrappers that do not yet have provider manifests.
 
 ## Integration Contract For New Providers
 
@@ -375,11 +373,7 @@ These are needed before adding many new domains:
 
 | Need | Why |
 | --- | --- |
-| Firecrawl action connector | Makes `utils.web.scrape`, crawl, map, and extract run through `action.execute`. |
-| Jina action connector | Gives a lightweight web-reader utility action. |
-| Reddit action connector | Moves audience/question research out of hidden vendor tools. |
-| DataForSEO action connector | Makes SEO templates actually executable without old procedure paths. |
-| Ahrefs action connector | Enables competitor keyword and backlink research through the generic action path. |
+| Retire or quarantine hidden vendor MCP tools | Firecrawl, Jina, Reddit, DataForSEO, and Ahrefs now have generic action connectors, so the direct vendor path should not remain an execution surface. |
 | Google PAA action contract | Decide whether it is a DataForSEO action, Firecrawl-derived utility action, or SEO action that depends on Firecrawl. |
 | WordPress publishing connector | Current wrapper only tests credentials. Publishing needs post/media actions. |
 | Ghost publishing connector | Current wrapper only tests credentials. Publishing needs post/image actions. |
@@ -618,7 +612,7 @@ connector, missing credential, disabled provider, and budget blocked.
 3. Tighten broad object schemas for executable actions.
 4. Keep `auth.status` and `auth.test` agent-visible; keep secret setup local-admin only.
 5. Add credential setup/test/revoke UI using existing REST routes.
-6. Remove internal `credential_id` from agent-visible action and vendor responses.
+6. Remove internal `credential_id` from any vendor MCP responses that remain reachable.
 7. Decide whether `integration_credentials` remains only an internal encrypted blob store or is migrated into the new credential model.
 8. Promote WordPress and Ghost from credential-test wrappers to publishing actions.
 9. Decide the long-term home for sitemap fetch: core setup tool, utility action, or both.
@@ -630,14 +624,15 @@ connector, missing credential, disabled provider, and budget blocked.
 
 ### Phase 1: Existing Integrations On The Clean Path
 
-Deliver connectors and manifests for Firecrawl, Jina, Reddit, DataForSEO, and
-Ahrefs. Add tests for:
+Initial connector migration is complete for Firecrawl, Jina, Reddit,
+DataForSEO, and Ahrefs. Remaining Phase 1 cleanup:
 
-- manifest parsing rejects secrets
-- connector validation accepts and rejects expected payloads
-- credential resolution stays daemon-only
-- `action.execute` requires run-plan grants and exact `action_refs`
-- action-call audit redacts secret-shaped fields
+- retire or quarantine hidden vendor MCP tools
+- remove internal `credential_id` from any vendor MCP responses that remain reachable
+- add action availability signals to catalog/UI surfaces
+- add remaining DataForSEO operation contracts where templates need them
+- keep focused tests for connector validation, daemon-side credential resolution,
+  run-plan grants, and redacted action-call audit
 
 ### Phase 2: Credential Setup UX
 
