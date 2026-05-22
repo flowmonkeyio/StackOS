@@ -19,7 +19,7 @@ from content_stack.plugins.manifest import (
 def test_builtin_plugin_manifests_validate() -> None:
     slugs = [manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS]
 
-    assert slugs == ["core", "seo", "utils"]
+    assert slugs == ["core", "publishing", "seo", "utils"]
     for manifest in BUILTIN_PLUGIN_MANIFESTS:
         assert manifest.capabilities
         assert manifest.resources
@@ -30,8 +30,21 @@ def test_builtin_plugin_manifests_validate() -> None:
         for manifest in BUILTIN_PLUGIN_MANIFESTS
     }
     assert resources_by_plugin["core"] >= {"learning", "experiment"}
+    assert resources_by_plugin["publishing"] >= {"published-post", "publish-target"}
     assert resources_by_plugin["seo"] >= {"keyword-opportunity", "content-piece"}
     assert resources_by_plugin["utils"] >= {"generated-image", "web-document"}
+    publishing = next(
+        manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "publishing"
+    )
+    publishing_actions = {action.key: action for action in publishing.actions}
+    assert publishing_actions["wordpress.post.create"].config == {
+        "schema_version": "stackos.action.v1",
+        "connector": "wordpress",
+        "operation": "post.create",
+        "requires_credential": True,
+    }
+    assert publishing_actions["ghost.post.create"].config["connector"] == "ghost"
+    assert publishing_actions["wordpress.post.create"].input_schema["required"] == ["post"]
     utils = next(manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "utils")
     utils_actions = {action.key: action for action in utils.actions}
     assert utils_actions["web.scrape"].config["connector"] == "firecrawl"
@@ -69,6 +82,8 @@ def test_seo_plugin_yaml_facade_validates() -> None:
         "dataforseo",
         "ahrefs",
     }
+    providers = {provider.key: provider for provider in manifest.providers}
+    assert providers["dataforseo"].config["setup_fields"][0]["key"] == "login"
     assert {resource.key for resource in manifest.resources} >= {
         "keyword-opportunity",
         "serp-snapshot",
@@ -99,6 +114,28 @@ def test_seo_plugin_yaml_facade_validates() -> None:
     assert actions["backlink.research"].config["connector"] == "ahrefs"
     assert actions["keyword.research"].input_schema["required"] == ["keywords"]
     assert actions["paa.extract"].input_schema["required"] == ["keyword"]
+
+
+def test_publishing_plugin_yaml_facade_validates() -> None:
+    manifest = load_plugin_manifest_file(Path("plugins/publishing/plugin.yaml"))
+
+    assert manifest.slug == "publishing"
+    assert manifest.ui is not None
+    assert manifest.ui["nav"]["section"] == "Publishing"
+    assert {provider.key for provider in manifest.providers} == {"wordpress", "ghost"}
+    providers = {provider.key: provider for provider in manifest.providers}
+    assert providers["wordpress"].config["setup_fields"][0]["key"] == "wp_url"
+    assert providers["ghost"].config["setup_fields"][0]["key"] == "ghost_url"
+    actions = {action.key: action for action in manifest.actions}
+    assert actions["wordpress.post.create"].provider == "wordpress"
+    assert actions["wordpress.post.create"].risk_level == "write"
+    assert actions["wordpress.post.create"].config["connector"] == "wordpress"
+    assert actions["ghost.post.create"].provider == "ghost"
+    assert actions["ghost.post.create"].config["connector"] == "ghost"
+    assert {resource.key for resource in manifest.resources} >= {
+        "published-post",
+        "publish-target",
+    }
 
 
 def test_plugin_manifest_loader_reads_bundled_assets_when_repo_plugins_absent(

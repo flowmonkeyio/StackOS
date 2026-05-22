@@ -118,6 +118,22 @@ class GhostIntegration(BaseIntegration):
             headers=self._headers(),
         )
 
+    async def create_post(
+        self,
+        *,
+        post: dict[str, Any],
+        source: str = "html",
+    ) -> IntegrationCallResult:
+        """Create a Ghost post from an explicit Admin API payload."""
+        return await self.call(
+            op="post.create",
+            method="POST",
+            url=self._url("posts/"),
+            params={"source": source},
+            json_body={"posts": [post]},
+            headers=self._headers(),
+        )
+
     async def test_credentials(self) -> dict[str, Any]:
         """Probe auth and return a small user/role sample."""
         result = await self.users(limit=1)

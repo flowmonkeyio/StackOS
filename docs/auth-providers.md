@@ -49,6 +49,11 @@ The MCP bridge advertises only `auth.status` and `auth.test`.
 No step requires an agent prompt, workflow template, or repository file to carry
 secret material.
 
+Provider manifests can declare non-secret `config.setup_fields` such as a
+WordPress site URL, Ghost Admin URL, API version, or DataForSEO login. The
+Connections UI stores those values in credential `config_json` and sends
+secrets separately as encrypted payload material.
+
 ## OAuth Providers
 
 OAuth providers use the generic auth provider boundary:

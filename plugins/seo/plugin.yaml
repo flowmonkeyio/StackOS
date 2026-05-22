@@ -21,6 +21,13 @@ providers:
     name: DataForSEO
     description: SERP, keyword volume, and competitor research provider.
     auth_type: api-key
+    config:
+      setup_fields:
+        - key: login
+          label: API Login
+          type: text
+          required: true
+          placeholder: login@example.com
   - key: ahrefs
     name: Ahrefs
     description: Organic keyword and backlink research provider.

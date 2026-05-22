@@ -106,7 +106,7 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 | Run detail | UiPageHeader, UiCodeBlock, UiJsonBlock, RunPlanRenderer, ArtifactRenderer | (none) |
 | Plugins | UiPanel, UiBadge, ActionSchemaRenderer | ProjectPageHeader |
 | Capabilities | DataTable, UiBadge, ActionSchemaRenderer | ProjectPageHeader |
-| Connections | DataTable, UiBadge, UiJsonBlock | ProjectPageHeader |
+| Connections | DataTable, UiBadge, UiFormField, UiInput, UiSecretInput, UiJsonBlock | ProjectPageHeader |
 | Workflow templates | DataTable, TemplateRenderer | ProjectPageHeader |
 | Project Data | UiSegmentedControl, DataTable, ArtifactRenderer | ProjectPageHeader |
 | Resource Explorer | DataTable, ResourceViewRenderer, ArtifactRenderer | ProjectPageHeader |

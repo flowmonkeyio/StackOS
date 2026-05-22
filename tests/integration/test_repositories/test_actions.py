@@ -281,6 +281,8 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
         "seo.paa.extract": ("dataforseo", True, "unknown"),
         "seo.competitor.keywords": ("ahrefs", True, "unknown"),
         "seo.backlink.research": ("ahrefs", True, "unknown"),
+        "publishing.wordpress.post.create": ("wordpress", True, "unknown"),
+        "publishing.ghost.post.create": ("ghost", True, "unknown"),
     }
     repo = ActionRepository(session)
 
@@ -596,6 +598,118 @@ def test_dataforseo_paa_action_uses_explicit_action_contract(
     )
     assert "password" not in rendered
     assert "login@example.com" not in rendered
+
+
+def test_wordpress_post_create_action_uses_daemon_side_site_config(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="wordpress",
+        plaintext_payload=json.dumps(
+            {"username": "editor", "application_password": "app pass"}
+        ).encode("utf-8"),
+        config_json={"wp_url": "https://wp.example"},
+    )
+    from content_stack.auth_providers import AuthRepository
+
+    credential_ref = AuthRepository(session).status(
+        project_id=project_id,
+        provider_key="wordpress",
+    ).connections[0].credential_ref
+    httpx_mock.add_response(
+        method="POST",
+        url="https://wp.example/wp-json/wp/v2/posts",
+        json={"id": 42, "link": "https://wp.example/hello-world/"},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="publishing.wordpress.post.create",
+            input_json={
+                "post": {
+                    "title": "Hello world",
+                    "content": "<p>Body</p>",
+                    "status": "draft",
+                }
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    request_body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert request_body == {
+        "title": "Hello world",
+        "content": "<p>Body</p>",
+        "status": "draft",
+    }
+    assert out.action_call.provider_key == "wordpress"
+    assert out.action_call.connector_key == "wordpress"
+    assert out.output_json["id"] == 42
+    assert "app pass" not in rendered
+    assert "editor" not in rendered
+
+
+def test_ghost_post_create_action_uses_daemon_side_admin_config(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="ghost",
+        plaintext_payload=b"keyid:00112233445566778899aabbccddeeff",
+        config_json={"ghost_url": "https://ghost.example", "api_version": "v5.0"},
+    )
+    from content_stack.auth_providers import AuthRepository
+
+    credential_ref = AuthRepository(session).status(
+        project_id=project_id,
+        provider_key="ghost",
+    ).connections[0].credential_ref
+    httpx_mock.add_response(
+        method="POST",
+        url="https://ghost.example/ghost/api/admin/posts/?source=html",
+        json={"posts": [{"id": "post-1", "url": "https://ghost.example/hello/"}]},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="publishing.ghost.post.create",
+            input_json={
+                "post": {
+                    "title": "Hello world",
+                    "html": "<p>Body</p>",
+                    "status": "draft",
+                }
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    request = httpx_mock.get_requests()[0]
+    request_body = json.loads(request.content.decode("utf-8"))
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert request_body == {
+        "posts": [
+            {
+                "title": "Hello world",
+                "html": "<p>Body</p>",
+                "status": "draft",
+            }
+        ]
+    }
+    assert request.headers["authorization"].startswith("Ghost ")
+    assert out.action_call.provider_key == "ghost"
+    assert out.action_call.connector_key == "ghost"
+    assert out.output_json["posts"][0]["id"] == "post-1"
+    assert "00112233445566778899aabbccddeeff" not in rendered
+    assert "keyid" not in rendered
 
 
 def test_action_validate_reports_schema_connector_and_credential_issues(

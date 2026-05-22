@@ -276,6 +276,7 @@ class AuthRepository:
             raise ValidationError(
                 "config_json must not contain secret-like keys; put the secret in plaintext_payload"
             )
+        self._validate_setup_fields(provider=provider, config_json=config_json)
         env = IntegrationCredentialRepository(self._s).set(
             project_id=project_id,
             kind=provider.key,
@@ -778,6 +779,37 @@ class AuthRepository:
         if row is None and required:
             raise NotFoundError(f"auth provider {provider_key!r} not found")
         return row
+
+    def _validate_setup_fields(
+        self,
+        *,
+        provider: AuthProvider,
+        config_json: dict[str, Any] | None,
+    ) -> None:
+        config = config_json or {}
+        setup_fields = (provider.config_json or {}).get("setup_fields")
+        if not isinstance(setup_fields, list):
+            return
+        for raw_field in setup_fields:
+            if not isinstance(raw_field, dict):
+                continue
+            key = raw_field.get("key")
+            if not isinstance(key, str) or not key:
+                continue
+            value = config.get(key)
+            label = str(raw_field.get("label") or key)
+            if bool(raw_field.get("required")) and (
+                not isinstance(value, str) or not value.strip()
+            ):
+                raise ValidationError(
+                    f"{provider.key} credential missing config_json.{key}",
+                    data={"provider_key": provider.key, "field": key, "label": label},
+                )
+            if value is not None and not isinstance(value, str):
+                raise ValidationError(
+                    f"{provider.key} credential config_json.{key} must be a string",
+                    data={"provider_key": provider.key, "field": key, "label": label},
+                )
 
     def _provider_out(self, row: AuthProvider, plugin: Plugin | None) -> AuthProviderOut:
         assert row.id is not None

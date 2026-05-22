@@ -24,6 +24,14 @@ import { sanitizeForDisplay } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 
 type ConnectionRow = SchemaCredentialConnectionOut & { id: string }
+type SetupField = {
+  key: string
+  label: string
+  type?: 'text' | 'url'
+  required?: boolean
+  placeholder?: string
+  description?: string
+}
 
 const route = useRoute()
 const catalogStore = useStackOsCatalogStore()
@@ -32,6 +40,7 @@ const { authProviders, authStatus, loading, error } = storeToRefs(catalogStore)
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const secretByProvider = ref<Record<string, string>>({})
 const labelByProvider = ref<Record<string, string>>({})
+const configByProvider = ref<Record<string, Record<string, string>>>({})
 const busyAction = ref<string | null>(null)
 const providerMessages = ref<Record<string, { tone: 'success' | 'danger' | 'info'; text: string }>>(
   {},
@@ -58,6 +67,40 @@ async function load(): Promise<void> {
 
 function supportsSecret(provider: SchemaAuthProviderOut): boolean {
   return !['none', 'local'].includes(provider.auth_type)
+}
+
+function setupFields(provider: SchemaAuthProviderOut): SetupField[] {
+  const fields = provider.config_json?.setup_fields
+  if (!Array.isArray(fields)) return []
+  return fields.filter(isSetupField)
+}
+
+function isSetupField(value: unknown): value is SetupField {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const field = value as Record<string, unknown>
+  return typeof field.key === 'string' && typeof field.label === 'string'
+}
+
+function inputType(field: SetupField): 'text' | 'url' {
+  return field.type === 'url' ? 'url' : 'text'
+}
+
+function configFieldValue(providerKey: string, fieldKey: string): string {
+  return configByProvider.value[providerKey]?.[fieldKey] ?? ''
+}
+
+function setConfigField(
+  providerKey: string,
+  fieldKey: string,
+  value: string | number | null,
+): void {
+  configByProvider.value = {
+    ...configByProvider.value,
+    [providerKey]: {
+      ...(configByProvider.value[providerKey] ?? {}),
+      [fieldKey]: value === null ? '' : String(value),
+    },
+  }
 }
 
 function connectionFor(providerKey: string): SchemaCredentialConnectionOut | null {
@@ -87,6 +130,21 @@ function setProviderMessage(
   }
 }
 
+function credentialConfig(provider: SchemaAuthProviderOut): Record<string, string> | null {
+  const config: Record<string, string> = {}
+  const label = (labelByProvider.value[provider.key] ?? '').trim()
+  if (label) config.label = label
+  for (const field of setupFields(provider)) {
+    const value = configFieldValue(provider.key, field.key).trim()
+    if (field.required && !value) {
+      setProviderMessage(provider.key, 'danger', `${field.label} is required.`)
+      return null
+    }
+    if (value) config[field.key] = value
+  }
+  return config
+}
+
 async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
   if (!supportsSecret(provider)) return
   const secret = (secretByProvider.value[provider.key] ?? '').trim()
@@ -94,13 +152,14 @@ async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
     setProviderMessage(provider.key, 'danger', 'Secret is required.')
     return
   }
+  const config = credentialConfig(provider)
+  if (config === null) return
   busyAction.value = actionKey(provider.key, 'save')
   try {
-    const label = (labelByProvider.value[provider.key] ?? '').trim()
     const response = await catalogStore.storeCredential(projectId.value, provider.key, {
       plaintext_payload: secret,
       payload_encoding: 'plain',
-      config_json: label ? { label } : null,
+      config_json: Object.keys(config).length > 0 ? config : null,
     })
     secretByProvider.value = { ...secretByProvider.value, [provider.key]: '' }
     setProviderMessage(provider.key, 'success', `Stored ${response.data.credential_ref}.`)
@@ -250,6 +309,26 @@ watch(projectId, load)
                   :invalid="invalid"
                   placeholder="Primary"
                   size="sm"
+                />
+              </template>
+            </UiFormField>
+            <UiFormField
+              v-for="field in setupFields(provider)"
+              :key="field.key"
+              :label="field.label"
+              :help="field.description"
+              :required="field.required"
+            >
+              <template #default="{ id, describedBy, invalid }">
+                <UiInput
+                  :id="id"
+                  :model-value="configFieldValue(provider.key, field.key)"
+                  :type="inputType(field)"
+                  :aria-describedby="describedBy"
+                  :invalid="invalid"
+                  :placeholder="field.placeholder"
+                  size="sm"
+                  @update:model-value="setConfigField(provider.key, field.key, $event)"
                 />
               </template>
             </UiFormField>

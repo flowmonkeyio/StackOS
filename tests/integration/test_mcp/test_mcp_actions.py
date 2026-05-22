@@ -119,6 +119,42 @@ def _create_dataforseo_credential(mcp: MCPClient, project_id: int) -> str:
     return status["connections"][0]["credential_ref"]
 
 
+def _create_wordpress_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/wordpress/credentials",
+        json={
+            "plaintext_payload": json.dumps(
+                {"username": "editor", "application_password": "app pass"}
+            ),
+            "config_json": {"wp_url": "https://wp.example"},
+        },
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "wordpress"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
+def _create_ghost_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/ghost/credentials",
+        json={
+            "plaintext_payload": "keyid:00112233445566778899aabbccddeeff",
+            "config_json": {"ghost_url": "https://ghost.example", "api_version": "v5.0"},
+        },
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "ghost"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _image_action_plan_json() -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",
@@ -210,6 +246,54 @@ def _dataforseo_paa_action_plan_json() -> dict:
                 "id": "extract-paa",
                 "title": "Extract PAA",
                 "action_refs": ["seo.paa.extract"],
+            }
+        ],
+    }
+
+
+def _wordpress_action_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "publishing.wordpress-action.run",
+        "title": "WordPress action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "create-wordpress-post",
+                    "tool": "action.execute",
+                    "action_refs": ["publishing.wordpress.post.create"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "create-wordpress-post",
+                "title": "Create WordPress post",
+                "action_refs": ["publishing.wordpress.post.create"],
+            }
+        ],
+    }
+
+
+def _ghost_action_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "publishing.ghost-action.run",
+        "title": "Ghost action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "create-ghost-post",
+                    "tool": "action.execute",
+                    "action_refs": ["publishing.ghost.post.create"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "create-ghost-post",
+                "title": "Create Ghost post",
+                "action_refs": ["publishing.ghost.post.create"],
             }
         ],
     }
@@ -558,3 +642,183 @@ def test_action_execute_dataforseo_paa_grant_uses_generic_connector(
     )
     assert "password" not in rendered
     assert "login@example.com" not in rendered
+
+
+def test_action_execute_wordpress_post_create_grant_uses_generic_connector(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_wordpress_credential(mcp_client, project_id)
+    described = mcp_client.call_tool_structured(
+        "action.describe",
+        {"project_id": project_id, "action_ref": "publishing.wordpress.post.create"},
+    )
+    validation = mcp_client.call_tool_structured(
+        "action.validate",
+        {
+            "project_id": project_id,
+            "action_ref": "publishing.wordpress.post.create",
+            "input_json": {
+                "post": {
+                    "title": "Hello world",
+                    "content": "<p>Body</p>",
+                    "status": "draft",
+                }
+            },
+            "credential_ref": credential_ref,
+        },
+    )
+
+    assert described["availability"]["status"] == "ready"
+    assert described["manifest"]["connector_key"] == "wordpress"
+    assert validation["valid"] is True
+
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _wordpress_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "create-wordpress-post",
+            "run_token": run_token,
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://wp.example/wp-json/wp/v2/posts",
+        json={"id": 42, "link": "https://wp.example/hello-world/"},
+    )
+
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "publishing.wordpress.post.create",
+            "input_json": {
+                "post": {
+                    "title": "Hello world",
+                    "content": "<p>Body</p>",
+                    "status": "draft",
+                }
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+
+    request_body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    data = out["data"]
+    rendered = json.dumps(data)
+    assert request_body == {
+        "title": "Hello world",
+        "content": "<p>Body</p>",
+        "status": "draft",
+    }
+    assert data["credential_ref"] == credential_ref
+    assert data["action_call"]["provider_key"] == "wordpress"
+    assert data["action_call"]["connector_key"] == "wordpress"
+    assert data["output_json"]["id"] == 42
+    assert "app pass" not in rendered
+    assert "editor" not in rendered
+
+
+def test_action_execute_ghost_post_create_grant_uses_generic_connector(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_ghost_credential(mcp_client, project_id)
+    described = mcp_client.call_tool_structured(
+        "action.describe",
+        {"project_id": project_id, "action_ref": "publishing.ghost.post.create"},
+    )
+    validation = mcp_client.call_tool_structured(
+        "action.validate",
+        {
+            "project_id": project_id,
+            "action_ref": "publishing.ghost.post.create",
+            "input_json": {
+                "post": {
+                    "title": "Hello world",
+                    "html": "<p>Body</p>",
+                    "status": "draft",
+                }
+            },
+            "credential_ref": credential_ref,
+        },
+    )
+
+    assert described["availability"]["status"] == "ready"
+    assert described["manifest"]["connector_key"] == "ghost"
+    assert validation["valid"] is True
+
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _ghost_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "create-ghost-post",
+            "run_token": run_token,
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://ghost.example/ghost/api/admin/posts/?source=html",
+        json={"posts": [{"id": "post-1", "url": "https://ghost.example/hello/"}]},
+    )
+
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "publishing.ghost.post.create",
+            "input_json": {
+                "post": {
+                    "title": "Hello world",
+                    "html": "<p>Body</p>",
+                    "status": "draft",
+                }
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+
+    request = httpx_mock.get_requests()[0]
+    request_body = json.loads(request.content.decode("utf-8"))
+    data = out["data"]
+    rendered = json.dumps(data)
+    assert request_body == {
+        "posts": [
+            {
+                "title": "Hello world",
+                "html": "<p>Body</p>",
+                "status": "draft",
+            }
+        ]
+    }
+    assert request.headers["authorization"].startswith("Ghost ")
+    assert data["credential_ref"] == credential_ref
+    assert data["action_call"]["provider_key"] == "ghost"
+    assert data["action_call"]["connector_key"] == "ghost"
+    assert data["output_json"]["posts"][0]["id"] == "post-1"
+    assert "00112233445566778899aabbccddeeff" not in rendered
+    assert "keyid" not in rendered

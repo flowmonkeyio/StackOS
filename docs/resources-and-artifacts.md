@@ -67,10 +67,10 @@ tokens, API keys, passwords, authorization headers, and credentials.
 ## Plugin Ownership
 
 Domain plugins own domain records as resources. SEO can own keyword
-opportunities and content pieces. Media-buying can own campaign briefs,
-creative variants, placements, or spend snapshots. GTM can own lead segments or
-outreach tasks. The core does not create typed tables or workflow screens for
-those domains.
+opportunities and content pieces. Publishing can own published-post refs and
+publish targets. Media-buying can own campaign briefs, creative variants,
+placements, or spend snapshots. GTM can own lead segments or outreach tasks.
+The core does not create typed tables or workflow screens for those domains.
 
 ## Agent Boundary
 

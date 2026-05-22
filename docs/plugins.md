@@ -44,6 +44,7 @@ actions:
 ## Built-In Plugins
 
 - `core`: project memory, learnings, experiments, decisions, and shared context.
+- `publishing`: CMS publishing providers, post actions, and publication records.
 - `seo`: SEO content/search resources, providers, actions, and templates.
 - `utils`: reusable utility actions such as image generation and web retrieval.
 
@@ -66,6 +67,10 @@ An action should include:
 Actions should not decide strategy. For example, `campaign.create` creates the
 campaign structure the agent passes in; it does not decide which campaign should
 exist.
+
+Providers may include safe `config.setup_fields` for local-admin setup values
+such as site URLs or API versions. These fields are stored in credential
+`config_json`; secrets still belong only in the encrypted credential payload.
 
 ## Resources
 

@@ -31,9 +31,9 @@ connector when that optional provider is enabled.
 1. Sign up at <https://app.dataforseo.com>.
 2. Top up a small balance (~$5 covers thousands of test queries).
 3. From the dashboard copy your **API login** + **API password**.
-4. In the StackOS Connections screen pick "DataForSEO" and paste
-   the pair. The login lands in ``config_json.login``; the password
-   lands in the encrypted payload.
+4. In the StackOS Connections screen pick "DataForSEO", paste the API password
+   into the secret field, and fill the safe "API Login" setup field. The login
+   lands in ``config_json.login``; the password lands in the encrypted payload.
 
 Cost notes: ~$0.001-$0.003 per SERP call; the wrapper reads the
 vendor's ``tasks[].cost`` value back into the budget so the cap stays
@@ -110,40 +110,45 @@ OPENAI_API_KEY=sk-...
 
 ## WordPress
 
-Used by: WordPress credential probes when a project enables the provider.
+Used by: `publishing.wordpress.post.create` and WordPress credential probes.
 
 1. In WordPress, open **Users → Profile → Application Passwords**.
 2. Create a dedicated application password for a least-privileged user. Do not
    use an administrator account for automation.
-3. In Connections → WordPress, store the payload as either JSON
+3. In Connections → WordPress, store the secret payload as either JSON
    ``{"username":"...", "application_password":"..."}`` or compact
    ``username:application-password``.
-4. Set ``config_json.wp_url`` to the site root, e.g.
+4. Fill the safe "Site URL" setup field. It is stored as
+   ``config_json.wp_url`` and should be the site root, e.g.
    ``https://example.com``.
 
 The wrapper probes ``GET /wp-json/wp/v2/users/me?context=edit`` using Basic Auth
-with the application password. Posting content should be added later as an
-explicit plugin action with its own schema and run-plan grant.
+with the application password. The publishing action posts the agent-supplied
+``post`` object to ``POST /wp-json/wp/v2/posts`` through run-plan-scoped
+``action.execute``.
 
 ---
 
 ## Ghost
 
-Used by: Ghost credential probes when a project enables the provider.
+Used by: `publishing.ghost.post.create` and Ghost credential probes.
 
 1. In Ghost Admin, create a **Custom Integration**.
 2. Copy the Admin API key in ``id:secret`` form.
-3. In Connections → Ghost, store the key as either raw ``id:secret`` or
+3. In Connections → Ghost, store the secret key as either raw ``id:secret`` or
    JSON ``{"admin_api_key":"id:secret"}``.
-4. Set ``config_json.ghost_url`` to the Ghost Admin domain root, e.g.
+4. Fill the safe "Admin URL" setup field. It is stored as
+   ``config_json.ghost_url`` and should be the Ghost Admin domain root, e.g.
    ``https://example.com``.
-5. Optionally set ``config_json.api_version``; default is ``v5.0``.
+5. Optionally fill the "API Version" setup field; it is stored as
+   ``config_json.api_version`` and defaults to ``v5.0``.
 
 The wrapper signs a short-lived HS256 JWT with ``aud="/admin/"`` and
 sends it as ``Authorization: Ghost <token>`` with ``Accept-Version``.
-The probe hits ``GET /ghost/api/admin/users/?limit=1&include=roles``. Posting
-content should be added later as an explicit plugin action with its own schema
-and run-plan grant.
+The probe hits ``GET /ghost/api/admin/users/?limit=1&include=roles``. The
+publishing action posts the agent-supplied ``post`` object to
+``POST /ghost/api/admin/posts/?source=html`` through run-plan-scoped
+``action.execute``.
 
 ---
 

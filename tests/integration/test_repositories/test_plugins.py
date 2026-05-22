@@ -17,11 +17,14 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
 
     plugins = repo.list_plugins()
 
-    assert [p.slug for p in plugins] == ["core", "seo", "utils"]
+    assert [p.slug for p in plugins] == ["core", "publishing", "seo", "utils"]
     seo = repo.get_plugin("seo")
     assert seo.name == "SEO"
     assert seo.enabled_for_project is None
     assert seo.manifest_json["ui"]["nav"]["section"] == "SEO"
+    publishing = repo.get_plugin("publishing")
+    assert publishing.name == "Publishing"
+    assert publishing.manifest_json["ui"]["nav"]["section"] == "Publishing"
 
 
 def test_project_enable_disable_plugin(session: Session, project_id: int) -> None:
@@ -81,6 +84,21 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "keyword-opportunity",
         "content-piece",
         "content-refresh",
+    }
+
+    publishing = repo.catalog(plugin_slug="publishing").plugins[0]
+    assert {cap.key for cap in publishing.capabilities} >= {"cms-publishing"}
+    assert {provider.key for provider in publishing.providers} >= {"wordpress", "ghost"}
+    assert {action.key for action in publishing.actions} >= {
+        "wordpress.post.create",
+        "ghost.post.create",
+    }
+    publishing_actions = {action.key: action for action in publishing.actions}
+    assert publishing_actions["wordpress.post.create"].config_json["connector"] == "wordpress"
+    assert publishing_actions["ghost.post.create"].config_json["connector"] == "ghost"
+    assert {resource.key for resource in publishing.resources} >= {
+        "published-post",
+        "publish-target",
     }
 
 

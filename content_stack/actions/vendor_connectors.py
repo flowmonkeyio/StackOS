@@ -16,6 +16,7 @@ from content_stack.actions.connectors import (
 from content_stack.integrations.ahrefs import AhrefsIntegration
 from content_stack.integrations.dataforseo import DataForSeoIntegration
 from content_stack.integrations.firecrawl import FirecrawlIntegration
+from content_stack.integrations.ghost import GhostIntegration
 from content_stack.integrations.jina_reader import JinaReaderIntegration
 from content_stack.integrations.reddit import RedditIntegration
 from content_stack.integrations.sitemap import (
@@ -24,6 +25,7 @@ from content_stack.integrations.sitemap import (
     MAX_INDEX_DEPTH,
     fetch_sitemap_entries,
 )
+from content_stack.integrations.wordpress import WordPressIntegration
 from content_stack.repositories.base import ValidationError
 
 
@@ -122,6 +124,13 @@ def _dict_field(payload: dict[str, Any], key: str, issues: list[ActionValidation
         issues.append(_issue(f"$.{key}", f"{key} must be an object", "type_mismatch"))
 
 
+def _required_dict(payload: dict[str, Any], key: str, issues: list[ActionValidationIssue]) -> None:
+    if key not in payload:
+        issues.append(_issue(f"$.{key}", f"{key} is required", "required"))
+        return
+    _dict_field(payload, key, issues)
+
+
 def _unknown_operation(request: ActionConnectorRequest) -> list[ActionValidationIssue]:
     return [_issue("$.operation", f"unsupported operation {request.operation!r}", "enum_mismatch")]
 
@@ -148,6 +157,22 @@ def _credential_payload(request: ActionConnectorRequest, *, required: bool = Tru
             raise ValidationError(f"{target} requires a credential")
         return b""
     return request.credential.plaintext_payload
+
+
+def _credential_config_str(
+    request: ActionConnectorRequest,
+    *keys: str,
+    label: str,
+) -> str:
+    config = request.credential.config_json if request.credential is not None else None
+    target = request.provider_key or request.action_ref
+    if not isinstance(config, dict):
+        raise ValidationError(f"{target} credential missing {label}")
+    for key in keys:
+        value = config.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    raise ValidationError(f"{target} credential missing {label}")
 
 
 class FirecrawlActionConnector:
@@ -499,11 +524,96 @@ class AhrefsActionConnector:
         return _result("ahrefs", request.operation, result.data, result.cost_usd)
 
 
+class WordPressActionConnector:
+    """Decision-free adapter for WordPress publishing actions."""
+
+    key = "wordpress"
+
+    def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
+        if request.operation != "post.create":
+            return _unknown_operation(request)
+        issues: list[ActionValidationIssue] = []
+        _required_dict(request.input_json, "post", issues)
+        return issues
+
+    def estimate_cost_cents(self, _request: ActionConnectorRequest) -> int:
+        return 0
+
+    async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+        if request.operation != "post.create":
+            raise ValidationError(f"unsupported WordPress operation {request.operation!r}")
+        payload = request.input_json
+        site_url = _credential_config_str(
+            request,
+            "wp_url",
+            "site_url",
+            "base_url",
+            label="config_json.wp_url",
+        )
+        async with httpx.AsyncClient(timeout=60.0) as http:
+            client = WordPressIntegration(
+                payload=_credential_payload(request),
+                project_id=request.project_id,
+                http=http,
+                site_url=site_url,
+            )
+            result = await client.create_post(post=dict(payload["post"]))
+        return _result("wordpress", request.operation, result.data, result.cost_usd)
+
+
+class GhostActionConnector:
+    """Decision-free adapter for Ghost publishing actions."""
+
+    key = "ghost"
+
+    def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
+        if request.operation != "post.create":
+            return _unknown_operation(request)
+        issues: list[ActionValidationIssue] = []
+        _required_dict(request.input_json, "post", issues)
+        _optional_str(request.input_json, "source", issues)
+        return issues
+
+    def estimate_cost_cents(self, _request: ActionConnectorRequest) -> int:
+        return 0
+
+    async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+        if request.operation != "post.create":
+            raise ValidationError(f"unsupported Ghost operation {request.operation!r}")
+        payload = request.input_json
+        site_url = _credential_config_str(
+            request,
+            "ghost_url",
+            "site_url",
+            "base_url",
+            label="config_json.ghost_url",
+        )
+        config = request.credential.config_json if request.credential is not None else {}
+        api_version = "v5.0"
+        if isinstance(config, dict) and isinstance(config.get("api_version"), str):
+            api_version = str(config["api_version"])
+        async with httpx.AsyncClient(timeout=60.0) as http:
+            client = GhostIntegration(
+                payload=_credential_payload(request),
+                project_id=request.project_id,
+                http=http,
+                site_url=site_url,
+                api_version=api_version,
+            )
+            result = await client.create_post(
+                post=dict(payload["post"]),
+                source=str(payload.get("source", "html")),
+            )
+        return _result("ghost", request.operation, result.data, result.cost_usd)
+
+
 __all__ = [
     "AhrefsActionConnector",
     "DataForSeoActionConnector",
     "FirecrawlActionConnector",
+    "GhostActionConnector",
     "JinaActionConnector",
     "RedditActionConnector",
     "SitemapActionConnector",
+    "WordPressActionConnector",
 ]

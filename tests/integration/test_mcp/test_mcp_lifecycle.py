@@ -51,6 +51,7 @@ FORBIDDEN_LEGACY_NAMESPACES = {
     "drift",
     "eeat",
     "firecrawl",
+    "ghost",
     "googlePaa",
     "gsc",
     "gscOauth",
@@ -65,6 +66,7 @@ FORBIDDEN_LEGACY_NAMESPACES = {
     "target",
     "topic",
     "voice",
+    "wordpress",
 }
 
 

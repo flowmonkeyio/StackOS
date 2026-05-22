@@ -14,9 +14,11 @@ LEGACY_VENDOR_NAMESPACES = {
     "dataforseo",
     "firecrawl",
     "googlePaa",
+    "ghost",
     "jina",
     "openaiImages",
     "reddit",
+    "wordpress",
 }
 LEGACY_VENDOR_TOOL_CALLS = [
     (
@@ -46,6 +48,14 @@ LEGACY_VENDOR_TOOL_CALLS = [
     (
         "reddit.search",
         {"project_id": 1, "subreddit": "seo", "query": "content"},
+    ),
+    (
+        "wordpress.post.create",
+        {"project_id": 1, "post": {"title": "Hello", "content": "<p>Body</p>"}},
+    ),
+    (
+        "ghost.post.create",
+        {"project_id": 1, "post": {"title": "Hello", "html": "<p>Body</p>"}},
     ),
 ]
 

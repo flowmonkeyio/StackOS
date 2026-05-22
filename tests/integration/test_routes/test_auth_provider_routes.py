@@ -120,3 +120,36 @@ def test_auth_secret_setup_rejects_secret_like_config(
     )
 
     assert response.status_code == 422, response.text
+
+
+def test_auth_secret_setup_requires_manifest_setup_fields(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    missing = api.post(
+        f"/api/v1/projects/{project_id}/auth/wordpress/credentials",
+        json={
+            "plaintext_payload": json.dumps(
+                {"username": "editor", "application_password": "app pass"}
+            ),
+            "config_json": {"label": "Editorial"},
+        },
+    )
+
+    assert missing.status_code == 422, missing.text
+    assert "config_json.wp_url" in missing.json()["detail"]
+
+    stored = api.post(
+        f"/api/v1/projects/{project_id}/auth/wordpress/credentials",
+        json={
+            "plaintext_payload": json.dumps(
+                {"username": "editor", "application_password": "app pass"}
+            ),
+            "config_json": {"label": "Editorial", "wp_url": "https://wp.example"},
+        },
+    )
+
+    assert stored.status_code == 201, stored.text
+    body = stored.json()
+    assert body["data"]["provider_key"] == "wordpress"
+    assert "app pass" not in json.dumps(body)

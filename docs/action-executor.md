@@ -111,6 +111,8 @@ Registered first-party connectors now cover the migrated clean path for:
 - `reddit`: `utils.reddit.search-subreddit`, `utils.reddit.top-questions`
 - `dataforseo`: `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract`
 - `ahrefs`: `seo.competitor.keywords`, `seo.backlink.research`
+- `wordpress`: `publishing.wordpress.post.create`
+- `ghost`: `publishing.ghost.post.create`
 
 The OpenAI Images connector persists base64 image bytes under generated assets
 and returns local artifact URLs with no `b64_json` payload. Other connectors

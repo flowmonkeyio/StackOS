@@ -7,7 +7,7 @@ from .conftest import MCPClient
 
 def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
     plugins = mcp_client.call_tool_structured("plugin.list", {})["items"]
-    assert [p["slug"] for p in plugins] == ["core", "seo", "utils"]
+    assert [p["slug"] for p in plugins] == ["core", "publishing", "seo", "utils"]
 
     catalog = mcp_client.call_tool_structured("catalog.describe", {"plugin_slug": "utils"})
     assert catalog["plugins"][0]["plugin"]["slug"] == "utils"
@@ -26,6 +26,15 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
         {"plugin_slug": "utils", "key": "openai-images"},
     )
     assert provider["auth_type"] == "api-key"
+
+    publishing = mcp_client.call_tool_structured(
+        "catalog.describe",
+        {"plugin_slug": "publishing"},
+    )
+    assert {a["key"] for a in publishing["plugins"][0]["actions"]} >= {
+        "wordpress.post.create",
+        "ghost.post.create",
+    }
 
 
 def test_plugin_enable_is_registered_but_not_system_granted(

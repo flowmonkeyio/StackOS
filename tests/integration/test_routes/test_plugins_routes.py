@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 def test_plugin_catalog_routes(api: TestClient) -> None:
     plugins = api.get("/api/v1/plugins")
     assert plugins.status_code == 200
-    assert [p["slug"] for p in plugins.json()] == ["core", "seo", "utils"]
+    assert [p["slug"] for p in plugins.json()] == ["core", "publishing", "seo", "utils"]
 
     catalog = api.get("/api/v1/catalog/utils")
     assert catalog.status_code == 200
@@ -58,6 +58,24 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "keyword-opportunity",
         "content-piece",
         "content-refresh",
+    }
+
+    publishing_catalog = api.get("/api/v1/catalog/publishing")
+    assert publishing_catalog.status_code == 200
+    assert publishing_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == (
+        "Publishing"
+    )
+    assert {p["key"] for p in publishing_catalog.json()["providers"]} >= {
+        "wordpress",
+        "ghost",
+    }
+    assert {a["key"] for a in publishing_catalog.json()["actions"]} >= {
+        "wordpress.post.create",
+        "ghost.post.create",
+    }
+    assert {r["key"] for r in publishing_catalog.json()["resources"]} >= {
+        "published-post",
+        "publish-target",
     }
 
 

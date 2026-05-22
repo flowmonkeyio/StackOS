@@ -68,6 +68,72 @@ def test_auth_test_dispatches_to_firecrawl(
     assert "fc-key" not in json.dumps(out)
 
 
+def test_auth_test_dispatches_to_wordpress_provider_manifest(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    httpx_mock.add_response(
+        method="GET",
+        url="https://wp.example/wp-json/wp/v2/users/me?context=edit",
+        json={"id": 7, "name": "Editor", "roles": ["editor"]},
+    )
+    _create_integration_credential(
+        mcp_client,
+        project_id=project_id,
+        kind="wordpress",
+        payload=json.dumps({"username": "editor", "application_password": "app pass"}).encode(
+            "utf-8"
+        ),
+        config_json={"wp_url": "https://wp.example"},
+    )
+    credential_ref = _credential_ref(mcp_client, project_id=project_id, provider_key="wordpress")
+
+    out = mcp_client.call_tool_structured(
+        "auth.test",
+        {"project_id": project_id, "credential_ref": credential_ref},
+    )
+
+    rendered = json.dumps(out)
+    assert out["data"]["ok"] is True
+    assert out["data"]["provider_key"] == "wordpress"
+    assert out["data"]["metadata"]["user_id"] == 7
+    assert "app pass" not in rendered
+
+
+def test_auth_test_dispatches_to_ghost_provider_manifest(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    httpx_mock.add_response(
+        method="GET",
+        url="https://ghost.example/ghost/api/admin/users/?limit=1&include=roles",
+        json={"users": [{"id": "u1", "name": "Editor", "roles": [{"name": "Editor"}]}]},
+    )
+    _create_integration_credential(
+        mcp_client,
+        project_id=project_id,
+        kind="ghost",
+        payload=b"keyid:00112233445566778899aabbccddeeff",
+        config_json={"ghost_url": "https://ghost.example", "api_version": "v5.0"},
+    )
+    credential_ref = _credential_ref(mcp_client, project_id=project_id, provider_key="ghost")
+
+    out = mcp_client.call_tool_structured(
+        "auth.test",
+        {"project_id": project_id, "credential_ref": credential_ref},
+    )
+
+    rendered = json.dumps(out)
+    assert out["data"]["ok"] is True
+    assert out["data"]["provider_key"] == "ghost"
+    assert out["data"]["metadata"]["user_id"] == "u1"
+    assert "00112233445566778899aabbccddeeff" not in rendered
+
+
 def test_auth_test_validates_unknown_kind(
     mcp_client: MCPClient,
     seeded_project: dict,

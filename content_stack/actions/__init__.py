@@ -29,9 +29,11 @@ from content_stack.actions.vendor_connectors import (
     AhrefsActionConnector,
     DataForSeoActionConnector,
     FirecrawlActionConnector,
+    GhostActionConnector,
     JinaActionConnector,
     RedditActionConnector,
     SitemapActionConnector,
+    WordPressActionConnector,
 )
 
 DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
@@ -41,6 +43,8 @@ DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SitemapActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(DataForSeoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(AhrefsActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(WordPressActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(GhostActionConnector())
 
 __all__ = [
     "ACTION_MANIFEST_SCHEMA_VERSION",
@@ -61,10 +65,12 @@ __all__ = [
     "DataForSeoActionConnector",
     "ExecutableActionManifest",
     "FirecrawlActionConnector",
+    "GhostActionConnector",
     "JinaActionConnector",
     "OpenAIImagesActionConnector",
     "RedditActionConnector",
     "SitemapActionConnector",
+    "WordPressActionConnector",
     "build_action_availability",
     "parse_action_manifest",
 ]

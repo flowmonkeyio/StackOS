@@ -33,6 +33,7 @@ and opaque `credential_ref` values.
 Files:
 
 - `content_stack/plugins/manifest.py`
+- `plugins/publishing/plugin.yaml`
 - `plugins/seo/plugin.yaml`
 - `plugins/core/workflows/project-memory-review.yaml`
 - `plugins/seo/workflows/keyword-research.yaml`
@@ -44,6 +45,7 @@ Current built-in plugins:
 | --- | --- | --- |
 | `core` | Local daemon provider, catalog primitives, project data resources, project memory review template | Good generic foundation. |
 | `utils` | OpenAI Images, Firecrawl, Jina, Reddit providers; image generation, web retrieval, and community research actions | Core utility connectors are now executable through the generic action path. |
+| `publishing` | WordPress and Ghost providers, CMS publishing actions, and generic publishing resources | First post-create connector path is wired. Media/upload/update actions and templates are still needed. |
 | `seo` | DataForSEO and Ahrefs providers, SEO actions, SEO resource schemas, two SEO templates | First SEO connector path is wired, including PAA extraction through DataForSEO. More templates and richer provider actions are still needed. |
 
 Current templates are intentionally small and reusable, but the library is thin:
@@ -85,10 +87,9 @@ The bridge advertises only `auth.status` and `auth.test` to normal agents.
 `auth.start` and `auth.revoke` are admin/setup operations.
 
 Auth providers are synced from plugin provider manifests. A daemon wrapper alone
-does not make a provider setup-ready. For example, WordPress and Ghost wrappers
-are registered in the integration registry, but no first-party plugin provider
-manifest currently declares them, so generic auth setup for those providers is
-not available yet.
+does not make a provider setup-ready. WordPress and Ghost now have first-party
+publishing provider manifests; future wrappers should follow the same path
+before they are treated as user-configurable providers.
 
 The repository correctly treats plaintext credentials as daemon-only data.
 `ResolvedCredential` is an internal dataclass with plaintext hidden from
@@ -139,6 +140,8 @@ Current executable connector registry:
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `reddit` | Ready through generic `action.execute`. |
 | `dataforseo` | `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract` | `dataforseo` | Ready for the first SEO research actions. |
 | `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `ahrefs` | Ready for the first SEO research actions. |
+| `wordpress` | `publishing.wordpress.post.create` | `wordpress` | Ready for explicit WordPress post payloads. |
+| `ghost` | `publishing.ghost.post.create` | `ghost` | Ready for explicit Ghost post payloads. |
 
 `action.execute` now returns the public action-call audit shape. Internal
 database identifiers such as `credential_id`, `action_id`, and replay-only
@@ -183,8 +186,8 @@ Wrapper inventory:
 | `jina` | read URL, credential test | Utils action | Ready through `utils.web.read` with optional auth. |
 | `reddit` | search subreddit, top questions, credential test | Utils actions | Ready through generic community research actions. |
 | `google-paa` | PAA extraction through Firecrawl | Wrapper only | Partial. No provider/action manifest; dependency on Firecrawl should be explicit. |
-| `wordpress` | current user, credential test | Wrapper registered only; no plugin provider manifest | Not setup-ready. Needs publishing plugin provider manifest, post/media actions, and connector. |
-| `ghost` | users, credential test | Wrapper registered only; no plugin provider manifest | Not setup-ready. Needs publishing plugin provider manifest, post/image actions, and connector. |
+| `wordpress` | current user, credential test, post create | Publishing plugin actions | Ready for post creation through generic `action.execute`; media/upload/update actions remain. |
+| `ghost` | users, credential test, post create | Publishing plugin actions | Ready for post creation through generic `action.execute`; image/upload/update actions remain. |
 | sitemap | sitemap fetch | Project REST/MCP setup utility and `utils.sitemap.fetch` action | Ready for setup and run-plan use. |
 
 ## Key Gaps
@@ -197,7 +200,8 @@ remaining connector gaps are:
 - Firecrawl-derived Google PAA needs an explicit action contract and dependency
   decision if we want that wrapper as a separate action. The first PAA action is
   `seo.paa.extract` through DataForSEO.
-- WordPress and Ghost need provider manifests, publishing actions, and connectors.
+- WordPress and Ghost now have provider manifests and post-create connectors;
+  media/upload/update actions still need contracts.
 - User-owned tools need a custom HTTP/Webhook connector.
 - Legacy vendor MCP tools are removed; keep them from reappearing as a parallel execution path.
 
@@ -212,7 +216,7 @@ The first SEO actions are executable:
 - `seo.backlink.research`
 
 The remaining gap is breadth, not basic executability. DataForSEO domain
-intersection, keywords-for-site, GSC, GA4, crawl imports, and CMS publishing
+intersection, keywords-for-site, GSC, GA4, and crawl imports
 still need explicit plugin actions, schemas, templates, and tests.
 
 ### 3. Legacy Vendor MCP Tools Are Removed
@@ -244,7 +248,8 @@ Remaining auth UI depth is provider setup breadth, not the core boundary:
 
 - OAuth/start-flow providers need a generic start/return UI path.
 - Providers with non-secret safe config such as login, site URL, base URL, or
-  scope selection need schema-driven setup fields instead of only a label.
+  scope selection should declare schema-driven setup fields instead of relying
+  on ad hoc UI controls.
 - Provider account metadata should be displayed when wrappers return safe
   account details.
 
@@ -255,14 +260,13 @@ but should never see secret values.
 
 Some wrappers exist without first-class plugin provider/action definitions:
 
-- `wordpress`
-- `ghost`
 - `google-paa`
 
 The original set of plugin providers without generic executable actions has
-been closed for Firecrawl, Jina, Reddit, DataForSEO, and Ahrefs. Future plugin
-providers should not be considered setup-ready until they have the same action
-connector coverage, even if a daemon wrapper already exists.
+been closed for Firecrawl, Jina, Reddit, DataForSEO, Ahrefs, WordPress, and
+Ghost. Future plugin providers should not be considered setup-ready until they
+have the same action connector coverage, even if a daemon wrapper already
+exists.
 
 For a clean plugin system, every external provider should have matching:
 
@@ -356,10 +360,10 @@ These are needed before adding many new domains:
 
 | Need | Why |
 | --- | --- |
-| Guard against vendor MCP tool reintroduction | Firecrawl, Jina, Reddit, DataForSEO, and Ahrefs now have generic action connectors, so provider-specific MCP tools should remain removed. |
+| Guard against vendor MCP tool reintroduction | Firecrawl, Jina, Reddit, DataForSEO, Ahrefs, WordPress, and Ghost now have generic action connectors, so provider-specific MCP tools should remain removed. |
 | Firecrawl-derived Google PAA action contract | DataForSEO PAA is now wired as `seo.paa.extract`; decide later whether the Firecrawl-derived wrapper belongs as a separate utility or SEO action. |
-| WordPress publishing connector | Current wrapper only tests credentials. Publishing needs post/media actions. |
-| Ghost publishing connector | Current wrapper only tests credentials. Publishing needs post/image actions. |
+| WordPress publishing connector breadth | `publishing.wordpress.post.create` is wired; media upload, post update, and richer publication-state actions remain. |
+| Ghost publishing connector breadth | `publishing.ghost.post.create` is wired; image upload, post update, and richer publication-state actions remain. |
 | Custom HTTP/Webhook connector | Allows user-owned internal tools to become StackOS actions without hard-coding each one into core. |
 
 ### P1: Utilities Plugin Expansion
@@ -537,8 +541,8 @@ Action groups:
 - redirect.create
 - canonical.update
 
-Current WordPress and Ghost wrappers should be promoted from credential probes
-to real publishing connectors.
+Current WordPress and Ghost wrappers have first post-create connectors. Media,
+update, publish-state, and richer CMS objects still need contracts.
 
 ### P2: SEO Plugin Expansion
 
@@ -599,7 +603,7 @@ disabled plugin, disabled provider, missing budget, and budget blocked.
    expose secret setup through agent MCP tools.
 6. Keep removed vendor MCP names unknown to MCP clients.
 7. Decide whether `integration_credentials` remains only an internal encrypted blob store or is migrated into the new credential model.
-8. Promote WordPress and Ghost from credential-test wrappers to publishing actions.
+8. Expand WordPress and Ghost from post-create actions to media/upload/update coverage.
 9. Keep sitemap fetch available both as a setup helper and as `utils.sitemap.fetch`
    for run-plan use.
 10. Add a custom HTTP/Webhook connector for user-owned tools.
@@ -611,7 +615,7 @@ disabled plugin, disabled provider, missing budget, and budget blocked.
 ### Phase 1: Existing Integrations On The Clean Path
 
 Initial connector migration and vendor MCP removal are complete for Firecrawl,
-Jina, Reddit, DataForSEO, and Ahrefs. Remaining Phase 1 cleanup:
+Jina, Reddit, DataForSEO, Ahrefs, WordPress, and Ghost. Remaining Phase 1 cleanup:
 
 - keep removed provider-specific MCP tool names unknown to clients
 - keep action availability signals visible in catalog/UI surfaces
@@ -623,16 +627,16 @@ Jina, Reddit, DataForSEO, and Ahrefs. Remaining Phase 1 cleanup:
 ### Phase 2: Credential Setup UX
 
 Complete for the baseline API-key/local-admin path. Connections now provides
-generic store/test/revoke controls, uses the REST-only UI console token for the
-narrow setup lane, and clears secret input after save. Remaining work belongs
-to provider-specific breadth: OAuth start/return flows, schema-driven safe
-config fields, and richer account metadata display.
+generic store/test/revoke controls, renders schema-driven safe setup fields,
+uses the REST-only UI console token for the narrow setup lane, and clears
+secret input after save. Remaining work belongs to provider-specific breadth:
+OAuth start/return flows and richer account metadata display.
 
 ### Phase 3: Publishing Plugin
 
-Create a publishing plugin and promote WordPress/Ghost wrappers into post and
-media actions. Use generic resources and action audit instead of hard-coded SEO
-publishing flows.
+The publishing plugin now promotes WordPress/Ghost wrappers into first
+post-create actions. Next, add media/upload/update contracts and templates. Use
+generic resources and action audit instead of hard-coded SEO publishing flows.
 
 ### Phase 4: Media Buying And GTM Plugin Scaffolds
 

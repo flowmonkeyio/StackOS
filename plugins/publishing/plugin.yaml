@@ -1,0 +1,165 @@
+slug: publishing
+name: Publishing
+version: 0.1.0
+description: First-party StackOS package for CMS publishing provider contracts and post artifacts.
+source: builtin
+capabilities:
+  - key: cms-publishing
+    name: CMS Publishing
+    description: Create or update content in configured CMS providers from explicit agent payloads.
+    kind: utility
+providers:
+  - key: wordpress
+    name: WordPress
+    description: WordPress REST API publishing provider.
+    auth_type: api-key
+    config:
+      setup_fields:
+        - key: wp_url
+          label: Site URL
+          type: url
+          required: true
+          placeholder: https://example.com
+  - key: ghost
+    name: Ghost
+    description: Ghost Admin API publishing provider.
+    auth_type: api-key
+    config:
+      setup_fields:
+        - key: ghost_url
+          label: Admin URL
+          type: url
+          required: true
+          placeholder: https://example.com
+        - key: api_version
+          label: API Version
+          type: text
+          required: false
+          placeholder: v5.0
+actions:
+  - key: wordpress.post.create
+    name: Create WordPress Post
+    description: Create a WordPress post from an explicit REST API post payload.
+    provider: wordpress
+    capability: cms-publishing
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - post
+      properties:
+        post: &wordpress_post_input
+          type: object
+          additionalProperties: true
+          required:
+            - title
+            - content
+          properties:
+            title:
+              type: string
+            content:
+              type: string
+            status:
+              type: string
+            slug:
+              type: string
+            excerpt:
+              type: string
+            categories:
+              type: array
+              items:
+                type: integer
+            tags:
+              type: array
+              items:
+                type: integer
+            featured_media:
+              type: integer
+    output_schema: &object_schema
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: wordpress
+      operation: post.create
+      requires_credential: true
+  - key: ghost.post.create
+    name: Create Ghost Post
+    description: Create a Ghost post from an explicit Admin API post payload.
+    provider: ghost
+    capability: cms-publishing
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - post
+      properties:
+        source:
+          type: string
+          enum:
+            - html
+        post:
+          type: object
+          additionalProperties: true
+          required:
+            - title
+            - html
+          properties:
+            title:
+              type: string
+            html:
+              type: string
+            status:
+              type: string
+            slug:
+              type: string
+            custom_excerpt:
+              type: string
+            feature_image:
+              type: string
+            published_at:
+              type: string
+            tags:
+              type: array
+              items:
+                oneOf:
+                  - type: string
+                  - type: object
+                    additionalProperties: true
+            authors:
+              type: array
+              items:
+                oneOf:
+                  - type: string
+                  - type: object
+                    additionalProperties: true
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: ghost
+      operation: post.create
+      requires_credential: true
+resources:
+  - key: published-post
+    name: Published Post
+    description: CMS post publication result or durable external post reference.
+    schema: *object_schema
+  - key: publish-target
+    name: Publish Target
+    description: Safe metadata for a configured CMS target or destination.
+    schema: *object_schema
+ui:
+  nav:
+    section: Publishing
+    items:
+      - key: publishing.resources
+        label: Publishing Resources
+        to: resources?plugin_slug=publishing
+        matchPrefix: true
+      - key: publishing.templates
+        label: Publishing Templates
+        to: workflow-templates?plugin_slug=publishing
+config:
+  schema_version: stackos.plugin.v1
