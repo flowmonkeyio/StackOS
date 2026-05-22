@@ -66,6 +66,24 @@ The table is part of the clean StackOS core. Domain plugins store their durable
 objects in resources/artifacts; the core action executor does not preserve
 legacy workflow tables for compatibility.
 
+## Availability
+
+Visible catalog action rows and `action.describe` now include a generic
+`availability` object. It is a setup signal, not a workflow decision:
+
+- `status`: `ready`, `unknown`, `not_executable`, `missing_connector`,
+  `missing_credential`, `credential_failed`, `missing_budget`,
+  `budget_blocked`, `plugin_disabled`, or `provider_disabled`
+- `executable`: whether the current project setup can run the action
+- connector, operation, credential, and budget state
+- safe opaque credential refs when connected
+- machine-readable reasons such as `credential_required` or `budget_required`
+
+Agents may use this to know what setup is missing, but they still pass exact
+payloads and action refs. StackOS does not infer which action should run.
+`plugin_disabled` and `provider_disabled` are also enforced by `action.execute`
+because they are static setup policy, not agent strategy.
+
 ## MCP Surface
 
 Direct/read discovery tools:

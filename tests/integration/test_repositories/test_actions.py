@@ -257,25 +257,90 @@ def test_action_execute_idempotency_replays_without_second_connector_call(
     assert len(session.exec(select(ActionCall)).all()) == 1
 
 
-def test_builtin_action_connectors_describe_as_executable(session: Session) -> None:
+def test_builtin_action_connectors_describe_availability(session: Session) -> None:
     action_refs = {
-        "utils.web.scrape": ("firecrawl", True),
-        "utils.web.read": ("jina", False),
-        "utils.reddit.search-subreddit": ("reddit", True),
-        "seo.keyword.research": ("dataforseo", True),
-        "seo.serp.analyze": ("dataforseo", True),
-        "seo.competitor.keywords": ("ahrefs", True),
-        "seo.backlink.research": ("ahrefs", True),
+        "utils.web.scrape": ("firecrawl", True, "unknown"),
+        "utils.web.read": ("jina", False, "ready"),
+        "utils.reddit.search-subreddit": ("reddit", True, "unknown"),
+        "seo.keyword.research": ("dataforseo", True, "unknown"),
+        "seo.serp.analyze": ("dataforseo", True, "unknown"),
+        "seo.competitor.keywords": ("ahrefs", True, "unknown"),
+        "seo.backlink.research": ("ahrefs", True, "unknown"),
     }
     repo = ActionRepository(session)
 
-    for action_ref, (connector, requires_credential) in action_refs.items():
+    for action_ref, (connector, requires_credential, status) in action_refs.items():
         described = repo.describe(action_ref=action_ref)
 
         assert described.connector_registered is True
-        assert described.execution_available is True
+        assert described.availability.status == status
+        assert described.execution_available is (status == "ready")
         assert described.manifest.connector_key == connector
         assert described.manifest.requires_credential is requires_credential
+
+
+def test_action_describe_reports_project_readiness_and_provider_disabled(
+    session: Session,
+    project_id: int,
+) -> None:
+    _seed_action(session)
+    credential_ref = _credential_ref(session, project_id)
+    registry = ActionConnectorRegistry()
+    registry.register(_FakeConnector())
+    repo = ActionRepository(session, connectors=registry)
+
+    ready = repo.describe(action_ref="test-actions.echo.run", project_id=project_id)
+
+    assert ready.availability.status == "ready"
+    assert ready.availability.executable is True
+    assert ready.availability.credential_state == "available"
+
+    provider = session.exec(select(Provider).where(Provider.key == "fake-provider")).one()
+    provider.config_json = {"enabled": False}
+    session.add(provider)
+    session.commit()
+
+    disabled = repo.describe(action_ref="test-actions.echo.run", project_id=project_id)
+
+    assert disabled.availability.status == "provider_disabled"
+    assert disabled.availability.executable is False
+    assert disabled.availability.reasons[0] == "provider_disabled"
+    with pytest.raises(ValidationError):
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="test-actions.echo.run",
+                input_json={"name": "Ada"},
+                credential_ref=credential_ref,
+            )
+        )
+
+
+def test_action_describe_reports_disabled_project_plugin(
+    session: Session,
+    project_id: int,
+) -> None:
+    from content_stack.repositories.plugins import PluginRepository
+
+    PluginRepository(session).enable(project_id=project_id, plugin_slug="utils")
+    PluginRepository(session).disable(project_id=project_id, plugin_slug="utils")
+
+    described = ActionRepository(session).describe(
+        project_id=project_id,
+        action_ref="utils.web.read",
+    )
+
+    assert described.availability.status == "plugin_disabled"
+    assert described.availability.executable is False
+    assert described.availability.reasons[0] == "plugin_disabled"
+
+
+def test_project_aware_action_describe_requires_existing_project(session: Session) -> None:
+    with pytest.raises(NotFoundError):
+        ActionRepository(session).describe(
+            project_id=999999,
+            action_ref="utils.web.read",
+        )
 
 
 def test_jina_action_preserves_optional_credentials(

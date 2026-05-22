@@ -15,6 +15,31 @@ const props = withDefaults(defineProps<{
 const inputSchema = computed(() => sanitizeForDisplay(props.action.input_schema_json))
 const outputSchema = computed(() => sanitizeForDisplay(props.action.output_schema_json))
 const config = computed(() => sanitizeForDisplay(props.action.config_json))
+const availability = computed(() => props.action.availability)
+
+const statusTone = computed(() => {
+  switch (availability.value.status) {
+    case 'ready':
+      return 'success'
+    case 'unknown':
+    case 'missing_budget':
+    case 'missing_credential':
+      return 'warning'
+    case 'budget_blocked':
+    case 'credential_failed':
+    case 'missing_connector':
+    case 'plugin_disabled':
+    case 'provider_disabled':
+      return 'danger'
+    default:
+      return 'neutral'
+  }
+})
+
+function humanize(value: string | null | undefined): string {
+  if (!value) return '-'
+  return value.replaceAll(/[-_.]/g, ' ')
+}
 </script>
 
 <template>
@@ -39,6 +64,9 @@ const config = computed(() => sanitizeForDisplay(props.action.config_json))
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-1.5 sm:justify-end">
+        <UiBadge :tone="statusTone">
+          {{ humanize(availability.status) }}
+        </UiBadge>
         <UiBadge tone="accent">{{ action.plugin_slug }}</UiBadge>
         <UiBadge
           v-if="action.provider_key"
@@ -49,22 +77,72 @@ const config = computed(() => sanitizeForDisplay(props.action.config_json))
         <UiBadge :tone="action.risk_level === 'read' ? 'success' : 'warning'">
           {{ action.risk_level }}
         </UiBadge>
-        <svg
-          class="ml-1 h-4 w-4 text-fg-subtle transition-transform duration-fast group-open:rotate-180"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
+        <span
+          class="i-lucide-chevron-down ml-1 h-4 w-4 text-fg-subtle transition-transform duration-fast group-open:rotate-180"
           aria-hidden="true"
-        >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
+        />
       </div>
     </summary>
+
+    <div class="grid gap-3 border-t border-subtle p-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Action ref</p>
+        <p class="mt-1 break-all font-mono text-xs text-fg-default">{{ action.action_ref }}</p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Connector</p>
+        <div class="mt-1 flex flex-wrap gap-1.5">
+          <UiBadge :tone="availability.connector_registered ? 'success' : 'danger'">
+            {{ action.connector_key ?? 'none' }}
+          </UiBadge>
+          <UiBadge variant="outline">{{ action.operation }}</UiBadge>
+        </div>
+      </div>
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Credential</p>
+        <div class="mt-1 flex flex-wrap gap-1.5">
+          <UiBadge :tone="availability.requires_credential && availability.credential_state !== 'available' ? 'warning' : 'neutral'">
+            {{ humanize(availability.credential_state) }}
+          </UiBadge>
+          <UiBadge
+            v-if="availability.credential_refs?.length"
+            tone="info"
+          >
+            {{ availability.credential_refs.length }}
+          </UiBadge>
+        </div>
+      </div>
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Budget</p>
+        <div class="mt-1 flex flex-wrap gap-1.5">
+          <UiBadge :tone="availability.budget_state === 'blocked' ? 'danger' : availability.budget_state === 'missing' ? 'warning' : 'neutral'">
+            {{ humanize(availability.budget_state) }}
+          </UiBadge>
+          <UiBadge
+            v-if="availability.budget_kind"
+            variant="outline"
+          >
+            {{ availability.budget_kind }}
+          </UiBadge>
+        </div>
+      </div>
+      <div
+        v-if="availability.reasons?.length"
+        class="md:col-span-2 xl:col-span-4"
+      >
+        <p class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Reasons</p>
+        <div class="mt-1 flex flex-wrap gap-1.5">
+          <UiBadge
+            v-for="reason in availability.reasons"
+            :key="reason"
+            tone="warning"
+            variant="outline"
+          >
+            {{ humanize(reason) }}
+          </UiBadge>
+        </div>
+      </div>
+    </div>
 
     <div class="grid gap-3 border-t border-subtle p-3 lg:grid-cols-2">
       <div>

@@ -22,10 +22,16 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     actions = api.get("/api/v1/actions", params={"plugin_slug": "utils"})
     assert actions.status_code == 200
     assert {a["key"] for a in actions.json()} >= {"image.generate", "web.scrape"}
+    web_read = next(a for a in actions.json() if a["key"] == "web.read")
+    assert web_read["action_ref"] == "utils.web.read"
+    assert web_read["connector_key"] == "jina"
+    assert web_read["availability"]["status"] == "ready"
+    assert web_read["availability"]["executable"] is True
 
     action = api.get("/api/v1/actions/image.generate", params={"plugin_slug": "utils"})
     assert action.status_code == 200
     assert action.json()["input_schema_json"]["required"] == ["prompt"]
+    assert action.json()["availability"]["status"] == "unknown"
 
     capability = api.get(
         "/api/v1/capabilities/seo-content",
@@ -47,6 +53,28 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "content-piece",
         "content-refresh",
     }
+
+
+def test_single_action_describe_can_be_project_aware(api: TestClient, project_id: int) -> None:
+    credential = api.post(
+        f"/api/v1/projects/{project_id}/auth/openai-images/credentials",
+        json={"plaintext_payload": "sk-test"},
+    )
+    assert credential.status_code == 201
+    budget = api.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "openai-images", "monthly_budget_usd": 10.0},
+    )
+    assert budget.status_code == 200
+
+    action = api.get(
+        "/api/v1/actions/image.generate",
+        params={"plugin_slug": "utils", "project_id": project_id},
+    )
+
+    assert action.status_code == 200
+    assert action.json()["availability"]["status"] == "ready"
+    assert action.json()["availability"]["executable"] is True
 
 
 def test_project_plugin_enable_disable_routes(api: TestClient, project_id: int) -> None:

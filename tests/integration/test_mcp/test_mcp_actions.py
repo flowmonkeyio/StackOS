@@ -37,6 +37,30 @@ def test_action_describe_and_validate_are_read_only_discovery_tools(
     assert validation["issues"] == []
 
 
+def test_action_describe_reports_project_availability(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    _create_openai_credential(mcp_client, project_id)
+    budget_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "openai-images", "monthly_budget_usd": 10.0},
+        headers=mcp_client._headers(),
+    )
+    assert budget_resp.status_code == 200
+
+    described = mcp_client.call_tool_structured(
+        "action.describe",
+        {"project_id": project_id, "action_ref": "utils.image.generate"},
+    )
+
+    assert described["availability"]["status"] == "ready"
+    assert described["execution_available"] is True
+    assert described["availability"]["credential_state"] == "available"
+    assert described["availability"]["budget_state"] == "available"
+
+
 def test_action_validate_rejects_raw_secret_payloads(mcp_client: MCPClient) -> None:
     err = mcp_client.call_tool_error(
         "action.validate",

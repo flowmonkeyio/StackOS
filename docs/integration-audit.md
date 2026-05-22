@@ -311,13 +311,15 @@ configuration to a utility or domain action.
 ### 7. Action Availability Needs To Be Visible
 
 Operators and agents need to know whether a catalog action is actually
-executable before starting a run. `action.describe` already returns connector
-availability, but the UI does not yet surface action status such as:
+executable before starting a run. `action.describe` and catalog action rows now
+return generic setup status such as:
 
 - executable
 - missing connector
 - missing credential
+- plugin disabled
 - provider disabled
+- missing budget
 - budget blocked
 
 This is important while the repo contains a mix of migrated actions,
@@ -578,9 +580,10 @@ Avoid per-workflow pages. Plugin nav should point into generic pages with
 filters such as `plugin_slug`, `resource_key`, `template_key`, or `action_ref`.
 
 The biggest UI integration gap is local-admin credential setup. Action calls are
-already visible in run detail and through the project action-call API, but the
-catalog still needs broader action availability signals: executable, missing
-connector, missing credential, disabled provider, and budget blocked.
+already visible in run detail and through the project action-call API, and the
+catalog now exposes action availability signals: executable, missing connector,
+missing credential, disabled plugin, disabled provider, missing budget, and
+budget blocked.
 
 ## Cleanup And Refactor Map
 
@@ -605,7 +608,7 @@ Initial connector migration and vendor MCP removal are complete for Firecrawl,
 Jina, Reddit, DataForSEO, and Ahrefs. Remaining Phase 1 cleanup:
 
 - keep removed provider-specific MCP tool names unknown to clients
-- add action availability signals to catalog/UI surfaces
+- keep action availability signals visible in catalog/UI surfaces
 - add remaining DataForSEO operation contracts where templates need them
 - keep focused tests for connector validation, daemon-side credential resolution,
   run-plan grants, and redacted action-call audit

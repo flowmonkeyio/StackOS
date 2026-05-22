@@ -22,9 +22,10 @@ from content_stack.mcp.streaming import ProgressEmitter
 class ActionDescribeInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"action_ref": "utils.image.generate"}},
+        json_schema_extra={"example": {"project_id": 1, "action_ref": "utils.image.generate"}},
     )
 
+    project_id: int | None = None
     action_ref: str | None = None
     plugin_slug: str | None = None
     action_key: str | None = None
@@ -84,6 +85,7 @@ async def _action_describe(
         action_ref=inp.action_ref,
         plugin_slug=inp.plugin_slug,
         action_key=inp.action_key,
+        project_id=inp.project_id,
     )
 
 

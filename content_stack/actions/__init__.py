@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from content_stack.action_availability import ActionAvailabilityOut, build_action_availability
 from content_stack.actions.connectors import (
     DEFAULT_ACTION_CONNECTORS,
     ActionConnector,
@@ -42,6 +43,7 @@ DEFAULT_ACTION_CONNECTORS.register(AhrefsActionConnector())
 __all__ = [
     "ACTION_MANIFEST_SCHEMA_VERSION",
     "DEFAULT_ACTION_CONNECTORS",
+    "ActionAvailabilityOut",
     "ActionCallAuditOut",
     "ActionCallOut",
     "ActionConnector",
@@ -60,5 +62,6 @@ __all__ = [
     "JinaActionConnector",
     "OpenAIImagesActionConnector",
     "RedditActionConnector",
+    "build_action_availability",
     "parse_action_manifest",
 ]

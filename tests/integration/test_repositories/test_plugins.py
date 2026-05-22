@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from sqlmodel import Session
 
+from content_stack.auth_providers import AuthRepository
 from content_stack.repositories.plugins import PluginRepository
+from content_stack.repositories.projects import (
+    IntegrationBudgetRepository,
+    IntegrationCredentialRepository,
+)
 
 
 def test_builtin_plugins_sync_and_list(session: Session) -> None:
@@ -72,6 +77,47 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "content-piece",
         "content-refresh",
     }
+
+
+def test_project_catalog_reports_action_availability(session: Session, project_id: int) -> None:
+    repo = PluginRepository(session)
+
+    missing_setup = {
+        action.key: action
+        for action in repo.list_actions(plugin_slug="utils", project_id=project_id)
+    }
+    assert missing_setup["web.scrape"].availability.status == "missing_credential"
+    assert missing_setup["web.scrape"].availability.executable is False
+    assert missing_setup["web.scrape"].availability.reasons == [
+        "credential_required",
+        "budget_required",
+    ]
+    assert missing_setup["web.read"].availability.status == "ready"
+
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="firecrawl",
+        plaintext_payload=b"firecrawl-key",
+    )
+    AuthRepository(session).status(project_id=project_id, provider_key="firecrawl")
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="firecrawl",
+        monthly_budget_usd=10.0,
+    )
+
+    ready_setup = {
+        action.key: action
+        for action in repo.list_actions(plugin_slug="utils", project_id=project_id)
+    }
+    scrape = ready_setup["web.scrape"]
+    assert scrape.connector_key == "firecrawl"
+    assert scrape.requires_credential is True
+    assert scrape.enforce_budget is True
+    assert scrape.availability.status == "ready"
+    assert scrape.availability.executable is True
+    assert scrape.availability.credential_state == "available"
+    assert scrape.availability.budget_state == "available"
 
 
 def test_capability_provider_describe_supports_plugin_filter(session: Session) -> None:

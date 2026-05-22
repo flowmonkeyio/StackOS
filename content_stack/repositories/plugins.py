@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
 
+from content_stack.action_availability import ActionAvailabilityOut
 from content_stack.db.models import (
     Action,
     ActionVersion,
@@ -99,6 +100,7 @@ class ActionOut(BaseModel):
     plugin_slug: str
     provider_id: int | None
     provider_key: str | None
+    action_ref: str
     key: str
     name: str
     description: str
@@ -107,6 +109,13 @@ class ActionOut(BaseModel):
     input_schema_json: dict[str, Any]
     output_schema_json: dict[str, Any]
     config_json: dict[str, Any] | None
+    connector_key: str | None = None
+    operation: str
+    requires_credential: bool = False
+    allows_credential: bool = False
+    budget_kind: str | None = None
+    enforce_budget: bool = False
+    availability: ActionAvailabilityOut
 
 
 class PluginCatalogOut(BaseModel):
@@ -266,6 +275,8 @@ class PluginRepository:
         project_id: int | None = None,
     ) -> list[ActionOut]:
         self.sync_builtin_plugins()
+        if project_id is not None:
+            self._require_project(project_id)
         stmt = (
             select(Action, Plugin, Provider)
             .join(Plugin, col(Action.plugin_id) == col(Plugin.id))
@@ -277,10 +288,28 @@ class PluginRepository:
             self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Action.key).asc())).all()
         )
         rows = self._filter_project_enabled(rows, project_id=project_id)
-        return [self._action_out(action, plugin, provider) for action, plugin, provider in rows]
+        return [
+            self._action_out(
+                action,
+                plugin,
+                provider,
+                project_id=project_id,
+            )
+            for action, plugin, provider in rows
+        ]
 
-    def get_action(self, *, key: str, plugin_slug: str | None = None) -> ActionOut:
-        rows = [a for a in self.list_actions(plugin_slug=plugin_slug) if a.key == key]
+    def get_action(
+        self,
+        *,
+        key: str,
+        plugin_slug: str | None = None,
+        project_id: int | None = None,
+    ) -> ActionOut:
+        rows = [
+            action
+            for action in self.list_actions(plugin_slug=plugin_slug, project_id=project_id)
+            if action.key == key
+        ]
         if not rows:
             raise NotFoundError(f"action {key!r} not found")
         if len(rows) > 1 and plugin_slug is None:
@@ -590,14 +619,34 @@ class PluginRepository:
             config_json=row.config_json,
         )
 
-    def _action_out(self, row: Action, plugin: Plugin, provider: Provider | None) -> ActionOut:
+    def _action_out(
+        self,
+        row: Action,
+        plugin: Plugin,
+        provider: Provider | None,
+        *,
+        project_id: int | None = None,
+    ) -> ActionOut:
+        from content_stack.action_availability import build_action_availability
+        from content_stack.actions.connectors import DEFAULT_ACTION_CONNECTORS
+        from content_stack.actions.manifest import parse_action_manifest
+
         assert row.id is not None and row.plugin_id is not None
+        manifest = parse_action_manifest(action=row, plugin=plugin, provider=provider)
+        availability = build_action_availability(
+            self._s,
+            manifest=manifest,
+            connector_keys=set(DEFAULT_ACTION_CONNECTORS.list_keys()),
+            project_id=project_id,
+            provider_config_json=provider.config_json if provider is not None else None,
+        )
         return ActionOut(
             id=row.id,
             plugin_id=row.plugin_id,
             plugin_slug=plugin.slug,
             provider_id=row.provider_id,
             provider_key=provider.key if provider is not None else None,
+            action_ref=manifest.action_ref,
             key=row.key,
             name=row.name,
             description=row.description,
@@ -606,6 +655,13 @@ class PluginRepository:
             input_schema_json=row.input_schema_json,
             output_schema_json=row.output_schema_json,
             config_json=row.config_json,
+            connector_key=manifest.connector_key,
+            operation=manifest.operation,
+            requires_credential=manifest.requires_credential,
+            allows_credential=manifest.allows_credential,
+            budget_kind=manifest.budget_kind,
+            enforce_budget=manifest.enforce_budget,
+            availability=availability,
         )
 
 

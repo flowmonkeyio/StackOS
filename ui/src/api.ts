@@ -1142,6 +1142,38 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ActionAvailabilityOut
+         * @description Project-aware execution readiness for one static action contract.
+         */
+        ActionAvailabilityOut: {
+            /** Action Ref */
+            action_ref: string;
+            /** Allows Credential */
+            allows_credential: boolean;
+            /** Budget Kind */
+            budget_kind?: string | null;
+            /** Budget State */
+            budget_state: string;
+            /** Connector Key */
+            connector_key?: string | null;
+            /** Connector Registered */
+            connector_registered: boolean;
+            /** Credential Refs */
+            credential_refs?: string[];
+            /** Credential State */
+            credential_state: string;
+            /** Executable */
+            executable: boolean;
+            /** Operation */
+            operation: string;
+            /** Reasons */
+            reasons?: string[];
+            /** Requires Credential */
+            requires_credential: boolean;
+            /** Status */
+            status: string;
+        };
+        /**
          * ActionCallAuditOut
          * @description Public action-call audit row for UI/read APIs.
          *
@@ -1251,14 +1283,31 @@ export interface components {
         };
         /** ActionOut */
         ActionOut: {
+            /** Action Ref */
+            action_ref: string;
+            /**
+             * Allows Credential
+             * @default false
+             */
+            allows_credential: boolean;
+            availability: components["schemas"]["ActionAvailabilityOut"];
+            /** Budget Kind */
+            budget_kind?: string | null;
             /** Capability Key */
             capability_key: string | null;
             /** Config Json */
             config_json: {
                 [key: string]: unknown;
             } | null;
+            /** Connector Key */
+            connector_key?: string | null;
             /** Description */
             description: string;
+            /**
+             * Enforce Budget
+             * @default false
+             */
+            enforce_budget: boolean;
             /** Id */
             id: number;
             /** Input Schema Json */
@@ -1269,6 +1318,8 @@ export interface components {
             key: string;
             /** Name */
             name: string;
+            /** Operation */
+            operation: string;
             /** Output Schema Json */
             output_schema_json: {
                 [key: string]: unknown;
@@ -1281,6 +1332,11 @@ export interface components {
             provider_id: number | null;
             /** Provider Key */
             provider_key: string | null;
+            /**
+             * Requires Credential
+             * @default false
+             */
+            requires_credential: boolean;
             /** Risk Level */
             risk_level: string;
         };
@@ -3823,6 +3879,7 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaActionAvailabilityOut = components['schemas']['ActionAvailabilityOut'];
 export type SchemaActionCallAuditOut = components['schemas']['ActionCallAuditOut'];
 export type SchemaActionContractSpec = components['schemas']['ActionContractSpec'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
@@ -3971,6 +4028,7 @@ export interface operations {
         parameters: {
             query?: {
                 plugin_slug?: string | null;
+                project_id?: number | null;
             };
             header?: never;
             path: {

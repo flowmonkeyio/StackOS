@@ -130,10 +130,15 @@ async def list_actions(
 async def describe_action(
     action_key: str,
     plugin_slug: str | None = Query(default=None),
+    project_id: int | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> ActionOut:
     """Describe one action schema; pass plugin_slug if the key is ambiguous."""
-    return PluginRepository(session).get_action(key=action_key, plugin_slug=plugin_slug)
+    return PluginRepository(session).get_action(
+        key=action_key,
+        plugin_slug=plugin_slug,
+        project_id=project_id,
+    )
 
 
 @router.post(

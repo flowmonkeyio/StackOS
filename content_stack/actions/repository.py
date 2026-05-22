@@ -11,6 +11,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session, col, select
 
+from content_stack.action_availability import (
+    ActionAvailabilityOut,
+    build_action_availability,
+)
 from content_stack.actions.connectors import (
     DEFAULT_ACTION_CONNECTORS,
     ActionConnectorRegistry,
@@ -26,6 +30,7 @@ from content_stack.db.models import (
     ActionCallStatus,
     Credential,
     Plugin,
+    ProjectPlugin,
     Provider,
     Run,
     RunPlan,
@@ -269,6 +274,7 @@ class ActionDescribeOut(BaseModel):
     connector_registered: bool
     execution_available: bool
     agent_execute_available: bool = False
+    availability: ActionAvailabilityOut
 
 
 class ActionValidationOut(BaseModel):
@@ -315,21 +321,34 @@ class ActionRepository:
         action_ref: str | None = None,
         plugin_slug: str | None = None,
         action_key: str | None = None,
+        project_id: int | None = None,
     ) -> ActionDescribeOut:
-        manifest = self._manifest(
+        manifest, provider_config_json = self._manifest_with_provider_config(
             action_ref=action_ref,
             plugin_slug=plugin_slug,
             action_key=action_key,
         )
-        registered = (
-            manifest.connector_key is not None
-            and manifest.connector_key in self._connectors.list_keys()
+        if project_id is not None:
+            self._require_project(project_id)
+        connector_keys = set(self._connectors.list_keys())
+        availability = build_action_availability(
+            self._s,
+            manifest=manifest,
+            connector_keys=connector_keys,
+            project_id=project_id,
+            provider_config_json=provider_config_json,
+            plugin_disabled=self._plugin_disabled_for_project(
+                project_id=project_id,
+                plugin_slug=manifest.plugin_slug,
+            ),
         )
+        registered = availability.connector_registered
         return ActionDescribeOut(
             manifest=manifest,
             connector_registered=registered,
-            execution_available=registered,
-            agent_execute_available=registered,
+            execution_available=availability.executable,
+            agent_execute_available=availability.executable,
+            availability=availability,
         )
 
     def query_calls(
@@ -450,7 +469,7 @@ class ActionRepository:
         metadata_json: dict[str, Any] | None = None,
     ) -> Envelope[ActionExecutionOut]:
         self._require_project(project_id)
-        manifest = self._manifest(
+        manifest, provider_config_json = self._manifest_with_provider_config(
             action_ref=action_ref,
             plugin_slug=plugin_slug,
             action_key=action_key,
@@ -477,6 +496,26 @@ class ActionRepository:
             raise ValidationError(
                 "action has no connector configured for execution",
                 data={"action_ref": manifest.action_ref},
+            )
+        availability = build_action_availability(
+            self._s,
+            manifest=manifest,
+            connector_keys=set(self._connectors.list_keys()),
+            project_id=project_id,
+            provider_config_json=provider_config_json,
+            plugin_disabled=self._plugin_disabled_for_project(
+                project_id=project_id,
+                plugin_slug=manifest.plugin_slug,
+            ),
+        )
+        if availability.status in {"plugin_disabled", "provider_disabled"}:
+            raise ValidationError(
+                "action is disabled for this project",
+                data={
+                    "action_ref": manifest.action_ref,
+                    "status": availability.status,
+                    "reasons": availability.reasons,
+                },
             )
 
         self._check_run_scope(
@@ -634,6 +673,20 @@ class ActionRepository:
         plugin_slug: str | None,
         action_key: str | None,
     ) -> ExecutableActionManifest:
+        manifest, _provider_config_json = self._manifest_with_provider_config(
+            action_ref=action_ref,
+            plugin_slug=plugin_slug,
+            action_key=action_key,
+        )
+        return manifest
+
+    def _manifest_with_provider_config(
+        self,
+        *,
+        action_ref: str | None,
+        plugin_slug: str | None,
+        action_key: str | None,
+    ) -> tuple[ExecutableActionManifest, dict[str, Any] | None]:
         PluginRepository(self._s).sync_builtin_plugins()
         resolved_plugin, resolved_action = self._resolve_action_key(
             action_ref=action_ref,
@@ -653,7 +706,10 @@ class ActionRepository:
                 data={"plugin_slug": resolved_plugin, "action_key": resolved_action},
             )
         action, plugin, provider = row
-        return parse_action_manifest(action=action, plugin=plugin, provider=provider)
+        return (
+            parse_action_manifest(action=action, plugin=plugin, provider=provider),
+            provider.config_json if provider is not None else None,
+        )
 
     def _resolve_action_key(
         self,
@@ -1019,6 +1075,19 @@ class ActionRepository:
                     data={"run_id": run_id, "run_plan_step_id": run_plan_step_id},
                 )
 
+    def _plugin_disabled_for_project(self, *, project_id: int | None, plugin_slug: str) -> bool:
+        if project_id is None:
+            return False
+        row = self._s.exec(
+            select(ProjectPlugin, Plugin)
+            .join(Plugin, col(ProjectPlugin.plugin_id) == col(Plugin.id))
+            .where(ProjectPlugin.project_id == project_id, col(Plugin.slug) == plugin_slug)
+        ).first()
+        if row is None:
+            return False
+        project_plugin, _plugin = row
+        return project_plugin.enabled is False
+
     def _require_project(self, project_id: int) -> None:
         from content_stack.db.models import Project
 
@@ -1027,6 +1096,7 @@ class ActionRepository:
 
 
 __all__ = [
+    "ActionAvailabilityOut",
     "ActionCallAuditOut",
     "ActionCallOut",
     "ActionDescribeOut",
