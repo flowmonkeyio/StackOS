@@ -111,17 +111,11 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
     assert actions["apollo.people.enrich"].capability == "enrichment"
     assert actions["outreach.sequence_state.create"].provider == "outreach"
     assert actions["webhook.pipeline.fetch"].provider == "gtm-webhook"
-    for action_key in [
-        "hubspot.crm.companies.batch_upsert",
-        "salesforce.lead.upsert_by_external_id",
-        "apollo.people.enrich",
-        "outreach.sequence_state.create",
-        "webhook.pipeline.fetch",
-    ]:
-        assert actions[action_key].config == {
-            "schema_version": "stackos.action.v1",
-            "execution_mode": "contract-only",
-        }
+    assert actions["hubspot.crm.companies.batch_upsert"].config["connector"] == "hubspot"
+    assert actions["salesforce.lead.upsert_by_external_id"].config["connector"] == "salesforce"
+    assert actions["apollo.people.enrich"].config["connector"] == "apollo"
+    assert actions["outreach.sequence_state.create"].config["connector"] == "outreach"
+    assert actions["webhook.pipeline.fetch"].config["execution_mode"] == "project-local-http"
     assert {resource.key for resource in manifest.resources} >= {
         "account",
         "company",
@@ -168,17 +162,11 @@ def test_media_buying_plugin_yaml_facade_validates() -> None:
     ]
     assert actions["webhook.media_campaign.create"].provider == "media-buying-webhook"
     assert actions["webhook.media_performance.fetch"].capability == "media-measurement"
-    for action_key in [
-        "meta.campaign.create",
-        "google.campaign.create",
-        "outbrain.campaign.create",
-        "taboola.campaign.create",
-        "webhook.media_campaign.create",
-    ]:
-        assert actions[action_key].config == {
-            "schema_version": "stackos.action.v1",
-            "execution_mode": "contract-only",
-        }
+    assert actions["meta.campaign.create"].config["connector"] == "meta-ads"
+    assert actions["google.campaign.create"].config["connector"] == "google-ads"
+    assert actions["taboola.campaign.create"].config["connector"] == "taboola"
+    assert actions["outbrain.campaign.create"].config["execution_mode"] == "deferred-partner-api"
+    assert actions["webhook.media_campaign.create"].config["execution_mode"] == "project-local-http"
     assert {resource.key for resource in manifest.resources} >= {
         "ad-account",
         "campaign",

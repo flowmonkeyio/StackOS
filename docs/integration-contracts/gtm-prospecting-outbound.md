@@ -1,8 +1,14 @@
 # GTM Prospecting, Enrichment, and Outbound Contract Audit
 
-Status: official-doc-backed contract review, not execution signoff.
+Status: first executable connector pass delivered on 2026-05-22 for Apollo,
+Clay table webhooks, Outreach, Salesloft, Google Workspace, and Microsoft
+Graph. Clearbit and inbound Clay workflow ingestion remain explicit deferred
+modes.
 
-Scope reviewed: Apollo, Clay, Clearbit/Clearbit by HubSpot, Outreach, Salesloft, Gmail/Google Workspace, and Microsoft Graph for Microsoft 365 mail/calendar. Current scaffold actions are contract-only; no provider connector exists in `content_stack/actions` for these providers.
+Scope reviewed: Apollo, Clay, Clearbit/Clearbit by HubSpot, Outreach,
+Salesloft, Gmail/Google Workspace, and Microsoft Graph for Microsoft 365
+mail/calendar. Current executable actions use one provider-specific connector
+file per provider under `content_stack/actions`.
 
 ## Provider Docs Ledger
 
@@ -46,7 +52,10 @@ Official sources used:
 - Outreach exposes JSON:API resources and relationships; adding a prospect to a sequence is modeled as creating a `sequenceState` resource, so the first-party contract is `outreach.sequence_state.create`.
 - Salesloft uses cadences and the relevant documented write is `POST /v2/cadence_memberships`, requiring `person_id` and `cadence_id` visible to the authenticated user. Current contracts use `salesloft.cadence_membership.create`.
 - `google-workspace.touchpoint.record` and `microsoft-365.touchpoint.record` blur internal audit recording with external provider writes. Gmail/Graph mail actions send email; Calendar/Graph calendar actions create events. StackOS touchpoint resources should be internal records created after a provider send/create result, not a provider action named "record" unless the connector only writes internal StackOS state.
-- All current schemas use `additionalProperties: true` inside provider-specific arrays. That is acceptable for a placeholder contract but not executable. Every executable provider action needs a strict provider-normalized schema, idempotency/provenance fields, and output status classification.
+- Some executable schemas still allow provider-native property bags where the
+  official API is itself extensible. Future expansions should tighten those
+  surfaces with provider metadata discovery, static enums, and operation-specific
+  tests before adding more write actions.
 
 ## Auth and Safe Setup Fields
 
@@ -213,7 +222,8 @@ Recommended refs before execution:
 
 ## Executable Gaps Before Signoff
 
-- Add real connectors under `content_stack/actions` for each executable provider operation, or keep every action `execution_mode: contract-only`.
+- Add real connectors under `content_stack/actions` for each executable provider
+  operation, or keep every action in an explicit deferred execution mode.
 - Replace generic schemas with provider-specific input/output schemas and validation tests.
 - Add provider grant tests for read, cost, write, send, and calendar-create risk levels.
 - Add auth tests for no-secret exposure, expired token refresh, refresh-token rotation, revoked credential behavior, and missing scope diagnostics.

@@ -40,7 +40,7 @@ providers:
           label: API Version
           type: text
           required: false
-          placeholder: v23.0
+          placeholder: v25.0
   - key: google-ads
     name: Google Ads
     description: Google Ads API provider contract for customers, budgets, campaigns, ad groups, assets, ads, reporting, and conversions.
@@ -118,12 +118,22 @@ actions:
         filters:
           type: object
           additionalProperties: true
+        fields:
+          type: array
+          items:
+            type: string
+        limit:
+          type: integer
+        after:
+          type: string
     output_schema: &object_schema
       type: object
       additionalProperties: true
-    config: &contract_only_config
+    config:
       schema_version: stackos.action.v1
-      execution_mode: contract-only
+      connector: meta-ads
+      operation: account.list
+      requires_credential: true
   - key: meta.campaign.create
     name: Create Meta Campaign
     description: Create a Meta campaign from an explicit agent-supplied campaign object.
@@ -145,6 +155,7 @@ actions:
           required:
             - name
             - objective
+            - special_ad_categories
           properties:
             name:
               type: string
@@ -152,17 +163,16 @@ actions:
               type: string
             status:
               type: string
-            budget:
-              type: object
-              additionalProperties: true
-            attribution:
-              type: object
-              additionalProperties: true
-            constraints:
-              type: object
-              additionalProperties: true
+            special_ad_categories:
+              type: array
+              items:
+                type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: campaign.create
+      requires_credential: true
   - key: meta.campaign.update
     name: Update Meta Campaign
     description: Update a Meta campaign from an explicit change object.
@@ -176,13 +186,19 @@ actions:
         - campaign_ref
         - changes
       properties:
+        account_ref:
+          type: string
         campaign_ref:
           type: string
         changes:
           type: object
           additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: campaign.update
+      requires_credential: true
   - key: meta.campaign.pause
     name: Pause Meta Campaign
     description: Pause a Meta campaign by safe campaign reference.
@@ -200,7 +216,11 @@ actions:
         reason:
           type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: campaign.pause
+      requires_credential: true
   - key: meta.campaign.resume
     name: Resume Meta Campaign
     description: Resume a Meta campaign by safe campaign reference.
@@ -209,7 +229,11 @@ actions:
     risk_level: write
     input_schema: *campaign_ref_input
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: campaign.resume
+      requires_credential: true
   - key: meta.ad_set.create
     name: Create Meta Ad Set
     description: Create a Meta ad set from explicit targeting, placement, budget, and schedule input.
@@ -220,9 +244,12 @@ actions:
       type: object
       additionalProperties: false
       required:
+        - account_ref
         - campaign_ref
         - ad_set
       properties:
+        account_ref:
+          type: string
         campaign_ref:
           type: string
         ad_set:
@@ -247,7 +274,11 @@ actions:
               items:
                 type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: ad_set.create
+      requires_credential: true
   - key: meta.ad_set.update
     name: Update Meta Ad Set
     description: Update a Meta ad set from an explicit change object.
@@ -267,7 +298,11 @@ actions:
           type: object
           additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: ad_set.update
+      requires_credential: true
   - key: meta.ad_creative.create
     name: Create Meta Ad Creative
     description: Create a Meta AdCreative object from explicit copy, asset refs, and destination metadata.
@@ -278,8 +313,11 @@ actions:
       type: object
       additionalProperties: false
       required:
+        - account_ref
         - creative
       properties:
+        account_ref:
+          type: string
         creative:
           type: object
           additionalProperties: true
@@ -301,7 +339,11 @@ actions:
             review_notes:
               type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: ad_creative.create
+      requires_credential: true
   - key: meta.asset.upload
     name: Upload Meta Asset
     description: Upload or register a Meta creative asset from safe asset refs before AdCreative creation.
@@ -320,8 +362,6 @@ actions:
         asset:
           type: object
           additionalProperties: true
-          required:
-            - asset_ref
           properties:
             asset_ref:
               type: string
@@ -332,7 +372,10 @@ actions:
             review_notes:
               type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-asset-upload
+      deferred_reason: Meta asset upload needs daemon artifact retrieval and multipart upload support.
   - key: meta.ad.create
     name: Create Meta Ad
     description: Create a Meta ad by connecting an ad set ref and creative ref.
@@ -343,10 +386,13 @@ actions:
       type: object
       additionalProperties: false
       required:
+        - account_ref
         - ad_set_ref
         - creative_ref
         - ad
       properties:
+        account_ref:
+          type: string
         ad_set_ref:
           type: string
         creative_ref:
@@ -365,7 +411,11 @@ actions:
               type: object
               additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: ad.create
+      requires_credential: true
   - key: meta.ad.update
     name: Update Meta Ad
     description: Update a Meta ad from an explicit change object.
@@ -385,36 +435,54 @@ actions:
           type: object
           additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: ad.update
+      requires_credential: true
   - key: meta.insights.fetch
     name: Fetch Meta Insights
     description: Fetch a bounded Meta performance snapshot for an agent-selected scope.
     provider: meta-ads
     capability: media-measurement
     risk_level: read
-    input_schema: &insight_input
+    input_schema: &meta_insights_input
       type: object
       additionalProperties: false
       required:
-        - scope
-        - time_range
+        - scope_ref
+        - fields
       properties:
-        scope:
-          type: object
-          additionalProperties: true
+        scope_ref:
+          type: string
+        fields:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        level:
+          type: string
+        date_preset:
+          type: string
+        time_increment:
+          type: string
+        limit:
+          type: integer
+        after:
+          type: string
         time_range:
           type: object
           additionalProperties: true
-        metrics:
-          type: array
-          items:
-            type: string
         breakdowns:
           type: array
           items:
             type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: insights.fetch
+      requires_credential: true
   - key: meta.campaign_budget.update
     name: Update Meta Campaign Budget
     description: Apply an explicit campaign-budget-optimization budget change to a Meta campaign reference.
@@ -432,24 +500,15 @@ actions:
           type: string
         budget:
           type: object
-          additionalProperties: false
-          required:
-            - amount
-            - currency
-            - period
-          properties:
-            amount:
-              type: number
-            currency:
-              type: string
-            period:
-              type: string
-            delivery_model:
-              type: string
+          additionalProperties: true
         reason:
           type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: campaign_budget.update
+      requires_credential: true
   - key: meta.ad_set_budget.update
     name: Update Meta Ad Set Budget
     description: Apply an explicit ad set budget change to a Meta ad set reference.
@@ -467,27 +526,18 @@ actions:
           type: string
         budget:
           type: object
-          additionalProperties: false
-          required:
-            - amount
-            - currency
-            - period
-          properties:
-            amount:
-              type: number
-            currency:
-              type: string
-            period:
-              type: string
-            delivery_model:
-              type: string
+          additionalProperties: true
         reason:
           type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: ad_set_budget.update
+      requires_credential: true
   - key: meta.conversions.send
     name: Send Meta Conversion Events
-    description: Send approved Meta conversion events using daemon-side normalization and hashing provenance.
+    description: Send approved Meta conversion events that are already normalized for the Conversions API.
     provider: meta-ads
     capability: media-measurement
     risk_level: write
@@ -495,29 +545,42 @@ actions:
       type: object
       additionalProperties: false
       required:
-        - account_ref
-        - conversion_event_ref
-        - hashing_policy_ref
+        - dataset_ref
         - events
       properties:
-        account_ref:
-          type: string
-        conversion_event_ref:
-          type: string
-        hashing_policy_ref:
+        dataset_ref:
           type: string
         events:
           type: array
           items:
             type: object
             additionalProperties: true
-        test_event:
-          type: boolean
+            required:
+              - event_name
+              - event_time
+              - action_source
+              - user_data
+            properties:
+              event_name:
+                type: string
+              event_time:
+                type: integer
+              action_source:
+                type: string
+              user_data:
+                type: object
+                additionalProperties: true
+        test_event_code:
+          type: string
         consent:
           type: object
           additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: meta-ads
+      operation: conversions.send
+      requires_credential: true
   - key: google.customer.list
     name: List Google Ads Customers
     description: Read accessible Google Ads customer metadata for the configured credential.
@@ -526,7 +589,11 @@ actions:
     risk_level: read
     input_schema: *account_list_input
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: google-ads
+      operation: customer.list
+      requires_credential: true
   - key: google.campaign_budget.create
     name: Create Google Campaign Budget
     description: Create a Google Ads campaign budget from explicit budget fields and safe customer refs.
@@ -544,21 +611,13 @@ actions:
           type: string
         budget:
           type: object
-          additionalProperties: false
-          required:
-            - name
-            - amount_micros
-          properties:
-            name:
-              type: string
-            amount_micros:
-              type: integer
-            delivery_method:
-              type: string
-            explicit_shared:
-              type: boolean
+          additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: google-ads
+      operation: campaign_budget.create
+      requires_credential: true
   - key: google.campaign_budget.update
     name: Update Google Campaign Budget
     description: Update a Google Ads campaign budget from explicit budget changes.
@@ -570,8 +629,8 @@ actions:
       additionalProperties: false
       required:
         - customer_ref
-        - campaign_budget_ref
         - changes
+        - update_mask
       properties:
         customer_ref:
           type: string
@@ -579,18 +638,17 @@ actions:
           type: string
         changes:
           type: object
-          additionalProperties: false
-          properties:
-            amount_micros:
-              type: integer
-            delivery_method:
-              type: string
-            explicit_shared:
-              type: boolean
+          additionalProperties: true
+        update_mask:
+          type: string
         reason:
           type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: google-ads
+      operation: campaign_budget.update
+      requires_credential: true
   - key: google.campaign.create
     name: Create Google Campaign
     description: Create a Google Ads campaign from an explicit campaign object and campaign budget ref.
@@ -614,9 +672,13 @@ actions:
           additionalProperties: true
           required:
             - name
-            - advertising_channel_type
+            - advertisingChannelType
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: google-ads
+      operation: campaign.create
+      requires_credential: true
   - key: google.ad_group.create
     name: Create Google Ad Group
     description: Create a Google Ads ad group from explicit bidding, targeting, and status fields.
@@ -641,10 +703,14 @@ actions:
           required:
             - name
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: google-ads
+      operation: ad_group.create
+      requires_credential: true
   - key: google.asset.create
     name: Create Google Asset
-    description: Create a Google Ads asset from a safe source asset ref and explicit asset metadata.
+    description: Create a Google Ads asset from an explicit provider-native asset object.
     provider: google-ads
     capability: creative-operations
     risk_level: write
@@ -660,10 +726,12 @@ actions:
         asset:
           type: object
           additionalProperties: true
-          required:
-            - asset_ref
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: google-ads
+      operation: asset.create
+      requires_credential: true
   - key: google.ad_group_ad.create
     name: Create Google Ad Group Ad
     description: Create a Google Ads ad group ad from explicit ad content and safe asset refs.
@@ -688,7 +756,11 @@ actions:
           required:
             - name
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: google-ads
+      operation: ad_group_ad.create
+      requires_credential: true
   - key: google.report.search
     name: Search Google Ads Report
     description: Run a bounded Google Ads reporting search from explicit GAQL or query parts and paging controls.
@@ -700,46 +772,22 @@ actions:
       additionalProperties: false
       required:
         - customer_ref
-        - report
+        - query
       properties:
         customer_ref:
           type: string
-        report:
-          type: object
-          additionalProperties: false
-          required:
-            - date_range
-            - query_ref
-            - fields
-            - max_rows
-          properties:
-            query_ref:
-              type: string
-            date_range:
-              type: object
-              additionalProperties: false
-              required:
-                - start_date
-                - end_date
-              properties:
-                start_date:
-                  type: string
-                end_date:
-                  type: string
-            fields:
-              type: array
-              items:
-                type: string
-            filters:
-              type: object
-              additionalProperties: true
-            max_rows:
-              type: integer
-        page:
-          type: object
-          additionalProperties: true
+        query:
+          type: string
+        page_token:
+          type: string
+        page_size:
+          type: integer
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: google-ads
+      operation: report.search
+      requires_credential: true
   - key: google.conversion_action.create
     name: Create Google Conversion Action
     description: Create a Google Ads conversion action from explicit tracking and attribution fields.
@@ -757,22 +805,13 @@ actions:
           type: string
         conversion_action:
           type: object
-          additionalProperties: false
-          required:
-            - name
-            - type
-            - category
-          properties:
-            name:
-              type: string
-            type:
-              type: string
-            category:
-              type: string
-            attribution_model_ref:
-              type: string
+          additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: google-ads
+      operation: conversion_action.create
+      requires_credential: true
   - key: google.conversion_upload.clicks
     name: Upload Google Click Conversions
     description: Upload approved Google Ads click conversions from safe event refs and daemon-side PII handling.
@@ -784,15 +823,9 @@ actions:
       additionalProperties: false
       required:
         - customer_ref
-        - conversion_event_ref
-        - pii_handling_ref
         - conversions
       properties:
         customer_ref:
-          type: string
-        conversion_event_ref:
-          type: string
-        pii_handling_ref:
           type: string
         conversions:
           type: array
@@ -801,8 +834,18 @@ actions:
             additionalProperties: true
         partial_failure:
           type: boolean
+        debug_enabled:
+          type: boolean
+        job_id:
+          type: integer
+        validate_only:
+          type: boolean
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: google-ads
+      operation: conversion_upload.clicks
+      requires_credential: true
   - key: outbrain.campaign.create
     name: Create Outbrain Campaign
     description: Create an Outbrain campaign from an explicit marketer-scoped campaign object.
@@ -824,7 +867,10 @@ actions:
           required:
             - name
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-partner-api
+      deferred_reason: Outbrain endpoint-level campaign and report contracts are partner/API-doc gated; only auth/token lifecycle is public.
   - key: outbrain.campaign.update
     name: Update Outbrain Campaign
     description: Update an Outbrain campaign from an explicit change object.
@@ -847,25 +893,46 @@ actions:
           type: object
           additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-partner-api
+      deferred_reason: Outbrain endpoint-level campaign and report contracts are partner/API-doc gated; only auth/token lifecycle is public.
   - key: outbrain.campaign.pause
     name: Pause Outbrain Campaign
     description: Pause an Outbrain campaign by safe campaign reference.
     provider: outbrain
     capability: campaign-management
     risk_level: write
-    input_schema: *campaign_ref_input
+    input_schema: &outbrain_campaign_ref_input
+      type: object
+      additionalProperties: false
+      required:
+        - marketer_ref
+        - campaign_ref
+      properties:
+        marketer_ref:
+          type: string
+        campaign_ref:
+          type: string
+        reason:
+          type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-partner-api
+      deferred_reason: Outbrain endpoint-level campaign and report contracts are partner/API-doc gated; only auth/token lifecycle is public.
   - key: outbrain.campaign.resume
     name: Resume Outbrain Campaign
     description: Resume an Outbrain campaign by safe campaign reference.
     provider: outbrain
     capability: campaign-management
     risk_level: write
-    input_schema: *campaign_ref_input
+    input_schema: *outbrain_campaign_ref_input
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-partner-api
+      deferred_reason: Outbrain endpoint-level campaign and report contracts are partner/API-doc gated; only auth/token lifecycle is public.
   - key: outbrain.marketer.list
     name: List Outbrain Marketers
     description: Read Outbrain marketer metadata available to the configured credential.
@@ -874,7 +941,10 @@ actions:
     risk_level: read
     input_schema: *account_list_input
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-partner-api
+      deferred_reason: Outbrain endpoint-level campaign and report contracts are partner/API-doc gated; only auth/token lifecycle is public.
   - key: outbrain.budget.update
     name: Update Outbrain Budget
     description: Update an Outbrain budget from explicit marketer, campaign, or budget refs.
@@ -901,7 +971,10 @@ actions:
         reason:
           type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-partner-api
+      deferred_reason: Outbrain endpoint-level campaign and report contracts are partner/API-doc gated; only auth/token lifecycle is public.
   - key: outbrain.promoted_link.create
     name: Create Outbrain Promoted Link
     description: Create an Outbrain promoted link from explicit destination, asset, and campaign refs.
@@ -927,7 +1000,10 @@ actions:
             - title
             - url_ref
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-partner-api
+      deferred_reason: Outbrain endpoint-level campaign and report contracts are partner/API-doc gated; only auth/token lifecycle is public.
   - key: outbrain.promoted_link.update
     name: Update Outbrain Promoted Link
     description: Update an Outbrain promoted link from an explicit change object.
@@ -950,16 +1026,33 @@ actions:
           type: object
           additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-partner-api
+      deferred_reason: Outbrain endpoint-level campaign and report contracts are partner/API-doc gated; only auth/token lifecycle is public.
   - key: outbrain.report.fetch
     name: Fetch Outbrain Report
     description: Fetch a bounded Outbrain performance snapshot for an agent-selected scope.
     provider: outbrain
     capability: media-measurement
     risk_level: read
-    input_schema: *insight_input
+    input_schema: &outbrain_report_input
+      type: object
+      additionalProperties: false
+      required:
+        - marketer_ref
+        - report
+      properties:
+        marketer_ref:
+          type: string
+        report:
+          type: object
+          additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-partner-api
+      deferred_reason: Outbrain endpoint-level campaign and report contracts are partner/API-doc gated; only auth/token lifecycle is public.
   - key: taboola.campaign.create
     name: Create Taboola Campaign
     description: Create a Taboola account-scoped campaign from an explicit campaign object.
@@ -981,7 +1074,11 @@ actions:
           required:
             - name
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: taboola
+      operation: campaign.create
+      requires_credential: true
   - key: taboola.campaign.update
     name: Update Taboola Campaign
     description: Update a Taboola campaign from an explicit change object.
@@ -1004,25 +1101,49 @@ actions:
           type: object
           additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: taboola
+      operation: campaign.update
+      requires_credential: true
   - key: taboola.campaign.pause
     name: Pause Taboola Campaign
     description: Pause a Taboola campaign by setting the provider-supported active state.
     provider: taboola
     capability: campaign-management
     risk_level: write
-    input_schema: *campaign_ref_input
+    input_schema: &taboola_campaign_ref_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - campaign_ref
+      properties:
+        account_ref:
+          type: string
+        campaign_ref:
+          type: string
+        reason:
+          type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: taboola
+      operation: campaign.pause
+      requires_credential: true
   - key: taboola.campaign.resume
     name: Resume Taboola Campaign
     description: Resume a Taboola campaign by setting the provider-supported active state.
     provider: taboola
     capability: campaign-management
     risk_level: write
-    input_schema: *campaign_ref_input
+    input_schema: *taboola_campaign_ref_input
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: taboola
+      operation: campaign.resume
+      requires_credential: true
   - key: taboola.account.get
     name: Get Taboola Account
     description: Read Taboola account metadata for a safe account reference.
@@ -1031,7 +1152,11 @@ actions:
     risk_level: read
     input_schema: *account_list_input
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: taboola
+      operation: account.get
+      requires_credential: true
   - key: taboola.item.create
     name: Create Taboola Item
     description: Create a Taboola campaign item from explicit creative and destination refs.
@@ -1052,12 +1177,18 @@ actions:
           type: string
         item:
           type: object
-          additionalProperties: true
+          additionalProperties: false
           required:
-            - title
-            - url_ref
+            - url
+          properties:
+            url:
+              type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: taboola
+      operation: item.create
+      requires_credential: true
   - key: taboola.item.update
     name: Update Taboola Item
     description: Update a Taboola campaign item from an explicit change object.
@@ -1069,10 +1200,13 @@ actions:
       additionalProperties: false
       required:
         - account_ref
+        - campaign_ref
         - item_ref
         - changes
       properties:
         account_ref:
+          type: string
+        campaign_ref:
           type: string
         item_ref:
           type: string
@@ -1080,16 +1214,50 @@ actions:
           type: object
           additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: taboola
+      operation: item.update
+      requires_credential: true
   - key: taboola.report.fetch
     name: Fetch Taboola Report
     description: Fetch a bounded Taboola performance snapshot for an agent-selected scope.
     provider: taboola
     capability: media-measurement
     risk_level: read
-    input_schema: *insight_input
+    input_schema: &taboola_report_input
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - dimension
+        - start_date
+        - end_date
+      properties:
+        account_ref:
+          type: string
+        dimension:
+          type: string
+        start_date:
+          type: string
+        end_date:
+          type: string
+        campaign_ref:
+          type: string
+        site:
+          type: string
+        platform:
+          type: string
+        country:
+          type: string
+        partner_name:
+          type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: taboola
+      operation: report.fetch
+      requires_credential: true
   - key: taboola.conversion_rule.create
     name: Create Taboola Conversion Rule
     description: Create a Taboola conversion rule from explicit conversion event and attribution fields.
@@ -1109,9 +1277,13 @@ actions:
           type: object
           additionalProperties: true
           required:
-            - name
+            - display_name
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: taboola
+      operation: conversion_rule.create
+      requires_credential: true
   - key: taboola.conversion_rule.update
     name: Update Taboola Conversion Rule
     description: Update a Taboola conversion rule from an explicit change object.
@@ -1134,7 +1306,11 @@ actions:
           type: object
           additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      connector: taboola
+      operation: conversion_rule.update
+      requires_credential: true
   - key: webhook.media_campaign.create
     name: Create Media Campaign Through Webhook
     description: Contract for user-owned campaign tooling. Project-local plugins should provide static HTTP connector config before execution.
@@ -1143,7 +1319,10 @@ actions:
     risk_level: write
     input_schema: *campaign_create_input
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: project-local-http
+      deferred_reason: Built-in media webhook actions require project-local static HTTP connector config.
   - key: webhook.media_campaign.update
     name: Update Media Campaign Through Webhook
     description: Contract for user-owned campaign tooling. Project-local plugins should provide static HTTP connector config before execution.
@@ -1152,16 +1331,30 @@ actions:
     risk_level: write
     input_schema: *campaign_update_input
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: project-local-http
+      deferred_reason: Built-in media webhook actions require project-local static HTTP connector config.
   - key: webhook.media_performance.fetch
     name: Fetch Media Performance Through Webhook
     description: Contract for user-owned reporting tools exposed through project-local static HTTP actions.
     provider: media-buying-webhook
     capability: media-measurement
     risk_level: read
-    input_schema: *insight_input
+    input_schema: &media_webhook_performance_input
+      type: object
+      additionalProperties: false
+      required:
+        - request
+      properties:
+        request:
+          type: object
+          additionalProperties: true
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: project-local-http
+      deferred_reason: Built-in media webhook actions require project-local static HTTP connector config.
   - key: webhook.media_budget.update
     name: Update Media Budget Through Webhook
     description: Contract for user-owned budget tooling exposed through project-local static HTTP actions.
@@ -1185,7 +1378,10 @@ actions:
         reason:
           type: string
     output_schema: *object_schema
-    config: *contract_only_config
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: project-local-http
+      deferred_reason: Built-in media webhook actions require project-local static HTTP connector config.
 resources:
   - key: ad-account
     name: Ad Account
@@ -1249,5 +1445,11 @@ ui:
 config:
   schema_version: stackos.plugin.v1
   provider_connectors:
-    status: planned
-    note: Provider-specific campaign connectors are intentionally not configured until real daemon adapters exist.
+    status: provider-specific
+    executable:
+      - meta-ads
+      - google-ads
+      - taboola
+    deferred:
+      - outbrain
+      - media-buying-webhook

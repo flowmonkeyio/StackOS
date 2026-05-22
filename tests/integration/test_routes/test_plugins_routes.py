@@ -96,8 +96,8 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         params={"plugin_slug": "gtm"},
     )
     assert gtm_action.status_code == 200
-    assert gtm_action.json()["connector_key"] is None
-    assert gtm_action.json()["availability"]["status"] == "not_executable"
+    assert gtm_action.json()["connector_key"] == "hubspot"
+    assert gtm_action.json()["availability"]["status"] == "unknown"
 
     media_catalog = api.get("/api/v1/catalog/media-buying")
     assert media_catalog.status_code == 200
@@ -133,8 +133,8 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         params={"plugin_slug": "media-buying"},
     )
     assert media_action.status_code == 200
-    assert media_action.json()["connector_key"] is None
-    assert media_action.json()["availability"]["status"] == "not_executable"
+    assert media_action.json()["connector_key"] == "meta-ads"
+    assert media_action.json()["availability"]["status"] == "unknown"
 
     publishing_catalog = api.get("/api/v1/catalog/publishing")
     assert publishing_catalog.status_code == 200

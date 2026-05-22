@@ -30,21 +30,21 @@ Important consequence: provider docs should shape action schemas and connector c
 | Connector key | Action refs | Current implementation refs | Manifest refs | Auth/setup implication |
 | --- | --- | --- | --- | --- |
 | `openai-images` | `utils.image.generate` | `content_stack/actions/openai_images.py:17`, `content_stack/integrations/openai_images.py:22` | `content_stack/plugins/manifest.py:372`, `content_stack/plugins/manifest.py:398` | API key payload; budget enforced by `openai-images` kind. |
-| `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`, `utils.web.extract` | `content_stack/actions/vendor_connectors.py:178`, `content_stack/integrations/firecrawl.py:24` | `content_stack/plugins/manifest.py:378`, `content_stack/plugins/manifest.py:434`, `content_stack/plugins/manifest.py:452`, `content_stack/plugins/manifest.py:470`, `content_stack/plugins/manifest.py:488` | Bearer API key payload; budget enforced by `firecrawl`. |
-| `jina` | `utils.web.read` | `content_stack/actions/vendor_connectors.py:252`, `content_stack/integrations/jina_reader.py:17` | `content_stack/plugins/manifest.py:384`, `content_stack/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
-| `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `content_stack/actions/vendor_connectors.py:279`, `content_stack/integrations/reddit.py:29` | `content_stack/plugins/manifest.py:390`, `content_stack/plugins/manifest.py:542`, `content_stack/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
-| `sitemap` | `utils.sitemap.fetch` | `content_stack/actions/vendor_connectors.py:331`, `content_stack/integrations/sitemap.py:84` | `content_stack/plugins/manifest.py:525` | No provider and no credential. |
-| `dataforseo` | `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract` | `content_stack/actions/vendor_connectors.py:378`, `content_stack/integrations/dataforseo.py:25` | `plugins/seo/plugin.yaml:20`, `plugins/seo/plugin.yaml:36`, `plugins/seo/plugin.yaml:66`, `plugins/seo/plugin.yaml:94` | Basic auth: `login` in credential config and password in encrypted payload. |
-| `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `content_stack/actions/vendor_connectors.py:475`, `content_stack/integrations/ahrefs.py:22` | `plugins/seo/plugin.yaml:31`, `plugins/seo/plugin.yaml:120`, `plugins/seo/plugin.yaml:148` | Bearer API key payload; requires eligible paid plan/API units. |
-| `wordpress` | `publishing.wordpress.post.create` | `content_stack/actions/vendor_connectors.py:527`, `content_stack/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
-| `ghost` | `publishing.ghost.post.create` | `content_stack/actions/vendor_connectors.py:564`, `content_stack/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
+| `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`, `utils.web.extract` | `content_stack/actions/firecrawl.py`, `content_stack/integrations/firecrawl.py:24` | `content_stack/plugins/manifest.py:378`, `content_stack/plugins/manifest.py:434`, `content_stack/plugins/manifest.py:452`, `content_stack/plugins/manifest.py:470`, `content_stack/plugins/manifest.py:488` | Bearer API key payload; budget enforced by `firecrawl`. |
+| `jina` | `utils.web.read` | `content_stack/actions/jina.py`, `content_stack/integrations/jina_reader.py:17` | `content_stack/plugins/manifest.py:384`, `content_stack/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
+| `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `content_stack/actions/reddit.py`, `content_stack/integrations/reddit.py:29` | `content_stack/plugins/manifest.py:390`, `content_stack/plugins/manifest.py:542`, `content_stack/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
+| `sitemap` | `utils.sitemap.fetch` | `content_stack/actions/sitemap.py`, `content_stack/integrations/sitemap.py:84` | `content_stack/plugins/manifest.py:525` | No provider and no credential. |
+| `dataforseo` | `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract` | `content_stack/actions/dataforseo.py`, `content_stack/integrations/dataforseo.py:25` | `plugins/seo/plugin.yaml:20`, `plugins/seo/plugin.yaml:36`, `plugins/seo/plugin.yaml:66`, `plugins/seo/plugin.yaml:94` | Basic auth: `login` in credential config and password in encrypted payload. |
+| `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `content_stack/actions/ahrefs.py`, `content_stack/integrations/ahrefs.py:22` | `plugins/seo/plugin.yaml:31`, `plugins/seo/plugin.yaml:120`, `plugins/seo/plugin.yaml:148` | Bearer API key payload; requires eligible paid plan/API units. |
+| `wordpress` | `publishing.wordpress.post.create` | `content_stack/actions/wordpress.py`, `content_stack/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
+| `ghost` | `publishing.ghost.post.create` | `content_stack/actions/ghost.py`, `content_stack/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
 | `http` | plugin-defined custom actions only | `content_stack/actions/http.py:170` | documented in `docs/plugins.md:77`; no first-party manifest row | Static plugin config supplies URL/method/auth mode; daemon injects credential if allowed. |
 
 ## Cross-Cutting Contract Principles
 
 - Keep action refs provider-specific when provider schemas differ. The current `utils.*`, `seo.*`, and `publishing.*` refs are acceptable because the provider is part of the manifest and connector config; do not add generic `post.create`, `keyword.research`, or `campaign.create` as an executable abstraction without a project-local plugin that owns the mapping.
 - Inputs should be explicit request payloads, not goals. For example, `publishing.ghost.post.create` receives a Ghost Admin API post payload; it should not decide title, status, author, tags, or schedule.
-- Output should be safe JSON plus provenance. The shared `_result()` wrapper currently adds vendor and operation metadata in `content_stack/actions/vendor_connectors.py:138`, while OpenAI Images strips `b64_json` when persisted by `content_stack/integrations/openai_images.py:110`.
+- Output should be safe JSON plus provenance. The shared `_result()` wrapper currently adds vendor and operation metadata in `content_stack/actions/vendor_utils.py`, while OpenAI Images strips `b64_json` when persisted by `content_stack/integrations/openai_images.py:110`.
 - Rate-limit behavior must be visible at the action-call boundary. `BaseIntegration` has token-bucket pacing and retries for 429/5xx in `content_stack/integrations/_base.py:177`, but generic HTTP does not use that base and currently collapses HTTP errors to status-only validation errors in `content_stack/actions/http.py:230`.
 - Budget availability is only meaningful when pre-call estimates or post-call actual costs match provider billing. DataForSEO reconciles `tasks[].cost`; Ahrefs currently has `estimate_cost_cents == 0` despite API-unit billing.
 - Pagination/status contracts must be modeled as actions before templates rely on them. Firecrawl crawl currently starts a job and returns an id, but the docs require polling `GET /v2/crawl/{id}` and following `next` when the result exceeds 10 MB.
@@ -74,7 +74,7 @@ Current: four utility actions map to v2 `scrape`, `crawl`, `map`, and `extract`.
 Gaps/mismatches:
 
 - `web.crawl` only starts the crawl job. Official v2 crawl returns `id`/`url`; result retrieval requires `GET /v2/crawl/{id}` and may return `next` for large results. There is no `utils.web.crawl-status` action yet.
-- Current `scrape.formats` validation only accepts string arrays in `content_stack/actions/vendor_connectors.py:187`, while Firecrawl v2 documents string and object format entries such as JSON extraction and screenshot objects.
+- Current `scrape.formats` validation only accepts string arrays in `content_stack/actions/firecrawl.py`, while Firecrawl v2 documents string and object format entries such as JSON extraction and screenshot objects.
 - `map` does not expose documented `limit`, `sitemap`, `includeSubdomains`, `ignoreQueryParameters`, or location options.
 - `extract` accepts only one `url` and wraps it as `urls: [url]` in `content_stack/integrations/firecrawl.py:113`; official docs accept an array/glob-style URL list and have options like `ignoreInvalidURLs`, `includeSubdomains`, `showSources`, and `scrapeOptions`.
 
@@ -108,7 +108,7 @@ Gaps/mismatches:
 
 - Resolved in the manifest: Reddit now declares `auth_type="oauth-client-credentials"` with credential payload metadata for `client_id`, `client_secret`, and `user_agent`. The wrapper still needs richer pagination and enum validation.
 - Reddit listing pagination uses `after`/`before`, `limit`, `count`, and `show`; actions expose only `limit`, so callers cannot page beyond the first listing slice.
-- `sort` and `time_filter` are unbounded strings in `content_stack/actions/vendor_connectors.py:291`, so invalid provider enum values reach Reddit.
+- `sort` and `time_filter` are unbounded strings in `content_stack/actions/reddit.py`, so invalid provider enum values reach Reddit.
 - `top_questions` is described as question-shaped in manifests, but the connector returns raw top listing data; the wrapper doc says the caller filters for question-shaped titles in `content_stack/integrations/reddit.py:121`.
 
 Recommended corrections:
@@ -123,8 +123,8 @@ Current: SEO actions call DataForSEO live endpoints via Basic auth. `login` live
 
 Gaps/mismatches:
 
-- Keyword volume docs allow up to 1000 keywords per request and only 12 requests per minute for Google Ads Live endpoints. Current connector does not cap keyword count in `content_stack/actions/vendor_connectors.py:389`, and the wrapper default QPS is 5.0 in `content_stack/integrations/dataforseo.py:28`, which could exceed endpoint-specific limits if many calls are made.
-- SERP live advanced docs describe top 100 live results; connector allows `depth` up to 700 in `content_stack/actions/vendor_connectors.py:397`. Confirm whether that is still accepted for the exact endpoint or lower the max.
+- Keyword volume docs allow up to 1000 keywords per request and only 12 requests per minute for Google Ads Live endpoints. Current connector does not cap keyword count in `content_stack/actions/dataforseo.py`, and the wrapper default QPS is 5.0 in `content_stack/integrations/dataforseo.py:28`, which could exceed endpoint-specific limits if many calls are made.
+- SERP live advanced docs describe top 100 live results; connector allows `depth` up to 700 in `content_stack/actions/dataforseo.py`. Confirm whether that is still accepted for the exact endpoint or lower the max.
 - DataForSEO docs distinguish current and legacy Labs routes. The wrapper uses `/dataforseo_labs/google/.../live` in `content_stack/integrations/dataforseo.py:127` and `content_stack/integrations/dataforseo.py:145`; comments should link current route docs so maintainers do not accidentally follow legacy pages.
 - `domain_intersection` and `keywords_for_site` are implemented in the connector but not exposed as plugin actions, except Ahrefs equivalents. That is okay, but undocumented dormant operations can confuse future action expansion.
 
@@ -140,10 +140,10 @@ Current: two SEO actions call Site Explorer organic keywords and all backlinks u
 
 Gaps/mismatches:
 
-- Ahrefs API v3 consumes API units, with minimum/request and per-row/field cost headers. Current connector estimates zero cost in `content_stack/actions/vendor_connectors.py:497`, while the manifest enforces budget in `plugins/seo/plugin.yaml:141` and `plugins/seo/plugin.yaml:167`. This makes StackOS budget availability mostly ceremonial for Ahrefs execution.
+- Ahrefs API v3 consumes API units, with minimum/request and per-row/field cost headers. Current connector estimates zero cost in `content_stack/actions/ahrefs.py`, while the manifest enforces budget in `plugins/seo/plugin.yaml:141` and `plugins/seo/plugin.yaml:167`. This makes StackOS budget availability mostly ceremonial for Ahrefs execution.
 - Wrapper does not read Ahrefs cost headers such as `x-api-units-cost-total-actual`, even though official docs say those headers are the source of unit consumption.
 - API v3 docs emphasize eligible paid plans and API key limits. Manifest has no setup note for plan eligibility or key-level limits.
-- `mode` for backlinks is a free string in `content_stack/actions/vendor_connectors.py:491`; constrain to documented modes before expanding.
+- `mode` for backlinks is a free string in `content_stack/actions/ahrefs.py`; constrain to documented modes before expanding.
 
 Recommended corrections:
 
@@ -175,7 +175,7 @@ Current: `publishing.ghost.post.create` signs an Admin API key into a short-live
 Gaps/mismatches:
 
 - Setup label says `Admin URL` in `plugins/publishing/plugin.yaml:30`, while the wrapper appends `/ghost/api/admin/...` in `content_stack/integrations/ghost.py:94`. This should be documented as the Ghost site/admin domain root, not a full endpoint URL.
-- Default `api_version` is `v5.0` in `content_stack/actions/vendor_connectors.py:592`; current Ghost installs may use newer API versions. The contract should specify which Admin API version is targeted and test against it.
+- Default `api_version` is `v5.0` in `content_stack/actions/ghost.py`; current Ghost installs may use newer API versions. The contract should specify which Admin API version is targeted and test against it.
 - Only `source: html` is allowed in the manifest in `plugins/publishing/plugin.yaml:99`; that matches the current connector, but image upload and mobiledoc/lexical pathways are absent.
 - No image upload, post update, scheduling status validation, or pagination actions exist.
 
@@ -192,7 +192,7 @@ Current: no-auth public sitemap fetch with XML parsing, recursion caps, byte cap
 Gaps/mismatches:
 
 - The wrapper caps each response at 10 MiB in `content_stack/integrations/sitemap.py:45`, while the protocol allows 50 MB uncompressed and 50,000 URLs. This lower cap is a deliberate daemon safety choice, but it should be documented as such in action output/contract docs.
-- Connector validation allows `max_entries` up to 20,000 in `content_stack/actions/vendor_connectors.py:348`, while wrapper default is 5,000 in `content_stack/integrations/sitemap.py:60`. That is okay, but templates should choose conservative values.
+- Connector validation allows `max_entries` up to 20,000 in `content_stack/actions/sitemap.py`, while wrapper default is 5,000 in `content_stack/integrations/sitemap.py:60`. That is okay, but templates should choose conservative values.
 - Namespace comments cite sitemaps.org already in `content_stack/integrations/sitemap.py:38`; good.
 
 Recommended corrections:

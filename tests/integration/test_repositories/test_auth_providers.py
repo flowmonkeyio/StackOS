@@ -25,7 +25,7 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
             project_id=project_id,
             kind="firecrawl",
             plaintext_payload=b"fc-secret",
-            config_json={"api_key": "fc-secret", "label": "Primary Firecrawl"},
+            config_json={"label": "Primary Firecrawl"},
         )
         .data
     )
@@ -44,7 +44,7 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
         select(Credential).where(Credential.integration_credential_id == integration.id)
     ).one()
     assert credential.credential_ref == connection.credential_ref
-    assert credential.config_json == {"api_key": "[redacted]", "label": "Primary Firecrawl"}
+    assert credential.config_json == {"label": "Primary Firecrawl"}
 
 
 def test_usage_and_refresh_events_redact_secret_metadata(

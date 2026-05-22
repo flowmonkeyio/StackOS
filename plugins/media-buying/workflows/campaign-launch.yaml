@@ -112,7 +112,6 @@ capability_requirements:
     preferred_providers:
       - meta-ads
       - google-ads
-      - outbrain
       - taboola
       - media-buying-webhook
   - key: creative-operations
@@ -123,10 +122,6 @@ auth_requirements:
   - key: meta_ads
     provider: meta-ads
     auth_type: oauth
-    optional: true
-  - key: outbrain
-    provider: outbrain
-    auth_type: api-key
     optional: true
   - key: google_ads
     provider: google-ads
@@ -217,20 +212,6 @@ action_contracts:
     provider: meta-ads
     risk_level: write
     auth_ref: meta_ads
-    approval_ref: launch_review
-  - key: outbrain_campaign_create
-    action: outbrain.campaign.create
-    capability: campaign-management
-    provider: outbrain
-    risk_level: write
-    auth_ref: outbrain
-    approval_ref: launch_review
-  - key: outbrain_promoted_link_create
-    action: outbrain.promoted_link.create
-    capability: creative-operations
-    provider: outbrain
-    risk_level: write
-    auth_ref: outbrain
     approval_ref: launch_review
   - key: taboola_campaign_create
     action: taboola.campaign.create
@@ -345,8 +326,6 @@ steps:
       - google_ad_group_ad_create
       - google_conversion_action_create
       - meta_conversions_send
-      - outbrain_campaign_create
-      - outbrain_promoted_link_create
       - taboola_campaign_create
       - taboola_item_create
       - taboola_conversion_rule_create

@@ -57,8 +57,8 @@ Current built-in plugins:
 | --- | --- | --- |
 | `core` | Local daemon provider, catalog primitives, project data resources, project memory review template | Good generic foundation. |
 | `utils` | OpenAI Images, Firecrawl, Jina, Reddit providers; image generation, web retrieval, and community research actions | Core utility connectors are now executable through the generic action path. |
-| `gtm` | HubSpot, Salesforce, Pipedrive, Apollo, Clay, Clearbit, Outreach, Salesloft, Google Workspace, Microsoft 365, and internal GTM provider contracts; GTM resources; five reusable templates | Catalog and template layer is in place. Provider actions are contract-only until real connectors are built. |
-| `media-buying` | Meta Ads, Google Ads, Outbrain, Taboola, and internal campaign-tool provider contracts; paid media resources; five reusable templates | Catalog and template layer is in place. Provider actions are contract-only until real connectors are built. |
+| `gtm` | HubSpot, Salesforce, Pipedrive, Apollo, Clay, Clearbit, Outreach, Salesloft, Google Workspace, Microsoft 365, and internal GTM provider contracts; GTM resources; five reusable templates | First provider-specific connectors are executable; Clearbit, inbound Clay result ingestion, and user-owned webhooks remain explicit deferred modes. |
+| `media-buying` | Meta Ads, Google Ads, Outbrain, Taboola, and internal campaign-tool provider contracts; paid media resources; five reusable templates | Meta Ads, Google Ads, and Taboola first connectors are executable; Outbrain and user-owned webhooks remain explicit deferred modes. |
 | `publishing` | WordPress and Ghost providers, CMS publishing actions, and generic publishing resources | First post-create connector path is wired. Media/upload/update actions and templates are still needed. |
 | `seo` | DataForSEO and Ahrefs providers, SEO actions, SEO resource schemas, two SEO templates | First SEO connector path is wired, including PAA extraction through DataForSEO. More templates and richer provider actions are still needed. |
 
@@ -467,14 +467,13 @@ Important rule: do not expose one generic `campaign.create` action unless it is
 a local abstraction configured by the user. First-party provider actions should
 be provider-specific so schemas, constraints, and outputs are precise.
 
-Current state: the first media-buying scaffold is committed as contract-only
-plugin metadata. It defines provider-specific action contracts such as
+Current state: the media-buying plugin now defines provider-specific executable
+actions for Meta Ads, Google Ads, and Taboola, including
 `meta.campaign.create`, `meta.ad_set.create`, `meta.ad_creative.create`,
-`google.campaign.create`, `outbrain.promoted_link.create`,
-`taboola.item.create`, and user-owned `webhook.media_*` contracts. None of
-these first-party entries has connector config yet, so catalog availability
-correctly reports `not_executable` until a real daemon connector or
-project-local static HTTP action is provided.
+`google.campaign.create`, and `taboola.item.create`. Outbrain actions are
+marked `deferred-partner-api` because endpoint-level campaign/report contracts
+are gated. User-owned `webhook.media_*` actions are `project-local-http` until
+a project supplies static HTTP connector config.
 
 ### P1: GTM And RevOps Plugin
 
@@ -525,14 +524,14 @@ Templates:
 - CRM hygiene pass
 - pipeline risk review
 
-Current state: the first GTM/RevOps scaffold is committed as contract-only
-plugin metadata. It defines provider-specific action contracts such as
+Current state: the GTM/RevOps plugin now defines provider-specific executable
+actions such as
 `hubspot.crm.companies.batch_upsert`,
 `salesforce.lead.upsert_by_external_id`, `apollo.people.enrich`,
-`outreach.sequence_state.create`, and `webhook.pipeline.fetch`. None of these
-first-party entries has connector config yet, so catalog availability correctly
-reports `not_executable` until a real daemon connector or project-local static
-HTTP action is provided.
+and `outreach.sequence_state.create`. Clearbit remains deferred until a public
+standard endpoint is verified, Clay workflow result ingestion remains an
+inbound resource flow, and `webhook.*` actions are `project-local-http` until a
+project supplies static HTTP connector config.
 
 ### P1: Analytics And Measurement Plugin
 

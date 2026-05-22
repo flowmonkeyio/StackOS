@@ -1,6 +1,9 @@
 # Media Buying Integration Contract Audit
 
-Status: official-doc-backed contract review only. No media-buying action in the current scaffold should be treated as executable until provider-specific daemon connectors, grants, tests, and audit handling exist.
+Status: first executable connector pass delivered on 2026-05-22 for Meta Ads,
+Google Ads, and Taboola. Outbrain and user-owned webhooks remain explicit
+deferred modes until endpoint-level contracts or project-local static HTTP
+config exist.
 
 Reviewed scaffold: `plugins/media-buying/plugin.yaml` and workflow templates under `plugins/media-buying/workflows/`. This audit intentionally owns only this document.
 
@@ -37,7 +40,7 @@ Implication: Meta actions must model the hierarchy `ad account -> campaign -> ad
 - Conversion events/uploads: https://developers.google.com/google-ads/api/docs/conversions/overview, https://developers.google.com/google-ads/api/docs/conversions/upload-clicks, and https://developers.google.com/google-ads/api/docs/conversions/enhanced-conversions/overview
 - Mutates/errors/quotas: https://developers.google.com/google-ads/api/docs/mutating/overview, https://developers.google.com/google-ads/api/docs/get-started/handle-errors, and https://developers.google.com/google-ads/api/docs/best-practices/quotas
 
-Implication: Google Ads needs separate actions for customer listing, campaign budget, campaign, ad group, asset, ad group ad, GAQL reporting, conversion action, and conversion upload. The current scaffold includes those action contracts as `contract-only`; executable connectors still need strict schemas, mutate tests, and quota/error handling.
+Implication: Google Ads needs separate actions for customer listing, campaign budget, campaign, ad group, asset, ad group ad, GAQL reporting, conversion action, and conversion upload. The first executable connector uses provider-native REST mutate/search/upload calls; expansion still needs stricter enum coverage, mutate tests, and quota/error handling.
 
 ### Outbrain Amplify API
 
@@ -67,12 +70,12 @@ Implication: webhook actions are project-local HTTP contracts, not provider APIs
 
 ## Current Scaffold Findings
 
-- Good: all first-party media-buying actions remain `execution_mode: contract-only`. Keep that until executable daemon connectors, grants, tests, and audit handling exist.
+- Good: Meta Ads, Google Ads, and Taboola now have provider-specific daemon connectors instead of one generic REST adapter.
 - Good: workflow templates separate approval gates from action contracts and keep secrets daemon-side.
 - Resolved in the scaffold: Google Ads now has customer, budget, campaign, ad group, asset, ad, reporting, conversion action, and conversion upload contracts, and the templates can reference Google explicitly.
 - Resolved in the scaffold: Taboola is OAuth-based, Outbrain has a daemon-managed token-lifecycle note, Meta budget updates are split by campaign and ad-set surface, reports use provider-native reporting refs, Meta conversions are represented, and user-owned webhook refs are media-specific.
-- Still contract-only: many write schemas intentionally keep provider extension points for future adapters. Before execution, tighten each connector around provider metadata, exact enum values, idempotency semantics, partial failures, pagination, rate limits, and redacted response artifacts.
-- Still required before execution: Google budgets need amount-micros handling and mutate partial-failure tests; conversion uploads need daemon-side PII normalization/hash provenance; reporting needs bounded query/page contracts; webhook writes need static allowlisting, retry policy, redacted structured errors, and SSRF/private-network review.
+- Still deferred: Outbrain endpoint-level campaign/report contracts are partner/API-doc gated, and user-owned webhooks need project-local static HTTP connector config.
+- Still required before expanding execution: stricter provider enum coverage, more mocked provider tests, rate-limit/error classification, and richer pagination handling. Conversion uploads require callers to pass already-normalized provider events; StackOS does not hash or normalize PII inside this connector.
 
 ## Action Ref Recommendations
 
@@ -136,14 +139,20 @@ Outputs should be normalized but preserve provider diagnostics:
 - Taboola: OAuth2 client credentials/access tokens stay daemon-side. Provider setup should store safe account refs and token status diagnostics.
 - Webhook: API keys, bearer tokens, HMAC secrets, mTLS material, and custom auth headers stay daemon-side. Agents provide only payload refs and approved operation inputs.
 
-## Gaps Before Executable Connectors
+## Remaining Execution Gaps
 
-1. Replace remaining broad placeholder schema areas with provider-specific JSON schemas backed by metadata discovery or static enums.
-2. Implement connector configs with fixed operation ids, method/path mapping, allowed hosts, timeout/retry/backoff, pagination, and rate-limit handling.
-3. Add grant tests for read/write separation, approval gates, no-secret redaction, action-call audit, provider request ids, and partial-failure handling.
-4. Add Google Ads mutate tests for budgets/campaigns/ad groups/assets/ads/conversions, including partial-failure output.
-5. Add conversion-event daemon handling for PII normalization, hashing provenance, consent flags, dedupe keys, and test-event modes.
-6. Add media webhook SSRF/private-network review, redacted structured errors, and retry/audit policy before executable HTTP campaign writes.
+1. Replace remaining broad provider-native property bags with stricter JSON
+   schemas backed by metadata discovery or static enums where the docs permit.
+2. Add timeout/retry/backoff, pagination, and rate-limit classifications to the
+   provider-specific connectors.
+3. Add grant tests for read/write separation, approval gates, provider request
+   ids, and partial-failure handling.
+4. Add more Google Ads mutate tests for budgets/campaigns/ad groups/assets/ads
+   and conversions.
+5. Keep conversion-event inputs already normalized by the caller; add a separate
+   utility action later if StackOS should hash or normalize PII.
+6. Add media webhook SSRF/private-network review, redacted structured errors,
+   and retry/audit policy before executable HTTP campaign writes.
 
 ## Recommended Manifest And Template Corrections
 

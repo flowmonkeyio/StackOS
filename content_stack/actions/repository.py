@@ -405,13 +405,14 @@ class ActionRepository:
             credential_ref=credential_ref,
         )
         issues = self._validate_payload(manifest=manifest, payload=payload)
-        issues.extend(
-            self._credential_ref_issues(
-                project_id=project_id,
-                manifest=manifest,
-                credential_ref=resolved_ref,
+        if not (manifest.execution_mode is not None and manifest.connector_key is None):
+            issues.extend(
+                self._credential_ref_issues(
+                    project_id=project_id,
+                    manifest=manifest,
+                    credential_ref=resolved_ref,
+                )
             )
-        )
         connector_registered = False
         estimated_cost_cents: int | None = None
         if manifest.connector_key is not None:
@@ -435,6 +436,15 @@ class ActionRepository:
                         code="connector_missing",
                     )
                 )
+        elif manifest.execution_mode is not None:
+            issues.append(
+                ActionValidationIssue(
+                    path="$.execution_mode",
+                    message=manifest.deferred_reason
+                    or f"action execution mode is {manifest.execution_mode}",
+                    code="execution_deferred",
+                )
+            )
         elif manifest.requires_credential or manifest.risk_level != "read":
             issues.append(
                 ActionValidationIssue(

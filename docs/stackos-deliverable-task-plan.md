@@ -78,11 +78,14 @@ Goal: prove the plugin model beyond SEO.
 Work:
 
 - Add a minimal media-buying plugin manifest with providers, resources,
-  actions, and workflow templates. Current state: first contract-only scaffold
-  is in place; provider connectors remain a separate delivery.
+  actions, and workflow templates. Current state: Meta Ads, Google Ads, and
+  Taboola have first executable connectors; Outbrain and project webhooks are
+  explicit deferred modes.
 - Add a minimal GTM plugin manifest with providers, resources, actions, and
-  workflow templates. Current state: first contract-only scaffold is in place;
-  provider connectors remain a separate delivery.
+  workflow templates. Current state: HubSpot, Salesforce, Apollo, Pipedrive,
+  Clay, Outreach, Salesloft, Google Workspace, and Microsoft Graph have first
+  executable connectors; Clearbit/inbound/webhook actions are explicit deferred
+  modes.
 - Keep utility actions available across domains.
 - Add catalog and UI tests proving generic renderers handle the new domains.
 

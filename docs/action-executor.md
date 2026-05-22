@@ -71,9 +71,10 @@ legacy workflow tables for compatibility.
 Visible catalog action rows and `action.describe` now include a generic
 `availability` object. It is a setup signal, not a workflow decision:
 
-- `status`: `ready`, `unknown`, `not_executable`, `missing_connector`,
-  `missing_credential`, `credential_failed`, `missing_budget`,
-  `budget_blocked`, `plugin_disabled`, or `provider_disabled`
+- `status`: `ready`, `unknown`, `deferred`, `project_local_required`,
+  `not_executable`, `missing_connector`, `missing_credential`,
+  `credential_failed`, `missing_budget`, `budget_blocked`, `plugin_disabled`,
+  or `provider_disabled`
 - `executable`: whether the current project setup can run the action
 - connector, operation, credential, and budget state
 - safe opaque credential refs when connected
@@ -101,7 +102,8 @@ started run plan, exactly one active claimed step, an explicit
 `action_refs`. The active step must also declare the same action ref in
 `action_refs`.
 
-Registered first-party connectors now cover the migrated clean path for:
+Registered first-party connectors are one provider per connector file and now
+cover the migrated clean path for:
 
 - `openai-images`: `utils.image.generate`
 - `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`,
@@ -114,13 +116,17 @@ Registered first-party connectors now cover the migrated clean path for:
 - `wordpress`: `publishing.wordpress.post.create`
 - `ghost`: `publishing.ghost.post.create`
 - `http`: static custom HTTP/Webhook actions declared by installed plugins
+- `hubspot`, `salesforce`, `apollo`, `pipedrive`, `clay`, `outreach`,
+  `salesloft`, `google-workspace`, and `microsoft-365`: first GTM/RevOps
+  provider actions
+- `meta-ads`, `google-ads`, and `taboola`: first paid media provider actions
 
-The media-buying and GTM plugins already contribute provider-specific campaign,
-creative, insight, budget, CRM, enrichment, sequence, and pipeline action
-contracts, but these are intentionally contract-only until real provider
-connectors are implemented. Their connector field is omitted, so catalog
-availability reports `not_executable` instead of pretending a Meta, HubSpot,
-Salesforce, Apollo, Outbrain, Taboola, or internal operation can run.
+Actions that are intentionally not executable use explicit `execution_mode`
+metadata, such as `deferred-partner-api`, `deferred-inbound`, or
+`project-local-http`. Catalog availability reports those modes directly instead
+of treating them as missing connectors. Outbrain and user-owned webhook actions
+remain deferred until endpoint-level contracts or project-local static HTTP
+config are supplied.
 
 The OpenAI Images connector persists base64 image bytes under generated assets
 and returns local artifact URLs with no `b64_json` payload. Other connectors

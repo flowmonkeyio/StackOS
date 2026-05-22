@@ -122,11 +122,10 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     }
     gtm_actions = {action.key: action for action in gtm.actions}
     company_upsert = gtm_actions["hubspot.crm.companies.batch_upsert"]
-    assert company_upsert.connector_key is None
-    assert company_upsert.operation == "hubspot.crm.companies.batch_upsert"
+    assert company_upsert.connector_key == "hubspot"
+    assert company_upsert.operation == "crm.companies.batch_upsert"
     assert company_upsert.requires_credential is True
-    assert company_upsert.availability.status == "not_executable"
-    assert company_upsert.availability.reasons[0] == "connector_not_configured"
+    assert company_upsert.availability.status == "unknown"
     assert {resource.key for resource in gtm.resources} >= {
         "account",
         "lead",
@@ -161,11 +160,10 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     }
     media_actions = {action.key: action for action in media.actions}
     campaign_create = media_actions["meta.campaign.create"]
-    assert campaign_create.connector_key is None
-    assert campaign_create.operation == "meta.campaign.create"
+    assert campaign_create.connector_key == "meta-ads"
+    assert campaign_create.operation == "campaign.create"
     assert campaign_create.requires_credential is True
-    assert campaign_create.availability.status == "not_executable"
-    assert campaign_create.availability.reasons[0] == "connector_not_configured"
+    assert campaign_create.availability.status == "unknown"
     assert {resource.key for resource in media.resources} >= {
         "campaign",
         "creative",

@@ -26,6 +26,8 @@ class ActionAvailabilityOut(BaseModel):
     executable: bool
     reasons: list[str] = Field(default_factory=list)
     connector_key: str | None = None
+    execution_mode: str | None = None
+    deferred_reason: str | None = None
     operation: str
     connector_registered: bool
     requires_credential: bool
@@ -48,6 +50,8 @@ def _credential_state(
     project_id: int | None,
     manifest: ExecutableActionManifest,
 ) -> tuple[str, list[str], list[str]]:
+    if manifest.execution_mode is not None and manifest.connector_key is None:
+        return "not_applicable", [], []
     if not manifest.allows_credential:
         return "not_allowed", [], []
     if project_id is None:
@@ -142,6 +146,17 @@ def build_action_availability(
         status = "provider_disabled"
         executable = False
         reasons.insert(0, "provider_disabled")
+    elif manifest.execution_mode is not None and manifest.connector_key is None:
+        if manifest.execution_mode.startswith("deferred"):
+            status = "deferred"
+        elif manifest.execution_mode == "project-local-http":
+            status = "project_local_required"
+        else:
+            status = "not_executable"
+        executable = False
+        reasons.insert(0, f"execution_mode:{manifest.execution_mode}")
+        if manifest.deferred_reason:
+            reasons.append(manifest.deferred_reason)
     elif manifest.connector_key is None:
         status = "not_executable"
         executable = False
@@ -172,6 +187,8 @@ def build_action_availability(
         executable=executable,
         reasons=reasons,
         connector_key=manifest.connector_key,
+        execution_mode=manifest.execution_mode,
+        deferred_reason=manifest.deferred_reason,
         operation=manifest.operation,
         connector_registered=connector_registered,
         requires_credential=manifest.requires_credential,

@@ -8,7 +8,8 @@ This directory is the review gate for StackOS integration contracts.
 - Link the exact documentation page for auth, object operations, rate limits,
   pagination, errors, and provider-specific constraints.
 - Do not invent executable actions. If a connector is not implemented in
-  `content_stack/actions`, mark the action as `contract-only`.
+  `content_stack/actions`, mark the action with an explicit deferred
+  `execution_mode` and `deferred_reason`.
 - StackOS stores static contracts, validates explicit inputs, resolves
   daemon-held credentials, calls connectors, and records audit. Agents and
   operators make business decisions.
@@ -50,8 +51,8 @@ Before an integration delivery is signed off, verify:
 - stale action refs from replaced contracts are absent from current manifests,
   workflow templates, tests, and operator-facing docs
 - REST, MCP, repository, and schema tests align with the manifest action names
-- contract-only actions have no `config.connector` and report non-executable
-  availability
+- deferred actions have no `config.connector`, include `execution_mode` and
+  `deferred_reason`, and report the deferred/project-local availability state
 - executable actions have daemon connector docs links, sanitized error handling,
   no-secret auth resolution, audit coverage, and grant tests
 - setup metadata tells operators which safe refs/scopes/accounts are needed

@@ -1,6 +1,8 @@
 # GTM CRM Contract Audit
 
-Status: audit-only, contract-only. Reviewed against official provider docs on 2026-05-22. This file is the signoff blocker for executable GTM CRM connectors; it does not enable execution.
+Status: first executable connector pass delivered on 2026-05-22. This review is
+kept as the provider-contract ledger and follow-up checklist for HubSpot,
+Salesforce, and Pipedrive compatibility.
 
 ## Official Docs Ledger
 
@@ -43,7 +45,7 @@ Status: audit-only, contract-only. Reviewed against official provider docs on 20
 
 - HubSpot: keep `auth_type: oauth`. Setup fields should include safe `portal_ref`, optional `app_distribution_ref`, and granted scope labels. Do not expose account ID, tokens, client secrets, or refresh token state beyond safe status.
 - Salesforce: keep `auth_type: oauth`, but add safe setup fields for `org_ref`, `environment` (`production`/`sandbox`), `instance_ref` or `my_domain_ref`, and `api_version_ref`. The daemon must own token refresh and instance URL resolution.
-- Pipedrive: current first-party provider metadata is OAuth-first. If API-token support is ever added, make it a separate project-local connector mode with `execution_mode: contract-only` until the credential vault can represent token ownership, rotation, and scope limitations.
+- Pipedrive: current first-party provider metadata is OAuth-first. If API-token support is ever added, make it a separate project-local connector mode with explicit `execution_mode` until the credential vault can represent token ownership, rotation, and scope limitations.
 
 ### Safe Setup Fields
 
@@ -100,15 +102,15 @@ The current resources are directionally right, but executable connectors need ma
 
 Agents receive provider keys, safe setup refs, granted scope names, and safe diagnostics only. The daemon resolves OAuth tokens/API keys, provider base URLs, instance domains, refresh token flow, and provider object IDs. Action-call audit may record endpoint family, request body shape hash, response status, provider request IDs, and sanitized errors, but never secrets or raw authorization headers.
 
-## Gaps Before Executable Connectors
+## Remaining Gaps
 
-- Implement daemon connectors and mark action availability executable only after provider-specific adapter tests exist.
 - Add provider metadata discovery for HubSpot properties/association types, Salesforce sObject describes/external ID fields, and Pipedrive custom field keys.
 - Add field-mapping resources and explicit external ID policies.
 - Add pagination/rate-limit harness tests for HubSpot `after`, Salesforce `nextRecordsUrl`, and Pipedrive `cursor`.
 - Add write-preview/dry-run flow for upserts and association mutations.
 - Add idempotency/audit strategy for retries, partial failures, HubSpot batch multi-status, Salesforce duplicate/external-ID conflicts, and Pipedrive account-limit errors.
-- Add workflow wording that provider reads/writes are unavailable until action contracts have executable daemon adapters; current scaffold should stay `contract-only`.
+- Keep deferred/project-local actions explicit with `execution_mode` and avoid
+  empty connector configs.
 
 ## Recommended Manifest And Template Corrections
 
@@ -118,4 +120,5 @@ Agents receive provider keys, safe setup refs, granted scope names, and safe dia
 4. Keep Salesforce note creation out of workflow action refs until the object/linking model is documented.
 5. Add Pipedrive to `gtm.crm-hygiene-pass` only after adding provider-specific organization/person/note/activity create/update contracts; current hygiene template lists HubSpot and Salesforce only.
 6. Continue tightening input schemas: remove broad `additionalProperties: true` where provider docs define fields, and move arbitrary provider fields behind `properties` plus `field_mapping_ref`.
-7. Keep GTM CRM actions `execution_mode: contract-only` until daemon adapters, grant tests, and sanitized audit records are implemented.
+7. Keep schemas provider-native and add mocked execution/redaction tests for
+   every new connector operation before expanding the write surface.

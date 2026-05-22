@@ -96,11 +96,10 @@ The URL and auth mode are static plugin configuration. The agent supplies only
 the action input JSON allowed by the action schema, and the daemon injects the
 credential inside the connector process.
 
-If a first-party provider connector is not implemented yet, keep the action as
-a contract-only catalog entry by omitting `config.connector`. The action remains
-visible for planning, templating, auth setup, and resource design, but
-`availability.status` is `not_executable` until a real daemon connector is
-added.
+If a first-party provider connector is not implemented yet, mark the action with
+an explicit `execution_mode` and `deferred_reason` instead of omitting intent.
+The action remains visible for planning, templating, auth setup, and resource
+design, while availability reports the deferred or project-local state.
 
 ## Resources
 

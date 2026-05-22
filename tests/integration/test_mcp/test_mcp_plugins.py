@@ -42,8 +42,8 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
         for action in gtm["plugins"][0]["actions"]
         if action["key"] == "hubspot.crm.companies.batch_upsert"
     )
-    assert gtm_action["connector_key"] is None
-    assert gtm_action["availability"]["status"] == "not_executable"
+    assert gtm_action["connector_key"] == "hubspot"
+    assert gtm_action["availability"]["status"] == "unknown"
 
     media = mcp_client.call_tool_structured(
         "catalog.describe",
@@ -60,8 +60,8 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
         for action in media["plugins"][0]["actions"]
         if action["key"] == "meta.campaign.create"
     )
-    assert media_action["connector_key"] is None
-    assert media_action["availability"]["status"] == "not_executable"
+    assert media_action["connector_key"] == "meta-ads"
+    assert media_action["availability"]["status"] == "unknown"
 
     provider = mcp_client.call_tool_structured(
         "provider.describe",

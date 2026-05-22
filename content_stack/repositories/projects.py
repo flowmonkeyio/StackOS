@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import or_
 from sqlmodel import Session, col, select
 
+from content_stack.artifacts import redact_secrets
 from content_stack.db.models import (
     IntegrationBudget,
     IntegrationCredential,
@@ -232,6 +233,11 @@ class IntegrationCredentialRepository:
     ) -> Envelope[IntegrationCredentialOut]:
         from content_stack.crypto.aes_gcm import encrypt as _crypto_encrypt
 
+        if config_json is not None and redact_secrets(config_json) != config_json:
+            raise ValidationError(
+                "credential config_json must not contain secret-like keys; "
+                "put secrets in plaintext_payload"
+            )
         existing_stmt = select(IntegrationCredential).where(IntegrationCredential.kind == kind)
         if project_id is None:
             existing_stmt = existing_stmt.where(IntegrationCredential.project_id.is_(None))  # type: ignore[union-attr]

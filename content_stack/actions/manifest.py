@@ -79,6 +79,8 @@ class ExecutableActionManifest(BaseModel):
     output_schema_json: dict[str, Any] = Field(default_factory=dict)
     config_json: dict[str, Any] = Field(default_factory=dict)
     connector_key: str | None = None
+    execution_mode: str | None = None
+    deferred_reason: str | None = None
     operation: str
     requires_credential: bool = False
     allows_credential: bool = False
@@ -113,6 +115,12 @@ def parse_action_manifest(
     connector_key = config.get("connector")
     if connector_key is not None and not isinstance(connector_key, str):
         raise ValidationError("action manifest connector must be a string")
+    execution_mode = config.get("execution_mode")
+    if execution_mode is not None and not isinstance(execution_mode, str):
+        raise ValidationError("action manifest execution_mode must be a string")
+    deferred_reason = config.get("deferred_reason")
+    if deferred_reason is not None and not isinstance(deferred_reason, str):
+        raise ValidationError("action manifest deferred_reason must be a string")
     operation = config.get("operation") or action.key
     if not isinstance(operation, str) or not operation:
         raise ValidationError("action manifest operation must be a non-empty string")
@@ -153,6 +161,8 @@ def parse_action_manifest(
         output_schema_json=action.output_schema_json,
         config_json=config,
         connector_key=connector_key,
+        execution_mode=execution_mode,
+        deferred_reason=deferred_reason,
         operation=operation,
         requires_credential=requires_credential,
         allows_credential=allows_credential,
