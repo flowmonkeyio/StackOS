@@ -493,8 +493,7 @@ async def _send_photo(
     if response.status_code >= 400:
         raise ValidationError(
             redact_secret_text(
-                f"provider action returned status {response.status_code}: "
-                f"{response.text[:500]}"
+                f"provider action returned status {response.status_code}: {response.text[:500]}"
             )
         )
     try:

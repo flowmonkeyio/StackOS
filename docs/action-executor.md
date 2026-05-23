@@ -152,6 +152,12 @@ and returns local artifact URLs with no `b64_json` payload. Other connectors
 normalize wrapper results into action output JSON and record the provider,
 operation, cost, status, and redacted payloads in `action_calls`.
 
+Communication setup is not an action connector. Telegram bot profile setup uses
+the shared `communicationBotProfile.upsert/get/list` operations across REST,
+CLI, and MCP after the project-scoped `telegram-bot` credential exists. Agents
+execute Telegram provider calls only through `action.execute` once a run-plan
+step grants the relevant action ref.
+
 The generic HTTP connector is a plugin-authoring escape hatch, not a direct
 agent browsing tool. The endpoint, method, auth mode, request mode, static
 headers, timeout, and response mode live in action `config_json.http`; the

@@ -12,7 +12,8 @@ UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf make signoff
 - `make lint`
 - `make typecheck`
 - targeted pytest coverage for unit contracts, REST operations, CLI mock
-  provider execution, MCP action execution, and action repositories
+  provider execution, auth setup, Telegram setup-to-action flow, MCP action and
+  communication setup execution, and action/auth repositories
 - UI unit tests
 - the UI production build into `content_stack/ui_dist/`
 

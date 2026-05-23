@@ -52,7 +52,17 @@ build-ui: ## Build Vue UI into content_stack/ui_dist/
 	@if [ -d ui ]; then cd ui && pnpm install && pnpm build; else echo "ui/ not available in this checkout"; exit 0; fi
 
 signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/CLI, and UI checks
-	$(UV) run pytest tests/unit tests/integration/test_routes/test_operations_routes.py tests/integration/test_routes/test_cli_mock_provider.py tests/integration/test_mcp/test_mcp_actions.py tests/integration/test_repositories/test_actions.py -q
+	$(UV) run pytest tests/unit \
+		tests/integration/test_routes/test_operations_routes.py \
+		tests/integration/test_routes/test_auth_provider_routes.py \
+		tests/integration/test_routes/test_cli_mock_provider.py \
+		tests/integration/test_routes/test_telegram_setup_to_action_routes.py \
+		tests/integration/test_mcp/test_mcp_actions.py \
+		tests/integration/test_mcp/test_mcp_communications.py \
+		tests/integration/test_repositories/test_actions.py \
+		tests/integration/test_repositories/test_auth_providers.py \
+		tests/integration/test_repositories/test_telegram_bot_actions.py \
+		-q
 	$(MAKE) test-ui-unit
 	$(MAKE) build-ui
 

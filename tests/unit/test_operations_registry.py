@@ -19,6 +19,9 @@ def test_operation_registry_documents_core_operations() -> None:
         "agentRequest.linkRunPlan",
         "agentRequest.list",
         "agentRequest.release",
+        "communicationBotProfile.get",
+        "communicationBotProfile.list",
+        "communicationBotProfile.upsert",
         "runPlan.claimStep",
         "runPlan.create",
         "runPlan.get",
@@ -54,6 +57,13 @@ def test_operation_registry_documents_core_operations() -> None:
     assert create_request.grant_policy == "run-plan-step-grant"
     assert any("run_token" in item for item in create_request.prerequisites)
 
+    bot_profile = registry.get("communicationBotProfile.upsert").describe_out()
+    assert bot_profile.surfaces["mcp"].enabled is True
+    assert bot_profile.surfaces["rest"].enabled is True
+    assert bot_profile.surfaces["cli"].command == "ops call communicationBotProfile.upsert"
+    assert bot_profile.grant_policy == "direct-setup-write"
+    assert any("telegram-bot credential" in item for item in bot_profile.prerequisites)
+
     run_plan = registry.get("runPlan.claimStep").describe_out()
     assert run_plan.surfaces["mcp"].enabled is True
     assert run_plan.surfaces["rest"].enabled is True
@@ -77,6 +87,9 @@ def test_operation_registry_surface_filter() -> None:
         "agentRequest.linkRunPlan",
         "agentRequest.list",
         "agentRequest.release",
+        "communicationBotProfile.get",
+        "communicationBotProfile.list",
+        "communicationBotProfile.upsert",
         "runPlan.claimStep",
         "runPlan.create",
         "runPlan.get",

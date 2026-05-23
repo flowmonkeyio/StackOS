@@ -208,6 +208,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ingress/telegram/{project_id}/{bot_profile_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest Telegram Update
+         * @description Store a Telegram update and create one generic claimable agent request.
+         *
+         *     This endpoint is intentionally static plumbing: it validates Telegram's
+         *     secret-token header, normalizes the event into Communications resources,
+         *     creates an `agent_requests` row, and stops. It does not call a model, infer
+         *     intent, approve work, or choose follow-up tools.
+         */
+        post: operations["ingest_telegram_update_api_v1_ingress_telegram__project_id___bot_profile_key__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/meta/enums": {
         parameters: {
             query?: never;
@@ -3690,6 +3715,28 @@ export interface components {
             /** Url */
             url: string;
         };
+        /**
+         * TelegramIngressOut
+         * @description Result of storing one Telegram update.
+         */
+        TelegramIngressOut: {
+            /** Agent Request Id */
+            agent_request_id?: number | null;
+            /** Bot Profile Key */
+            bot_profile_key: string;
+            /** Event Record Id */
+            event_record_id?: number | null;
+            /** Interaction Record Id */
+            interaction_record_id?: number | null;
+            /** Message Record Id */
+            message_record_id?: number | null;
+            /** Ok */
+            ok: boolean;
+            /** Policy Status */
+            policy_status: string;
+            /** Update Id */
+            update_id: number;
+        };
         /** TemplateBaseSpec */
         TemplateBaseSpec: {
             /** Key */
@@ -4223,6 +4270,7 @@ export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertR
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
+export type SchemaTelegramIngressOut = components['schemas']['TelegramIngressOut'];
 export type SchemaTemplateBaseSpec = components['schemas']['TemplateBaseSpec'];
 export type SchemaTemplateIoSpec = components['schemas']['TemplateIOSpec'];
 export type SchemaTemplateOwnerSpec = components['schemas']['TemplateOwnerSpec'];
@@ -4543,6 +4591,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    ingest_telegram_update_api_v1_ingress_telegram__project_id___bot_profile_key__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Telegram-Bot-Api-Secret-Token"?: string | null;
+            };
+            path: {
+                project_id: number;
+                bot_profile_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramIngressOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

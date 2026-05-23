@@ -8,6 +8,7 @@ import {
   UiBadge,
   UiButton,
   UiCallout,
+  UiCheckbox,
   UiFormField,
   UiInput,
   UiJsonBlock,
@@ -17,9 +18,11 @@ import {
   UiSectionHeader,
   UiSelect,
   UiSidePanel,
+  UiTextarea,
 } from '@/components/ui'
 import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
 import { formatApiError } from '@/lib/client'
+import { callOperation } from '@/lib/operations'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 
@@ -33,6 +36,72 @@ interface ServiceGroup {
   provider: SchemaAuthProviderOut | null
   providerKey: string
   connections: ConnectionRow[]
+}
+
+interface TelegramBotProfile {
+  record_id: number
+  project_id: number
+  external_id: string
+  key: string
+  provider_key: string
+  auth_profile_key: string
+  enabled: boolean
+  bot_username: string | null
+  ingress_mode: string
+  allowed_updates: string[]
+  identity: {
+    display_name?: string
+    purpose?: string
+    voice?: string
+  }
+  agent_guidance: {
+    default_instructions?: string
+    boundaries?: string
+    escalation?: string
+  }
+  access_policy: {
+    dm_mode?: string
+    group_mode?: string
+    user_mode?: string
+    allowed_chat_refs?: string[]
+    allowed_user_refs?: string[]
+    denied_chat_refs?: string[]
+    denied_user_refs?: string[]
+  }
+  trigger_policy: {
+    commands?: TelegramCommandSpec[]
+    mention_patterns?: string[]
+  }
+  visibility_policy: Record<string, unknown>
+  context_policy: Record<string, unknown>
+  response_policy: Record<string, unknown>
+  refs: Record<string, string>
+  webhook_base_url: string | null
+  allowed_webhook_hosts: string[]
+}
+
+interface TelegramCommandSpec {
+  command: string
+  description?: string
+  guidance?: string
+  enabled?: boolean
+  aliases?: string[]
+  arguments_schema?: Record<string, unknown>
+  required_context?: string[]
+  expected_outputs?: string[]
+}
+
+interface TelegramCommandDraft {
+  command: string
+  description: string
+  guidance: string
+  enabled: boolean
+}
+
+interface TelegramBotProfileListOut {
+  items: TelegramBotProfile[]
+  next_cursor: string | number | null
+  total_estimate: number | null
 }
 
 const AUTH_TYPE_LABELS: Record<string, string> = {
@@ -73,6 +142,36 @@ const fieldsByForm = ref<Record<string, Record<string, string>>>({})
 const busyAction = ref<string | null>(null)
 const providerMessages = ref<Record<string, { tone: MessageTone; text: string }>>({})
 const connectionMessages = ref<Record<string, { tone: MessageTone; text: string }>>({})
+const botProfiles = ref<TelegramBotProfile[]>([])
+const botProfilesLoading = ref(false)
+const botProfilePanelOpen = ref(false)
+const botProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
+const botProfileForm = ref({
+  key: 'support-bot',
+  auth_profile_key: '',
+  bot_username: '',
+  identity_display_name: 'Support Bot',
+  identity_purpose: '',
+  identity_voice: 'Clear, concise, and operational.',
+  agent_default_instructions: '',
+  agent_boundaries: '',
+  agent_escalation: '',
+  allowed_chat_refs: '',
+  allowed_user_refs: '',
+  commands: [
+    {
+      command: '/support',
+      description: 'Handle support requests.',
+      guidance: 'Triage the request, inspect relevant context, and reply with the next clear step.',
+      enabled: true,
+    },
+  ] as TelegramCommandDraft[],
+  mention_patterns: '',
+  store_non_trigger_messages: true,
+  origin_required: true,
+  reply_to_source_message: true,
+  same_thread: true,
+})
 
 const connections = computed<ConnectionRow[]>(() =>
   (authStatus.value?.connections ?? []).map((connection) => ({
@@ -125,6 +224,17 @@ const attentionConnections = computed(() =>
   activeConnections.value.filter((connection) => connection.status !== 'connected'),
 )
 
+const telegramConnections = computed(() =>
+  connectedConnections.value.filter((connection) => connection.provider_key === 'telegram-bot'),
+)
+
+const telegramConnectionOptions = computed(() =>
+  telegramConnections.value.map((connection) => ({
+    value: connection.profile_key,
+    label: `${connectionTitle(connection)} (${connection.profile_key})`,
+  })),
+)
+
 const serviceGroups = computed<ServiceGroup[]>(() => {
   const grouped = new Map<string, ConnectionRow[]>()
   for (const connection of connections.value) {
@@ -149,7 +259,27 @@ async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
   await catalogStore.refresh(projectId.value)
   await catalogStore.refreshAuth(projectId.value)
+  await loadBotProfiles()
   syncProviderSelectionFromQuery()
+}
+
+async function loadBotProfiles(): Promise<void> {
+  if (!projectId.value || Number.isNaN(projectId.value)) return
+  botProfilesLoading.value = true
+  try {
+    const response = await callOperation<TelegramBotProfileListOut>(
+      'communicationBotProfile.list',
+      { project_id: projectId.value },
+    )
+    botProfiles.value = response.items ?? []
+  } catch (err) {
+    botProfileMessage.value = {
+      tone: 'danger',
+      text: formatApiError(err, 'failed to load Telegram bot profiles'),
+    }
+  } finally {
+    botProfilesLoading.value = false
+  }
 }
 
 function syncProviderSelectionFromQuery(): void {
@@ -171,7 +301,9 @@ function selectedMethodKey(provider: SchemaAuthProviderOut): string {
 
 function selectedMethod(provider: SchemaAuthProviderOut): AuthMethod | null {
   const key = selectedMethodKey(provider)
-  return authMethods(provider).find((method) => method.key === key) ?? authMethods(provider)[0] ?? null
+  return (
+    authMethods(provider).find((method) => method.key === key) ?? authMethods(provider)[0] ?? null
+  )
 }
 
 function setSelectedMethod(providerKey: string, value: string | number | null): void {
@@ -253,6 +385,41 @@ function openAddConnection(providerKey?: string): void {
   addPanelOpen.value = true
 }
 
+function openAddBotProfile(): void {
+  if (!botProfileForm.value.auth_profile_key && telegramConnections.value[0]) {
+    botProfileForm.value = {
+      ...botProfileForm.value,
+      auth_profile_key: telegramConnections.value[0].profile_key,
+    }
+  }
+  botProfileMessage.value = null
+  botProfilePanelOpen.value = true
+}
+
+function editBotProfile(profile: TelegramBotProfile): void {
+  botProfileForm.value = {
+    key: profile.key,
+    auth_profile_key: profile.auth_profile_key,
+    bot_username: profile.bot_username ?? '',
+    identity_display_name: String(profile.identity.display_name ?? profile.key),
+    identity_purpose: String(profile.identity.purpose ?? ''),
+    identity_voice: String(profile.identity.voice ?? ''),
+    agent_default_instructions: String(profile.agent_guidance.default_instructions ?? ''),
+    agent_boundaries: String(profile.agent_guidance.boundaries ?? ''),
+    agent_escalation: String(profile.agent_guidance.escalation ?? ''),
+    allowed_chat_refs: (profile.access_policy.allowed_chat_refs ?? []).join(', '),
+    allowed_user_refs: (profile.access_policy.allowed_user_refs ?? []).join(', '),
+    commands: toCommandDrafts(profile.trigger_policy.commands ?? []),
+    mention_patterns: (profile.trigger_policy.mention_patterns ?? []).join(', '),
+    store_non_trigger_messages: profile.visibility_policy.store_non_trigger_messages !== false,
+    origin_required: profile.response_policy.origin_required !== false,
+    reply_to_source_message: profile.response_policy.reply_to_source_message === true,
+    same_thread: profile.response_policy.same_thread === true,
+  }
+  botProfileMessage.value = null
+  botProfilePanelOpen.value = true
+}
+
 function compareConnections(left: ConnectionRow, right: ConnectionRow): number {
   const statusDiff = (STATUS_ORDER[left.status] ?? 99) - (STATUS_ORDER[right.status] ?? 99)
   if (statusDiff !== 0) return statusDiff
@@ -288,7 +455,11 @@ function methodLabel(provider: SchemaAuthProviderOut, methodKey: string): string
 }
 
 function serviceStatusTone(group: ServiceGroup): BadgeTone {
-  if (group.connections.some((connection) => connection.status === 'connected' && connection.revoked_at === null)) {
+  if (
+    group.connections.some(
+      (connection) => connection.status === 'connected' && connection.revoked_at === null,
+    )
+  ) {
     return 'success'
   }
   if (group.connections.some((connection) => ['failed', 'revoked'].includes(connection.status))) {
@@ -340,9 +511,9 @@ function connectionTitle(connection: SchemaCredentialConnectionOut): string {
 function accountLabel(connection: SchemaCredentialConnectionOut): string {
   return String(
     connection.account?.display_name ??
-    connection.account?.provider_account_id ??
-    connection.profile_key ??
-    '-',
+      connection.account?.provider_account_id ??
+      connection.profile_key ??
+      '-',
   )
 }
 
@@ -376,7 +547,171 @@ function setConnectionMessage(credentialRef: string, tone: MessageTone, text: st
   }
 }
 
-function credentialFields(provider: SchemaAuthProviderOut, method: AuthMethod): Record<string, string> | null {
+function parseCsv(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function normalizeBotUsername(value: string): string | null {
+  const normalized = value.trim().replace(/^@/, '')
+  return normalized || null
+}
+
+function normalizeCommand(value: string): string {
+  const command = value.trim()
+  if (!command) return ''
+  return command.startsWith('/') ? command : `/${command}`
+}
+
+function toCommandDrafts(commands: TelegramCommandSpec[]): TelegramCommandDraft[] {
+  const drafts = commands.map((command) => ({
+    command: normalizeCommand(command.command),
+    description: command.description ?? '',
+    guidance: command.guidance ?? '',
+    enabled: command.enabled !== false,
+  }))
+  return drafts.length > 0
+    ? drafts
+    : [
+        {
+          command: '',
+          description: '',
+          guidance: '',
+          enabled: true,
+        },
+      ]
+}
+
+function toCommandSpecs(commands: TelegramCommandDraft[]): TelegramCommandSpec[] {
+  return commands
+    .map((command) => ({
+      command: normalizeCommand(command.command),
+      description: command.description.trim(),
+      guidance: command.guidance.trim(),
+      enabled: command.enabled,
+    }))
+    .filter((command) => command.command)
+}
+
+function addCommandDraft(): void {
+  botProfileForm.value.commands = [
+    ...botProfileForm.value.commands,
+    { command: '', description: '', guidance: '', enabled: true },
+  ]
+}
+
+function removeCommandDraft(index: number): void {
+  botProfileForm.value.commands = botProfileForm.value.commands.filter((_, itemIndex) => {
+    return itemIndex !== index
+  })
+  if (botProfileForm.value.commands.length === 0) addCommandDraft()
+}
+
+function commandSummary(commands: TelegramCommandSpec[] | undefined): string {
+  const values = (commands ?? [])
+    .filter((command) => command.enabled !== false)
+    .map((command) => command.command)
+    .filter(Boolean)
+  return values.length > 0 ? values.join(', ') : '-'
+}
+
+function ensureBotFormDefaults(): void {
+  if (!botProfileForm.value.auth_profile_key && telegramConnections.value[0]) {
+    botProfileForm.value = {
+      ...botProfileForm.value,
+      auth_profile_key: telegramConnections.value[0].profile_key,
+    }
+  }
+}
+
+async function saveBotProfile(): Promise<void> {
+  ensureBotFormDefaults()
+  const form = botProfileForm.value
+  const key = form.key.trim()
+  const authProfileKey = form.auth_profile_key.trim()
+  const allowedChatRefs = parseCsv(form.allowed_chat_refs)
+  const allowedUserRefs = parseCsv(form.allowed_user_refs)
+  const identityDisplayName = form.identity_display_name.trim()
+  const commands = toCommandSpecs(form.commands)
+  if (!key) {
+    botProfileMessage.value = { tone: 'danger', text: 'Bot profile key is required.' }
+    return
+  }
+  if (!identityDisplayName) {
+    botProfileMessage.value = { tone: 'danger', text: 'Bot display name is required.' }
+    return
+  }
+  if (!authProfileKey) {
+    botProfileMessage.value = { tone: 'danger', text: 'Choose a Telegram connection.' }
+    return
+  }
+  if (allowedChatRefs.length === 0 || allowedUserRefs.length === 0) {
+    botProfileMessage.value = {
+      tone: 'danger',
+      text: 'Allowlisted chats and users are required before the bot can trigger agents.',
+    }
+    return
+  }
+  busyAction.value = 'telegram-bot-profile:save'
+  try {
+    await callOperation('communicationBotProfile.upsert', {
+      project_id: projectId.value,
+      key,
+      auth_profile_key: authProfileKey,
+      bot_username: normalizeBotUsername(form.bot_username),
+      identity: {
+        display_name: identityDisplayName,
+        purpose: form.identity_purpose.trim(),
+        voice: form.identity_voice.trim(),
+      },
+      agent_guidance: {
+        default_instructions: form.agent_default_instructions.trim(),
+        boundaries: form.agent_boundaries.trim(),
+        escalation: form.agent_escalation.trim(),
+      },
+      access_policy: {
+        dm_mode: 'allowlist',
+        group_mode: 'allowlist',
+        user_mode: 'allowlist',
+        allowed_chat_refs: allowedChatRefs,
+        allowed_user_refs: allowedUserRefs,
+      },
+      trigger_policy: {
+        dm_trigger: 'always',
+        group_trigger: 'mention_or_command',
+        commands,
+        mention_patterns: parseCsv(form.mention_patterns),
+        reply_to_bot_triggers: true,
+      },
+      visibility_policy: {
+        store_non_trigger_messages: form.store_non_trigger_messages,
+      },
+      response_policy: {
+        reply_in_same_chat: true,
+        origin_required: form.origin_required,
+        reply_to_source_message: form.reply_to_source_message,
+        same_thread: form.same_thread,
+      },
+    })
+    botProfileMessage.value = { tone: 'success', text: `Saved ${key}.` }
+    botProfilePanelOpen.value = false
+    await loadBotProfiles()
+  } catch (err) {
+    botProfileMessage.value = {
+      tone: 'danger',
+      text: formatApiError(err, 'failed to save Telegram bot profile'),
+    }
+  } finally {
+    busyAction.value = null
+  }
+}
+
+function credentialFields(
+  provider: SchemaAuthProviderOut,
+  method: AuthMethod,
+): Record<string, string> | null {
   const fields: Record<string, string> = {}
   for (const field of method.fields ?? []) {
     const value = fieldValue(provider.key, method.key, field.key).trim()
@@ -513,20 +848,13 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
       :breadcrumbs="[{ label: 'Connections' }]"
     >
       <template #actions>
-        <UiButton
-          variant="primary"
-          icon-left="plus"
-          @click="openAddConnection()"
-        >
+        <UiButton variant="primary" icon-left="plus" @click="openAddConnection()">
           Add connection
         </UiButton>
       </template>
     </ProjectPageHeader>
 
-    <UiCallout
-      v-if="error"
-      tone="danger"
-    >
+    <UiCallout v-if="error" tone="danger">
       {{ error }}
     </UiCallout>
 
@@ -568,23 +896,15 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
       >
         <p class="font-medium text-fg-strong">No services connected.</p>
         <p class="mx-auto mt-1 max-w-xl text-sm text-fg-muted">
-          Add the first connection for a provider account or internal tool. The daemon stores
-          the secret and exposes only status, labels, and credential refs.
+          Add the first connection for a provider account or internal tool. The daemon stores the
+          secret and exposes only status, labels, and credential refs.
         </p>
-        <UiButton
-          class="mt-4"
-          variant="primary"
-          icon-left="plus"
-          @click="openAddConnection()"
-        >
+        <UiButton class="mt-4" variant="primary" icon-left="plus" @click="openAddConnection()">
           Add connection
         </UiButton>
       </div>
 
-      <ul
-        v-else
-        class="grid gap-3"
-      >
+      <ul v-else class="grid gap-3">
         <li
           v-for="group in serviceGroups"
           :key="group.providerKey"
@@ -602,15 +922,10 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
                     <h3 class="text-base font-semibold leading-6 text-fg-strong">
                       {{ serviceName(group) }}
                     </h3>
-                    <UiBadge
-                      v-if="group.provider"
-                      tone="accent"
-                    >
+                    <UiBadge v-if="group.provider" tone="accent">
                       {{ pluginLabel(group.provider.plugin_slug) }}
                     </UiBadge>
-                    <UiBadge
-                      :tone="serviceStatusTone(group)"
-                    >
+                    <UiBadge :tone="serviceStatusTone(group)">
                       {{ serviceStatusLabel(group) }}
                     </UiBadge>
                   </div>
@@ -625,12 +940,11 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
                       <dt class="shrink-0 text-fg-muted">Provider</dt>
                       <dd class="truncate font-mono text-fg-default">{{ group.providerKey }}</dd>
                     </div>
-                    <div
-                      v-if="group.provider"
-                      class="flex items-center gap-1.5"
-                    >
+                    <div v-if="group.provider" class="flex items-center gap-1.5">
                       <dt class="text-fg-muted">Auth</dt>
-                      <dd class="text-fg-default">{{ formatAuthType(group.provider.auth_type) }}</dd>
+                      <dd class="text-fg-default">
+                        {{ formatAuthType(group.provider.auth_type) }}
+                      </dd>
                     </div>
                     <div class="flex items-center gap-1.5">
                       <dt class="text-fg-muted">Saved</dt>
@@ -667,13 +981,13 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
                     <h4 class="truncate text-sm font-semibold leading-5 text-fg-strong">
                       {{ connectionTitle(connection) }}
                     </h4>
-                    <UiBadge
-                      :tone="statusTone(connection)"
-                    >
+                    <UiBadge :tone="statusTone(connection)">
                       {{ connection.status }}
                     </UiBadge>
                   </div>
-                  <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-fg-muted">
+                  <div
+                    class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-fg-muted"
+                  >
                     <span class="truncate font-mono">{{ connection.credential_ref }}</span>
                     <span aria-hidden="true">&middot;</span>
                     <span>{{ formatAuthType(connection.auth_type) }}</span>
@@ -751,10 +1065,119 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
       </ul>
     </UiPanel>
 
-    <details
-      v-if="authStatus"
-      class="rounded-md border border-default bg-bg-surface shadow-xs"
-    >
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Telegram Bot Profiles"
+        description="Bind a Telegram connection to project-scoped identity, agent guidance, access, trigger, context, and response policy."
+      >
+        <template #actions>
+          <div class="flex flex-wrap items-center gap-2">
+            <UiBadge>{{ botProfiles.length }}</UiBadge>
+            <UiButton
+              size="sm"
+              icon-left="plus"
+              :disabled="telegramConnections.length === 0"
+              @click="openAddBotProfile"
+            >
+              Add bot profile
+            </UiButton>
+          </div>
+        </template>
+      </UiSectionHeader>
+
+      <UiCallout v-if="telegramConnections.length === 0" tone="info">
+        Store a Telegram Bot connection before creating a bot profile.
+        <UiButton
+          class="mt-3"
+          size="sm"
+          icon-left="plus"
+          @click="openAddConnection('telegram-bot')"
+        >
+          Add Telegram connection
+        </UiButton>
+      </UiCallout>
+
+      <UiCallout v-else-if="botProfileMessage" :tone="botProfileMessage.tone">
+        {{ botProfileMessage.text }}
+      </UiCallout>
+
+      <div
+        v-if="botProfilesLoading"
+        class="rounded-md border border-subtle bg-bg-surface p-4 text-sm text-fg-muted"
+      >
+        Loading Telegram bot profiles...
+      </div>
+
+      <div
+        v-else-if="telegramConnections.length > 0 && botProfiles.length === 0"
+        class="rounded-md border border-dashed border-default bg-bg-surface p-5"
+      >
+        <p class="font-medium text-fg-strong">No bot profiles configured.</p>
+        <p class="mt-1 max-w-3xl text-sm text-fg-muted">
+          Create a profile for each Telegram bot identity or access boundary. Profiles are static
+          setup; agents still decide which work to run after a trigger arrives.
+        </p>
+      </div>
+
+      <ul v-else class="grid gap-3">
+        <li
+          v-for="profile in botProfiles"
+          :key="profile.external_id"
+          class="rounded-md border border-subtle bg-bg-surface px-4 py-4"
+        >
+          <div
+            class="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,1fr)_auto] lg:items-center"
+          >
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="text-sm font-semibold text-fg-strong">
+                  {{ profile.identity.display_name || profile.key }}
+                </h3>
+                <UiBadge :tone="profile.enabled ? 'success' : 'warning'">
+                  {{ profile.enabled ? 'enabled' : 'disabled' }}
+                </UiBadge>
+                <UiBadge>{{ profile.ingress_mode }}</UiBadge>
+              </div>
+              <p class="mt-1 truncate text-xs text-fg-muted">
+                <span class="font-mono">{{ profile.key }}</span>
+                <span aria-hidden="true"> · </span>Connection
+                <span class="font-mono">{{ profile.auth_profile_key }}</span>
+                <template v-if="profile.bot_username">
+                  <span aria-hidden="true"> · </span>@{{ profile.bot_username }}
+                </template>
+              </p>
+            </div>
+            <dl class="grid gap-3 text-sm sm:grid-cols-3">
+              <div>
+                <dt class="text-2xs font-medium uppercase text-fg-muted">Chats</dt>
+                <dd class="mt-0.5 font-mono text-xs text-fg-default">
+                  {{ profile.access_policy.allowed_chat_refs?.length ?? 0 }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-2xs font-medium uppercase text-fg-muted">Users</dt>
+                <dd class="mt-0.5 font-mono text-xs text-fg-default">
+                  {{ profile.access_policy.allowed_user_refs?.length ?? 0 }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-2xs font-medium uppercase text-fg-muted">Commands</dt>
+                <dd class="mt-0.5 truncate font-mono text-xs text-fg-default">
+                  {{ commandSummary(profile.trigger_policy.commands) }}
+                </dd>
+              </div>
+            </dl>
+            <div class="flex justify-start lg:justify-end">
+              <UiButton size="sm" icon-left="settings" @click="editBotProfile(profile)">
+                Configure
+              </UiButton>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </UiPanel>
+
+    <details v-if="authStatus" class="rounded-md border border-default bg-bg-surface shadow-xs">
       <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-fg-strong focus-ring">
         Diagnostics
       </summary>
@@ -774,14 +1197,8 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
       description="Choose a service and store the credential in the local daemon."
       size="lg"
     >
-      <div
-        v-if="selectedProvider"
-        class="grid gap-4"
-      >
-        <UiCallout
-          v-if="visibleAuthProviders.length === 0"
-          tone="info"
-        >
+      <div v-if="selectedProvider" class="grid gap-4">
+        <UiCallout v-if="visibleAuthProviders.length === 0" tone="info">
           Enable a plugin before adding provider connections.
         </UiCallout>
 
@@ -804,26 +1221,17 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
             <UiBadge tone="accent">{{ pluginLabel(selectedProvider.plugin_slug) }}</UiBadge>
             <UiBadge>{{ formatAuthType(selectedProvider.auth_type) }}</UiBadge>
           </div>
-          <p
-            v-if="selectedProvider.description"
-            class="mt-1 text-sm text-fg-muted"
-          >
+          <p v-if="selectedProvider.description" class="mt-1 text-sm text-fg-muted">
             {{ selectedProvider.description }}
           </p>
         </div>
 
-        <UiCallout
-          v-if="providerSetupNote(selectedProvider)"
-          tone="info"
-        >
+        <UiCallout v-if="providerSetupNote(selectedProvider)" tone="info">
           {{ providerSetupNote(selectedProvider) }}
         </UiCallout>
 
         <template v-if="supportsCredential(selectedProvider) && selectedMethod(selectedProvider)">
-          <UiFormField
-            v-if="authMethods(selectedProvider).length > 1"
-            label="Auth method"
-          >
+          <UiFormField v-if="authMethods(selectedProvider).length > 1" label="Auth method">
             <template #default="{ id, describedBy, invalid }">
               <UiSelect
                 :id="id"
@@ -848,7 +1256,11 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
             <template #default="{ id, describedBy, invalid }">
               <UiInput
                 :id="id"
-                v-model="profileByForm[formKey(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')]"
+                v-model="
+                  profileByForm[
+                    formKey(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
+                  ]
+                "
                 :aria-describedby="describedBy"
                 :invalid="invalid"
                 placeholder="default"
@@ -856,14 +1268,15 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
             </template>
           </UiFormField>
 
-          <UiFormField
-            label="Display label"
-            help="Shown to operators and agents as safe metadata."
-          >
+          <UiFormField label="Display label" help="Shown to operators and agents as safe metadata.">
             <template #default="{ id, describedBy, invalid }">
               <UiInput
                 :id="id"
-                v-model="labelByForm[formKey(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')]"
+                v-model="
+                  labelByForm[
+                    formKey(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
+                  ]
+                "
                 :aria-describedby="describedBy"
                 :invalid="invalid"
                 placeholder="Primary account"
@@ -883,21 +1296,34 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
                 v-if="hasFieldOptions(field)"
                 :id="id"
                 :model-value="
-                  fieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key)
+                  fieldValue(
+                    selectedProvider.key,
+                    selectedMethod(selectedProvider)?.key ?? '',
+                    field.key,
+                  )
                 "
                 :options="fieldOptions(field)"
                 :aria-describedby="describedBy"
                 :invalid="invalid"
                 :placeholder="field.placeholder ?? 'Select'"
                 @update:model-value="
-                  setFieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key, $event)
+                  setFieldValue(
+                    selectedProvider.key,
+                    selectedMethod(selectedProvider)?.key ?? '',
+                    field.key,
+                    $event,
+                  )
                 "
               />
               <UiSecretInput
                 v-else-if="isSecretField(field)"
                 :id="id"
                 :model-value="
-                  fieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key)
+                  fieldValue(
+                    selectedProvider.key,
+                    selectedMethod(selectedProvider)?.key ?? '',
+                    field.key,
+                  )
                 "
                 :aria-describedby="describedBy"
                 :invalid="invalid"
@@ -905,30 +1331,41 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
                 no-reveal
                 :placeholder="field.placeholder ?? ''"
                 @update:model-value="
-                  setFieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key, $event)
+                  setFieldValue(
+                    selectedProvider.key,
+                    selectedMethod(selectedProvider)?.key ?? '',
+                    field.key,
+                    $event,
+                  )
                 "
               />
               <UiInput
                 v-else
                 :id="id"
                 :model-value="
-                  fieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key)
+                  fieldValue(
+                    selectedProvider.key,
+                    selectedMethod(selectedProvider)?.key ?? '',
+                    field.key,
+                  )
                 "
                 :type="inputType(field)"
                 :aria-describedby="describedBy"
                 :invalid="invalid"
                 :placeholder="field.placeholder ?? undefined"
                 @update:model-value="
-                  setFieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key, $event)
+                  setFieldValue(
+                    selectedProvider.key,
+                    selectedMethod(selectedProvider)?.key ?? '',
+                    field.key,
+                    $event,
+                  )
                 "
               />
             </template>
           </UiFormField>
 
-          <UiCallout
-            v-if="selectedMethod(selectedProvider)?.description"
-            tone="info"
-          >
+          <UiCallout v-if="selectedMethod(selectedProvider)?.description" tone="info">
             {{ selectedMethod(selectedProvider)?.description }}
           </UiCallout>
 
@@ -940,28 +1377,15 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           </UiCallout>
         </template>
 
-        <UiCallout
-          v-else
-          tone="info"
-        >
-          No credential required.
-        </UiCallout>
+        <UiCallout v-else tone="info"> No credential required. </UiCallout>
       </div>
 
-      <UiCallout
-        v-else
-        tone="info"
-      >
+      <UiCallout v-else tone="info">
         Enable a plugin before adding provider connections.
       </UiCallout>
 
       <template #footer>
-        <UiButton
-          variant="ghost"
-          @click="addPanelOpen = false"
-        >
-          Cancel
-        </UiButton>
+        <UiButton variant="ghost" @click="addPanelOpen = false"> Cancel </UiButton>
         <UiButton
           v-if="selectedProvider && selectedMethod(selectedProvider)?.interactive"
           variant="secondary"
@@ -980,6 +1404,304 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           @click="saveCredential(selectedProvider)"
         >
           Save connection
+        </UiButton>
+      </template>
+    </UiSidePanel>
+
+    <UiSidePanel
+      v-model="botProfilePanelOpen"
+      title="Telegram bot profile"
+      description="Configure static bot policy. Secrets stay in the selected connection."
+      size="lg"
+    >
+      <div class="grid gap-4">
+        <UiCallout v-if="botProfileMessage" :tone="botProfileMessage.tone">
+          {{ botProfileMessage.text }}
+        </UiCallout>
+
+        <UiFormField
+          label="Bot profile key"
+          help="Project-scoped key used by webhook paths and agent-readable setup."
+          required
+        >
+          <template #default="{ id, describedBy, invalid }">
+            <UiInput
+              :id="id"
+              v-model="botProfileForm.key"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              placeholder="support-bot"
+            />
+          </template>
+        </UiFormField>
+
+        <UiFormField
+          label="Telegram connection"
+          help="Only the profile key is exposed here; the token stays daemon-side."
+          required
+        >
+          <template #default="{ id, describedBy, invalid }">
+            <UiSelect
+              :id="id"
+              v-model="botProfileForm.auth_profile_key"
+              :options="telegramConnectionOptions"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              placeholder="Select connection"
+            />
+          </template>
+        </UiFormField>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <UiFormField label="Bot username">
+            <template #default="{ id, describedBy, invalid }">
+              <UiInput
+                :id="id"
+                v-model="botProfileForm.bot_username"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                placeholder="@support_bot"
+              />
+            </template>
+          </UiFormField>
+
+          <UiFormField label="Display name" required>
+            <template #default="{ id, describedBy, invalid }">
+              <UiInput
+                :id="id"
+                v-model="botProfileForm.identity_display_name"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                placeholder="Support Bot"
+              />
+            </template>
+          </UiFormField>
+        </div>
+
+        <UiFormField label="Purpose">
+          <template #default="{ id, describedBy, invalid }">
+            <UiTextarea
+              :id="id"
+              v-model="botProfileForm.identity_purpose"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              :rows="3"
+              placeholder="Handle support requests from approved Telegram users."
+            />
+          </template>
+        </UiFormField>
+
+        <UiFormField label="Voice">
+          <template #default="{ id, describedBy, invalid }">
+            <UiTextarea
+              :id="id"
+              v-model="botProfileForm.identity_voice"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              :rows="2"
+              placeholder="Clear, concise, and operational."
+            />
+          </template>
+        </UiFormField>
+
+        <UiFormField
+          label="Agent instructions"
+          help="Static guidance attached to every agent request created by this bot."
+        >
+          <template #default="{ id, describedBy, invalid }">
+            <UiTextarea
+              :id="id"
+              v-model="botProfileForm.agent_default_instructions"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              :rows="4"
+              placeholder="Triage the request, inspect relevant project context, and reply only when the next action is clear."
+            />
+          </template>
+        </UiFormField>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <UiFormField label="Boundaries">
+            <template #default="{ id, describedBy, invalid }">
+              <UiTextarea
+                :id="id"
+                v-model="botProfileForm.agent_boundaries"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                :rows="3"
+                placeholder="Do not change accounts, spend budget, or promise outcomes without explicit approval."
+              />
+            </template>
+          </UiFormField>
+
+          <UiFormField label="Escalation">
+            <template #default="{ id, describedBy, invalid }">
+              <UiTextarea
+                :id="id"
+                v-model="botProfileForm.agent_escalation"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                :rows="3"
+                placeholder="Escalate billing, legal, or destructive actions before executing."
+              />
+            </template>
+          </UiFormField>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <UiFormField
+            label="Allowed chats"
+            help="Comma-separated StackOS refs, for example telegram-chat:999."
+            required
+          >
+            <template #default="{ id, describedBy, invalid }">
+              <UiInput
+                :id="id"
+                v-model="botProfileForm.allowed_chat_refs"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                placeholder="telegram-chat:999"
+              />
+            </template>
+          </UiFormField>
+
+          <UiFormField
+            label="Allowed users"
+            help="Comma-separated StackOS refs, for example telegram-user:555."
+            required
+          >
+            <template #default="{ id, describedBy, invalid }">
+              <UiInput
+                :id="id"
+                v-model="botProfileForm.allowed_user_refs"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                placeholder="telegram-user:555"
+              />
+            </template>
+          </UiFormField>
+        </div>
+
+        <div class="grid gap-4">
+          <UiFormField label="Mentions">
+            <template #default="{ id, describedBy, invalid }">
+              <UiInput
+                :id="id"
+                v-model="botProfileForm.mention_patterns"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                placeholder="@support_bot"
+              />
+            </template>
+          </UiFormField>
+        </div>
+
+        <div class="grid gap-3 rounded-md border border-subtle bg-bg-surface-alt p-3">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-fg-strong">Command intents</h3>
+              <p class="mt-0.5 text-xs text-fg-muted">
+                Optional triggers with guidance passed to the operating agent.
+              </p>
+            </div>
+            <UiButton size="sm" variant="secondary" icon-left="plus" @click="addCommandDraft">
+              Add command
+            </UiButton>
+          </div>
+
+          <div
+            v-for="(command, index) in botProfileForm.commands"
+            :key="index"
+            class="grid gap-3 rounded-md border border-subtle bg-bg-surface p-3"
+          >
+            <div class="grid gap-3 sm:grid-cols-[minmax(8rem,12rem)_1fr_auto] sm:items-start">
+              <UiFormField label="Command">
+                <template #default="{ id, describedBy, invalid }">
+                  <UiInput
+                    :id="id"
+                    v-model="command.command"
+                    :aria-describedby="describedBy"
+                    :invalid="invalid"
+                    placeholder="/support"
+                  />
+                </template>
+              </UiFormField>
+
+              <UiFormField label="Description">
+                <template #default="{ id, describedBy, invalid }">
+                  <UiInput
+                    :id="id"
+                    v-model="command.description"
+                    :aria-describedby="describedBy"
+                    :invalid="invalid"
+                    placeholder="Handle support requests"
+                  />
+                </template>
+              </UiFormField>
+
+              <div class="pt-6">
+                <UiButton
+                  size="sm"
+                  variant="ghost"
+                  icon-left="trash"
+                  @click="removeCommandDraft(index)"
+                >
+                  Remove
+                </UiButton>
+              </div>
+            </div>
+
+            <UiFormField label="Command guidance">
+              <template #default="{ id, describedBy, invalid }">
+                <UiTextarea
+                  :id="id"
+                  v-model="command.guidance"
+                  :aria-describedby="describedBy"
+                  :invalid="invalid"
+                  :rows="3"
+                  placeholder="Explain what the agent should gather, decide, and return for this command."
+                />
+              </template>
+            </UiFormField>
+
+            <UiCheckbox v-model="command.enabled" label="Command enabled" />
+          </div>
+        </div>
+
+        <details class="rounded-md border border-subtle bg-bg-surface-alt">
+          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default">
+            Advanced delivery behavior
+          </summary>
+          <div class="grid gap-3 border-t border-subtle p-3">
+            <UiCheckbox
+              v-model="botProfileForm.store_non_trigger_messages"
+              label="Store non-trigger messages"
+            />
+            <UiCheckbox
+              v-model="botProfileForm.origin_required"
+              label="Require origin-bound replies"
+            />
+            <UiCheckbox
+              v-model="botProfileForm.reply_to_source_message"
+              label="Reply to source message"
+            />
+            <UiCheckbox
+              v-model="botProfileForm.same_thread"
+              label="Use same thread when available"
+            />
+          </div>
+        </details>
+      </div>
+
+      <template #footer>
+        <UiButton variant="ghost" @click="botProfilePanelOpen = false"> Cancel </UiButton>
+        <UiButton
+          variant="primary"
+          icon-left="save"
+          :loading="busyAction === 'telegram-bot-profile:save'"
+          @click="saveBotProfile"
+        >
+          Save bot profile
         </UiButton>
       </template>
     </UiSidePanel>

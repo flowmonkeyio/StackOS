@@ -185,17 +185,18 @@ class AgentRequestRepository:
         self._require_project(project_id)
         now = _utcnow()
         stmt = select(AgentRequest).where(
-            AgentRequest.project_id == project_id,
+            col(AgentRequest.project_id) == project_id,
             or_(
-                AgentRequest.status == AgentRequestStatus.NEW,
+                col(AgentRequest.status) == AgentRequestStatus.NEW,
                 (
-                    (AgentRequest.status == AgentRequestStatus.CLAIMED)
-                    & (AgentRequest.claim_expires_at <= now)
+                    (col(AgentRequest.status) == AgentRequestStatus.CLAIMED)
+                    & col(AgentRequest.claim_expires_at).is_not(None)
+                    & (col(AgentRequest.claim_expires_at) <= now)
                 ),
             ),
         )
         if attention_status is not None:
-            stmt = stmt.where(AgentRequest.attention_status == attention_status)
+            stmt = stmt.where(col(AgentRequest.attention_status) == attention_status)
         return cursor_paginate(
             self._s,
             stmt,

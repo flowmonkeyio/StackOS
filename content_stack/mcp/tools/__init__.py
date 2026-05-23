@@ -8,6 +8,7 @@ from content_stack.mcp.tools import (
     agent_requests,
     artifacts,
     auth,
+    communications,
     context,
     cost,
     meta,
@@ -27,6 +28,7 @@ def register_all(registry: ToolRegistry) -> None:
     actions.register(registry)
     projects.register(registry)
     auth.register(registry)
+    communications.register(registry)
     context.register(registry)
     runs.register(registry)
     cost.register(registry)

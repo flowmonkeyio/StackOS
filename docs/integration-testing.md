@@ -78,6 +78,25 @@ All three checks assert the same invariants:
 - The action cost and structured output are recorded through the normal
   action-call ledger.
 
+## Telegram Local Slice
+
+Telegram communication setup has its own mocked provider E2E because it spans
+credential setup, bot-profile setup, webhook ingress, agent requests, run plans,
+and provider actions:
+
+```bash
+TPF_LLM_TOOL=codex tpf uv run pytest \
+  tests/integration/test_routes/test_telegram_setup_to_action_routes.py \
+  tests/integration/test_mcp/test_mcp_communications.py \
+  tests/integration/test_repositories/test_telegram_bot_actions.py \
+  -q
+```
+
+This does not require a live Telegram account. It uses a fake bot token and
+mocked Bot API responses, while still exercising the real StackOS credential
+boundary, project-scoped bot profile, local webhook route, run-plan grant, and
+redacted action-call/resource audit.
+
 ## Rule
 
 Do not bypass StackOS internals during local integration testing. Mock only the

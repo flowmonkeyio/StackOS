@@ -21,9 +21,16 @@ does not run an assistant, classify intent, or decide workflows.
   let the selected agent runner decide the response.
 - Telegram behavior is project-scoped through `communication-bot-profile`
   records. Credentials store token material and transport endpoints only.
+- Bot profiles store identity, default agent guidance, and optional structured
+  command intents. Commands are not plain strings; each command may carry
+  guidance/configuration for the operating agent.
 - Each Telegram bot profile binds to one credential profile through
   `auth_profile_key`; do not add global Telegram credentials or fallback token
   lookup.
+- Create and update bot profiles through `communicationBotProfile.upsert`.
+  Inspect them through `communicationBotProfile.get` and
+  `communicationBotProfile.list`. These are setup operations shared by REST,
+  CLI, MCP, and UI; do not bypass them with raw resource writes in product code.
 - `local-webhook` is the normal Telegram listener path for local StackOS.
   `updates.poll` is bounded diagnostic/bootstrap access only, never a
   background listener.
@@ -64,12 +71,13 @@ does not run an assistant, classify intent, or decide workflows.
 Telegram bot identity checks, text messages, photo sends, callback answers,
 bounded diagnostic `updates.poll`, webhook set/delete/info, and
 bot-profile-scoped secret-token ingress are executable through `action.execute`
-and the `telegram-bot` connector. Webhook ingress stores communication
-resources and creates generic agent requests only after bot-profile trigger and
-access policy allow it. SMTP, IMAP, automatic background callback ACK jobs, and
-richer Telegram media/admin operations remain deferred until their connector,
-mocked provider tests, redaction tests, and run-plan grant coverage are
-delivered.
+and the `telegram-bot` connector. Bot-profile setup is executable through
+`communicationBotProfile.*` across REST, CLI, and MCP. Webhook ingress stores
+communication resources and creates generic agent requests only after
+bot-profile trigger and access policy allow it. SMTP, IMAP, automatic
+background callback ACK jobs, and richer Telegram media/admin operations remain
+deferred until their connector, mocked provider tests, redaction tests, and
+run-plan grant coverage are delivered.
 
 The core `agentRequest.*` operations are executable through the shared
 operation registry. Use `agentRequest.list`, `agentRequest.get`,

@@ -200,27 +200,48 @@ Telegram is not globally connected. A project owns one or more
 project
 -> communication-bot-profile
 -> telegram credential profile
--> persona / access / trigger / context / response policies
+-> identity / agent guidance / access / trigger / context / response policies
 ```
 
 Each profile binds to exactly one project-scoped Telegram credential profile by
 `auth_profile_key`. There is no global Telegram credential, no cross-project
 fallback credential, and no agent-visible token handoff. The credential stores
 only bot token material, webhook secret, and safe transport endpoint
-configuration such as `api_base_url`. The bot profile owns behavior:
+configuration such as `api_base_url`. The bot profile owns behavior and agent
+setup:
 
-- `persona`: role, LLM guidance, boundaries, escalation rules, and forbidden
-  actions.
+- `identity`: display name, purpose, and voice. This is the bot's project-level
+  identity, not the credential identity returned by Telegram `getMe`.
+- `agent_guidance`: default instructions, boundaries, and escalation guidance
+  attached to every agent request created by this bot.
 - `access_policy`: numeric Telegram user/chat ids first; usernames are metadata
   and setup convenience because they can change.
-- `trigger_policy`: DM, mention, slash command, reply-to-bot, callback button,
-  or configured wake patterns.
+- `trigger_policy`: DM, mention, structured slash-command intents,
+  reply-to-bot, callback button, or configured wake patterns. Command intents
+  may carry their own description, guidance, expected inputs, and output
+  expectations for the operating agent.
 - `visibility_policy`: whether allowed chats may be observed without triggering
   a request.
 - `context_policy`: bounded history selection from messages StackOS already
   stored, filtered by project/profile/chat/thread/lookback/fields.
 - `response_policy`: same chat/thread defaults, invoker-only behavior,
   broadcast/DM constraints, and reply requirements.
+
+Setup is exposed through shared StackOS operations, not provider-specific MCP
+tools:
+
+- `communicationBotProfile.upsert`: creates or updates the safe bot-profile
+  identity, agent guidance, trigger policy, and delivery policy after a
+  project-scoped `telegram-bot` credential profile exists.
+- `communicationBotProfile.get`: returns one safe profile, including response
+  reference maps such as `reply_to_message_refs`, `thread_refs`, and
+  `direct_messages_topic_refs`.
+- `communicationBotProfile.list`: lists safe profiles for a project.
+
+These operations are available through REST, CLI `ops call`, and MCP. The
+browser UI token may call only this narrow setup mutation because it never
+includes token material; provider secrets still go through the typed auth
+credential setup route and remain daemon-side.
 
 Visibility is not activation. A bot profile may observe and store allowed group
 messages for future context, but StackOS creates an `agent_request` only when a
@@ -321,7 +342,7 @@ or mailbox internals.
 
 ### `communication-bot-profile`
 
-Represents one project-scoped bot persona and policy bundle.
+Represents one project-scoped bot identity and policy bundle.
 
 Example fields:
 
@@ -332,7 +353,8 @@ Example fields:
 - `ingress_mode`: `local-webhook` for the normal local listener path, or
   `webhook` for an explicitly hardened public/relay boundary
 - `allowed_updates`
-- `persona`
+- `identity`
+- `agent_guidance`
 - `access_policy`
 - `trigger_policy`
 - `visibility_policy`
@@ -637,8 +659,9 @@ Secret fields:
 - `bot_token`
 - `webhook_secret_token`
 
-Bot behavior fields such as persona, allowed users, allowed chats, trigger
-patterns, context windows, and response constraints belong to
+Bot behavior fields such as identity, agent guidance, command intent guidance,
+allowed users, allowed chats, trigger patterns, context windows, and response
+constraints belong to
 `communication-bot-profile` resource records, not credentials.
 
 Credential tests:
@@ -854,23 +877,29 @@ Flow:
 
 1. Operator creates a Telegram credential profile with server-side bot token and
    webhook secret fields.
-2. Operator creates a project-scoped `communication-bot-profile` whose
-   `auth_profile_key` points at that credential profile.
-3. Operator sets `ingress_mode: local-webhook` and an explicit
+2. Operator or setup agent calls `communicationBotProfile.upsert` to create a
+   project-scoped `communication-bot-profile` whose `auth_profile_key` points at
+   that credential profile.
+3. Operator defines bot identity, default agent guidance, access policy, and
+   optional structured command intents on the bot profile.
+4. Operator sets `ingress_mode: local-webhook` and an explicit
    `allowed_updates` list on the bot profile.
-4. Operator runs the official local Telegram Bot API server or a hardened public
+5. Operator runs the official local Telegram Bot API server or a hardened public
    relay and calls `communications.telegram-bot.webhook.set`.
-5. The listener verifies Telegram secret token against the daemon-held
+6. The listener verifies Telegram secret token against the daemon-held
    credential bound by `auth_profile_key`.
-6. The listener rejects the wrong project, bot profile, or secret with the same
+7. The listener rejects the wrong project, bot profile, or secret with the same
    invalid-secret response.
-7. The listener applies bot-profile update/chat visibility policy. Blocked
+8. The listener applies bot-profile update/chat visibility policy. Blocked
    chats, disabled profiles, and no-store non-triggers write nothing.
-8. The listener upserts `communication-event`, `communication-message`, and
+9. The listener upserts `communication-event`, `communication-message`, and
    `communication-interaction` records by bot-profile-scoped provider ids.
-9. The listener creates or replays one idempotent generic `agent_requests` row
+10. The listener creates or replays one idempotent generic `agent_requests` row
    only when trigger policy matches and invoker access policy allows it.
-10. The listener does not call a model and does not infer business intent.
+11. The listener copies safe identity, agent guidance, context policy, response
+   policy, and matched command guidance into request metadata for the operating
+   agent.
+12. The listener does not call a model and does not infer business intent.
 
 Rules:
 
@@ -945,6 +974,7 @@ User sends DM to bot
 -> agentRequest.list shows unread request
 -> agent claims request
 -> agent creates run plan from a chosen template
+-> agent links the run plan to the request
 -> agent executes needed actions
 -> agent sends reply with communications.telegram-bot.message.send
 -> agent completes request

@@ -213,6 +213,7 @@ def _store_update(
             "policy_status": decision["status"],
             "triggered": decision["create_request"],
             "trigger_reason": decision.get("trigger_reason"),
+            "matched_command": decision.get("matched_command"),
             "message_ref": parsed.get("message_ref"),
             "interaction_ref": parsed.get("interaction_ref"),
         },
@@ -242,31 +243,37 @@ def _store_update(
     )
     request_id = None
     if decision["create_request"]:
-        request = AgentRequestRepository(session).create(
-            project_id=project_id,
-            request_key=f"telegram-update:{profile.key}:{update_id}",
-            title=parsed["request_title"],
-            body_preview=parsed["body_preview"],
-            source_provider="telegram-bot",
-            source_kind=parsed["source_kind"],
-            source_resource_key=source_resource_key,
-            source_resource_record_id=source_record_id,
-            source_message_ref=parsed.get("message_ref"),
-            metadata_json={
-                "bot_profile_key": profile.key,
-                "auth_profile_key": profile.auth_profile_key,
-                "update_id": update_id,
-                "event_record_id": event.id,
-                "interaction_ref": parsed.get("interaction_ref"),
-                "invoker_ref": parsed.get("user_ref"),
-                "chat_ref": parsed.get("chat_ref"),
-                "thread_ref": parsed.get("thread_ref"),
-                "trigger_reason": decision.get("trigger_reason"),
-                "persona": profile.data.get("persona"),
-                "context_policy": profile.data.get("context_policy"),
-                "response_policy": profile.data.get("response_policy"),
-            },
-        ).data
+        request = (
+            AgentRequestRepository(session)
+            .create(
+                project_id=project_id,
+                request_key=f"telegram-update:{profile.key}:{update_id}",
+                title=parsed["request_title"],
+                body_preview=parsed["body_preview"],
+                source_provider="telegram-bot",
+                source_kind=parsed["source_kind"],
+                source_resource_key=source_resource_key,
+                source_resource_record_id=source_record_id,
+                source_message_ref=parsed.get("message_ref"),
+                metadata_json={
+                    "bot_profile_key": profile.key,
+                    "auth_profile_key": profile.auth_profile_key,
+                    "update_id": update_id,
+                    "event_record_id": event.id,
+                    "interaction_ref": parsed.get("interaction_ref"),
+                    "invoker_ref": parsed.get("user_ref"),
+                    "chat_ref": parsed.get("chat_ref"),
+                    "thread_ref": parsed.get("thread_ref"),
+                    "trigger_reason": decision.get("trigger_reason"),
+                    "matched_command": decision.get("matched_command"),
+                    "identity": profile.data.get("identity"),
+                    "agent_guidance": profile.data.get("agent_guidance"),
+                    "context_policy": profile.data.get("context_policy"),
+                    "response_policy": profile.data.get("response_policy"),
+                },
+            )
+            .data
+        )
         request_id = request.id
     return {
         "ok": True,
@@ -302,8 +309,8 @@ def _policy_decision(
     if not _chat_allowed(profile, parsed):
         return {"store": False, "create_request": False, "status": "chat_blocked"}
 
-    trigger_reason = _trigger_reason(profile, parsed)
-    if trigger_reason is None:
+    trigger_match = _trigger_match(profile, parsed)
+    if trigger_match is None:
         visibility = _policy(profile, "visibility_policy")
         if visibility.get("store_non_trigger_messages") is False:
             return {"store": False, "create_request": False, "status": "not_triggered"}
@@ -319,7 +326,8 @@ def _policy_decision(
         "store": True,
         "create_request": True,
         "status": "request_created",
-        "trigger_reason": trigger_reason,
+        "trigger_reason": trigger_match["reason"],
+        "matched_command": trigger_match.get("command"),
         "identity_confidence": user_match,
     }
 
@@ -453,6 +461,21 @@ def _mark_button_clicked(
 
 
 def _validate_bot_profile(data: Mapping[str, Any]) -> None:
+    identity = data.get("identity")
+    if not isinstance(identity, Mapping) or not str(identity.get("display_name") or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="invalid Telegram bot profile",
+        )
+    trigger = data.get("trigger_policy")
+    commands = trigger.get("commands") if isinstance(trigger, Mapping) else []
+    if commands is not None and (
+        not isinstance(commands, list) or any(not isinstance(item, Mapping) for item in commands)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="invalid Telegram bot profile",
+        )
     access = data.get("access_policy")
     if not isinstance(access, Mapping):
         raise HTTPException(
@@ -496,44 +519,70 @@ def _validate_bot_profile(data: Mapping[str, Any]) -> None:
                 )
 
 
-def _trigger_reason(profile: TelegramBotProfile, parsed: dict[str, Any]) -> str | None:
+def _trigger_match(profile: TelegramBotProfile, parsed: dict[str, Any]) -> dict[str, Any] | None:
     if parsed["update_type"] == "callback_query":
-        return "callback"
+        return {"reason": "callback"}
     message = parsed.get("message")
     if not isinstance(message, dict):
         return None
     trigger = _policy(profile, "trigger_policy")
     text = parsed.get("body_preview") or ""
     chat_type = parsed.get("chat_type")
-    if chat_type == "private" and trigger.get("dm_trigger", "always") == "always":
-        return "dm"
     group_trigger = trigger.get("group_trigger", "mention_or_command")
-    if group_trigger == "always":
-        return "group_always"
-    if group_trigger == "never":
+    if chat_type != "private" and group_trigger == "never":
         return None
-    if _matches_command(text, trigger, profile):
-        return "command"
+    command = _matched_command(text, trigger, profile)
+    if command is not None:
+        return {"reason": "command", "command": command}
+    if chat_type == "private" and trigger.get("dm_trigger", "always") == "always":
+        return {"reason": "dm"}
+    if group_trigger == "always":
+        return {"reason": "group_always"}
     if _matches_mention(text, trigger, profile):
-        return "mention"
+        return {"reason": "mention"}
     if trigger.get("reply_to_bot_triggers") is True and _is_reply_to_bot(message, profile):
-        return "reply_to_bot"
+        return {"reason": "reply_to_bot"}
     return None
 
 
-def _matches_command(text: str, trigger: Mapping[str, Any], profile: TelegramBotProfile) -> bool:
-    commands = _split_config_values(trigger.get("commands"))
+def _matched_command(
+    text: str,
+    trigger: Mapping[str, Any],
+    profile: TelegramBotProfile,
+) -> dict[str, Any] | None:
+    commands = _command_specs(trigger.get("commands"))
     if not commands:
-        return False
+        return None
     bot_username = _bot_username(profile)
     first_token = text.strip().split(maxsplit=1)[0] if text.strip() else ""
     for command in commands:
-        normalized = command if command.startswith("/") else f"/{command}"
-        if first_token == normalized:
-            return True
-        if bot_username and first_token == f"{normalized}@{bot_username}":
-            return True
-    return False
+        if command.get("enabled") is False:
+            continue
+        candidates = [str(command.get("command") or ""), *command.get("aliases", [])]
+        for candidate in candidates:
+            normalized = candidate if candidate.startswith("/") else f"/{candidate}"
+            if first_token == normalized:
+                return command
+            if bot_username and first_token == f"{normalized}@{bot_username}":
+                return command
+    return None
+
+
+def _command_specs(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    specs: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        command = str(item.get("command") or "").strip()
+        if not command:
+            continue
+        spec = dict(item)
+        spec["command"] = command if command.startswith("/") else f"/{command}"
+        spec["aliases"] = _split_config_values(spec.get("aliases"))
+        specs.append(spec)
+    return specs
 
 
 def _matches_mention(text: str, trigger: Mapping[str, Any], profile: TelegramBotProfile) -> bool:
@@ -626,8 +675,9 @@ def _store_message(
     message = parsed.get("message")
     if not isinstance(message, dict):
         return None
-    chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
-    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    raw_chat = message.get("chat")
+    chat: Mapping[str, Any] = raw_chat if isinstance(raw_chat, Mapping) else {}
+    chat_id = chat.get("id")
     if chat_id is not None:
         resources.upsert_record(
             project_id=project_id,

@@ -556,11 +556,17 @@ class AuthRepository:
         project_id: int | None,
         provider_key: str | None,
     ) -> list[IntegrationCredential]:
+        if provider_key == "telegram-bot" and project_id is None:
+            return []
         stmt = select(IntegrationCredential)
         if provider_key is not None:
             stmt = stmt.where(col(IntegrationCredential.kind) == provider_key)
         if project_id is None:
             stmt = stmt.where(col(IntegrationCredential.project_id).is_(None))
+            if provider_key is None:
+                stmt = stmt.where(col(IntegrationCredential.kind) != "telegram-bot")
+        elif provider_key == "telegram-bot":
+            stmt = stmt.where(col(IntegrationCredential.project_id) == project_id)
         else:
             stmt = stmt.where(
                 or_(
@@ -568,6 +574,13 @@ class AuthRepository:
                     col(IntegrationCredential.project_id).is_(None),
                 )
             )
+            if provider_key is None:
+                stmt = stmt.where(
+                    or_(
+                        col(IntegrationCredential.project_id).is_not(None),
+                        col(IntegrationCredential.kind) != "telegram-bot",
+                    )
+                )
         return list(
             self._s.exec(
                 stmt.order_by(
@@ -584,11 +597,17 @@ class AuthRepository:
         project_id: int | None,
         provider_key: str | None,
     ) -> list[Credential]:
+        if provider_key == "telegram-bot" and project_id is None:
+            return []
         stmt = select(Credential)
         if provider_key is not None:
             stmt = stmt.where(col(Credential.provider_key) == provider_key)
         if project_id is None:
             stmt = stmt.where(col(Credential.project_id).is_(None))
+            if provider_key is None:
+                stmt = stmt.where(col(Credential.provider_key) != "telegram-bot")
+        elif provider_key == "telegram-bot":
+            stmt = stmt.where(col(Credential.project_id) == project_id)
         else:
             stmt = stmt.where(
                 or_(
@@ -596,6 +615,13 @@ class AuthRepository:
                     col(Credential.project_id).is_(None),
                 )
             )
+            if provider_key is None:
+                stmt = stmt.where(
+                    or_(
+                        col(Credential.project_id).is_not(None),
+                        col(Credential.provider_key) != "telegram-bot",
+                    )
+                )
         return list(self._s.exec(stmt.order_by(col(Credential.id).asc())).all())
 
     def _ensure_credential(
@@ -747,6 +773,11 @@ class AuthRepository:
                 "backing credential not found",
                 data={"credential_ref": credential.credential_ref},
             )
+        if row.kind == "telegram-bot" and row.project_id is None:
+            raise NotFoundError(
+                f"credential {credential.credential_ref!r} not in project {project_id}",
+                data={"project_id": project_id, "credential_ref": credential.credential_ref},
+            )
         if row.project_id is not None and row.project_id != project_id:
             raise NotFoundError(
                 f"credential {credential.credential_ref!r} not in project {project_id}",
@@ -783,6 +814,8 @@ class AuthRepository:
             extra["site_url"] = str(site_url)
             if config.get("api_version"):
                 extra["api_version"] = str(config["api_version"])
+        elif row.kind == "telegram-bot" and config.get("api_base_url"):
+            extra["api_base_url"] = str(config["api_base_url"])
         return extra
 
     def _normalize_test_result(

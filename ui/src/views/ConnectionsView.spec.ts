@@ -252,6 +252,171 @@ describe('ConnectionsView', () => {
     expect(wrapper.text()).not.toContain('app pass')
   })
 
+  it('creates Telegram bot profiles without posting bot tokens to the profile operation', async () => {
+    let connected = false
+    const postedBodies: unknown[] = []
+    const botProfiles: unknown[] = []
+
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (init?.body) postedBodies.push(JSON.parse(String(init.body)))
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
+      if (url === '/api/v1/auth/providers') {
+        return json([
+          authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod()),
+        ])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({
+          project_id: 1,
+          provider_key: null,
+          providers: [],
+          connections: connected
+            ? [
+                authConnection({
+                  revokedAt: null,
+                  providerKey: 'telegram-bot',
+                  credentialRef: 'cred_telegram',
+                  authType: 'bot-token',
+                  authMethodKey: 'bot-token',
+                  profileKey: 'support',
+                  label: 'Support Bot',
+                }),
+              ]
+            : [],
+        })
+      }
+      if (url === '/api/v1/projects/1/auth/telegram-bot/credentials') {
+        connected = true
+        return json(
+          {
+            data: authConnection({
+              revokedAt: null,
+              providerKey: 'telegram-bot',
+              credentialRef: 'cred_telegram',
+              authType: 'bot-token',
+              authMethodKey: 'bot-token',
+              profileKey: 'support',
+              label: 'Support Bot',
+            }),
+          },
+          201,
+        )
+      }
+      if (url === '/api/v1/operations/communicationBotProfile.list/call') {
+        return json({ items: botProfiles, next_cursor: null, total_estimate: botProfiles.length })
+      }
+      if (url === '/api/v1/operations/communicationBotProfile.upsert/call') {
+        const body = JSON.parse(String(init?.body))
+        const args = body.arguments
+        botProfiles.splice(0, botProfiles.length, {
+          record_id: 1,
+          project_id: 1,
+          external_id: `telegram-bot-profile:${args.key}`,
+          key: args.key,
+          provider_key: 'telegram-bot',
+          auth_profile_key: args.auth_profile_key,
+          enabled: true,
+          bot_username: args.bot_username,
+          ingress_mode: 'local-webhook',
+          allowed_updates: ['message', 'callback_query'],
+          identity: args.identity,
+          agent_guidance: args.agent_guidance,
+          access_policy: args.access_policy,
+          trigger_policy: args.trigger_policy,
+          visibility_policy: args.visibility_policy,
+          context_policy: { include_last_messages: 50 },
+          response_policy: args.response_policy,
+          refs: {},
+          webhook_base_url: null,
+          allowed_webhook_hosts: [],
+        })
+        return json({ data: botProfiles[0], run_id: null, project_id: 1 })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
+    await clickButton(wrapper, 'Add connection')
+    await vi.waitFor(() =>
+      expect(wrapper.find('input[placeholder="123456:ABC..."]').exists()).toBe(true),
+    )
+
+    await wrapper
+      .find<HTMLInputElement>('input[placeholder="123456:ABC..."]')
+      .setValue('123456:ABC')
+    await wrapper
+      .find<HTMLInputElement>('input[placeholder="Primary account"]')
+      .setValue('Support Bot')
+    await wrapper.find<HTMLInputElement>('input[placeholder="default"]').setValue('support')
+    await wrapper
+      .find<HTMLInputElement>('input[placeholder="http://127.0.0.1:8081"]')
+      .setValue('http://127.0.0.1:8081')
+    await clickButton(wrapper, 'Save connection')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Support Bot'))
+
+    await clickButton(wrapper, 'Add bot profile')
+    await wrapper
+      .find<HTMLInputElement>('input[placeholder="@support_bot"]')
+      .setValue('@support_bot')
+    await wrapper
+      .find<HTMLTextAreaElement>('textarea[placeholder^="Handle support"]')
+      .setValue('Handle support requests from approved Telegram users.')
+    await wrapper
+      .find<HTMLInputElement>('input[placeholder="telegram-chat:999"]')
+      .setValue('telegram-chat:999')
+    await wrapper
+      .find<HTMLInputElement>('input[placeholder="telegram-user:555"]')
+      .setValue('telegram-user:555')
+    await clickButton(wrapper, 'Save bot profile')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('support-bot'))
+    const profileCalls = postedBodies.filter(
+      (body) =>
+        typeof body === 'object' &&
+        body !== null &&
+        'arguments' in body &&
+        (body as { arguments?: { key?: string } }).arguments?.key === 'support-bot',
+    )
+    expect(profileCalls).toHaveLength(1)
+    expect(profileCalls[0]).toMatchObject({
+      arguments: {
+        project_id: 1,
+        key: 'support-bot',
+        auth_profile_key: 'support',
+        identity: {
+          display_name: 'Support Bot',
+          purpose: 'Handle support requests from approved Telegram users.',
+          voice: 'Clear, concise, and operational.',
+        },
+        access_policy: {
+          allowed_chat_refs: ['telegram-chat:999'],
+          allowed_user_refs: ['telegram-user:555'],
+        },
+        trigger_policy: {
+          commands: [
+            expect.objectContaining({
+              command: '/support',
+              guidance: expect.stringContaining('Triage the request'),
+            }),
+          ],
+        },
+      },
+    })
+    expect(JSON.stringify(profileCalls)).not.toContain('123456:ABC')
+    expect(wrapper.text()).not.toContain('123456:ABC')
+  })
+
   it('does not report failed credentials as connected and keeps operator actions available', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
@@ -312,18 +477,30 @@ function authProvider(
 function authConnection({
   revokedAt,
   status,
+  providerKey = 'firecrawl',
+  credentialRef = 'cred_firecrawl',
+  authType = 'api-key',
+  authMethodKey = 'api_key',
+  profileKey = 'default',
+  label = 'Primary Firecrawl',
 }: {
   revokedAt: string | null
   status?: string
+  providerKey?: string
+  credentialRef?: string
+  authType?: string
+  authMethodKey?: string
+  profileKey?: string
+  label?: string
 }) {
   return {
-    credential_ref: 'cred_firecrawl',
+    credential_ref: credentialRef,
     project_id: 1,
-    provider_key: 'firecrawl',
-    auth_type: 'api-key',
-    auth_method_key: 'api_key',
-    profile_key: 'default',
-    label: 'Primary Firecrawl',
+    provider_key: providerKey,
+    auth_type: authType,
+    auth_method_key: authMethodKey,
+    profile_key: profileKey,
+    label,
     status: status ?? (revokedAt ? 'revoked' : 'connected'),
     expires_at: null,
     last_tested_at: null,
@@ -352,6 +529,47 @@ function apiKeyMethod(placeholder = 'sk-...') {
           secret: true,
           required: true,
           placeholder,
+        },
+      ],
+      config: null,
+    },
+  ]
+}
+
+function telegramBotMethod() {
+  return [
+    {
+      key: 'bot-token',
+      label: 'Bot token',
+      auth_type: 'bot-token',
+      description: '',
+      interactive: false,
+      payload_format: 'json',
+      payload_field: null,
+      fields: [
+        {
+          key: 'bot_token',
+          label: 'Bot Token',
+          type: 'secret',
+          secret: true,
+          required: true,
+          placeholder: '123456:ABC...',
+        },
+        {
+          key: 'webhook_secret_token',
+          label: 'Webhook Secret Token',
+          type: 'secret',
+          secret: true,
+          required: false,
+          placeholder: '',
+        },
+        {
+          key: 'api_base_url',
+          label: 'Bot API Base URL',
+          type: 'text',
+          secret: false,
+          required: false,
+          placeholder: 'http://127.0.0.1:8081',
         },
       ],
       config: null,
@@ -396,9 +614,7 @@ function catalogJson(url: string): Response | null {
 }
 
 async function clickButton(wrapper: ReturnType<typeof mount>, label: string): Promise<void> {
-  const button = wrapper
-    .findAll('button')
-    .find((candidate) => candidate.text().trim() === label)
+  const button = wrapper.findAll('button').find((candidate) => candidate.text().trim() === label)
   expect(button, `${label} button`).toBeDefined()
   await button?.trigger('click')
 }

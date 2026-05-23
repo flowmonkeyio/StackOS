@@ -13,7 +13,7 @@ from sqlmodel import Session
 from content_stack.actions import ActionRepository
 from content_stack.auth_providers import AuthRepository
 from content_stack.repositories.agent_requests import AgentRequestRepository
-from content_stack.repositories.base import ConflictError
+from content_stack.repositories.base import ConflictError, NotFoundError
 from content_stack.repositories.projects import IntegrationCredentialRepository
 from content_stack.repositories.resources import ResourceRepository
 
@@ -58,6 +58,15 @@ def _telegram_bot_profile(
         "bot_username": "stackos_bot",
         "allowed_updates": ["message", "callback_query"],
         "refs": {"main": "12345"},
+        "identity": {
+            "display_name": "Support Bot",
+            "purpose": "Handle support requests from approved Telegram users.",
+            "voice": "Concise and calm.",
+        },
+        "agent_guidance": {
+            "default_instructions": "Triage support requests before replying.",
+            "boundaries": "Do not expose secrets.",
+        },
         "access_policy": access_policy
         or {
             "dm_mode": "allowlist",
@@ -358,7 +367,10 @@ def test_telegram_webhook_actions_execute_against_local_bot_api_server(
     httpx_mock.add_response(
         method="POST",
         url=f"http://127.0.0.1:8081/bot{_TOKEN}/getWebhookInfo",
-        json={"ok": True, "result": {"url": "http://127.0.0.1:5180/api/v1/ingress/telegram/1/support-bot"}},
+        json={
+            "ok": True,
+            "result": {"url": "http://127.0.0.1:5180/api/v1/ingress/telegram/1/support-bot"},
+        },
     )
     httpx_mock.add_response(
         method="POST",
@@ -454,20 +466,26 @@ def test_telegram_send_rejects_global_credential_for_project_bot_profile(
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
-    IntegrationCredentialRepository(session).set(
-        project_id=None,
-        kind="telegram-bot",
-        secret_payload=json.dumps(
-            {"bot_token": _TOKEN, "webhook_secret_token": "telegram-secret"}
-        ).encode("utf-8"),
+    global_credential = (
+        IntegrationCredentialRepository(session)
+        .set(
+            project_id=None,
+            kind="telegram-bot",
+            secret_payload=json.dumps(
+                {"bot_token": _TOKEN, "webhook_secret_token": "telegram-secret"}
+            ).encode("utf-8"),
+        )
+        .data
     )
-    credential_ref = AuthRepository(session).status(
+    status = AuthRepository(session).status(
         project_id=project_id,
         provider_key="telegram-bot",
-    ).connections[0].credential_ref
+    )
+    assert status.connections == []
+    credential = AuthRepository(session).sync_credential_for_integration(global_credential.id)
     _telegram_bot_profile(session, project_id)
 
-    with pytest.raises(ConflictError, match="action connector failed") as exc:
+    with pytest.raises(NotFoundError):
         asyncio.run(
             ActionRepository(session).execute(
                 project_id=project_id,
@@ -477,11 +495,10 @@ def test_telegram_send_rejects_global_credential_for_project_bot_profile(
                     "chat_ref": "main",
                     "text": "hello",
                 },
-                credential_ref=credential_ref,
+                credential_ref=credential.credential_ref,
             )
         )
 
-    assert "requires a project-scoped credential" in exc.value.data["error"]
     assert httpx_mock.get_requests() == []
 
 
@@ -505,8 +522,7 @@ def test_telegram_webhook_set_rejects_wrong_project_or_profile_url(
                 input_json={
                     "bot_profile_key": "support-bot",
                     "webhook_url": (
-                        "http://127.0.0.1:5180/api/v1/ingress/telegram/"
-                        f"{project_id}/other-bot"
+                        f"http://127.0.0.1:5180/api/v1/ingress/telegram/{project_id}/other-bot"
                     ),
                 },
                 credential_ref=credential_ref,
@@ -523,8 +539,7 @@ def test_telegram_webhook_set_rejects_wrong_project_or_profile_url(
                 input_json={
                     "bot_profile_key": "support-bot",
                     "webhook_url": (
-                        "https://evil.example/api/v1/ingress/telegram/"
-                        f"{project_id}/support-bot"
+                        f"https://evil.example/api/v1/ingress/telegram/{project_id}/support-bot"
                     ),
                 },
                 credential_ref=credential_ref,
@@ -553,21 +568,25 @@ def test_telegram_response_policy_requires_source_origin_and_exact_reply(
             "thread_refs": {"telegram-thread:12345:default": 1},
         },
     )
-    source = AgentRequestRepository(session).create(
-        project_id=project_id,
-        request_key="telegram-update:support-bot:500",
-        title="Telegram message",
-        body_preview="@stackos_bot review",
-        source_provider="telegram-bot",
-        source_kind="telegram_message",
-        source_message_ref="telegram-message:12345:77",
-        metadata_json={
-            "bot_profile_key": "support-bot",
-            "chat_ref": "telegram-chat:12345",
-            "thread_ref": "telegram-thread:12345:default",
-            "invoker_ref": "telegram-user:555",
-        },
-    ).data
+    source = (
+        AgentRequestRepository(session)
+        .create(
+            project_id=project_id,
+            request_key="telegram-update:support-bot:500",
+            title="Telegram message",
+            body_preview="@stackos_bot review",
+            source_provider="telegram-bot",
+            source_kind="telegram_message",
+            source_message_ref="telegram-message:12345:77",
+            metadata_json={
+                "bot_profile_key": "support-bot",
+                "chat_ref": "telegram-chat:12345",
+                "thread_ref": "telegram-thread:12345:default",
+                "invoker_ref": "telegram-user:555",
+            },
+        )
+        .data
+    )
     httpx_mock.add_response(
         method="POST",
         url=f"{_BASE}/sendMessage",
@@ -640,14 +659,18 @@ def test_telegram_response_policy_rejects_malformed_non_telegram_source(
         project_id,
         response_policy={"origin_required": True},
     )
-    source = AgentRequestRepository(session).create(
-        project_id=project_id,
-        request_key="manual-request:1",
-        title="Manual task",
-        source_provider="manual",
-        source_kind="manual",
-        metadata_json={"bot_profile_key": "support-bot"},
-    ).data
+    source = (
+        AgentRequestRepository(session)
+        .create(
+            project_id=project_id,
+            request_key="manual-request:1",
+            title="Manual task",
+            source_provider="manual",
+            source_kind="manual",
+            metadata_json={"bot_profile_key": "support-bot"},
+        )
+        .data
+    )
 
     with pytest.raises(ConflictError, match="action connector failed") as exc:
         asyncio.run(

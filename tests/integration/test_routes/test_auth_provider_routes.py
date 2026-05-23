@@ -89,6 +89,52 @@ def test_auth_test_uses_credential_ref_and_returns_sanitized_result(
     assert "encrypted_payload" not in rendered
 
 
+def test_auth_test_supports_telegram_bot_token_without_secret_leak(
+    api: TestClient,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    stored = api.post(
+        f"/api/v1/projects/{project_id}/auth/telegram-bot/credentials",
+        json={
+            "auth_method_key": "bot-token",
+            "profile_key": "support",
+            "label": "Support Bot",
+            "fields": {
+                "bot_token": "123456:ABC",
+                "webhook_secret_token": "telegram-secret",
+                "api_base_url": "http://127.0.0.1:8081",
+            },
+        },
+    )
+    assert stored.status_code == 201, stored.text
+    credential_ref = stored.json()["data"]["credential_ref"]
+
+    httpx_mock.add_response(
+        method="POST",
+        url="http://127.0.0.1:8081/bot123456:ABC/getMe",
+        json={
+            "ok": True,
+            "result": {"id": 123456, "is_bot": True, "username": "support_bot"},
+        },
+    )
+
+    response = api.post(
+        f"/api/v1/projects/{project_id}/auth/test",
+        json={"credential_ref": credential_ref},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()["data"]
+    assert body["ok"] is True
+    assert body["provider_key"] == "telegram-bot"
+    assert body["metadata"]["bot_id"] == 123456
+    assert body["metadata"]["username"] == "support_bot"
+    rendered = json.dumps(response.json())
+    assert "123456:ABC" not in rendered
+    assert "telegram-secret" not in rendered
+
+
 def test_auth_revoke_removes_backing_secret_and_preserves_redacted_history(
     api: TestClient,
     project_id: int,

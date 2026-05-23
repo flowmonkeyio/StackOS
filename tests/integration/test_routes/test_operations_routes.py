@@ -7,6 +7,7 @@ from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
 from content_stack.db.models import CredentialUsageEvent
+from content_stack.repositories.agent_requests import AgentRequestRepository
 from content_stack.repositories.run_plans import RunPlanRepository
 
 
@@ -85,6 +86,24 @@ def _store_mock_credential(
             "profile_key": "primary",
             "label": "Mock Primary",
             "fields": {"api_key": secret},
+        },
+    )
+    assert credential.status_code == 201, credential.text
+    return str(credential.json()["data"]["credential_ref"])
+
+
+def _store_telegram_credential(api: TestClient, project_id: int) -> str:
+    credential = api.post(
+        f"/api/v1/projects/{project_id}/auth/telegram-bot/credentials",
+        json={
+            "auth_method_key": "bot-token",
+            "profile_key": "support",
+            "label": "Support Bot",
+            "fields": {
+                "bot_token": "123456:ABC",
+                "webhook_secret_token": "telegram-secret",
+                "api_base_url": "http://127.0.0.1:8081",
+            },
         },
     )
     assert credential.status_code == 201, credential.text
@@ -504,6 +523,159 @@ def test_operation_rest_agent_request_vertical_slice(
     assert completed.status_code == 200, completed.text
     assert completed.json()["data"]["status"] == "resolved"
     assert completed.json()["data"]["metadata_json"]["summary"] == "done"
+
+
+def test_operation_rest_telegram_bot_profile_setup_to_ingress_slice(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_telegram_credential(api, project_id)
+
+    missing_credential = api.post(
+        "/api/v1/operations/communicationBotProfile.upsert/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "missing-credential",
+                "auth_profile_key": "missing",
+                "identity": {
+                    "display_name": "Missing Bot",
+                    "purpose": "Exercise credential validation.",
+                    "voice": "Concise.",
+                },
+                "access_policy": {
+                    "dm_mode": "allowlist",
+                    "group_mode": "allowlist",
+                    "user_mode": "allowlist",
+                    "allowed_chat_refs": ["telegram-chat:999"],
+                    "allowed_user_refs": ["telegram-user:555"],
+                },
+            }
+        },
+    )
+    assert missing_credential.status_code == 422, missing_credential.text
+
+    created = api.post(
+        "/api/v1/operations/communicationBotProfile.upsert/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support-bot",
+                "auth_profile_key": "support",
+                "bot_username": "support_bot",
+                "identity": {
+                    "display_name": "Support Bot",
+                    "purpose": "Handle support requests from approved Telegram users.",
+                    "voice": "Concise and calm.",
+                },
+                "agent_guidance": {
+                    "default_instructions": (
+                        "Triage support requests and inspect project context before replying."
+                    ),
+                    "boundaries": (
+                        "Do not change billing, legal, or account state without approval."
+                    ),
+                },
+                "access_policy": {
+                    "dm_mode": "allowlist",
+                    "group_mode": "allowlist",
+                    "user_mode": "allowlist",
+                    "allowed_chat_refs": ["telegram-chat:999"],
+                    "allowed_user_refs": ["telegram-user:555"],
+                },
+                "trigger_policy": {
+                    "dm_trigger": "always",
+                    "group_trigger": "mention_or_command",
+                    "commands": [
+                        {
+                            "command": "/support",
+                            "description": "Handle a support request.",
+                            "guidance": (
+                                "Classify the request, gather relevant context, and return "
+                                "the next safe action."
+                            ),
+                        }
+                    ],
+                    "mention_patterns": ["@support_bot"],
+                    "reply_to_bot_triggers": True,
+                },
+                "visibility_policy": {"store_non_trigger_messages": True},
+                "response_policy": {
+                    "reply_in_same_chat": True,
+                    "origin_required": True,
+                    "reply_to_source_message": True,
+                    "same_thread": True,
+                },
+                "reply_to_message_refs": {"telegram-message:999:88": 88},
+                "thread_refs": {"telegram-thread:999:default": 1},
+                "direct_messages_topic_refs": {"telegram-dm-topic:999:555": 22},
+                "allowed_webhook_hosts": ["127.0.0.1"],
+            }
+        },
+    )
+    assert created.status_code == 200, created.text
+    body = created.json()["data"]
+    assert body["key"] == "support-bot"
+    assert body["auth_profile_key"] == "support"
+    assert body["bot_username"] == "support_bot"
+    assert body["identity"]["display_name"] == "Support Bot"
+    assert body["agent_guidance"]["boundaries"].startswith("Do not change")
+    assert body["access_policy"]["allowed_user_refs"] == ["telegram-user:555"]
+    assert body["reply_to_message_refs"] == {"telegram-message:999:88": 88}
+    assert body["thread_refs"] == {"telegram-thread:999:default": 1}
+    assert body["direct_messages_topic_refs"] == {"telegram-dm-topic:999:555": 22}
+    assert "123456:ABC" not in json.dumps(created.json())
+
+    fetched = api.post(
+        "/api/v1/operations/communicationBotProfile.get/call",
+        json={"arguments": {"project_id": project_id, "key": "support-bot"}},
+    )
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["key"] == "support-bot"
+    assert fetched.json()["reply_to_message_refs"] == {"telegram-message:999:88": 88}
+
+    listed = api.post(
+        "/api/v1/operations/communicationBotProfile.list/call",
+        json={"arguments": {"project_id": project_id}},
+    )
+    assert listed.status_code == 200, listed.text
+    assert [item["key"] for item in listed.json()["items"]] == ["support-bot"]
+
+    original_auth = api.headers.pop("Authorization", None)
+    try:
+        ingress = api.post(
+            f"/api/v1/ingress/telegram/{project_id}/support-bot",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
+            json={
+                "update_id": 789,
+                "message": {
+                    "message_id": 88,
+                    "date": 1_779_526_000,
+                    "from": {"id": 555, "username": "ada"},
+                    "chat": {"id": 999, "type": "private", "username": "ada"},
+                    "text": "/support check campaign",
+                },
+            },
+        )
+    finally:
+        if original_auth is not None:
+            api.headers["Authorization"] = original_auth
+
+    assert ingress.status_code == 202, ingress.text
+    assert ingress.json()["agent_request_id"] is not None
+
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+    assert requests.total_estimate == 1
+    assert requests.items[0].request_key == "telegram-update:support-bot:789"
+    assert requests.items[0].metadata_json["identity"]["display_name"] == "Support Bot"
+    assert (
+        requests.items[0]
+        .metadata_json["agent_guidance"]["default_instructions"]
+        .startswith("Triage support")
+    )
+    assert requests.items[0].metadata_json["matched_command"]["command"] == "/support"
 
 
 def test_operation_rest_mock_provider_failure_records_redacted_audit(

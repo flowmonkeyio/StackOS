@@ -87,6 +87,57 @@ def test_ui_token_can_call_read_only_operations(client: TestClient, auth_token: 
     assert body["total_estimate"] == 0
 
 
+def test_ui_token_can_call_telegram_bot_profile_setup_operation(
+    client: TestClient,
+    auth_token: str,
+) -> None:
+    """The browser can configure safe bot policy after storing daemon-side secrets."""
+    project_id = _create_project(client, auth_token)
+    ui_token = derive_ui_token(auth_token)
+
+    stored = client.post(
+        f"/api/v1/projects/{project_id}/auth/telegram-bot/credentials",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={
+            "auth_method_key": "bot-token",
+            "profile_key": "support",
+            "fields": {
+                "bot_token": "123456:ABC",
+                "webhook_secret_token": "telegram-secret",
+            },
+        },
+    )
+    assert stored.status_code == 201, stored.text
+
+    resp = client.post(
+        "/api/v1/operations/communicationBotProfile.upsert/call",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support-bot",
+                "auth_profile_key": "support",
+                "identity": {
+                    "display_name": "Support Bot",
+                    "purpose": "Handle support requests from approved Telegram users.",
+                    "voice": "Concise and calm.",
+                },
+                "access_policy": {
+                    "dm_mode": "allowlist",
+                    "group_mode": "allowlist",
+                    "user_mode": "allowlist",
+                    "allowed_chat_refs": ["telegram-chat:999"],
+                    "allowed_user_refs": ["telegram-user:555"],
+                },
+            }
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["key"] == "support-bot"
+    assert "123456:ABC" not in resp.text
+    assert "telegram-secret" not in resp.text
+
+
 def test_ui_token_cannot_call_mutating_operations(client: TestClient, auth_token: str) -> None:
     """Operation POST access stays limited by the operation spec, not URL shape."""
     project_id = _create_project(client, auth_token)

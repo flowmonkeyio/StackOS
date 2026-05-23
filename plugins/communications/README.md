@@ -44,11 +44,21 @@ step that explicitly grants `agentRequest.create`.
 Telegram bot profiles are project scoped. Each profile binds to one credential
 profile through `auth_profile_key`; there are no global Telegram credentials or
 agent-visible bot tokens. Credentials store token material, webhook secrets, and
-safe transport endpoints only; bot profiles store persona, access policy,
-trigger policy, context policy, response policy, and ingress mode. Visibility is
+safe transport endpoints only; bot profiles store identity, agent guidance,
+structured command intents, access policy, trigger policy, context policy,
+response policy, and ingress mode. Visibility is
 not activation: allowed group messages may be stored as bounded context without
 creating an agent request. `local-webhook` is the normal local listener path;
 `updates.poll` is diagnostic/bootstrap-only.
+
+Project setup uses shared StackOS operations:
+
+- `communicationBotProfile.upsert` creates or updates safe bot identity,
+  guidance, and policy after the typed `telegram-bot` credential profile exists.
+- `communicationBotProfile.get` and `communicationBotProfile.list` let agents
+  inspect profiles without receiving token material.
+- REST, CLI `ops call`, MCP, and the local Connections UI all use the same
+  operation registry path for this setup.
 
 ## Architecture Boundary
 

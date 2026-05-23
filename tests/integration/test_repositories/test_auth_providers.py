@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from sqlmodel import Session, select
 
 from content_stack.auth_providers import AuthRepository
@@ -12,6 +13,7 @@ from content_stack.db.models import (
     CredentialRefreshEvent,
     CredentialUsageEvent,
 )
+from content_stack.repositories.base import NotFoundError
 from content_stack.repositories.projects import IntegrationCredentialRepository
 
 
@@ -96,6 +98,65 @@ def test_failed_credential_profile_can_be_revoked(
 
     assert revoked.status == "revoked"
     assert revoked.credential_ref == credential.credential_ref
+
+
+def test_telegram_status_excludes_global_credentials(
+    session: Session,
+    project_id: int,
+) -> None:
+    global_telegram = (
+        IntegrationCredentialRepository(session)
+        .set(
+            project_id=None,
+            kind="telegram-bot",
+            secret_payload=b'{"bot_token":"global-secret"}',
+            profile_key="global",
+        )
+        .data
+    )
+    IntegrationCredentialRepository(session).set(
+        project_id=None,
+        kind="firecrawl",
+        secret_payload=b"fc-global",
+        profile_key="global",
+    )
+    project_telegram = (
+        IntegrationCredentialRepository(session)
+        .set(
+            project_id=project_id,
+            kind="telegram-bot",
+            secret_payload=b'{"bot_token":"project-secret"}',
+            profile_key="support",
+        )
+        .data
+    )
+
+    repo = AuthRepository(session)
+    telegram = repo.status(project_id=project_id, provider_key="telegram-bot")
+    all_status = repo.status(project_id=project_id)
+
+    assert [connection.profile_key for connection in telegram.connections] == ["support"]
+    assert {
+        (connection.provider_key, connection.profile_key) for connection in all_status.connections
+    } == {("firecrawl", "global"), ("telegram-bot", "support")}
+
+    global_credential = repo.sync_credential_for_integration(global_telegram.id)
+    with pytest.raises(NotFoundError):
+        repo.resolve_for_execution(
+            project_id=project_id,
+            provider_key="telegram-bot",
+            credential_ref=global_credential.credential_ref,
+            operation="communications.telegram-bot.message.send",
+        )
+
+    project_credential = repo.sync_credential_for_integration(project_telegram.id)
+    resolved = repo.resolve_for_execution(
+        project_id=project_id,
+        provider_key="telegram-bot",
+        credential_ref=project_credential.credential_ref,
+        operation="communications.telegram-bot.message.send",
+    )
+    assert resolved.integration.profile_key == "support"
 
 
 def test_usage_and_refresh_events_redact_secret_metadata(

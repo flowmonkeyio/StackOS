@@ -57,7 +57,7 @@ providers:
             required: false
             placeholder: http://127.0.0.1:8081
     config:
-      setup_note: Store only Telegram token material and transport endpoints here. Persona, access, trigger, context, and response policy belong to project-scoped communication-bot-profile records.
+      setup_note: Store only Telegram token material and transport endpoints here. Bot identity, agent guidance, command intent guidance, access, trigger, context, and response policy belong to project-scoped communication-bot-profile records.
       docs:
         - docs/integration-contracts/communications.md
         - https://core.telegram.org/bots/api
@@ -729,7 +729,7 @@ actions:
 resources:
   - key: communication-bot-profile
     name: Communication Bot Profile
-    description: Project-scoped bot persona, credential binding, access policy, trigger policy, context policy, and response policy for Telegram or future chat transports.
+    description: Project-scoped bot identity, agent guidance, credential binding, access policy, trigger policy, context policy, and response policy for Telegram or future chat transports.
     schema: *object_schema
   - key: communication-channel
     name: Communication Channel

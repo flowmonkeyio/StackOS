@@ -51,7 +51,15 @@ def _store_telegram_bot_profile(
                 "bot_username": "support_bot",
                 "ingress_mode": ingress_mode,
                 "allowed_updates": ["message", "callback_query"],
-                "persona": {"role": "customer_support"},
+                "identity": {
+                    "display_name": "Support Bot",
+                    "purpose": "Handle support requests from approved Telegram users.",
+                    "voice": "Concise and calm.",
+                },
+                "agent_guidance": {
+                    "default_instructions": "Triage support requests before replying.",
+                    "boundaries": "Do not expose secrets.",
+                },
                 "access_policy": access_policy
                 or {
                     "dm_mode": "allowlist",
@@ -60,13 +68,18 @@ def _store_telegram_bot_profile(
                     "allowed_chat_refs": ["telegram-chat:999"],
                     "allowed_user_refs": ["telegram-user:555"],
                 },
-                "visibility_policy": visibility_policy
-                or {"store_non_trigger_messages": True},
+                "visibility_policy": visibility_policy or {"store_non_trigger_messages": True},
                 "trigger_policy": trigger_policy
                 or {
                     "dm_trigger": "always",
                     "group_trigger": "mention_or_command",
-                    "commands": ["/support"],
+                    "commands": [
+                        {
+                            "command": "/support",
+                            "description": "Handle a support request.",
+                            "guidance": "Triage the request and reply with the next safe action.",
+                        }
+                    ],
                     "mention_patterns": ["@support_bot"],
                 },
                 "context_policy": {"include_last_messages": 50},
@@ -173,7 +186,10 @@ def test_telegram_ingress_records_callback_and_creates_agent_request_without_bea
     assert requests.items[0].request_key == "telegram-update:support-bot:123"
     assert requests.items[0].source_resource_key == "communication-interaction"
     assert requests.items[0].metadata_json["bot_profile_key"] == "support-bot"
-    assert requests.items[0].metadata_json["persona"] == {"role": "customer_support"}
+    assert requests.items[0].metadata_json["identity"]["display_name"] == "Support Bot"
+    assert (
+        requests.items[0].metadata_json["agent_guidance"]["boundaries"] == "Do not expose secrets."
+    )
     rendered = json.dumps(requests.items[0].model_dump(mode="json"))
     assert "telegram-secret" not in rendered
     assert "123456:ABC" not in rendered

@@ -59,6 +59,7 @@ _UI_TOKEN_MESSAGE = b"content-stack-ui-console-v1"
 _UI_SAFE_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS"})
 _UI_AUTH_SETUP_ACTIONS: frozenset[str] = frozenset({"test", "revoke"})
 _UI_AUTH_PROVIDER_ACTIONS: frozenset[str] = frozenset({"credentials", "start"})
+_UI_SETUP_OPERATION_CALLS: frozenset[str] = frozenset({"communicationBotProfile.upsert"})
 
 
 class TokenFileError(RuntimeError):
@@ -170,6 +171,21 @@ def _allows_ui_read_operation_call(path: str, method: str) -> bool:
     return spec.read_only
 
 
+def _allows_ui_setup_operation_call(path: str, method: str) -> bool:
+    """Return True for narrow browser setup operations with no secret exposure."""
+    if method.upper() != "POST":
+        return False
+    segments = path.strip("/").split("/")
+    if (
+        len(segments) != 5
+        or segments[:3] != ["api", "v1", "operations"]
+        or segments[4] != "call"
+        or not segments[3]
+    ):
+        return False
+    return segments[3] in _UI_SETUP_OPERATION_CALLS
+
+
 def _allows_ui_auth_setup(path: str, method: str) -> bool:
     """Return True for the only local-admin writes the browser may perform.
 
@@ -205,6 +221,8 @@ def _ui_scope_for_request(path: str, method: str) -> str | None:
         return "ui-read"
     if _allows_ui_read_operation_call(path, method):
         return "ui-read-operation"
+    if _allows_ui_setup_operation_call(path, method):
+        return "ui-setup-operation"
     if _allows_ui_project_setup(path, method):
         return "ui-project-setup"
     if _allows_ui_auth_setup(path, method):

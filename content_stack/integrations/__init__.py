@@ -24,6 +24,7 @@ from content_stack.integrations.google_paa import GooglePaaIntegration
 from content_stack.integrations.jina_reader import JinaReaderIntegration
 from content_stack.integrations.openai_images import OpenAIImagesIntegration
 from content_stack.integrations.reddit import RedditIntegration
+from content_stack.integrations.telegram_bot import TelegramBotIntegration
 from content_stack.integrations.wordpress import WordPressIntegration
 
 if TYPE_CHECKING:
@@ -40,6 +41,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "ahrefs": AhrefsIntegration,
     "wordpress": WordPressIntegration,
     "ghost": GhostIntegration,
+    "telegram-bot": TelegramBotIntegration,
 }
 
 
@@ -65,6 +67,7 @@ __all__ = [
     "JinaReaderIntegration",
     "OpenAIImagesIntegration",
     "RedditIntegration",
+    "TelegramBotIntegration",
     "WordPressIntegration",
     "integration_class_for",
 ]
