@@ -1,0 +1,112 @@
+schema_version: stackos.workflow-template.v1
+key: communications.rich-telegram-reply
+name: Rich Telegram Reply
+version: 0.1.0
+description: Reusable setup for replying to a Telegram-originated agent request with text, images, and optional inline buttons.
+domain: communications
+owner:
+  team: StackOS
+when_to_use:
+  - A Telegram message created an agent_request and the response may need buttons or images.
+  - The agent must respect the originating bot profile, chat, thread, and response policy.
+when_not_to_use:
+  - The response is not tied to a Telegram bot profile.
+inputs:
+  - key: agent_request_id
+    name: Agent Request ID
+    type: integer
+    required: true
+  - key: response_goal
+    name: Response Goal
+    type: string
+    required: true
+context_requirements:
+  - id: request_context
+    source: agent_requests
+    purpose: Read origin refs, bot identity, guidance, and response policy.
+    fields:
+      - title
+      - body_preview
+      - source_message_ref
+      - metadata_json
+    max_items: 1
+    return_mode: compact
+  - id: recent_thread_messages
+    source: resources
+    purpose: Read bounded communication history for the same chat/thread.
+    filters:
+      plugin_slug: communications
+      resource_keys:
+        - communication-message
+        - communication-interaction
+    fields:
+      - title
+      - data_json
+      - updated_at
+    max_items: 20
+    return_mode: compact
+capability_requirements:
+  - key: messaging
+    required: true
+auth_requirements:
+  - key: telegram_bot
+    provider: telegram-bot
+    auth_type: bot-token
+    optional: false
+action_contracts:
+  - key: send_message
+    action: telegram-bot.message.send
+    capability: messaging
+    provider: telegram-bot
+    risk_level: write
+    auth_ref: telegram_bot
+  - key: send_photo
+    action: telegram-bot.photo.send
+    capability: messaging
+    provider: telegram-bot
+    risk_level: write
+    auth_ref: telegram_bot
+policies:
+  - key: origin_bound_response
+    kind: safety
+    description: Reply actions must include source_agent_request_id and match the originating bot profile/chat policy.
+steps:
+  - id: orient
+    title: Read Origin Context
+    purpose: Inspect the request metadata, bot profile guidance, and thread context.
+    input_refs:
+      - agent_request_id
+      - response_goal
+    context_refs:
+      - request_context
+      - recent_thread_messages
+    output_refs:
+      - response_plan
+  - id: compose
+    title: Compose Response Payload
+    purpose: Decide exact text, image refs, and optional button payloads without embedding secrets.
+    policy_refs:
+      - origin_bound_response
+    depends_on:
+      - orient
+    output_refs:
+      - response_payload
+  - id: send
+    title: Send Telegram Response
+    purpose: Execute the explicit Telegram send action granted by the run plan.
+    action_refs:
+      - send_message
+      - send_photo
+    depends_on:
+      - compose
+outputs:
+  - key: response_plan
+    name: Response Plan
+    type: object
+  - key: response_payload
+    name: Response Payload
+    type: object
+    required: true
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

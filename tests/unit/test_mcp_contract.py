@@ -44,6 +44,7 @@ from content_stack.mcp.server import (
         "agentRequest.claim",
         "agentRequest.release",
         "agentRequest.linkRunPlan",
+        "agentRequest.prepareRunPlan",
         "agentRequest.complete",
         "agentRequest.ignore",
         "auth.start",

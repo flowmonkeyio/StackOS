@@ -34,6 +34,8 @@ ALLOWED_CONTEXT_SOURCES = frozenset(
         "learnings",
         "experiments",
         "decisions",
+        "agent_requests",
+        "action_calls",
         "metrics",
         "resources",
         "artifacts",

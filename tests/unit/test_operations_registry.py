@@ -18,10 +18,12 @@ def test_operation_registry_documents_core_operations() -> None:
         "agentRequest.ignore",
         "agentRequest.linkRunPlan",
         "agentRequest.list",
+        "agentRequest.prepareRunPlan",
         "agentRequest.release",
         "communicationBotProfile.get",
         "communicationBotProfile.list",
         "communicationBotProfile.upsert",
+        "localAgentChat.createMessage",
         "runPlan.claimStep",
         "runPlan.create",
         "runPlan.get",
@@ -57,12 +59,24 @@ def test_operation_registry_documents_core_operations() -> None:
     assert create_request.grant_policy == "run-plan-step-grant"
     assert any("run_token" in item for item in create_request.prerequisites)
 
+    prepare_request = registry.get("agentRequest.prepareRunPlan").describe_out()
+    assert prepare_request.surfaces["cli"].command == "agent-requests prepare-run-plan"
+    assert prepare_request.grant_policy == "direct-work-queue-write"
+    assert any("does not infer intent" in item for item in prepare_request.prerequisites)
+
     bot_profile = registry.get("communicationBotProfile.upsert").describe_out()
     assert bot_profile.surfaces["mcp"].enabled is True
     assert bot_profile.surfaces["rest"].enabled is True
     assert bot_profile.surfaces["cli"].command == "ops call communicationBotProfile.upsert"
     assert bot_profile.grant_policy == "direct-setup-write"
     assert any("telegram-bot credential" in item for item in bot_profile.prerequisites)
+
+    local_chat = registry.get("localAgentChat.createMessage").describe_out()
+    assert local_chat.surfaces["mcp"].enabled is True
+    assert local_chat.surfaces["rest"].enabled is True
+    assert local_chat.surfaces["cli"].command == "ops call localAgentChat.createMessage"
+    assert local_chat.grant_policy == "direct-work-queue-write"
+    assert any("never invokes a model" in item for item in [local_chat.purpose])
 
     run_plan = registry.get("runPlan.claimStep").describe_out()
     assert run_plan.surfaces["mcp"].enabled is True
@@ -86,10 +100,12 @@ def test_operation_registry_surface_filter() -> None:
         "agentRequest.ignore",
         "agentRequest.linkRunPlan",
         "agentRequest.list",
+        "agentRequest.prepareRunPlan",
         "agentRequest.release",
         "communicationBotProfile.get",
         "communicationBotProfile.list",
         "communicationBotProfile.upsert",
+        "localAgentChat.createMessage",
         "runPlan.claimStep",
         "runPlan.create",
         "runPlan.get",

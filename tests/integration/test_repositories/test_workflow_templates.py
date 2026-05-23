@@ -76,6 +76,11 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         key="media-buying.campaign-launch",
         plugin_slug="media-buying",
     )
+    communications_listing = repo.list_templates(plugin_slug="communications")
+    communications_described = repo.describe_template(
+        key="communications.inbox-review",
+        plugin_slug="communications",
+    )
 
     assert [item.key for item in listing.templates] == ["core.project-memory-review"]
     assert described.summary.source == "plugin"
@@ -101,6 +106,17 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert media_described.summary.plugin_slug == "media-buying"
     assert media_described.spec.action_contracts[0].action == "meta.campaign.create"
     assert all("payload" not in step.model_dump_json() for step in media_described.spec.steps)
+    assert [item.key for item in communications_listing.templates] == [
+        "communications.callback-follow-up",
+        "communications.inbox-review",
+        "communications.outbound-notification",
+        "communications.rich-telegram-reply",
+    ]
+    assert communications_described.summary.plugin_slug == "communications"
+    assert communications_described.spec.action_contracts[0].action == "imap.messages.search"
+    assert all(
+        "payload" not in step.model_dump_json() for step in communications_described.spec.steps
+    )
 
 
 def test_repo_templates_override_plugin_templates(session: Session, tmp_path: Path) -> None:

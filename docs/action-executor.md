@@ -133,6 +133,10 @@ cover the migrated clean path for:
 - `http`: static custom HTTP/Webhook actions declared by installed plugins
 - `telegram-bot`: project-scoped Telegram bot identity, message/photo sends,
   callback answers, diagnostic update inspection, and webhook set/delete/info
+- `smtp`: `communications.smtp.email.send` with daemon-side password auth and
+  accepted/rejected recipient metadata only
+- `imap`: mailbox list, bounded UID search, selected message fetch, and mark
+  seen/unseen lifecycle actions
 - `hubspot`, `salesforce`, `apollo`, `pipedrive`, `clay`, `outreach`,
   `salesloft`, `google-workspace`, and `microsoft-365`: first GTM/RevOps
   provider actions
@@ -156,7 +160,10 @@ Communication setup is not an action connector. Telegram bot profile setup uses
 the shared `communicationBotProfile.upsert/get/list` operations across REST,
 CLI, and MCP after the project-scoped `telegram-bot` credential exists. Agents
 execute Telegram provider calls only through `action.execute` once a run-plan
-step grants the relevant action ref.
+step grants the relevant action ref. SMTP and IMAP credentials are also
+project-scoped auth profiles; agents receive only opaque credential refs and
+safe status, while the connector resolves host/user/password/TLS config inside
+the daemon process.
 
 The generic HTTP connector is a plugin-authoring escape hatch, not a direct
 agent browsing tool. The endpoint, method, auth mode, request mode, static

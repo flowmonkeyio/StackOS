@@ -1,7 +1,7 @@
 slug: communications
 name: Communications
 version: 0.1.0
-description: First-party StackOS package for messaging, email send, mailbox status, and agent-trigger resources.
+description: First-party StackOS package for messaging, email send, mailbox/message lifecycle, and agent-trigger resources.
 source: builtin
 capabilities:
   - key: messaging
@@ -586,8 +586,6 @@ actions:
             - text
         - required:
             - html
-        - required:
-            - body_artifact_ref
       properties:
         recipients:
           type: array
@@ -595,37 +593,45 @@ actions:
           maxItems: 100
           items:
             type: string
+            minLength: 1
         cc:
           type: array
           maxItems: 100
           items:
             type: string
+            minLength: 1
         bcc:
           type: array
           maxItems: 100
           items:
             type: string
+            minLength: 1
         subject:
           type: string
+          minLength: 1
+          maxLength: 998
         text:
           type: string
         html:
-          type: string
-        body_artifact_ref:
           type: string
         from_ref:
           type: string
         reply_to:
           type: string
+        source_agent_request_id:
+          type: integer
+          minimum: 1
         headers:
           type: object
+          maxProperties: 50
           additionalProperties:
             type: string
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
-      execution_mode: deferred-connector
-      deferred_reason: SMTP connector implementation and mocked contract tests are not delivered yet.
+      connector: smtp
+      operation: email.send
+      requires_credential: true
       docs:
         - docs/integration-contracts/communications.md
         - https://www.rfc-editor.org/rfc/rfc5321.html
@@ -638,10 +644,11 @@ actions:
     risk_level: read
     input_schema: *empty_input
     output_schema: *object_schema
-    config: &imap_deferred_config
+    config:
       schema_version: stackos.action.v1
-      execution_mode: deferred-connector
-      deferred_reason: IMAP connector implementation and mocked contract tests are not delivered yet.
+      connector: imap
+      operation: mailbox.list
+      requires_credential: true
       docs:
         - docs/integration-contracts/communications.md
         - https://www.rfc-editor.org/rfc/rfc9051.html
@@ -664,13 +671,49 @@ actions:
           type: string
         criteria:
           type: object
-          additionalProperties: true
+          additionalProperties: false
+          properties:
+            unseen:
+              type: boolean
+            seen:
+              type: boolean
+            from:
+              type: string
+            to:
+              type: string
+            subject:
+              type: string
+            text:
+              type: string
+            since:
+              type: string
+              pattern: '^\d{1,2}-[A-Za-z]{3}-\d{4}$'
+            before:
+              type: string
+              pattern: '^\d{1,2}-[A-Za-z]{3}-\d{4}$'
+            uid_from:
+              type: integer
+              minimum: 1
+            uid_to:
+              oneOf:
+                - type: integer
+                  minimum: 1
+                - type: string
+                  enum:
+                    - "*"
         limit:
           type: integer
           minimum: 1
           maximum: 500
     output_schema: *object_schema
-    config: *imap_deferred_config
+    config:
+      schema_version: stackos.action.v1
+      connector: imap
+      operation: messages.search
+      requires_credential: true
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://www.rfc-editor.org/rfc/rfc9051.html
   - key: imap.message.fetch
     name: Fetch IMAP Message
     description: Fetch selected fields for one IMAP message by UID and mailbox reference.
@@ -692,12 +735,32 @@ actions:
           type: array
           items:
             type: string
+            enum:
+              - subject
+              - from
+              - to
+              - cc
+              - date
+              - message_id
+              - text_preview
+              - html_preview
+              - body_text
+              - body_html
+              - flags
+              - headers
         max_body_bytes:
           type: integer
           minimum: 0
           maximum: 1048576
     output_schema: *object_schema
-    config: *imap_deferred_config
+    config:
+      schema_version: stackos.action.v1
+      connector: imap
+      operation: message.fetch
+      requires_credential: true
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://www.rfc-editor.org/rfc/rfc9051.html
   - key: imap.message.mark_seen
     name: Mark IMAP Message Seen
     description: Add the IMAP Seen flag to one message by UID after explicit grant.
@@ -715,8 +778,16 @@ actions:
           type: string
         uid:
           type: integer
+          minimum: 1
     output_schema: *object_schema
-    config: *imap_deferred_config
+    config:
+      schema_version: stackos.action.v1
+      connector: imap
+      operation: message.mark_seen
+      requires_credential: true
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://www.rfc-editor.org/rfc/rfc9051.html
   - key: imap.message.mark_unseen
     name: Mark IMAP Message Unseen
     description: Remove the IMAP Seen flag from one message by UID after explicit grant.
@@ -725,7 +796,14 @@ actions:
     risk_level: write
     input_schema: *imap_mark_input
     output_schema: *object_schema
-    config: *imap_deferred_config
+    config:
+      schema_version: stackos.action.v1
+      connector: imap
+      operation: message.mark_unseen
+      requires_credential: true
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://www.rfc-editor.org/rfc/rfc9051.html
 resources:
   - key: communication-bot-profile
     name: Communication Bot Profile
@@ -784,6 +862,10 @@ config:
       - telegram-bot.webhook.set
       - telegram-bot.webhook.delete
       - telegram-bot.webhook.info
-    deferred:
-      - smtp
-      - imap
+      - smtp.email.send
+      - imap.mailbox.list
+      - imap.messages.search
+      - imap.message.fetch
+      - imap.message.mark_seen
+      - imap.message.mark_unseen
+    deferred: []

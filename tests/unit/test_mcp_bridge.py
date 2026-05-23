@@ -289,6 +289,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "agentRequest.claim" in _AGENT_VISIBLE_TOOL_NAMES
     assert "agentRequest.release" in _AGENT_VISIBLE_TOOL_NAMES
     assert "agentRequest.linkRunPlan" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentRequest.prepareRunPlan" in _AGENT_VISIBLE_TOOL_NAMES
     assert "agentRequest.complete" in _AGENT_VISIBLE_TOOL_NAMES
     assert "agentRequest.ignore" in _AGENT_VISIBLE_TOOL_NAMES
     assert "catalog.describe" in _AGENT_VISIBLE_TOOL_NAMES
@@ -301,6 +302,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "communicationBotProfile.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationBotProfile.get" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationBotProfile.upsert" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "localAgentChat.createMessage" in _AGENT_VISIBLE_TOOL_NAMES
     assert "context.query" in _AGENT_VISIBLE_TOOL_NAMES
     assert "context.timeline" in _AGENT_VISIBLE_TOOL_NAMES
     assert "learning.query" in _AGENT_VISIBLE_TOOL_NAMES

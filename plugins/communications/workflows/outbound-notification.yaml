@@ -1,0 +1,121 @@
+schema_version: stackos.workflow-template.v1
+key: communications.outbound-notification
+name: Communications Outbound Notification
+version: 0.1.0
+description: Reusable setup for sending explicit email or Telegram notifications after a run or decision.
+domain: communications
+owner:
+  team: StackOS
+when_to_use:
+  - A run, decision, or agent action needs a human-facing notification.
+  - The agent has explicit recipients/channels and approved message content.
+when_not_to_use:
+  - The recipient, channel, or message content is still ambiguous.
+inputs:
+  - key: notification_goal
+    name: Notification Goal
+    type: string
+    required: true
+  - key: recipients
+    name: Recipients
+    type: array
+    required: false
+  - key: chat_refs
+    name: Chat Refs
+    type: array
+    required: false
+context_requirements:
+  - id: recent_action_calls
+    source: action_calls
+    purpose: Reuse recent notification attempts and avoid duplicate sends.
+    filters:
+      plugin_slug: communications
+    fields:
+      - action_key
+      - status
+      - response_json
+      - created_at
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: email-send
+    required: false
+  - key: messaging
+    required: false
+auth_requirements:
+  - key: smtp
+    provider: smtp
+    auth_type: smtp-password
+    optional: true
+  - key: telegram_bot
+    provider: telegram-bot
+    auth_type: bot-token
+    optional: true
+action_contracts:
+  - key: send_email
+    action: smtp.email.send
+    capability: email-send
+    provider: smtp
+    risk_level: write
+    auth_ref: smtp
+    approval_ref: outbound_review
+  - key: send_telegram_message
+    action: telegram-bot.message.send
+    capability: messaging
+    provider: telegram-bot
+    risk_level: write
+    auth_ref: telegram_bot
+    approval_ref: outbound_review
+policies:
+  - key: no_delivery_claims
+    kind: boundary
+    description: SMTP acceptance is not delivery, read, open, click, or reply.
+  - key: explicit_recipients_only
+    kind: safety
+    description: Agents must pass exact recipients or chat refs; StackOS does not infer destinations.
+approval_gates:
+  - key: outbound_review
+    description: Review external notification content and recipients before sending when project policy requires it.
+steps:
+  - id: orient
+    title: Confirm Notification Need
+    purpose: Read the goal and recent action calls before composing a notification.
+    input_refs:
+      - notification_goal
+      - recipients
+      - chat_refs
+    context_refs:
+      - recent_action_calls
+    output_refs:
+      - notification_plan
+  - id: compose
+    title: Compose Explicit Payload
+    purpose: Produce exact recipient/channel, subject, body, and optional origin refs.
+    policy_refs:
+      - explicit_recipients_only
+      - no_delivery_claims
+    depends_on:
+      - orient
+    output_refs:
+      - notification_payload
+  - id: send
+    title: Send Notification
+    purpose: Execute the explicitly granted send action.
+    action_refs:
+      - send_email
+      - send_telegram_message
+    approval_refs:
+      - outbound_review
+    depends_on:
+      - compose
+outputs:
+  - key: notification_plan
+    name: Notification Plan
+    type: object
+  - key: notification_payload
+    name: Notification Payload
+    type: object
+    required: true
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

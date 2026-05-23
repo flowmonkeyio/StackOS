@@ -121,11 +121,43 @@ def _store_outbound_button(
         )
 
 
+def _store_outbound_message(
+    api: TestClient,
+    project_id: int,
+    *,
+    bot_profile_key: str = "support-bot",
+    chat_id: int = 999,
+    message_id: int = 77,
+) -> None:
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        ResourceRepository(session).upsert_record(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-message",
+            external_id=f"telegram-message:{bot_profile_key}:{chat_id}:{message_id}",
+            title="Telegram outbound message",
+            data_json={
+                "provider_key": "telegram-bot",
+                "bot_profile_key": bot_profile_key,
+                "direction": "outbound",
+                "channel_ref": f"telegram-chat:{chat_id}",
+                "message_ref": f"telegram-message:{chat_id}:{message_id}",
+                "provider_message_id": str(message_id),
+                "content_type": "text",
+                "text_preview": "Review generated image?",
+                "attention_status": "sent",
+            },
+            provenance_json={"source": "test"},
+        )
+
+
 def test_telegram_ingress_records_callback_and_creates_agent_request_without_bearer(
     api: TestClient,
     project_id: int,
 ) -> None:
     _store_telegram_bot_profile(api, project_id)
+    _store_outbound_message(api, project_id)
     _store_outbound_button(api, project_id)
     update = {
         "update_id": 123,
@@ -155,7 +187,7 @@ def test_telegram_ingress_records_callback_and_creates_agent_request_without_bea
     assert response.status_code == 202, response.text
     body = response.json()
     assert body["ok"] is True
-    assert body["message_record_id"] is not None
+    assert body["message_record_id"] is None
     assert body["interaction_record_id"] is not None
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
@@ -163,6 +195,11 @@ def test_telegram_ingress_records_callback_and_creates_agent_request_without_bea
             project_id=project_id,
             plugin_slug="communications",
             resource_key="communication-interaction",
+        )
+        messages = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-message",
         )
         requests = AgentRequestRepository(session).list(project_id=project_id)
 
@@ -182,6 +219,10 @@ def test_telegram_ingress_records_callback_and_creates_agent_request_without_bea
     assert len(outbound) == 1
     assert outbound[0].data_json["status"] == "clicked"
     assert outbound[0].data_json["last_callback_query_id"] == "cbq_123"
+    assert messages.total_estimate == 1
+    assert messages.items[0].external_id == "telegram-message:support-bot:999:77"
+    assert messages.items[0].data_json["direction"] == "outbound"
+    assert messages.items[0].data_json["attention_status"] == "sent"
     assert requests.total_estimate == 1
     assert requests.items[0].request_key == "telegram-update:support-bot:123"
     assert requests.items[0].source_resource_key == "communication-interaction"

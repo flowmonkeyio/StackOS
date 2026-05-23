@@ -245,6 +245,7 @@ class RunPlanRepository:
         selected_context_json: dict[str, Any] | None = None,
         created_by: str | None = None,
         metadata_json: dict[str, Any] | None = None,
+        _commit: bool = True,
     ) -> Envelope[RunPlanOut]:
         self._require_project(project_id)
         loaded: LoadedWorkflowTemplate | None = None
@@ -408,8 +409,11 @@ class RunPlanRepository:
             )
             self._s.add(approval_row)
 
-        self._s.commit()
-        self._s.refresh(row)
+        if _commit:
+            self._s.commit()
+            self._s.refresh(row)
+        else:
+            self._s.flush()
         return Envelope(data=self._plan_out(row), project_id=project_id)
 
     def start(self, run_plan_id: int, *, project_id: int) -> Envelope[RunPlanStartOut]:

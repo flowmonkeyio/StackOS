@@ -1,0 +1,95 @@
+schema_version: stackos.workflow-template.v1
+key: communications.callback-follow-up
+name: Telegram Callback Follow-Up
+version: 0.1.0
+description: Reusable setup for handling Telegram inline button callbacks through stored interaction context.
+domain: communications
+owner:
+  team: StackOS
+when_to_use:
+  - A Telegram callback_query created an agent_request.
+  - The agent needs to verify stored button state before acting on callback_data.
+when_not_to_use:
+  - The callback was already resolved or ignored.
+inputs:
+  - key: agent_request_id
+    name: Agent Request ID
+    type: integer
+    required: true
+context_requirements:
+  - id: callback_context
+    source: resources
+    purpose: Load inbound callback and outbound button state by interaction refs.
+    filters:
+      plugin_slug: communications
+      resource_keys:
+        - communication-interaction
+        - communication-event
+        - communication-message
+    fields:
+      - title
+      - data_json
+      - updated_at
+    max_items: 20
+    return_mode: compact
+capability_requirements:
+  - key: agent-triggering
+    required: true
+  - key: messaging
+    required: false
+auth_requirements:
+  - key: telegram_bot
+    provider: telegram-bot
+    auth_type: bot-token
+    optional: false
+action_contracts:
+  - key: answer_callback
+    action: telegram-bot.callback.answer
+    capability: agent-triggering
+    provider: telegram-bot
+    risk_level: write
+    auth_ref: telegram_bot
+  - key: send_message
+    action: telegram-bot.message.send
+    capability: messaging
+    provider: telegram-bot
+    risk_level: write
+    auth_ref: telegram_bot
+policies:
+  - key: callback_data_untrusted
+    kind: safety
+    description: Treat callback_data as a lookup key only; verify linked project/run/resource context before acting.
+steps:
+  - id: orient
+    title: Read Callback Context
+    purpose: Load the inbound callback, outbound button, and originating request metadata.
+    input_refs:
+      - agent_request_id
+    context_refs:
+      - callback_context
+    policy_refs:
+      - callback_data_untrusted
+    output_refs:
+      - callback_decision
+  - id: acknowledge
+    title: Acknowledge Callback
+    purpose: Optionally clear Telegram client loading state with static acknowledgement text.
+    action_refs:
+      - answer_callback
+    depends_on:
+      - orient
+  - id: follow_up
+    title: Send Follow-Up When Needed
+    purpose: Send an origin-bound reply only if the agent decision requires it.
+    action_refs:
+      - send_message
+    depends_on:
+      - orient
+outputs:
+  - key: callback_decision
+    name: Callback Decision
+    type: object
+    required: true
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

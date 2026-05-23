@@ -53,6 +53,7 @@ def test_agent_request_operations_are_registered(mcp_client: MCPClient) -> None:
         "agentRequest.claim",
         "agentRequest.release",
         "agentRequest.linkRunPlan",
+        "agentRequest.prepareRunPlan",
         "agentRequest.complete",
         "agentRequest.ignore",
     } <= tools
@@ -127,3 +128,39 @@ def test_agent_request_mcp_lifecycle_uses_operation_registry(
         },
     )
     assert completed["data"]["status"] == "resolved"
+
+
+def test_agent_request_prepare_run_plan_mcp_replay(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    run_token = _start_ingest_plan(mcp_client, project_id)
+    created = mcp_client.call_tool_structured(
+        "agentRequest.create",
+        {
+            "project_id": project_id,
+            "run_token": run_token,
+            "request_key": "mcp:agent-request:prepare",
+            "title": "Prepare this request",
+        },
+    )["data"]
+
+    arguments = {
+        "project_id": project_id,
+        "request_id": created["id"],
+        "claimed_by": "codex",
+        "idempotency_key": "mcp-prepare-agent-request-1",
+        "run_plan_json": {
+            "schema_version": "stackos.run-plan.v1",
+            "key": "mcp.handle.request.run",
+            "title": "MCP handle request",
+            "steps": [{"id": "handle", "title": "Handle request"}],
+        },
+    }
+    prepared = mcp_client.call_tool_structured("agentRequest.prepareRunPlan", arguments)
+    replayed = mcp_client.call_tool_structured("agentRequest.prepareRunPlan", arguments)
+
+    assert replayed["data"]["claim_token"] == prepared["data"]["claim_token"]
+    assert prepared["data"]["request"]["status"] == "run-created"
+    assert prepared["data"]["request"]["run_plan_id"] == prepared["data"]["run_plan"]["id"]

@@ -145,44 +145,23 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
     assert ingress.status_code == 202, ingress.text
     agent_request_id = int(ingress.json()["agent_request_id"])
 
-    claimed_request = api.post(
-        "/api/v1/operations/agentRequest.claim/call",
+    prepared = api.post(
+        "/api/v1/operations/agentRequest.prepareRunPlan/call",
         json={
             "arguments": {
                 "project_id": project_id,
                 "request_id": agent_request_id,
                 "claimed_by": "codex",
-                "idempotency_key": "claim-telegram-setup-to-action",
-            }
-        },
-    )
-    assert claimed_request.status_code == 200, claimed_request.text
-    claim_token = claimed_request.json()["data"]["claim_token"]
-
-    created_plan = api.post(
-        "/api/v1/operations/runPlan.create/call",
-        json={
-            "arguments": {
-                "project_id": project_id,
+                "idempotency_key": "prepare-telegram-setup-to-action",
                 "run_plan_json": _telegram_reply_plan_json(),
             }
         },
     )
-    assert created_plan.status_code == 200, created_plan.text
-    run_plan_id = int(created_plan.json()["data"]["id"])
-
-    linked = api.post(
-        "/api/v1/operations/agentRequest.linkRunPlan/call",
-        json={
-            "arguments": {
-                "project_id": project_id,
-                "request_id": agent_request_id,
-                "run_plan_id": run_plan_id,
-                "claim_token": claim_token,
-            }
-        },
-    )
-    assert linked.status_code == 200, linked.text
+    assert prepared.status_code == 200, prepared.text
+    claim_token = prepared.json()["data"]["claim_token"]
+    assert claim_token
+    run_plan_id = int(prepared.json()["data"]["run_plan"]["id"])
+    assert prepared.json()["data"]["request"]["run_plan_id"] == run_plan_id
 
     started = api.post(
         "/api/v1/operations/runPlan.start/call",

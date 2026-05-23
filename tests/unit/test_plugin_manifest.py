@@ -162,11 +162,21 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     assert actions["telegram-bot.identity.get"].config["connector"] == "telegram-bot"
     assert actions["telegram-bot.webhook.set"].config["connector"] == "telegram-bot"
     assert actions["telegram-bot.webhook.set"].config["operation"] == "webhook.set"
-    assert actions["smtp.email.send"].config["execution_mode"] == "deferred-connector"
+    assert actions["smtp.email.send"].config["connector"] == "smtp"
+    assert actions["smtp.email.send"].config["operation"] == "email.send"
+    assert "body_artifact_ref" not in actions["smtp.email.send"].input_schema["properties"]
     assert actions["imap.message.fetch"].input_schema["required"] == [
         "mailbox_ref",
         "uid",
     ]
+    assert actions["imap.messages.search"].config["connector"] == "imap"
+    assert actions["imap.messages.search"].config["operation"] == "messages.search"
+    assert (
+        actions["imap.messages.search"].input_schema["properties"]["criteria"][
+            "additionalProperties"
+        ]
+        is False
+    )
     assert {resource.key for resource in manifest.resources} >= {
         "communication-bot-profile",
         "communication-channel",

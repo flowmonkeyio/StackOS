@@ -21,6 +21,7 @@ from content_stack.actions.google_ads import GoogleAdsActionConnector
 from content_stack.actions.google_workspace import GoogleWorkspaceActionConnector
 from content_stack.actions.http import HttpActionConnector
 from content_stack.actions.hubspot import HubSpotActionConnector
+from content_stack.actions.imap import ImapActionConnector
 from content_stack.actions.jina import JinaActionConnector
 from content_stack.actions.manifest import (
     ACTION_MANIFEST_SCHEMA_VERSION,
@@ -45,6 +46,7 @@ from content_stack.actions.repository import (
 from content_stack.actions.salesforce import SalesforceActionConnector
 from content_stack.actions.salesloft import SalesloftActionConnector
 from content_stack.actions.sitemap import SitemapActionConnector
+from content_stack.actions.smtp import SmtpActionConnector
 from content_stack.actions.taboola import TaboolaActionConnector
 from content_stack.actions.telegram_bot import TelegramBotActionConnector
 from content_stack.actions.wordpress import WordPressActionConnector
@@ -72,6 +74,8 @@ DEFAULT_ACTION_CONNECTORS.register(MetaAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GoogleAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TaboolaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TelegramBotActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(SmtpActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(ImapActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(MockProviderActionConnector())
 
 __all__ = [
@@ -100,6 +104,7 @@ __all__ = [
     "GoogleWorkspaceActionConnector",
     "HttpActionConnector",
     "HubSpotActionConnector",
+    "ImapActionConnector",
     "JinaActionConnector",
     "MetaAdsActionConnector",
     "MicrosoftGraphActionConnector",
@@ -111,6 +116,7 @@ __all__ = [
     "SalesforceActionConnector",
     "SalesloftActionConnector",
     "SitemapActionConnector",
+    "SmtpActionConnector",
     "TaboolaActionConnector",
     "TelegramBotActionConnector",
     "WordPressActionConnector",

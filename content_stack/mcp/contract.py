@@ -65,6 +65,7 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         # Lifecycle / orchestration verbs.
         "run",
         "claim",
+        "prepareRunPlan",
         "release",
         "link",
         "complete",

@@ -767,6 +767,55 @@ def agent_requests_link_run_plan(
     _echo_json(_operation_call("agentRequest.linkRunPlan", arguments))
 
 
+@agent_requests_app.command(name="prepare-run-plan")
+def agent_requests_prepare_run_plan(
+    request_id: Annotated[int, typer.Argument(help="Agent request id.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    claimed_by: Annotated[str, typer.Option("--claimed-by", help="Stable claimer label.")],
+    idempotency_key: Annotated[
+        str,
+        typer.Option("--idempotency-key", help="Required replay key for retry-safe prepare."),
+    ],
+    input_path: Annotated[
+        str | None,
+        typer.Option("--input", "-i", help="JSON run-plan spec, or '-' for stdin."),
+    ] = None,
+    template_key: Annotated[
+        str | None,
+        typer.Option("--template-key", help="Template key to instantiate."),
+    ] = None,
+    lease_seconds: Annotated[
+        int, typer.Option("--lease-seconds", help="Claim lease seconds.")
+    ] = 86_400,
+    created_by: Annotated[str | None, typer.Option("--created-by", help="Creator label.")] = None,
+    repo_root: Annotated[str | None, typer.Option("--repo-root", help="Repository root.")] = None,
+    plugin_slug: Annotated[str | None, typer.Option("--plugin", help="Plugin slug filter.")] = None,
+    source: Annotated[str | None, typer.Option("--source", help="Template source filter.")] = None,
+    metadata_path: Annotated[
+        str | None,
+        typer.Option("--metadata", help="JSON metadata object, or '-' for stdin."),
+    ] = None,
+) -> None:
+    """Claim a request, create a supplied run plan, and link both."""
+    arguments = _merge_common_arguments(
+        {
+            "request_id": request_id,
+            "claimed_by": claimed_by,
+            "lease_seconds": lease_seconds,
+            "run_plan_json": _load_operation_arguments(input_path) if input_path else None,
+            "template_key": template_key,
+            "repo_root": repo_root,
+            "plugin_slug": plugin_slug,
+            "source": source,
+            "created_by": created_by,
+            "metadata_json": _load_operation_arguments(metadata_path) if metadata_path else None,
+        },
+        project_id=project_id,
+        idempotency_key=idempotency_key,
+    )
+    _echo_json(_operation_call("agentRequest.prepareRunPlan", arguments))
+
+
 @agent_requests_app.command(name="complete")
 def agent_requests_complete(
     request_id: Annotated[int, typer.Argument(help="Agent request id.")],

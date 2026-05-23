@@ -279,6 +279,74 @@ def test_agent_request_link_complete_and_project_invariants(
         )
 
 
+def test_agent_request_prepare_run_plan_is_atomic_and_links_request(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = AgentRequestRepository(session)
+    request = repo.create(
+        project_id=project_id,
+        request_key="telegram:update:prepare",
+        title="Prepare this",
+    ).data
+
+    prepared = repo.prepare_run_plan(
+        project_id=project_id,
+        request_id=request.id,
+        claimed_by="agent-a",
+        run_plan_json=_run_plan_json(),
+        metadata_json={"source": "telegram"},
+    ).data
+
+    assert prepared.claim_token
+    assert prepared.request.status == AgentRequestStatus.RUN_CREATED
+    assert prepared.request.claimed_by == "agent-a"
+    assert prepared.request.run_plan_id == prepared.run_plan.id
+    assert prepared.run_plan.status == "draft"
+    assert prepared.run_plan.metadata_json == {
+        "source": "telegram",
+        "agent_request_id": request.id,
+        "agent_request_key": "telegram:update:prepare",
+    }
+
+    completed = repo.complete(
+        project_id=project_id,
+        request_id=request.id,
+        claim_token=prepared.claim_token,
+    ).data
+    assert completed.status == AgentRequestStatus.RESOLVED
+
+
+def test_agent_request_prepare_run_plan_rolls_back_invalid_plan(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = AgentRequestRepository(session)
+    request = repo.create(
+        project_id=project_id,
+        request_key="telegram:update:bad-plan",
+        title="Bad plan",
+    ).data
+
+    with pytest.raises(ValidationError):
+        repo.prepare_run_plan(
+            project_id=project_id,
+            request_id=request.id,
+            claimed_by="agent-a",
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "bad.run",
+                "title": "Bad",
+                "steps": [],
+            },
+        )
+
+    after = repo.get(project_id=project_id, request_id=request.id)
+    assert after.status == AgentRequestStatus.NEW
+    assert after.claimed_by is None
+    assert RunPlanRepository(session).list(project_id=project_id).items == []
+
+
 def test_agent_request_ignore_and_validation(session: Session, project_id: int) -> None:
     repo = AgentRequestRepository(session)
     created = repo.create(project_id=project_id, request_key="ignore-me", title="Ignore").data

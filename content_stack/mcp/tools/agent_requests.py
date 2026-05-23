@@ -17,6 +17,7 @@ def _agent_request_operations() -> OperationRegistry:
         "agentRequest.claim",
         "agentRequest.release",
         "agentRequest.linkRunPlan",
+        "agentRequest.prepareRunPlan",
         "agentRequest.complete",
         "agentRequest.ignore",
     ):

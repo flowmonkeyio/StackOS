@@ -59,9 +59,14 @@ signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/
 		tests/integration/test_routes/test_telegram_setup_to_action_routes.py \
 		tests/integration/test_mcp/test_mcp_actions.py \
 		tests/integration/test_mcp/test_mcp_communications.py \
+		tests/integration/test_mcp/test_mcp_agent_requests.py \
 		tests/integration/test_repositories/test_actions.py \
+		tests/integration/test_repositories/test_agent_requests.py \
 		tests/integration/test_repositories/test_auth_providers.py \
+		tests/integration/test_repositories/test_smtp_actions.py \
+		tests/integration/test_repositories/test_imap_actions.py \
 		tests/integration/test_repositories/test_telegram_bot_actions.py \
+		tests/integration/test_repositories/test_workflow_templates.py \
 		-q
 	$(MAKE) test-ui-unit
 	$(MAKE) build-ui

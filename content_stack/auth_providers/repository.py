@@ -816,6 +816,20 @@ class AuthRepository:
                 extra["api_version"] = str(config["api_version"])
         elif row.kind == "telegram-bot" and config.get("api_base_url"):
             extra["api_base_url"] = str(config["api_base_url"])
+        elif row.kind in {"smtp", "imap"}:
+            for key in ("host", "port", "tls_mode", "username", "timeout_s"):
+                if key in config and config[key] is not None:
+                    extra[key] = config[key]
+            if row.kind == "imap":
+                extra["default_mailbox"] = str(config.get("default_mailbox") or "INBOX")
+            missing = [key for key in ("host", "port", "tls_mode", "username") if key not in extra]
+            if missing:
+                raise ValidationError(
+                    f"{row.kind} credential missing config_json fields",
+                    data={"credential_id": row.id, "missing": missing},
+                )
+            extra["port"] = int(extra["port"])
+            extra["timeout_s"] = float(extra.get("timeout_s") or 30)
         return extra
 
     def _normalize_test_result(

@@ -19,6 +19,7 @@ from content_stack.operations.spec import (
 from content_stack.repositories.agent_requests import (
     AgentRequestClaimOut,
     AgentRequestOut,
+    AgentRequestPrepareRunPlanOut,
     AgentRequestRepository,
 )
 from content_stack.repositories.base import Page, ValidationError
@@ -127,6 +128,43 @@ class AgentRequestLinkRunPlanInput(AgentRequestClaimTokenInput):
     )
 
     run_plan_id: int
+
+
+class AgentRequestPrepareRunPlanInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "request_id": 42,
+                "claimed_by": "codex",
+                "idempotency_key": "prepare-request-42",
+                "run_plan_json": {
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "handle.telegram.request.run",
+                    "title": "Handle Telegram Request",
+                    "steps": [{"id": "handle", "title": "Handle request"}],
+                },
+            }
+        },
+    )
+
+    project_id: int
+    request_id: int
+    claimed_by: str
+    lease_seconds: int = 86_400
+    run_plan_json: dict[str, Any] | None = None
+    template_key: str | None = None
+    repo_root: str | None = None
+    plugin_slug: str | None = None
+    source: str | None = None
+    key: str | None = None
+    title: str | None = None
+    inputs_json: dict[str, Any] | None = None
+    context_snapshot_id: int | None = None
+    selected_context_json: dict[str, Any] | None = None
+    created_by: str | None = None
+    metadata_json: dict[str, Any] | None = None
 
 
 class AgentRequestCompleteInput(AgentRequestClaimTokenInput):
@@ -278,6 +316,38 @@ async def agent_request_link_run_plan(
     )
     return WriteEnvelope[AgentRequestOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
+    )
+
+
+async def agent_request_prepare_run_plan(
+    inp: AgentRequestPrepareRunPlanInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[AgentRequestPrepareRunPlanOut]:
+    if not inp.idempotency_key:
+        raise ValidationError("idempotency_key is required for agentRequest.prepareRunPlan")
+    env = AgentRequestRepository(ctx.session).prepare_run_plan(
+        project_id=inp.project_id,
+        request_id=inp.request_id,
+        claimed_by=inp.claimed_by,
+        lease_seconds=inp.lease_seconds,
+        run_plan_json=inp.run_plan_json,
+        template_key=inp.template_key,
+        repo_root=inp.repo_root,
+        plugin_slug=inp.plugin_slug,
+        source=inp.source,
+        key=inp.key,
+        title=inp.title,
+        inputs_json=inp.inputs_json,
+        context_snapshot_id=inp.context_snapshot_id,
+        selected_context_json=inp.selected_context_json,
+        created_by=inp.created_by,
+        metadata_json=inp.metadata_json,
+    )
+    return WriteEnvelope[AgentRequestPrepareRunPlanOut](
+        data=env.data,
+        run_id=ctx.run_id,
+        project_id=env.project_id,
     )
 
 
@@ -500,6 +570,57 @@ def operation_specs() -> list[OperationSpec]:
             grant_policy="direct-claim-token-write",
         ),
         OperationSpec(
+            name="agentRequest.prepareRunPlan",
+            summary="Claim a request, create a caller-supplied run plan, and link both.",
+            input_model=AgentRequestPrepareRunPlanInput,
+            output_model=WriteEnvelope[AgentRequestPrepareRunPlanOut],
+            handler=agent_request_prepare_run_plan,
+            surfaces=_surfaces("agentRequest.prepareRunPlan", "agent-requests prepare-run-plan"),
+            purpose=(
+                "Use this as the deterministic queue-to-plan handoff for trigger-driven "
+                "work. The caller supplies run_plan_json or template_key; StackOS only "
+                "claims the request, stores the plan, links the audit trail, and returns "
+                "the claim token."
+            ),
+            when_to_use=(
+                "An agent or script selected a workflow template or explicit plan for an "
+                "inbound request.",
+                "The caller wants one retry-safe operation instead of separate claim, "
+                "runPlan.create, and linkRunPlan calls.",
+            ),
+            prerequisites=(
+                "Pass project_id, request_id, claimed_by, and idempotency_key.",
+                "Pass either run_plan_json or template_key.",
+                "The operation does not infer intent, start a model, execute actions, "
+                "or send replies.",
+                "Use runPlan.start and runPlan.claimStep after this operation when the "
+                "agent is ready to execute the created plan.",
+            ),
+            returns=(
+                "A WriteEnvelope containing the linked AgentRequestOut, RunPlanOut, and "
+                "the one-time claim_token.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Prepare a request run plan",
+                    arguments={
+                        "project_id": 1,
+                        "request_id": 42,
+                        "claimed_by": "codex",
+                        "idempotency_key": "prepare-agent-request-42-codex",
+                        "run_plan_json": {
+                            "schema_version": "stackos.run-plan.v1",
+                            "key": "handle.request.run",
+                            "title": "Handle request",
+                            "steps": [{"id": "handle", "title": "Handle request"}],
+                        },
+                    },
+                ),
+            ),
+            mutating=True,
+            grant_policy="direct-work-queue-write",
+        ),
+        OperationSpec(
             name="agentRequest.complete",
             summary="Resolve or fail a claimed agent request.",
             input_model=AgentRequestCompleteInput,
@@ -567,6 +688,7 @@ __all__ = [
     "AgentRequestIgnoreInput",
     "AgentRequestLinkRunPlanInput",
     "AgentRequestListInput",
+    "AgentRequestPrepareRunPlanInput",
     "agent_request_claim",
     "agent_request_complete",
     "agent_request_create",
@@ -574,6 +696,7 @@ __all__ = [
     "agent_request_ignore",
     "agent_request_link_run_plan",
     "agent_request_list",
+    "agent_request_prepare_run_plan",
     "agent_request_release",
     "operation_specs",
 ]

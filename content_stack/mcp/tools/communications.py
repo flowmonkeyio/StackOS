@@ -9,6 +9,7 @@ def _communication_operations() -> OperationRegistry:
     operations = OperationRegistry()
     all_operations = build_operation_registry()
     for name in (
+        "localAgentChat.createMessage",
         "communicationBotProfile.list",
         "communicationBotProfile.get",
         "communicationBotProfile.upsert",

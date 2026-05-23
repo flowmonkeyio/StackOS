@@ -134,13 +134,11 @@ content-stack run-plans record-step 42 \
   --run-token "$RUN_TOKEN"
 
 content-stack agent-requests list --project 1 --claimable
-content-stack agent-requests claim 42 \
+content-stack agent-requests prepare-run-plan 42 \
   --project 1 \
   --claimed-by codex \
-  --idempotency-key claim-agent-request-42
-content-stack agent-requests link-run-plan 42 99 \
-  --project 1 \
-  --claim-token "$CLAIM_TOKEN"
+  --input run-plan.json \
+  --idempotency-key prepare-agent-request-42
 content-stack agent-requests complete 42 \
   --project 1 \
   --claim-token "$CLAIM_TOKEN" \
@@ -158,10 +156,15 @@ The current core operation registry includes:
 - `agentRequest.get`
 - `agentRequest.create`
 - `agentRequest.claim`
+- `agentRequest.prepareRunPlan`
 - `agentRequest.release`
 - `agentRequest.linkRunPlan`
 - `agentRequest.complete`
 - `agentRequest.ignore`
+- `communicationBotProfile.list`
+- `communicationBotProfile.get`
+- `communicationBotProfile.upsert`
+- `localAgentChat.createMessage`
 - `runPlan.validate`
 - `runPlan.create`
 - `runPlan.start`
@@ -203,12 +206,22 @@ The current core operation registry includes:
 2. `agentRequest.claim` is a bootstrap work-queue mutation and requires
    `claimed_by` plus `idempotency_key`; the raw `claim_token` is returned only
    in the claim response or its idempotency replay.
-3. `agentRequest.release`, `agentRequest.linkRunPlan`, `agentRequest.complete`,
+3. `agentRequest.prepareRunPlan` is a bootstrap work-queue mutation that
+   atomically claims a request, creates the caller-supplied run plan or
+   template-backed run plan, links both records, and returns the claim token.
+   It does not choose the plan, start execution, call a model, call providers,
+   or send replies.
+4. `agentRequest.release`, `agentRequest.linkRunPlan`, `agentRequest.complete`,
    and `agentRequest.ignore` require the active `claim_token`.
-4. `agentRequest.create` is registered for REST/CLI/MCP parity, but it is not a
+5. `agentRequest.create` is registered for REST/CLI/MCP parity, but it is not a
    bootstrap/system write. Normal callers need a `run_token` whose active
    run-plan step explicitly grants `agentRequest.create`.
-5. Agent request operations never call Telegram, SMTP, IMAP, or any provider API.
+6. Agent request operations never call Telegram, SMTP, IMAP, or any provider API.
+
+`localAgentChat.createMessage` stores local human/agent chat messages as
+communications resources and may create a generic `agent_request` for inbound
+human messages. It does not run a model, choose a workflow, call a provider, or
+send an external reply.
 
 No operation adapter should bypass repository/connector auth, grant, idempotency,
 or audit code.

@@ -22,7 +22,7 @@ StackOS provider work has three states:
 | [GTM CRM](gtm-crm.md) | HubSpot, Salesforce, Pipedrive CRM and pipeline contracts | First executable connector pass delivered; keep schemas provider-native. |
 | [GTM Prospecting And Outbound](gtm-prospecting-outbound.md) | Apollo, Clay, Clearbit/Clearbit by HubSpot, Outreach, Salesloft, Google Workspace, Microsoft 365 | First executable connector pass delivered except explicit deferred actions. |
 | [Media Buying](media-buying.md) | Meta Marketing API, Google Ads API, Outbrain, Taboola, custom media tool contracts | Meta, Google Ads, and Taboola first pass executable; Outbrain and custom media tool actions deferred until provider docs or project-local HTTP connector config exist. |
-| [Communications](communications.md) | Telegram Bot API, SMTP, IMAP, and generic agent request inbox | Generic `agent_requests` model/repository and REST/CLI/MCP `agentRequest.*` operations delivered; provider actions/connectors remain deferred. |
+| [Communications](communications.md) | Telegram Bot API, SMTP, IMAP, and generic agent request inbox | Telegram Bot API, SMTP send, IMAP mailbox/message lifecycle, and generic `agent_requests` REST/CLI/MCP operations are executable through the clean action/operation path. |
 
 ## Current Integration Status
 
@@ -34,7 +34,7 @@ StackOS provider work has three states:
 | `publishing` | WordPress and Ghost post-create actions are executable. Media upload, update, scheduling, taxonomy, and richer CMS operations still need contracts. |
 | `media-buying` | Meta Ads, Google Ads, and Taboola first actions are executable. Outbrain and custom media tools remain deferred or project-local until provider/project contracts are supplied. |
 | `gtm` | First CRM, enrichment, outbound, and workspace actions are executable where provider contracts are documented. Clearbit/inbound/custom project-local actions remain explicit deferred modes. |
-| `communications` | Planned first-party plugin for Telegram bot, SMTP send, IMAP mailbox status, and generic agent request triggers. Core agent request queue operations are executable; no Telegram/SMTP/IMAP connector is registered yet. |
+| `communications` | First-party plugin for Telegram bot, SMTP send, IMAP mailbox/message lifecycle, and generic agent request triggers. Telegram Bot API, SMTP, IMAP, and core agent request queue operations are executable through shared manifests/connectors/operations; broader chat/mail providers and OAuth/XOAUTH2 mail auth remain deferred. |
 
 Provider-specific direct MCP tools are not part of the current architecture.
 Provider calls should enter through plugin action manifests, daemon connectors,

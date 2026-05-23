@@ -2,10 +2,10 @@
 
 Status: implementation in progress. Generic agent request operations, Telegram
 Bot API messaging, Telegram webhook set/delete/info, project-scoped Telegram bot
-profiles, and Telegram secret-token ingress are executable. SMTP and IMAP
-connectors remain tracked follow-up work. This document owns the contract for
-the first StackOS communications layer and the generic agent request inbox that
-lets external agents treat messages as triggers.
+profiles, Telegram secret-token ingress, SMTP send, and IMAP mailbox/message
+lifecycle actions are executable. This document owns the contract for the first
+StackOS communications layer and the generic agent request inbox that lets
+external agents treat messages as triggers.
 
 Plan review status: signed off with minor implementation notes by sub-agent
 review on 2026-05-23.
@@ -64,8 +64,7 @@ Local chat / Telegram / SMTP / IMAP / future communication providers
 -> one provider connector call
 -> normalized safe output and action-call audit
 -> communication resources and optional agent_request records
--> agent claims request
--> agent creates a run plan
+-> agent prepares or claims request and links a chosen run plan
 -> agent executes granted actions
 -> StackOS records audit, resources, learnings, and decisions
 ```
@@ -552,6 +551,7 @@ through REST, CLI, and MCP where appropriate:
 - `agentRequest.get`
 - `agentRequest.create`
 - `agentRequest.claim`
+- `agentRequest.prepareRunPlan`
 - `agentRequest.release`
 - `agentRequest.linkRunPlan`
 - `agentRequest.complete`
@@ -825,12 +825,14 @@ Action refs:
 Validation rules:
 
 - Require explicit recipients.
-- Require subject and body or artifact/body refs.
+- Require subject and either `text` or `html` body content.
 - Require from identity from safe credential config or explicit allowed
   `from_ref`.
 - Enforce max recipient count in schema.
 - Return accepted/rejected recipient counts and safe SMTP status metadata.
 - Do not claim delivery/read/open state.
+- Persist an outbound `communication-message` resource for the accepted/rejected
+  submission record only.
 
 ### IMAP Actions
 
@@ -852,6 +854,8 @@ Validation rules:
 - Let agents request only selected fields unless full body/artifact storage is
   explicitly needed.
 - Mark-seen and mark-unseen are write actions and need approval/grant coverage.
+- Persist mailbox cursor/channel/message/event resources from connector output
+  without exposing IMAP passwords.
 
 ## Trigger And Ingestion Modes
 
@@ -940,9 +944,9 @@ what to do.
 
 ```text
 User opens local StackOS agent chat
--> StackOS creates or reuses communication-thread
+-> localAgentChat.createMessage creates or reuses communication-thread
 -> user message is stored as communication-message
--> StackOS creates generic agent_request for the selected agent/runner
+-> operation creates generic agent_request when requested
 -> agent runner claims the request
 -> agent reads thread/context, creates run plans or calls actions as needed
 -> agent writes response communication-message with content blocks, artifacts,
@@ -963,6 +967,9 @@ Rules:
   transports can reuse it.
 - A local chat runner may be bundled later, but it must still use the same
   action registry and run-plan grants as any external agent.
+- `localAgentChat.createMessage` is the current executable local-chat ingress
+  path across REST, CLI `ops call`, and MCP. It stores resources and creates
+  agent work only; it does not invoke a model.
 
 ### Telegram DM Trigger
 
@@ -972,9 +979,7 @@ User sends DM to bot
 -> StackOS stores communication-message
 -> allowlist creates agent_request
 -> agentRequest.list shows unread request
--> agent claims request
--> agent creates run plan from a chosen template
--> agent links the run plan to the request
+-> agent calls agentRequest.prepareRunPlan with a chosen template or run plan
 -> agent executes needed actions
 -> agent sends reply with communications.telegram-bot.message.send
 -> agent completes request
@@ -987,7 +992,7 @@ Message appears in allowed group
 -> update type and chat_ref pass static allowlist
 -> StackOS stores message and source chat metadata
 -> agent_request includes group/thread/message refs
--> agent claims request and decides if action is needed
+-> agent prepares or claims request and decides if action is needed
 ```
 
 The connector must not decide that a group message is actionable unless the
@@ -1005,7 +1010,7 @@ Agent sends message with inline keyboard
 -> StackOS stores communication-event and marks interaction clicked
 -> optional static callback.answer clears Telegram client loading state
 -> allowlist creates agent_request with event/interaction refs
--> agent claims request and decides follow-up
+-> agent prepares or claims request and decides follow-up
 -> agent may answer callback, edit buttons, send photo/text, or run other tools
 ```
 
@@ -1151,10 +1156,26 @@ No delivery/read claim should be made from SMTP acceptance alone.
 Agent starts inbox-review run plan
 -> action.execute calls imap.messages.search with bounded mailbox/query
 -> agent fetches selected messages by UID
--> agent stores communication-message resources
--> agent creates agent_requests for messages needing action
+-> StackOS stores selected mailbox/message/cursor resources from connector output
+-> agent creates or prepares generic agent_requests for messages needing action
 -> agent may mark selected messages seen after approval/grant
 ```
+
+### Agent Request To Run Plan Handoff
+
+```text
+Trusted ingress or granted workflow creates agent_request
+-> agent reads sanitized request/context
+-> agent calls agentRequest.prepareRunPlan with explicit run_plan_json or template_key
+-> StackOS atomically claims the request, creates the run plan, and links both
+-> agent starts/claims run-plan steps through runPlan.* and uses granted actions
+-> agent completes the original request with claim_token after work is done
+```
+
+`agentRequest.prepareRunPlan` is a mechanical queue-to-plan handoff. It does not
+classify intent, choose a template, start a model, start the run plan, execute
+provider actions, or send a response. The caller supplies the plan/template
+choice and action refs.
 
 ## UI Surface
 
@@ -1207,6 +1228,8 @@ Before a communications action is marked executable:
   returned.
 - Run-plan grant tests prove `action.execute` is required for provider calls.
 - REST/CLI/MCP parity tests cover generic `agentRequest.*` operations.
+- Queue-to-plan tests cover `agentRequest.prepareRunPlan` idempotent replay,
+  rollback on invalid plans, and run-plan metadata linkage.
 - Resource tests cover idempotent upsert by `external_id`/provider ref.
 - Cursor tests cover Telegram update offsets and IMAP UID/UIDVALIDITY behavior.
 - Interaction tests cover inline keyboard payload validation, callback query
@@ -1233,9 +1256,9 @@ when the blast radius is meaningful, and a detailed commit message after signoff
 | C06 | Delivered: implement Telegram connector file for `identity.get`, `message.send`, `photo.send`, `callback.answer`, `updates.poll`, and `webhook.set/delete/info`. | C01. | Mocked Telegram tests; validation tests; inline keyboard, photo, webhook, diagnostic poll, and no-token redaction tests. | Connector has official docs links near provider calls and no token-bearing URLs. |
 | C07 | Add Telegram credential test wrapper and auth diagnostics. | C01, C06. | Auth test success/failure mocks; no token in diagnostics. | `auth.test` returns safe bot identity/status only. |
 | C08 | Add Telegram normalization, cursor, message, interaction, and callback resource flow for local-webhook ingress plus bounded diagnostic poll output. | C03, C04, C06. | Route/connector tests for message/callback normalization, resource writes, idempotency, and diagnostic poll bounds. | Local-webhook is the normal listener path; `updates.poll` is not a daemon listener. |
-| C09 | Implement SMTP send connector and credential test. | C01. | Mock SMTP server tests for accepted/rejected/auth/TLS paths. | SMTP output never claims delivery/read state. |
-| C10 | Implement IMAP list/search/fetch/mark connector and credential test. | C01. | Mock IMAP tests for UID search/fetch, `\\Seen`, UIDVALIDITY, size caps. | No sequence-number-only operations. |
-| C11 | Add communications workflow templates for inbox review, rich Telegram reply, callback follow-up, and outbound notification. | C01, C03, C04, C06, C08, C09, C10 as relevant. | Template validation; run-plan grant tests. | Templates describe setup/context, not business decisions. |
+| C09 | Delivered: implement SMTP send connector and credential test. | C01. | Mock SMTP server tests for accepted/rejected/auth/TLS paths, no-secret output, resource writes, and safe validation. | SMTP output never claims delivery/read state. |
+| C10 | Delivered: implement IMAP list/search/fetch/mark connector and credential test. | C01. | Mock IMAP tests for UID search/fetch, `\\Seen`, UIDVALIDITY, size caps, no-secret output, and resource writes. | No sequence-number-only operations. |
+| C11 | Delivered: add communications workflow templates for inbox review, rich Telegram reply, callback follow-up, and outbound notification. | C01, C03, C04, C06, C08, C09, C10 as relevant. | Template loader validation; no-payload template checks. | Templates describe setup/context, not business decisions. |
 | C12 | Add static scheduled ingestion runner. | C03, C04, C06, C08, C10. | Scheduler tests; system run-plan audit; idempotent cursor and optional callback ACK tests. | Runner stores events/requests only; no model invocation. |
 | C13 | Delivered: add Telegram secret-token local-webhook ingress for message/callback storage and generic agent-request creation through project-scoped bot profiles. | C03, C04, C06, C08. | Route tests for missing/wrong secret, auth_profile_key binding, callback/message resource writes, idempotent request creation, and no secret leakage. | Ingress does not invoke a model, does not bypass queue state, and uses server-side secrets only. |
 | C14 | Update connector quality matrix and release signoff docs for executable communications actions. | First executable connector tasks. | `make signoff` or targeted signoff set. | Docs and tests agree on executable/deferred state. |

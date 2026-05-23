@@ -672,6 +672,8 @@ def _store_message(
     parsed: dict[str, Any],
     policy_status: str,
 ) -> int | None:
+    if parsed.get("update_type") == "callback_query":
+        return None
     message = parsed.get("message")
     if not isinstance(message, dict):
         return None

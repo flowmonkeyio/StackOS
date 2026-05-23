@@ -21,9 +21,11 @@ from content_stack.integrations.dataforseo import DataForSeoIntegration
 from content_stack.integrations.firecrawl import FirecrawlIntegration
 from content_stack.integrations.ghost import GhostIntegration
 from content_stack.integrations.google_paa import GooglePaaIntegration
+from content_stack.integrations.imap import ImapIntegration
 from content_stack.integrations.jina_reader import JinaReaderIntegration
 from content_stack.integrations.openai_images import OpenAIImagesIntegration
 from content_stack.integrations.reddit import RedditIntegration
+from content_stack.integrations.smtp import SmtpIntegration
 from content_stack.integrations.telegram_bot import TelegramBotIntegration
 from content_stack.integrations.wordpress import WordPressIntegration
 
@@ -42,6 +44,8 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "wordpress": WordPressIntegration,
     "ghost": GhostIntegration,
     "telegram-bot": TelegramBotIntegration,
+    "smtp": SmtpIntegration,
+    "imap": ImapIntegration,
 }
 
 
@@ -63,10 +67,12 @@ __all__ = [
     "FirecrawlIntegration",
     "GhostIntegration",
     "GooglePaaIntegration",
+    "ImapIntegration",
     "IntegrationCallResult",
     "JinaReaderIntegration",
     "OpenAIImagesIntegration",
     "RedditIntegration",
+    "SmtpIntegration",
     "TelegramBotIntegration",
     "WordPressIntegration",
     "integration_class_for",

@@ -33,10 +33,48 @@ def test_communication_bot_profile_operations_are_registered(mcp_client: MCPClie
     tools = {tool["name"] for tool in mcp_client.list_tools()}
 
     assert {
+        "localAgentChat.createMessage",
         "communicationBotProfile.list",
         "communicationBotProfile.get",
         "communicationBotProfile.upsert",
     } <= tools
+
+
+def test_local_agent_chat_mcp_creates_message_and_request(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+
+    created = mcp_client.call_tool_structured(
+        "localAgentChat.createMessage",
+        {
+            "project_id": project_id,
+            "thread_key": "support",
+            "message_key": "msg-001",
+            "sender_ref": "local-user:operator",
+            "sender_display_name": "Operator",
+            "text": "Review campaign status.",
+            "create_request": True,
+        },
+    )
+    replayed = mcp_client.call_tool_structured(
+        "localAgentChat.createMessage",
+        {
+            "project_id": project_id,
+            "thread_key": "support",
+            "message_key": "msg-001",
+            "sender_ref": "local-user:operator",
+            "sender_display_name": "Operator",
+            "text": "Review campaign status.",
+            "create_request": True,
+        },
+    )
+
+    assert created["data"]["thread_ref"] == "local-agent-chat:thread:support"
+    assert created["data"]["message_ref"] == "local-agent-chat:message:support:msg-001"
+    assert created["data"]["agent_request"]["source_provider"] == "local-agent-chat"
+    assert replayed["data"]["agent_request"]["id"] == created["data"]["agent_request"]["id"]
 
 
 def test_communication_bot_profile_mcp_lifecycle_has_no_secret_roundtrip(

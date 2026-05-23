@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import or_
 from sqlmodel import Session, col, select
 
@@ -31,6 +32,7 @@ from content_stack.repositories.base import (
     cursor_paginate,
     validate_transition,
 )
+from content_stack.repositories.run_plans import RunPlanOut, RunPlanRepository
 
 
 def _utcnow() -> datetime:
@@ -43,6 +45,19 @@ def _token() -> str:
 
 def _hash_token(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _run_plan_json_with_metadata(
+    run_plan_json: dict[str, Any],
+    metadata_json: dict[str, Any],
+) -> dict[str, Any]:
+    plan = dict(run_plan_json)
+    existing = plan.get("metadata_json", plan.get("metadata"))
+    merged = dict(existing) if isinstance(existing, dict) else {}
+    merged.update(metadata_json)
+    plan["metadata_json"] = merged
+    plan.pop("metadata", None)
+    return plan
 
 
 def _clean_text(value: str | None) -> str:
@@ -79,6 +94,12 @@ class AgentRequestOut(BaseModel):
 
 
 class AgentRequestClaimOut(AgentRequestOut):
+    claim_token: str = Field(min_length=1)
+
+
+class AgentRequestPrepareRunPlanOut(BaseModel):
+    request: AgentRequestOut
+    run_plan: RunPlanOut
     claim_token: str = Field(min_length=1)
 
 
@@ -325,6 +346,135 @@ class AgentRequestRepository:
         self._s.refresh(row)
         return Envelope(data=self._out(row), project_id=project_id)
 
+    def prepare_run_plan(
+        self,
+        *,
+        project_id: int,
+        request_id: int,
+        claimed_by: str,
+        lease_seconds: int = 86_400,
+        run_plan_json: dict[str, Any] | None = None,
+        template_key: str | None = None,
+        repo_root: str | None = None,
+        plugin_slug: str | None = None,
+        source: str | None = None,
+        key: str | None = None,
+        title: str | None = None,
+        inputs_json: dict[str, Any] | None = None,
+        context_snapshot_id: int | None = None,
+        selected_context_json: dict[str, Any] | None = None,
+        created_by: str | None = None,
+        metadata_json: dict[str, Any] | None = None,
+    ) -> Envelope[AgentRequestPrepareRunPlanOut]:
+        """Atomically claim a request, create its run plan, and link both.
+
+        The caller supplies the template or plan. This method never infers
+        intent from provider payloads, never starts execution, and never calls
+        tools or models.
+        """
+        if not claimed_by.strip():
+            raise ValidationError("claimed_by is required")
+        if lease_seconds < 1 or lease_seconds > 86_400:
+            raise ValidationError(
+                "lease_seconds must be between 1 and 86400",
+                data={"lease_seconds": lease_seconds},
+            )
+        if run_plan_json is None and template_key is None:
+            raise ValidationError("run_plan_json or template_key is required")
+        row = self._fetch(project_id=project_id, request_id=request_id)
+        now = _utcnow()
+        if row.status == AgentRequestStatus.CLAIMED:
+            if row.claim_expires_at is None or row.claim_expires_at > now:
+                raise ConflictError(
+                    "agent request is already claimed",
+                    data={
+                        "request_id": request_id,
+                        "claimed_by": row.claimed_by,
+                        "claim_expires_at": row.claim_expires_at.isoformat()
+                        if row.claim_expires_at
+                        else None,
+                    },
+                )
+        elif row.status != AgentRequestStatus.NEW:
+            raise ConflictError(
+                "agent request is not claimable",
+                data={"request_id": request_id, "status": row.status.value},
+            )
+
+        claim_token = _token()
+        try:
+            if row.status != AgentRequestStatus.CLAIMED:
+                validate_transition(
+                    row.status,
+                    AgentRequestStatus.CLAIMED,
+                    AGENT_REQUEST_STATUS_TRANSITIONS,
+                    label="agent_request.status",
+                )
+            row.status = AgentRequestStatus.CLAIMED
+            row.attention_status = AgentRequestAttentionStatus.READ
+            row.claimed_by = claimed_by
+            row.claim_token_hash = _hash_token(claim_token)
+            row.claimed_at = now
+            row.claim_expires_at = now + timedelta(seconds=lease_seconds)
+            row.updated_at = now
+            self._s.add(row)
+
+            linked_metadata = {
+                **(metadata_json or {}),
+                "agent_request_id": request_id,
+                "agent_request_key": row.request_key,
+            }
+            plan_env = RunPlanRepository(self._s).create(
+                project_id=project_id,
+                run_plan_json=(
+                    _run_plan_json_with_metadata(run_plan_json, linked_metadata)
+                    if run_plan_json is not None
+                    else None
+                ),
+                template_key=template_key,
+                repo_root=repo_root,
+                plugin_slug=plugin_slug,
+                source=source,
+                key=key,
+                title=title,
+                inputs_json=inputs_json,
+                context_snapshot_id=context_snapshot_id,
+                selected_context_json=selected_context_json,
+                created_by=created_by or claimed_by,
+                metadata_json=linked_metadata,
+                _commit=False,
+            )
+            validate_transition(
+                row.status,
+                AgentRequestStatus.RUN_CREATED,
+                AGENT_REQUEST_STATUS_TRANSITIONS,
+                label="agent_request.status",
+            )
+            row.status = AgentRequestStatus.RUN_CREATED
+            row.run_plan_id = plan_env.data.id
+            row.updated_at = _utcnow()
+            self._s.add(row)
+            self._s.commit()
+            self._s.refresh(row)
+        except PydanticValidationError as exc:
+            self._s.rollback()
+            raise ValidationError(
+                "run plan is invalid",
+                data={"errors": exc.errors()},
+            ) from exc
+        except Exception:
+            self._s.rollback()
+            raise
+
+        return Envelope(
+            data=AgentRequestPrepareRunPlanOut(
+                request=self._out(row),
+                run_plan=RunPlanRepository(self._s).get(plan_env.data.id),
+                claim_token=claim_token,
+            ),
+            project_id=project_id,
+        )
+
     def complete(
         self,
         *,
@@ -490,5 +640,6 @@ class AgentRequestRepository:
 __all__ = [
     "AgentRequestClaimOut",
     "AgentRequestOut",
+    "AgentRequestPrepareRunPlanOut",
     "AgentRequestRepository",
 ]

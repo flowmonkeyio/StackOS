@@ -1,0 +1,160 @@
+schema_version: stackos.workflow-template.v1
+key: communications.inbox-review
+name: Communications Inbox Review
+version: 0.1.0
+description: Reusable setup for reviewing bounded mailbox messages and turning selected items into agent work.
+domain: communications
+owner:
+  team: StackOS
+when_to_use:
+  - A project needs an agent to inspect recent email messages and decide which ones need action.
+  - The agent should reuse existing communication-message resources and prior request history before fetching more.
+when_not_to_use:
+  - The mailbox item is already represented by an active agent_request.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+  - key: mailbox_ref
+    name: Mailbox Ref
+    type: string
+    required: true
+  - key: criteria
+    name: IMAP Criteria
+    type: object
+    required: false
+context_requirements:
+  - id: recent_messages
+    source: resources
+    purpose: Avoid creating duplicate work for messages already reviewed.
+    filters:
+      plugin_slug: communications
+      resource_keys:
+        - communication-message
+        - communication-event
+        - communication-cursor
+    fields:
+      - resource_key
+      - title
+      - data_json
+      - updated_at
+    max_items: 25
+    return_mode: compact
+  - id: recent_agent_requests
+    source: agent_requests
+    purpose: Check active and recently completed request state before creating new work.
+    filters:
+      source_provider: imap
+    fields:
+      - title
+      - status
+      - source_message_ref
+      - metadata_json
+      - updated_at
+    max_items: 20
+    return_mode: compact
+capability_requirements:
+  - key: email-inbox
+    required: true
+auth_requirements:
+  - key: imap
+    provider: imap
+    auth_type: imap-password
+    optional: false
+action_contracts:
+  - key: search_messages
+    action: imap.messages.search
+    capability: email-inbox
+    provider: imap
+    risk_level: read
+    auth_ref: imap
+  - key: fetch_message
+    action: imap.message.fetch
+    capability: email-inbox
+    provider: imap
+    risk_level: read
+    auth_ref: imap
+  - key: mark_seen
+    action: imap.message.mark_seen
+    capability: email-inbox
+    provider: imap
+    risk_level: write
+    auth_ref: imap
+    approval_ref: mailbox_status_review
+policies:
+  - key: no_secret_exposure
+    kind: auth
+    description: IMAP credentials stay daemon-side; agents use only credential refs.
+  - key: agent_decides_work
+    kind: boundary
+    description: StackOS stores mailbox state; the agent decides whether a message becomes work.
+approval_gates:
+  - key: mailbox_status_review
+    description: Confirm before marking messages seen/unseen when the mailbox is shared.
+steps:
+  - id: orient
+    title: Orient From Mailbox History
+    purpose: Read prior messages, requests, and the current goal.
+    input_refs:
+      - goal
+      - mailbox_ref
+      - criteria
+    context_refs:
+      - recent_messages
+      - recent_agent_requests
+    output_refs:
+      - review_plan
+  - id: search
+    title: Search Bounded Messages
+    purpose: Search the configured mailbox by explicit criteria and limit.
+    action_refs:
+      - search_messages
+    depends_on:
+      - orient
+    output_refs:
+      - candidate_uids
+  - id: fetch_selected
+    title: Fetch Selected Messages
+    purpose: Fetch only selected fields/body previews for candidate UIDs.
+    action_refs:
+      - fetch_message
+    depends_on:
+      - search
+    output_refs:
+      - fetched_messages
+  - id: create_work
+    title: Create Or Prepare Work
+    purpose: Create or prepare generic agent requests only for messages that need follow-up.
+    depends_on:
+      - fetch_selected
+    policy_refs:
+      - agent_decides_work
+    output_refs:
+      - created_requests
+  - id: update_status
+    title: Update Mailbox Status
+    purpose: Mark reviewed messages seen only when approval and policy allow it.
+    action_refs:
+      - mark_seen
+    approval_refs:
+      - mailbox_status_review
+    depends_on:
+      - create_work
+outputs:
+  - key: review_plan
+    name: Review Plan
+    type: object
+  - key: candidate_uids
+    name: Candidate UIDs
+    type: array
+  - key: fetched_messages
+    name: Fetched Messages
+    type: array
+  - key: created_requests
+    name: Created Requests
+    type: array
+    required: true
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan

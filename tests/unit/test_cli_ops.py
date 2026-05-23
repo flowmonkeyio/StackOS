@@ -402,3 +402,76 @@ def test_cli_agent_requests_claim_alias_calls_operation(monkeypatch) -> None:  #
         )
     ]
     assert json.loads(result.stdout)["data"]["claim_token"] == "claim-token"
+
+
+def test_cli_agent_requests_prepare_run_plan_alias_calls_operation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {"data": {"claim_token": "claim-token"}}
+
+    input_path = tmp_path / "plan.json"
+    input_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "stackos.run-plan.v1",
+                "key": "handle.request.run",
+                "title": "Handle request",
+                "steps": [{"id": "handle", "title": "Handle request"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "agent-requests",
+            "prepare-run-plan",
+            "42",
+            "--project",
+            "7",
+            "--claimed-by",
+            "codex",
+            "--idempotency-key",
+            "prepare-42",
+            "--input",
+            str(input_path),
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "POST",
+            "/api/v1/operations/agentRequest.prepareRunPlan/call",
+            {
+                "arguments": {
+                    "request_id": 42,
+                    "claimed_by": "codex",
+                    "lease_seconds": 86_400,
+                    "run_plan_json": {
+                        "schema_version": "stackos.run-plan.v1",
+                        "key": "handle.request.run",
+                        "title": "Handle request",
+                        "steps": [{"id": "handle", "title": "Handle request"}],
+                    },
+                    "project_id": 7,
+                    "idempotency_key": "prepare-42",
+                }
+            },
+        )
+    ]
+    assert json.loads(result.stdout)["data"]["claim_token"] == "claim-token"

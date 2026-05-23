@@ -19,6 +19,9 @@ does not run an assistant, classify intent, or decide workflows.
 - Local agent chat is a communication transport, not a model runner hidden in
   the daemon. Store messages/interactions, create generic agent requests, and
   let the selected agent runner decide the response.
+- Use `localAgentChat.createMessage` for local chat ingress. It stores
+  communication resources and optionally creates a generic agent request; it
+  must not invoke a model or select a workflow.
 - Telegram behavior is project-scoped through `communication-bot-profile`
   records. Credentials store token material and transport endpoints only.
 - Bot profiles store identity, default agent guidance, and optional structured
@@ -74,15 +77,26 @@ bot-profile-scoped secret-token ingress are executable through `action.execute`
 and the `telegram-bot` connector. Bot-profile setup is executable through
 `communicationBotProfile.*` across REST, CLI, and MCP. Webhook ingress stores
 communication resources and creates generic agent requests only after
-bot-profile trigger and access policy allow it. SMTP, IMAP, automatic
-background callback ACK jobs, and richer Telegram media/admin operations remain
-deferred until their connector, mocked provider tests, redaction tests, and
-run-plan grant coverage are delivered.
+bot-profile trigger and access policy allow it.
+
+SMTP send and IMAP mailbox/message lifecycle actions are executable through
+`action.execute` with daemon-held credentials. SMTP covers explicit outbound
+message send only and never claims delivery/read/open/click/reply state. IMAP
+covers mailbox list, bounded UID search, selected message fetch, and mark
+seen/unseen. Automatic background callback ACK jobs, richer Telegram
+media/admin operations, broader chat/mail providers, and SMTP/IMAP OAuth or
+XOAUTH2 remain deferred until their provider-specific contracts, tests, and
+safe auth diagnostics are delivered.
 
 The core `agentRequest.*` operations are executable through the shared
 operation registry. Use `agentRequest.list`, `agentRequest.get`,
-`agentRequest.claim`, `agentRequest.release`, `agentRequest.linkRunPlan`,
-`agentRequest.complete`, and `agentRequest.ignore` for queue lifecycle.
+`agentRequest.claim`, `agentRequest.prepareRunPlan`, `agentRequest.release`,
+`agentRequest.linkRunPlan`, `agentRequest.complete`, and
+`agentRequest.ignore` for queue lifecycle.
+`agentRequest.prepareRunPlan` atomically claims a request, creates the
+caller-supplied run plan or template-backed plan, links both, and returns the
+claim token. It does not choose a template, start a plan, call a model, call a
+provider, or send a reply.
 `agentRequest.create` is not bootstrap granted; it requires a run token whose
 active step explicitly grants `agentRequest.create`.
 

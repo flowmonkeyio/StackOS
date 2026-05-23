@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any, ClassVar
 
 from fastapi.testclient import TestClient
 from pytest_httpx import HTTPXMock
@@ -8,6 +9,7 @@ from sqlmodel import Session, select
 
 from content_stack.db.models import CredentialUsageEvent
 from content_stack.repositories.agent_requests import AgentRequestRepository
+from content_stack.repositories.resources import ResourceRepository
 from content_stack.repositories.run_plans import RunPlanRepository
 
 
@@ -59,6 +61,30 @@ def _mock_action_plan_json() -> dict:
     }
 
 
+def _smtp_action_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "communications.smtp-notification.run",
+        "title": "SMTP notification",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "send-email",
+                    "tool": "action.execute",
+                    "action_refs": ["communications.smtp.email.send"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "send-email",
+                "title": "Send email",
+                "action_refs": ["communications.smtp.email.send"],
+            }
+        ],
+    }
+
+
 def _agent_request_ingest_plan_json() -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",
@@ -86,6 +112,27 @@ def _store_mock_credential(
             "profile_key": "primary",
             "label": "Mock Primary",
             "fields": {"api_key": secret},
+        },
+    )
+    assert credential.status_code == 201, credential.text
+    return str(credential.json()["data"]["credential_ref"])
+
+
+def _store_smtp_credential(api: TestClient, project_id: int) -> str:
+    credential = api.post(
+        f"/api/v1/projects/{project_id}/auth/smtp/credentials",
+        json={
+            "auth_method_key": "smtp-password",
+            "profile_key": "primary",
+            "label": "Primary SMTP",
+            "fields": {
+                "password": "smtp-secret",
+                "host": "smtp.example.test",
+                "port": 587,
+                "tls_mode": "none",
+                "username": "mailer@example.test",
+                "from_email": "mailer@example.test",
+            },
         },
     )
     assert credential.status_code == 201, credential.text
@@ -139,6 +186,36 @@ def _start_mock_run_plan(api: TestClient, project_id: int) -> tuple[int, str, in
     assert claimed.status_code == 200, claimed.text
     step_pk = int(claimed.json()["data"]["id"])
     return run_plan_id, run_token, run_id, step_pk
+
+
+class _RouteSMTP:
+    sent_messages: ClassVar[list[dict[str, Any]]] = []
+
+    def __init__(self, host: str, port: int, timeout: float | None = None) -> None:
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+
+    def login(self, username: str, password: str) -> None:
+        assert username == "mailer@example.test"
+        assert password == "smtp-secret"
+
+    def send_message(
+        self,
+        msg: Any,
+        from_addr: str,
+        to_addrs: list[str],
+    ) -> dict[str, tuple[int, bytes]]:
+        self.__class__.sent_messages.append(
+            {"subject": msg["Subject"], "from_addr": from_addr, "to_addrs": to_addrs}
+        )
+        return {}
+
+    def quit(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
 
 
 def test_operation_docs_are_agent_readable(api: TestClient) -> None:
@@ -388,6 +465,82 @@ def test_operation_rest_mock_provider_vertical_slice(
     )
 
 
+def test_operation_rest_smtp_notification_uses_run_plan_action_execute(
+    api: TestClient,
+    project_id: int,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    import content_stack.actions.smtp as smtp_module
+
+    _RouteSMTP.sent_messages.clear()
+    monkeypatch.setattr(smtp_module.smtplib, "SMTP", _RouteSMTP)
+    credential_ref = _store_smtp_credential(api, project_id)
+    created = api.post(
+        "/api/v1/operations/runPlan.create/call",
+        json={"arguments": {"project_id": project_id, "run_plan_json": _smtp_action_plan_json()}},
+    )
+    assert created.status_code == 200, created.text
+    run_plan_id = int(created.json()["data"]["id"])
+    started = api.post(
+        "/api/v1/operations/runPlan.start/call",
+        json={"arguments": {"project_id": project_id, "run_plan_id": run_plan_id}},
+    )
+    assert started.status_code == 200, started.text
+    run_token = str(started.json()["data"]["run_token"])
+    claimed = api.post(
+        "/api/v1/operations/runPlan.claimStep/call",
+        json={
+            "arguments": {
+                "run_plan_id": run_plan_id,
+                "step_id": "send-email",
+                "run_token": run_token,
+            }
+        },
+    )
+    assert claimed.status_code == 200, claimed.text
+
+    executed = api.post(
+        "/api/v1/operations/action.execute/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_token": run_token,
+                "credential_ref": credential_ref,
+                "action_ref": "communications.smtp.email.send",
+                "input_json": {
+                    "recipients": ["ops@example.test"],
+                    "subject": "StackOS run complete",
+                    "text": "The run completed.",
+                },
+            }
+        },
+    )
+
+    assert executed.status_code == 200, executed.text
+    body = executed.json()["data"]
+    assert body["action_call"]["run_plan_id"] == run_plan_id
+    assert body["action_call"]["connector_key"] == "smtp"
+    assert body["output_json"]["accepted_recipient_count"] == 1
+    assert _RouteSMTP.sent_messages == [
+        {
+            "subject": "StackOS run complete",
+            "from_addr": "mailer@example.test",
+            "to_addrs": ["ops@example.test"],
+        }
+    ]
+    rendered = json.dumps(body)
+    assert "smtp-secret" not in rendered
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        messages = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-message",
+        )
+    assert messages.items[0].data_json["provider_key"] == "smtp"
+    assert messages.items[0].data_json["direction"] == "outbound"
+
+
 def test_operation_rest_agent_request_vertical_slice(
     api: TestClient,
     project_id: int,
@@ -523,6 +676,115 @@ def test_operation_rest_agent_request_vertical_slice(
     assert completed.status_code == 200, completed.text
     assert completed.json()["data"]["status"] == "resolved"
     assert completed.json()["data"]["metadata_json"]["summary"] == "done"
+
+
+def test_operation_rest_agent_request_prepare_run_plan_replays(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    created_plan = api.post(
+        "/api/v1/operations/runPlan.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_plan_json": _agent_request_ingest_plan_json(),
+            }
+        },
+    )
+    assert created_plan.status_code == 200, created_plan.text
+    started = api.post(
+        "/api/v1/operations/runPlan.start/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_plan_id": created_plan.json()["data"]["id"],
+            }
+        },
+    )
+    assert started.status_code == 200, started.text
+    run_token = started.json()["data"]["run_token"]
+    claim_step = api.post(
+        "/api/v1/operations/runPlan.claimStep/call",
+        json={
+            "arguments": {
+                "run_plan_id": created_plan.json()["data"]["id"],
+                "step_id": "ingest",
+                "run_token": run_token,
+            }
+        },
+    )
+    assert claim_step.status_code == 200, claim_step.text
+    created_request = api.post(
+        "/api/v1/operations/agentRequest.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_token": run_token,
+                "request_key": "telegram:update:prepare-route",
+                "title": "Prepare by route",
+            }
+        },
+    )
+    assert created_request.status_code == 200, created_request.text
+    request = created_request.json()["data"]
+    arguments = {
+        "project_id": project_id,
+        "request_id": request["id"],
+        "claimed_by": "codex",
+        "idempotency_key": "prepare-route-request",
+        "run_plan_json": {
+            "schema_version": "stackos.run-plan.v1",
+            "key": "route.handle.request.run",
+            "title": "Route handle request",
+            "steps": [{"id": "handle", "title": "Handle request"}],
+        },
+    }
+
+    prepared = api.post(
+        "/api/v1/operations/agentRequest.prepareRunPlan/call",
+        json={"arguments": arguments},
+    )
+    replayed = api.post(
+        "/api/v1/operations/agentRequest.prepareRunPlan/call",
+        json={"arguments": arguments},
+    )
+
+    assert prepared.status_code == 200, prepared.text
+    assert replayed.status_code == 200, replayed.text
+    assert replayed.json()["data"]["claim_token"] == prepared.json()["data"]["claim_token"]
+    assert (
+        prepared.json()["data"]["request"]["run_plan_id"]
+        == prepared.json()["data"]["run_plan"]["id"]
+    )
+
+
+def test_operation_rest_local_agent_chat_creates_message_and_request(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    payload = {
+        "arguments": {
+            "project_id": project_id,
+            "thread_key": "support",
+            "message_key": "msg-001",
+            "sender_ref": "local-user:operator",
+            "sender_display_name": "Operator",
+            "text": "Review campaign status.",
+            "create_request": True,
+        }
+    }
+
+    created = api.post("/api/v1/operations/localAgentChat.createMessage/call", json=payload)
+    replayed = api.post("/api/v1/operations/localAgentChat.createMessage/call", json=payload)
+
+    assert created.status_code == 200, created.text
+    assert replayed.status_code == 200, replayed.text
+    body = created.json()["data"]
+    assert body["thread_ref"] == "local-agent-chat:thread:support"
+    assert body["message_ref"] == "local-agent-chat:message:support:msg-001"
+    assert body["agent_request"]["source_provider"] == "local-agent-chat"
+    assert body["agent_request"]["source_resource_key"] == "communication-message"
+    assert replayed.json()["data"]["agent_request"]["id"] == body["agent_request"]["id"]
 
 
 def test_operation_rest_telegram_bot_profile_setup_to_ingress_slice(
