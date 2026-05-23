@@ -117,6 +117,17 @@ Run the daemon:
 TPF_LLM_TOOL=codex tpf make serve
 ```
 
+Open the StackOS UI:
+
+```text
+http://127.0.0.1:5180/
+```
+
+`make serve` runs the FastAPI daemon on `127.0.0.1:5180` and serves the
+committed UI bundle from the same port. If you are actively developing the Vue
+app, run `make dev-ui` separately and open the Vite UI at
+`http://127.0.0.1:5173/`; it proxies `/api` and `/mcp` to the daemon on `5180`.
+
 Run tests:
 
 ```bash

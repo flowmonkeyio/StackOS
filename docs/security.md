@@ -6,10 +6,13 @@ explains *what* is loosened, *why*, and *what* still defends the surface.
 
 ## Auth posture (PLAN.md §D5)
 
-The daemon binds to `127.0.0.1` only. Every `/api/v1/*` and `/mcp/*` call
-must carry `Authorization: Bearer <token>` where the token is the contents
-of `~/.local/state/content-stack/auth.token` (32 bytes, mode 0600,
-generated atomically at first boot, rotated on `make install`).
+The daemon binds to `127.0.0.1:5180` only and serves the committed StackOS UI
+bundle from the same origin. The Vue/Vite development UI, when used, runs on
+`127.0.0.1:5173` and proxies `/api` and `/mcp` to the daemon on `5180`. Every
+direct `/api/v1/*` and `/mcp/*` call must carry `Authorization: Bearer <token>`
+where the token is the contents of `~/.local/state/content-stack/auth.token`
+(32 bytes, mode 0600, generated atomically at first boot, rotated on
+`make install`).
 
 Three middlewares form the request gauntlet, applied in this order
 (outermost first):

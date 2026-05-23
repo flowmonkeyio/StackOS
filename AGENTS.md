@@ -89,6 +89,15 @@ workflow:
 
 SEO remains a first-party plugin domain, not the core product shape.
 
+## Local Ports
+
+- StackOS daemon and committed UI bundle: `http://127.0.0.1:5180/`
+- Vue/Vite dev UI: `http://127.0.0.1:5173/`, proxying `/api` and `/mcp` to
+  `http://127.0.0.1:5180`
+
+Do not assume another live localhost port belongs to this project. For example,
+`3030` is commonly used by other local apps and is not the StackOS UI.
+
 ## Change Checklist
 
 When changing an execution or tool flow, update these together:
