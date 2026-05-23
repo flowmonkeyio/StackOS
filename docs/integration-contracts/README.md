@@ -17,6 +17,7 @@ StackOS provider work has three states:
 
 | Review | Scope | Status |
 | --- | --- | --- |
+| [Connector Quality Gate](connector-quality.md) | Every registered executable connector | Required review matrix for validation, errors, pagination/status, rate limits/budget, provider docs, and audit depth. |
 | [Current Connectors](current-connectors.md) | OpenAI Images, Firecrawl, Jina, Reddit, DataForSEO, Ahrefs, WordPress, Ghost, sitemap, HTTP | Executable surface audited; follow-up corrections required. |
 | [GTM CRM](gtm-crm.md) | HubSpot, Salesforce, Pipedrive CRM and pipeline contracts | First executable connector pass delivered; keep schemas provider-native. |
 | [GTM Prospecting And Outbound](gtm-prospecting-outbound.md) | Apollo, Clay, Clearbit/Clearbit by HubSpot, Outreach, Salesloft, Google Workspace, Microsoft 365 | First executable connector pass delivered except explicit deferred actions. |
@@ -45,11 +46,14 @@ Before adding or changing `config.connector` on any action:
 2. Use provider-specific action refs and schemas.
 3. Define safe auth method fields and daemon-only credential handling.
 4. Add connector code with doc links near provider-specific calls.
-5. Add validation, redaction, audit, rate-limit/error, pagination, and budget
+5. Update the [Connector Quality Gate](connector-quality.md) row for validation,
+   safe errors, pagination/status, rate limits/budget, docs, and signoff.
+6. Add validation, redaction, audit, rate-limit/error, pagination, and budget
    tests as appropriate.
-6. Prove MCP/REST/UI availability reports the right setup state.
-7. Run a stale-ref scan across manifests, workflow templates, tests, and docs.
-8. Confirm every workflow action contract exists in the owning plugin manifest.
+7. Prove MCP/REST/CLI entrypoint behavior or availability through the shared
+   operation/action registry; do not add provider-specific MCP tools.
+8. Run a stale-ref scan across manifests, workflow templates, tests, and docs.
+9. Confirm every workflow action contract exists in the owning plugin manifest.
 
 If any item is missing, use an explicit deferred execution mode rather than an
 empty or misleading connector config.

@@ -1,0 +1,66 @@
+# Connector Quality Gate
+
+Audit date: 2026-05-22
+
+Every registered action connector is held to the same review dimensions before
+it can be treated as production-ready. Equal depth does not mean every provider
+has the same features; it means every connector explicitly documents the same
+questions: validation, safe error handling, pagination or async status,
+rate-limit/budget behavior, provider documentation, auth shape, audit coverage,
+and remaining gaps.
+
+Agents are the primary users of these contracts. The agent chooses strategy,
+creates run plans, and passes explicit action inputs. StackOS connectors only
+validate the input, resolve daemon-held credentials, call the provider operation,
+return safe structured output, and write audit records.
+
+## Minimum Standard
+
+- **Validation**: action schema plus connector validation reject malformed
+  payloads, unsafe generic goals, and secret-looking input.
+- **Errors**: provider failures are normalized into safe responses and action
+  call audit records without leaking authorization headers, tokens, passwords,
+  or raw credential payloads.
+- **Pagination/status**: list, report, crawl, async, and batch operations expose
+  bounded cursors/status outputs or are documented as submit-only/deferred.
+- **Rate limits/budget**: retries, backoff, provider units, credits, quota, or
+  explicit non-budget semantics are visible in metadata and docs.
+- **Provider docs**: official docs for auth, operation shape, pagination,
+  errors, and rate limits are linked from the contract ledger.
+- **Audit**: executable actions have mocked or local tests that prove grant
+  enforcement, credential resolution, redaction, and action-call persistence.
+
+## Registered Connector Matrix
+
+| Connector | Executable action surface | Contract docs | Validation | Errors | Pagination/status | Rate limits/budget | Current signoff |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | [`current-connectors.md`](current-connectors.md) | Provider-specific target/mode/input validation; enums still need tightening before expansion. | Safe action-call failures; API-unit headers still need capture. | First-page/list calls only; future backlinks/keyword pagination must be explicit. | Budget enforcement disabled until API-unit accounting is mapped. | Executable, narrow, with tracked gaps. |
+| `apollo` | People/org search and enrichment actions | [`gtm-prospecting-outbound.md`](gtm-prospecting-outbound.md) | Search/enrichment schemas bound to Apollo endpoint concepts; broad provider bags still need metadata tightening. | Connector must normalize 401/403/422/429 and credit failures. | Page/per_page contract required; stop before provider caps. | Credit-consuming endpoints require credit budget metadata. | Executable first pass; needs pagination/rate-limit tests before expansion. |
+| `clay` | `gtm.clay.table.webhook.submit` | [`gtm-prospecting-outbound.md`](gtm-prospecting-outbound.md) | Static table webhook payload validation; no generic Clay API action. | Webhook delivery errors must be normalized and redacted. | Async workflow result ingestion is separate/deferred. | Project-specific table/workflow throttles must be documented per connection. | Executable webhook submit only; enterprise API deferred. |
+| `dataforseo` | Keyword volume, SERP, PAA | [`current-connectors.md`](current-connectors.md) | Keyword/depth caps validated against exposed action schemas. | Provider task errors and cost rows are normalized. | Current live endpoints are bounded; Labs pagination needs explicit actions before exposure. | `tasks[].cost` reconciles post-call cost; QPS honors documented limits. | Executable, narrow, with Labs gaps tracked. |
+| `firecrawl` | Scrape, crawl submit, map | [`current-connectors.md`](current-connectors.md) | URL and option validation exists; format object support is intentionally not exposed yet. | Base integration retries/normalizes provider errors. | Crawl is submit-only until a crawl-status/pagination action exists. | Budget estimates exist for exposed calls; rate limiting uses the shared base. | Executable; crawl-status action required before templates consume crawl results. |
+| `ghost` | Admin post create | [`current-connectors.md`](current-connectors.md) | Post payload and API version are scoped to create-post HTML source. | JWT/auth/post errors are normalized and redacted. | No list/update/image pagination actions exposed. | No monetary budget; provider throttling remains provider-error metadata. | Executable create-post only. |
+| `google-ads` | Customer, budget, campaign, ad group, asset, ad, report, conversion actions | [`media-buying.md`](media-buying.md) | Provider-native schemas for first action set; more enums/mutate constraints still need tightening. | Google Ads error details must stay sanitized and include request ids where present. | Reporting/search pagination and mutate partial failures need explicit tests. | Quotas and conversion/mutate costs are documented but need richer metadata. | Executable first pass; high priority for deeper mocked provider tests. |
+| `google-workspace` | Gmail send, Calendar event create | [`gtm-prospecting-outbound.md`](gtm-prospecting-outbound.md) | Mail/event payloads must use explicit recipients/body/timezone inputs. | Gmail/Calendar errors and quota responses must be normalized. | Send/create are non-list operations; future reads need cursors. | Gmail unit costs and Calendar quotas documented; metadata should include quota diagnostics. | Executable first pass; send risk requires approval gates. |
+| `http` | Project-local custom static HTTP actions | [`current-connectors.md`](current-connectors.md), [`action-executor.md`](../action-executor.md) | Static method/URL/auth/request mode validation; secret-looking static headers rejected. | HTTP status errors are safe but need richer problem-detail bodies. | Connector does not page; project-local actions must model cursors in their schema. | No shared retry/rate-limit policy yet; project-local policy must be explicit. | Executable escape hatch with strict review requirements. |
+| `hubspot` | CRM batch upserts, notes/tasks, deals search/list | [`gtm-crm.md`](gtm-crm.md) | Provider-native object schemas; field-mapping metadata still needs tightening. | HubSpot multi-status and correlation ids must be normalized. | Search/list cursors and 10k caps must be bounded in inputs/outputs. | OAuth rate-limit headers and daily limits documented; metadata needs coverage. | Executable first pass; needs cursor/error tests. |
+| `jina` | Reader fetch | [`current-connectors.md`](current-connectors.md) | Absolute HTTP(S) target validation is required before further expansion. | Provider/text fetch errors are safe; long response behavior needs output guidance. | No pagination; large output should move toward artifact/resource persistence. | Optional credential improves quota; no StackOS budget gate. | Executable narrow read. |
+| `meta-ads` | Account, campaign, ad set, ad, creative, insights, budget, conversion actions | [`media-buying.md`](media-buying.md) | Provider hierarchy modeled explicitly; remaining enums and creative variants need tightening. | Graph API errors must preserve safe `fbtrace_id` and redact tokens. | Insights pagination/breakdowns require explicit cursors and caps. | Graph rate limits and spend-bearing mutations require approval/budget metadata. | Executable first pass; high priority for mocked provider depth. |
+| `microsoft-365` | Graph mail send, calendar event create | [`gtm-prospecting-outbound.md`](gtm-prospecting-outbound.md) | Payloads scoped to Graph send/create operations and safe mailbox/calendar refs. | Graph `request-id`, throttling, and async `202` semantics must be normalized. | Send/create are non-list operations; future reads need Graph paging. | Graph `Retry-After` and throttling limits documented; metadata needs coverage. | Executable first pass; send/create need approval gates. |
+| `mock-provider` | `utils.mock.echo` | [`../integration-testing.md`](../integration-testing.md) | Local scenarios cover success, partial success, provider errors, auth errors, rate limits, and timeout. | Redaction/audit failure path is tested without live credentials. | Not paginated; scenarios prove status handling. | Local cost_cents input proves budget/audit plumbing without vendor accounts. | Local proof connector for REST, CLI, and MCP. |
+| `openai-images` | Image generation | [`current-connectors.md`](current-connectors.md) | GPT Image model/size/quality/formats validated against supported profiles. | API errors are normalized; raw base64 is stripped from persisted output. | Not paginated. | Model/size/quality estimates are encoded; pricing requires scheduled doc audit. | Executable with cost estimates. |
+| `outreach` | Sequence state create | [`gtm-prospecting-outbound.md`](gtm-prospecting-outbound.md) | JSON:API sequence-state payload required; generic sequence add avoided. | JSON:API errors must preserve safe title/detail/status fields. | Create is non-list; future Outreach reads need cursor or offset contracts. | OAuth/rate limits documented; throttle policy refs needed for sends. | Executable first pass; outbound risk requires approval gates. |
+| `pipedrive` | Deals list/search | [`gtm-crm.md`](gtm-crm.md) | Deal filters and selected fields should remain bounded and provider-native. | Pipedrive error body should be normalized safely. | Cursor/list pagination must expose next cursor and caps. | Cost/rate-limit behavior documented; metadata needs coverage. | Executable read first pass. |
+| `reddit` | Subreddit search/top posts | [`current-connectors.md`](current-connectors.md) | Sort/time_filter enums and pagination inputs still need tightening. | OAuth/listing errors are normalized without token exposure. | First slice only today; `after`/`before` pagination should be added before expansion. | OAuth app quota/status documented; no StackOS budget gate. | Executable narrow read. |
+| `salesforce` | External-ID upserts, task create, opportunity query | [`gtm-crm.md`](gtm-crm.md) | sObject/external-ID/update-only contracts required; no arbitrary free-form SOQL. | Salesforce error arrays and request-limit failures must be normalized. | Query `nextRecordsUrl` requires bounded continuation before large reads. | API limits and `Sforce-Limit-Info` should be captured. | Executable first pass; needs strict query and limit tests. |
+| `salesloft` | Cadence membership create | [`gtm-prospecting-outbound.md`](gtm-prospecting-outbound.md) | Cadence membership payload must use visible person/cadence refs. | 422 and cadence ownership errors must be safe and actionable. | Create is non-list; future reads need page/per_page contracts. | Team-level cost/rate limits documented; metadata needs coverage. | Executable first pass; outbound risk requires approval gates. |
+| `sitemap` | Public sitemap fetch | [`current-connectors.md`](current-connectors.md) | XML URL/index caps, recursion, and max_entries are bounded. | Partial failures are preserved instead of collapsing the whole fetch. | Sitemap recursion is bounded; no cursor paging. | No provider quota; StackOS byte/entry caps are documented safety limits. | Executable mature utility. |
+| `taboola` | Account, campaign, item, report, conversion actions | [`media-buying.md`](media-buying.md) | Account-scoped Backstage schemas; remaining enums/status rules need tightening. | OAuth/API errors must include safe provider diagnostics. | Reports and dictionaries need pagination/cursor caps before broader use. | OAuth token/rate-limit behavior documented; budget metadata needed for spend writes. | Executable first pass; high priority for mocked provider depth. |
+| `wordpress` | REST post create | [`current-connectors.md`](current-connectors.md) | Post payload and application-password auth shape documented; capability checks need clearer status. | REST errors normalized; role/capability diagnostics should improve. | No list/update/media pagination actions exposed. | No monetary budget; HTTPS/application password setup is required. | Executable create-post only. |
+
+## Release Rule
+
+Before adding or expanding a connector, update this matrix, the relevant
+provider-contract ledger, the plugin action manifest, mocked connector tests,
+grant tests, and the before-commit/release command set in
+[`../release-signoff.md`](../release-signoff.md).

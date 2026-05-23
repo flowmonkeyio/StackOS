@@ -203,8 +203,7 @@ class GoogleAdsActionConnector:
                         ActionValidationIssue(
                             path="$.partial_failure",
                             message=(
-                                "Google Ads click conversion upload requires "
-                                "partial_failure=true"
+                                "Google Ads click conversion upload requires partial_failure=true"
                             ),
                             code="validation_error",
                         )

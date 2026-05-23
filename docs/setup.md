@@ -4,8 +4,9 @@ StackOS is the product/runtime. The Python package, CLI, and plugin slug remain
 `content-stack` for install compatibility.
 
 Setup has one goal: install StackOS once, connect the project and provider
-accounts once, then let agents or operators use the same contracts through the
-UI, MCP bridge, REST API, or CLI.
+accounts once, then let agents use the same contracts through the MCP bridge,
+REST API, or CLI. The UI remains a local-admin and observability surface for
+projects, readiness, connections, runs, action calls, resources, and artifacts.
 
 ## Setup Contract
 
@@ -124,10 +125,10 @@ After the daemon is running, use the UI in this order:
 2. Create or select the project that represents the business, site, product, or
    client.
 3. Review the installed plugin catalog and confirm the project has the domains
-   it needs, such as SEO, media buying, GTM, publishing, or utilities. Plugin
-   enablement is seeded by setup today; future enable/disable changes should go
-   through an admin CLI, REST, or agent-owned setup flow rather than exposing
-   broad catalog mutation in the browser.
+   it needs, such as SEO, media buying, GTM, publishing, or utilities. The
+   browser should not become a broad plugin-mutation console. Catalog mutation
+   belongs in a deliberate admin path such as CLI, REST-admin, or an
+   agent-owned setup operation that still writes the same project state.
 4. Open the project Setup page to review runtime, plugin, connection, template,
    action, and run-plan readiness.
 5. Add connections for each provider account. A provider may allow multiple
@@ -184,7 +185,9 @@ MCP / CLI / REST / UI
 
 The agent-facing MCP surface stays small and generic. Scripts that are not AI
 agents can use `content-stack ops ...`, `content-stack actions ...`, or REST for
-the same operation catalog.
+the same operation catalog. Run-plan claim/record/action mechanics are
+intentionally explicit because the primary execution user is an agent, not a
+human clicking through a bespoke workflow UI.
 
 ## Health Checks
 

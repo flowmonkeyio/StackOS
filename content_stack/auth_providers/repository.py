@@ -271,6 +271,7 @@ class AuthRepository:
         provider = self._get_provider(provider_key)
         assert provider is not None
         method = self._get_auth_method(provider, auth_method_key)
+        assert method is not None
         _ = redirect_uri
         setup_url = self._local_setup_url(
             settings=settings,
@@ -311,6 +312,7 @@ class AuthRepository:
         provider = self._get_provider(provider_key)
         assert provider is not None
         method = self._get_auth_method(provider, auth_method_key)
+        assert method is not None
         profile_key = self._normalize_profile_key(profile_key)
         secret_values, safe_config = self._split_credential_fields(method=method, fields=fields)
         safe_config["auth_method_key"] = method.key

@@ -50,6 +50,9 @@ Each contract review should include:
 Before an integration delivery is signed off, verify:
 
 - builtin plugin manifests load successfully
+- the connector has a current row in
+  [`connector-quality.md`](./connector-quality.md) covering validation, safe
+  errors, pagination/status, rate limits/budget, provider docs, and audit depth
 - every workflow action contract points to an action in the matching plugin
 - stale action refs from replaced contracts are absent from current manifests,
   workflow templates, tests, and operator-facing docs

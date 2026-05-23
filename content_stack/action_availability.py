@@ -66,7 +66,7 @@ def _credential_state(
         .where(
             Credential.provider_key == manifest.provider_key,
             col(Credential.revoked_at).is_(None),
-            (Credential.project_id == project_id) | col(Credential.project_id).is_(None),
+            (col(Credential.project_id) == project_id) | col(Credential.project_id).is_(None),
         )
         .order_by(col(Credential.project_id).desc(), col(Credential.created_at).desc())
     ).all()

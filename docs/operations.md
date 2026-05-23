@@ -25,8 +25,11 @@ behavior. Operations define the callable contract around that behavior:
 
 ## Agent Documentation
 
-Agents and scripts should not guess operation payloads. The operation registry
-returns an agent-readable description for every registered operation:
+Agents are the primary callers for workflow execution operations. Scripts can
+use the same catalog for automation and setup, but run-plan mechanics are
+optimized for agents that need precise schemas, grants, examples, and safe
+return notes. Callers should not guess operation payloads. The operation
+registry returns an agent-readable description for every registered operation:
 
 ```bash
 content-stack ops list

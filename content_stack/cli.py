@@ -627,6 +627,8 @@ def serve(
 
     # Override settings with CLI flags by stuffing into env *before* importing
     # uvicorn — pydantic-settings will read these.
+    env_overrides = ("CONTENT_STACK_HOST", "CONTENT_STACK_PORT", "CONTENT_STACK_LOG_LEVEL")
+    previous_env = {key: os.environ.get(key) for key in env_overrides}
     os.environ["CONTENT_STACK_HOST"] = host
     os.environ["CONTENT_STACK_PORT"] = str(port)
     os.environ["CONTENT_STACK_LOG_LEVEL"] = log_level.upper()
@@ -650,6 +652,11 @@ def serve(
         )
     finally:
         _remove_pid_file(settings.pid_path, os.getpid())
+        for key, value in previous_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 # ---- plugin bridge --------------------------------------------------------

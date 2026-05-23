@@ -4,6 +4,11 @@ A run plan is a concrete, auditable execution plan for one run. It is usually
 derived from a workflow template, then authored by an agent for the project,
 goal, context, and approval requirements at hand.
 
+The mechanics are intentionally agent-first. Humans and scripts can bootstrap,
+inspect, approve, and administer through UI, CLI, or REST, but the normal
+execution user is an agent creating a precise run plan, claiming steps, calling
+granted actions, and recording results.
+
 ## Lifecycle
 
 1. Use the bootstrap/setup MCP surface to choose or create the project and set

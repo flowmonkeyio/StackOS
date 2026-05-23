@@ -431,8 +431,7 @@ def test_openai_image_action_rejects_legacy_quality_for_gpt_profiles(
 
     assert validation.valid is False
     assert any(
-        issue.path == "$.quality" and issue.code == "enum_mismatch"
-        for issue in validation.issues
+        issue.path == "$.quality" and issue.code == "enum_mismatch" for issue in validation.issues
     )
 
 
@@ -1393,8 +1392,7 @@ def test_dataforseo_keyword_and_serp_limits_match_live_contracts(
 
     assert keyword_validation.valid is False
     assert any(
-        issue.path == "$.keywords" and issue.code == "length"
-        for issue in keyword_validation.issues
+        issue.path == "$.keywords" and issue.code == "length" for issue in keyword_validation.issues
     )
     assert serp_validation.valid is False
     assert any(

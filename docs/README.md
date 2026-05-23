@@ -16,6 +16,7 @@ obvious without loading every document.
 | Changing resources or artifacts | [`resources-and-artifacts.md`](./resources-and-artifacts.md), [`project-memory.md`](./project-memory.md) |
 | Changing UI | [`ui-design-system.md`](./ui-design-system.md), [`ui-component-inventory.md`](./ui-component-inventory.md) |
 | Reviewing provider contracts | [`integration-contracts/`](./integration-contracts/) |
+| Before-commit or release validation | [`release-signoff.md`](./release-signoff.md) |
 
 ## Canonical Rules
 
@@ -33,6 +34,16 @@ obvious without loading every document.
   remains domain-agnostic.
 
 ## Verification Commands
+
+For changes that touch setup, actions, operation adapters, MCP, REST, CLI, UI
+wiring, provider contracts, or agent-facing docs, use the canonical signoff:
+
+```bash
+UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf make signoff
+```
+
+See [`release-signoff.md`](./release-signoff.md) for the faster targeted slices
+and setup smoke commands.
 
 For documentation-only edits:
 

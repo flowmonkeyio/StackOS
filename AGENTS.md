@@ -19,6 +19,7 @@ work, start here:
 | Plugins, resources, templates, runs | [`docs/plugins.md`](./docs/plugins.md), [`docs/workflow-templates.md`](./docs/workflow-templates.md), [`docs/run-plans.md`](./docs/run-plans.md) |
 | Provider contract reviews | [`docs/integration-contracts/AGENTS.md`](./docs/integration-contracts/AGENTS.md), [`docs/integration-contracts/`](./docs/integration-contracts/) |
 | UI work | [`docs/ui-design-system.md`](./docs/ui-design-system.md), [`docs/ui-component-inventory.md`](./docs/ui-component-inventory.md) |
+| Before-commit/release signoff | [`docs/release-signoff.md`](./docs/release-signoff.md) |
 
 ## Core Rules
 
@@ -30,6 +31,9 @@ work, start here:
 - Agents decide strategy. StackOS stores, validates, resolves daemon-held auth,
   executes explicit calls, and records audit. Tools/connectors must not invent
   workflow logic or business decisions.
+- Agents are the primary users of run-plan execution mechanics. Humans and
+  scripts bootstrap, inspect, approve, and administer; they should not require
+  bespoke workflow UIs for each plugin domain.
 - Agents never receive secrets. They receive safe provider/account refs,
   auth-method keys, status, scopes, diagnostics, and opaque `credential_ref`
   values. `action.execute` resolves credentials inside the daemon process.

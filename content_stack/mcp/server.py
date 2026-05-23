@@ -503,9 +503,11 @@ class MCPDispatcher:
         if self._settings_resolver is not None:
             with suppress(RuntimeError):
                 settings = self._settings_resolver()
+        operation_name = spec.operation_name
+        assert operation_name is not None
         try:
             result = await OperationDispatcher(self._operation_registry).dispatch(
-                spec.operation_name,
+                operation_name,
                 arguments,
                 session=session,
                 surface="mcp",

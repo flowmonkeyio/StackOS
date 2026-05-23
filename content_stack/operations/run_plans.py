@@ -407,9 +407,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             prerequisites=("Pass run_plan_id.",),
             returns=("The full run plan object, including steps and approval requests.",),
-            examples=(
-                OperationExample(title="Fetch a run plan", arguments={"run_plan_id": 42}),
-            ),
+            examples=(OperationExample(title="Fetch a run plan", arguments={"run_plan_id": 42}),),
             mutating=False,
             grant_policy="direct-read",
         ),

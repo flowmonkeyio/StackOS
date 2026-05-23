@@ -161,6 +161,27 @@ def _create_ghost_credential(mcp: MCPClient, project_id: int) -> str:
     return status["connections"][0]["credential_ref"]
 
 
+def _create_mock_credential(
+    mcp: MCPClient, project_id: int, secret: str = "mock-mcp-secret"
+) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/mock-provider/credentials",
+        json={
+            "auth_method_key": "api_key",
+            "profile_key": "primary",
+            "label": "Mock MCP Primary",
+            "fields": {"api_key": secret},
+        },
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "mock-provider"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _image_action_plan_json() -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",
@@ -228,6 +249,30 @@ def _sitemap_action_plan_json() -> dict:
                 "id": "fetch-sitemap",
                 "title": "Fetch sitemap",
                 "action_refs": ["utils.sitemap.fetch"],
+            }
+        ],
+    }
+
+
+def _mock_action_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "utils.mock-provider.run",
+        "title": "Mock provider action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "execute-mock",
+                    "tool": "action.execute",
+                    "action_refs": ["utils.mock.echo"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "execute-mock",
+                "title": "Execute mock provider",
+                "action_refs": ["utils.mock.echo"],
             }
         ],
     }
@@ -400,6 +445,85 @@ def test_action_execute_requires_matching_grant_action_ref(
 
     assert err["code"] == -32007
     assert "arguments do not match" in err["data"]["detail"]
+
+
+def test_action_execute_mock_provider_vertical_slice_through_mcp(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_mock_credential(mcp_client, project_id)
+    described = mcp_client.call_tool_structured(
+        "action.describe",
+        {"project_id": project_id, "action_ref": "utils.mock.echo"},
+    )
+    assert described["availability"]["status"] == "ready"
+    assert described["availability"]["credential_state"] == "available"
+
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _mock_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "execute-mock",
+            "run_token": run_token,
+        },
+    )
+
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.mock.echo",
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+            "input_json": {
+                "message": "hello from mcp mock provider",
+                "echo": {"campaign": "mock-campaign"},
+                "cost_cents": 11,
+            },
+        },
+    )
+
+    data = out["data"]
+    rendered = json.dumps(data)
+    assert data["action_call"]["run_id"] == started["data"]["run_id"]
+    assert data["action_call"]["run_plan_id"] == created["data"]["id"]
+    assert data["action_call"]["run_plan_step_id"] == claimed["data"]["id"]
+    assert data["action_call"]["provider_key"] == "mock-provider"
+    assert data["action_call"]["connector_key"] == "mock-provider"
+    assert data["output_json"]["status"] == "success"
+    assert data["output_json"]["credential_ref"] == credential_ref
+    assert data["output_json"]["leak_check"] == {
+        "authorization": "[redacted]",
+        "api_key": "[redacted]",
+    }
+    assert data["metadata_json"]["access_token"] == "[redacted]"
+    assert data["cost_cents"] == 11
+    assert "mock-mcp-secret" not in rendered
+
+    audit_resp = mcp_client.test_client.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={
+            "run_id": started["data"]["run_id"],
+            "run_plan_id": created["data"]["id"],
+            "run_plan_step_id": claimed["data"]["id"],
+            "status": "success",
+        },
+        headers=mcp_client._headers(),
+    )
+    assert audit_resp.status_code == 200
+    audit = audit_resp.json()
+    assert audit["total_estimate"] == 1
+    assert "mock-mcp-secret" not in json.dumps(audit)
 
 
 def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(

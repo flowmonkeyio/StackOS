@@ -105,8 +105,7 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
     assert _auth_field_keys(providers["hubspot"])[:2] == ["access_token", "portal_ref"]
     assert providers["custom-gtm-tool"].auth_type == "local"
     assert (
-        providers["custom-gtm-tool"].config["connection_setup"]
-        == "project-local-plugin-required"
+        providers["custom-gtm-tool"].config["connection_setup"] == "project-local-plugin-required"
     )
     actions = {action.key: action for action in manifest.actions}
     assert actions["hubspot.crm.companies.batch_upsert"].provider == "hubspot"
@@ -167,8 +166,7 @@ def test_media_buying_plugin_yaml_facade_validates() -> None:
     assert _auth_field_keys(providers["meta-ads"])[:2] == ["access_token", "business_ref"]
     assert providers["custom-media-tool"].auth_type == "local"
     assert (
-        providers["custom-media-tool"].config["connection_setup"]
-        == "project-local-plugin-required"
+        providers["custom-media-tool"].config["connection_setup"] == "project-local-plugin-required"
     )
     actions = {action.key: action for action in manifest.actions}
     assert actions["meta.campaign.create"].provider == "meta-ads"

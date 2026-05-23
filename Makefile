@@ -8,7 +8,7 @@ UV ?= uv
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install serve dev-ui build-ui register-codex register-claude \
+.PHONY: help install serve dev-ui build-ui signoff register-codex register-claude \
         install-skills-codex install-skills-claude \
         install-plugins \
         install-launchd doctor test test-ui-unit test-ui-e2e migrate lint \
@@ -50,6 +50,11 @@ dev-ui: ## Run Vite dev server alongside the daemon
 
 build-ui: ## Build Vue UI into content_stack/ui_dist/
 	@if [ -d ui ]; then cd ui && pnpm install && pnpm build; else echo "ui/ not available in this checkout"; exit 0; fi
+
+signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/CLI, and UI checks
+	$(UV) run pytest tests/unit tests/integration/test_routes/test_operations_routes.py tests/integration/test_routes/test_cli_mock_provider.py tests/integration/test_mcp/test_mcp_actions.py tests/integration/test_repositories/test_actions.py -q
+	$(MAKE) test-ui-unit
+	$(MAKE) build-ui
 
 migrate: ## Run alembic migrations forward
 	$(UV) run alembic upgrade head
