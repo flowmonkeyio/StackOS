@@ -297,6 +297,14 @@ function serviceStatusTone(group: ServiceGroup): BadgeTone {
   return 'warning'
 }
 
+function serviceStatusDotClass(group: ServiceGroup): string {
+  const tone = serviceStatusTone(group)
+  if (tone === 'success') return 'bg-success'
+  if (tone === 'danger') return 'bg-danger'
+  if (tone === 'warning') return 'bg-warning'
+  return 'bg-neutral'
+}
+
 function serviceStatusLabel(group: ServiceGroup): string {
   const connected = group.connections.filter(
     (connection) => connection.status === 'connected' && connection.revoked_at === null,
@@ -306,10 +314,23 @@ function serviceStatusLabel(group: ServiceGroup): string {
   return first ? first.status : 'not connected'
 }
 
+function connectionCountLabel(group: ServiceGroup): string {
+  const count = group.connections.length
+  return `${count} connection${count === 1 ? '' : 's'}`
+}
+
 function statusTone(connection: SchemaCredentialConnectionOut): BadgeTone {
   if (connection.status === 'connected' && !connection.setup_required) return 'success'
   if (connection.status === 'failed' || connection.status === 'revoked') return 'danger'
   return 'warning'
+}
+
+function statusDotClass(connection: SchemaCredentialConnectionOut): string {
+  const tone = statusTone(connection)
+  if (tone === 'success') return 'bg-success'
+  if (tone === 'danger') return 'bg-danger'
+  if (tone === 'warning') return 'bg-warning'
+  return 'bg-neutral'
 }
 
 function connectionTitle(connection: SchemaCredentialConnectionOut): string {
@@ -567,116 +588,160 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
         <li
           v-for="group in serviceGroups"
           :key="group.providerKey"
-          class="rounded-md border border-subtle bg-bg-surface p-4"
+          class="overflow-hidden rounded-md border border-subtle bg-bg-surface shadow-xs"
         >
-          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <h3 class="text-base font-semibold text-fg-strong">{{ serviceName(group) }}</h3>
-                <UiBadge
-                  v-if="group.provider"
-                  tone="accent"
-                >
-                  {{ pluginLabel(group.provider.plugin_slug) }}
-                </UiBadge>
-                <UiBadge :tone="serviceStatusTone(group)">
-                  {{ serviceStatusLabel(group) }}
-                </UiBadge>
+          <div class="border-b border-subtle bg-bg-surface-alt px-4 py-4 sm:px-5">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div class="flex min-w-0 gap-3">
+                <span
+                  :class="['mt-1 h-2.5 w-2.5 shrink-0 rounded-full', serviceStatusDotClass(group)]"
+                  aria-hidden="true"
+                />
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h3 class="text-base font-semibold leading-6 text-fg-strong">
+                      {{ serviceName(group) }}
+                    </h3>
+                    <UiBadge
+                      v-if="group.provider"
+                      tone="accent"
+                    >
+                      {{ pluginLabel(group.provider.plugin_slug) }}
+                    </UiBadge>
+                    <UiBadge
+                      :tone="serviceStatusTone(group)"
+                    >
+                      {{ serviceStatusLabel(group) }}
+                    </UiBadge>
+                  </div>
+                  <p
+                    v-if="group.provider?.description"
+                    class="mt-1 max-w-3xl text-sm leading-5 text-fg-muted"
+                  >
+                    {{ group.provider.description }}
+                  </p>
+                  <dl class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    <div class="flex min-w-0 items-center gap-1.5">
+                      <dt class="shrink-0 text-fg-muted">Provider</dt>
+                      <dd class="truncate font-mono text-fg-default">{{ group.providerKey }}</dd>
+                    </div>
+                    <div
+                      v-if="group.provider"
+                      class="flex items-center gap-1.5"
+                    >
+                      <dt class="text-fg-muted">Auth</dt>
+                      <dd class="text-fg-default">{{ formatAuthType(group.provider.auth_type) }}</dd>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <dt class="text-fg-muted">Saved</dt>
+                      <dd class="text-fg-default">{{ connectionCountLabel(group) }}</dd>
+                    </div>
+                  </dl>
+                </div>
               </div>
-              <p
-                v-if="group.provider?.description"
-                class="mt-1 max-w-3xl text-sm text-fg-muted"
+              <UiButton
+                v-if="group.provider && canAddProvider(group.provider)"
+                class="shrink-0"
+                size="sm"
+                icon-left="plus"
+                @click="openAddConnection(group.provider.key)"
               >
-                {{ group.provider.description }}
-              </p>
-              <p class="mt-1 font-mono text-xs text-fg-subtle">{{ group.providerKey }}</p>
+                Add another
+              </UiButton>
             </div>
-            <UiButton
-              v-if="group.provider && canAddProvider(group.provider)"
-              size="sm"
-              icon-left="plus"
-              @click="openAddConnection(group.provider.key)"
-            >
-              Add another
-            </UiButton>
           </div>
 
-          <div class="mt-3 grid gap-2">
+          <div class="divide-y divide-subtle">
             <article
               v-for="connection in group.connections"
               :key="connection.credential_ref"
-              class="rounded-md border border-subtle bg-bg-surface-alt p-3"
+              class="grid gap-3 px-4 py-4 sm:px-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(26rem,1.5fr)_auto] xl:items-center"
             >
-              <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+              <div class="flex min-w-0 gap-3">
+                <span
+                  :class="['mt-2 h-2 w-2 shrink-0 rounded-full', statusDotClass(connection)]"
+                  aria-hidden="true"
+                />
                 <div class="min-w-0">
                   <div class="flex flex-wrap items-center gap-2">
-                    <h4 class="text-sm font-semibold text-fg-default">
+                    <h4 class="truncate text-sm font-semibold leading-5 text-fg-strong">
                       {{ connectionTitle(connection) }}
                     </h4>
-                    <UiBadge :tone="statusTone(connection)">
+                    <UiBadge
+                      :tone="statusTone(connection)"
+                    >
                       {{ connection.status }}
                     </UiBadge>
-                    <UiBadge>{{ formatAuthType(connection.auth_type) }}</UiBadge>
-                    <UiBadge
+                  </div>
+                  <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-fg-muted">
+                    <span class="truncate font-mono">{{ connection.credential_ref }}</span>
+                    <span aria-hidden="true">&middot;</span>
+                    <span>{{ formatAuthType(connection.auth_type) }}</span>
+                    <template
                       v-if="
                         group.provider &&
                         methodLabel(group.provider, connection.auth_method_key) !==
                           formatAuthType(connection.auth_type)
                       "
                     >
-                      {{ methodLabel(group.provider, connection.auth_method_key) }}
-                    </UiBadge>
+                      <span aria-hidden="true">&middot;</span>
+                      <span>{{ methodLabel(group.provider, connection.auth_method_key) }}</span>
+                    </template>
                   </div>
-                  <p class="mt-1 truncate font-mono text-xs text-fg-muted">
-                    {{ connection.credential_ref }}
-                  </p>
-                </div>
-                <div class="flex shrink-0 flex-wrap gap-2">
-                  <UiButton
-                    size="sm"
-                    icon-left="plug-zap"
-                    :loading="isConnectionBusy(connection.credential_ref, 'test')"
-                    :disabled="connection.revoked_at !== null"
-                    @click="testConnection(connection)"
-                  >
-                    Test
-                  </UiButton>
-                  <UiButton
-                    size="sm"
-                    variant="danger"
-                    icon-left="ban"
-                    :loading="isConnectionBusy(connection.credential_ref, 'revoke')"
-                    :disabled="connection.revoked_at !== null"
-                    @click="revokeConnection(connection)"
-                  >
-                    Revoke
-                  </UiButton>
                 </div>
               </div>
 
-              <dl class="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
-                <div>
-                  <dt class="text-xs text-fg-muted">Connection key</dt>
-                  <dd class="font-mono text-fg-default">{{ connection.profile_key }}</dd>
+              <dl class="grid gap-3 text-sm sm:grid-cols-2 2xl:grid-cols-4">
+                <div class="min-w-0">
+                  <dt class="text-2xs font-medium uppercase text-fg-muted">Connection key</dt>
+                  <dd class="mt-0.5 truncate font-mono text-xs text-fg-default">
+                    {{ connection.profile_key }}
+                  </dd>
                 </div>
-                <div>
-                  <dt class="text-xs text-fg-muted">Account</dt>
-                  <dd class="truncate text-fg-default">{{ accountLabel(connection) }}</dd>
+                <div class="min-w-0">
+                  <dt class="text-2xs font-medium uppercase text-fg-muted">Account</dt>
+                  <dd class="mt-0.5 truncate text-fg-default">{{ accountLabel(connection) }}</dd>
                 </div>
-                <div>
-                  <dt class="text-xs text-fg-muted">Expires</dt>
-                  <dd class="text-fg-default">{{ formatDateTime(connection.expires_at) }}</dd>
+                <div class="min-w-0">
+                  <dt class="text-2xs font-medium uppercase text-fg-muted">Expires</dt>
+                  <dd class="mt-0.5 truncate text-fg-default">
+                    {{ formatDateTime(connection.expires_at) }}
+                  </dd>
                 </div>
-                <div>
-                  <dt class="text-xs text-fg-muted">Last tested</dt>
-                  <dd class="text-fg-default">{{ formatDateTime(connection.last_tested_at) }}</dd>
+                <div class="min-w-0">
+                  <dt class="text-2xs font-medium uppercase text-fg-muted">Last tested</dt>
+                  <dd class="mt-0.5 truncate text-fg-default">
+                    {{ formatDateTime(connection.last_tested_at) }}
+                  </dd>
                 </div>
               </dl>
+
+              <div class="flex shrink-0 flex-wrap gap-2 xl:justify-end">
+                <UiButton
+                  size="sm"
+                  icon-left="plug-zap"
+                  :loading="isConnectionBusy(connection.credential_ref, 'test')"
+                  :disabled="connection.revoked_at !== null"
+                  @click="testConnection(connection)"
+                >
+                  Test
+                </UiButton>
+                <UiButton
+                  size="sm"
+                  variant="danger"
+                  icon-left="ban"
+                  :loading="isConnectionBusy(connection.credential_ref, 'revoke')"
+                  :disabled="connection.revoked_at !== null"
+                  @click="revokeConnection(connection)"
+                >
+                  Revoke
+                </UiButton>
+              </div>
 
               <UiCallout
                 v-if="connectionMessages[connection.credential_ref]"
                 :tone="connectionMessages[connection.credential_ref].tone"
-                class="mt-3"
+                class="xl:col-span-3"
               >
                 {{ connectionMessages[connection.credential_ref].text }}
               </UiCallout>
