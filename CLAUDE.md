@@ -8,6 +8,7 @@ agent-operated projects.
 - `AGENTS.md`: current repo instructions and change checklist.
 - `README.md`: business/product overview.
 - `docs/README.md`: documentation router.
+- `docs/setup.md`: install, start, autostart, repair, and first-run flow.
 - `docs/architecture.md`: core architecture.
 - `docs/operations.md`: operation registry and MCP/REST/CLI surfaces.
 - `docs/action-executor.md`: daemon-side action execution.

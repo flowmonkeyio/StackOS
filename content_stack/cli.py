@@ -57,8 +57,16 @@ run_plans_app = typer.Typer(
 )
 app.add_typer(run_plans_app, name="run-plans")
 
+autostart_app = typer.Typer(
+    name="autostart",
+    help="Install, inspect, or remove local daemon autostart.",
+    no_args_is_help=True,
+)
+app.add_typer(autostart_app, name="autostart")
+
 
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
+_LAUNCHD_LABEL = "com.content-stack.daemon"
 
 
 def _exit(code: int) -> None:
@@ -755,6 +763,172 @@ def _autostart_bridge_daemon(settings: Settings, host: str, port: int) -> tuple[
     return ok, message
 
 
+def _launchd_plist_path(home: Path) -> Path:
+    return home / "Library" / "LaunchAgents" / f"{_LAUNCHD_LABEL}.plist"
+
+
+def _launchd_domain() -> str:
+    if not hasattr(os, "getuid"):
+        raise RuntimeError("launchd autostart requires a Unix-like platform")
+    return f"gui/{os.getuid()}"
+
+
+def _launchd_service() -> str:
+    return f"{_launchd_domain()}/{_LAUNCHD_LABEL}"
+
+
+def _launchctl(args: list[str]) -> tuple[bool, str]:
+    launchctl = shutil.which("launchctl")
+    if launchctl is None:
+        return False, "launchctl is not on PATH; launchd autostart requires macOS."
+    try:
+        result = subprocess.run(
+            [launchctl, *args],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+    output = (result.stderr or result.stdout).strip()
+    return result.returncode == 0, output
+
+
+def _launchd_loaded() -> tuple[bool, str]:
+    try:
+        service = _launchd_service()
+    except RuntimeError as exc:
+        return False, str(exc)
+    return _launchctl(["print", service])
+
+
+def _launchd_bootout(plist_path: Path) -> tuple[bool, str]:
+    loaded, _ = _launchd_loaded()
+    if loaded:
+        try:
+            service = _launchd_service()
+        except RuntimeError as exc:
+            return False, str(exc)
+        ok, message = _launchctl(["bootout", service])
+        return ok, message
+    # Older launchctl versions accept unload and ignore unloaded jobs.
+    return _launchctl(["unload", str(plist_path)])
+
+
+def _launchd_bootstrap(plist_path: Path) -> tuple[bool, str]:
+    try:
+        domain = _launchd_domain()
+    except RuntimeError as exc:
+        return False, str(exc)
+    loaded, _ = _launchd_loaded()
+    if loaded:
+        return True, "launchd job already loaded"
+    ok, message = _launchctl(["bootstrap", domain, str(plist_path)])
+    if ok:
+        return True, "launchd job loaded"
+    legacy_ok, legacy_message = _launchctl(["load", "-w", str(plist_path)])
+    if legacy_ok:
+        return True, "launchd job loaded"
+    return False, legacy_message or message
+
+
+def _launchd_plist_content(
+    settings: Settings,
+    *,
+    home: Path,
+    host: str,
+    port: int,
+    log_level: str,
+) -> bytes:
+    import plistlib
+
+    settings.ensure_dirs()
+    payload = {
+        "Label": _LAUNCHD_LABEL,
+        "ProgramArguments": _daemon_args(host, port, log_level),
+        "RunAtLoad": True,
+        "KeepAlive": {"SuccessfulExit": False},
+        "WorkingDirectory": str(home),
+        "StandardOutPath": str(settings.log_path),
+        "StandardErrorPath": str(settings.log_path),
+        "EnvironmentVariables": {
+            "HOME": str(home),
+            "CONTENT_STACK_DATA_DIR": str(settings.data_dir),
+            "CONTENT_STACK_STATE_DIR": str(settings.state_dir),
+            "CONTENT_STACK_HOST": host,
+            "CONTENT_STACK_PORT": str(port),
+            "CONTENT_STACK_LOG_LEVEL": log_level,
+        },
+    }
+    return plistlib.dumps(payload, sort_keys=False)
+
+
+def _install_launchd_autostart(
+    settings: Settings,
+    *,
+    home: Path,
+    force: bool,
+    host: str,
+    port: int,
+    log_level: str,
+) -> tuple[bool, str]:
+    if shutil.which("launchctl") is None:
+        return False, "launchctl is not on PATH; launchd autostart requires macOS."
+    try:
+        _launchd_domain()
+    except RuntimeError as exc:
+        return False, str(exc)
+
+    plist_path = _launchd_plist_path(home)
+    content = _launchd_plist_content(
+        settings,
+        home=home,
+        host=host,
+        port=port,
+        log_level=log_level,
+    )
+
+    if plist_path.exists() and plist_path.read_bytes() == content:
+        ok, message = _launchd_bootstrap(plist_path)
+        if not ok:
+            return (
+                False,
+                f"launchd plist already current at {plist_path}, but load failed: {message}",
+            )
+        return True, f"launchd plist already current at {plist_path}; {message}"
+
+    if plist_path.exists() and not force:
+        return (
+            False,
+            f"launchd plist at {plist_path} differs; rerun with --force to overwrite.",
+        )
+
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    if plist_path.exists():
+        backup = plist_path.with_suffix(plist_path.suffix + ".bak")
+        backup.write_bytes(plist_path.read_bytes())
+        _launchd_bootout(plist_path)
+
+    tmp_path = plist_path.with_name(f".{plist_path.name}.tmp")
+    tmp_path.write_bytes(content)
+    os.replace(tmp_path, plist_path)
+
+    ok, message = _launchd_bootstrap(plist_path)
+    if not ok:
+        return False, f"wrote launchd plist at {plist_path}, but load failed: {message}"
+    return True, f"installed launchd plist at {plist_path}; {message}"
+
+
+def _uninstall_launchd_autostart(*, home: Path) -> tuple[bool, str]:
+    plist_path = _launchd_plist_path(home)
+    if not plist_path.exists():
+        return True, f"no launchd plist at {plist_path}; nothing to do"
+    _launchd_bootout(plist_path)
+    plist_path.unlink(missing_ok=True)
+    return True, f"removed launchd plist {plist_path}"
+
+
 def _write_pid_file(path: Path, pid: int) -> None:
     path.write_text(f"{pid}\n", encoding="utf-8")
 
@@ -923,6 +1097,76 @@ def _terminate_daemon_processes(
 
 
 @app.command()
+def start(
+    host: Annotated[
+        str | None,
+        typer.Option("--host", help="Daemon host; defaults to configured loopback host."),
+    ] = None,
+    port: Annotated[
+        int | None,
+        typer.Option("--port", help="Daemon port; defaults to configured daemon port."),
+    ] = None,
+    log_level: Annotated[
+        str | None,
+        typer.Option("--log-level", help="Log level for the daemon."),
+    ] = None,
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", help="Seconds to wait for readiness."),
+    ] = 20.0,
+) -> None:
+    """Start the local singleton daemon in the background if needed."""
+    settings = get_settings()
+    settings.ensure_dirs()
+    daemon_host = host or settings.host
+    daemon_port = port or settings.port
+    daemon_log_level = (log_level or settings.log_level).upper()
+
+    if not _is_loopback_host(daemon_host):
+        typer.echo(
+            f"error: --host {daemon_host!r} is not a loopback address; refusing to start.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
+    if blocker_pids:
+        typer.echo(
+            "error: port "
+            f"{daemon_port} is held by non-content-stack process pid(s): "
+            f"{', '.join(str(pid) for pid in blocker_pids)}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if _daemon_health_ok(daemon_host, daemon_port, timeout=0.25):
+        typer.echo(f"start: daemon already running; url=http://{daemon_host}:{daemon_port}")
+        return
+
+    if daemon_pids or _tcp_can_connect(daemon_host, daemon_port, timeout=0.25):
+        typer.echo(
+            "error: daemon process or port is present but health is not ready; "
+            "run `content-stack restart`.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    ok, message = _spawn_detached_daemon(
+        settings,
+        daemon_host,
+        daemon_port,
+        log_level=daemon_log_level,
+        log_path=settings.log_path,
+        cwd=Path.cwd(),
+        ready_timeout=timeout,
+    )
+    if not ok:
+        typer.echo(f"start: {message}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"start: {message}")
+
+
+@app.command()
 def restart(
     host: Annotated[
         str | None,
@@ -1001,6 +1245,85 @@ def restart(
         typer.echo(f"restart: {message}", err=True)
         raise typer.Exit(code=1)
     typer.echo(f"restart: {message}")
+
+
+@autostart_app.command(name="install")
+def autostart_install(
+    host: Annotated[
+        str | None,
+        typer.Option("--host", help="Daemon host for the launchd job."),
+    ] = None,
+    port: Annotated[
+        int | None,
+        typer.Option("--port", help="Daemon port for the launchd job."),
+    ] = None,
+    log_level: Annotated[
+        str | None,
+        typer.Option("--log-level", help="Daemon log level for the launchd job."),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Overwrite an existing differing plist."),
+    ] = False,
+) -> None:
+    """Install or refresh the macOS launchd autostart job."""
+    settings = get_settings()
+    settings.ensure_dirs()
+    daemon_host = host or settings.host
+    daemon_port = port or settings.port
+    daemon_log_level = (log_level or settings.log_level).upper()
+    home = _doctor_home()
+    if not _is_loopback_host(daemon_host):
+        typer.echo(
+            f"autostart: refusing non-loopback daemon host {daemon_host!r}.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    ok, message = _install_launchd_autostart(
+        settings,
+        home=home,
+        force=force,
+        host=daemon_host,
+        port=daemon_port,
+        log_level=daemon_log_level,
+    )
+    if not ok:
+        typer.echo(f"autostart: {message}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"autostart: {message}")
+
+
+@autostart_app.command(name="uninstall")
+def autostart_uninstall() -> None:
+    """Remove the launchd autostart job and plist."""
+    ok, message = _uninstall_launchd_autostart(home=_doctor_home())
+    if not ok:
+        typer.echo(f"autostart: {message}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"autostart: {message}")
+
+
+@autostart_app.command(name="status")
+def autostart_status(
+    json_output: Annotated[bool, typer.Option("--json", help="Emit JSON")] = False,
+) -> None:
+    """Inspect launchd autostart plist and load state."""
+    home = _doctor_home()
+    plist_path = _launchd_plist_path(home)
+    loaded, message = _launchd_loaded()
+    payload = {
+        "plist_path": str(plist_path),
+        "plist_present": plist_path.exists(),
+        "launchd_loaded": loaded,
+        "launchctl_message": message,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, sort_keys=True))
+        return
+    typer.echo(f"autostart: plist_present={payload['plist_present']} path={plist_path}")
+    typer.echo(f"autostart: launchd_loaded={loaded}")
+    if message:
+        typer.echo(f"autostart: launchctl={message}")
 
 
 @app.command(name="mcp-bridge")
@@ -1414,7 +1737,7 @@ def _check_claude_mcp_registered(home: Path) -> tuple[bool, dict[str, object]]:
 
 def _check_launchd_plist(home: Path) -> tuple[bool, dict[str, object]]:
     """Optional launchd plist presence check; launchd itself is not required."""
-    target = home / "Library" / "LaunchAgents" / "com.content-stack.daemon.plist"
+    target = _launchd_plist_path(home)
     return target.exists(), {"target": str(target), "exists": target.exists()}
 
 
@@ -1531,11 +1854,11 @@ def doctor(
     _exit(code)
 
 
-# ---- stubbed subcommands --------------------------------------------------
+# ---- reserved subcommands -------------------------------------------------
 
 
 def _stub(milestone: str, name: str) -> None:
-    """Print a milestone tag and exit 0 — uniform format for stubbed CLIs."""
+    """Print a clear placeholder and exit 0 for reserved CLIs."""
     typer.echo(f"`content-stack {name}` not yet implemented ({milestone}).")
 
 
@@ -1608,10 +1931,10 @@ def install(
 ) -> None:
     """End-user one-liner install — clone-mode or pipx-mode.
 
-    Auto-detects whether the package was installed from a checked-out
-    repo (uses the bash scripts under ``scripts/``) or via pipx (resolves
-    bundled assets via ``importlib.resources``). The two paths land at
-    the same end state.
+    Auto-detects whether the package was installed from a checked-out repo or
+    via pipx. Clone mode reads repo assets; package mode resolves bundled
+    assets via ``importlib.resources``. The two paths land at the same end
+    state.
 
     Re-running is idempotent: plugins are the default runtime surface, MCP
     registration upserts existing entries, and loose skills remain available
@@ -1663,21 +1986,18 @@ def install(
         typer.echo(f"==> {msg}")
 
     if launchd:
-        # Defer to the bash script; pipx-mode users still get launchd
-        # via the script if they have a clone of the repo. Without a
-        # repo we cannot generate a sensible plist (the daemon needs a
-        # working directory) — surface that explicitly.
-        scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
-        plist_script = scripts_dir / "install-launchd.sh"
-        if plist_script.is_file():
-            import subprocess
-
-            subprocess.run(["bash", str(plist_script)], check=True)
-        else:
-            typer.echo(
-                "warning: --launchd requires a checked-out repo (script not in wheel).",
-                err=True,
-            )
+        ok, message = _install_launchd_autostart(
+            settings,
+            home=_doctor_home(),
+            force=False,
+            host=settings.host,
+            port=settings.port,
+            log_level=settings.log_level,
+        )
+        if not ok:
+            typer.echo(f"==> launchd autostart failed: {message}", err=True)
+            raise typer.Exit(code=1)
+        typer.echo(f"==> {message}")
 
     if not skip_doctor:
         typer.echo("==> Running doctor")
@@ -1687,9 +2007,16 @@ def install(
         try:
             doctor(json_output=False)
         except typer.Exit as exc:
-            # Surface the doctor exit code as the install exit code so
-            # `make install` fails loudly when the daemon is not yet up.
-            if exc.exit_code not in (0, None):
+            # A fresh install usually happens before the daemon is started.
+            # Keep `doctor` strict when called directly, but let install finish
+            # once state, assets, and MCP registration are in place.
+            if exc.exit_code == 1:
+                typer.echo(
+                    "==> Doctor: daemon is not running yet. Start it with "
+                    "`content-stack start` or `make serve`, then open "
+                    f"http://{settings.host}:{settings.port}/."
+                )
+            elif exc.exit_code not in (0, None):
                 raise
     typer.echo("==> install complete")
 

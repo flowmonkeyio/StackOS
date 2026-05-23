@@ -1,4 +1,4 @@
-"""Shared fixtures for the M9 distribution tests.
+"""Shared fixtures for distribution/install tests.
 
 Each test runs in a sandbox HOME so the install scripts target a tmp
 directory rather than the operator's real `~/.codex` or `~/.claude`.

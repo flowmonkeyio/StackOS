@@ -143,8 +143,9 @@ per-tool daemon rate limits until enforcement exists in middleware and tests.
 
 ## Distribution And Install Posture
 
-Both the clone-mode `make install` and the pipx-mode
-`content-stack install` paths share the same install code:
+The canonical setup contract is in [`./setup.md`](./setup.md). Clone-mode
+`make install` and package-mode `content-stack install` land at the same local
+state, plugin, and MCP bridge contract:
 
 - **Auth token**: created by `content-stack init`, `content-stack install`,
   or `make install` before MCP registration. `pipx upgrade` does NOT rotate
@@ -164,11 +165,11 @@ Both the clone-mode `make install` and the pipx-mode
   from those assets via `importlib.resources` so users without the repo on disk
   get the same install. The committed `ui_dist/` ships inside the package, so
   no `pnpm` is needed at user install time.
-- **launchd plist**: optional. The plist runs the daemon as the
-  invoking user; never as root. `make install-launchd` writes the
-  plist with mode 0644 (world-readable, owner-writable). The plist
-  itself does not store the auth token; the daemon reads it from
-  `~/.local/state/content-stack/auth.token` at startup.
+- **launchd plist**: optional. The plist runs the daemon as the invoking user;
+  never as root. `content-stack autostart install` owns plist generation in
+  both clone and package installs; `make install-launchd` delegates to that
+  command. The plist itself does not store the auth token; the daemon reads it
+  from `~/.local/state/content-stack/auth.token` at startup.
 
 The pipx + launchd path does not change the threat model: the daemon binds
 loopback only, the bearer token gates every call, and the seed encrypts

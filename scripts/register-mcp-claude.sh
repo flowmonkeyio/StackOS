@@ -5,8 +5,8 @@
 # Reads the target `.mcp.json` (default `${HOME}/.claude/mcp.json`,
 # overridable via `CONTENT_STACK_MCP_TARGET` for per-project configs),
 # upserts the `content-stack` entry, and writes back atomically with a
-# `.bak` backup of any pre-existing file. Never `>`-overwrites — atomic
-# rename via a temp file in the same directory (audit B-24).
+# `.bak` backup of any pre-existing file. Never `>`-overwrites; it uses an
+# atomic rename via a temp file in the same directory.
 #
 # `--remove` deletes the entry (used by `make uninstall`).
 

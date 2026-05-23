@@ -7,6 +7,7 @@ obvious without loading every document.
 
 | Work | Primary Docs |
 | --- | --- |
+| Installing, starting, or repairing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md) |
 | Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
 | Adding providers, auth, or credentials | [`auth-providers.md`](./auth-providers.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |

@@ -1,12 +1,12 @@
-"""`scripts/install-launchd.sh` generates a plist from a template.
+"""`scripts/install-launchd.sh` delegates launchd setup to the CLI.
 
 We can't actually `launchctl bootstrap` in the test runner, so we shim `launchctl`
 with a stub on PATH that records every invocation. The plist itself
 must:
-  - substitute `__UV_PATH__`, `__REPO_ROOT__`, `__HOME__` correctly,
+  - use the Python module daemon entrypoint,
+  - include the operator home and daemon log path,
   - be idempotent on re-run with identical content,
-  - prompt for confirmation (or honor `--force`) when the plist
-    differs from the generated one,
+  - honor `--force` when the plist differs from the generated one,
   - boot out and remove the plist on `--uninstall`.
 """
 
@@ -61,18 +61,22 @@ def _run(
 def test_writes_plist_with_substitutions(
     sandbox_home: Path, scripts_dir: Path, launchctl_stub: Path, repo_root: Path
 ) -> None:
+    _ = repo_root
     result = _run(scripts_dir, sandbox_home, launchctl_stub)
     assert result.returncode == 0, result.stderr
     plist = sandbox_home / "Library" / "LaunchAgents" / "com.content-stack.daemon.plist"
     assert plist.is_file()
     content = plist.read_text(encoding="utf-8")
-    # No raw template tokens remain.
-    assert "__UV_PATH__" not in content
-    assert "__REPO_ROOT__" not in content
-    assert "__HOME__" not in content
-    # Substituted paths are present.
+    # The CLI owns the plist and runs the package module directly.
+    assert "<string>-m</string>" in content
+    assert "<string>content_stack</string>" in content
+    assert "<string>serve</string>" in content
     assert str(sandbox_home) in content
-    assert str(repo_root) in content
+    assert "auth.token" not in content
+    assert "seed.bin" not in content
+    assert "Authorization" not in content
+    assert "Bearer" not in content
+    assert "CONTENT_STACK_TOKEN" not in content
     # Label is the stable identifier we'll boot out later.
     assert "<string>com.content-stack.daemon</string>" in content
 
@@ -108,7 +112,6 @@ def test_force_overwrites_with_bak(
 def test_diff_without_force_aborts_in_non_tty(
     sandbox_home: Path, scripts_dir: Path, launchctl_stub: Path
 ) -> None:
-    """Without a TTY on stdin, the script must fail rather than block on read."""
     plist_dir = sandbox_home / "Library" / "LaunchAgents"
     plist_dir.mkdir(parents=True, exist_ok=True)
     plist = plist_dir / "com.content-stack.daemon.plist"

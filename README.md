@@ -92,7 +92,7 @@ MCP tools are reserved for generic StackOS primitives.
 
 ## Running Locally
 
-Install and start the daemon:
+For repository development:
 
 ```bash
 TPF_LLM_TOOL=codex tpf make install
@@ -105,11 +105,21 @@ Open the committed StackOS UI bundle:
 http://127.0.0.1:5180/
 ```
 
+For package/operator installs:
+
+```bash
+content-stack install
+content-stack start
+```
+
 For Vue UI development, run `make dev-ui` and open:
 
 ```text
 http://127.0.0.1:5173/
 ```
+
+The complete setup contract, first-run UI sequence, autostart commands, and
+agent-from-any-repo flow are in [`docs/setup.md`](./docs/setup.md).
 
 ## Documentation
 
@@ -119,6 +129,7 @@ questions to the right canonical document.
 
 Useful technical entrypoints:
 
+- [`docs/setup.md`](./docs/setup.md)
 - [`docs/architecture.md`](./docs/architecture.md)
 - [`docs/operations.md`](./docs/operations.md)
 - [`docs/action-executor.md`](./docs/action-executor.md)

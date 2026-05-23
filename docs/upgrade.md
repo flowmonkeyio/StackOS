@@ -15,7 +15,9 @@ content-stack install
 
 `pipx upgrade` swaps the wheel; `content-stack install` then re-mirrors
 the hydrated content-stack plugin from the wheel's bundled `_assets/` tree,
-refreshes MCP registrations, and runs `doctor`.
+refreshes MCP registrations, and runs `doctor`. Use `content-stack start` for
+first start and `content-stack restart` after an upgrade when the daemon is
+already running.
 
 ## Clone mode
 
@@ -36,7 +38,7 @@ doctor install steps.
 | Plugin | `rsync -a --delete` mirrors and hydrates `~/.codex/plugins/content-stack`. Retired plugin assets disappear from the plugin catalog on the next install. |
 | MCP registration | Codex CLI: `codex mcp add` registers the local `mcp-bridge` stdio command and is a no-op when already registered (the script greps `mcp list` first). Claude Code: atomic JSON merge with `.bak` backup; sibling servers preserved. Neither registration stores a bearer token in client config. |
 | Auth token | **Does not rotate on upgrade.** Run `content-stack rotate-token --yes` or `make rotate-token` explicitly to rotate; registration refreshes saved configs. Restart any running daemon so middleware loads the new token. |
-| launchd plist | If the existing plist matches the generated one, it's a no-op. If different, `--force` overwrites with a `.bak` retained. |
+| launchd plist | `content-stack autostart install` owns plist generation for clone and package installs. If the existing plist matches the generated one, it is a no-op. If different, `--force` overwrites with a `.bak` retained. |
 
 ## Breaking changes
 
@@ -63,10 +65,13 @@ pipx install --force "content-stack==<previous-version>"
 content-stack install
 ```
 
-A backup of the SQLite DB lives at
-`~/.local/share/content-stack/backups/` (auto-backup job, weekly,
-12-week retention) — `make restore <file>` halts the daemon, copies
-the backup over the live DB, and restarts.
+Automated backup/restore commands are reserved and should not be treated as
+available operator recovery yet. Before rollback or cross-machine moves, stop
+the daemon and take a manual copy of:
+
+- `~/.local/share/content-stack/content-stack.db`
+- `~/.local/state/content-stack/seed.bin`
+- `~/.local/state/content-stack/auth.token`
 
 ## Schema migrations
 

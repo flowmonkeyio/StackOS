@@ -19,8 +19,9 @@ daemon through `workspace.*` tools.
 Installers hydrate the personal Codex plugin location
 `~/.codex/plugins/content-stack` and register it through
 `~/.agents/plugins/marketplace.json` with source path
-`./.codex/plugins/content-stack`. Restart Codex after install or upgrade, then
-use `/plugins` to inspect or toggle the plugin.
+`./.codex/plugins/content-stack`, which resolves against the user's home
+directory for the personal marketplace. Restart Codex after install or upgrade,
+then use `/plugins` to inspect or toggle the plugin.
 
 The installed `.mcp.json` is rewritten during install to use the current Python
 environment (`python -m content_stack mcp-bridge`), so clone-mode development
@@ -28,6 +29,35 @@ does not require a global `content-stack` executable on `PATH`.
 If the daemon is not listening yet, the bridge auto-starts it on the configured
 loopback host and writes startup output to
 `~/.local/state/content-stack/mcp-bridge-autostart.log`.
+
+## Setup
+
+Canonical setup lives in [`../../docs/setup.md`](../../docs/setup.md).
+
+Repository development:
+
+```bash
+TPF_LLM_TOOL=codex tpf make install
+TPF_LLM_TOOL=codex tpf make serve
+```
+
+Package/operator install:
+
+```bash
+content-stack install
+content-stack start
+```
+
+Optional macOS autostart:
+
+```bash
+content-stack autostart install
+```
+
+After setup, create or select a project, enable needed plugins, add provider
+connections, and create run plans from workflow templates. Website repositories
+should bind to the project through workspace tools rather than carrying local
+StackOS setup files.
 
 ## Agent-Facing MCP Surface
 

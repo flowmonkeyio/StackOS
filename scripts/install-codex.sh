@@ -5,7 +5,7 @@
 # Mirrors `skills/` from this repository into
 # `${HOME}/.codex/skills/content-stack/` using `rsync -a --delete` so
 # retired skills disappear and re-running the script lands at the same
-# end state every time (audit B-24 / PLAN.md "Install script semantics").
+# end state every time.
 #
 # Honours `CONTENT_STACK_HOME` for tests so the sandbox HOME fixture
 # can redirect the install target without monkey-patching `${HOME}`.

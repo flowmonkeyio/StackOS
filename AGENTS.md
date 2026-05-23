@@ -12,6 +12,7 @@ work, start here:
 
 | Work | Read |
 | --- | --- |
+| Setup, local start, autostart, or repair | [`docs/setup.md`](./docs/setup.md), [`docs/upgrade.md`](./docs/upgrade.md), [`docs/security.md`](./docs/security.md) |
 | Architecture or execution model | [`docs/architecture.md`](./docs/architecture.md), [`docs/operations.md`](./docs/operations.md) |
 | Callable operations or action execution | [`docs/operations.md`](./docs/operations.md), [`docs/action-executor.md`](./docs/action-executor.md), [`docs/extending.md`](./docs/extending.md) |
 | Provider auth or credentials | [`docs/auth-providers.md`](./docs/auth-providers.md), [`docs/security.md`](./docs/security.md) |

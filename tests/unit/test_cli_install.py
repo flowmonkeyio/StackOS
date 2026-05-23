@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -258,6 +259,38 @@ def test_cli_install_default_is_plugin_first(sandbox: Path) -> None:
     assert not (sandbox / ".codex" / "skills" / "content-stack").exists()
 
 
+def test_cli_install_tolerates_daemon_down_doctor(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def daemon_down_doctor(json_output: bool = False) -> None:
+        _ = json_output
+        raise cli_module.typer.Exit(code=1)
+
+    monkeypatch.setattr(cli_module, "doctor", daemon_down_doctor)
+
+    result = CliRunner().invoke(app, ["install"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.stdout
+    assert "daemon is not running yet" in result.stdout
+    assert "content-stack start" in result.stdout
+
+
+def test_cli_install_preserves_blocking_doctor_failures(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def seed_failure_doctor(json_output: bool = False) -> None:
+        _ = json_output
+        raise cli_module.typer.Exit(code=8)
+
+    monkeypatch.setattr(cli_module, "doctor", seed_failure_doctor)
+
+    result = CliRunner().invoke(app, ["install"])
+
+    assert result.exit_code == 8
+
+
 def test_cli_install_rejects_multiple_only_flags(sandbox: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(
@@ -335,6 +368,113 @@ def test_cli_rotate_token_requires_yes(sandbox: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["rotate-token"])
     assert result.exit_code == 2
+
+
+def test_cli_start_spawns_background_daemon(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, int, str, Path]] = []
+
+    monkeypatch.setattr(cli_module, "_discover_daemon_processes", lambda *args: ([], []))
+    monkeypatch.setattr(cli_module, "_daemon_health_ok", lambda *args, **kwargs: False)
+    monkeypatch.setattr(cli_module, "_tcp_can_connect", lambda *args, **kwargs: False)
+
+    def fake_spawn(
+        settings: Settings,
+        host: str,
+        port: int,
+        *,
+        log_level: str,
+        log_path: Path,
+        cwd: Path,
+        ready_timeout: float = 20.0,
+    ) -> tuple[bool, str]:
+        _ = settings
+        _ = ready_timeout
+        calls.append((host, port, log_level, log_path))
+        return True, "started daemon pid=42; url=http://127.0.0.1:5180"
+
+    monkeypatch.setattr(cli_module, "_spawn_detached_daemon", fake_spawn)
+
+    result = CliRunner().invoke(app, ["start"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.stdout
+    assert "started daemon pid=42" in result.stdout
+    assert calls == [("127.0.0.1", 5180, "INFO", sandbox / ".local/state/content-stack/daemon.log")]
+
+
+def test_launchd_autostart_install_writes_python_plist(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        data_dir=sandbox / ".local" / "share" / "content-stack",
+        state_dir=sandbox / ".local" / "state" / "content-stack",
+    )
+    launchctl_calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _ = kwargs
+        launchctl_calls.append(args)
+        if args[1] == "print":
+            return subprocess.CompletedProcess(args, 1, "", "not loaded")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(cli_module.shutil, "which", lambda name: "/bin/launchctl")
+    monkeypatch.setattr(cli_module.subprocess, "run", fake_run)
+
+    ok, message = cli_module._install_launchd_autostart(
+        settings,
+        home=sandbox,
+        force=False,
+        host="127.0.0.1",
+        port=5180,
+        log_level="INFO",
+    )
+
+    assert ok is True
+    assert "installed launchd plist" in message
+    plist = sandbox / "Library" / "LaunchAgents" / "com.content-stack.daemon.plist"
+    content = plist.read_text(encoding="utf-8")
+    assert sys.executable in content
+    assert "<string>content_stack</string>" in content
+    assert "<string>serve</string>" in content
+    assert str(settings.log_path) in content
+    assert "auth.token" not in content
+    assert "seed.bin" not in content
+    assert "Authorization" not in content
+    assert "Bearer" not in content
+    assert "CONTENT_STACK_TOKEN" not in content
+    assert launchctl_calls
+
+
+def test_launchd_autostart_requires_force_for_different_plist(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        data_dir=sandbox / ".local" / "share" / "content-stack",
+        state_dir=sandbox / ".local" / "state" / "content-stack",
+    )
+    plist = sandbox / "Library" / "LaunchAgents" / "com.content-stack.daemon.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_text("<plist><dict>custom</dict></plist>", encoding="utf-8")
+
+    monkeypatch.setattr(cli_module.shutil, "which", lambda name: "/bin/launchctl")
+
+    ok, message = cli_module._install_launchd_autostart(
+        settings,
+        home=sandbox,
+        force=False,
+        host="127.0.0.1",
+        port=5180,
+        log_level="INFO",
+    )
+
+    assert ok is False
+    assert "rerun with --force" in message
+    assert "custom" in plist.read_text(encoding="utf-8")
 
 
 def test_codex_mcp_doctor_accepts_bridge_entries_only() -> None:

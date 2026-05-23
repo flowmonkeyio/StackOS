@@ -7,8 +7,8 @@ Pipx installs cannot use repo-relative paths, so those assets are bundled at
 resolved through ``importlib.resources``.
 
 The two install paths copy from different *sources* but write to the same
-*targets* and share the same idempotency contract (audit B-24): re-running
-yields the same end state.
+*targets* and share the same idempotency contract: re-running yields the same
+end state.
 
 Public surface:
 
@@ -448,10 +448,9 @@ def register_mcp_claude(
 ) -> str:
     """Atomic JSON merge for Claude Code's ``mcp.json``.
 
-    Mirrors the bash script line-for-line so clone-mode and pipx-mode
-    behave identically. Existing files are backed up to ``.bak``; the
-    write itself is via a temp file in the same directory + ``os.replace``
-    for atomicity (audit B-24).
+    Mirrors the bash script line-for-line so clone-mode and pipx-mode behave
+    identically. Existing files are backed up to ``.bak``; the write itself is
+    via a temp file in the same directory + ``os.replace`` for atomicity.
     """
     home_dir = home if home is not None else Path.home()
     if target is None:

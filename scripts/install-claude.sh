@@ -3,8 +3,8 @@
 # content-stack skill installer for the Claude Code runtime.
 #
 # Mirrors `skills/` into `${HOME}/.claude/skills/content-stack/` with
-# `rsync -a --delete` (audit B-24). Honours `CONTENT_STACK_HOME` so
-# tests can target a sandbox HOME.
+# `rsync -a --delete`. Honours `CONTENT_STACK_HOME` so tests can target a
+# sandbox HOME.
 
 set -euo pipefail
 

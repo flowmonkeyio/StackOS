@@ -2,9 +2,9 @@
 #
 # Register `content-stack` with the Codex CLI as an MCP server.
 #
-# Idempotent (audit B-24): if Codex already lists a `content-stack`
-# server we treat the script as a no-op. The registered server is the local
-# stdio bridge; the bearer token stays inside the bridge process.
+# Idempotent: if Codex already lists a `content-stack` server we treat the
+# script as a no-op. The registered server is the local stdio bridge; the
+# bearer token stays inside the bridge process.
 #
 # `--remove` unregisters the server (used by `make uninstall`).
 # `--force` re-registers even if already present (used after rotation).

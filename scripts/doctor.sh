@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Wrapper around `content-stack doctor` (audit P-G3 / A-MINOR-29).
+# Wrapper around `content-stack doctor`.
 #
 # Defaults to human-readable output. `--json` emits the machine-readable
 # envelope `{ok, code, checks, info}`. The Python implementation owns
-# the exit-code contract documented at PLAN.md L1271.
+# the exit-code contract.
 
 set -uo pipefail
 
