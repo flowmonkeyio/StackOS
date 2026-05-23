@@ -1,9 +1,11 @@
 # Communications Integration Design And Delivery Plan
 
-Status: planned, pending implementation. This document owns the contract for the
-first StackOS communications layer: Telegram Bot API, SMTP send, IMAP mailbox
-read/status, and the generic agent request inbox that lets external agents treat
-messages as triggers.
+Status: implementation in progress. Generic agent request operations, the
+first Telegram Bot API connector slice, and Telegram secret-token ingress are
+executable; SMTP, IMAP, Telegram webhook set/delete/info actions, and scheduled
+Telegram sync runners remain tracked follow-up work. This document owns the
+contract for the first StackOS communications layer and the generic agent
+request inbox that lets external agents treat messages as triggers.
 
 Plan review status: signed off with minor implementation notes by sub-agent
 review on 2026-05-23.
@@ -35,10 +37,26 @@ StackOS references this plan must stay aligned with:
 Communications is an input, output, and trigger layer for agents. It is not an
 agent brain inside StackOS.
 
+There are two related but separate planes:
+
+- **Agent execution plane**: MCP, CLI, and REST entrypoints let an agent or
+  script call StackOS operations/actions, create run plans, read context, and
+  persist results.
+- **Agent communication plane**: humans talk to an agent through a transport
+  such as the local StackOS chat UI, CLI chat, Telegram, Slack, email, or a
+  future provider. Those transports store messages/interactions and wake an
+  agent runner through generic agent requests.
+
+Telegram is only one communication transport. It must not become the product's
+agent-chat model. A direct local "talk to the agent like this chat" experience
+uses the same `communication-thread`, `communication-message`,
+`communication-interaction`, and `agent_requests` contracts as Telegram, with a
+local/web provider adapter instead of Telegram Bot API calls.
+
 The aligned runtime shape is:
 
 ```text
-Telegram / SMTP / IMAP / future communication providers
+Local chat / Telegram / SMTP / IMAP / future communication providers
 -> plugin provider/action manifest
 -> action.execute
 -> daemon-side credential resolution
@@ -118,6 +136,56 @@ Telegram bot tokens are embedded in the Bot API request path. The Telegram
 connector must never expose a full request URL in logs, action-call metadata,
 error messages, tests, or returned JSON.
 
+### Telegram Rich Interaction Model
+
+Telegram is not just text transport. The StackOS contract must support outbound
+messages with buttons and media, plus inbound updates created when users press
+those buttons.
+
+Outbound capabilities are still explicit actions:
+
+- `telegram-bot.message.send`: text message through Telegram `sendMessage`.
+- `telegram-bot.photo.send`: image/photo message through Telegram `sendPhoto`.
+- `telegram-bot.callback.answer`: acknowledge an inline button callback through
+  Telegram `answerCallbackQuery`.
+- Future actions may add edit/delete, document/video/audio sends, and media
+  group sends, but only after each provider method has its own schema and tests.
+
+Button support must be modeled as payload, not workflow logic:
+
+- `reply_markup.inline_keyboard` may contain URL buttons and callback buttons.
+- Callback buttons must use short opaque `callback_data` values. Telegram caps
+  callback data at 1-64 bytes, so callback data must not contain long payloads,
+  secrets, raw prompts, or business decisions.
+- If a callback needs local state, store it in a `communication-interaction`
+  resource and put only an opaque `interaction_ref` or button token in
+  `callback_data`.
+- StackOS treats incoming callback data as untrusted input. The agent decides
+  what it means after reading the stored message/event/interaction resources.
+
+Image/media support has two safe paths:
+
+- `photo.file_id` or `photo.url` when Telegram can already access the file.
+- `photo.artifact_ref` for daemon-side multipart upload from a generated asset
+  URI under `/generated-assets/...`. This is required for local generated
+  images because Telegram cannot fetch `127.0.0.1` generated asset URLs from
+  the public internet. Resolving database artifact ids can be added later
+  without changing the agent-facing action shape.
+
+Inbound callback handling has two modes:
+
+- Polling mode: `updates.poll` requests `callback_query` in `allowed_updates`
+  and returns normalized callback events for an agent-run sync plan.
+- Webhook mode: an explicit webhook ingress endpoint verifies Telegram's secret
+  token header, stores the update idempotently, and creates resources/requests
+  from static allowlist rules. It still does not invoke a model.
+
+Telegram clients show a loading state after a callback button is pressed until
+`answerCallbackQuery` is called. StackOS may perform a static configured ACK in
+an ingestion runner or webhook handler, but it must be recorded through the
+action/audit path and must not decide business outcome. Rich follow-up replies
+remain agent-authored actions.
+
 ### SMTP
 
 SMTP sends mail. It can report that the SMTP server accepted or rejected a
@@ -151,9 +219,14 @@ Capabilities:
 
 Providers:
 
+- `local-agent-chat`
 - `telegram-bot`
 - `smtp`
 - `imap`
+
+`local-agent-chat` is the provider-neutral local conversation surface for a
+user who wants to talk directly to an agent through StackOS. Telegram is a
+remote transport adapter, not the only agent conversation channel.
 
 The plugin may later add Slack, Discord, WhatsApp Business, Twilio, Gmail API,
 Microsoft Graph mail, or project-local communication connectors, but those
@@ -224,6 +297,10 @@ Example fields:
 - `body_preview`
 - `body_artifact_ref`
 - `raw_artifact_ref`
+- `content_type`
+- `attachments`
+- `reply_markup`
+- `interaction_refs`
 - `transport_status`
 - `processing_status`
 - `attention_status`
@@ -238,6 +315,31 @@ Message bodies may contain private or commercially sensitive content. Long or
 raw bodies should be stored as artifacts with retention policy metadata. Agents
 should receive previews and field-selected content unless a run explicitly needs
 full text.
+
+### `communication-interaction`
+
+Represents interactive controls attached to an outbound message and their local
+lifecycle. This keeps Telegram `callback_data` short and lets agents query the
+state behind a button without putting state into the provider payload.
+
+Example fields:
+
+- `interaction_ref`
+- `provider_key`
+- `channel_ref`
+- `thread_ref`
+- `message_ref`
+- `interaction_type`: `inline-button`, `reply-keyboard`, `force-reply`
+- `button_key`
+- `callback_data`
+- `state_ref`
+- `status`: `sent`, `clicked`, `acknowledged`, `expired`, `ignored`
+- `created_by_run_plan_id`
+- `expires_at`
+- `metadata`
+
+Interaction records are static state. They do not decide what happens after a
+button click.
 
 ### `communication-event`
 
@@ -258,6 +360,7 @@ Example fields:
 - `provider_key`
 - `channel_ref`
 - `message_ref`
+- `interaction_ref`
 - `event_type`
 - `event_status`
 - `provider_event_ref`
@@ -418,8 +521,9 @@ Telegram, this is only StackOS-local state.
 
 Provider-specific structured metadata:
 
-- Telegram `update_id`, `message_id`, chat type, allowed update type, and safe
-  request metadata.
+- Telegram `update_id`, `message_id`, chat type, allowed update type, callback
+  query id/data, originating message ref, safe user/chat refs, and safe request
+  metadata.
 - IMAP UID, UIDVALIDITY, flags, mailbox, internal date, and safe headers.
 - SMTP response code, enhanced status code where present, server id where safe,
   and accepted/rejected recipient counts.
@@ -533,30 +637,45 @@ Action refs:
 
 - `communications.telegram-bot.identity.get`
 - `communications.telegram-bot.message.send`
+- `communications.telegram-bot.photo.send`
+- `communications.telegram-bot.callback.answer`
 - `communications.telegram-bot.updates.poll`
 - `communications.telegram-bot.webhook.set`
 - `communications.telegram-bot.webhook.delete`
 - `communications.telegram-bot.webhook.info`
 
-Initial executable set:
+Executable in the current Telegram connector:
 
 - `identity.get`
 - `message.send`
+- `photo.send`
+- `callback.answer`
 - `updates.poll`
 
 Deferred until separate tests/contracts:
 
 - webhook set/delete/info if local deployment cannot expose HTTPS safely.
-- media uploads/downloads.
+- media downloads, video/audio/document sends, and media groups.
 - edit/delete message.
-- callback query answers.
 - channel administration.
+- database artifact-id resolution for `photo.artifact_ref`; generated asset
+  URIs are supported now.
 
 Validation rules:
 
 - `message.send` requires explicit `chat_ref` or provider-safe `chat_id`
-  resolved from resources, plus explicit text/media payload.
+  resolved from resources, plus explicit text payload.
+- `message.send` and `photo.send` may include `reply_markup`. Inline keyboard
+  callback buttons must keep `callback_data` within Telegram's 1-64 byte limit
+  and must not contain secrets.
+- `photo.send` requires exactly one of `photo.file_id`, `photo.url`, or
+  `photo.artifact_ref`. URL sends require a public HTTPS URL. Local/generated
+  assets require daemon multipart upload from a `/generated-assets/...` URI.
+- `callback.answer` requires `callback_query_id`. It may include notification
+  text, alert mode, URL, and cache time, but it must not claim work was
+  completed unless the agent actually completed it.
 - `updates.poll` requires bounded `limit`, `timeout_s`, and `allowed_updates`.
+  `callback_query` must be included when the agent expects button clicks.
 - If credential profile says `ingestion_mode=webhook`, `updates.poll` should
   fail with a clear validation error unless explicitly overridden for migration.
 - If webhook is set, polling is invalid per Telegram contract.
@@ -612,7 +731,8 @@ Flow:
 1. Agent or script periodically calls `agentRequest.list`.
 2. If no requests exist, the agent may run a granted sync run plan that calls
    `communications.telegram-bot.updates.poll` or IMAP search/fetch actions.
-3. Agent stores relevant messages as communication resources.
+3. Agent stores relevant messages, callback events, and interaction state as
+   communication resources.
 4. Agent creates `agentRequest.create` records for items that should become
    work.
 5. Agent claims one request, creates a run plan, executes actions, replies, and
@@ -639,8 +759,10 @@ Flow:
 3. The ingestion runner executes only static sync steps:
    provider poll/search, cursor update, resource upsert, and optional
    `agentRequest.create` based on explicit allowlists.
-4. The runner does not invoke a model.
-5. Agents still claim requests and decide what to do.
+4. If a Telegram callback needs immediate acknowledgement, the runner may call
+   `telegram-bot.callback.answer` with static configured ACK text.
+5. The runner does not invoke a model.
+6. Agents still claim requests and decide what to do.
 
 Rules:
 
@@ -651,26 +773,74 @@ Rules:
 
 ### V3: Webhook Ingestion
 
-Allowed after polling/cursor behavior is proven.
+Current local relay endpoint:
+
+```text
+POST /api/v1/ingress/telegram/{project_id}/{profile_key}
+Header: X-Telegram-Bot-Api-Secret-Token: <configured webhook_secret_token>
+```
+
+This endpoint is bearer-token whitelisted because Telegram cannot send the
+daemon bearer token. It verifies the Telegram secret-token header against the
+encrypted `telegram-bot` credential for the project/profile before writing
+anything. The default daemon is still loopback-only, so direct public Telegram
+webhooks require an explicit public relay or hardened deployment boundary.
 
 Flow:
 
 1. Operator configures webhook mode for a Telegram bot profile.
-2. StackOS exposes a local/admin-controlled webhook endpoint or documents a
-   tunnel/reverse-proxy deployment.
+2. StackOS exposes an explicitly enabled Telegram ingress endpoint or receives
+   events from a small public relay. The default loopback daemon remains
+   loopback-only unless the operator opts into a hardened ingress deployment.
 3. Webhook handler verifies Telegram secret token when configured.
-4. Handler stores raw event artifact if needed, normalizes communication
-   resources, updates cursors/status, and optionally creates agent requests
-   from static allowlist rules.
+4. Handler rejects updates for the wrong project/profile with the same invalid
+   secret response used for wrong secrets.
+5. Handler enforces static profile allowlists for `allowed_updates`,
+   `allowed_chat_refs`, and `allowed_user_refs` before writing resources.
+6. Handler upserts `communication-event`, `communication-message`, and
+   `communication-interaction` records by provider id and creates or replays one
+   idempotent generic `agent_requests` row keyed by `update_id`.
+7. Handler does not call a model and does not infer business intent. Future
+   static provider calls needed for transport hygiene, such as `callback.answer`,
+   must still preserve the action-call audit path.
 
 Rules:
 
 - Webhook endpoints must be explicitly authenticated/verified.
 - Token-bearing provider URLs must not be logged.
 - Webhooks must be idempotent by provider update id/event id.
+- Webhooks must preserve the action-call audit path for outbound ACKs.
 - Webhooks do not invoke a model directly.
 
 ## Agent Flow Examples
+
+### Direct Local Agent Chat
+
+```text
+User opens local StackOS agent chat
+-> StackOS creates or reuses communication-thread
+-> user message is stored as communication-message
+-> StackOS creates generic agent_request for the selected agent/runner
+-> agent runner claims the request
+-> agent reads thread/context, creates run plans or calls actions as needed
+-> agent writes response communication-message with content blocks, artifacts,
+   and optional communication-interaction records for buttons/controls
+-> UI renders text, images, files, and buttons
+-> button click stores a communication-interaction event
+-> StackOS creates another generic agent_request for the agent runner
+```
+
+Rules:
+
+- StackOS stores the conversation and interactions; the agent runner owns model
+  invocation and decisions.
+- Direct chat buttons use the same opaque interaction model as Telegram
+  callbacks. The button payload is a handle to stored context, not the decision.
+- Direct chat can render richer UI than Telegram, but outbound content should
+  still normalize into provider-neutral message blocks and artifacts so other
+  transports can reuse it.
+- A local chat runner may be bundled later, but it must still use the same
+  action registry and run-plan grants as any external agent.
 
 ### Telegram DM Trigger
 
@@ -700,6 +870,38 @@ Message appears in allowed group
 The connector must not decide that a group message is actionable unless the
 configured allowlist says it should become a request. Even then, the agent
 decides the workflow.
+
+### Telegram Inline Button Flow
+
+```text
+Agent sends message with inline keyboard
+-> action.execute calls communications.telegram-bot.message.send
+-> StackOS stores outbound communication-message and interaction refs
+-> user presses button
+-> updates.poll or webhook receives callback_query
+-> StackOS stores communication-event and marks interaction clicked
+-> optional static callback.answer clears Telegram client loading state
+-> allowlist creates agent_request with event/interaction refs
+-> agent claims request and decides follow-up
+-> agent may answer callback, edit buttons, send photo/text, or run other tools
+```
+
+Callback data is a routing hint, not trusted workflow logic. If the click should
+mean "approve budget" or "generate variants", the agent must verify the linked
+project/run/resource context before acting.
+
+### Telegram Image Reply
+
+```text
+Agent generates or selects image artifact
+-> if public HTTPS URL exists, action uses photo.url
+-> if local generated asset exists, connector uploads photo_artifact_ref by multipart
+-> Telegram returns sent Message
+-> StackOS records outbound communication-message with provider_message_ref
+```
+
+The action result may include provider file ids and message ids, but it must not
+return a token-bearing URL or local secret path.
 
 ### SMTP Outbound Notification
 
@@ -732,7 +934,7 @@ Keep UI generic and object-driven:
 - Plugin catalog shows `communications` with provider setup status.
 - Connections page renders typed Telegram, SMTP, and IMAP auth methods.
 - Resources browser renders communication channels, threads, messages, events,
-  and cursors by schema.
+  interactions, and cursors by schema.
 - A generic Agent Requests view can list claimable work across providers.
 - Action Calls ledger shows Telegram/SMTP/IMAP calls through the existing audit
   path.
@@ -746,6 +948,10 @@ later, it must still render the same resources and queue records.
 - Agents never receive secrets.
 - Telegram bot tokens must never appear in URLs returned to agents or stored in
   audit metadata.
+- Telegram callback data is untrusted input and must not contain secrets.
+- Public webhook exposure is opt-in only. The default StackOS daemon remains
+  loopback-only; production ingress needs secret-token verification and host
+  allowlisting or a relay.
 - SMTP and IMAP passwords stay in encrypted credential payloads.
 - OAuth/XOAUTH2 stays deferred until refresh and safe diagnostics are real.
 - Allowlist Telegram numeric user/chat ids through safe refs; do not trust
@@ -774,6 +980,8 @@ Before a communications action is marked executable:
 - REST/CLI/MCP parity tests cover generic `agentRequest.*` operations.
 - Resource tests cover idempotent upsert by `external_id`/provider ref.
 - Cursor tests cover Telegram update offsets and IMAP UID/UIDVALIDITY behavior.
+- Interaction tests cover inline keyboard payload validation, callback query
+  normalization, idempotency, and optional static ACK audit.
 - UI smoke tests show provider connections, plugin catalog, resources, agent
   requests, and action calls render with generic components.
 - Docs update this file, [README](README.md), [Connector Quality Gate](connector-quality.md),
@@ -793,14 +1001,14 @@ when the blast radius is meaningful, and a detailed commit message after signoff
 | C03 | Add `agent_requests` model, migration, repository, and invariants. | C00. | Repository tests for create/list/claim/release/complete/ignore and project isolation. | Queue state is generic and provider-agnostic. |
 | C04 | Register `agentRequest.*` operation specs and REST/CLI/MCP adapters. | C03. | REST/CLI/MCP parity tests against the same operation registry. | No provider-specific MCP tools added. |
 | C05 | Add generic Agent Requests UI page or resource view integration. | C03, C04. | UI unit/build smoke; manual browser pass when server is running. | UI stays generic and object-driven. |
-| C06 | Implement Telegram connector file for `identity.get`, `message.send`, and `updates.poll`. | C01. | Mocked Telegram tests; validation tests; no-token redaction tests. | Connector has official docs links near provider calls. |
+| C06 | Delivered: implement Telegram connector file for `identity.get`, `message.send`, `photo.send`, `callback.answer`, and `updates.poll`. | C01. | Mocked Telegram tests; validation tests; inline keyboard and photo payload tests; no-token redaction tests. | Connector has official docs links near provider calls. |
 | C07 | Add Telegram credential test wrapper and auth diagnostics. | C01, C06. | Auth test success/failure mocks; no token in diagnostics. | `auth.test` returns safe bot identity/status only. |
-| C08 | Add Telegram normalization and cursor resource flow for manual sync runs. | C03, C04, C06. | Run-plan test polling updates, storing resources, creating requests. | Manual agent-pulled flow works end to end. |
+| C08 | Add Telegram normalization, cursor, message, interaction, and callback resource flow for manual sync runs. | C03, C04, C06. | Run-plan test polling messages/callbacks, storing resources, creating requests. | Manual agent-pulled flow works end to end. |
 | C09 | Implement SMTP send connector and credential test. | C01. | Mock SMTP server tests for accepted/rejected/auth/TLS paths. | SMTP output never claims delivery/read state. |
 | C10 | Implement IMAP list/search/fetch/mark connector and credential test. | C01. | Mock IMAP tests for UID search/fetch, `\\Seen`, UIDVALIDITY, size caps. | No sequence-number-only operations. |
-| C11 | Add communications workflow templates for inbox review and outbound notification. | C01, C03, C04, C06, C09, C10 as relevant. | Template validation; run-plan grant tests. | Templates describe setup/context, not business decisions. |
-| C12 | Add static scheduled ingestion runner. | C03, C04, C06, C08, C10. | Scheduler tests; system run-plan audit; idempotent cursor tests. | Runner stores events/requests only; no model invocation. |
-| C13 | Add Telegram webhook ingestion. | C06, C08, C12. | Webhook auth/idempotency tests; secret-token verification; replay tests. | Webhook does not bypass audit or queue state. |
+| C11 | Add communications workflow templates for inbox review, rich Telegram reply, callback follow-up, and outbound notification. | C01, C03, C04, C06, C08, C09, C10 as relevant. | Template validation; run-plan grant tests. | Templates describe setup/context, not business decisions. |
+| C12 | Add static scheduled ingestion runner. | C03, C04, C06, C08, C10. | Scheduler tests; system run-plan audit; idempotent cursor and optional callback ACK tests. | Runner stores events/requests only; no model invocation. |
+| C13 | Partially delivered: add Telegram secret-token ingress for message/callback storage and generic agent-request creation. Webhook set/delete/info and outbound callback ACK automation remain deferred. | C06. | Route tests for missing/wrong secret, callback/message resource writes, idempotent request creation, and no secret leakage. | Ingress does not invoke a model and does not bypass queue state or daemon security posture. |
 | C14 | Update connector quality matrix and release signoff docs for executable communications actions. | First executable connector tasks. | `make signoff` or targeted signoff set. | Docs and tests agree on executable/deferred state. |
 
 ## Dependency Graph
@@ -841,7 +1049,8 @@ Recommended delivery order:
 - SMTP delivery/read/open tracking.
 - Telegram read receipts.
 - OAuth/XOAUTH2 for custom SMTP/IMAP.
-- Media upload/download for Telegram.
+- Telegram video/audio/document/media-group support beyond the explicitly
+  modeled first `photo.send` action.
 - Public webhook deployment automation.
 - Specialized workflow UI for each communication use case.
 

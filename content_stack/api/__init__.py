@@ -35,6 +35,7 @@ from content_stack.api.runs import (
 from content_stack.api.runs import (
     run_router as runs_run_router,
 )
+from content_stack.api.telegram_ingress import router as telegram_ingress_router
 from content_stack.api.workflow_templates import router as workflow_templates_router
 
 
@@ -64,6 +65,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(actions_router)
     # Generic StackOS resources/artifacts.
     app.include_router(resources_router)
+    # Provider ingress that validates provider-signed/static secrets before writes.
+    app.include_router(telegram_ingress_router)
     # Project memory/context primitives.
     app.include_router(context_router)
     # Reusable workflow templates.

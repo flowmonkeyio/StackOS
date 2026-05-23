@@ -35,6 +35,7 @@ the bearer-token check. Currently:
 |---|---|---|
 | `/api/v1/health` | `doctor` probes liveness before it has resolved the token (when diagnosing token-related failures). | None worth caring about; the response carries only liveness booleans + version. |
 | `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk daemon token file from the browser, so it fetches a derived console bearer token at app boot via this endpoint. | **See below.** |
+| `/api/v1/ingress/telegram/*` | Telegram webhooks and local relay processes cannot carry the daemon bearer token. The route verifies `X-Telegram-Bot-Api-Secret-Token` against the encrypted Telegram credential before writing communication resources or agent requests. | A caller with the webhook secret can submit Telegram-shaped events for that profile. The default daemon remains loopback-only; public ingress requires an explicit relay/deployment boundary. |
 
 ## No-secret auth provider boundary
 

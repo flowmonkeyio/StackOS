@@ -41,9 +41,16 @@ PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 #   this endpoint. The HostHeaderMiddleware (loopback-only) and CORSMiddleware
 #   (same-origin) form the upstream guard. Trade-off documented in
 #   ``docs/security.md`` and in ``content_stack/api/auth.py``.
+# - ``/api/v1/ingress/telegram``: Telegram webhooks and local relay processes
+#   cannot carry the daemon bearer token. The route validates Telegram's
+#   `X-Telegram-Bot-Api-Secret-Token` against the encrypted provider
+#   credential before it writes resources or agent requests. HostHeaderMiddleware
+#   still keeps the default daemon loopback-only; public ingress requires an
+#   explicit relay/deployment boundary.
 WHITELIST_PREFIXES: tuple[str, ...] = (
     "/api/v1/health",
     "/api/v1/auth/ui-token",
+    "/api/v1/ingress/telegram",
 )
 
 _TOKEN_BYTES = 32

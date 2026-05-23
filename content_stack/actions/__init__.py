@@ -46,6 +46,7 @@ from content_stack.actions.salesforce import SalesforceActionConnector
 from content_stack.actions.salesloft import SalesloftActionConnector
 from content_stack.actions.sitemap import SitemapActionConnector
 from content_stack.actions.taboola import TaboolaActionConnector
+from content_stack.actions.telegram_bot import TelegramBotActionConnector
 from content_stack.actions.wordpress import WordPressActionConnector
 
 DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
@@ -70,6 +71,7 @@ DEFAULT_ACTION_CONNECTORS.register(ClayActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(MetaAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GoogleAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TaboolaActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(TelegramBotActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(MockProviderActionConnector())
 
 __all__ = [
@@ -110,6 +112,7 @@ __all__ = [
     "SalesloftActionConnector",
     "SitemapActionConnector",
     "TaboolaActionConnector",
+    "TelegramBotActionConnector",
     "WordPressActionConnector",
     "build_action_availability",
     "parse_action_manifest",

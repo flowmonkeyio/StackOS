@@ -49,6 +49,7 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert resources_by_plugin["communications"] >= {
         "communication-channel",
         "communication-message",
+        "communication-interaction",
         "communication-cursor",
     }
     assert resources_by_plugin["core"] >= {"learning", "experiment"}
@@ -104,11 +105,13 @@ def test_communications_plugin_yaml_facade_validates() -> None:
         "agent-triggering",
     }
     assert {provider.key for provider in manifest.providers} == {
+        "local-agent-chat",
         "telegram-bot",
         "smtp",
         "imap",
     }
     providers = {provider.key: provider for provider in manifest.providers}
+    assert providers["local-agent-chat"].auth_type == "none"
     assert _auth_field_keys(providers["telegram-bot"], "bot-token")[:2] == [
         "bot_token",
         "webhook_secret_token",
@@ -133,9 +136,30 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     actions = {action.key: action for action in manifest.actions}
     assert actions["telegram-bot.identity.get"].provider == "telegram-bot"
     assert actions["telegram-bot.message.send"].risk_level == "write"
+    reply_markup = actions["telegram-bot.message.send"].input_schema["properties"]["reply_markup"]
+    button_schema = reply_markup["properties"]["inline_keyboard"]["items"]["items"]
+    assert button_schema["properties"]["callback_data"]["maxLength"] == 64
+    assert button_schema["additionalProperties"] is False
+    assert actions["telegram-bot.photo.send"].provider == "telegram-bot"
+    assert actions["telegram-bot.photo.send"].config["connector"] == "telegram-bot"
+    assert actions["telegram-bot.photo.send"].config["operation"] == "photo.send"
+    assert actions["telegram-bot.photo.send"].input_schema["required"] == [
+        "chat_ref",
+        "photo",
+    ]
+    photo_schema = actions["telegram-bot.photo.send"].input_schema["properties"]["photo"]
+    assert photo_schema["oneOf"] == [
+        {"required": ["file_id"]},
+        {"required": ["url"]},
+        {"required": ["artifact_ref"]},
+    ]
+    assert photo_schema["properties"]["url"]["pattern"] == "^https://"
+    assert actions["telegram-bot.callback.answer"].capability == "agent-triggering"
+    assert actions["telegram-bot.callback.answer"].config["operation"] == "callback.answer"
     assert actions["telegram-bot.updates.poll"].capability == "agent-triggering"
-    assert actions["telegram-bot.identity.get"].config["execution_mode"] == "deferred-connector"
-    assert "connector" not in actions["telegram-bot.identity.get"].config
+    assert actions["telegram-bot.updates.poll"].config["operation"] == "updates.poll"
+    assert actions["telegram-bot.identity.get"].config["connector"] == "telegram-bot"
+    assert actions["telegram-bot.webhook.set"].config["execution_mode"] == "deferred-connector"
     assert actions["smtp.email.send"].config["execution_mode"] == "deferred-connector"
     assert actions["imap.message.fetch"].input_schema["required"] == [
         "mailbox_ref",
@@ -145,6 +169,7 @@ def test_communications_plugin_yaml_facade_validates() -> None:
         "communication-channel",
         "communication-thread",
         "communication-message",
+        "communication-interaction",
         "communication-event",
         "communication-cursor",
         "agent-request-source",

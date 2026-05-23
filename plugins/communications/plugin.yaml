@@ -21,6 +21,14 @@ capabilities:
     description: Store inbound provider events as generic claimable agent requests.
     kind: utility
 providers:
+  - key: local-agent-chat
+    name: Local Agent Chat
+    description: StackOS local conversation surface for direct human-to-agent messages, rich response blocks, and interaction events.
+    auth_type: none
+    config:
+      setup_note: Local agent chat stores messages and interactions in StackOS resources; the agent runner owns model invocation and decisions.
+      docs:
+        - docs/integration-contracts/communications.md
   - key: telegram-bot
     name: Telegram Bot
     description: Telegram Bot API provider for bot identity, message send, update polling, and future webhook ingestion.
@@ -252,20 +260,22 @@ actions:
     output_schema: &object_schema
       type: object
       additionalProperties: true
-    config: &telegram_deferred_config
+    config:
       schema_version: stackos.action.v1
-      execution_mode: deferred-connector
-      deferred_reason: Telegram Bot API connector implementation and mocked contract tests are not delivered yet.
+      connector: telegram-bot
+      operation: identity.get
+      requires_credential: true
+      enforce_budget: false
       docs:
         - docs/integration-contracts/communications.md
         - https://core.telegram.org/bots/api
   - key: telegram-bot.message.send
     name: Send Telegram Message
-    description: Send a Telegram bot message to an explicit allowed chat reference.
+    description: Send a Telegram bot text message to an explicit allowed chat reference, with optional reply markup.
     provider: telegram-bot
     capability: messaging
     risk_level: write
-    input_schema:
+    input_schema: &telegram_message_input
       type: object
       additionalProperties: false
       required:
@@ -284,8 +294,165 @@ actions:
           type: string
         thread_ref:
           type: string
+        direct_messages_topic_ref:
+          type: string
+        reply_markup:
+          type: object
+          additionalProperties: false
+          properties:
+            inline_keyboard:
+              type: array
+              maxItems: 20
+              items:
+                type: array
+                maxItems: 8
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - text
+                  properties:
+                    text:
+                      type: string
+                    url:
+                      type: string
+                    callback_data:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                  oneOf:
+                    - required:
+                        - url
+                    - required:
+                        - callback_data
     output_schema: *object_schema
-    config: *telegram_deferred_config
+    config:
+      schema_version: stackos.action.v1
+      connector: telegram-bot
+      operation: message.send
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api#sendmessage
+  - key: telegram-bot.photo.send
+    name: Send Telegram Photo
+    description: Send a Telegram bot photo/image message from a file id, public URL, or StackOS artifact ref.
+    provider: telegram-bot
+    capability: messaging
+    risk_level: write
+    input_schema: &telegram_photo_input
+      type: object
+      additionalProperties: false
+      required:
+        - chat_ref
+        - photo
+      properties:
+        chat_ref:
+          type: string
+        photo:
+          type: object
+          additionalProperties: false
+          oneOf:
+            - required:
+                - file_id
+            - required:
+                - url
+            - required:
+                - artifact_ref
+          properties:
+            file_id:
+              type: string
+            url:
+              type: string
+              pattern: '^https://'
+            artifact_ref:
+              type: string
+        caption:
+          type: string
+        parse_mode:
+          type: string
+        disable_notification:
+          type: boolean
+        reply_to_message_ref:
+          type: string
+        thread_ref:
+          type: string
+        direct_messages_topic_ref:
+          type: string
+        reply_markup:
+          type: object
+          additionalProperties: false
+          properties:
+            inline_keyboard:
+              type: array
+              maxItems: 20
+              items:
+                type: array
+                maxItems: 8
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - text
+                  properties:
+                    text:
+                      type: string
+                    url:
+                      type: string
+                    callback_data:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                  oneOf:
+                    - required:
+                        - url
+                    - required:
+                        - callback_data
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: telegram-bot
+      operation: photo.send
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api#sendphoto
+  - key: telegram-bot.callback.answer
+    name: Answer Telegram Callback
+    description: Acknowledge a Telegram inline button callback query with optional notification text.
+    provider: telegram-bot
+    capability: agent-triggering
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - callback_query_id
+      properties:
+        callback_query_id:
+          type: string
+        text:
+          type: string
+        show_alert:
+          type: boolean
+        url:
+          type: string
+        cache_time:
+          type: integer
+          minimum: 0
+          maximum: 3600
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: telegram-bot
+      operation: callback.answer
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api#answercallbackquery
   - key: telegram-bot.updates.poll
     name: Poll Telegram Updates
     description: Poll bounded Telegram updates for an explicit bot credential profile and cursor.
@@ -316,8 +483,18 @@ actions:
           type: array
           items:
             type: string
+        allow_webhook_polling:
+          type: boolean
     output_schema: *object_schema
-    config: *telegram_deferred_config
+    config:
+      schema_version: stackos.action.v1
+      connector: telegram-bot
+      operation: updates.poll
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api#getupdates
   - key: telegram-bot.webhook.set
     name: Set Telegram Webhook
     description: Set the Telegram webhook URL for a bot profile after deployment and secret-token verification are configured.
@@ -339,7 +516,13 @@ actions:
         drop_pending_updates:
           type: boolean
     output_schema: *object_schema
-    config: *telegram_deferred_config
+    config: &telegram_deferred_config
+      schema_version: stackos.action.v1
+      execution_mode: deferred-connector
+      deferred_reason: Telegram webhook operations require explicit public ingress hardening and are not delivered yet.
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api
   - key: telegram-bot.webhook.delete
     name: Delete Telegram Webhook
     description: Remove a Telegram webhook before switching a bot profile back to polling mode.
@@ -533,6 +716,10 @@ resources:
     name: Communication Message
     description: Normalized inbound or outbound message with local processing and attention state.
     schema: *object_schema
+  - key: communication-interaction
+    name: Communication Interaction
+    description: Provider interaction state for buttons, callbacks, reply controls, and future rich-message controls.
+    schema: *object_schema
   - key: communication-event
     name: Communication Event
     description: Provider event such as a Telegram edit, IMAP flag change, SMTP rejection, or future delivery webhook.
@@ -560,8 +747,16 @@ config:
   schema_version: stackos.plugin.v1
   contract_doc: docs/integration-contracts/communications.md
   provider_connectors:
-    status: planned
+    status: partial
+    executable:
+      - telegram-bot.identity.get
+      - telegram-bot.message.send
+      - telegram-bot.photo.send
+      - telegram-bot.callback.answer
+      - telegram-bot.updates.poll
     deferred:
-      - telegram-bot
+      - telegram-bot.webhook.set
+      - telegram-bot.webhook.delete
+      - telegram-bot.webhook.info
       - smtp
       - imap
