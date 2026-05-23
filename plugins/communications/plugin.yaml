@@ -1,0 +1,567 @@
+slug: communications
+name: Communications
+version: 0.1.0
+description: First-party StackOS package for messaging, email send, mailbox status, and agent-trigger resources.
+source: builtin
+capabilities:
+  - key: messaging
+    name: Messaging
+    description: Send and receive chat-style messages from explicit agent inputs.
+    kind: utility
+  - key: email-send
+    name: Email Send
+    description: Send email through configured providers from explicit agent payloads.
+    kind: utility
+  - key: email-inbox
+    name: Email Inbox
+    description: Inspect mailbox messages and flags with bounded queries.
+    kind: utility
+  - key: agent-triggering
+    name: Agent Triggering
+    description: Store inbound provider events as generic claimable agent requests.
+    kind: utility
+providers:
+  - key: telegram-bot
+    name: Telegram Bot
+    description: Telegram Bot API provider for bot identity, message send, update polling, and future webhook ingestion.
+    auth_type: bot-token
+    auth_methods:
+      - key: bot-token
+        label: Bot token
+        auth_type: bot-token
+        payload_format: json
+        fields:
+          - key: bot_token
+            label: Bot Token
+            type: secret
+            secret: true
+            required: true
+            placeholder: "123456:ABC..."
+          - key: webhook_secret_token
+            label: Webhook Secret Token
+            type: secret
+            secret: true
+            required: false
+          - key: bot_username
+            label: Bot Username
+            type: text
+            secret: false
+            required: false
+            placeholder: my_stackos_bot
+          - key: ingestion_mode
+            label: Ingestion Mode
+            type: select
+            secret: false
+            required: true
+            options:
+              - label: Polling
+                value: polling
+              - label: Webhook
+                value: webhook
+          - key: allowed_updates
+            label: Allowed Updates
+            type: text
+            secret: false
+            required: false
+            placeholder: message,edited_message,channel_post,callback_query
+          - key: allowed_chat_refs
+            label: Allowed Chat Refs
+            type: text
+            secret: false
+            required: false
+            placeholder: safe chat refs, comma separated
+          - key: allowed_user_refs
+            label: Allowed User Refs
+            type: text
+            secret: false
+            required: false
+            placeholder: safe user refs, comma separated
+          - key: privacy_mode_expected
+            label: Privacy Mode Expected
+            type: checkbox
+            secret: false
+            required: false
+          - key: default_parse_mode
+            label: Default Parse Mode
+            type: select
+            secret: false
+            required: false
+            options:
+              - label: Plain Text
+                value: plain
+              - label: MarkdownV2
+                value: MarkdownV2
+              - label: HTML
+                value: HTML
+    config:
+      setup_note: Telegram polling and webhook modes are mutually exclusive. Bot tokens appear in provider URLs and must never be logged or returned to agents.
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api
+  - key: smtp
+    name: SMTP
+    description: SMTP provider for send-only email. Acceptance by the SMTP server is not delivery or read confirmation.
+    auth_type: smtp-password
+    auth_methods:
+      - key: smtp-password
+        label: SMTP password
+        auth_type: smtp-password
+        payload_format: json
+        fields:
+          - key: password
+            label: Password
+            type: secret
+            secret: true
+            required: true
+          - key: host
+            label: Host
+            type: text
+            secret: false
+            required: true
+            placeholder: smtp.example.com
+          - key: port
+            label: Port
+            type: number
+            secret: false
+            required: true
+            placeholder: "587"
+          - key: tls_mode
+            label: TLS Mode
+            type: select
+            secret: false
+            required: true
+            options:
+              - label: STARTTLS
+                value: starttls
+              - label: SSL
+                value: ssl
+              - label: None
+                value: none
+          - key: username
+            label: Username
+            type: text
+            secret: false
+            required: true
+          - key: from_email
+            label: From Email
+            type: text
+            secret: false
+            required: true
+          - key: from_name
+            label: From Name
+            type: text
+            secret: false
+            required: false
+          - key: reply_to
+            label: Reply To
+            type: text
+            secret: false
+            required: false
+          - key: timeout_s
+            label: Timeout Seconds
+            type: number
+            secret: false
+            required: false
+    config:
+      setup_note: SMTP is send-only. Use IMAP or provider webhooks for mailbox read/unread, replies, bounces, or delivery events.
+      deferred_auth_methods:
+        - oauth-xoauth2
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://www.rfc-editor.org/rfc/rfc5321.html
+        - https://www.rfc-editor.org/rfc/rfc4954
+  - key: imap
+    name: IMAP
+    description: IMAP provider for mailbox listing, search, fetch, and message flag lifecycle.
+    auth_type: imap-password
+    auth_methods:
+      - key: imap-password
+        label: IMAP password
+        auth_type: imap-password
+        payload_format: json
+        fields:
+          - key: password
+            label: Password
+            type: secret
+            secret: true
+            required: true
+          - key: host
+            label: Host
+            type: text
+            secret: false
+            required: true
+            placeholder: imap.example.com
+          - key: port
+            label: Port
+            type: number
+            secret: false
+            required: true
+            placeholder: "993"
+          - key: tls_mode
+            label: TLS Mode
+            type: select
+            secret: false
+            required: true
+            options:
+              - label: SSL
+                value: ssl
+              - label: STARTTLS
+                value: starttls
+              - label: None
+                value: none
+          - key: username
+            label: Username
+            type: text
+            secret: false
+            required: true
+          - key: default_mailbox
+            label: Default Mailbox
+            type: text
+            secret: false
+            required: false
+            placeholder: INBOX
+          - key: mailbox_refs
+            label: Mailbox Refs
+            type: text
+            secret: false
+            required: false
+            placeholder: safe mailbox refs, comma separated
+          - key: search_limit
+            label: Search Limit
+            type: number
+            secret: false
+            required: false
+    config:
+      setup_note: IMAP operations must use UIDs and UIDVALIDITY, not sequence-number-only references.
+      deferred_auth_methods:
+        - oauth-xoauth2
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://www.rfc-editor.org/rfc/rfc9051.html
+actions:
+  - key: telegram-bot.identity.get
+    name: Get Telegram Bot Identity
+    description: Verify a Telegram bot token and return safe bot identity metadata.
+    provider: telegram-bot
+    capability: messaging
+    risk_level: read
+    input_schema: &empty_input
+      type: object
+      additionalProperties: false
+      properties: {}
+    output_schema: &object_schema
+      type: object
+      additionalProperties: true
+    config: &telegram_deferred_config
+      schema_version: stackos.action.v1
+      execution_mode: deferred-connector
+      deferred_reason: Telegram Bot API connector implementation and mocked contract tests are not delivered yet.
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api
+  - key: telegram-bot.message.send
+    name: Send Telegram Message
+    description: Send a Telegram bot message to an explicit allowed chat reference.
+    provider: telegram-bot
+    capability: messaging
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - chat_ref
+        - text
+      properties:
+        chat_ref:
+          type: string
+        text:
+          type: string
+        parse_mode:
+          type: string
+        disable_notification:
+          type: boolean
+        reply_to_message_ref:
+          type: string
+        thread_ref:
+          type: string
+    output_schema: *object_schema
+    config: *telegram_deferred_config
+  - key: telegram-bot.updates.poll
+    name: Poll Telegram Updates
+    description: Poll bounded Telegram updates for an explicit bot credential profile and cursor.
+    provider: telegram-bot
+    capability: agent-triggering
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - limit
+        - timeout_s
+        - allowed_updates
+      properties:
+        cursor_ref:
+          type: string
+        offset:
+          type: integer
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        timeout_s:
+          type: integer
+          minimum: 0
+          maximum: 60
+        allowed_updates:
+          type: array
+          items:
+            type: string
+    output_schema: *object_schema
+    config: *telegram_deferred_config
+  - key: telegram-bot.webhook.set
+    name: Set Telegram Webhook
+    description: Set the Telegram webhook URL for a bot profile after deployment and secret-token verification are configured.
+    provider: telegram-bot
+    capability: agent-triggering
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - webhook_url
+      properties:
+        webhook_url:
+          type: string
+        allowed_updates:
+          type: array
+          items:
+            type: string
+        drop_pending_updates:
+          type: boolean
+    output_schema: *object_schema
+    config: *telegram_deferred_config
+  - key: telegram-bot.webhook.delete
+    name: Delete Telegram Webhook
+    description: Remove a Telegram webhook before switching a bot profile back to polling mode.
+    provider: telegram-bot
+    capability: agent-triggering
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        drop_pending_updates:
+          type: boolean
+    output_schema: *object_schema
+    config: *telegram_deferred_config
+  - key: telegram-bot.webhook.info
+    name: Get Telegram Webhook Info
+    description: Read safe Telegram webhook status for a bot profile.
+    provider: telegram-bot
+    capability: agent-triggering
+    risk_level: read
+    input_schema: *empty_input
+    output_schema: *object_schema
+    config: *telegram_deferred_config
+  - key: smtp.email.send
+    name: Send SMTP Email
+    description: Send email through SMTP from an explicit agent-supplied message payload.
+    provider: smtp
+    capability: email-send
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - recipients
+        - subject
+      anyOf:
+        - required:
+            - text
+        - required:
+            - html
+        - required:
+            - body_artifact_ref
+      properties:
+        recipients:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+        cc:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        bcc:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        subject:
+          type: string
+        text:
+          type: string
+        html:
+          type: string
+        body_artifact_ref:
+          type: string
+        from_ref:
+          type: string
+        reply_to:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-connector
+      deferred_reason: SMTP connector implementation and mocked contract tests are not delivered yet.
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://www.rfc-editor.org/rfc/rfc5321.html
+        - https://www.rfc-editor.org/rfc/rfc4954
+  - key: imap.mailbox.list
+    name: List IMAP Mailboxes
+    description: List safe mailbox metadata available to a configured IMAP credential.
+    provider: imap
+    capability: email-inbox
+    risk_level: read
+    input_schema: *empty_input
+    output_schema: *object_schema
+    config: &imap_deferred_config
+      schema_version: stackos.action.v1
+      execution_mode: deferred-connector
+      deferred_reason: IMAP connector implementation and mocked contract tests are not delivered yet.
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://www.rfc-editor.org/rfc/rfc9051.html
+  - key: imap.messages.search
+    name: Search IMAP Messages
+    description: Search a bounded IMAP mailbox by safe mailbox reference and provider-valid criteria.
+    provider: imap
+    capability: email-inbox
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - mailbox_ref
+        - limit
+      properties:
+        mailbox_ref:
+          type: string
+        cursor_ref:
+          type: string
+        criteria:
+          type: object
+          additionalProperties: true
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 500
+    output_schema: *object_schema
+    config: *imap_deferred_config
+  - key: imap.message.fetch
+    name: Fetch IMAP Message
+    description: Fetch selected fields for one IMAP message by UID and mailbox reference.
+    provider: imap
+    capability: email-inbox
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - mailbox_ref
+        - uid
+      properties:
+        mailbox_ref:
+          type: string
+        uid:
+          type: integer
+        fields:
+          type: array
+          items:
+            type: string
+        max_body_bytes:
+          type: integer
+          minimum: 0
+          maximum: 1048576
+    output_schema: *object_schema
+    config: *imap_deferred_config
+  - key: imap.message.mark_seen
+    name: Mark IMAP Message Seen
+    description: Add the IMAP Seen flag to one message by UID after explicit grant.
+    provider: imap
+    capability: email-inbox
+    risk_level: write
+    input_schema: &imap_mark_input
+      type: object
+      additionalProperties: false
+      required:
+        - mailbox_ref
+        - uid
+      properties:
+        mailbox_ref:
+          type: string
+        uid:
+          type: integer
+    output_schema: *object_schema
+    config: *imap_deferred_config
+  - key: imap.message.mark_unseen
+    name: Mark IMAP Message Unseen
+    description: Remove the IMAP Seen flag from one message by UID after explicit grant.
+    provider: imap
+    capability: email-inbox
+    risk_level: write
+    input_schema: *imap_mark_input
+    output_schema: *object_schema
+    config: *imap_deferred_config
+resources:
+  - key: communication-channel
+    name: Communication Channel
+    description: Safe metadata for a Telegram chat/channel, SMTP identity, IMAP mailbox, or future communication surface.
+    schema: *object_schema
+  - key: communication-thread
+    name: Communication Thread
+    description: Conversation grouping such as a Telegram chat/topic or email thread.
+    schema: *object_schema
+  - key: communication-message
+    name: Communication Message
+    description: Normalized inbound or outbound message with local processing and attention state.
+    schema: *object_schema
+  - key: communication-event
+    name: Communication Event
+    description: Provider event such as a Telegram edit, IMAP flag change, SMTP rejection, or future delivery webhook.
+    schema: *object_schema
+  - key: communication-cursor
+    name: Communication Cursor
+    description: Provider sync state such as Telegram update offset or IMAP UID/UIDVALIDITY cursor.
+    schema: *object_schema
+  - key: agent-request-source
+    name: Agent Request Source
+    description: Static allowlist and source metadata for creating generic agent requests from communication events.
+    schema: *object_schema
+ui:
+  nav:
+    section: Communications
+    items:
+      - key: communications.resources
+        label: Communications Resources
+        to: resources?plugin_slug=communications
+        matchPrefix: true
+      - key: communications.templates
+        label: Communications Templates
+        to: workflow-templates?plugin_slug=communications
+config:
+  schema_version: stackos.plugin.v1
+  contract_doc: docs/integration-contracts/communications.md
+  provider_connectors:
+    status: planned
+    deferred:
+      - telegram-bot
+      - smtp
+      - imap

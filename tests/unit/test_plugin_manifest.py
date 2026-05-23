@@ -28,7 +28,15 @@ def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) 
 def test_builtin_plugin_manifests_validate() -> None:
     slugs = [manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS]
 
-    assert slugs == ["core", "gtm", "media-buying", "publishing", "seo", "utils"]
+    assert slugs == [
+        "communications",
+        "core",
+        "gtm",
+        "media-buying",
+        "publishing",
+        "seo",
+        "utils",
+    ]
     for manifest in BUILTIN_PLUGIN_MANIFESTS:
         assert manifest.capabilities
         assert manifest.resources
@@ -37,6 +45,11 @@ def test_builtin_plugin_manifests_validate() -> None:
     resources_by_plugin = {
         manifest.slug: {resource.key for resource in manifest.resources}
         for manifest in BUILTIN_PLUGIN_MANIFESTS
+    }
+    assert resources_by_plugin["communications"] >= {
+        "communication-channel",
+        "communication-message",
+        "communication-cursor",
     }
     assert resources_by_plugin["core"] >= {"learning", "experiment"}
     assert resources_by_plugin["gtm"] >= {"account", "lead", "pipeline-snapshot"}
@@ -76,6 +89,66 @@ def test_builtin_plugin_manifests_validate() -> None:
         "allows_credential": False,
     }
     assert utils_actions["reddit.search-subreddit"].config["connector"] == "reddit"
+
+
+def test_communications_plugin_yaml_facade_validates() -> None:
+    manifest = load_plugin_manifest_file(Path("plugins/communications/plugin.yaml"))
+
+    assert manifest.slug == "communications"
+    assert manifest.ui is not None
+    assert manifest.ui["nav"]["section"] == "Communications"
+    assert {capability.key for capability in manifest.capabilities} >= {
+        "messaging",
+        "email-send",
+        "email-inbox",
+        "agent-triggering",
+    }
+    assert {provider.key for provider in manifest.providers} == {
+        "telegram-bot",
+        "smtp",
+        "imap",
+    }
+    providers = {provider.key: provider for provider in manifest.providers}
+    assert _auth_field_keys(providers["telegram-bot"], "bot-token")[:2] == [
+        "bot_token",
+        "webhook_secret_token",
+    ]
+    assert (
+        providers["telegram-bot"]
+        .config["setup_note"]
+        .startswith("Telegram polling and webhook modes are mutually exclusive")
+    )
+    assert _auth_field_keys(providers["smtp"], "smtp-password")[:4] == [
+        "password",
+        "host",
+        "port",
+        "tls_mode",
+    ]
+    assert _auth_field_keys(providers["imap"], "imap-password")[:4] == [
+        "password",
+        "host",
+        "port",
+        "tls_mode",
+    ]
+    actions = {action.key: action for action in manifest.actions}
+    assert actions["telegram-bot.identity.get"].provider == "telegram-bot"
+    assert actions["telegram-bot.message.send"].risk_level == "write"
+    assert actions["telegram-bot.updates.poll"].capability == "agent-triggering"
+    assert actions["telegram-bot.identity.get"].config["execution_mode"] == "deferred-connector"
+    assert "connector" not in actions["telegram-bot.identity.get"].config
+    assert actions["smtp.email.send"].config["execution_mode"] == "deferred-connector"
+    assert actions["imap.message.fetch"].input_schema["required"] == [
+        "mailbox_ref",
+        "uid",
+    ]
+    assert {resource.key for resource in manifest.resources} >= {
+        "communication-channel",
+        "communication-thread",
+        "communication-message",
+        "communication-event",
+        "communication-cursor",
+        "agent-request-source",
+    }
 
 
 def test_gtm_plugin_yaml_facade_validates() -> None:
