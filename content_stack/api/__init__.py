@@ -19,6 +19,7 @@ from content_stack.api.errors import (
 )
 from content_stack.api.health import router as health_router
 from content_stack.api.meta import router as meta_router
+from content_stack.api.operations import router as operations_router
 from content_stack.api.plugins import router as plugins_router
 from content_stack.api.projects import router as projects_router
 from content_stack.api.resources import router as resources_router
@@ -55,6 +56,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(auth_providers_router)
     # Meta (enums, observability).
     app.include_router(meta_router)
+    # Protocol-neutral StackOS operation discovery and generic calls.
+    app.include_router(operations_router)
     # StackOS plugin/catalog discovery.
     app.include_router(plugins_router)
     # StackOS action audit discovery.

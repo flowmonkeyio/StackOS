@@ -140,9 +140,12 @@ Files:
 - `content_stack/actions/manifest.py`
 - `content_stack/actions/repository.py`
 - `content_stack/actions/openai_images.py`
+- `content_stack/operations/actions.py`
+- `content_stack/operations/registry.py`
 - `content_stack/mcp/tools/actions.py`
 - `content_stack/workflows/run_plan_grants.py`
 - `docs/action-executor.md`
+- `docs/operations.md`
 
 The action executor is the clean StackOS path:
 
@@ -159,6 +162,13 @@ active step's declared `action_refs` and the frozen `mcp_tool_grants`
 can reach a connector. Successful executions are persisted to `action_calls`
 with `run_id`, `run_plan_id`, and `run_plan_step_id`, then exposed through the
 project Action Calls ledger using only the public audit shape.
+
+The first action operations now use a protocol-neutral StackOS operation
+registry. `action.describe`, `action.validate`, and `action.execute` are
+registered once with input/output schemas, surface policy, grant policy, and
+agent-readable guidance. MCP action tools are generated from those specs, while
+REST and CLI callers can use `GET /api/v1/operations/{name}` and
+`content-stack ops describe {name}` before calling anything.
 
 Current executable connector registry:
 

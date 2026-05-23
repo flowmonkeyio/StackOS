@@ -98,6 +98,7 @@ class ToolSpec:
     handler: ToolHandler
     streaming: bool = False
     read_only: bool = field(init=False)
+    operation_name: str | None = None
 
     def __post_init__(self) -> None:
         self.read_only = not verb_is_mutating(self.name)
@@ -335,10 +336,12 @@ class MCPDispatcher:
         registry: ToolRegistry,
         engine_resolver: Callable[[], Any],
         settings_resolver: Callable[[], Any] | None = None,
+        operation_registry: Any | None = None,
     ) -> None:
         self._registry = registry
         self._engine_resolver = engine_resolver
         self._settings_resolver = settings_resolver
+        self._operation_registry = operation_registry
 
     async def dispatch(self, name: str, arguments: dict[str, Any] | None) -> _CallResult:
         """Resolve a tool, validate input, execute, return JSON-RPC payload.
@@ -382,6 +385,8 @@ class MCPDispatcher:
 
         engine = self._engine_resolver()
         with Session(engine) as session:
+            if spec.operation_name is not None:
+                return await self._dispatch_operation(spec, arguments, session)
             ctx = build_context(arguments, session)
             if self._settings_resolver is not None:
                 with suppress(RuntimeError):
@@ -473,6 +478,44 @@ class MCPDispatcher:
                     **ctx.to_log_dict(),
                 )
                 return _CallResult(payload=payload)
+
+    async def _dispatch_operation(
+        self,
+        spec: ToolSpec,
+        arguments: dict[str, Any] | None,
+        session: Session,
+    ) -> _CallResult:
+        """Delegate operation-backed MCP tools to the shared operation dispatcher."""
+        if self._operation_registry is None:
+            return _CallResult(
+                payload={
+                    "error": {
+                        "code": JSONRPC_INTERNAL,
+                        "message": "RepositoryError",
+                        "data": {
+                            "detail": f"operation registry missing for tool {spec.name!r}",
+                        },
+                    }
+                },
+                is_error=True,
+            )
+        from content_stack.operations.dispatcher import OperationDispatcher
+
+        settings = None
+        if self._settings_resolver is not None:
+            with suppress(RuntimeError):
+                settings = self._settings_resolver()
+        try:
+            result = await OperationDispatcher(self._operation_registry).dispatch(
+                spec.operation_name,
+                arguments,
+                session=session,
+                surface="mcp",
+                settings=settings,
+            )
+        except RepositoryError as exc:
+            return self._repo_error(exc)
+        return _CallResult(payload=result.payload)
 
     # -------- helpers --------
 
@@ -729,7 +772,9 @@ def register_mcp(app: FastAPI) -> None:
     """
     # Lazy import to avoid a top-level cycle during package import.
     from content_stack.mcp.tools import register_all
+    from content_stack.operations.registry import build_operation_registry
 
+    operation_registry = build_operation_registry()
     registry = ToolRegistry()
     register_all(registry)
     assert_envelope_discipline(registry)
@@ -747,13 +792,19 @@ def register_mcp(app: FastAPI) -> None:
             raise RuntimeError("settings not initialised on app.state")
         return settings
 
-    dispatcher = MCPDispatcher(registry, _engine_resolver, _settings_resolver)
+    dispatcher = MCPDispatcher(
+        registry,
+        _engine_resolver,
+        _settings_resolver,
+        operation_registry=operation_registry,
+    )
     server = build_server(registry, dispatcher)
 
     # Stash on app.state so tests / introspection can reach the registry.
     app.state.mcp_server = server
     app.state.mcp_registry = registry
     app.state.mcp_dispatcher = dispatcher
+    app.state.operation_registry = operation_registry
 
     # Build the streamable HTTP manager. ``json_response=True`` returns
     # JSON for non-streaming POSTs (the dominant Codex / Claude Code

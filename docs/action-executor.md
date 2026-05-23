@@ -91,18 +91,28 @@ payloads and action refs. StackOS does not infer which action should run.
 `plugin_disabled` and `provider_disabled` are also enforced by `action.execute`
 because they are static setup policy, not agent strategy.
 
-## MCP Surface
+## Operation Surface
 
-Direct/read discovery tools:
+Action calls are now registered once as StackOS operations, then exposed through
+MCP, the generic REST operation endpoint, and the CLI when the operation surface
+allows it. Agents and scripts can inspect the operation contract with:
+
+```bash
+content-stack ops describe action.execute --json
+```
+
+or through `GET /api/v1/operations/action.execute`.
+
+Direct/read discovery operations:
 
 - `action.describe`
 - `action.validate`
 
-Hidden, run-plan-scoped execution tool:
+Run-plan-scoped execution operation:
 
 - `action.execute`
 
-`action.execute` is not direct agent surface. It is callable only through a
+`action.execute` is not direct execution surface. It is callable only through a
 started run plan, exactly one active claimed step, an explicit
 `mcp_tool_grants` entry with `tool: "action.execute"`, and matching
 `action_refs`. The active step must also declare the same action ref in

@@ -16,6 +16,10 @@ executes explicit tool calls.
 - **Tools**: static callable operations. Tools validate input, resolve auth
   server-side, call local or external systems, and return structured output.
   Tools must not decide strategy or invent workflow logic.
+- **Operations**: protocol-neutral callable contracts registered once and then
+  exposed through enabled MCP, REST, and CLI adapters. New callables should
+  define input/output schemas, surface policy, grant policy, examples, and
+  agent-facing guidance in the operation registry.
 - **Agents**: plan, choose templates, create run plans, request context, select
   tools, interpret results, and record learnings.
 
@@ -73,6 +77,22 @@ Vendor operations should be modeled as plugin actions and executed through
 a provider needs a new callable operation, add a provider manifest entry, action
 manifest, connector, grant tests, and docs.
 
+## Operation Surface
+
+MCP is an adapter, not the core abstraction. Registered StackOS operations should
+be inspectable by agents and scripts before they are called:
+
+- REST docs: `GET /api/v1/operations` and
+  `GET /api/v1/operations/{operation_name}`
+- REST calls: `POST /api/v1/operations/{operation_name}/call`
+- CLI docs/calls: `content-stack ops list`, `content-stack ops describe`, and
+  `content-stack ops call`
+- MCP tools: generated from the same operation specs when the MCP surface is
+  enabled
+
+Do not register the same callable manually in MCP, REST, and CLI. Add or migrate
+the operation spec, then let adapters expose the enabled surfaces.
+
 ## UI Direction
 
 The UI should render generic StackOS objects rather than one bespoke screen per
@@ -103,12 +123,13 @@ Do not assume another live localhost port belongs to this project. For example,
 When changing an execution or tool flow, update these together:
 
 1. data model and repository invariant
-2. MCP tool schema and bridge visibility
-3. permission grant and no-secret auth boundary
-4. plugin manifest or workflow template metadata
-5. generic UI rendering path
-6. tests for direct visibility, grants, auth, and run-plan audit records
-7. documentation that names the current StackOS model
+2. operation spec, schemas, surface policy, examples, and agent guidance
+3. MCP/REST/CLI adapter visibility generated from the operation registry
+4. permission grant and no-secret auth boundary
+5. plugin manifest or workflow template metadata
+6. generic UI rendering path
+7. tests for direct visibility, grants, auth, and run-plan audit records
+8. documentation that names the current StackOS model
 
 Do not add support shims for removed flows. If a flow is replaced, delete the old
 route, tool registration, docs, tests, and install asset in the same delivery.

@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import typer
 
@@ -34,6 +34,13 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+ops_app = typer.Typer(
+    name="ops",
+    help="Inspect and call registered StackOS operations through the daemon REST adapter.",
+    no_args_is_help=True,
+)
+app.add_typer(ops_app, name="ops")
 
 
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -68,6 +75,177 @@ def _root(
     """Top-level options. `--version` short-circuits the help-on-no-args flow."""
     _ = ctx
     _ = version
+
+
+# ---- operations -----------------------------------------------------------
+
+
+def _read_daemon_token(settings: Settings) -> str:
+    try:
+        return settings.token_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        typer.echo(
+            f"auth token missing at {settings.token_path}; run `content-stack init`.",
+            err=True,
+        )
+        raise typer.Exit(code=7) from None
+
+
+def _api_request(
+    method: str,
+    path: str,
+    *,
+    body: dict[str, Any] | None = None,
+    settings: Settings | None = None,
+) -> Any:
+    """Call the local daemon REST API and return parsed JSON."""
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
+
+    settings = settings or get_settings()
+    token = _read_daemon_token(settings)
+    url = f"http://{settings.host}:{settings.port}{path}"
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    request = Request(
+        url,
+        data=data,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            raw = response.read().decode("utf-8")
+    except HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(raw)
+            detail = payload.get("detail") if isinstance(payload, dict) else raw
+        except json.JSONDecodeError:
+            detail = raw
+        typer.echo(f"daemon API error {exc.code}: {detail}", err=True)
+        raise typer.Exit(code=1) from None
+    except (OSError, TimeoutError, URLError) as exc:
+        typer.echo(
+            f"daemon API request failed: {exc}; is content-stack running on "
+            f"{settings.host}:{settings.port}?",
+            err=True,
+        )
+        raise typer.Exit(code=1) from None
+    if not raw:
+        return None
+    return json.loads(raw)
+
+
+def _load_operation_arguments(input_path: str | None) -> dict[str, Any]:
+    if input_path is None:
+        return {}
+    raw = sys.stdin.read() if input_path == "-" else Path(input_path).read_text(encoding="utf-8")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"invalid JSON input: {exc.msg}", err=True)
+        raise typer.Exit(code=2) from None
+    if not isinstance(payload, dict):
+        typer.echo("operation input must be a JSON object", err=True)
+        raise typer.Exit(code=2)
+    if set(payload) == {"arguments"} and isinstance(payload["arguments"], dict):
+        return dict(payload["arguments"])
+    return dict(payload)
+
+
+def _echo_json(payload: Any) -> None:
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+
+
+@ops_app.command(name="list")
+def ops_list(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit the full machine-readable operation list."),
+    ] = False,
+) -> None:
+    """List daemon-registered operations."""
+    payload = _api_request("GET", "/api/v1/operations")
+    if json_output:
+        _echo_json(payload)
+        return
+    for item in payload.get("items", []):
+        surfaces = [
+            name
+            for name, surface in item.get("surfaces", {}).items()
+            if isinstance(surface, dict) and surface.get("enabled")
+        ]
+        typer.echo(f"{item['name']}\t{','.join(surfaces)}\t{item['summary']}")
+
+
+@ops_app.command(name="describe")
+def ops_describe(
+    operation_name: Annotated[str, typer.Argument(help="Operation name, e.g. action.describe")],
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit the full schema and agent guidance."),
+    ] = False,
+) -> None:
+    """Describe one operation with schemas, examples, and agent guidance."""
+    payload = _api_request("GET", f"/api/v1/operations/{operation_name}")
+    if json_output:
+        _echo_json(payload)
+        return
+    typer.echo(f"{payload['name']}: {payload['summary']}")
+    typer.echo(f"purpose: {payload['purpose']}")
+    if payload.get("prerequisites"):
+        typer.echo("prerequisites:")
+        for item in payload["prerequisites"]:
+            typer.echo(f"  - {item}")
+    if payload.get("examples"):
+        typer.echo("examples:")
+        for item in payload["examples"]:
+            typer.echo(f"  - {item['title']}")
+            typer.echo(f"    {json.dumps(item['arguments'], sort_keys=True)}")
+
+
+@ops_app.command(name="call")
+def ops_call(
+    operation_name: Annotated[str, typer.Argument(help="Operation name, e.g. action.validate")],
+    input_path: Annotated[
+        str | None,
+        typer.Option(
+            "--input",
+            "-i",
+            help="JSON file containing operation arguments, or '-' for stdin.",
+        ),
+    ] = None,
+    project_id: Annotated[
+        int | None,
+        typer.Option("--project", help="Merge project_id into operation arguments."),
+    ] = None,
+    run_token: Annotated[
+        str | None,
+        typer.Option("--run-token", help="Merge run_token into operation arguments."),
+    ] = None,
+    idempotency_key: Annotated[
+        str | None,
+        typer.Option("--idempotency-key", help="Merge idempotency_key into operation arguments."),
+    ] = None,
+) -> None:
+    """Call one operation through the daemon's generic REST adapter."""
+    arguments = _load_operation_arguments(input_path)
+    if project_id is not None:
+        arguments["project_id"] = project_id
+    if run_token is not None:
+        arguments["run_token"] = run_token
+    if idempotency_key is not None:
+        arguments["idempotency_key"] = idempotency_key
+    payload = _api_request(
+        "POST",
+        f"/api/v1/operations/{operation_name}/call",
+        body={"arguments": arguments},
+    )
+    _echo_json(payload)
 
 
 # ---- serve ----------------------------------------------------------------

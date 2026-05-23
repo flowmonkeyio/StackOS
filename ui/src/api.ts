@@ -225,6 +225,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Operations
+         * @description List registered StackOS operations with surface and policy metadata.
+         */
+        get: operations["list_operations_api_v1_operations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/{operation_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe Operation
+         * @description Describe one operation with schemas, examples, and agent guidance.
+         */
+        get: operations["describe_operation_api_v1_operations__operation_name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/{operation_name}/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Call Operation
+         * @description Call one REST-enabled operation through the shared dispatcher.
+         */
+        post: operations["call_operation_api_v1_operations__operation_name__call_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugins": {
         parameters: {
             query?: never;
@@ -2620,6 +2680,110 @@ export interface components {
             source_type: string | null;
         };
         /**
+         * OperationCallIn
+         * @description Generic operation-call envelope for REST and CLI clients.
+         * @example {
+         *       "arguments": {
+         *         "action_ref": "utils.sitemap.fetch",
+         *         "input_json": {
+         *           "urls": [
+         *             "https://example.com/sitemap.xml"
+         *           ]
+         *         },
+         *         "project_id": 1
+         *       }
+         *     }
+         */
+        OperationCallIn: {
+            /** Arguments */
+            arguments?: {
+                [key: string]: unknown;
+            };
+        };
+        /** OperationDescribeOut */
+        OperationDescribeOut: {
+            /** Examples */
+            examples?: components["schemas"]["OperationExampleOut"][];
+            /** Grant Policy */
+            grant_policy: string;
+            /** Input Schema */
+            input_schema: {
+                [key: string]: unknown;
+            };
+            /** Mutating */
+            mutating: boolean;
+            /** Name */
+            name: string;
+            /** Output Schema */
+            output_schema: {
+                [key: string]: unknown;
+            };
+            /** Prerequisites */
+            prerequisites?: string[];
+            /** Purpose */
+            purpose: string;
+            /** Read Only */
+            read_only: boolean;
+            /** Returns */
+            returns?: string[];
+            /** Secret Policy */
+            secret_policy: string;
+            /** Summary */
+            summary: string;
+            /** Surfaces */
+            surfaces: {
+                [key: string]: components["schemas"]["OperationSurfaceOut"];
+            };
+            /** When To Use */
+            when_to_use?: string[];
+        };
+        /** OperationExampleOut */
+        OperationExampleOut: {
+            /** Arguments */
+            arguments: {
+                [key: string]: unknown;
+            };
+            /** Notes */
+            notes?: string | null;
+            /** Title */
+            title: string;
+        };
+        /** OperationListOut */
+        OperationListOut: {
+            /** Items */
+            items: components["schemas"]["OperationSummaryOut"][];
+        };
+        /** OperationSummaryOut */
+        OperationSummaryOut: {
+            /** Grant Policy */
+            grant_policy: string;
+            /** Mutating */
+            mutating: boolean;
+            /** Name */
+            name: string;
+            /** Read Only */
+            read_only: boolean;
+            /** Secret Policy */
+            secret_policy: string;
+            /** Summary */
+            summary: string;
+            /** Surfaces */
+            surfaces: {
+                [key: string]: components["schemas"]["OperationSurfaceOut"];
+            };
+        };
+        /** OperationSurfaceOut */
+        OperationSurfaceOut: {
+            /** Command */
+            command?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Notes */
+            notes?: string | null;
+            /** Path */
+            path?: string | null;
+        };
+        /**
          * PageResponse[ActionCallAuditOut]
          * @example {
          *       "items": [],
@@ -4018,6 +4182,12 @@ export type SchemaLearningOut = components['schemas']['LearningOut'];
 export type SchemaLearningUpdateRequest = components['schemas']['LearningUpdateRequest'];
 export type SchemaLoadedWorkflowTemplate = components['schemas']['LoadedWorkflowTemplate'];
 export type SchemaMetricSnapshotOut = components['schemas']['MetricSnapshotOut'];
+export type SchemaOperationCallIn = components['schemas']['OperationCallIn'];
+export type SchemaOperationDescribeOut = components['schemas']['OperationDescribeOut'];
+export type SchemaOperationExampleOut = components['schemas']['OperationExampleOut'];
+export type SchemaOperationListOut = components['schemas']['OperationListOut'];
+export type SchemaOperationSummaryOut = components['schemas']['OperationSummaryOut'];
+export type SchemaOperationSurfaceOut = components['schemas']['OperationSurfaceOut'];
 export type SchemaPageResponseActionCallAuditOut = components['schemas']['PageResponse_ActionCallAuditOut_'];
 export type SchemaPageResponseArtifactOut = components['schemas']['PageResponse_ArtifactOut_'];
 export type SchemaPageResponseContextSnapshotOut = components['schemas']['PageResponse_ContextSnapshotOut_'];
@@ -4393,6 +4563,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnumLookupResponse"];
+                };
+            };
+        };
+    };
+    list_operations_api_v1_operations_get: {
+        parameters: {
+            query?: {
+                surface?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_operation_api_v1_operations__operation_name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationDescribeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    call_operation_api_v1_operations__operation_name__call_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationCallIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

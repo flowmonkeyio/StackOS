@@ -12,8 +12,9 @@ state, plugin catalogs, auth boundaries, run plans, and tool execution.
    persistence. They do not encode business strategy.
 3. **No-secret agents**: credentials stay in the daemon process. Agents pass
    provider and account references.
-4. **Generic product surface**: core UI/API/MCP render templates, run plans,
-   resources, artifacts, auth, and actions. Domain UX comes from plugin config.
+4. **Generic product surface**: core UI/API/MCP/CLI render templates, run
+   plans, resources, artifacts, auth, actions, and operations. Domain UX comes
+   from plugin config.
 5. **Project memory by filters**: context retrieval is explicit and bounded, so
    agents can learn from history without flooding the prompt.
 
@@ -66,6 +67,14 @@ An action call is one validated tool invocation. It records input, output,
 provider, credential reference, status, errors, and cost metadata. External
 credentials resolve inside the daemon.
 
+### Operation
+
+An operation is the protocol-neutral callable contract above repositories and
+below adapters. It defines input/output schemas, handler, surface policy,
+grant policy, examples, and agent-facing guidance once. MCP tools, generic REST
+operation calls, and CLI `ops` commands are adapters over the same operation
+spec.
+
 ## Data Model
 
 Core StackOS tables include:
@@ -91,6 +100,12 @@ domain resources. Those tables are plugin-owned and should not drive core UI
 or MCP design.
 
 ## MCP And Permissions
+
+MCP is an adapter, not the core callable abstraction. New callables should be
+registered as StackOS operations when they need MCP, REST, or CLI exposure. The
+operation registry emits agent-readable docs through `/api/v1/operations` and
+`content-stack ops describe`, and MCP tool schemas are generated from the same
+specs when the MCP surface is enabled.
 
 The direct MCP surface is intentionally small:
 
@@ -151,6 +166,8 @@ clearly justified.
 - A new domain starts as a plugin manifest plus templates and actions.
 - A new external service starts as a provider, auth type, action definitions,
   and a daemon-side wrapper.
+- A new callable operation starts as one operation spec with schemas, examples,
+  surface policy, grant policy, and agent guidance.
 - A new workflow starts as a template and run-plan tests.
 - A new UI surface should render generic StackOS data.
 - Removed flows must be deleted from routes, MCP registration, bridge exposure,
