@@ -13,6 +13,9 @@ describe('StackOS nav contributions', () => {
     expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
       '/projects/7/resources',
     )
+    expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
+      '/projects/7/action-calls',
+    )
   })
 
   it('loads plugin nav contributions from sanitized manifest UI metadata', () => {

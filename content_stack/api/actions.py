@@ -13,6 +13,7 @@ from content_stack.api.pagination import (
     page_response,
     pagination_params,
 )
+from content_stack.db.models import ActionCallStatus
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["actions"])
 
@@ -25,6 +26,7 @@ async def query_action_calls(
     run_plan_step_id: int | None = Query(default=None),
     plugin_slug: str | None = Query(default=None),
     action_key: str | None = Query(default=None),
+    status: ActionCallStatus | None = Query(default=None),
     page: PaginationParams = Depends(pagination_params),
     session: Session = Depends(get_session),
 ) -> PageResponse[ActionCallAuditOut]:
@@ -37,6 +39,7 @@ async def query_action_calls(
             run_plan_step_id=run_plan_step_id,
             plugin_slug=plugin_slug,
             action_key=action_key,
+            status=status,
             limit=page.limit,
             after_id=page.after,
         )

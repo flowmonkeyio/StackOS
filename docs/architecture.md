@@ -139,7 +139,7 @@ The UI renders StackOS primitives:
 - generic resource record pages
 - artifact preview
 - provider/auth status
-- action history
+- action-call audit ledger
 - context and learning views
 
 Plugin nav points to generic renderers with plugin/resource keys. New domains

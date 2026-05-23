@@ -62,6 +62,12 @@ Every internal execution writes an `action_calls` sidecar row with:
 identifiers such as `credential_id`, `action_id`, and replay-only
 `idempotency_key` stay in storage and are not returned to agents.
 
+The read API exposes the same public audit shape at
+`GET /api/v1/projects/{project_id}/action-calls`. It can be filtered by run,
+run plan, run-plan step, plugin, action key, and status. The StackOS UI exposes
+this as the project-level **Action Calls** ledger, while run detail continues to
+show the calls scoped to a specific run/step.
+
 The table is part of the clean StackOS core. Domain plugins store their durable
 objects in resources/artifacts; the core action executor does not preserve
 legacy workflow tables for compatibility.

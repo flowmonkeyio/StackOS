@@ -4632,6 +4632,7 @@ export interface operations {
                 run_plan_step_id?: number | null;
                 plugin_slug?: string | null;
                 action_key?: string | null;
+                status?: components["schemas"]["ActionCallStatus"] | null;
                 limit?: number;
                 after?: number | null;
             };

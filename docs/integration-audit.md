@@ -632,10 +632,11 @@ The UI should stay generic:
 Avoid per-workflow pages. Plugin nav should point into generic pages with
 filters such as `plugin_slug`, `resource_key`, `template_key`, or `action_ref`.
 
-Credential setup, action readiness, and run detail action-call visibility are
-now wired through generic UI surfaces. The next UI integration gap is broader
-generic browsing and filtering for action-call audit history across a project,
-without adding workflow-specific pages. The catalog already exposes action
+Credential setup, action readiness, run detail action-call visibility, and the
+project-level action-call ledger are now wired through generic UI surfaces. The
+ledger uses `/api/v1/projects/{project_id}/action-calls` with plugin, action,
+run, and status filters; it does not add workflow-specific pages. The catalog
+already exposes action
 availability signals: executable, missing connector, missing credential,
 disabled plugin, disabled provider, missing budget, and budget blocked.
 

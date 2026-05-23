@@ -38,6 +38,7 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
         { key: 'plugins', label: 'Plugins', to: `${base}/plugins` },
         { key: 'capabilities', label: 'Capabilities', to: `${base}/capabilities` },
         { key: 'connections', label: 'Connections', to: `${base}/connections` },
+        { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls` },
         { key: 'workflow-templates', label: 'Workflow Templates', to: `${base}/workflow-templates` },
         { key: 'runs', label: 'Runs', to: `${base}/runs`, matchPrefix: true },
       ],

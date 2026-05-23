@@ -360,6 +360,7 @@ class ActionRepository:
         run_plan_step_id: int | None = None,
         plugin_slug: str | None = None,
         action_key: str | None = None,
+        status: ActionCallStatus | None = None,
         limit: int | None = None,
         after_id: int | None = None,
     ) -> Page[ActionCallAuditOut]:
@@ -375,6 +376,8 @@ class ActionRepository:
             filters.append(ActionCall.plugin_slug == plugin_slug)
         if action_key is not None:
             filters.append(ActionCall.action_key == action_key)
+        if status is not None:
+            filters.append(ActionCall.status == status)
         stmt = select(ActionCall).where(*filters)
         return cursor_paginate(
             self._s,

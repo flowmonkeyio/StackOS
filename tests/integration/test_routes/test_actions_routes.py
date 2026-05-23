@@ -38,16 +38,34 @@ def test_action_call_route_returns_redacted_audit_rows(
             response_json={"asset_url": "/generated-assets/test.webp", "token": "secret"},
             metadata_json={"credential_ref": "cred_123", "refresh_token": "secret"},
         )
+        failed = ActionCall(
+            project_id=project_id,
+            action_key="image.generate",
+            plugin_slug="utils",
+            provider_key="openai-images",
+            connector_key="openai-images",
+            operation="image.generate",
+            status=ActionCallStatus.FAILED,
+            dry_run=False,
+            credential_id=credential.id,
+            credential_ref="cred_123",
+            request_json={"prompt": "bad"},
+            response_json=None,
+            error="provider rejected request",
+        )
         session.add(row)
+        session.add(failed)
         session.commit()
 
     resp = api.get(
         f"/api/v1/projects/{project_id}/action-calls",
-        params={"plugin_slug": "utils", "action_key": "image.generate"},
+        params={"plugin_slug": "utils", "action_key": "image.generate", "status": "success"},
     )
 
     assert resp.status_code == 200
+    assert len(resp.json()["items"]) == 1
     item = resp.json()["items"][0]
+    assert item["status"] == "success"
     assert item["request_json"]["api_key"] == "[redacted]"
     assert item["response_json"]["token"] == "[redacted]"
     assert item["metadata_json"]["credential_ref"] == "cred_123"

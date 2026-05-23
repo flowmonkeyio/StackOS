@@ -14,6 +14,7 @@ import ConnectionsView from './views/ConnectionsView.vue'
 import WorkflowTemplatesView from './views/WorkflowTemplatesView.vue'
 import ProjectDataView from './views/ProjectDataView.vue'
 import ResourceExplorerView from './views/ResourceExplorerView.vue'
+import ActionCallsView from './views/ActionCallsView.vue'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: HomeView },
@@ -32,6 +33,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects/:id/plugins', name: 'project-plugins', component: PluginsView },
   { path: '/projects/:id/capabilities', name: 'project-capabilities', component: CapabilitiesView },
   { path: '/projects/:id/connections', name: 'project-connections', component: ConnectionsView },
+  { path: '/projects/:id/action-calls', name: 'project-action-calls', component: ActionCallsView },
   {
     path: '/projects/:id/workflow-templates',
     name: 'project-workflow-templates',
