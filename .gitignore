@@ -37,9 +37,9 @@ ui/playwright/screenshots/
 ui/playwright-report/
 ui/test-results/
 
-# Note: content_stack/ui_dist/ IS committed per D8 (no pnpm at user install)
+# Note: stackos/ui_dist/ IS committed per D8 (no pnpm at user install)
 
-# Local databases (the canonical DB lives at ~/.local/share/content-stack/)
+# Local databases (the canonical DB lives at ~/.local/share/stackos/)
 *.db
 *.db-shm
 *.db-wal

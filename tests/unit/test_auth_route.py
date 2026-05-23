@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from content_stack.auth import derive_ui_token
+from stackos.auth import derive_ui_token
 
 
 def test_ui_token_returns_token_without_authorization(
@@ -26,7 +26,7 @@ def test_ui_token_returns_token_without_authorization(
 
 def test_ui_token_is_in_auth_whitelist() -> None:
     """Module-level invariant: the new path is in WHITELIST_PREFIXES."""
-    from content_stack.auth import WHITELIST_PREFIXES, requires_auth
+    from stackos.auth import WHITELIST_PREFIXES, requires_auth
 
     assert "/api/v1/auth/ui-token" in WHITELIST_PREFIXES
     assert requires_auth("/api/v1/auth/ui-token") is False

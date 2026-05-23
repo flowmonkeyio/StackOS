@@ -1,6 +1,6 @@
 """Shared pytest fixtures.
 
-We isolate every test from the user's real `~/.local/state/content-stack/`
+We isolate every test from the user's real `~/.local/state/stackos/`
 by pointing `Settings.data_dir` and `Settings.state_dir` at a tmp dir.
 """
 
@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from content_stack.config import Settings
-from content_stack.server import create_app
+from stackos.config import Settings
+from stackos.server import create_app
 
 
 @pytest.fixture

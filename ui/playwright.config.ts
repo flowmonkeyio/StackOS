@@ -1,4 +1,4 @@
-// Playwright config for content-stack UI E2E tests.
+// Playwright config for StackOS UI E2E tests.
 //
 // Wires:
 //   - global setup that spawns the daemon on port 5181 and waits for /health
@@ -8,7 +8,7 @@
 
 import { defineConfig, devices } from '@playwright/test'
 
-const PORT = Number(process.env.CS_E2E_PORT ?? 5181)
+const PORT = Number(process.env.STACKOS_E2E_PORT ?? 5181)
 const BASE_URL = `http://127.0.0.1:${PORT}`
 const RETRIES = Number(process.env.PW_RETRIES ?? 0)
 

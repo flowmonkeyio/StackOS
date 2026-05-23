@@ -228,6 +228,10 @@ const telegramConnections = computed(() =>
   connectedConnections.value.filter((connection) => connection.provider_key === 'telegram-bot'),
 )
 
+const identifiedTelegramConnections = computed(() =>
+  telegramConnections.value.filter((connection) => botUsernameFromConnection(connection)),
+)
+
 const telegramConnectionOptions = computed(() =>
   telegramConnections.value.map((connection) => ({
     value: connection.profile_key,
@@ -339,6 +343,26 @@ function isSecretField(field: AuthField): boolean {
   return field.secret || ['secret', 'password'].includes(field.type)
 }
 
+function isAdvancedCredentialField(provider: SchemaAuthProviderOut, field: AuthField): boolean {
+  return provider.key === 'telegram-bot'
+    ? ['api_base_url', 'webhook_secret_token'].includes(field.key)
+    : false
+}
+
+function primaryCredentialFields(
+  provider: SchemaAuthProviderOut,
+  method: AuthMethod | null | undefined,
+): AuthField[] {
+  return (method?.fields ?? []).filter((field) => !isAdvancedCredentialField(provider, field))
+}
+
+function advancedCredentialFields(
+  provider: SchemaAuthProviderOut,
+  method: AuthMethod | null | undefined,
+): AuthField[] {
+  return (method?.fields ?? []).filter((field) => isAdvancedCredentialField(provider, field))
+}
+
 function fieldOptions(field: AuthField): Array<{ value: string; label: string }> {
   return (field.options ?? [])
     .map((option) => {
@@ -386,10 +410,11 @@ function openAddConnection(providerKey?: string): void {
 }
 
 function openAddBotProfile(): void {
-  if (!botProfileForm.value.auth_profile_key && telegramConnections.value[0]) {
+  const preferred = preferredTelegramConnection()
+  if (!botProfileForm.value.auth_profile_key && preferred) {
     botProfileForm.value = {
       ...botProfileForm.value,
-      auth_profile_key: telegramConnections.value[0].profile_key,
+      auth_profile_key: preferred.profile_key,
     }
   }
   botProfileMessage.value = null
@@ -517,6 +542,27 @@ function accountLabel(connection: SchemaCredentialConnectionOut): string {
   )
 }
 
+function telegramConnectionForProfile(profileKey: string): ConnectionRow | null {
+  return (
+    telegramConnections.value.find((connection) => connection.profile_key === profileKey) ?? null
+  )
+}
+
+function botUsernameFromConnection(connection: SchemaCredentialConnectionOut | null): string | null {
+  const metadata = connection?.account?.metadata_json
+  const username =
+    metadata && typeof metadata === 'object' && 'username' in metadata
+      ? String((metadata as Record<string, unknown>).username ?? '').trim()
+      : ''
+  if (username) return username.replace(/^@/, '')
+  const displayName = String(connection?.account?.display_name ?? '').trim()
+  return displayName.startsWith('@') ? displayName.slice(1) : null
+}
+
+function preferredTelegramConnection(): ConnectionRow | null {
+  return identifiedTelegramConnections.value[0] ?? telegramConnections.value[0] ?? null
+}
+
 function connectionActionKey(credentialRef: string, action: string): string {
   return `${credentialRef}:${action}`
 }
@@ -552,11 +598,6 @@ function parseCsv(value: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
-}
-
-function normalizeBotUsername(value: string): string | null {
-  const normalized = value.trim().replace(/^@/, '')
-  return normalized || null
 }
 
 function normalizeCommand(value: string): string {
@@ -618,10 +659,11 @@ function commandSummary(commands: TelegramCommandSpec[] | undefined): string {
 }
 
 function ensureBotFormDefaults(): void {
-  if (!botProfileForm.value.auth_profile_key && telegramConnections.value[0]) {
+  const preferred = preferredTelegramConnection()
+  if (!botProfileForm.value.auth_profile_key && preferred) {
     botProfileForm.value = {
       ...botProfileForm.value,
-      auth_profile_key: telegramConnections.value[0].profile_key,
+      auth_profile_key: preferred.profile_key,
     }
   }
 }
@@ -647,6 +689,15 @@ async function saveBotProfile(): Promise<void> {
     botProfileMessage.value = { tone: 'danger', text: 'Choose a Telegram connection.' }
     return
   }
+  const selectedTelegramConnection = telegramConnectionForProfile(authProfileKey)
+  const botUsername = botUsernameFromConnection(selectedTelegramConnection)
+  if (!botUsername) {
+    botProfileMessage.value = {
+      tone: 'danger',
+      text: 'Test the Telegram connection first so StackOS can fetch the bot identity from Telegram.',
+    }
+    return
+  }
   if (allowedChatRefs.length === 0 || allowedUserRefs.length === 0) {
     botProfileMessage.value = {
       tone: 'danger',
@@ -660,7 +711,7 @@ async function saveBotProfile(): Promise<void> {
       project_id: projectId.value,
       key,
       auth_profile_key: authProfileKey,
-      bot_username: normalizeBotUsername(form.bot_username),
+      bot_username: botUsername,
       identity: {
         display_name: identityDisplayName,
         purpose: form.identity_purpose.trim(),
@@ -744,10 +795,23 @@ async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
       label: label || null,
       fields,
     })
+    let message = `Stored ${response.data.credential_ref}.`
+    let tone: MessageTone = 'success'
+    if (provider.key === 'telegram-bot') {
+      const testResponse = await catalogStore.testCredential(projectId.value, {
+        credential_ref: response.data.credential_ref,
+      })
+      const rawUsername = testResponse.data.metadata?.username
+      const username = typeof rawUsername === 'string' ? rawUsername : ''
+      message = testResponse.data.ok
+        ? `Connected ${username ? `@${username}` : response.data.credential_ref}.`
+        : testResponse.data.summary
+      tone = testResponse.data.ok ? 'success' : 'danger'
+    }
     fieldsByForm.value = { ...fieldsByForm.value, [key]: {} }
     profileByForm.value = { ...profileByForm.value, [key]: '' }
     labelByForm.value = { ...labelByForm.value, [key]: '' }
-    setProviderMessage(provider.key, 'success', `Stored ${response.data.credential_ref}.`)
+    setProviderMessage(provider.key, tone, message)
     addPanelOpen.value = false
   } catch (err) {
     setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to store credential'))
@@ -1007,7 +1071,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
 
               <dl class="grid gap-3 text-sm sm:grid-cols-2 2xl:grid-cols-4">
                 <div class="min-w-0">
-                  <dt class="text-2xs font-medium uppercase text-fg-muted">Connection key</dt>
+                  <dt class="text-2xs font-medium uppercase text-fg-muted">Connection name</dt>
                   <dd class="mt-0.5 truncate font-mono text-xs text-fg-default">
                     {{ connection.profile_key }}
                   </dd>
@@ -1250,8 +1314,8 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           </UiFormField>
 
           <UiFormField
-            label="Connection key"
-            help="Use a unique key per account or workspace. Reusing a key replaces that service connection."
+            label="Connection name"
+            help="Leave blank for the default account. Use a short name like client-a or sandbox when this service has more than one account."
           >
             <template #default="{ id, describedBy, invalid }">
               <UiInput
@@ -1285,7 +1349,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           </UiFormField>
 
           <UiFormField
-            v-for="field in selectedMethod(selectedProvider)?.fields ?? []"
+            v-for="field in primaryCredentialFields(selectedProvider, selectedMethod(selectedProvider))"
             :key="field.key"
             :label="field.label"
             :help="field.description ?? undefined"
@@ -1364,6 +1428,107 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
               />
             </template>
           </UiFormField>
+
+          <details
+            v-if="
+              advancedCredentialFields(selectedProvider, selectedMethod(selectedProvider)).length > 0
+            "
+            class="rounded-md border border-subtle bg-bg-surface-alt"
+          >
+            <summary
+              class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring"
+            >
+              Advanced connection settings
+              <span class="ml-2 text-xs font-normal text-fg-muted">
+                self-hosted Bot API and webhook secret overrides
+              </span>
+            </summary>
+            <div class="grid gap-4 border-t border-subtle p-3">
+              <UiFormField
+                v-for="field in advancedCredentialFields(
+                  selectedProvider,
+                  selectedMethod(selectedProvider),
+                )"
+                :key="field.key"
+                :label="field.label"
+                :help="field.description ?? undefined"
+                :required="field.required"
+              >
+                <template #default="{ id, describedBy, invalid }">
+                  <UiSelect
+                    v-if="hasFieldOptions(field)"
+                    :id="id"
+                    :model-value="
+                      fieldValue(
+                        selectedProvider.key,
+                        selectedMethod(selectedProvider)?.key ?? '',
+                        field.key,
+                      )
+                    "
+                    :options="fieldOptions(field)"
+                    :aria-describedby="describedBy"
+                    :invalid="invalid"
+                    :placeholder="field.placeholder ?? 'Select'"
+                    @update:model-value="
+                      setFieldValue(
+                        selectedProvider.key,
+                        selectedMethod(selectedProvider)?.key ?? '',
+                        field.key,
+                        $event,
+                      )
+                    "
+                  />
+                  <UiSecretInput
+                    v-else-if="isSecretField(field)"
+                    :id="id"
+                    :model-value="
+                      fieldValue(
+                        selectedProvider.key,
+                        selectedMethod(selectedProvider)?.key ?? '',
+                        field.key,
+                      )
+                    "
+                    :aria-describedby="describedBy"
+                    :invalid="invalid"
+                    no-copy
+                    no-reveal
+                    :placeholder="field.placeholder ?? ''"
+                    @update:model-value="
+                      setFieldValue(
+                        selectedProvider.key,
+                        selectedMethod(selectedProvider)?.key ?? '',
+                        field.key,
+                        $event,
+                      )
+                    "
+                  />
+                  <UiInput
+                    v-else
+                    :id="id"
+                    :model-value="
+                      fieldValue(
+                        selectedProvider.key,
+                        selectedMethod(selectedProvider)?.key ?? '',
+                        field.key,
+                      )
+                    "
+                    :type="inputType(field)"
+                    :aria-describedby="describedBy"
+                    :invalid="invalid"
+                    :placeholder="field.placeholder ?? undefined"
+                    @update:model-value="
+                      setFieldValue(
+                        selectedProvider.key,
+                        selectedMethod(selectedProvider)?.key ?? '',
+                        field.key,
+                        $event,
+                      )
+                    "
+                  />
+                </template>
+              </UiFormField>
+            </div>
+          </details>
 
           <UiCallout v-if="selectedMethod(selectedProvider)?.description" tone="info">
             {{ selectedMethod(selectedProvider)?.description }}
@@ -1452,31 +1617,26 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           </template>
         </UiFormField>
 
-        <div class="grid gap-4 sm:grid-cols-2">
-          <UiFormField label="Bot username">
-            <template #default="{ id, describedBy, invalid }">
-              <UiInput
-                :id="id"
-                v-model="botProfileForm.bot_username"
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                placeholder="@support_bot"
-              />
-            </template>
-          </UiFormField>
+        <UiCallout v-if="botProfileForm.auth_profile_key" tone="info">
+          Telegram identity:
+          {{
+            botUsernameFromConnection(telegramConnectionForProfile(botProfileForm.auth_profile_key))
+              ? `@${botUsernameFromConnection(telegramConnectionForProfile(botProfileForm.auth_profile_key))}`
+              : 'test the selected connection to fetch it from Telegram'
+          }}
+        </UiCallout>
 
-          <UiFormField label="Display name" required>
-            <template #default="{ id, describedBy, invalid }">
-              <UiInput
-                :id="id"
-                v-model="botProfileForm.identity_display_name"
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                placeholder="Support Bot"
-              />
-            </template>
-          </UiFormField>
-        </div>
+        <UiFormField label="Display name" required>
+          <template #default="{ id, describedBy, invalid }">
+            <UiInput
+              :id="id"
+              v-model="botProfileForm.identity_display_name"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              placeholder="Support Bot"
+            />
+          </template>
+        </UiFormField>
 
         <UiFormField label="Purpose">
           <template #default="{ id, describedBy, invalid }">
@@ -1590,7 +1750,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
                 v-model="botProfileForm.mention_patterns"
                 :aria-describedby="describedBy"
                 :invalid="invalid"
-                placeholder="@support_bot"
+                placeholder="support, ops"
               />
             </template>
           </UiFormField>

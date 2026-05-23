@@ -9,10 +9,10 @@ from typing import Any, ClassVar
 import pytest
 from sqlmodel import Session
 
-from content_stack.actions import ActionRepository
-from content_stack.auth_providers import AuthRepository
-from content_stack.repositories.projects import IntegrationCredentialRepository
-from content_stack.repositories.resources import ResourceRepository
+from stackos.actions import ActionRepository
+from stackos.auth_providers import AuthRepository
+from stackos.repositories.projects import IntegrationCredentialRepository
+from stackos.repositories.resources import ResourceRepository
 
 
 class _FakeSMTP:
@@ -96,7 +96,7 @@ def test_smtp_action_is_executable_and_sends_without_secret_leak(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import content_stack.actions.smtp as smtp_module
+    import stackos.actions.smtp as smtp_module
 
     _FakeSMTP.instances.clear()
     _FakeSMTP.refused = {"bad@example.test": (550, b"mailbox unavailable")}
@@ -185,7 +185,7 @@ def test_smtp_ssl_path_uses_smtp_ssl(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import content_stack.actions.smtp as smtp_module
+    import stackos.actions.smtp as smtp_module
 
     _FakeSMTPSSL.instances.clear()
     _FakeSMTPSSL.refused = {}

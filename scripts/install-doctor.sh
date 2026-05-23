@@ -6,7 +6,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DOCTOR_SCRIPT="${CONTENT_STACK_DOCTOR_SCRIPT:-${REPO_ROOT}/scripts/doctor.sh}"
+DOCTOR_SCRIPT="${STACKOS_DOCTOR_SCRIPT:-${REPO_ROOT}/scripts/doctor.sh}"
 
 "${DOCTOR_SCRIPT}"
 code=$?
@@ -16,7 +16,7 @@ if [[ "${code}" -eq 0 ]]; then
 fi
 
 if [[ "${code}" -eq 1 ]]; then
-    echo "  doctor: daemon is not running yet; run \`make serve\` or \`content-stack start\` next."
+    echo "  doctor: daemon is not running yet; run \`make serve\` or \`stackos start\` next."
     exit 0
 fi
 

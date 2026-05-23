@@ -7,7 +7,7 @@ Three invariants:
    ``version``, ``runtime_support``, ``derived_from``, ``license``,
    ``allowed_tools``.
 2. ``allowed_tools`` matches the corresponding entry in
-   ``content_stack.mcp.permissions.SKILL_TOOL_GRANTS`` — the
+   ``stackos.mcp.permissions.SKILL_TOOL_GRANTS`` — the
    frontmatter is human-readable docs; the registry is the canonical
    enforcement (audit B-10), and the two MUST agree.
 3. When repo-level skills exist, every skill links the shared operating
@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from content_stack.mcp.permissions import SKILL_TOOL_GRANTS
+from stackos.mcp.permissions import SKILL_TOOL_GRANTS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILLS_ROOT = REPO_ROOT / "skills"

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Register `content-stack` with the Codex CLI as an MCP server.
+# Register `stackos` with the Codex CLI as an MCP server.
 #
-# Idempotent: if Codex already lists a `content-stack` server we treat the
+# Idempotent: if Codex already lists a `stackos` server we treat the
 # script as a no-op. The registered server is the local stdio bridge; the
 # bearer token stays inside the bridge process.
 #
@@ -26,43 +26,44 @@ if ! command -v codex >/dev/null 2>&1; then
     exit 0
 fi
 
-HOME_DIR="${CONTENT_STACK_HOME:-${HOME}}"
-TOKEN_PATH="${HOME_DIR}/.local/state/content-stack/auth.token"
+HOME_DIR="${STACKOS_HOME:-${HOME}}"
+TOKEN_PATH="${HOME_DIR}/.local/state/stackos/auth.token"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BRIDGE_PYTHON="${CONTENT_STACK_BRIDGE_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+BRIDGE_PYTHON="${STACKOS_BRIDGE_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+MCP_NAME="${STACKOS_MCP_NAME:-stackos}"
 if [[ ! -x "${BRIDGE_PYTHON}" ]]; then
     BRIDGE_PYTHON="$(command -v python3)"
 fi
 
 already_registered() {
-    codex mcp list 2>/dev/null | grep -q '^content-stack[[:space:]]'
+    codex mcp list 2>/dev/null | grep -q "^${1}[[:space:]]"
 }
 
 if [[ "${ACTION}" == "remove" ]]; then
-    if already_registered; then
-        codex mcp remove content-stack
-        echo "Unregistered MCP 'content-stack' from Codex CLI"
+    if already_registered "${MCP_NAME}"; then
+        codex mcp remove "${MCP_NAME}"
+        echo "Unregistered MCP '${MCP_NAME}' from Codex CLI"
     else
-        echo "MCP 'content-stack' not registered with Codex CLI; nothing to remove"
+        echo "MCP '${MCP_NAME}' not registered with Codex CLI; nothing to remove"
     fi
     exit 0
 fi
 
-if [[ "${ACTION}" == "register" ]] && already_registered; then
-    echo "MCP 'content-stack' already registered with Codex CLI"
+if [[ "${ACTION}" == "register" ]] && already_registered "${MCP_NAME}"; then
+    echo "MCP '${MCP_NAME}' already registered with Codex CLI"
     exit 0
 fi
 
 if [[ ! -f "${TOKEN_PATH}" ]]; then
-    echo "auth token missing at ${TOKEN_PATH} — run \`make install\` or \`content-stack init\` first." >&2
+    echo "auth token missing at ${TOKEN_PATH} — run \`make install\` or \`stackos init\` first." >&2
     exit 1
 fi
 # `--force` removes-then-adds so the registration refreshes after rotation.
-if [[ "${ACTION}" == "force" ]] && already_registered; then
-    codex mcp remove content-stack
+if [[ "${ACTION}" == "force" ]] && already_registered "${MCP_NAME}"; then
+    codex mcp remove "${MCP_NAME}"
 fi
 
-codex mcp add content-stack \
-    -- "${BRIDGE_PYTHON}" -m content_stack mcp-bridge
+codex mcp add "${MCP_NAME}" \
+    -- "${BRIDGE_PYTHON}" -m stackos mcp-bridge
 
-echo "Registered MCP 'content-stack' with Codex CLI via mcp-bridge"
+echo "Registered MCP '${MCP_NAME}' with Codex CLI via mcp-bridge"

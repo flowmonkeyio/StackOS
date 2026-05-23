@@ -9,8 +9,8 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
-from content_stack.integrations.ahrefs import AhrefsIntegration
-from content_stack.mcp.errors import IntegrationDownError
+from stackos.integrations.ahrefs import AhrefsIntegration
+from stackos.mcp.errors import IntegrationDownError
 
 
 def test_keywords_for_site_with_key(httpx_mock: HTTPXMock, project_id: int) -> None:

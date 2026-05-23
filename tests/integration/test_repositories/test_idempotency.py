@@ -7,9 +7,9 @@ from datetime import timedelta
 import pytest
 from sqlmodel import Session
 
-from content_stack.db.models import RunKind
-from content_stack.repositories.base import IdempotencyReplayError
-from content_stack.repositories.runs import IdempotencyKeyRepository, RunRepository
+from stackos.db.models import RunKind
+from stackos.repositories.base import IdempotencyReplayError
+from stackos.repositories.runs import IdempotencyKeyRepository, RunRepository
 
 
 def _make_run(session: Session, project_id: int) -> int:
@@ -69,7 +69,7 @@ def test_stale_key_treated_fresh(session: Session, project_id: int) -> None:
     # Backdate the row's created_at past 24h.
     from sqlmodel import select
 
-    from content_stack.db.models import IdempotencyKey
+    from stackos.db.models import IdempotencyKey
 
     row = session.exec(
         select(IdempotencyKey).where(IdempotencyKey.idempotency_key == "stale-key")

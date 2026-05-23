@@ -7,9 +7,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlmodel import Session
 
-from content_stack.db.models import RunKind, RunStatus
-from content_stack.repositories.base import ConflictError
-from content_stack.repositories.runs import RunRepository
+from stackos.db.models import RunKind, RunStatus
+from stackos.repositories.base import ConflictError
+from stackos.repositories.runs import RunRepository
 
 
 def _now() -> datetime:
@@ -66,7 +66,7 @@ def test_reap_stale_orphans(session: Session, project_id: int) -> None:
     fresh = repo.start(project_id=project_id, kind=RunKind.SKILL_RUN).data
     stale = repo.start(project_id=project_id, kind=RunKind.SKILL_RUN).data
     # Manually backdate the stale heartbeat past the 5-minute threshold.
-    from content_stack.db.models import Run
+    from stackos.db.models import Run
 
     s_row = session.get(Run, stale.id)
     assert s_row is not None
@@ -83,7 +83,7 @@ def test_reap_stale_orphans(session: Session, project_id: int) -> None:
 
 def test_cost_aggregation(session: Session, project_id: int) -> None:
     """Cost rollup sums run_steps.cost_cents per kind for a month."""
-    from content_stack.db.models import RunStep, RunStepStatus
+    from stackos.db.models import RunStep, RunStepStatus
 
     repo = RunRepository(session)
     run_a = repo.start(project_id=project_id, kind=RunKind.SKILL_RUN).data

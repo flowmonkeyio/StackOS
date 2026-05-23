@@ -10,14 +10,14 @@ import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
-from content_stack.actions import (
+from stackos.actions import (
     ActionConnectorRegistry,
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionRepository,
     ActionValidationIssue,
 )
-from content_stack.db.models import (
+from stackos.db.models import (
     Action,
     ActionCall,
     Credential,
@@ -26,12 +26,12 @@ from content_stack.db.models import (
     PluginSource,
     Provider,
 )
-from content_stack.repositories.base import ConflictError, NotFoundError, ValidationError
-from content_stack.repositories.projects import (
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
+from stackos.repositories.projects import (
     IntegrationBudgetRepository,
     IntegrationCredentialRepository,
 )
-from content_stack.repositories.run_plans import RunPlanRepository
+from stackos.repositories.run_plans import RunPlanRepository
 
 
 class _FakeConnector:
@@ -252,14 +252,14 @@ def _credential_ref(session: Session, project_id: int) -> str:
         secret_payload=b"daemon-only-secret",
         config_json={"label": "Fake"},
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     status = AuthRepository(session).status(project_id=project_id, provider_key="fake-provider")
     return status.connections[0].credential_ref
 
 
 def _provider_credential_ref(session: Session, project_id: int, provider_key: str) -> str:
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     status = AuthRepository(session).status(project_id=project_id, provider_key=provider_key)
     return status.connections[0].credential_ref
@@ -476,7 +476,7 @@ def test_action_describe_reports_disabled_project_plugin(
     session: Session,
     project_id: int,
 ) -> None:
-    from content_stack.repositories.plugins import PluginRepository
+    from stackos.repositories.plugins import PluginRepository
 
     PluginRepository(session).enable(project_id=project_id, plugin_slug="utils")
     PluginRepository(session).disable(project_id=project_id, plugin_slug="utils")
@@ -602,7 +602,7 @@ def test_custom_http_action_executes_static_webhook_with_daemon_side_auth(
         secret_payload=b"webhook-token",
         config_json={"label": "Internal webhook"},
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     credential_ref = (
         AuthRepository(session)
@@ -658,7 +658,7 @@ def test_hubspot_builtin_company_upsert_sends_documented_batch_body(
         kind="hubspot",
         secret_payload=json.dumps({"access_token": "hubspot-secret"}).encode("utf-8"),
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     credential_ref = (
         AuthRepository(session)
@@ -722,7 +722,7 @@ def test_meta_builtin_campaign_create_resolves_account_ref_and_sends_form_body(
         secret_payload=json.dumps({"access_token": "meta-secret"}).encode("utf-8"),
         config_json={"api_version": "v25.0", "accounts": {"primary": "act_123"}},
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     credential_ref = (
         AuthRepository(session)
@@ -786,7 +786,7 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
             "customers": {"main": "444-555-6666"},
         },
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     credential_ref = (
         AuthRepository(session)
@@ -840,7 +840,7 @@ def test_taboola_builtin_campaign_create_uses_backstage_account_endpoint(
         secret_payload=json.dumps({"access_token": "taboola-access"}).encode("utf-8"),
         config_json={"accounts": {"main": "demo-account"}},
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     credential_ref = (
         AuthRepository(session)
@@ -1283,7 +1283,7 @@ def test_firecrawl_action_executes_through_generic_connector(
         kind="firecrawl",
         monthly_budget_usd=10.0,
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     credential_ref = (
         AuthRepository(session)
@@ -1330,7 +1330,7 @@ def test_dataforseo_action_executes_with_daemon_side_login_config(
         kind="dataforseo",
         monthly_budget_usd=10.0,
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     credential_ref = (
         AuthRepository(session)
@@ -1416,7 +1416,7 @@ def test_dataforseo_paa_action_uses_explicit_action_contract(
         kind="dataforseo",
         monthly_budget_usd=10.0,
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     credential_ref = (
         AuthRepository(session)
@@ -1473,7 +1473,7 @@ def test_wordpress_post_create_action_uses_daemon_side_site_config(
         ).encode("utf-8"),
         config_json={"wp_url": "https://wp.example"},
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     credential_ref = (
         AuthRepository(session)
@@ -1530,7 +1530,7 @@ def test_ghost_post_create_action_uses_daemon_side_admin_config(
         secret_payload=b"keyid:00112233445566778899aabbccddeeff",
         config_json={"ghost_url": "https://ghost.example", "api_version": "v5.0"},
     )
-    from content_stack.auth_providers import AuthRepository
+    from stackos.auth_providers import AuthRepository
 
     credential_ref = (
         AuthRepository(session)
@@ -1715,7 +1715,7 @@ def test_action_call_step_scope_requires_parent_project_match(
     session: Session,
     project_id: int,
 ) -> None:
-    from content_stack.repositories.projects import ProjectRepository
+    from stackos.repositories.projects import ProjectRepository
 
     _seed_action(session)
     _seed_noauth_action(session)
@@ -1763,7 +1763,7 @@ def test_idempotency_replay_still_enforces_step_scope(
     session: Session,
     project_id: int,
 ) -> None:
-    from content_stack.repositories.projects import ProjectRepository
+    from stackos.repositories.projects import ProjectRepository
 
     _seed_action(session)
     _seed_noauth_action(session)

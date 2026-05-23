@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-import content_stack.plugins.manifest as manifest_module
-from content_stack.plugins.manifest import (
+import stackos.plugins.manifest as manifest_module
+from stackos.plugins.manifest import (
     BUILTIN_PLUGIN_MANIFESTS,
     PluginManifest,
     ProviderManifest,

@@ -1,14 +1,14 @@
-"""Unit tests for ``content_stack.repositories.base``."""
+"""Unit tests for ``stackos.repositories.base``."""
 
 from __future__ import annotations
 
 import pytest
 
-from content_stack.db.models import (
+from stackos.db.models import (
     RUN_STATUS_TRANSITIONS,
     RunStatus,
 )
-from content_stack.repositories.base import (
+from stackos.repositories.base import (
     ConflictError,
     Envelope,
     Page,

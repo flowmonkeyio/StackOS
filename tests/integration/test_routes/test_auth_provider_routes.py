@@ -162,7 +162,12 @@ def test_auth_test_supports_telegram_bot_token_without_secret_leak(
         url="http://127.0.0.1:8081/bot123456:ABC/getMe",
         json={
             "ok": True,
-            "result": {"id": 123456, "is_bot": True, "username": "support_bot"},
+            "result": {
+                "id": 123456,
+                "is_bot": True,
+                "username": "support_bot",
+                "first_name": "Support Bot",
+            },
         },
     )
 
@@ -177,6 +182,15 @@ def test_auth_test_supports_telegram_bot_token_without_secret_leak(
     assert body["provider_key"] == "telegram-bot"
     assert body["metadata"]["bot_id"] == 123456
     assert body["metadata"]["username"] == "support_bot"
+    assert body["metadata"]["first_name"] == "Support Bot"
+    status_response = api.get(
+        f"/api/v1/projects/{project_id}/auth/status?provider_key=telegram-bot"
+    )
+    assert status_response.status_code == 200, status_response.text
+    [connection] = status_response.json()["connections"]
+    assert connection["account"]["provider_account_id"] == "123456"
+    assert connection["account"]["display_name"] == "@support_bot"
+    assert connection["account"]["metadata_json"]["username"] == "support_bot"
     rendered = json.dumps(response.json())
     assert "123456:ABC" not in rendered
     assert "telegram-secret" not in rendered
@@ -187,7 +201,7 @@ def test_auth_test_supports_smtp_without_secret_leak(
     project_id: int,
     monkeypatch,
 ) -> None:  # type: ignore[no-untyped-def]
-    import content_stack.integrations.smtp as smtp_integration
+    import stackos.integrations.smtp as smtp_integration
 
     _AuthSMTP.fail_with_secret = False
     monkeypatch.setattr(smtp_integration.smtplib, "SMTP", _AuthSMTP)
@@ -226,7 +240,7 @@ def test_auth_test_smtp_failure_redacts_provider_exception(
     project_id: int,
     monkeypatch,
 ) -> None:  # type: ignore[no-untyped-def]
-    import content_stack.integrations.smtp as smtp_integration
+    import stackos.integrations.smtp as smtp_integration
 
     _AuthSMTP.fail_with_secret = True
     monkeypatch.setattr(smtp_integration.smtplib, "SMTP", _AuthSMTP)
@@ -266,7 +280,7 @@ def test_auth_test_supports_imap_without_secret_leak(
     project_id: int,
     monkeypatch,
 ) -> None:  # type: ignore[no-untyped-def]
-    import content_stack.integrations.imap as imap_integration
+    import stackos.integrations.imap as imap_integration
 
     _AuthIMAP.fail_with_secret = False
     monkeypatch.setattr(imap_integration.imaplib, "IMAP4", _AuthIMAP)
@@ -305,7 +319,7 @@ def test_auth_test_imap_failure_redacts_provider_exception(
     project_id: int,
     monkeypatch,
 ) -> None:  # type: ignore[no-untyped-def]
-    import content_stack.integrations.imap as imap_integration
+    import stackos.integrations.imap as imap_integration
 
     _AuthIMAP.fail_with_secret = True
     monkeypatch.setattr(imap_integration.imaplib, "IMAP4", _AuthIMAP)

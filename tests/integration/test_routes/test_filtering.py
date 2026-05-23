@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from content_stack.api.filtering import parse_filters, parse_sort
+from stackos.api.filtering import parse_filters, parse_sort
 
 
 def test_parse_filters_drops_reserved_keys() -> None:

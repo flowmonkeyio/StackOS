@@ -11,7 +11,7 @@ is the local gate for provider-specific contract work.
 - Link the exact documentation page for auth, object operations, rate limits,
   pagination, errors, and provider-specific constraints.
 - Do not invent executable actions. If a connector is not implemented in
-  `content_stack/actions`, mark the action with an explicit deferred
+  `stackos/actions`, mark the action with an explicit deferred
   `execution_mode` and `deferred_reason`.
 - StackOS stores static contracts, validates explicit inputs, resolves
   daemon-held credentials, calls connectors, and records audit. Agents and

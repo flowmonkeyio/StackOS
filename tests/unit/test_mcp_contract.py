@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from content_stack.mcp.contract import (
+from stackos.mcp.contract import (
     MCPInput,
     WriteEnvelope,
     verb_is_mutating,
 )
-from content_stack.mcp.server import (
+from stackos.mcp.server import (
     ToolRegistry,
     ToolSpec,
     assert_envelope_discipline,

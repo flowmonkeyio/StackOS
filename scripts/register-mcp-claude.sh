@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Register `content-stack` with Claude Code as an MCP server.
+# Register `stackos` with Claude Code as an MCP server.
 #
 # Reads the target `.mcp.json` (default `${HOME}/.claude/mcp.json`,
-# overridable via `CONTENT_STACK_MCP_TARGET` for per-project configs),
-# upserts the `content-stack` entry, and writes back atomically with a
+# overridable via `STACKOS_MCP_TARGET` for per-project configs),
+# upserts the `stackos` entry, and writes back atomically with a
 # `.bak` backup of any pre-existing file. Never `>`-overwrites; it uses an
 # atomic rename via a temp file in the same directory.
 #
@@ -21,11 +21,12 @@ for arg in "$@"; do
     esac
 done
 
-HOME_DIR="${CONTENT_STACK_HOME:-${HOME}}"
-TARGET="${CONTENT_STACK_MCP_TARGET:-${HOME_DIR}/.claude/mcp.json}"
-TOKEN_PATH="${HOME_DIR}/.local/state/content-stack/auth.token"
+HOME_DIR="${STACKOS_HOME:-${HOME}}"
+TARGET="${STACKOS_MCP_TARGET:-${HOME_DIR}/.claude/mcp.json}"
+TOKEN_PATH="${HOME_DIR}/.local/state/stackos/auth.token"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BRIDGE_PYTHON="${CONTENT_STACK_BRIDGE_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+BRIDGE_PYTHON="${STACKOS_BRIDGE_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+MCP_NAME="${STACKOS_MCP_NAME:-stackos}"
 if [[ ! -x "${BRIDGE_PYTHON}" ]]; then
     BRIDGE_PYTHON="$(command -v python3)"
 fi
@@ -38,7 +39,7 @@ fi
 
 if [[ "${ACTION}" == "register" ]]; then
     if [[ ! -f "${TOKEN_PATH}" ]]; then
-        echo "auth token missing at ${TOKEN_PATH} — run \`make install\` or \`content-stack init\` first." >&2
+        echo "auth token missing at ${TOKEN_PATH} — run \`make install\` or \`stackos init\` first." >&2
         exit 1
     fi
 fi
@@ -46,13 +47,13 @@ fi
 # Use Python (already a hard dep — the daemon is Python) for the JSON
 # merge so we don't pull jq into the install floor. Atomic via tempfile
 # + os.replace, which is what `rename(2)` guarantees on POSIX.
-python3 - "${TARGET}" "${BRIDGE_PYTHON}" "${ACTION}" <<'PYEOF'
+python3 - "${TARGET}" "${BRIDGE_PYTHON}" "${ACTION}" "${MCP_NAME}" <<'PYEOF'
 import json
 import os
 import sys
 import tempfile
 
-target, bridge_python, action = sys.argv[1:4]
+target, bridge_python, action, server_name = sys.argv[1:5]
 
 existing: dict[str, object] = {}
 if os.path.exists(target):
@@ -75,18 +76,18 @@ if not isinstance(servers, dict):
     sys.exit(1)
 
 if action == "remove":
-    if "content-stack" in servers:
-        del servers["content-stack"]
-        msg = f"Unregistered MCP 'content-stack' from {target}"
+    if server_name in servers:
+        del servers[server_name]
+        msg = f"Unregistered MCP '{server_name}' from {target}"
     else:
-        msg = f"MCP 'content-stack' not present in {target}; nothing to remove"
+        msg = f"MCP '{server_name}' not present in {target}; nothing to remove"
 else:
-    servers["content-stack"] = {
+    servers[server_name] = {
         "transport": "stdio",
         "command": bridge_python,
-        "args": ["-m", "content_stack", "mcp-bridge"],
+        "args": ["-m", "stackos", "mcp-bridge"],
     }
-    msg = f"Registered MCP 'content-stack' with Claude Code -> {target}"
+    msg = f"Registered MCP '{server_name}' with Claude Code -> {target}"
 
 target_dir = os.path.dirname(os.path.abspath(target)) or "."
 fd, tmp = tempfile.mkstemp(prefix=".mcp.", dir=target_dir)

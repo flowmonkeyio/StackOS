@@ -7,14 +7,14 @@ from datetime import datetime
 import pytest
 from sqlmodel import Session, SQLModel
 
-from content_stack.db.connection import make_engine
-from content_stack.repositories.base import (
+from stackos.db.connection import make_engine
+from stackos.repositories.base import (
     BudgetExceededError,
     ConflictError,
     NotFoundError,
     ValidationError,
 )
-from content_stack.repositories.projects import (
+from stackos.repositories.projects import (
     IntegrationBudgetRepository,
     IntegrationCredentialRepository,
     ProjectRepository,
@@ -75,7 +75,7 @@ def test_integration_credential_set_round_trip_and_remove(
 
 
 def test_integration_credential_aad_tamper_fails(session: Session, project_id: int) -> None:
-    from content_stack.crypto.aes_gcm import CryptoError, decrypt
+    from stackos.crypto.aes_gcm import CryptoError, decrypt
 
     repo = IntegrationCredentialRepository(session)
     env = repo.set(project_id=project_id, kind="firecrawl", secret_payload=b"secret")

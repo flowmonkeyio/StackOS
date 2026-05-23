@@ -21,8 +21,8 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[gen-types] dumping source OpenAPI"
-CONTENT_STACK_STATE_DIR="$GEN_STATE" \
-    CONTENT_STACK_DATA_DIR="$GEN_DATA" \
+STACKOS_STATE_DIR="$GEN_STATE" \
+    STACKOS_DATA_DIR="$GEN_DATA" \
     uv run python scripts/write-openapi.py "$OPENAPI_JSON"
 
 echo "[gen-types] regenerating ui/src/api.ts"

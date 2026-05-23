@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from content_stack.db.models import (
+from stackos.db.models import (
     RUN_PLAN_STATUS_TRANSITIONS,
     RUN_STATUS_TRANSITIONS,
     RunKind,

@@ -1,0 +1,11 @@
+{
+  "name": "stackos",
+  "version": "0.1.0",
+  "description": "Repo-agnostic StackOS project, plugin, workflow-template, run-plan, and action runtime for Claude Code.",
+  "author": {
+    "name": "StackOS",
+    "url": "https://github.com/flowmonkey-io/stackos"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

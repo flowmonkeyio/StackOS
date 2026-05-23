@@ -7,10 +7,10 @@ from fastapi.testclient import TestClient
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
-from content_stack.db.models import CredentialUsageEvent
-from content_stack.repositories.agent_requests import AgentRequestRepository
-from content_stack.repositories.resources import ResourceRepository
-from content_stack.repositories.run_plans import RunPlanRepository
+from stackos.db.models import CredentialUsageEvent
+from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.repositories.resources import ResourceRepository
+from stackos.repositories.run_plans import RunPlanRepository
 
 
 def _sitemap_action_plan_json() -> dict:
@@ -470,7 +470,7 @@ def test_operation_rest_smtp_notification_uses_run_plan_action_execute(
     project_id: int,
     monkeypatch,
 ) -> None:  # type: ignore[no-untyped-def]
-    import content_stack.actions.smtp as smtp_module
+    import stackos.actions.smtp as smtp_module
 
     _RouteSMTP.sent_messages.clear()
     monkeypatch.setattr(smtp_module.smtplib, "SMTP", _RouteSMTP)

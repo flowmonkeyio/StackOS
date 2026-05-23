@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from content_stack.config import Settings
+from stackos.config import Settings
 
 
 def test_health_returns_m0_shape(client: TestClient) -> None:

@@ -1,0 +1,914 @@
+"""StackOS plugin manifest schema and built-in manifests."""
+
+from __future__ import annotations
+
+import re
+from importlib import resources
+from importlib.resources.abc import Traversable
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+
+_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
+
+
+def _validate_key(value: str) -> str:
+    if not _KEY_RE.match(value):
+        raise ValueError("must be lowercase snake/kebab/dotted identifier")
+    return value
+
+
+class CapabilityManifest(BaseModel):
+    """Capability metadata contributed by a plugin."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    key: str = Field(min_length=1, max_length=160)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    kind: str = Field(default="domain", max_length=80)
+    config: dict[str, Any] | None = None
+
+    @field_validator("key")
+    @classmethod
+    def _key(cls, value: str) -> str:
+        return _validate_key(value)
+
+
+class AuthFieldManifest(BaseModel):
+    """One field in a provider-owned credential setup contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=160)
+    label: str = Field(min_length=1, max_length=200)
+    type: str = Field(default="text", max_length=40)
+    secret: bool = False
+    required: bool = False
+    placeholder: str | None = None
+    description: str | None = None
+    options: list[dict[str, str]] | None = None
+
+    @field_validator("key")
+    @classmethod
+    def _key(cls, value: str) -> str:
+        return _validate_key(value)
+
+
+class AuthMethodManifest(BaseModel):
+    """Credential setup method contributed by a provider."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=160)
+    label: str = Field(min_length=1, max_length=200)
+    auth_type: str = Field(default="none", max_length=80)
+    description: str = ""
+    interactive: bool = False
+    payload_format: str = Field(default="json", max_length=40)
+    payload_field: str | None = Field(default=None, max_length=160)
+    fields: list[AuthFieldManifest] = Field(default_factory=list)
+    config: dict[str, Any] | None = None
+
+    @field_validator("key", "payload_field")
+    @classmethod
+    def _keys(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_key(value)
+
+
+class ProviderManifest(BaseModel):
+    """Provider metadata contributed by a plugin."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=160)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    auth_type: str = Field(default="none", max_length=80)
+    auth_methods: list[AuthMethodManifest] = Field(default_factory=list)
+    config: dict[str, Any] | None = None
+
+    @field_validator("key")
+    @classmethod
+    def _key(cls, value: str) -> str:
+        return _validate_key(value)
+
+
+class ActionManifest(BaseModel):
+    """Action catalog metadata.
+
+    D02 stores static action schemas only. Execution and credential resolution
+    are later deliverables and must be grant-gated.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=160)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    provider: str | None = Field(default=None, max_length=160)
+    capability: str | None = Field(default=None, max_length=160)
+    risk_level: str = Field(default="read", max_length=40)
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    output_schema: dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] | None = None
+
+    @field_validator("key", "provider", "capability")
+    @classmethod
+    def _keys(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_key(value)
+
+
+class ResourceManifest(BaseModel):
+    """Resource schema contributed by a plugin."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=160)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    schema_data: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("schema", "schema_data"),
+        serialization_alias="schema",
+    )
+    ui_schema: dict[str, Any] | None = None
+    config: dict[str, Any] | None = None
+
+    @field_validator("key")
+    @classmethod
+    def _key(cls, value: str) -> str:
+        return _validate_key(value)
+
+
+class PluginManifest(BaseModel):
+    """Top-level StackOS plugin manifest."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=200)
+    version: str = Field(default="0.1.0", max_length=40)
+    description: str = ""
+    source: str = Field(default="builtin", max_length=40)
+    capabilities: list[CapabilityManifest] = Field(default_factory=list)
+    providers: list[ProviderManifest] = Field(default_factory=list)
+    actions: list[ActionManifest] = Field(default_factory=list)
+    resources: list[ResourceManifest] = Field(default_factory=list)
+    ui: dict[str, Any] | None = None
+    config: dict[str, Any] | None = None
+
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, value: str) -> str:
+        return _validate_key(value)
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _plugin_manifest_paths() -> list[Path]:
+    root = _repo_root() / "plugins"
+    if not root.is_dir():
+        return []
+    return sorted(path for path in root.glob("*/plugin.yaml") if path.is_file())
+
+
+def _bundled_plugin_manifest_nodes() -> list[Traversable]:
+    root = resources.files("stackos").joinpath("_assets").joinpath("plugins")
+    if not root.is_dir():
+        return []
+    return sorted(
+        [
+            plugin_dir.joinpath("plugin.yaml")
+            for plugin_dir in root.iterdir()
+            if plugin_dir.is_dir() and plugin_dir.joinpath("plugin.yaml").is_file()
+        ],
+        key=lambda node: str(node),
+    )
+
+
+def load_plugin_manifest_file(path: Path) -> PluginManifest:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"plugin manifest must be a YAML object: {path}")
+    return PluginManifest.model_validate(raw)
+
+
+def _load_plugin_manifest_node(node: Traversable) -> PluginManifest:
+    raw = yaml.safe_load(node.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"plugin manifest must be a YAML object: {node}")
+    return PluginManifest.model_validate(raw)
+
+
+def load_plugin_manifest_files() -> tuple[PluginManifest, ...]:
+    bundled = [_load_plugin_manifest_node(node) for node in _bundled_plugin_manifest_nodes()]
+    clone = [load_plugin_manifest_file(path) for path in _plugin_manifest_paths()]
+    manifests = {manifest.slug: manifest for manifest in bundled}
+    manifests.update({manifest.slug: manifest for manifest in clone})
+    return tuple(sorted(manifests.values(), key=lambda manifest: manifest.slug))
+
+
+_OBJECT_SCHEMA = {"type": "object", "additionalProperties": True}
+_TEXT_RECORD_SCHEMA = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "title": {"type": "string"},
+        "body": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+}
+_ARTIFACT_RESOURCE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "uri": {"type": "string"},
+        "kind": {"type": "string"},
+        "metadata": {"type": "object", "additionalProperties": True},
+    },
+    "required": ["uri"],
+}
+_WEB_SCRAPE_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url"],
+    "properties": {
+        "url": {"type": "string"},
+        "formats": {"type": "array", "items": {"type": "string"}},
+        "only_main_content": {"type": "boolean"},
+    },
+}
+_WEB_CRAWL_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url"],
+    "properties": {
+        "url": {"type": "string"},
+        "max_depth": {"type": "integer"},
+        "limit": {"type": "integer"},
+    },
+}
+_WEB_MAP_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url"],
+    "properties": {
+        "url": {"type": "string"},
+        "search": {"type": "string"},
+    },
+}
+_WEB_EXTRACT_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url"],
+    "properties": {
+        "url": {"type": "string"},
+        "schema": {"type": "object", "additionalProperties": True},
+        "prompt": {"type": "string"},
+    },
+}
+_WEB_READ_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url"],
+    "properties": {"url": {"type": "string"}},
+}
+_SITEMAP_FETCH_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["urls"],
+    "properties": {
+        "urls": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "maxItems": 20,
+        },
+        "timeout_s": {"type": "number", "minimum": 0.1, "maximum": 60},
+        "max_index_depth": {"type": "integer", "minimum": 0, "maximum": 4},
+        "max_entries": {"type": "integer", "minimum": 1, "maximum": 20000},
+    },
+}
+_REDDIT_SEARCH_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["subreddit", "query"],
+    "properties": {
+        "subreddit": {"type": "string"},
+        "query": {"type": "string"},
+        "sort": {"type": "string"},
+        "limit": {"type": "integer"},
+    },
+}
+_REDDIT_TOP_QUESTIONS_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["subreddit"],
+    "properties": {
+        "subreddit": {"type": "string"},
+        "time_filter": {"type": "string"},
+        "limit": {"type": "integer"},
+    },
+}
+_MOCK_SCENARIOS = [
+    "success",
+    "partial_success",
+    "provider_error",
+    "invalid_credentials",
+    "rate_limit",
+    "timeout",
+]
+_MOCK_ECHO_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["message"],
+    "properties": {
+        "message": {"type": "string"},
+        "scenario": {
+            "type": "string",
+            "enum": _MOCK_SCENARIOS,
+        },
+        "echo": {"type": "object", "additionalProperties": True},
+        "cost_cents": {"type": "integer"},
+    },
+}
+
+_CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
+    PluginManifest(
+        slug="core",
+        name="StackOS Core",
+        description="Domain-neutral project, workflow, run, context, auth, and catalog primitives.",
+        capabilities=[
+            CapabilityManifest(
+                key="plugin-catalog",
+                name="Plugin Catalog",
+                description="List plugins, capabilities, providers, and action schemas.",
+                kind="core",
+            ),
+            CapabilityManifest(
+                key="workflow-runtime",
+                name="Workflow Runtime",
+                description="Reusable workflow templates, run plans, runs, gates, and audit.",
+                kind="core",
+            ),
+            CapabilityManifest(
+                key="project-data",
+                name="Project Data",
+                description=(
+                    "Bounded project context, learnings, experiments, decisions, and artifacts."
+                ),
+                kind="core",
+            ),
+        ],
+        providers=[
+            ProviderManifest(
+                key="local-daemon",
+                name="Local StackOS Daemon",
+                description="Local storage, validation, grant enforcement, and audit provider.",
+                auth_type="local",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="local",
+                        label="Local daemon",
+                        auth_type="local",
+                        payload_format="none",
+                    )
+                ],
+            )
+        ],
+        actions=[
+            ActionManifest(
+                key="catalog.describe",
+                name="Describe Catalog",
+                description="Describe installed plugin catalog metadata.",
+                provider="local-daemon",
+                capability="plugin-catalog",
+                risk_level="read",
+                input_schema=_OBJECT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+            )
+        ],
+        resources=[
+            ResourceManifest(
+                key="project-note",
+                name="Project Note",
+                description="Domain-neutral project record for agent-visible context.",
+                schema_data=_TEXT_RECORD_SCHEMA,
+            ),
+            ResourceManifest(
+                key="learning",
+                name="Learning",
+                description="Durable observation or lesson derived from prior work.",
+                schema_data=_TEXT_RECORD_SCHEMA,
+            ),
+            ResourceManifest(
+                key="experiment",
+                name="Experiment",
+                description="Experiment definition or result summary owned by the project.",
+                schema_data=_OBJECT_SCHEMA,
+            ),
+        ],
+    ),
+    PluginManifest(
+        slug="utils",
+        name="Utilities",
+        description="Domain-neutral utility providers and actions reusable by any plugin.",
+        capabilities=[
+            CapabilityManifest(
+                key="image-generation",
+                name="Image Generation",
+                description="Generate image artifacts through configured providers.",
+                kind="utility",
+            ),
+            CapabilityManifest(
+                key="web-retrieval",
+                name="Web Retrieval",
+                description="Read, scrape, and normalize external web content.",
+                kind="utility",
+            ),
+            CapabilityManifest(
+                key="community-research",
+                name="Community Research",
+                description="Retrieve community discussions and question signals.",
+                kind="utility",
+            ),
+            CapabilityManifest(
+                key="integration-testing",
+                name="Integration Testing",
+                description="Exercise StackOS auth, grants, connector, and audit flow locally.",
+                kind="utility",
+            ),
+        ],
+        providers=[
+            ProviderManifest(
+                key="openai-images",
+                name="OpenAI Images",
+                description="Image generation provider.",
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                                placeholder="sk-...",
+                            )
+                        ],
+                    )
+                ],
+            ),
+            ProviderManifest(
+                key="firecrawl",
+                name="Firecrawl",
+                description="Web crawling and scraping provider.",
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                                placeholder="fc-...",
+                            )
+                        ],
+                    )
+                ],
+            ),
+            ProviderManifest(
+                key="jina",
+                name="Jina Reader",
+                description=(
+                    "Readable web document extraction provider; API key is optional "
+                    "for higher quota."
+                ),
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="API Key",
+                                type="secret",
+                                secret=True,
+                                required=False,
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Jina Reader can run without a key; add a daemon-held API key "
+                        "only when higher quota is needed."
+                    ),
+                },
+            ),
+            ProviderManifest(
+                key="reddit",
+                name="Reddit",
+                description="Reddit research provider using OAuth client credentials.",
+                auth_type="oauth-client-credentials",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="client_credentials",
+                        label="Client credentials",
+                        auth_type="oauth-client-credentials",
+                        payload_format="json",
+                        fields=[
+                            AuthFieldManifest(
+                                key="client_id",
+                                label="Client ID",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            ),
+                            AuthFieldManifest(
+                                key="client_secret",
+                                label="Client Secret",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            ),
+                            AuthFieldManifest(
+                                key="user_agent",
+                                label="User Agent",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            ),
+                        ],
+                    )
+                ],
+                config={
+                    "credential_payload": {
+                        "format": "json",
+                        "required_keys": ["client_id", "client_secret", "user_agent"],
+                        "secret_keys": ["client_secret"],
+                    },
+                    "setup_note": (
+                        "Store the OAuth app JSON in the encrypted payload; do not "
+                        "persist access tokens in agent-visible state."
+                    ),
+                },
+            ),
+            ProviderManifest(
+                key="mock-provider",
+                name="Mock Provider",
+                description=(
+                    "Local fake provider for end-to-end StackOS action execution tests "
+                    "without external API accounts."
+                ),
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="Fake API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                                placeholder="mock_...",
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Use any non-empty fake key. This provider never calls a vendor "
+                        "network, but it still goes through credential storage, run-plan "
+                        "grants, action execution, redaction, and audit."
+                    )
+                },
+            ),
+        ],
+        actions=[
+            ActionManifest(
+                key="image.generate",
+                name="Generate Image",
+                description=(
+                    "Generate and persist image artifacts through an explicit GPT Image "
+                    "model profile."
+                ),
+                provider="openai-images",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string"},
+                        "size": {
+                            "type": "string",
+                            "enum": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                        },
+                        "quality": {
+                            "type": "string",
+                            "enum": ["auto", "low", "medium", "high"],
+                        },
+                        "n": {"type": "integer"},
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "gpt-image-2",
+                                "gpt-image-1.5",
+                                "gpt-image-1",
+                                "gpt-image-1-mini",
+                            ],
+                        },
+                        "output_format": {"type": "string", "enum": ["webp", "png", "jpeg"]},
+                    },
+                },
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "openai-images",
+                    "operation": "image.generate",
+                    "requires_credential": True,
+                    "budget_kind": "openai-images",
+                    "enforce_budget": True,
+                    "default_model": "gpt-image-2",
+                    "model_profiles": {
+                        "gpt-image-2": {
+                            "qualities": ["auto", "low", "medium", "high"],
+                            "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                            "output_formats": ["webp", "png", "jpeg"],
+                            "transparent_background": False,
+                            "docs": [
+                                "https://developers.openai.com/api/docs/guides/image-generation",
+                                "https://developers.openai.com/api/reference/resources/images",
+                            ],
+                        },
+                        "gpt-image-1.5": {
+                            "qualities": ["auto", "low", "medium", "high"],
+                            "sizes": ["1024x1024", "1536x1024", "1024x1536"],
+                            "output_formats": ["webp", "png", "jpeg"],
+                            "docs": [
+                                "https://developers.openai.com/api/docs/guides/image-generation",
+                                "https://developers.openai.com/api/reference/resources/images",
+                            ],
+                        },
+                        "gpt-image-1": {
+                            "qualities": ["auto", "low", "medium", "high"],
+                            "sizes": ["1024x1024", "1536x1024", "1024x1536"],
+                            "output_formats": ["webp", "png", "jpeg"],
+                            "docs": [
+                                "https://developers.openai.com/api/docs/guides/image-generation",
+                                "https://developers.openai.com/api/reference/resources/images",
+                            ],
+                        },
+                        "gpt-image-1-mini": {
+                            "qualities": ["auto", "low", "medium", "high"],
+                            "sizes": ["1024x1024", "1536x1024", "1024x1536"],
+                            "output_formats": ["webp", "png", "jpeg"],
+                            "docs": [
+                                "https://developers.openai.com/api/docs/guides/image-generation",
+                                "https://developers.openai.com/api/reference/resources/images",
+                            ],
+                        },
+                    },
+                },
+            ),
+            ActionManifest(
+                key="web.scrape",
+                name="Scrape Web Page",
+                description="Fetch and normalize a web page.",
+                provider="firecrawl",
+                capability="web-retrieval",
+                risk_level="read",
+                input_schema=_WEB_SCRAPE_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "firecrawl",
+                    "operation": "scrape",
+                    "requires_credential": True,
+                    "budget_kind": "firecrawl",
+                    "enforce_budget": True,
+                },
+            ),
+            ActionManifest(
+                key="web.crawl",
+                name="Crawl Website",
+                description="Start a bounded Firecrawl crawl for an agent-selected site.",
+                provider="firecrawl",
+                capability="web-retrieval",
+                risk_level="cost",
+                input_schema=_WEB_CRAWL_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "firecrawl",
+                    "operation": "crawl",
+                    "requires_credential": True,
+                    "budget_kind": "firecrawl",
+                    "enforce_budget": True,
+                },
+            ),
+            ActionManifest(
+                key="web.map",
+                name="Map Website URLs",
+                description="Discover URLs from an agent-selected site.",
+                provider="firecrawl",
+                capability="web-retrieval",
+                risk_level="cost",
+                input_schema=_WEB_MAP_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "firecrawl",
+                    "operation": "map",
+                    "requires_credential": True,
+                    "budget_kind": "firecrawl",
+                    "enforce_budget": True,
+                },
+            ),
+            ActionManifest(
+                key="web.extract",
+                name="Extract Web Data",
+                description=(
+                    "Deferred Firecrawl structured extraction contract; execution needs "
+                    "async status polling before this action can be enabled."
+                ),
+                provider="firecrawl",
+                capability="web-retrieval",
+                risk_level="cost",
+                input_schema=_WEB_EXTRACT_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "operation": "extract",
+                    "execution_mode": "deferred-firecrawl-async-extract",
+                    "deferred_reason": (
+                        "Firecrawl extract submits an async job; enable this action only "
+                        "after StackOS has an explicit status-poll action and run-plan "
+                        "artifact contract."
+                    ),
+                    "docs": ["https://docs.firecrawl.dev/api-reference/endpoint/extract-post"],
+                },
+            ),
+            ActionManifest(
+                key="web.read",
+                name="Read Web Page",
+                description="Fetch a readable Markdown view of a URL through Jina Reader.",
+                provider="jina",
+                capability="web-retrieval",
+                risk_level="read",
+                input_schema=_WEB_READ_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "jina",
+                    "operation": "read",
+                    "requires_credential": False,
+                    "allows_credential": True,
+                    "budget_kind": "jina",
+                    "enforce_budget": False,
+                },
+            ),
+            ActionManifest(
+                key="sitemap.fetch",
+                name="Fetch Sitemap",
+                description="Fetch and parse public sitemap URLs with sitemap-index recursion.",
+                provider=None,
+                capability="web-retrieval",
+                risk_level="read",
+                input_schema=_SITEMAP_FETCH_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "sitemap",
+                    "operation": "fetch",
+                    "requires_credential": False,
+                    "allows_credential": False,
+                },
+            ),
+            ActionManifest(
+                key="reddit.search-subreddit",
+                name="Search Subreddit",
+                description="Search posts in a configured subreddit.",
+                provider="reddit",
+                capability="community-research",
+                risk_level="read",
+                input_schema=_REDDIT_SEARCH_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "reddit",
+                    "operation": "search_subreddit",
+                    "requires_credential": True,
+                },
+            ),
+            ActionManifest(
+                key="reddit.top-questions",
+                name="Top Reddit Posts",
+                description=(
+                    "Fetch raw top Reddit posts from a subreddit; the executing agent "
+                    "filters question-shaped titles when needed."
+                ),
+                provider="reddit",
+                capability="community-research",
+                risk_level="read",
+                input_schema=_REDDIT_TOP_QUESTIONS_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "reddit",
+                    "operation": "top_questions",
+                    "requires_credential": True,
+                },
+            ),
+            ActionManifest(
+                key="mock.echo",
+                name="Mock Provider Echo",
+                description=(
+                    "Local executable action for validating StackOS auth, grants, "
+                    "redaction, audit, and failure handling without provider accounts."
+                ),
+                provider="mock-provider",
+                capability="integration-testing",
+                risk_level="read",
+                input_schema=_MOCK_ECHO_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "mock-provider",
+                    "operation": "echo",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "scenarios": _MOCK_SCENARIOS,
+                    "docs": ["docs/integration-testing.md"],
+                },
+            ),
+        ],
+        resources=[
+            ResourceManifest(
+                key="generated-image",
+                name="Generated Image",
+                description="Generated image artifact metadata reusable by any workflow.",
+                schema_data=_ARTIFACT_RESOURCE_SCHEMA,
+            ),
+            ResourceManifest(
+                key="web-document",
+                name="Web Document",
+                description="Retrieved or normalized web document metadata.",
+                schema_data=_OBJECT_SCHEMA,
+            ),
+        ],
+    ),
+)
+
+
+def _combined_builtin_plugin_manifests() -> tuple[PluginManifest, ...]:
+    manifests = {manifest.slug: manifest for manifest in _CODE_PLUGIN_MANIFESTS}
+    manifests.update({manifest.slug: manifest for manifest in load_plugin_manifest_files()})
+    return tuple(sorted(manifests.values(), key=lambda manifest: manifest.slug))
+
+
+BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = _combined_builtin_plugin_manifests()
+
+__all__ = [
+    "BUILTIN_PLUGIN_MANIFESTS",
+    "ActionManifest",
+    "CapabilityManifest",
+    "PluginManifest",
+    "ProviderManifest",
+    "ResourceManifest",
+    "load_plugin_manifest_file",
+    "load_plugin_manifest_files",
+]

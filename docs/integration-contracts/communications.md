@@ -739,7 +739,7 @@ Do not add provider-specific MCP tools such as `telegram.sendMessage` or
 
 ### Telegram Actions
 
-Connector file: `content_stack/actions/telegram_bot.py`
+Connector file: `stackos/actions/telegram_bot.py`
 
 Action refs:
 
@@ -816,7 +816,7 @@ Validation rules:
 
 ### SMTP Actions
 
-Connector file: `content_stack/actions/smtp.py`
+Connector file: `stackos/actions/smtp.py`
 
 Action refs:
 
@@ -836,7 +836,7 @@ Validation rules:
 
 ### IMAP Actions
 
-Connector file: `content_stack/actions/imap.py`
+Connector file: `stackos/actions/imap.py`
 
 Action refs:
 

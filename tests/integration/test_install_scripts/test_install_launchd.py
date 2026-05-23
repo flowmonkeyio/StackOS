@@ -52,7 +52,7 @@ def _run(
         text=True,
         env={
             **os.environ,
-            "CONTENT_STACK_HOME": str(home),
+            "STACKOS_HOME": str(home),
             "PATH": f"{launchctl_dir}{os.pathsep}{os.environ['PATH']}",
         },
     )
@@ -64,26 +64,26 @@ def test_writes_plist_with_substitutions(
     _ = repo_root
     result = _run(scripts_dir, sandbox_home, launchctl_stub)
     assert result.returncode == 0, result.stderr
-    plist = sandbox_home / "Library" / "LaunchAgents" / "com.content-stack.daemon.plist"
+    plist = sandbox_home / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
     assert plist.is_file()
     content = plist.read_text(encoding="utf-8")
     # The CLI owns the plist and runs the package module directly.
     assert "<string>-m</string>" in content
-    assert "<string>content_stack</string>" in content
+    assert "<string>stackos</string>" in content
     assert "<string>serve</string>" in content
     assert str(sandbox_home) in content
     assert "auth.token" not in content
     assert "seed.bin" not in content
     assert "Authorization" not in content
     assert "Bearer" not in content
-    assert "CONTENT_STACK_TOKEN" not in content
+    assert "STACKOS_TOKEN" not in content
     # Label is the stable identifier we'll boot out later.
-    assert "<string>com.content-stack.daemon</string>" in content
+    assert "<string>com.stackos.daemon</string>" in content
 
 
 def test_idempotent_no_op(sandbox_home: Path, scripts_dir: Path, launchctl_stub: Path) -> None:
     _run(scripts_dir, sandbox_home, launchctl_stub)
-    plist = sandbox_home / "Library" / "LaunchAgents" / "com.content-stack.daemon.plist"
+    plist = sandbox_home / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
     first = plist.read_bytes()
 
     second = _run(scripts_dir, sandbox_home, launchctl_stub)
@@ -97,7 +97,7 @@ def test_force_overwrites_with_bak(
 ) -> None:
     plist_dir = sandbox_home / "Library" / "LaunchAgents"
     plist_dir.mkdir(parents=True, exist_ok=True)
-    plist = plist_dir / "com.content-stack.daemon.plist"
+    plist = plist_dir / "com.stackos.daemon.plist"
     plist.write_text("<plist><dict>obsolete</dict></plist>\n", encoding="utf-8")
 
     result = _run(scripts_dir, sandbox_home, launchctl_stub, "--force")
@@ -114,7 +114,7 @@ def test_diff_without_force_aborts_in_non_tty(
 ) -> None:
     plist_dir = sandbox_home / "Library" / "LaunchAgents"
     plist_dir.mkdir(parents=True, exist_ok=True)
-    plist = plist_dir / "com.content-stack.daemon.plist"
+    plist = plist_dir / "com.stackos.daemon.plist"
     plist.write_text("<plist><dict>different</dict></plist>\n", encoding="utf-8")
 
     result = _run(scripts_dir, sandbox_home, launchctl_stub)
@@ -128,7 +128,7 @@ def test_uninstall_removes_plist(
     sandbox_home: Path, scripts_dir: Path, launchctl_stub: Path
 ) -> None:
     _run(scripts_dir, sandbox_home, launchctl_stub)
-    plist = sandbox_home / "Library" / "LaunchAgents" / "com.content-stack.daemon.plist"
+    plist = sandbox_home / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
     assert plist.is_file()
 
     result = _run(scripts_dir, sandbox_home, launchctl_stub, "--uninstall")

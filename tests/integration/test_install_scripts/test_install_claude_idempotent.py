@@ -18,7 +18,7 @@ def _run(script: Path, home: Path) -> str:
         ["bash", str(script)],
         capture_output=True,
         text=True,
-        env={**os.environ, "CONTENT_STACK_HOME": str(home)},
+        env={**os.environ, "STACKOS_HOME": str(home)},
         check=True,
     )
     return result.stdout
@@ -33,7 +33,7 @@ def _snapshot(target: Path) -> dict[str, bytes]:
 def test_install_claude_creates_target(
     sandbox_home: Path, scripts_dir: Path, repo_root: Path
 ) -> None:
-    target = sandbox_home / ".claude" / "skills" / "content-stack"
+    target = sandbox_home / ".claude" / "skills" / "stackos"
     assert not target.exists()
     output = _run(scripts_dir / "install-claude.sh", sandbox_home)
     expected = sum(1 for _ in (repo_root / "skills").rglob("SKILL.md"))
@@ -42,7 +42,7 @@ def test_install_claude_creates_target(
 
 def test_install_claude_idempotent(sandbox_home: Path, scripts_dir: Path) -> None:
     _run(scripts_dir / "install-claude.sh", sandbox_home)
-    target = sandbox_home / ".claude" / "skills" / "content-stack"
+    target = sandbox_home / ".claude" / "skills" / "stackos"
     snap1 = _snapshot(target)
     _run(scripts_dir / "install-claude.sh", sandbox_home)
     snap2 = _snapshot(target)
@@ -53,7 +53,7 @@ def test_install_claude_matches_source(
     sandbox_home: Path, scripts_dir: Path, repo_root: Path
 ) -> None:
     _run(scripts_dir / "install-claude.sh", sandbox_home)
-    target = sandbox_home / ".claude" / "skills" / "content-stack"
+    target = sandbox_home / ".claude" / "skills" / "stackos"
     cmp = filecmp.dircmp(str(repo_root / "skills"), str(target))
     assert cmp.left_only == [] or cmp.left_only == [".DS_Store"]
     assert cmp.right_only == []

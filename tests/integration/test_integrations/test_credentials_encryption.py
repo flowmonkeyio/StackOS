@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from sqlmodel import Session
 
-from content_stack.repositories.projects import IntegrationCredentialRepository
+from stackos.repositories.projects import IntegrationCredentialRepository
 
 
 def test_set_then_get_decrypted_round_trips_payload(session: Session, project_id: int) -> None:
@@ -67,8 +67,8 @@ def test_cross_machine_seed_swap_breaks_decryption(
     """
     import pytest
 
-    from content_stack.crypto.aes_gcm import CryptoError, configure_seed_path
-    from content_stack.crypto.seed import ensure_seed_file
+    from stackos.crypto.aes_gcm import CryptoError, configure_seed_path
+    from stackos.crypto.seed import ensure_seed_file
 
     repo = IntegrationCredentialRepository(session)
     out = repo.set(project_id=project_id, kind="firecrawl", secret_payload=b"original")

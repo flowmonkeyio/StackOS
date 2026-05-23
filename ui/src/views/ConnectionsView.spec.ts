@@ -254,6 +254,7 @@ describe('ConnectionsView', () => {
 
   it('creates Telegram bot profiles without posting bot tokens to the profile operation', async () => {
     let connected = false
+    let telegramTested = false
     const postedBodies: unknown[] = []
     const botProfiles: unknown[] = []
 
@@ -278,11 +279,27 @@ describe('ConnectionsView', () => {
                 authConnection({
                   revokedAt: null,
                   providerKey: 'telegram-bot',
+                  credentialRef: 'cred_telegram_unidentified',
+                  authType: 'bot-token',
+                  authMethodKey: 'bot-token',
+                  profileKey: 'default',
+                  label: 'Untested Bot',
+                }),
+                authConnection({
+                  revokedAt: null,
+                  providerKey: 'telegram-bot',
                   credentialRef: 'cred_telegram',
                   authType: 'bot-token',
                   authMethodKey: 'bot-token',
                   profileKey: 'support',
                   label: 'Support Bot',
+                  account: telegramTested
+                    ? {
+                        provider_account_id: '123456',
+                        display_name: '@support_bot',
+                        metadata_json: { username: 'support_bot', bot_id: 123456 },
+                      }
+                    : null,
                 }),
               ]
             : [],
@@ -304,6 +321,24 @@ describe('ConnectionsView', () => {
           },
           201,
         )
+      }
+      if (url === '/api/v1/projects/1/auth/test') {
+        telegramTested = true
+        return json({
+          data: {
+            credential_ref: 'cred_telegram',
+            provider_key: 'telegram-bot',
+            ok: true,
+            status: 'ok',
+            summary: 'telegram-bot credentials are reachable',
+            checked_at: '2026-05-23T00:00:00Z',
+            retryable: false,
+            next_action: null,
+            metadata: { username: 'support_bot', bot_id: 123456, is_bot: true },
+          },
+          run_id: null,
+          project_id: 1,
+        })
       }
       if (url === '/api/v1/operations/communicationBotProfile.list/call') {
         return json({ items: botProfiles, next_cursor: null, total_estimate: botProfiles.length })
@@ -359,16 +394,14 @@ describe('ConnectionsView', () => {
       .find<HTMLInputElement>('input[placeholder="Primary account"]')
       .setValue('Support Bot')
     await wrapper.find<HTMLInputElement>('input[placeholder="default"]').setValue('support')
-    await wrapper
-      .find<HTMLInputElement>('input[placeholder="http://127.0.0.1:8081"]')
-      .setValue('http://127.0.0.1:8081')
+    expect(wrapper.text()).toContain('Advanced connection settings')
+    expect(wrapper.text()).not.toContain('Bot API Base URL')
     await clickButton(wrapper, 'Save connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Support Bot'))
 
     await clickButton(wrapper, 'Add bot profile')
-    await wrapper
-      .find<HTMLInputElement>('input[placeholder="@support_bot"]')
-      .setValue('@support_bot')
+    expect(wrapper.find<HTMLInputElement>('input[placeholder="@support_bot"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Telegram identity: @support_bot')
     await wrapper
       .find<HTMLTextAreaElement>('textarea[placeholder^="Handle support"]')
       .setValue('Handle support requests from approved Telegram users.')
@@ -394,6 +427,7 @@ describe('ConnectionsView', () => {
         project_id: 1,
         key: 'support-bot',
         auth_profile_key: 'support',
+        bot_username: 'support_bot',
         identity: {
           display_name: 'Support Bot',
           purpose: 'Handle support requests from approved Telegram users.',
@@ -483,6 +517,7 @@ function authConnection({
   authMethodKey = 'api_key',
   profileKey = 'default',
   label = 'Primary Firecrawl',
+  account = null,
 }: {
   revokedAt: string | null
   status?: string
@@ -492,6 +527,7 @@ function authConnection({
   authMethodKey?: string
   profileKey?: string
   label?: string
+  account?: Record<string, unknown> | null
 }) {
   return {
     credential_ref: credentialRef,
@@ -506,7 +542,7 @@ function authConnection({
     last_tested_at: null,
     revoked_at: revokedAt,
     scopes: [],
-    account: null,
+    account,
     setup_required: revokedAt !== null || status === 'failed',
   }
 }
@@ -565,11 +601,13 @@ function telegramBotMethod() {
         },
         {
           key: 'api_base_url',
-          label: 'Bot API Base URL',
+          label: 'Local Bot API URL',
           type: 'text',
           secret: false,
           required: false,
           placeholder: 'http://127.0.0.1:8081',
+          description:
+            "Leave blank for Telegram's hosted Bot API. Use only with the official self-hosted Telegram Bot API server.",
         },
       ],
       config: null,

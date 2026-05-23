@@ -7,12 +7,12 @@ from datetime import timedelta
 import pytest
 from sqlmodel import Session
 
-from content_stack.db.models import AgentRequest, AgentRequestStatus
-from content_stack.repositories.agent_requests import AgentRequestRepository
-from content_stack.repositories.base import ConflictError, NotFoundError, ValidationError
-from content_stack.repositories.projects import ProjectRepository
-from content_stack.repositories.resources import ResourceRepository
-from content_stack.repositories.run_plans import RunPlanRepository
+from stackos.db.models import AgentRequest, AgentRequestStatus
+from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
+from stackos.repositories.projects import ProjectRepository
+from stackos.repositories.resources import ResourceRepository
+from stackos.repositories.run_plans import RunPlanRepository
 
 
 def _run_plan_json() -> dict:

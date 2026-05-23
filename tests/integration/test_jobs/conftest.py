@@ -9,9 +9,9 @@ import pytest
 from sqlalchemy import text
 from sqlmodel import SQLModel
 
-from content_stack.crypto.aes_gcm import configure_seed_path
-from content_stack.crypto.seed import ensure_seed_file
-from content_stack.db.connection import make_memory_engine
+from stackos.crypto.aes_gcm import configure_seed_path
+from stackos.crypto.seed import ensure_seed_file
+from stackos.db.connection import make_memory_engine
 
 
 @pytest.fixture(scope="session", autouse=True)

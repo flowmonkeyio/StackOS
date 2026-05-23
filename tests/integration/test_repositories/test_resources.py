@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlmodel import Session
 
-from content_stack.repositories.resources import ArtifactRepository, ResourceRepository
+from stackos.repositories.resources import ArtifactRepository, ResourceRepository
 
 
 def test_resource_catalog_and_record_upsert(session: Session, project_id: int) -> None:

@@ -7,7 +7,7 @@ import json
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from content_stack.db.models import MetricSnapshot
+from stackos.db.models import MetricSnapshot
 
 
 def test_project_memory_routes_create_and_query_sanitized_context(

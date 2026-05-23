@@ -6,7 +6,7 @@ Scope: executable connector contracts for OpenAI Images, Firecrawl, Jina Reader,
 
 ## StackOS Contract Boundary
 
-Current code has the right architectural split: actions are static contracts, connectors are small execution adapters, agents choose strategy, and plaintext credentials stay inside daemon-side connector requests. The core contract lives in `content_stack/actions/connectors.py:24`, `content_stack/actions/connectors.py:46`, and `content_stack/actions/connectors.py:56`; connector registration is explicit in `content_stack/actions/__init__.py:40`. Manifest parsing rejects secret-looking static config in `content_stack/actions/manifest.py:44` and derives executable fields in `content_stack/actions/manifest.py:96`. Availability is static and project-aware in `content_stack/action_availability.py:108`.
+Current code has the right architectural split: actions are static contracts, connectors are small execution adapters, agents choose strategy, and plaintext credentials stay inside daemon-side connector requests. The core contract lives in `stackos/actions/connectors.py:24`, `stackos/actions/connectors.py:46`, and `stackos/actions/connectors.py:56`; connector registration is explicit in `stackos/actions/__init__.py:40`. Manifest parsing rejects secret-looking static config in `stackos/actions/manifest.py:44` and derives executable fields in `stackos/actions/manifest.py:96`. Availability is static and project-aware in `stackos/action_availability.py:108`.
 
 Important consequence: provider docs should shape action schemas and connector comments, but provider-specific decisions should not move into connectors. Connectors should validate payload shape, resolve daemon-held credentials, call one documented provider operation, normalize safe output, surface rate-limit/error metadata, and record audit.
 
@@ -29,23 +29,23 @@ Important consequence: provider docs should shape action schemas and connector c
 
 | Connector key | Action refs | Current implementation refs | Manifest refs | Auth/setup implication |
 | --- | --- | --- | --- | --- |
-| `openai-images` | `utils.image.generate` | `content_stack/actions/openai_images.py:17`, `content_stack/integrations/openai_images.py:22` | `content_stack/plugins/manifest.py:372`, `content_stack/plugins/manifest.py:398` | API key payload; budget enforced by `openai-images` kind. |
-| `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map` | `content_stack/actions/firecrawl.py`, `content_stack/integrations/firecrawl.py:24` | `content_stack/plugins/manifest.py` built-in utils actions | Bearer API key payload; budget enforced by `firecrawl`; `utils.web.extract` is deferred, not executable. |
-| `jina` | `utils.web.read` | `content_stack/actions/jina.py`, `content_stack/integrations/jina_reader.py:17` | `content_stack/plugins/manifest.py:384`, `content_stack/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
-| `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `content_stack/actions/reddit.py`, `content_stack/integrations/reddit.py:29` | `content_stack/plugins/manifest.py:390`, `content_stack/plugins/manifest.py:542`, `content_stack/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
-| `sitemap` | `utils.sitemap.fetch` | `content_stack/actions/sitemap.py`, `content_stack/integrations/sitemap.py:84` | `content_stack/plugins/manifest.py:525` | No provider and no credential. |
-| `dataforseo` | `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract` | `content_stack/actions/dataforseo.py`, `content_stack/integrations/dataforseo.py:25` | `plugins/seo/plugin.yaml:20`, `plugins/seo/plugin.yaml:36`, `plugins/seo/plugin.yaml:66`, `plugins/seo/plugin.yaml:94` | Basic auth: `login` in credential config and password in encrypted payload. |
-| `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `content_stack/actions/ahrefs.py`, `content_stack/integrations/ahrefs.py:22` | `plugins/seo/plugin.yaml:31`, `plugins/seo/plugin.yaml:120`, `plugins/seo/plugin.yaml:148` | Bearer API key payload; requires eligible paid plan/API units. |
-| `wordpress` | `publishing.wordpress.post.create` | `content_stack/actions/wordpress.py`, `content_stack/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
-| `ghost` | `publishing.ghost.post.create` | `content_stack/actions/ghost.py`, `content_stack/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
-| `http` | plugin-defined custom actions only | `content_stack/actions/http.py:170` | documented in `docs/plugins.md:77`; no first-party manifest row | Static plugin config supplies URL/method/auth mode; daemon injects credential if allowed. |
+| `openai-images` | `utils.image.generate` | `stackos/actions/openai_images.py:17`, `stackos/integrations/openai_images.py:22` | `stackos/plugins/manifest.py:372`, `stackos/plugins/manifest.py:398` | API key payload; budget enforced by `openai-images` kind. |
+| `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map` | `stackos/actions/firecrawl.py`, `stackos/integrations/firecrawl.py:24` | `stackos/plugins/manifest.py` built-in utils actions | Bearer API key payload; budget enforced by `firecrawl`; `utils.web.extract` is deferred, not executable. |
+| `jina` | `utils.web.read` | `stackos/actions/jina.py`, `stackos/integrations/jina_reader.py:17` | `stackos/plugins/manifest.py:384`, `stackos/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
+| `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `stackos/actions/reddit.py`, `stackos/integrations/reddit.py:29` | `stackos/plugins/manifest.py:390`, `stackos/plugins/manifest.py:542`, `stackos/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
+| `sitemap` | `utils.sitemap.fetch` | `stackos/actions/sitemap.py`, `stackos/integrations/sitemap.py:84` | `stackos/plugins/manifest.py:525` | No provider and no credential. |
+| `dataforseo` | `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract` | `stackos/actions/dataforseo.py`, `stackos/integrations/dataforseo.py:25` | `plugins/seo/plugin.yaml:20`, `plugins/seo/plugin.yaml:36`, `plugins/seo/plugin.yaml:66`, `plugins/seo/plugin.yaml:94` | Basic auth: `login` in credential config and password in encrypted payload. |
+| `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `stackos/actions/ahrefs.py`, `stackos/integrations/ahrefs.py:22` | `plugins/seo/plugin.yaml:31`, `plugins/seo/plugin.yaml:120`, `plugins/seo/plugin.yaml:148` | Bearer API key payload; requires eligible paid plan/API units. |
+| `wordpress` | `publishing.wordpress.post.create` | `stackos/actions/wordpress.py`, `stackos/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
+| `ghost` | `publishing.ghost.post.create` | `stackos/actions/ghost.py`, `stackos/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
+| `http` | plugin-defined custom actions only | `stackos/actions/http.py:170` | documented in `docs/plugins.md:77`; no first-party manifest row | Static plugin config supplies URL/method/auth mode; daemon injects credential if allowed. |
 
 ## Cross-Cutting Contract Principles
 
 - Keep action refs provider-specific when provider schemas differ. The current `utils.*`, `seo.*`, and `publishing.*` refs are acceptable because the provider is part of the manifest and connector config; do not add generic `post.create`, `keyword.research`, or `campaign.create` as an executable abstraction without a project-local plugin that owns the mapping.
 - Inputs should be explicit request payloads, not goals. For example, `publishing.ghost.post.create` receives a Ghost Admin API post payload; it should not decide title, status, author, tags, or schedule.
-- Output should be safe JSON plus provenance. The shared `_result()` wrapper currently adds vendor and operation metadata in `content_stack/actions/vendor_utils.py`, while OpenAI Images strips `b64_json` when persisted by `content_stack/integrations/openai_images.py:110`.
-- Rate-limit behavior must be visible at the action-call boundary. `BaseIntegration` has token-bucket pacing and retries for 429/5xx in `content_stack/integrations/_base.py:177`, but generic HTTP does not use that base and currently collapses HTTP errors to status-only validation errors in `content_stack/actions/http.py:230`.
+- Output should be safe JSON plus provenance. The shared `_result()` wrapper currently adds vendor and operation metadata in `stackos/actions/vendor_utils.py`, while OpenAI Images strips `b64_json` when persisted by `stackos/integrations/openai_images.py:110`.
+- Rate-limit behavior must be visible at the action-call boundary. `BaseIntegration` has token-bucket pacing and retries for 429/5xx in `stackos/integrations/_base.py:177`, but generic HTTP does not use that base and currently collapses HTTP errors to status-only validation errors in `stackos/actions/http.py:230`.
 - Budget availability is only meaningful when pre-call estimates or post-call actual costs match provider billing. DataForSEO reconciles `tasks[].cost`; Ahrefs currently has `estimate_cost_cents == 0` despite API-unit billing.
 - Pagination/status contracts must be modeled as actions before templates rely on them. Firecrawl crawl currently starts a job and returns an id, but the docs require polling `GET /v2/crawl/{id}` and following `next` when the result exceeds 10 MB.
 
@@ -73,14 +73,14 @@ Current: three executable utility actions map to v2 `scrape`, `crawl`, and `map`
 Gaps/mismatches:
 
 - `web.crawl` only starts the crawl job. Official v2 crawl returns `id`/`url`; result retrieval requires `GET /v2/crawl/{id}` and may return `next` for large results. There is no `utils.web.crawl-status` action yet.
-- Current `scrape.formats` validation only accepts string arrays in `content_stack/actions/firecrawl.py`, while Firecrawl v2 documents string and object format entries such as JSON extraction and screenshot objects.
+- Current `scrape.formats` validation only accepts string arrays in `stackos/actions/firecrawl.py`, while Firecrawl v2 documents string and object format entries such as JSON extraction and screenshot objects.
 - `map` does not expose documented `limit`, `sitemap`, `includeSubdomains`, `ignoreQueryParameters`, or location options.
 - Resolved for agent safety: `extract` is no longer wired as executable. The wrapper implementation remains a daemon helper until a status action and output artifact contract exist.
 
 Recommended corrections:
 
 - Before templates assume crawl content, add a separate status/pagination action or rename/describe `utils.web.crawl` as a submit-only action everywhere.
-- Link `content_stack/integrations/firecrawl.py` comments to the v2 endpoint pages and error docs.
+- Link `stackos/integrations/firecrawl.py` comments to the v2 endpoint pages and error docs.
 - Expand schemas only when each additional option has bounded defaults and budget implications, especially `proxy`, `actions`, and `maxConcurrency`.
 
 ### Jina Reader
@@ -89,8 +89,8 @@ Current: `utils.web.read` maps to `https://r.jina.ai/{url}` with optional bearer
 
 Gaps/mismatches:
 
-- Provider manifest says `auth_type="api-key"` in `content_stack/plugins/manifest.py:384`, which may imply setup is required even though execution works without a credential.
-- The wrapper builds `https://r.jina.ai/{url}` directly in `content_stack/integrations/jina_reader.py:36`. That matches the Reader pattern, but input validation should explicitly require absolute `http(s)` target URLs before concatenation.
+- Provider manifest says `auth_type="api-key"` in `stackos/plugins/manifest.py:384`, which may imply setup is required even though execution works without a credential.
+- The wrapper builds `https://r.jina.ai/{url}` directly in `stackos/integrations/jina_reader.py:36`. That matches the Reader pattern, but input validation should explicitly require absolute `http(s)` target URLs before concatenation.
 - No response-size/token-budget contract is attached to action output; Reader pages can be large.
 
 Recommended corrections:
@@ -107,7 +107,7 @@ Gaps/mismatches:
 
 - Resolved in the manifest: Reddit now declares `auth_type="oauth-client-credentials"` with credential payload metadata for `client_id`, `client_secret`, and `user_agent`. The wrapper still needs richer pagination and enum validation.
 - Reddit listing pagination uses `after`/`before`, `limit`, `count`, and `show`; actions expose only `limit`, so callers cannot page beyond the first listing slice.
-- `sort` and `time_filter` are unbounded strings in `content_stack/actions/reddit.py`, so invalid provider enum values reach Reddit.
+- `sort` and `time_filter` are unbounded strings in `stackos/actions/reddit.py`, so invalid provider enum values reach Reddit.
 - Resolved in the manifest: `top_questions` is described as raw top Reddit posts, and the executing agent owns any question-shaped filtering.
 
 Recommended corrections:
@@ -117,13 +117,13 @@ Recommended corrections:
 
 ### DataForSEO
 
-Current: SEO actions call DataForSEO live endpoints via Basic auth. `login` lives in credential config; password lives in the encrypted payload. Cost reconciliation reads `tasks[].cost` in `content_stack/integrations/dataforseo.py:57`.
+Current: SEO actions call DataForSEO live endpoints via Basic auth. `login` lives in credential config; password lives in the encrypted payload. Cost reconciliation reads `tasks[].cost` in `stackos/integrations/dataforseo.py:57`.
 
 Gaps/mismatches:
 
 - Resolved: keyword volume now caps requests at 1000 keywords and the wrapper default QPS is 0.2, matching the Google Ads Live 12 requests/minute contract.
 - Resolved: SERP live depth is capped at 100 for the exposed `seo.serp.analyze` action.
-- DataForSEO docs distinguish current and legacy Labs routes. The wrapper uses `/dataforseo_labs/google/.../live` in `content_stack/integrations/dataforseo.py:127` and `content_stack/integrations/dataforseo.py:145`; comments should link current route docs so maintainers do not accidentally follow legacy pages.
+- DataForSEO docs distinguish current and legacy Labs routes. The wrapper uses `/dataforseo_labs/google/.../live` in `stackos/integrations/dataforseo.py:127` and `stackos/integrations/dataforseo.py:145`; comments should link current route docs so maintainers do not accidentally follow legacy pages.
 - `domain_intersection` and `keywords_for_site` are implemented in the connector but not exposed as plugin actions, except Ahrefs equivalents. That is okay, but undocumented dormant operations can confuse future action expansion.
 
 Recommended corrections:
@@ -141,7 +141,7 @@ Gaps/mismatches:
 - Resolved for agent safety: Ahrefs actions no longer claim StackOS budget enforcement while the connector does not read API-unit headers.
 - Wrapper does not read Ahrefs cost headers such as `x-api-units-cost-total-actual`, even though official docs say those headers are the source of unit consumption.
 - API v3 docs emphasize eligible paid plans and API key limits. Manifest has no setup note for plan eligibility or key-level limits.
-- `mode` for backlinks is a free string in `content_stack/actions/ahrefs.py`; constrain to documented modes before expanding.
+- `mode` for backlinks is a free string in `stackos/actions/ahrefs.py`; constrain to documented modes before expanding.
 
 Recommended corrections:
 
@@ -155,9 +155,9 @@ Current: `publishing.wordpress.post.create` sends a raw REST post payload to `/w
 
 Gaps/mismatches:
 
-- `auth_type: api-key` in `plugins/publishing/plugin.yaml:15` is semantically loose. The actual credential is username plus application password, parsed in `content_stack/integrations/wordpress.py:33`.
+- `auth_type: api-key` in `plugins/publishing/plugin.yaml:15` is semantically loose. The actual credential is username plus application password, parsed in `stackos/integrations/wordpress.py:33`.
 - WordPress docs require HTTPS for Application Passwords in normal remote use. The setup field is a URL but does not document HTTPS expectation.
-- Current credential test calls `users/me?context=edit`, but post creation also needs the user capability to create posts; roles are returned in `content_stack/integrations/wordpress.py:87`, but availability does not reflect publish capability.
+- Current credential test calls `users/me?context=edit`, but post creation also needs the user capability to create posts; roles are returned in `stackos/integrations/wordpress.py:87`, but availability does not reflect publish capability.
 - No media upload, post update, status transition, taxonomy lookup, or pagination actions exist. That is fine, but templates should not assume these are available.
 
 Recommended corrections:
@@ -172,8 +172,8 @@ Current: `publishing.ghost.post.create` signs an Admin API key into a short-live
 
 Gaps/mismatches:
 
-- Setup label says `Admin URL` in `plugins/publishing/plugin.yaml:30`, while the wrapper appends `/ghost/api/admin/...` in `content_stack/integrations/ghost.py:94`. This should be documented as the Ghost site/admin domain root, not a full endpoint URL.
-- Default `api_version` is `v5.0` in `content_stack/actions/ghost.py`; current Ghost installs may use newer API versions. The contract should specify which Admin API version is targeted and test against it.
+- Setup label says `Admin URL` in `plugins/publishing/plugin.yaml:30`, while the wrapper appends `/ghost/api/admin/...` in `stackos/integrations/ghost.py:94`. This should be documented as the Ghost site/admin domain root, not a full endpoint URL.
+- Default `api_version` is `v5.0` in `stackos/actions/ghost.py`; current Ghost installs may use newer API versions. The contract should specify which Admin API version is targeted and test against it.
 - Only `source: html` is allowed in the manifest in `plugins/publishing/plugin.yaml:99`; that matches the current connector, but image upload and mobiledoc/lexical pathways are absent.
 - No image upload, post update, scheduling status validation, or pagination actions exist.
 
@@ -189,9 +189,9 @@ Current: no-auth public sitemap fetch with XML parsing, recursion caps, byte cap
 
 Gaps/mismatches:
 
-- The wrapper caps each response at 10 MiB in `content_stack/integrations/sitemap.py:45`, while the protocol allows 50 MB uncompressed and 50,000 URLs. This lower cap is a deliberate daemon safety choice, but it should be documented as such in action output/contract docs.
-- Connector validation allows `max_entries` up to 20,000 in `content_stack/actions/sitemap.py`, while wrapper default is 5,000 in `content_stack/integrations/sitemap.py:60`. That is okay, but templates should choose conservative values.
-- Namespace comments cite sitemaps.org already in `content_stack/integrations/sitemap.py:38`; good.
+- The wrapper caps each response at 10 MiB in `stackos/integrations/sitemap.py:45`, while the protocol allows 50 MB uncompressed and 50,000 URLs. This lower cap is a deliberate daemon safety choice, but it should be documented as such in action output/contract docs.
+- Connector validation allows `max_entries` up to 20,000 in `stackos/actions/sitemap.py`, while wrapper default is 5,000 in `stackos/integrations/sitemap.py:60`. That is okay, but templates should choose conservative values.
+- Namespace comments cite sitemaps.org already in `stackos/integrations/sitemap.py:38`; good.
 
 Recommended corrections:
 
@@ -205,8 +205,8 @@ Current: `http` is a static custom HTTP/Webhook connector for plugin-authored ac
 Gaps/mismatches:
 
 - No retry/rate-limit policy is applied. Unlike vendor integrations, this connector does not use `BaseIntegration`.
-- HTTP errors lose response body/details: any status >=400 raises `ValidationError` with only the status in `content_stack/actions/http.py:232`.
-- Static headers reject secret-looking names in `content_stack/actions/http.py:45`, but custom header auth intentionally injects a credential header at execution time in `content_stack/actions/http.py:214`. That split is good and should be documented in plugin-authoring examples.
+- HTTP errors lose response body/details: any status >=400 raises `ValidationError` with only the status in `stackos/actions/http.py:232`.
+- Static headers reject secret-looking names in `stackos/actions/http.py:45`, but custom header auth intentionally injects a credential header at execution time in `stackos/actions/http.py:214`. That split is good and should be documented in plugin-authoring examples.
 - SSRF/sensitive-network policy is not visible here. The static URL constraint helps, but project-local plugin installation should have review/approval around private network targets.
 
 Recommended corrections:
@@ -217,10 +217,10 @@ Recommended corrections:
 
 ## Action Availability Implications
 
-- `missing_connector` is reliable because registry keys are explicit in `content_stack/actions/__init__.py:40`.
+- `missing_connector` is reliable because registry keys are explicit in `stackos/actions/__init__.py:40`.
 - `missing_credential` is reliable for required credentials, but setup semantics can still be misleading when manifests use `auth_type: api-key` for OAuth/client-secret pairs or username/application-password pairs.
 - `missing_budget` is reliable as a gate, but not necessarily as a cost control. Ahrefs currently estimates zero. Reddit/Jina/WordPress/Ghost/sitemap/HTTP do not enforce budgets.
-- Optional credentials work for Jina because the manifest has `requires_credential: false` and `allows_credential: true` in `content_stack/plugins/manifest.py:515`.
+- Optional credentials work for Jina because the manifest has `requires_credential: false` and `allows_credential: true` in `stackos/plugins/manifest.py:515`.
 - Provider-disabled/plugin-disabled statuses are generic and correct, but they do not express provider-specific plan eligibility, scopes, roles, or endpoint permissions.
 
 ## Gaps Before Expanding Actions
@@ -235,19 +235,19 @@ Recommended corrections:
 
 ## Recommended Manifest/Template/Code Comments
 
-- `content_stack/integrations/openai_images.py`: keep links to the Image generation guide and Images API reference beside `_IMAGE_COSTS`; refresh GPT Image pricing on provider-doc audits.
-- `content_stack/plugins/manifest.py`: add new GPT Image model profiles only when their size, quality, format, and cost semantics are documented.
-- `content_stack/integrations/firecrawl.py`: link each method to Firecrawl v2 endpoint docs; add a comment that `crawl()` submits a job only.
-- `content_stack/plugins/manifest.py`: rename/describe `utils.web.crawl` as submit-only unless a crawl-status action is added.
-- `content_stack/integrations/jina_reader.py`: link Reader API and validate absolute target URL shape before path concatenation.
-- `content_stack/plugins/manifest.py`: add optional-auth setup copy for Jina.
-- `content_stack/plugins/manifest.py`: add Reddit auth method fields for `client_id` and `user_agent`; keep `client_secret` daemon-side.
-- `content_stack/integrations/reddit.py`: link OAuth2/Data API docs and document listing pagination headers/fields.
-- `content_stack/integrations/dataforseo.py`: link exact endpoint docs above each method; note keyword volume 12 RPM and task-size limits.
+- `stackos/integrations/openai_images.py`: keep links to the Image generation guide and Images API reference beside `_IMAGE_COSTS`; refresh GPT Image pricing on provider-doc audits.
+- `stackos/plugins/manifest.py`: add new GPT Image model profiles only when their size, quality, format, and cost semantics are documented.
+- `stackos/integrations/firecrawl.py`: link each method to Firecrawl v2 endpoint docs; add a comment that `crawl()` submits a job only.
+- `stackos/plugins/manifest.py`: rename/describe `utils.web.crawl` as submit-only unless a crawl-status action is added.
+- `stackos/integrations/jina_reader.py`: link Reader API and validate absolute target URL shape before path concatenation.
+- `stackos/plugins/manifest.py`: add optional-auth setup copy for Jina.
+- `stackos/plugins/manifest.py`: add Reddit auth method fields for `client_id` and `user_agent`; keep `client_secret` daemon-side.
+- `stackos/integrations/reddit.py`: link OAuth2/Data API docs and document listing pagination headers/fields.
+- `stackos/integrations/dataforseo.py`: link exact endpoint docs above each method; note keyword volume 12 RPM and task-size limits.
 - `plugins/seo/plugin.yaml`: add DataForSEO keyword count/depth/limit constraints once confirmed against endpoint docs.
-- `content_stack/integrations/ahrefs.py`: link API v3 intro, API keys, limits consumption, organic keywords, and all backlinks; capture unit-cost headers.
+- `stackos/integrations/ahrefs.py`: link API v3 intro, API keys, limits consumption, organic keywords, and all backlinks; capture unit-cost headers.
 - `plugins/seo/plugin.yaml`: clarify Ahrefs plan/API-unit requirements and budget meaning.
-- `content_stack/integrations/wordpress.py`: link WordPress Authentication, Application Passwords, and Posts docs; mention HTTPS and post capability.
+- `stackos/integrations/wordpress.py`: link WordPress Authentication, Application Passwords, and Posts docs; mention HTTPS and post capability.
 - `plugins/publishing/plugin.yaml`: clarify WordPress credential shape and Ghost URL root/API version.
-- `content_stack/integrations/ghost.py`: link Ghost Admin API auth/posts/images docs; document JWT `aud`, expiration, and `Accept-Version` target.
-- `content_stack/actions/http.py`: link RFC 9110, RFC 7617, RFC 6750, and RFC 9457; document why static config cannot contain secret headers while injected auth headers can.
+- `stackos/integrations/ghost.py`: link Ghost Admin API auth/posts/images docs; document JWT `aud`, expiration, and `Accept-Version` target.
+- `stackos/actions/http.py`: link RFC 9110, RFC 7617, RFC 6750, and RFC 9457; document why static config cannot contain secret headers while injected auth headers can.

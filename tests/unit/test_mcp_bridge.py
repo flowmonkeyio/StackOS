@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from content_stack.mcp.bridge import (
+from stackos.mcp.bridge import (
     _AGENT_ADMIN_GATED_TOOL_NAMES,
     _AGENT_BASE_TOOLBOX_NAMES,
     _AGENT_GATED_TOOL_NAMES,
@@ -19,10 +19,10 @@ from content_stack.mcp.bridge import (
     _bridge_filter_tool_list_response,
     _bridge_toolbox_describe,
 )
-from content_stack.mcp.contract import verb_is_mutating
-from content_stack.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
-from content_stack.mcp.server import ToolRegistry
-from content_stack.mcp.tools import register_all
+from stackos.mcp.contract import verb_is_mutating
+from stackos.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
+from stackos.mcp.server import ToolRegistry
+from stackos.mcp.tools import register_all
 
 
 def _tool(name: str) -> dict[str, object]:

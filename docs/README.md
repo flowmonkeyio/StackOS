@@ -50,7 +50,7 @@ For documentation-only edits:
 ```bash
 TPF_LLM_TOOL=codex tpf git diff --check
 TPF_LLM_TOOL=codex tpf rg "StackOS" AGENTS.md CLAUDE.md README.md docs plugins -n
-TPF_LLM_TOOL=codex tpf rg "content-stack" docs README.md plugins/content-stack -n
+TPF_LLM_TOOL=codex tpf rg "stackos" docs README.md plugins/stackos -n
 ```
 
 Run targeted tests when documentation changes command contracts, generated API

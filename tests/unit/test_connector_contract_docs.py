@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from content_stack.actions import DEFAULT_ACTION_CONNECTORS
+from stackos.actions import DEFAULT_ACTION_CONNECTORS
 
 ROOT = Path(__file__).resolve().parents[2]
 QUALITY_DOC = ROOT / "docs" / "integration-contracts" / "connector-quality.md"

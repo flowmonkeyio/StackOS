@@ -1,4 +1,4 @@
-"""`scripts/register-mcp-codex.sh` upserts the `content-stack` MCP entry.
+"""`scripts/register-mcp-codex.sh` upserts the `stackos` MCP entry.
 
 Codex CLI may not be installed on a given machine; the script must
 exit 0 with a notice in that case (audit B-24 — "skipped: codex CLI
@@ -20,7 +20,7 @@ import pytest
 def _run(
     script: Path, home: Path, extra_path: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "CONTENT_STACK_HOME": str(home)}
+    env = {**os.environ, "STACKOS_HOME": str(home)}
     if extra_path is not None:
         env["PATH"] = f"{extra_path}{os.pathsep}{env['PATH']}"
     return subprocess.run(
@@ -43,7 +43,7 @@ def codex_stub(tmp_path: Path) -> Path:
     log = tmp_path / "invocations.log"
     state = tmp_path / "registered"
     script = bin_dir / "codex"
-    list_line = '  "mcp list") if [[ -f "$STATE" ]]; then echo "content-stack stdio -"; fi ;;\n'
+    list_line = '  "mcp list") if [[ -f "$STATE" ]]; then echo "stackos stdio -"; fi ;;\n'
     script.write_text(
         "#!/usr/bin/env bash\n"
         f'echo "$@" >> "{log}"\n'
@@ -70,7 +70,7 @@ def test_no_codex_on_path_is_skipped(sandbox_home: Path, scripts_dir: Path, tmp_
         bash_dir = "/usr/bin"
     env = {
         **os.environ,
-        "CONTENT_STACK_HOME": str(sandbox_home),
+        "STACKOS_HOME": str(sandbox_home),
         "PATH": f"{empty_path}{os.pathsep}{bash_dir}",
     }
     result = subprocess.run(
@@ -114,7 +114,7 @@ def test_remove_flag(sandbox_home: Path, scripts_dir: Path, codex_stub: Path) ->
         text=True,
         env={
             **os.environ,
-            "CONTENT_STACK_HOME": str(sandbox_home),
+            "STACKOS_HOME": str(sandbox_home),
             "PATH": f"{codex_stub}{os.pathsep}{os.environ['PATH']}",
         },
     )
@@ -134,7 +134,7 @@ def test_force_reregisters(sandbox_home: Path, scripts_dir: Path, codex_stub: Pa
         text=True,
         env={
             **os.environ,
-            "CONTENT_STACK_HOME": str(sandbox_home),
+            "STACKOS_HOME": str(sandbox_home),
             "PATH": f"{codex_stub}{os.pathsep}{os.environ['PATH']}",
         },
     )
@@ -147,7 +147,7 @@ def test_force_reregisters(sandbox_home: Path, scripts_dir: Path, codex_stub: Pa
 def test_register_fails_without_token(
     sandbox_home: Path, scripts_dir: Path, codex_stub: Path
 ) -> None:
-    token_path = sandbox_home / ".local" / "state" / "content-stack" / "auth.token"
+    token_path = sandbox_home / ".local" / "state" / "stackos" / "auth.token"
     token_path.unlink()
 
     result = subprocess.run(
@@ -156,7 +156,7 @@ def test_register_fails_without_token(
         text=True,
         env={
             **os.environ,
-            "CONTENT_STACK_HOME": str(sandbox_home),
+            "STACKOS_HOME": str(sandbox_home),
             "PATH": f"{codex_stub}{os.pathsep}{os.environ['PATH']}",
         },
     )

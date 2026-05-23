@@ -89,7 +89,7 @@ const enterClass = computed(() => props.side === 'right' ? 'translate-x-full' : 
           aria-modal="true"
           :aria-labelledby="title ? 'ui-sidepanel-title' : undefined"
           :class="[
-            'ui-sidepanel fixed top-0 bottom-0 z-modal flex flex-col bg-bg-surface border-default shadow-lg max-w-full',
+            'ui-sidepanel fixed top-0 bottom-0 z-modal flex min-h-0 flex-col bg-bg-surface border-default shadow-lg max-w-full',
             side === 'right' ? 'right-0 border-l' : 'left-0 border-r',
           ]"
           :style="{ width: sizePx }"
@@ -131,7 +131,7 @@ const enterClass = computed(() => props.side === 'right' ? 'translate-x-full' : 
           </header>
           <div
             :class="[
-              'ui-sidepanel__body flex-1 px-5 py-4',
+              'ui-sidepanel__body min-h-0 flex-1 px-5 py-4',
               scrollBody !== false && 'overflow-y-auto',
             ]"
           >

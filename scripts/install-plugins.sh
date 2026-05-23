@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# content-stack plugin installer.
+# StackOS plugin installer.
 #
-# Mirrors `plugins/content-stack/` into `${HOME}/.codex/plugins/content-stack/` and upserts a home-local Codex plugin
+# Mirrors `plugins/stackos/` into `${HOME}/.codex/plugins/stackos/` and upserts a home-local Codex plugin
 # marketplace entry at `${HOME}/.agents/plugins/marketplace.json`.
 # This keeps website repositories clean: the plugin is global/user-local, while
-# repo/project binding lives in the content-stack daemon DB.
+# repo/project binding lives in the StackOS daemon DB.
 
 set -euo pipefail
 
@@ -18,10 +18,10 @@ for arg in "$@"; do
 done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOME_DIR="${CONTENT_STACK_HOME:-${HOME}}"
-TARGET="${HOME_DIR}/.codex/plugins/content-stack"
+HOME_DIR="${STACKOS_HOME:-${HOME}}"
+TARGET="${HOME_DIR}/.codex/plugins/stackos"
 MARKETPLACE="${HOME_DIR}/.agents/plugins/marketplace.json"
-PLUGIN_PYTHON="${CONTENT_STACK_PLUGIN_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+PLUGIN_PYTHON="${STACKOS_PLUGIN_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
 if [[ ! -x "${PLUGIN_PYTHON}" ]]; then
     PLUGIN_PYTHON="$(command -v python3)"
 fi
@@ -32,7 +32,7 @@ if [[ "${ACTION}" == "install" ]]; then
     rsync -a --delete \
         --exclude '.DS_Store' \
         --exclude '__pycache__' \
-        "${REPO_ROOT}/plugins/content-stack/" "${TARGET}/"
+        "${REPO_ROOT}/plugins/stackos/" "${TARGET}/"
     python3 - "${TARGET}" "${HOME_DIR}" "${PLUGIN_PYTHON}" <<'PYEOF'
 import json
 import os
@@ -42,9 +42,9 @@ import tempfile
 target, home_dir, plugin_python = sys.argv[1:4]
 payload = {
     "mcpServers": {
-        "content-stack": {
+        "stackos": {
             "command": plugin_python,
-            "args": ["-m", "content_stack", "mcp-bridge"],
+            "args": ["-m", "stackos", "mcp-bridge"],
         }
     }
 }
@@ -66,7 +66,7 @@ def write_mcp(plugin_root: str) -> None:
 
 
 write_mcp(target)
-cache_root = os.path.join(home_dir, ".codex", "plugins", "cache", "local-content-stack", "content-stack")
+cache_root = os.path.join(home_dir, ".codex", "plugins", "cache", "local-stackos", "stackos")
 if os.path.isdir(cache_root):
     for name in os.listdir(cache_root):
         plugin_root = os.path.join(cache_root, name)
@@ -86,8 +86,8 @@ import tempfile
 target, action = sys.argv[1:3]
 
 existing = {
-    "name": "local-content-stack",
-    "interface": {"displayName": "Local content-stack Plugins"},
+    "name": "local-stackos",
+    "interface": {"displayName": "Local StackOS Plugins"},
     "plugins": [],
 }
 if os.path.exists(target):
@@ -107,12 +107,12 @@ if not isinstance(plugins, list):
 
 plugins[:] = [
     p for p in plugins
-    if not (isinstance(p, dict) and p.get("name") == "content-stack")
+    if not (isinstance(p, dict) and p.get("name") == "stackos")
 ]
 if action == "install":
     plugins.append({
-        "name": "content-stack",
-        "source": {"source": "local", "path": "./.codex/plugins/content-stack"},
+        "name": "stackos",
+        "source": {"source": "local", "path": "./.codex/plugins/stackos"},
         "policy": {
             "installation": "INSTALLED_BY_DEFAULT",
             "authentication": "ON_USE",
@@ -140,8 +140,8 @@ else
 fi
 if [[ "${ACTION}" == "install" ]]; then
     echo "Installed ${count} plugins to ${TARGET}"
-    echo "Registered content-stack plugin marketplace at ${MARKETPLACE}"
+    echo "Registered StackOS plugin marketplace at ${MARKETPLACE}"
 else
-    echo "Removed content-stack plugin from ${TARGET}"
-    echo "Unregistered content-stack plugin marketplace entry at ${MARKETPLACE}"
+    echo "Removed StackOS plugin from ${TARGET}"
+    echo "Unregistered StackOS plugin marketplace entry at ${MARKETPLACE}"
 fi

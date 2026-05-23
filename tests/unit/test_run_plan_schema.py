@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from content_stack.workflows.run_plan_schema import RunPlanSpec, validate_run_plan_obj
+from stackos.workflows.run_plan_schema import RunPlanSpec, validate_run_plan_obj
 
 
 def _plan_dict() -> dict:

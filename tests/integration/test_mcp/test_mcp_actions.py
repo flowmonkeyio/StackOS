@@ -7,7 +7,7 @@ import json
 
 from pytest_httpx import HTTPXMock
 
-from content_stack.config import Settings
+from stackos.config import Settings
 
 from .conftest import MCPClient
 

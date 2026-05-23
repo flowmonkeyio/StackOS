@@ -1,9 +1,9 @@
 {
-  "name": "content-stack-ui",
+  "name": "stackos-ui",
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Vue 3 operator UI for the content-stack daemon.",
+  "description": "Vue 3 operator UI for the StackOS daemon.",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",

@@ -15,7 +15,7 @@ for arg in "$@"; do
 done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLI_ARGS=(-m content_stack autostart "${ACTION}")
+CLI_ARGS=(-m stackos autostart "${ACTION}")
 if [[ "${ACTION}" == "install" && "${FORCE}" -eq 1 ]]; then
     CLI_ARGS+=(--force)
 fi

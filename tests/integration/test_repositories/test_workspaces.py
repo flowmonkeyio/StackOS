@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Session
 
-from content_stack.repositories.base import NotFoundError, ValidationError
-from content_stack.repositories.projects import ProjectRepository
-from content_stack.repositories.workspaces import WorkspaceRepository
+from stackos.repositories.base import NotFoundError, ValidationError
+from stackos.repositories.projects import ProjectRepository
+from stackos.repositories.workspaces import WorkspaceRepository
 
 
 def _create_project(session: Session, slug: str = "workspace-site") -> int:

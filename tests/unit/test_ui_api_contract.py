@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from content_stack.config import Settings
-from content_stack.server import create_app
+from stackos.config import Settings
+from stackos.server import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 API_TS = REPO_ROOT / "ui" / "src" / "api.ts"

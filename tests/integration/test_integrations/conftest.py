@@ -17,10 +17,10 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session, SQLModel
 
-from content_stack.crypto.aes_gcm import configure_seed_path
-from content_stack.crypto.seed import ensure_seed_file
-from content_stack.db.connection import make_memory_engine
-from content_stack.integrations._rate_limit import reset_buckets
+from stackos.crypto.aes_gcm import configure_seed_path
+from stackos.crypto.seed import ensure_seed_file
+from stackos.db.connection import make_memory_engine
+from stackos.integrations._rate_limit import reset_buckets
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -72,7 +72,7 @@ def session() -> Iterator[Session]:
 @pytest.fixture
 def project_id(session: Session) -> int:
     """Create a project so dependent rows have a valid FK."""
-    from content_stack.repositories.projects import ProjectRepository
+    from stackos.repositories.projects import ProjectRepository
 
     repo = ProjectRepository(session)
     env = repo.create(slug="t-int", name="T", domain="x", locale="en")

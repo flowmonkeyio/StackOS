@@ -3,13 +3,13 @@
 import { expect, type Page } from '@playwright/test'
 
 export function getDaemonToken(): string {
-  const t = process.env.CS_E2E_TOKEN
-  if (!t) throw new Error('CS_E2E_TOKEN not set; global-setup must have failed')
+  const t = process.env.STACKOS_E2E_TOKEN
+  if (!t) throw new Error('STACKOS_E2E_TOKEN not set; global-setup must have failed')
   return t
 }
 
 export function getBaseUrl(): string {
-  return process.env.CS_E2E_BASE_URL ?? 'http://127.0.0.1:5181'
+  return process.env.STACKOS_E2E_BASE_URL ?? 'http://127.0.0.1:5181'
 }
 
 /**

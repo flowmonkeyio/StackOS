@@ -6,7 +6,7 @@ import json
 
 from sqlmodel import Session
 
-from content_stack.repositories.projects import IntegrationCredentialRepository
+from stackos.repositories.projects import IntegrationCredentialRepository
 
 from .conftest import MCPClient
 

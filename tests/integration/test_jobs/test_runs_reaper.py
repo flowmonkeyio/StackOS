@@ -6,12 +6,12 @@ from datetime import UTC, datetime, timedelta
 
 from sqlmodel import Session
 
-from content_stack.db.models import (
+from stackos.db.models import (
     Run,
     RunKind,
     RunStatus,
 )
-from content_stack.jobs.runs_reaper import (
+from stackos.jobs.runs_reaper import (
     DEFAULT_STALE_AFTER_SECONDS,
     make_session_factory,
     reap_orphaned_runs,

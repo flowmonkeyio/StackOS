@@ -8,22 +8,22 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-import content_stack.cli as cli_module
-from content_stack.cli import app
-from content_stack.config import Settings
+import stackos.cli as cli_module
+from stackos.cli import app
+from stackos.config import Settings
 
 
 @pytest.fixture
 def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "home"
-    data = home / ".local" / "share" / "content-stack"
-    state = home / ".local" / "state" / "content-stack"
+    data = home / ".local" / "share" / "stackos"
+    state = home / ".local" / "state" / "stackos"
     state.mkdir(parents=True)
 
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("CONTENT_STACK_HOME", str(home))
-    monkeypatch.setenv("CONTENT_STACK_DATA_DIR", str(data))
-    monkeypatch.setenv("CONTENT_STACK_STATE_DIR", str(state))
+    monkeypatch.setenv("STACKOS_HOME", str(home))
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(data))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(state))
     return home
 
 
@@ -31,7 +31,7 @@ def test_serve_writes_and_removes_pid_file(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pid_path = sandbox / ".local" / "state" / "content-stack" / "daemon.pid"
+    pid_path = sandbox / ".local" / "state" / "stackos" / "daemon.pid"
 
     def fake_run(*_args: object, **kwargs: object) -> None:
         assert pid_path.read_text(encoding="utf-8") == f"{os.getpid()}\n"
@@ -55,14 +55,14 @@ def test_discover_daemon_processes_classifies_listener_pids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = Settings(
-        data_dir=sandbox / ".local" / "share" / "content-stack",
-        state_dir=sandbox / ".local" / "state" / "content-stack",
+        data_dir=sandbox / ".local" / "share" / "stackos",
+        state_dir=sandbox / ".local" / "state" / "stackos",
     )
     settings.ensure_dirs()
     settings.pid_path.write_text("123\n", encoding="utf-8")
 
     commands = {
-        123: f"{sys.executable} -m content_stack serve --port 5180",
+        123: f"{sys.executable} -m stackos serve --port 5180",
         456: "/usr/bin/python3 -m something_else serve --port 5180",
     }
     monkeypatch.setattr(cli_module, "_listener_pids", lambda _port: [123, 456])
@@ -146,7 +146,7 @@ def test_cli_restart_stops_existing_daemon_and_starts_new(
     assert events[1][0] == "spawn"
 
 
-def test_cli_restart_refuses_non_content_stack_listener(
+def test_cli_restart_refuses_non_stackos_listener(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -156,4 +156,4 @@ def test_cli_restart_refuses_non_content_stack_listener(
     result = CliRunner().invoke(app, ["restart"])
 
     assert result.exit_code == 1
-    assert "non-content-stack process pid(s): 999" in result.stderr
+    assert "non-StackOS process pid(s): 999" in result.stderr

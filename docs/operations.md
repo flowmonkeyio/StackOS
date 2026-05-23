@@ -32,9 +32,9 @@ return notes. Callers should not guess operation payloads. The operation
 registry returns an agent-readable description for every registered operation:
 
 ```bash
-content-stack ops list
-content-stack ops describe action.execute --json
-content-stack ops describe runPlan.claimStep --json
+stackos ops list
+stackos ops describe action.execute --json
+stackos ops describe runPlan.claimStep --json
 ```
 
 The same metadata is available through REST:
@@ -96,14 +96,14 @@ for the UI.
 The CLI uses the same REST operation adapter:
 
 ```bash
-content-stack ops call action.describe \
+stackos ops call action.describe \
   --input describe-action.json
 ```
 
 For common cross-cutting fields, the CLI can merge flags into the input JSON:
 
 ```bash
-content-stack ops call action.execute \
+stackos ops call action.execute \
   --project 1 \
   --run-token "$RUN_TOKEN" \
   --idempotency-key sitemap-1 \
@@ -116,30 +116,30 @@ Common operations also have aliases that still call the generic operation
 endpoint:
 
 ```bash
-content-stack actions describe utils.sitemap.fetch --project 1
-content-stack actions validate utils.sitemap.fetch --project 1 --input action-input.json
-content-stack actions execute utils.sitemap.fetch \
+stackos actions describe utils.sitemap.fetch --project 1
+stackos actions validate utils.sitemap.fetch --project 1 --input action-input.json
+stackos actions execute utils.sitemap.fetch \
   --project 1 \
   --run-token "$RUN_TOKEN" \
   --input action-input.json
 
-content-stack run-plans validate --project 1 --template-key core.project-memory-review
-content-stack run-plans create --project 1 --input run-plan.json
-content-stack run-plans start 42 --project 1
-content-stack run-plans claim-step 42 --step-id fetch-sitemap --run-token "$RUN_TOKEN"
-content-stack run-plans record-step 42 \
+stackos run-plans validate --project 1 --template-key core.project-memory-review
+stackos run-plans create --project 1 --input run-plan.json
+stackos run-plans start 42 --project 1
+stackos run-plans claim-step 42 --step-id fetch-sitemap --run-token "$RUN_TOKEN"
+stackos run-plans record-step 42 \
   --step-id fetch-sitemap \
   --status success \
   --result step-result.json \
   --run-token "$RUN_TOKEN"
 
-content-stack agent-requests list --project 1 --claimable
-content-stack agent-requests prepare-run-plan 42 \
+stackos agent-requests list --project 1 --claimable
+stackos agent-requests prepare-run-plan 42 \
   --project 1 \
   --claimed-by codex \
   --input run-plan.json \
   --idempotency-key prepare-agent-request-42
-content-stack agent-requests complete 42 \
+stackos agent-requests complete 42 \
   --project 1 \
   --claim-token "$CLAIM_TOKEN" \
   --status resolved

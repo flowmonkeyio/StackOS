@@ -17,7 +17,7 @@ UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf make signoff
   communication setup execution, workflow template loading, and action/auth
   repositories
 - UI unit tests
-- the UI production build into `content_stack/ui_dist/`
+- the UI production build into `stackos/ui_dist/`
 
 For a faster local check while iterating on action execution, run the mock
 provider and connector-contract slice directly:

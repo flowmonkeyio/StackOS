@@ -1,4 +1,4 @@
-# content-stack Makefile
+# StackOS Makefile
 # All targets idempotent unless documented otherwise.
 # Reserved targets print a clear placeholder and exit 0.
 
@@ -22,11 +22,11 @@ install: ## Full dev install — deps + migrate + UI bundle + plugin + MCP + doc
 	@echo "==> Installing Python deps"
 	$(UV) sync --all-extras
 	@echo "==> Bootstrapping daemon state (creates seed + auth.token if absent)"
-	$(PYTHON) -m content_stack init
+	$(PYTHON) -m stackos init
 	@echo "==> Running migrations"
-	$(PYTHON) -m content_stack migrate
-	@echo "==> Verifying committed UI bundle (content_stack/ui_dist/ is committed)"
-	@if [ -f content_stack/ui_dist/index.html ]; then \
+	$(PYTHON) -m stackos migrate
+	@echo "==> Verifying committed UI bundle (stackos/ui_dist/ is committed)"
+	@if [ -f stackos/ui_dist/index.html ]; then \
 	  echo "  ui_dist/index.html present"; \
 	else \
 	  echo "  ui_dist/ missing — running \`make build-ui\` to regenerate"; \
@@ -43,12 +43,12 @@ install: ## Full dev install — deps + migrate + UI bundle + plugin + MCP + doc
 	@echo "==> install complete"
 
 serve: ## Run the daemon foreground on 127.0.0.1:5180
-	$(PYTHON) -m content_stack serve
+	$(PYTHON) -m stackos serve
 
 dev-ui: ## Run Vite dev server alongside the daemon
 	@if [ -d ui ]; then cd ui && pnpm dev; else echo "ui/ not available in this checkout"; exit 0; fi
 
-build-ui: ## Build Vue UI into content_stack/ui_dist/
+build-ui: ## Build Vue UI into stackos/ui_dist/
 	@if [ -d ui ]; then cd ui && pnpm install && pnpm build; else echo "ui/ not available in this checkout"; exit 0; fi
 
 signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/CLI, and UI checks
@@ -92,15 +92,15 @@ format: ## Apply ruff format + auto-fix lints
 	$(UV) run ruff check --fix .
 
 typecheck: ## Run mypy on the package
-	$(UV) run mypy content_stack
+	$(UV) run mypy stackos
 
 gen-types: ## Regenerate ui/src/api.ts from the source OpenAPI spec
 	bash scripts/gen-types.sh
 
 doctor: ## Diagnose local install state
-	$(PYTHON) -m content_stack doctor
+	$(PYTHON) -m stackos doctor
 
-clean: ## Remove caches and build artifacts (preserves DB at ~/.local/share/content-stack/)
+clean: ## Remove caches and build artifacts (preserves DB at ~/.local/share/stackos/)
 	rm -rf __pycache__ .ruff_cache .mypy_cache .pytest_cache build dist
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	find . -type d -name '*.egg-info' -prune -exec rm -rf {} +
@@ -111,13 +111,13 @@ register-codex: ## Register bridge MCP server with Codex CLI
 register-claude: ## Register bridge MCP server with Claude Code
 	@bash scripts/register-mcp-claude.sh
 
-install-skills-codex: ## Install skills into ~/.codex/skills/content-stack/
+install-skills-codex: ## Install skills into ~/.codex/skills/stackos/
 	@bash scripts/install-codex.sh
 
-install-skills-claude: ## Install skills into ~/.claude/skills/content-stack/
+install-skills-claude: ## Install skills into ~/.claude/skills/stackos/
 	@bash scripts/install-claude.sh
 
-install-plugins: ## Install content-stack plugin into ~/.codex/plugins and ~/.agents marketplace
+install-plugins: ## Install StackOS plugin into ~/.codex/plugins and ~/.agents marketplace
 	@bash scripts/install-plugins.sh
 
 install-launchd: ## Install launchd autostart for the daemon
@@ -127,14 +127,14 @@ uninstall: ## Remove installed skills/plugins/MCP entries; preserve DB + seed
 	@echo "==> Booting out launchd job (if loaded)"
 	@bash scripts/install-launchd.sh --uninstall || true
 	@echo "==> Removing skills"
-	@rm -rf "$(HOME)/.codex/skills/content-stack" "$(HOME)/.claude/skills/content-stack"
+	@rm -rf "$(HOME)/.codex/skills/stackos" "$(HOME)/.claude/skills/stackos"
 	@echo "==> Removing plugins"
 	@bash scripts/install-plugins.sh --remove || true
 	@echo "==> Unregistering bridge MCP for Codex CLI"
 	@bash scripts/register-mcp-codex.sh --remove || true
 	@echo "==> Unregistering bridge MCP for Claude Code"
 	@bash scripts/register-mcp-claude.sh --remove || true
-	@echo "==> Note: ~/.local/share/content-stack/ (DB) and ~/.local/state/content-stack/ (seed + token) preserved."
+	@echo "==> Note: ~/.local/share/stackos/ (DB) and ~/.local/state/stackos/ (seed + token) preserved."
 	@echo "==> uninstall complete"
 
 backup: ## Reserved backup command
@@ -144,7 +144,7 @@ restore: ## Reserved restore command
 	@echo "Not yet implemented (backup/restore jobs)"
 
 rotate-seed: ## Re-encrypt all integration_credentials with a new seed
-	$(PYTHON) -m content_stack rotate-seed --reencrypt
+	$(PYTHON) -m stackos rotate-seed --reencrypt
 
 rotate-token: ## Generate new auth token and update MCP configs
-	$(PYTHON) -m content_stack rotate-token --yes
+	$(PYTHON) -m stackos rotate-token --yes

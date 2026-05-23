@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from sqlmodel import Session
 
-from content_stack.context import ContextRepository
-from content_stack.repositories.base import ValidationError
+from stackos.context import ContextRepository
+from stackos.repositories.base import ValidationError
 
 
 def test_context_query_projects_fields_limits_and_redacts(

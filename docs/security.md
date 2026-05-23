@@ -10,10 +10,10 @@ The daemon binds to `127.0.0.1:5180` only and serves the committed StackOS UI
 bundle from the same origin. The Vue/Vite development UI, when used, runs on
 `127.0.0.1:5173` and proxies `/api` and `/mcp` to the daemon on `5180`. Every
 direct `/api/v1/*` and `/mcp/*` call must carry `Authorization: Bearer <token>`
-where the token is the contents of `~/.local/state/content-stack/auth.token`
+where the token is the contents of `~/.local/state/stackos/auth.token`
 (32 bytes, mode 0600, generated atomically when missing). Installs and upgrades
 do not rotate an existing token; operators rotate explicitly with
-`content-stack rotate-token --yes` or `make rotate-token`.
+`stackos rotate-token --yes` or `make rotate-token`.
 
 Three middlewares form the request gauntlet, applied in this order
 (outermost first):
@@ -28,7 +28,7 @@ Three middlewares form the request gauntlet, applied in this order
 
 ## Whitelisted paths
 
-`WHITELIST_PREFIXES` in `content_stack/auth.py` lists paths that bypass
+`WHITELIST_PREFIXES` in `stackos/auth.py` lists paths that bypass
 the bearer-token check. Currently:
 
 | Path | Why it is whitelisted | Residual exposure |
@@ -134,7 +134,7 @@ machines and want browser bootstrap removed can:
    hardening flag could let operators turn the bootstrap off; the SPA would
    then prompt for a token at first load and store it in `sessionStorage` for
    the tab's lifetime. Operators who need this today can `chmod 0400` the
-   token file and short-circuit the bootstrap by editing `content_stack/auth.py`
+   token file and short-circuit the bootstrap by editing `stackos/auth.py`
    `WHITELIST_PREFIXES`. This is intentionally a code change, not a runtime
    flag, to make sure any operator going down that path has read the
    implications.
@@ -149,12 +149,12 @@ per-tool daemon rate limits until enforcement exists in middleware and tests.
 ## Distribution And Install Posture
 
 The canonical setup contract is in [`./setup.md`](./setup.md). Clone-mode
-`make install` and package-mode `content-stack install` land at the same local
+`make install` and package-mode `stackos install` land at the same local
 state, plugin, and MCP bridge contract:
 
-- **Auth token**: created by `content-stack init`, `content-stack install`,
+- **Auth token**: created by `stackos init`, `stackos install`,
   or `make install` before MCP registration. `pipx upgrade` does NOT rotate
-  by itself; operators rotate explicitly via `content-stack rotate-token
+  by itself; operators rotate explicitly via `stackos rotate-token
   --yes` or `make rotate-token`. Rotation refreshes saved MCP configs, but a
   daemon that is already running keeps the token it loaded at startup until it
   is restarted.
@@ -166,15 +166,15 @@ state, plugin, and MCP bridge contract:
   that staged file behind, daemon startup refuses to continue until the
   operator finishes or restores the rotation.
 - **Wheel layout (pipx)**: skills and plugins are bundled under
-  `content_stack/_assets/`. The console script hydrates the user-local plugin
+  `stackos/_assets/`. The console script hydrates the user-local plugin
   from those assets via `importlib.resources` so users without the repo on disk
   get the same install. The committed `ui_dist/` ships inside the package, so
   no `pnpm` is needed at user install time.
 - **launchd plist**: optional. The plist runs the daemon as the invoking user;
-  never as root. `content-stack autostart install` owns plist generation in
+  never as root. `stackos autostart install` owns plist generation in
   both clone and package installs; `make install-launchd` delegates to that
   command. The plist itself does not store the auth token; the daemon reads it
-  from `~/.local/state/content-stack/auth.token` at startup.
+  from `~/.local/state/stackos/auth.token` at startup.
 
 The pipx + launchd path does not change the threat model: the daemon binds
 loopback only, the bearer token gates every call, and the seed encrypts

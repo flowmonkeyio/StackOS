@@ -1,0 +1,263 @@
+"""OpenAI Images integration wrapper (PLAN.md L1050).
+
+Authentication: Bearer ``Authorization: Bearer <api_key>``. This is a
+daemon-side vendor key for image generation only; prose generation uses
+the current operator agent's runtime credentials outside StackOS.
+
+Operation:
+
+- ``generate(prompt, size, quality, n)`` — GPT Image generation.
+
+The current OpenAI Image API returns base64 for GPT Image models. This
+wrapper persists those bytes into the daemon's generated-assets directory
+and returns local artifact URLs.
+
+Cost: the table below is a rough budget guardrail derived from the
+published GPT Image pricing table. The operator should reconcile actual
+invoices against OpenAI's current pricing page.
+"""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import hashlib
+from pathlib import Path
+from typing import Any, ClassVar
+
+from stackos.integrations._base import BaseIntegration, IntegrationCallResult
+from stackos.mcp.errors import IntegrationDownError
+
+
+class OpenAIImagesIntegration(BaseIntegration):
+    """Wrapper for ``https://api.openai.com/v1/images/generations``."""
+
+    kind = "openai-images"
+    vendor = "openai-images"
+    default_qps = 10.0
+
+    BASE_URL = "https://api.openai.com/v1"
+    DEFAULT_MODEL = "gpt-image-2"
+
+    # Official refs:
+    # https://developers.openai.com/api/docs/guides/image-generation
+    # https://developers.openai.com/api/reference/resources/images
+    #
+    # Values are output image-cost guardrails for the StackOS budget pre-check.
+    # Text/image input tokens and invoices remain OpenAI's source of truth.
+    _IMAGE_COSTS: ClassVar[dict[tuple[str, str, str], float]] = {
+        ("gpt-image-2", "1024x1024", "low"): 0.006,
+        ("gpt-image-2", "1024x1024", "medium"): 0.053,
+        ("gpt-image-2", "1024x1024", "high"): 0.211,
+        ("gpt-image-2", "1536x1024", "low"): 0.005,
+        ("gpt-image-2", "1536x1024", "medium"): 0.041,
+        ("gpt-image-2", "1536x1024", "high"): 0.165,
+        ("gpt-image-2", "1024x1536", "low"): 0.005,
+        ("gpt-image-2", "1024x1536", "medium"): 0.041,
+        ("gpt-image-2", "1024x1536", "high"): 0.165,
+        ("gpt-image-1.5", "1024x1024", "low"): 0.009,
+        ("gpt-image-1.5", "1024x1024", "medium"): 0.034,
+        ("gpt-image-1.5", "1024x1024", "high"): 0.133,
+        ("gpt-image-1.5", "1536x1024", "low"): 0.013,
+        ("gpt-image-1.5", "1536x1024", "medium"): 0.050,
+        ("gpt-image-1.5", "1536x1024", "high"): 0.200,
+        ("gpt-image-1.5", "1024x1536", "low"): 0.013,
+        ("gpt-image-1.5", "1024x1536", "medium"): 0.050,
+        ("gpt-image-1.5", "1024x1536", "high"): 0.200,
+        ("gpt-image-1", "1024x1024", "low"): 0.011,
+        ("gpt-image-1", "1024x1024", "medium"): 0.042,
+        ("gpt-image-1", "1024x1024", "high"): 0.167,
+        ("gpt-image-1", "1536x1024", "low"): 0.016,
+        ("gpt-image-1", "1536x1024", "medium"): 0.063,
+        ("gpt-image-1", "1536x1024", "high"): 0.250,
+        ("gpt-image-1", "1024x1536", "low"): 0.016,
+        ("gpt-image-1", "1024x1536", "medium"): 0.063,
+        ("gpt-image-1", "1024x1536", "high"): 0.250,
+        ("gpt-image-1-mini", "1024x1024", "low"): 0.005,
+        ("gpt-image-1-mini", "1024x1024", "medium"): 0.011,
+        ("gpt-image-1-mini", "1024x1024", "high"): 0.036,
+        ("gpt-image-1-mini", "1536x1024", "low"): 0.006,
+        ("gpt-image-1-mini", "1536x1024", "medium"): 0.015,
+        ("gpt-image-1-mini", "1536x1024", "high"): 0.052,
+        ("gpt-image-1-mini", "1024x1536", "low"): 0.006,
+        ("gpt-image-1-mini", "1024x1536", "medium"): 0.015,
+        ("gpt-image-1-mini", "1024x1536", "high"): 0.052,
+    }
+    _GPT_IMAGE_MODELS: ClassVar[frozenset[str]] = frozenset(
+        {"gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"}
+    )
+    _DALL_E_MODELS: ClassVar[frozenset[str]] = frozenset({"dall-e-2", "dall-e-3"})
+    _OUTPUT_EXTENSIONS: ClassVar[dict[str, str]] = {
+        "jpeg": "jpg",
+        "png": "png",
+        "webp": "webp",
+    }
+
+    def __init__(
+        self,
+        *,
+        asset_dir: Path | None = None,
+        asset_url_prefix: str = "/generated-assets",
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._api_key = self.payload.decode("utf-8")
+        self._asset_dir = asset_dir
+        self._asset_url_prefix = asset_url_prefix.rstrip("/")
+
+    def _auth_headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _estimate_cost_usd(self, op: str, **kwargs: Any) -> float:
+        """Estimate cost from ``size`` + ``quality`` keyword args."""
+        del op
+        body = kwargs.get("json", {}) or {}
+        model = str(body.get("model", self.DEFAULT_MODEL))
+        size = body.get("size", "1024x1024")
+        quality = body.get("quality", "medium")
+        n = int(body.get("n", 1))
+        return self.estimate_image_cost_usd(model=model, size=str(size), quality=str(quality), n=n)
+
+    @classmethod
+    def estimate_image_cost_usd(cls, *, model: str, size: str, quality: str, n: int = 1) -> float:
+        """Estimate output-image cost for the current StackOS-supported sizes."""
+        if model not in cls._GPT_IMAGE_MODELS:
+            return 0.04 * n
+        normalized_size = size if size != "auto" else "1024x1024"
+        normalized_quality = quality if quality != "auto" else "high"
+        per_image = cls._IMAGE_COSTS.get((model, normalized_size, normalized_quality))
+        if per_image is None:
+            model_costs = [
+                cost
+                for (cost_model, _size, cost_quality), cost in cls._IMAGE_COSTS.items()
+                if cost_model == model and cost_quality == normalized_quality
+            ]
+            per_image = max(model_costs) if model_costs else 0.04
+        return per_image * n
+
+    async def generate(
+        self,
+        *,
+        prompt: str,
+        size: str = "1536x1024",
+        quality: str = "medium",
+        n: int = 1,
+        model: str = DEFAULT_MODEL,
+        output_format: str = "webp",
+    ) -> IntegrationCallResult:
+        """Generate ``n`` images from ``prompt``.
+
+        GPT Image models return base64 image bytes. When ``asset_dir`` is
+        configured, the wrapper writes those bytes to disk and returns a
+        response with local ``url`` fields and no ``b64_json`` payloads.
+        """
+        body = {
+            "prompt": prompt,
+            "n": n,
+            "model": model,
+        }
+        # DALL-E keeps legacy size/quality names while GPT Image models use
+        # low/medium/high quality and output_format.
+        if model in self._DALL_E_MODELS:
+            body["size"] = _dalle_size(size)
+            body["quality"] = _dalle_quality(quality)
+            body["response_format"] = "url"
+        else:
+            body["size"] = size
+            body["quality"] = quality
+            body["output_format"] = output_format
+        result = await self.call(
+            op="generate",
+            method="POST",
+            url=f"{self.BASE_URL}/images/generations",
+            json_body=body,
+            headers=self._auth_headers(),
+        )
+        return IntegrationCallResult(
+            data=self._persist_base64_images(
+                result.data,
+                output_format=output_format,
+                model=model,
+            ),
+            cost_usd=result.cost_usd,
+            duration_ms=result.duration_ms,
+            cached=result.cached,
+        )
+
+    def _persist_base64_images(
+        self,
+        data: Any,
+        *,
+        output_format: str,
+        model: str,
+    ) -> Any:
+        """Replace OpenAI ``b64_json`` entries with daemon-local URLs."""
+        if self._asset_dir is None or not isinstance(data, dict):
+            return data
+        items = data.get("data")
+        if not isinstance(items, list):
+            return data
+
+        out = dict(data)
+        persisted: list[Any] = []
+        for item in items:
+            if not isinstance(item, dict):
+                persisted.append(item)
+                continue
+            b64 = item.get("b64_json")
+            if not isinstance(b64, str):
+                persisted.append(item)
+                continue
+            try:
+                raw = base64.b64decode(b64, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise IntegrationDownError(
+                    "OpenAI Images returned invalid base64 image data",
+                    data={"vendor": "openai-images", "model": model},
+                ) from exc
+            ext = self._OUTPUT_EXTENSIONS.get(output_format, "webp")
+            digest = hashlib.sha256(raw).hexdigest()
+            filename = f"openai-{digest[:32]}.{ext}"
+            subdir = self._asset_dir / "openai-images"
+            subdir.mkdir(parents=True, exist_ok=True)
+            path = subdir / filename
+            if not path.exists():
+                path.write_bytes(raw)
+            clean = {k: v for k, v in item.items() if k != "b64_json"}
+            clean["url"] = f"{self._asset_url_prefix}/openai-images/{filename}"
+            clean["file_format"] = ext
+            clean["source_model"] = model
+            persisted.append(clean)
+        out["data"] = persisted
+        return out
+
+    async def test_credentials(self) -> dict[str, Any]:
+        """Cheap auth probe — list models (free, validates auth)."""
+        result = await self.call(
+            op="test",
+            method="GET",
+            url=f"{self.BASE_URL}/models",
+            headers=self._auth_headers(),
+        )
+        models_count = len(result.data.get("data", [])) if isinstance(result.data, dict) else 0
+        return {"ok": True, "vendor": "openai-images", "models_count": models_count}
+
+
+__all__ = ["OpenAIImagesIntegration"]
+
+
+def _dalle_quality(quality: str) -> str:
+    if quality in {"standard", "hd"}:
+        return quality
+    return "hd" if quality == "high" else "standard"
+
+
+def _dalle_size(size: str) -> str:
+    if size == "1536x1024":
+        return "1792x1024"
+    if size == "1024x1536":
+        return "1024x1792"
+    return size

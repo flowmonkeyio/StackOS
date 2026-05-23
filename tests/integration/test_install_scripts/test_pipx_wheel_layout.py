@@ -1,8 +1,8 @@
 """Per audit P-G4: the wheel must bundle skills and plugins.
 
 A pipx-mode install has no checked-out repo on disk, so
-`content-stack install` resolves assets via `importlib.resources` from
-``content_stack/_assets/skills/`` and ``content_stack/_assets/plugins/``.
+`stackos install` resolves assets via `importlib.resources` from
+``stackos/_assets/skills/`` and ``stackos/_assets/plugins/``.
 We verify the wheel produced by `python -m build` contains those paths
 with the same skill counts as the source repo.
 """
@@ -47,29 +47,27 @@ def test_wheel_includes_assets_skills(built_wheel: Path) -> None:
     expected = sum(1 for _ in (repo_root / "skills").rglob("SKILL.md"))
     names = _wheel_names(built_wheel)
     bundled = [
-        n
-        for n in names
-        if n.startswith("content_stack/_assets/skills/") and n.endswith("/SKILL.md")
+        n for n in names if n.startswith("stackos/_assets/skills/") and n.endswith("/SKILL.md")
     ]
     assert len(bundled) == expected, (
         f"wheel has {len(bundled)} SKILL.md files; source has {expected}"
     )
 
 
-def test_wheel_includes_content_stack_plugin(built_wheel: Path) -> None:
+def test_wheel_includes_stackos_plugin(built_wheel: Path) -> None:
     names = _wheel_names(built_wheel)
 
-    assert "content_stack/_assets/plugins/content-stack/.codex-plugin/plugin.json" in names
-    assert "content_stack/_assets/plugins/content-stack/.claude-plugin/plugin.json" in names
-    assert "content_stack/_assets/plugins/content-stack/.mcp.json" in names
+    assert "stackos/_assets/plugins/stackos/.codex-plugin/plugin.json" in names
+    assert "stackos/_assets/plugins/stackos/.claude-plugin/plugin.json" in names
+    assert "stackos/_assets/plugins/stackos/.mcp.json" in names
 
 
-def test_wheel_assets_path_namespace_is_under_content_stack(built_wheel: Path) -> None:
+def test_wheel_assets_path_namespace_is_under_stackos(built_wheel: Path) -> None:
     """Assets are namespaced under the package so `importlib.resources` resolves them."""
     names = _wheel_names(built_wheel)
-    # All `_assets/...` entries live inside `content_stack/`.
-    stray = [n for n in names if "_assets/" in n and not n.startswith("content_stack/_assets/")]
-    assert stray == [], f"stray _assets entries outside content_stack/: {stray}"
+    # All `_assets/...` entries live inside `stackos/`.
+    stray = [n for n in names if "_assets/" in n and not n.startswith("stackos/_assets/")]
+    assert stray == [], f"stray _assets entries outside stackos/: {stray}"
 
 
 def test_wheel_no_duplicate_entries(built_wheel: Path) -> None:

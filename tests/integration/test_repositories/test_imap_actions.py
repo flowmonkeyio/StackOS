@@ -10,10 +10,10 @@ from typing import Any, ClassVar
 import pytest
 from sqlmodel import Session
 
-from content_stack.actions import ActionRepository
-from content_stack.auth_providers import AuthRepository
-from content_stack.repositories.projects import IntegrationCredentialRepository
-from content_stack.repositories.resources import ResourceRepository
+from stackos.actions import ActionRepository
+from stackos.auth_providers import AuthRepository
+from stackos.repositories.projects import IntegrationCredentialRepository
+from stackos.repositories.resources import ResourceRepository
 
 
 def _raw_message() -> bytes:
@@ -141,7 +141,7 @@ def test_imap_list_search_fetch_and_mark_without_secret_leak(
     project_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import content_stack.actions.imap as imap_module
+    import stackos.actions.imap as imap_module
 
     _FakeIMAPSSL.instances.clear()
     monkeypatch.setattr(imap_module.imaplib, "IMAP4_SSL", _FakeIMAPSSL)

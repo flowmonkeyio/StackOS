@@ -5,18 +5,18 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Session
 
-from content_stack.context.repository import ContextRepository
-from content_stack.db.models import (
+from stackos.context.repository import ContextRepository
+from stackos.db.models import (
     ApprovalRequestStatus,
     ContextSnapshot,
     Run,
     RunPlanStepStatus,
     RunStatus,
 )
-from content_stack.repositories.base import ConflictError, ValidationError
-from content_stack.repositories.run_plans import RunPlanRepository
-from content_stack.workflows.template_loader import WorkflowTemplateLoader
-from content_stack.workflows.template_schema import WorkflowTemplateSpec
+from stackos.repositories.base import ConflictError, ValidationError
+from stackos.repositories.run_plans import RunPlanRepository
+from stackos.workflows.template_loader import WorkflowTemplateLoader
+from stackos.workflows.template_schema import WorkflowTemplateSpec
 
 
 def _run_plan_json() -> dict:

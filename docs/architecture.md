@@ -105,7 +105,7 @@ or MCP design.
 MCP is an adapter, not the core callable abstraction. New callables should be
 registered as StackOS operations when they need MCP, REST, or CLI exposure. The
 operation registry emits agent-readable docs through `/api/v1/operations` and
-`content-stack ops describe`, and MCP tool schemas are generated from the same
+`stackos ops describe`, and MCP tool schemas are generated from the same
 specs when the MCP surface is enabled.
 
 The direct MCP surface is intentionally small:

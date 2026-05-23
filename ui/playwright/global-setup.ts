@@ -1,4 +1,4 @@
-// Spawn the content-stack daemon on a separate port so it doesn't
+// Spawn the StackOS daemon on a separate port so it doesn't
 // collide with a developer's `make serve`. Wait until /health responds
 // 200 before letting any tests run. Persist the spawned PID + state-dir
 // path on `globalThis` so the teardown can stop the daemon and exfiltrate
@@ -15,8 +15,8 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const REPO_ROOT = join(__dirname, '..', '..')
 
-const PORT = Number(process.env.CS_E2E_PORT ?? 5181)
-const SERVE_ARGS = ['-m', 'content_stack', 'serve', '--host', '127.0.0.1', '--port', String(PORT)]
+const PORT = Number(process.env.STACKOS_E2E_PORT ?? 5181)
+const SERVE_ARGS = ['-m', 'stackos', 'serve', '--host', '127.0.0.1', '--port', String(PORT)]
 
 interface DaemonRecord {
   pid: number
@@ -27,7 +27,7 @@ interface DaemonRecord {
 
 declare global {
   // eslint-disable-next-line no-var
-  var __CS_DAEMON__: DaemonRecord | undefined
+  var __STACKOS_DAEMON__: DaemonRecord | undefined
 }
 
 async function probeHealth(url: string, timeoutMs = 30_000): Promise<boolean> {
@@ -62,8 +62,8 @@ async function readToken(stateDir: string, timeoutMs = 30_000): Promise<string |
 }
 
 function daemonCommand(): { command: string; args: string[] } {
-  if (process.env.CS_E2E_PYTHON) {
-    return { command: process.env.CS_E2E_PYTHON, args: SERVE_ARGS }
+  if (process.env.STACKOS_E2E_PYTHON) {
+    return { command: process.env.STACKOS_E2E_PYTHON, args: SERVE_ARGS }
   }
 
   const venvPython = join(REPO_ROOT, '.venv', 'bin', 'python')
@@ -75,14 +75,14 @@ function daemonCommand(): { command: string; args: string[] } {
 }
 
 export default async function globalSetup(): Promise<void> {
-  const stateDir = mkdtempSync(join(tmpdir(), 'cs-e2e-state-'))
-  const dataDir = mkdtempSync(join(tmpdir(), 'cs-e2e-data-'))
+  const stateDir = mkdtempSync(join(tmpdir(), 'stackos-e2e-state-'))
+  const dataDir = mkdtempSync(join(tmpdir(), 'stackos-e2e-data-'))
 
   const env = {
     ...process.env,
-    CONTENT_STACK_STATE_DIR: stateDir,
-    CONTENT_STACK_DATA_DIR: dataDir,
-    CONTENT_STACK_PORT: String(PORT),
+    STACKOS_STATE_DIR: stateDir,
+    STACKOS_DATA_DIR: dataDir,
+    STACKOS_PORT: String(PORT),
     PYTHONUNBUFFERED: '1',
   }
 
@@ -117,12 +117,12 @@ export default async function globalSetup(): Promise<void> {
     throw new Error(`token file never appeared at ${stateDir}/auth.token`)
   }
 
-  globalThis.__CS_DAEMON__ = {
+  globalThis.__STACKOS_DAEMON__ = {
     pid: child.pid ?? -1,
     stateDir,
     dataDir,
     token,
   }
-  process.env.CS_E2E_TOKEN = token
-  process.env.CS_E2E_BASE_URL = `http://127.0.0.1:${PORT}`
+  process.env.STACKOS_E2E_TOKEN = token
+  process.env.STACKOS_E2E_BASE_URL = `http://127.0.0.1:${PORT}`
 }

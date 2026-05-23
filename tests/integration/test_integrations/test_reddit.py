@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 from pytest_httpx import HTTPXMock
 
-from content_stack.integrations.reddit import RedditIntegration
+from stackos.integrations.reddit import RedditIntegration
 
 
 def _payload() -> bytes:

@@ -6,8 +6,8 @@ from typing import Any
 
 from typer.testing import CliRunner
 
-import content_stack.cli as cli_module
-from content_stack.cli import app
+import stackos.cli as cli_module
+from stackos.cli import app
 
 
 def test_cli_ops_list_prints_registered_operations(monkeypatch) -> None:  # type: ignore[no-untyped-def]

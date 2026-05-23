@@ -1,7 +1,6 @@
 # StackOS Setup
 
-StackOS is the product/runtime. The Python package, CLI, and plugin slug remain
-`content-stack` for install compatibility.
+StackOS is the product/runtime, package, CLI, plugin slug, and MCP identity.
 
 Setup has one goal: install StackOS once, connect the project and provider
 accounts once, then let agents use the same contracts through the MCP bridge,
@@ -15,7 +14,7 @@ Every supported setup path should land at the same state:
 1. Create local data and state directories.
 2. Create `seed.bin` and `auth.token` with mode `0600`.
 3. Run database migrations.
-4. Hydrate the `content-stack` Codex plugin from bundled assets.
+4. Hydrate the `stackos` Codex plugin from bundled assets.
 5. Register the stdio MCP bridge for supported agent runtimes.
 6. Start the daemon now, or install daemon autostart.
 7. Open the StackOS UI at `http://127.0.0.1:5180/`.
@@ -68,17 +67,17 @@ The Vite app proxies `/api` and `/mcp` to the daemon on port `5180`.
 Use this path when StackOS is installed as a Python package or pipx app:
 
 ```bash
-content-stack install
-content-stack start
+stackos install
+stackos start
 ```
 
-`content-stack install` initializes local state, runs database migrations,
+`stackos install` initializes local state, runs database migrations,
 hydrates plugin assets from the package, registers MCP bridge entries, and runs
 `doctor`. A daemon-down doctor result is treated as a first-run warning during
-install; run `content-stack start` next to start the singleton daemon in the
+install; run `stackos start` next to start the singleton daemon in the
 background.
 
-Use `content-stack restart` when a daemon is already running and should reload
+Use `stackos restart` when a daemon is already running and should reload
 settings, token rotation, or package code.
 
 ## Autostart
@@ -86,29 +85,29 @@ settings, token rotation, or package code.
 On macOS, StackOS can install a launchd job for the current user:
 
 ```bash
-content-stack autostart install
-content-stack autostart status
-content-stack autostart uninstall
+stackos autostart install
+stackos autostart status
+stackos autostart uninstall
 ```
 
 The plist runs:
 
 ```text
-python -m content_stack serve
+python -m stackos serve
 ```
 
 using the same Python environment that installed StackOS. It stores no bearer
 token and no provider secrets. Logs go to:
 
 ```text
-~/.local/state/content-stack/daemon.log
+~/.local/state/stackos/daemon.log
 ```
 
 If an existing plist differs, the installer refuses to overwrite it unless
 called with:
 
 ```bash
-content-stack autostart install --force
+stackos autostart install --force
 ```
 
 The clone-mode convenience target delegates to the same CLI-owned behavior:
@@ -145,13 +144,13 @@ strategy and passes explicit inputs.
 
 ## Agent Setup From Any Repo
 
-After install, agents can use the `content-stack` plugin from a business or
+After install, agents can use the `stackos` plugin from a business or
 website repository without copying setup files into that repo.
 
 The bridge command is:
 
 ```text
-python -m content_stack mcp-bridge
+python -m stackos mcp-bridge
 ```
 
 The bridge reads the local daemon token from the state directory and forwards
@@ -159,7 +158,7 @@ MCP traffic to the singleton daemon. If the daemon is not already listening,
 the bridge attempts a loopback-only auto-start and logs to:
 
 ```text
-~/.local/state/content-stack/mcp-bridge-autostart.log
+~/.local/state/stackos/mcp-bridge-autostart.log
 ```
 
 Agents should first bind the working repository to a StackOS project, inspect
@@ -184,7 +183,7 @@ MCP / CLI / REST / UI
 ```
 
 The agent-facing MCP surface stays small and generic. Scripts that are not AI
-agents can use `content-stack ops ...`, `content-stack actions ...`, or REST for
+agents can use `stackos ops ...`, `stackos actions ...`, or REST for
 the same operation catalog. Run-plan claim/record/action mechanics are
 intentionally explicit because the primary execution user is an agent, not a
 human clicking through a bespoke workflow UI.
@@ -194,7 +193,7 @@ human clicking through a bespoke workflow UI.
 Run:
 
 ```bash
-content-stack doctor
+stackos doctor
 ```
 
 Important exit codes:
@@ -202,7 +201,7 @@ Important exit codes:
 | Code | Meaning |
 | --- | --- |
 | 0 | Install is healthy. |
-| 1 | Daemon is down. Start it with `content-stack start` or `make serve`. |
+| 1 | Daemon is down. Start it with `stackos start` or `make serve`. |
 | 4 | Database migration head mismatch. Run migrations or restart the daemon. |
 | 7 | Auth token is missing or has the wrong file mode. |
 | 8 | Seed is missing, has the wrong mode, or credentials cannot decrypt. |
@@ -210,7 +209,7 @@ Important exit codes:
 Use JSON output for automation:
 
 ```bash
-content-stack doctor --json
+stackos doctor --json
 ```
 
 ## Local Paths
@@ -219,13 +218,13 @@ Default paths:
 
 | Item | Path |
 | --- | --- |
-| SQLite DB | `~/.local/share/content-stack/content-stack.db` |
-| Generated assets | `~/.local/share/content-stack/generated-assets/` |
-| Auth token | `~/.local/state/content-stack/auth.token` |
-| Credential seed | `~/.local/state/content-stack/seed.bin` |
-| Daemon log | `~/.local/state/content-stack/daemon.log` |
-| PID file | `~/.local/state/content-stack/daemon.pid` |
-| Codex plugin | `~/.codex/plugins/content-stack` |
+| SQLite DB | `~/.local/share/stackos/stackos.db` |
+| Generated assets | `~/.local/share/stackos/generated-assets/` |
+| Auth token | `~/.local/state/stackos/auth.token` |
+| Credential seed | `~/.local/state/stackos/seed.bin` |
+| Daemon log | `~/.local/state/stackos/daemon.log` |
+| PID file | `~/.local/state/stackos/daemon.pid` |
+| Codex plugin | `~/.codex/plugins/stackos` |
 | Plugin marketplace | `~/.agents/plugins/marketplace.json` |
 
 Moving an install to another machine requires copying the DB, `seed.bin`, and
@@ -237,7 +236,7 @@ credentials cannot be recovered.
 Re-run install to repair plugin assets and MCP registration:
 
 ```bash
-content-stack install
+stackos install
 ```
 
 In clone mode:
@@ -249,7 +248,7 @@ TPF_LLM_TOOL=codex tpf make install
 After token rotation or package upgrades, restart the daemon:
 
 ```bash
-content-stack restart
+stackos restart
 ```
 
 See [`upgrade.md`](./upgrade.md) for upgrade and cross-machine move details.

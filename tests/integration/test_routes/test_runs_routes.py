@@ -18,7 +18,7 @@ def _seed_run(
     """Create a Run row directly via the engine on app.state."""
     from sqlmodel import Session
 
-    from content_stack.db.models import Run, RunKind, RunStatus
+    from stackos.db.models import Run, RunKind, RunStatus
 
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as s:

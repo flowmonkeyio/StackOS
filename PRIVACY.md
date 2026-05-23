@@ -1,6 +1,6 @@
 # Privacy
 
-content-stack is local-first. The daemon binds to loopback, stores its
+StackOS is local-first. The daemon binds to loopback, stores its
 SQLite database under the local XDG data directory, and does not include
 telemetry or phone-home behavior.
 
@@ -8,9 +8,9 @@ telemetry or phone-home behavior.
 
 The daemon stores project configuration, content, prompts, run logs,
 integration metadata, and encrypted credentials in
-`~/.local/share/content-stack/content-stack.db` by default. The
+`~/.local/share/stackos/stackos.db` by default. The
 per-machine encryption seed and bearer token live under
-`~/.local/state/content-stack/` with mode `0600`.
+`~/.local/state/stackos/` with mode `0600`.
 
 Backups and restores copy local files only. Moving an install to another
 machine requires the database and matching `seed.bin`; without that seed,
@@ -18,7 +18,7 @@ encrypted integration credentials cannot be decrypted.
 
 ## Outbound Calls
 
-content-stack only contacts external services when you configure and run
+StackOS only contacts external services when you configure and run
 the corresponding integration, action, job, or run plan. Those calls may
 include:
 

@@ -16,8 +16,8 @@ def _run(script: Path, home: Path, *args: str) -> str:
         text=True,
         env={
             **os.environ,
-            "CONTENT_STACK_HOME": str(home),
-            "CONTENT_STACK_PLUGIN_PYTHON": sys.executable,
+            "STACKOS_HOME": str(home),
+            "STACKOS_PLUGIN_PYTHON": sys.executable,
         },
         check=True,
     )
@@ -34,21 +34,21 @@ def test_install_plugins_creates_plugin_and_marketplace(
     sandbox_home: Path, scripts_dir: Path
 ) -> None:
     output = _run(scripts_dir / "install-plugins.sh", sandbox_home)
-    plugin_root = sandbox_home / ".codex" / "plugins" / "content-stack"
+    plugin_root = sandbox_home / ".codex" / "plugins" / "stackos"
     marketplace = sandbox_home / ".agents" / "plugins" / "marketplace.json"
     payload = json.loads(marketplace.read_text(encoding="utf-8"))
 
     assert "Installed 1 plugins" in output
     assert (plugin_root / ".codex-plugin" / "plugin.json").is_file()
     mcp = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
-    assert mcp["mcpServers"]["content-stack"] == {
+    assert mcp["mcpServers"]["stackos"] == {
         "command": sys.executable,
-        "args": ["-m", "content_stack", "mcp-bridge"],
+        "args": ["-m", "stackos", "mcp-bridge"],
     }
-    assert (plugin_root / "skills" / "content-stack" / "SKILL.md").is_file()
+    assert (plugin_root / "skills" / "stackos" / "SKILL.md").is_file()
     assert not (plugin_root / "skills" / "catalog").exists()
     assert any(
-        p["name"] == "content-stack" and p["source"]["path"] == "./.codex/plugins/content-stack"
+        p["name"] == "stackos" and p["source"]["path"] == "./.codex/plugins/stackos"
         for p in payload["plugins"]
     )
 
@@ -71,8 +71,8 @@ def test_install_plugins_remove_preserves_marketplace_file(
 
     _run(scripts_dir / "install-plugins.sh", sandbox_home, "--remove")
 
-    plugin_root = sandbox_home / ".codex" / "plugins" / "content-stack"
+    plugin_root = sandbox_home / ".codex" / "plugins" / "stackos"
     marketplace = sandbox_home / ".agents" / "plugins" / "marketplace.json"
     payload = json.loads(marketplace.read_text(encoding="utf-8"))
     assert not plugin_root.exists()
-    assert all(p["name"] != "content-stack" for p in payload["plugins"])
+    assert all(p["name"] != "stackos" for p in payload["plugins"])

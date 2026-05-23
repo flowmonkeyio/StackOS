@@ -88,9 +88,9 @@ LEGACY_TABLES: frozenset[str] = frozenset(
 def isolated_alembic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     data_dir = tmp_path / "data"
     state_dir = tmp_path / "state"
-    monkeypatch.setenv("CONTENT_STACK_DATA_DIR", str(data_dir))
-    monkeypatch.setenv("CONTENT_STACK_STATE_DIR", str(state_dir))
-    yield data_dir / "content-stack.db"
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(state_dir))
+    yield data_dir / "stackos.db"
 
 
 def _run_alembic(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:

@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from content_stack.db.models import RunPlanStatus
-from content_stack.repositories.run_plans import RunPlanRepository
+from stackos.db.models import RunPlanStatus
+from stackos.repositories.run_plans import RunPlanRepository
 
 
 def _seed_run_plan(api: TestClient, project_id: int) -> int:

@@ -7,8 +7,8 @@ from typing import Any
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-import content_stack.cli as cli_module
-from content_stack.cli import app
+import stackos.cli as cli_module
+from stackos.cli import app
 
 
 def _mock_action_plan_json() -> dict[str, Any]:

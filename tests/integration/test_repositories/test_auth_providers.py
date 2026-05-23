@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 from sqlmodel import Session, select
 
-from content_stack.auth_providers import AuthRepository
-from content_stack.db.models import (
+from stackos.auth_providers import AuthRepository
+from stackos.db.models import (
     Credential,
     CredentialRefreshEvent,
     CredentialUsageEvent,
+    IntegrationCredential,
 )
-from content_stack.repositories.base import NotFoundError
-from content_stack.repositories.projects import IntegrationCredentialRepository
+from stackos.repositories.base import ConflictError, NotFoundError
+from stackos.repositories.projects import IntegrationCredentialRepository
 
 
 def test_status_wraps_existing_credentials_with_opaque_refs(
@@ -71,6 +73,71 @@ def test_failed_credential_requires_operator_setup(
 
     assert status.connections[0].status == "failed"
     assert status.connections[0].setup_required is True
+
+
+def test_telegram_bot_store_generates_webhook_secret(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = AuthRepository(session)
+
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="telegram-bot",
+        auth_method_key="bot-token",
+        profile_key="support",
+        fields={"bot_token": "123456:ABC"},
+    ).data
+
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "telegram-bot",
+        )
+    ).one()
+    assert row.id is not None
+    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id).decode())
+    assert stored.credential_ref.startswith("cred_")
+    assert payload["bot_token"] == "123456:ABC"
+    assert isinstance(payload["webhook_secret_token"], str)
+    assert len(payload["webhook_secret_token"]) >= 32
+    assert row.config_json is not None
+    assert row.config_json["provider_account_id"] == "123456"
+    assert "webhook_secret_token" not in row.config_json
+
+
+def test_telegram_bot_token_can_only_claim_one_active_connection(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = AuthRepository(session)
+
+    first = repo.store_credential(
+        project_id=project_id,
+        provider_key="telegram-bot",
+        auth_method_key="bot-token",
+        profile_key="support",
+        fields={"bot_token": "123456:ABC"},
+    ).data
+    replacement = repo.store_credential(
+        project_id=project_id,
+        provider_key="telegram-bot",
+        auth_method_key="bot-token",
+        profile_key="support",
+        fields={"bot_token": "123456:ROTATED"},
+    ).data
+
+    assert replacement.credential_ref == first.credential_ref
+    with pytest.raises(ConflictError) as exc:
+        repo.store_credential(
+            project_id=project_id,
+            provider_key="telegram-bot",
+            auth_method_key="bot-token",
+            profile_key="analytics",
+            fields={"bot_token": "123456:ROTATED"},
+        )
+    assert exc.value.data["provider_account_id"] == "123456"
+    assert exc.value.data["existing_profile_key"] == "support"
 
 
 def test_failed_credential_profile_can_be_revoked(
@@ -224,7 +291,7 @@ def test_auth_test_redacts_vendor_controlled_text_fields(
         secret_payload=b"fc-secret",
     )
     monkeypatch.setattr(
-        "content_stack.auth_providers.repository.integration_class_for",
+        "stackos.auth_providers.repository.integration_class_for",
         lambda kind: _TextLeakIntegration if kind == "firecrawl" else None,
     )
     status = AuthRepository(session).status(project_id=project_id, provider_key="firecrawl")

@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session
 
-from content_stack.repositories.base import ConflictError
-from content_stack.workflows.template_loader import WorkflowTemplateLoader
-from content_stack.workflows.template_schema import WorkflowTemplateSpec
+from stackos.repositories.base import ConflictError
+from stackos.workflows.template_loader import WorkflowTemplateLoader
+from stackos.workflows.template_schema import WorkflowTemplateSpec
 
 
 def _project_template(key: str = "company.project-memory-review") -> WorkflowTemplateSpec:

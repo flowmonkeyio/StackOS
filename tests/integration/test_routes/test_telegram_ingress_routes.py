@@ -7,9 +7,9 @@ import json
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from content_stack.repositories.agent_requests import AgentRequestRepository
-from content_stack.repositories.projects import IntegrationCredentialRepository
-from content_stack.repositories.resources import ResourceRepository
+from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.repositories.projects import IntegrationCredentialRepository
+from stackos.repositories.resources import ResourceRepository
 
 
 def _store_telegram_bot_profile(

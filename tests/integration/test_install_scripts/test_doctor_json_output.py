@@ -20,16 +20,16 @@ def test_doctor_json_emits_documented_schema(
     # tmp seed/auth/db rather than the real `~/.local/...`.
     env = {
         **os.environ,
-        "CONTENT_STACK_HOME": str(sandbox_home),
+        "STACKOS_HOME": str(sandbox_home),
         "HOME": str(sandbox_home),
-        "CONTENT_STACK_DATA_DIR": str(sandbox_home / ".local" / "share" / "content-stack"),
-        "CONTENT_STACK_STATE_DIR": str(sandbox_home / ".local" / "state" / "content-stack"),
+        "STACKOS_DATA_DIR": str(sandbox_home / ".local" / "share" / "stackos"),
+        "STACKOS_STATE_DIR": str(sandbox_home / ".local" / "state" / "stackos"),
         # Pin the seed to a value matching the conftest auth.token. The
         # doctor refuses to start if it sees a token with the wrong mode,
         # but the conftest already wrote 0600 — so just give it dirs.
     }
     # Remove env vars that might shadow our overrides during a test run.
-    env.pop("CONTENT_STACK_PORT", None)
+    env.pop("STACKOS_PORT", None)
 
     result = subprocess.run(
         ["bash", str(scripts_dir / "doctor.sh"), "--json"],

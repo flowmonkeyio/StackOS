@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
-# content-stack skill installer for the Claude Code runtime.
+# StackOS skill installer for the Claude Code runtime.
 #
-# Mirrors `skills/` into `${HOME}/.claude/skills/content-stack/` with
-# `rsync -a --delete`. Honours `CONTENT_STACK_HOME` so tests can target a
+# Mirrors `skills/` into `${HOME}/.claude/skills/stackos/` with
+# `rsync -a --delete`. Honours `STACKOS_HOME` so tests can target a
 # sandbox HOME.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOME_DIR="${CONTENT_STACK_HOME:-${HOME}}"
-TARGET="${HOME_DIR}/.claude/skills/content-stack"
+HOME_DIR="${STACKOS_HOME:-${HOME}}"
+TARGET="${HOME_DIR}/.claude/skills/stackos"
 
 mkdir -p "${TARGET}"
 rsync -a --delete \

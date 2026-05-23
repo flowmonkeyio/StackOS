@@ -11,10 +11,10 @@ import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session
 
-from content_stack.integrations.dataforseo import DataForSeoIntegration
-from content_stack.mcp.errors import RateLimitedError
-from content_stack.repositories.base import BudgetExceededError
-from content_stack.repositories.projects import IntegrationBudgetRepository
+from stackos.integrations.dataforseo import DataForSeoIntegration
+from stackos.mcp.errors import RateLimitedError
+from stackos.repositories.base import BudgetExceededError
+from stackos.repositories.projects import IntegrationBudgetRepository
 
 
 def _make(

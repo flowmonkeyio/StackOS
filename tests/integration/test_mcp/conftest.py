@@ -18,8 +18,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from content_stack.config import Settings
-from content_stack.server import create_app
+from stackos.config import Settings
+from stackos.server import create_app
 
 # ---------------------------------------------------------------------------
 # Wire helper.

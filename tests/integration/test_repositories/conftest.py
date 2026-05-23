@@ -19,9 +19,9 @@ import pytest
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel
 
-from content_stack.crypto.aes_gcm import configure_seed_path
-from content_stack.crypto.seed import ensure_seed_file
-from content_stack.db.connection import make_memory_engine
+from stackos.crypto.aes_gcm import configure_seed_path
+from stackos.crypto.seed import ensure_seed_file
+from stackos.db.connection import make_memory_engine
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -29,7 +29,7 @@ def _crypto_seed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     """Configure a deterministic per-session seed file.
 
     M4: ``IntegrationCredentialRepository.set`` now calls into
-    ``content_stack.crypto.aes_gcm.encrypt``. That helper requires
+    ``stackos.crypto.aes_gcm.encrypt``. That helper requires
     ``configure_seed_path`` to have been called at daemon startup. The
     autouse fixture mirrors what ``server.create_app`` does.
     """
@@ -64,7 +64,7 @@ def session() -> Iterator[Session]:
 @pytest.fixture
 def project_id(session: Session) -> int:
     """Create a project and return its id."""
-    from content_stack.repositories.projects import ProjectRepository
+    from stackos.repositories.projects import ProjectRepository
 
     repo = ProjectRepository(session)
     env = repo.create(

@@ -70,13 +70,13 @@ FIRECRAWL_API_KEY=fc-...
 
 ## Runtime LLM keys
 
-Used by: the operator runtime, outside content-stack. Writing and planning
+Used by: the operator runtime, outside StackOS. Writing and planning
 are agent-led: Codex, Claude Code, or another MCP client performs the work
 and uses that runtime's own model credentials.
-Do not store prose-generation OpenAI/Anthropic keys in content-stack
+Do not store prose-generation OpenAI/Anthropic keys in StackOS
 just so the daemon can spawn unattended writer sessions.
 
-The only OpenAI key content-stack itself needs is the vendor integration
+The only OpenAI key StackOS itself needs is the vendor integration
 key for image generation below.
 
 ---
@@ -96,7 +96,7 @@ runtime, so you can budget images independently from prose.
 Default path: the utility image action uses the current GPT Image API
 (``gpt-image-2`` by default). GPT Image responses return base64 image data,
 so the daemon wrapper persists the bytes under
-``CONTENT_STACK_DATA_DIR/generated-assets`` and returns local artifact URLs.
+``STACKOS_DATA_DIR/generated-assets`` and returns local artifact URLs.
 
 Cost: treat the wrapper's image estimates as a budget guardrail, not final
 billing. The wrapper records the vendor response and the operator should
@@ -165,7 +165,7 @@ Used by: plugin actions that need Reddit audience or question research.
    the redirect is unused).
 5. Copy the **client_id** (under the app name) + **client_secret**.
 6. Choose a unique **user_agent** string per Reddit's API rules
-   (e.g. ``content-stack/0.1 by your-username``).
+   (e.g. ``stackos/0.1 by your-username``).
 7. Paste all three into Connections → Reddit. The wrapper persists
    them as a JSON bundle inside the encrypted payload.
 

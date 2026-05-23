@@ -1,6 +1,6 @@
 // Auth store — bootstraps the daemon's bearer token at app start.
 //
-// The token lives at `~/.local/state/content-stack/auth.token` (mode 0600);
+// The token lives at `~/.local/state/stackos/auth.token` (mode 0600);
 // the browser can't read it directly, so the daemon exposes
 // `GET /api/v1/auth/ui-token` (whitelisted, same-origin + Host-loopback
 // enforced; see docs/security.md). On bootstrap we GET that endpoint, hold

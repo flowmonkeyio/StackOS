@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from content_stack.operations.registry import build_operation_registry
+from stackos.operations.registry import build_operation_registry
 
 
 def test_operation_registry_documents_core_operations() -> None:

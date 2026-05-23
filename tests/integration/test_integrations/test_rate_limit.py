@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from content_stack.integrations._rate_limit import (
+from stackos.integrations._rate_limit import (
     TokenBucket,
     get_bucket,
     reset_buckets,

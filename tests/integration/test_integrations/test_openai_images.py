@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 from pytest_httpx import HTTPXMock
 
-from content_stack.integrations.openai_images import OpenAIImagesIntegration
+from stackos.integrations.openai_images import OpenAIImagesIntegration
 
 
 def test_generate_uses_gpt_image_defaults(httpx_mock: HTTPXMock, project_id: int) -> None:

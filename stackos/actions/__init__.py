@@ -1,0 +1,125 @@
+"""StackOS generic action execution foundation."""
+
+from __future__ import annotations
+
+from stackos.action_availability import ActionAvailabilityOut, build_action_availability
+from stackos.actions.ahrefs import AhrefsActionConnector
+from stackos.actions.apollo import ApolloActionConnector
+from stackos.actions.clay import ClayActionConnector
+from stackos.actions.connectors import (
+    DEFAULT_ACTION_CONNECTORS,
+    ActionConnector,
+    ActionConnectorRegistry,
+    ActionConnectorRequest,
+    ActionConnectorResult,
+    ActionValidationIssue,
+)
+from stackos.actions.dataforseo import DataForSeoActionConnector
+from stackos.actions.firecrawl import FirecrawlActionConnector
+from stackos.actions.ghost import GhostActionConnector
+from stackos.actions.google_ads import GoogleAdsActionConnector
+from stackos.actions.google_workspace import GoogleWorkspaceActionConnector
+from stackos.actions.http import HttpActionConnector
+from stackos.actions.hubspot import HubSpotActionConnector
+from stackos.actions.imap import ImapActionConnector
+from stackos.actions.jina import JinaActionConnector
+from stackos.actions.manifest import (
+    ACTION_MANIFEST_SCHEMA_VERSION,
+    ExecutableActionManifest,
+    parse_action_manifest,
+)
+from stackos.actions.meta_ads import MetaAdsActionConnector
+from stackos.actions.microsoft_graph import MicrosoftGraphActionConnector
+from stackos.actions.mock_provider import MockProviderActionConnector
+from stackos.actions.openai_images import OpenAIImagesActionConnector
+from stackos.actions.outreach import OutreachActionConnector
+from stackos.actions.pipedrive import PipedriveActionConnector
+from stackos.actions.reddit import RedditActionConnector
+from stackos.actions.repository import (
+    ActionCallAuditOut,
+    ActionCallOut,
+    ActionDescribeOut,
+    ActionExecutionOut,
+    ActionRepository,
+    ActionValidationOut,
+)
+from stackos.actions.salesforce import SalesforceActionConnector
+from stackos.actions.salesloft import SalesloftActionConnector
+from stackos.actions.sitemap import SitemapActionConnector
+from stackos.actions.smtp import SmtpActionConnector
+from stackos.actions.taboola import TaboolaActionConnector
+from stackos.actions.telegram_bot import TelegramBotActionConnector
+from stackos.actions.wordpress import WordPressActionConnector
+
+DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(SitemapActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(DataForSeoActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(AhrefsActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(WordPressActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(GhostActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(HttpActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(HubSpotActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(SalesforceActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(ApolloActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(PipedriveActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(OutreachActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(SalesloftActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(GoogleWorkspaceActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(MicrosoftGraphActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(ClayActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(MetaAdsActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(GoogleAdsActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(TaboolaActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(TelegramBotActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(SmtpActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(ImapActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(MockProviderActionConnector())
+
+__all__ = [
+    "ACTION_MANIFEST_SCHEMA_VERSION",
+    "DEFAULT_ACTION_CONNECTORS",
+    "ActionAvailabilityOut",
+    "ActionCallAuditOut",
+    "ActionCallOut",
+    "ActionConnector",
+    "ActionConnectorRegistry",
+    "ActionConnectorRequest",
+    "ActionConnectorResult",
+    "ActionDescribeOut",
+    "ActionExecutionOut",
+    "ActionRepository",
+    "ActionValidationIssue",
+    "ActionValidationOut",
+    "AhrefsActionConnector",
+    "ApolloActionConnector",
+    "ClayActionConnector",
+    "DataForSeoActionConnector",
+    "ExecutableActionManifest",
+    "FirecrawlActionConnector",
+    "GhostActionConnector",
+    "GoogleAdsActionConnector",
+    "GoogleWorkspaceActionConnector",
+    "HttpActionConnector",
+    "HubSpotActionConnector",
+    "ImapActionConnector",
+    "JinaActionConnector",
+    "MetaAdsActionConnector",
+    "MicrosoftGraphActionConnector",
+    "MockProviderActionConnector",
+    "OpenAIImagesActionConnector",
+    "OutreachActionConnector",
+    "PipedriveActionConnector",
+    "RedditActionConnector",
+    "SalesforceActionConnector",
+    "SalesloftActionConnector",
+    "SitemapActionConnector",
+    "SmtpActionConnector",
+    "TaboolaActionConnector",
+    "TelegramBotActionConnector",
+    "WordPressActionConnector",
+    "build_action_availability",
+    "parse_action_manifest",
+]

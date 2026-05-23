@@ -102,3 +102,19 @@ Use this project's dedicated Serena MCP server:
 
 Do not call `activate_project` on the shared/global `serena` MCP. Do not write,
 rename, edit, or delete Serena memories unless the user explicitly asks.
+
+## StackOS MCP
+
+Use the project StackOS MCP server for StackOS operations when it is available
+in the Codex tool list:
+
+- Codex MCP name: `stackos`
+- Registration command: `bash scripts/register-mcp-codex.sh --force`
+- Bridge command: `.venv/bin/python -m stackos mcp-bridge`
+- Daemon URL used by the bridge: `http://127.0.0.1:5180/mcp`
+
+The bridge reads the daemon token from local state and must keep it out of
+prompts, logs, and tool arguments. After registering or changing this MCP entry,
+restart the Codex session so native `mcp__stackos__...` tools are mounted.
+Do not use custom JSON-RPC scripts for normal StackOS agent operations once the
+native MCP tools are available.

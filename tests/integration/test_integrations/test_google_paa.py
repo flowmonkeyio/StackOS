@@ -8,9 +8,9 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
-from content_stack.integrations.firecrawl import FirecrawlIntegration
-from content_stack.integrations.google_paa import GooglePaaIntegration
-from content_stack.mcp.errors import IntegrationDownError
+from stackos.integrations.firecrawl import FirecrawlIntegration
+from stackos.integrations.google_paa import GooglePaaIntegration
+from stackos.mcp.errors import IntegrationDownError
 
 
 def test_extract_questions_from_serp_markdown(httpx_mock: HTTPXMock, project_id: int) -> None:

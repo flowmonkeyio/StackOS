@@ -13,7 +13,7 @@ from typing import Any
 
 from pytest_httpx import HTTPXMock
 
-from content_stack.mcp.bridge import _AGENT_VISIBLE_TOOL_ORDER, AgentBridgeProxy
+from stackos.mcp.bridge import _AGENT_VISIBLE_TOOL_ORDER, AgentBridgeProxy
 
 from .conftest import MCPClient
 

@@ -50,12 +50,14 @@ providers:
             type: secret
             secret: true
             required: false
+            description: Generated automatically if left blank. Override only when rotating webhook validation manually.
           - key: api_base_url
-            label: Bot API Base URL
+            label: Local Bot API URL
             type: text
             secret: false
             required: false
             placeholder: http://127.0.0.1:8081
+            description: Leave blank for Telegram's hosted Bot API. Use only with the official self-hosted Telegram Bot API server.
     config:
       setup_note: Store only Telegram token material and transport endpoints here. Bot identity, agent guidance, command intent guidance, access, trigger, context, and response policy belong to project-scoped communication-bot-profile records.
       docs:

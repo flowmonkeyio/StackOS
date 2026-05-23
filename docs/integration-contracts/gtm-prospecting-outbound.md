@@ -8,7 +8,7 @@ modes.
 Scope reviewed: Apollo, Clay, Clearbit/Clearbit by HubSpot, Outreach,
 Salesloft, Gmail/Google Workspace, and Microsoft Graph for Microsoft 365
 mail/calendar. Current executable actions use one provider-specific connector
-file per provider under `content_stack/actions`.
+file per provider under `stackos/actions`.
 
 ## Provider Docs Ledger
 
@@ -222,7 +222,7 @@ Recommended refs before execution:
 
 ## Executable Gaps Before Signoff
 
-- Add real connectors under `content_stack/actions` for each executable provider
+- Add real connectors under `stackos/actions` for each executable provider
   operation, or keep every action in an explicit deferred execution mode.
 - Replace generic schemas with provider-specific input/output schemas and validation tests.
 - Add provider grant tests for read, cost, write, send, and calendar-create risk levels.

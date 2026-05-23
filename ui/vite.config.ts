@@ -2,8 +2,8 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'node:path'
 
-// content-stack UI build config.
-// Per PLAN.md D8 the build output lands in ../content_stack/ui_dist and
+// StackOS UI build config.
+// Per PLAN.md D8 the build output lands in ../stackos/ui_dist and
 // is COMMITTED to the repo (no pnpm at user install time). The FastAPI
 // daemon mounts that directory as static assets at "/".
 export default defineConfig({
@@ -13,7 +13,7 @@ export default defineConfig({
   },
   base: '/',
   build: {
-    outDir: path.resolve(__dirname, '../content_stack/ui_dist'),
+    outDir: path.resolve(__dirname, '../stackos/ui_dist'),
     emptyOutDir: true,
     target: 'es2022',
     sourcemap: false,

@@ -9,8 +9,8 @@ import json
 import httpx
 from pytest_httpx import HTTPXMock
 
-from content_stack.integrations.ghost import GhostIntegration
-from content_stack.integrations.wordpress import WordPressIntegration
+from stackos.integrations.ghost import GhostIntegration
+from stackos.integrations.wordpress import WordPressIntegration
 
 
 def test_wordpress_test_credentials_uses_application_password_basic_auth(

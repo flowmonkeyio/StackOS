@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from sqlmodel import Session
 
-from content_stack.auth_providers import AuthRepository
-from content_stack.repositories.plugins import PluginRepository
-from content_stack.repositories.projects import (
+from stackos.auth_providers import AuthRepository
+from stackos.repositories.plugins import PluginRepository
+from stackos.repositories.projects import (
     IntegrationBudgetRepository,
     IntegrationCredentialRepository,
 )

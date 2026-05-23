@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from content_stack.crypto.aes_gcm import (
+from stackos.crypto.aes_gcm import (
     NONCE_BYTES,
     CryptoError,
     configure_seed_path,
@@ -21,8 +21,8 @@ from content_stack.crypto.aes_gcm import (
     encrypt,
     format_aad,
 )
-from content_stack.crypto.kdf import derive_key
-from content_stack.crypto.seed import (
+from stackos.crypto.kdf import derive_key
+from stackos.crypto.seed import (
     SeedFileError,
     abort_staged_seed_rotation,
     backup_seed_path,

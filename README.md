@@ -108,8 +108,8 @@ http://127.0.0.1:5180/
 For package/operator installs:
 
 ```bash
-content-stack install
-content-stack start
+stackos install
+stackos start
 ```
 
 For Vue UI development, run `make dev-ui` and open:

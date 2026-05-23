@@ -1,4 +1,4 @@
-// Flat ESLint config for content-stack UI.
+// Flat ESLint config for StackOS UI.
 // Uses Vue 3 recommended rules + TypeScript strict + Prettier-friendly settings.
 import js from '@eslint/js'
 import vue from 'eslint-plugin-vue'
@@ -7,7 +7,7 @@ import vueParser from 'vue-eslint-parser'
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', '../content_stack/ui_dist/**'],
+    ignores: ['dist/**', 'node_modules/**', '../stackos/ui_dist/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

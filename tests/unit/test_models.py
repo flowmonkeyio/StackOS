@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from content_stack.db.models import (
+from stackos.db.models import (
     ACTION_CALL_STATUS_TRANSITIONS,
     AGENT_REQUEST_STATUS_TRANSITIONS,
     APPROVAL_REQUEST_STATUS_TRANSITIONS,

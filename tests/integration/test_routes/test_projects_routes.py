@@ -80,7 +80,7 @@ def test_auth_status_includes_global_and_project_credentials(
 ) -> None:
     from sqlmodel import Session
 
-    from content_stack.repositories.projects import IntegrationCredentialRepository
+    from stackos.repositories.projects import IntegrationCredentialRepository
 
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:

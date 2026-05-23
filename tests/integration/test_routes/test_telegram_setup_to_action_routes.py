@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session
 
-from content_stack.repositories.resources import ResourceRepository
+from stackos.repositories.resources import ResourceRepository
 
 
 def _telegram_reply_plan_json() -> dict:

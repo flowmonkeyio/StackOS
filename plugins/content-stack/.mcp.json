@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "content-stack": {
-      "command": "content-stack",
-      "args": ["mcp-bridge"]
-    }
-  }
-}

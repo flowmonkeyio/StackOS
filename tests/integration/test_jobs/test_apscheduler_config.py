@@ -7,8 +7,8 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
-from content_stack.config import Settings
-from content_stack.jobs.scheduler import build_scheduler
+from stackos.config import Settings
+from stackos.jobs.scheduler import build_scheduler
 
 
 def test_scheduler_has_default_and_long_executors(engine: object) -> None:

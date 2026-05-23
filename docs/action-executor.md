@@ -37,7 +37,7 @@ accident.
 ## Connector Boundary
 
 Connectors implement the tiny adapter contract in
-`content_stack/actions/connectors.py`:
+`stackos/actions/connectors.py`:
 
 - `validate(request)`: payload checks without provider side effects.
 - `estimate_cost_cents(request)`: mechanical cost estimate.
@@ -97,7 +97,7 @@ MCP, the generic REST operation endpoint, and the CLI when the operation surface
 allows it. Agents and scripts can inspect the operation contract with:
 
 ```bash
-content-stack ops describe action.execute --json
+stackos ops describe action.execute --json
 ```
 
 or through `GET /api/v1/operations/action.execute`.

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from content_stack.mcp.server import ToolRegistry
-from content_stack.mcp.tools import register_all
+from stackos.mcp.server import ToolRegistry
+from stackos.mcp.tools import register_all
 
 from .conftest import MCPClient
 

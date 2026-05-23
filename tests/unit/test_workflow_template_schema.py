@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from content_stack.workflows.template_schema import (
+from stackos.workflows.template_schema import (
     WorkflowTemplateSpec,
     parse_workflow_template_yaml,
     validate_workflow_template_obj,

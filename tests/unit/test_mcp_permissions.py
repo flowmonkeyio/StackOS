@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from content_stack.mcp.errors import ToolNotGrantedError
-from content_stack.mcp.permissions import (
+from stackos.mcp.errors import ToolNotGrantedError
+from stackos.mcp.permissions import (
     RUN_PLAN_CONTROLLER_SKILL,
     SKILL_TOOL_GRANTS,
     SYSTEM_SKILL,

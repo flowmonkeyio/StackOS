@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from content_stack.server import create_app
+from stackos.server import create_app
 
 
 def main() -> int:

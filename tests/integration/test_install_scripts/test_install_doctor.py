@@ -25,7 +25,7 @@ def _run(scripts_dir: Path, fake_doctor: Path) -> subprocess.CompletedProcess[st
         text=True,
         env={
             **os.environ,
-            "CONTENT_STACK_DOCTOR_SCRIPT": str(fake_doctor),
+            "STACKOS_DOCTOR_SCRIPT": str(fake_doctor),
         },
     )
 

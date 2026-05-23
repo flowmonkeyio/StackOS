@@ -3,7 +3,7 @@
 Per audit B-24 the script must:
   - Create the file when absent.
   - Preserve any sibling MCP servers when present.
-  - No-op (idempotent) when content-stack is already registered with
+  - No-op (idempotent) when stackos is already registered with
     the same payload.
   - Atomic write via tempfile + rename — never leave a half-written
     `mcp.json` on a crash.
@@ -21,10 +21,10 @@ from pathlib import Path
 def _run(
     scripts_dir: Path, home: Path, *args: str, target: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "CONTENT_STACK_HOME": str(home)}
-    env.pop("CONTENT_STACK_PORT", None)
+    env = {**os.environ, "STACKOS_HOME": str(home)}
+    env.pop("STACKOS_PORT", None)
     if target is not None:
-        env["CONTENT_STACK_MCP_TARGET"] = str(target)
+        env["STACKOS_MCP_TARGET"] = str(target)
     return subprocess.run(
         ["bash", str(scripts_dir / "register-mcp-claude.sh"), *args],
         capture_output=True,
@@ -40,9 +40,9 @@ def test_creates_file_when_absent(sandbox_home: Path, scripts_dir: Path) -> None
     assert result.returncode == 0, result.stderr
     payload = json.loads(target.read_text(encoding="utf-8"))
     assert "mcpServers" in payload
-    cs = payload["mcpServers"]["content-stack"]
+    cs = payload["mcpServers"]["stackos"]
     assert cs["transport"] == "stdio"
-    assert cs["args"] == ["-m", "content_stack", "mcp-bridge"]
+    assert cs["args"] == ["-m", "stackos", "mcp-bridge"]
     assert "headers" not in cs
 
 
@@ -70,7 +70,7 @@ def test_preserves_existing_other_server(sandbox_home: Path, scripts_dir: Path) 
 
     assert "other-server" in payload["mcpServers"], "sibling server lost"
     assert payload["mcpServers"]["other-server"]["command"] == "/usr/local/bin/other-server"
-    assert payload["mcpServers"]["content-stack"]["transport"] == "stdio"
+    assert payload["mcpServers"]["stackos"]["transport"] == "stdio"
     assert payload["extraTopLevelKey"] == "preserved", "top-level keys not preserved"
 
 
@@ -96,12 +96,12 @@ def test_remove_flag(sandbox_home: Path, scripts_dir: Path) -> None:
     target = sandbox_home / ".claude" / "mcp.json"
     _run(scripts_dir, sandbox_home, target=target)
     payload = json.loads(target.read_text(encoding="utf-8"))
-    assert "content-stack" in payload["mcpServers"]
+    assert "stackos" in payload["mcpServers"]
 
     result = _run(scripts_dir, sandbox_home, "--remove", target=target)
     assert result.returncode == 0, result.stderr
     payload = json.loads(target.read_text(encoding="utf-8"))
-    assert "content-stack" not in payload["mcpServers"]
+    assert "stackos" not in payload["mcpServers"]
 
 
 def test_atomic_write_uses_tempfile_in_same_dir(sandbox_home: Path, scripts_dir: Path) -> None:
@@ -121,7 +121,7 @@ def test_per_project_target_via_env(sandbox_home: Path, scripts_dir: Path, tmp_p
     assert result.returncode == 0, result.stderr
     assert target.is_file()
     payload = json.loads(target.read_text(encoding="utf-8"))
-    assert "content-stack" in payload["mcpServers"]
+    assert "stackos" in payload["mcpServers"]
 
 
 def test_rejects_non_json(sandbox_home: Path, scripts_dir: Path) -> None:

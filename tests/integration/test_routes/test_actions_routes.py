@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from content_stack.db.models import ActionCall, ActionCallStatus, Credential
+from stackos.db.models import ActionCall, ActionCallStatus, Credential
 
 
 def test_action_call_route_returns_redacted_audit_rows(

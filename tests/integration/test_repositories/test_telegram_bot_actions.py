@@ -10,12 +10,12 @@ import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session
 
-from content_stack.actions import ActionRepository
-from content_stack.auth_providers import AuthRepository
-from content_stack.repositories.agent_requests import AgentRequestRepository
-from content_stack.repositories.base import ConflictError, NotFoundError
-from content_stack.repositories.projects import IntegrationCredentialRepository
-from content_stack.repositories.resources import ResourceRepository
+from stackos.actions import ActionRepository
+from stackos.auth_providers import AuthRepository
+from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.repositories.base import ConflictError, NotFoundError
+from stackos.repositories.projects import IntegrationCredentialRepository
+from stackos.repositories.resources import ResourceRepository
 
 _TOKEN = "123456:ABC"
 _BASE = f"https://api.telegram.org/bot{_TOKEN}"

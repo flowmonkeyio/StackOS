@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Wrapper around `content-stack doctor`.
+# Wrapper around `stackos doctor`.
 #
 # Defaults to human-readable output. `--json` emits the machine-readable
 # envelope `{ok, code, checks, info}`. The Python implementation owns
@@ -9,7 +9,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DOCTOR_ARGS=(-m content_stack doctor)
+DOCTOR_ARGS=(-m stackos doctor)
 
 if [[ "${1:-}" == "--json" ]]; then
     DOCTOR_ARGS+=(--json)
