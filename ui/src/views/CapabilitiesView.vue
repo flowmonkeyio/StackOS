@@ -5,8 +5,7 @@ import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import ActionSchemaRenderer from '@/components/renderers/ActionSchemaRenderer.vue'
-import { UiBadge, UiCallout, UiPageShell, UiPanel, UiSectionHeader } from '@/components/ui'
+import { UiBadge, UiButton, UiCallout, UiPageShell, UiPanel, UiSectionHeader } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaCapabilityOut, SchemaProviderOut } from '@/api'
 import { useStackOsCatalogStore } from '@/stores/plugins'
@@ -16,6 +15,7 @@ const catalogStore = useStackOsCatalogStore()
 const { capabilities, providers, actions, loading, error } = storeToRefs(catalogStore)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const operationsHref = computed(() => `/projects/${projectId.value}/operations`)
 
 const capabilityColumns: DataTableColumn<SchemaCapabilityOut>[] = [
   { key: 'plugin_slug', label: 'Plugin', widthClass: 'w-32' },
@@ -69,6 +69,7 @@ watch(projectId, load)
         :items="capabilities"
         :columns="capabilityColumns"
         :loading="loading"
+        max-height="22rem"
         aria-label="Capabilities"
         empty-message="No capabilities."
       >
@@ -91,6 +92,7 @@ watch(projectId, load)
         :items="providers"
         :columns="providerColumns"
         :loading="loading"
+        max-height="22rem"
         aria-label="Providers"
         empty-message="No providers."
       >
@@ -103,28 +105,18 @@ watch(projectId, load)
     <UiPanel class="p-4">
       <UiSectionHeader
         title="Action Contracts"
+        description="Detailed input/output schemas live in Operations to keep this catalog page readable."
         as="h3"
       >
         <template #actions>
           <UiBadge>{{ actions.length }}</UiBadge>
+          <UiButton size="sm" :href="operationsHref">Open Operations</UiButton>
         </template>
       </UiSectionHeader>
-      <p
-        v-if="!loading && actions.length === 0"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
-      >
-        No action contracts.
+      <p class="text-sm text-fg-muted">
+        {{ actions.length }} actions are registered. Operations provides the compact registry,
+        surface policy, schemas, and connector readiness in one place.
       </p>
-      <div
-        v-else
-        class="space-y-2"
-      >
-        <ActionSchemaRenderer
-          v-for="action in actions"
-          :key="`${action.plugin_slug}.${action.key}`"
-          :action="action"
-        />
-      </div>
     </UiPanel>
   </UiPageShell>
 </template>

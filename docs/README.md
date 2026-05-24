@@ -15,7 +15,7 @@ obvious without loading every document.
 | Adding or changing plugins | [`plugins.md`](./plugins.md), [`extending.md`](./extending.md), [`workflow-templates.md`](./workflow-templates.md) |
 | Changing workflow templates or runs | [`workflow-templates.md`](./workflow-templates.md), [`run-plans.md`](./run-plans.md), [`project-memory.md`](./project-memory.md) |
 | Changing resources or artifacts | [`resources-and-artifacts.md`](./resources-and-artifacts.md), [`project-memory.md`](./project-memory.md) |
-| Changing UI | [`ui-design-system.md`](./ui-design-system.md), [`ui-component-inventory.md`](./ui-component-inventory.md) |
+| Changing UI | [`ui-design-system.md`](./ui-design-system.md), [`ui-component-inventory.md`](./ui-component-inventory.md), [`ui-usability-audit.md`](./ui-usability-audit.md) |
 | Reviewing provider contracts | [`integration-contracts/`](./integration-contracts/) |
 | Before-commit or release validation | [`release-signoff.md`](./release-signoff.md) |
 

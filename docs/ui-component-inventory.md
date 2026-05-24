@@ -51,6 +51,16 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 
+## Shipped — app-level primitives (`ui/src/components/`)
+
+| Component | Notes |
+|---|---|
+| `DataTable` | Generic accessible table with sorting, selection, cursor pagination, sticky desktop header, mobile card rendering, row click support, `selected-id` highlighting for master/detail pages, and optional `max-height` for dense ledgers/catalogs. |
+| `TabBar` | Accessible grouped tab navigation; currently available for richer route/tab shells. |
+| `KvList` | Compact key/value list for dense read-only metadata. |
+| `MarkdownView` | Sanitized markdown display. |
+| `StatusBadge` | Status tone mapping for projects, jobs, runs, and connector state. |
+
 ## Shipped — StackOS renderers (`ui/src/components/renderers/`)
 
 | Component | Notes |
@@ -104,8 +114,8 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 | Project budget tab | UiPanel, UiMetricCard, DataTable | ProjectPageHeader |
 | Runs list | UiFilterBar, DataTable, UiBadge | (none) |
 | Run detail | UiPageHeader, UiCodeBlock, UiJsonBlock, RunPlanRenderer, ArtifactRenderer | (none) |
-| Plugins | UiPanel, UiBadge, ActionSchemaRenderer | ProjectPageHeader |
-| Capabilities | DataTable, UiBadge, ActionSchemaRenderer | ProjectPageHeader |
+| Plugins | UiPanel, UiBadge, UiButton | ProjectPageHeader |
+| Capabilities | DataTable, UiBadge, UiButton | ProjectPageHeader |
 | Connections | DataTable, UiBadge, UiFormField, UiInput, UiSecretInput, UiJsonBlock | ProjectPageHeader |
 | Workflow templates | DataTable, TemplateRenderer | ProjectPageHeader |
 | Project Data | UiSegmentedControl, DataTable, ArtifactRenderer | ProjectPageHeader |

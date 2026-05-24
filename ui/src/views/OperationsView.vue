@@ -130,90 +130,93 @@ watch(selectedName, (name) => loadDetail(name))
       {{ error }}
     </UiCallout>
 
-    <UiPanel class="p-4">
-      <UiSectionHeader
-        title="Catalog"
-        as="h3"
-      >
-        <template #actions>
-          <UiSegmentedControl
-            v-model="surfaceFilter"
-            :options="surfaceOptions"
-            label="Surface"
-          />
-          <UiBadge>{{ rows.length }}</UiBadge>
-        </template>
-      </UiSectionHeader>
+    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(30rem,44rem)] xl:items-start">
+      <UiPanel class="p-4">
+        <UiSectionHeader
+          title="Catalog"
+          as="h3"
+        >
+          <template #actions>
+            <UiSegmentedControl
+              v-model="surfaceFilter"
+              :options="surfaceOptions"
+              label="Surface"
+            />
+            <UiBadge>{{ rows.length }}</UiBadge>
+          </template>
+        </UiSectionHeader>
 
-      <DataTable
-        :items="rows"
-        :columns="columns"
-        :loading="loading"
-        aria-label="StackOS operations"
-        empty-message="No operations."
-        interactive
-        @row-click="selectOperation"
-      >
-        <template #cell:name="{ value }">
-          <span class="font-medium text-fg-strong">{{ value }}</span>
-        </template>
-        <template #cell:surfaces="{ row }">
-          <span class="flex flex-wrap gap-1">
+        <DataTable
+          :items="rows"
+          :columns="columns"
+          :loading="loading"
+          :selected-id="selected?.name"
+          max-height="calc(100vh - 18rem)"
+          aria-label="StackOS operations"
+          empty-message="No operations."
+          interactive
+          @row-click="selectOperation"
+        >
+          <template #cell:name="{ value }">
+            <span class="font-medium text-fg-strong">{{ value }}</span>
+          </template>
+          <template #cell:surfaces="{ row }">
+            <span class="flex flex-wrap gap-1">
+              <UiBadge
+                v-for="surface in enabledSurfaceNames(row)"
+                :key="surface"
+                tone="accent"
+              >
+                {{ surface }}
+              </UiBadge>
+            </span>
+          </template>
+          <template #cell:grant_policy="{ value }">
+            <UiBadge :tone="policyTone(String(value))">
+              {{ value }}
+            </UiBadge>
+          </template>
+        </DataTable>
+      </UiPanel>
+
+      <UiPanel class="p-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+        <UiSectionHeader
+          :title="selected?.name ?? 'Operation'"
+          as="h3"
+        >
+          <template
+            v-if="selected"
+            #actions
+          >
+            <UiBadge :tone="selected.read_only ? 'success' : 'warning'">
+              {{ selected.read_only ? 'read' : 'write' }}
+            </UiBadge>
             <UiBadge
-              v-for="surface in enabledSurfaceNames(row)"
+              v-for="surface in selectedSurfaces"
               :key="surface"
               tone="accent"
             >
               {{ surface }}
             </UiBadge>
-          </span>
-        </template>
-        <template #cell:grant_policy="{ value }">
-          <UiBadge :tone="policyTone(String(value))">
-            {{ value }}
-          </UiBadge>
-        </template>
-      </DataTable>
-    </UiPanel>
+          </template>
+        </UiSectionHeader>
 
-    <UiPanel class="p-4">
-      <UiSectionHeader
-        :title="selected?.name ?? 'Operation'"
-        as="h3"
-      >
-        <template
-          v-if="selected"
-          #actions
+        <div
+          v-if="detailLoading"
+          class="py-8 text-center text-sm text-fg-muted"
         >
-          <UiBadge :tone="selected.read_only ? 'success' : 'warning'">
-            {{ selected.read_only ? 'read' : 'write' }}
-          </UiBadge>
-          <UiBadge
-            v-for="surface in selectedSurfaces"
-            :key="surface"
-            tone="accent"
-          >
-            {{ surface }}
-          </UiBadge>
-        </template>
-      </UiSectionHeader>
-
-      <div
-        v-if="detailLoading"
-        class="py-8 text-center text-sm text-fg-muted"
-      >
-        Loading…
-      </div>
-      <div
-        v-else-if="!selected"
-        class="py-8 text-sm text-fg-muted"
-      >
-        No operation selected.
-      </div>
-      <div
-        v-else
-        class="space-y-5"
-      >
+          Loading…
+        </div>
+        <div
+          v-else-if="!selected"
+          class="py-8 text-sm text-fg-muted"
+        >
+          No operation selected.
+        </div>
+        <div
+          v-else
+          class="space-y-5"
+        >
         <div class="space-y-2">
           <p class="text-sm text-fg-muted">{{ selected.summary }}</p>
           <p class="text-sm text-fg-default">{{ selected.purpose }}</p>
@@ -294,7 +297,8 @@ watch(selectedName, (name) => loadDetail(name))
             />
           </section>
         </div>
-      </div>
-    </UiPanel>
+        </div>
+      </UiPanel>
+    </div>
   </UiPageShell>
 </template>

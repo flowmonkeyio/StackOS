@@ -23,6 +23,7 @@ const { resources, records, artifacts, loading, error } = storeToRefs(resourcesS
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const pluginSlug = ref(String(route.query.plugin_slug ?? ''))
 const resourceKey = ref(String(route.query.resource_key ?? ''))
+const selectedRecord = ref<SchemaResourceRecordOut | null>(null)
 
 const pluginOptions = computed(() => [
   { value: '', label: 'All plugins' },
@@ -57,6 +58,7 @@ async function load(): Promise<void> {
       resourceKey: resourceKey.value || null,
     }),
   ])
+  selectedRecord.value = records.value[0] ?? null
 }
 
 function onPlugin(value: string | number | null): void {
@@ -72,6 +74,11 @@ function onResource(value: string | number | null): void {
 
 onMounted(load)
 watch(projectId, load)
+watch(records, (items) => {
+  if (!selectedRecord.value || !items.some((record) => record.id === selectedRecord.value?.id)) {
+    selectedRecord.value = items[0] ?? null
+  }
+})
 watch(
   () => route.query,
   () => {
@@ -122,72 +129,87 @@ watch(
       </div>
     </UiPanel>
 
-    <UiPanel class="p-4">
-      <UiSectionHeader
-        title="Schemas"
-        as="h3"
-      >
-        <template #actions>
-          <UiBadge>{{ resources.length }}</UiBadge>
-        </template>
-      </UiSectionHeader>
-      <DataTable
-        :items="resources"
-        :columns="resourceColumns"
-        :loading="loading"
-        aria-label="Resource schemas"
-        empty-message="No resource schemas."
-      >
-        <template #cell:plugin_slug="{ value }">
-          <UiBadge tone="accent">{{ value }}</UiBadge>
-        </template>
-      </DataTable>
-    </UiPanel>
+    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(26rem,38rem)] xl:items-start">
+      <div class="space-y-4">
+        <UiPanel class="p-4">
+          <UiSectionHeader
+            title="Schemas"
+            as="h3"
+          >
+            <template #actions>
+              <UiBadge>{{ resources.length }}</UiBadge>
+            </template>
+          </UiSectionHeader>
+          <DataTable
+            :items="resources"
+            :columns="resourceColumns"
+            :loading="loading"
+            max-height="18rem"
+            aria-label="Resource schemas"
+            empty-message="No resource schemas."
+          >
+            <template #cell:plugin_slug="{ value }">
+              <UiBadge tone="accent">{{ value }}</UiBadge>
+            </template>
+          </DataTable>
+        </UiPanel>
 
-    <UiPanel class="p-4">
-      <UiSectionHeader
-        title="Records"
-        as="h3"
-      >
-        <template #actions>
-          <UiBadge>{{ records.length }}</UiBadge>
-        </template>
-      </UiSectionHeader>
-      <DataTable
-        :items="records"
-        :columns="recordColumns"
-        :loading="loading"
-        aria-label="Resource records"
-        empty-message="No resource records."
-      >
-        <template #cell:plugin_slug="{ value }">
-          <UiBadge tone="accent">{{ value }}</UiBadge>
-        </template>
-      </DataTable>
-    </UiPanel>
+        <UiPanel class="p-4">
+          <UiSectionHeader
+            title="Records"
+            as="h3"
+          >
+            <template #actions>
+              <UiBadge>{{ records.length }}</UiBadge>
+            </template>
+          </UiSectionHeader>
+          <DataTable
+            :items="records"
+            :columns="recordColumns"
+            :loading="loading"
+            :selected-id="selectedRecord?.id"
+            max-height="calc(100vh - 31rem)"
+            aria-label="Resource records"
+            empty-message="No resource records."
+            interactive
+            @row-click="(row) => (selectedRecord = row)"
+          >
+            <template #cell:plugin_slug="{ value }">
+              <UiBadge tone="accent">{{ value }}</UiBadge>
+            </template>
+          </DataTable>
+        </UiPanel>
+      </div>
 
-    <section
-      v-if="records.length > 0"
-      class="space-y-3"
-    >
-      <UiSectionHeader title="Record Details" />
-      <ResourceViewRenderer
-        v-for="record in records.slice(0, 8)"
-        :key="record.id"
-        :record="record"
-      />
-    </section>
+      <div class="space-y-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+        <section v-if="selectedRecord" class="space-y-3">
+          <UiSectionHeader
+            title="Record Details"
+            :description="`Selected ${selectedRecord.resource_key} #${selectedRecord.id}`"
+          >
+            <template #actions>
+              <UiBadge tone="accent">{{ selectedRecord.plugin_slug }}</UiBadge>
+              <UiBadge>{{ selectedRecord.resource_key }}</UiBadge>
+            </template>
+          </UiSectionHeader>
+          <ResourceViewRenderer :record="selectedRecord" />
+        </section>
 
-    <section
-      v-if="artifacts.length > 0"
-      class="space-y-3"
-    >
-      <UiSectionHeader title="Artifacts" />
-      <ArtifactRenderer
-        v-for="artifact in artifacts"
-        :key="artifact.id"
-        :artifact="artifact"
-      />
-    </section>
+        <section v-if="artifacts.length > 0" class="space-y-3">
+          <UiSectionHeader title="Artifacts">
+            <template #actions>
+              <UiBadge>{{ artifacts.length }}</UiBadge>
+            </template>
+          </UiSectionHeader>
+          <div class="grid gap-3">
+            <ArtifactRenderer
+              v-for="artifact in artifacts"
+              :key="artifact.id"
+              :artifact="artifact"
+            />
+          </div>
+        </section>
+      </div>
+    </div>
   </UiPageShell>
 </template>

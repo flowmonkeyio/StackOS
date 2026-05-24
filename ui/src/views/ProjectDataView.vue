@@ -6,7 +6,7 @@ import { useRoute } from 'vue-router'
 import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
-import { UiBadge, UiCallout, UiJsonBlock, UiPageShell, UiPanel, UiSectionHeader, UiSegmentedControl } from '@/components/ui'
+import { UiBadge, UiCallout, UiJsonBlock, UiMetricCard, UiPageShell, UiPanel, UiSectionHeader, UiSegmentedControl } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type {
   SchemaContextSnapshotOut,
@@ -137,38 +137,14 @@ watch(projectId, load)
     </UiCallout>
 
     <div class="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
-      <UiPanel class="p-3">
-        <div class="text-xs text-fg-muted">Events</div>
-        <div class="text-2xl font-semibold">{{ timeline.length }}</div>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <div class="text-xs text-fg-muted">Learnings</div>
-        <div class="text-2xl font-semibold">{{ learnings.length }}</div>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <div class="text-xs text-fg-muted">Experiments</div>
-        <div class="text-2xl font-semibold">{{ experiments.length }}</div>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <div class="text-xs text-fg-muted">Observations</div>
-        <div class="text-2xl font-semibold">{{ observations.length }}</div>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <div class="text-xs text-fg-muted">Decisions</div>
-        <div class="text-2xl font-semibold">{{ decisions.length }}</div>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <div class="text-xs text-fg-muted">Snapshots</div>
-        <div class="text-2xl font-semibold">{{ snapshots.length }}</div>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <div class="text-xs text-fg-muted">Artifacts</div>
-        <div class="text-2xl font-semibold">{{ artifacts.length }}</div>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <div class="text-xs text-fg-muted">Metrics</div>
-        <div class="text-2xl font-semibold">{{ metrics.length }}</div>
-      </UiPanel>
+      <UiMetricCard label="Events" :value="timeline.length" density="compact" />
+      <UiMetricCard label="Learnings" :value="learnings.length" density="compact" />
+      <UiMetricCard label="Experiments" :value="experiments.length" density="compact" />
+      <UiMetricCard label="Observations" :value="observations.length" density="compact" />
+      <UiMetricCard label="Decisions" :value="decisions.length" density="compact" />
+      <UiMetricCard label="Snapshots" :value="snapshots.length" density="compact" />
+      <UiMetricCard label="Artifacts" :value="artifacts.length" density="compact" />
+      <UiMetricCard label="Metrics" :value="metrics.length" density="compact" />
     </div>
 
     <UiPanel class="p-4">
@@ -189,6 +165,7 @@ watch(projectId, load)
         :items="timeline"
         :columns="timelineColumns"
         :loading="loading"
+        max-height="calc(100vh - 22rem)"
         aria-label="Project timeline"
         empty-message="No timeline events."
       />
@@ -203,6 +180,7 @@ watch(projectId, load)
         :items="learnings"
         :columns="learningColumns"
         :loading="loading"
+        max-height="calc(100vh - 22rem)"
         aria-label="Learnings"
         empty-message="No learnings."
       >
@@ -221,6 +199,7 @@ watch(projectId, load)
         :items="experiments"
         :columns="experimentColumns"
         :loading="loading"
+        max-height="calc(100vh - 22rem)"
         aria-label="Experiments"
         empty-message="No experiments."
       >
@@ -239,6 +218,7 @@ watch(projectId, load)
         :items="observations"
         :columns="observationColumns"
         :loading="loading"
+        max-height="calc(100vh - 22rem)"
         aria-label="Observations"
         empty-message="No observations."
       />
@@ -253,6 +233,7 @@ watch(projectId, load)
         :items="decisions"
         :columns="decisionColumns"
         :loading="loading"
+        max-height="calc(100vh - 22rem)"
         aria-label="Decisions"
         empty-message="No decisions."
       />
@@ -267,6 +248,7 @@ watch(projectId, load)
         :items="snapshots"
         :columns="snapshotColumns"
         :loading="loading"
+        max-height="calc(100vh - 22rem)"
         aria-label="Context snapshots"
         empty-message="No snapshots."
       />
@@ -316,6 +298,7 @@ watch(projectId, load)
         :items="metrics"
         :columns="metricColumns"
         :loading="loading"
+        max-height="calc(100vh - 22rem)"
         aria-label="Metrics"
         empty-message="No metric snapshots."
       />

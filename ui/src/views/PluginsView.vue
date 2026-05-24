@@ -4,8 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import ActionSchemaRenderer from '@/components/renderers/ActionSchemaRenderer.vue'
-import { UiBadge, UiCallout, UiPageShell, UiPanel, UiSectionHeader } from '@/components/ui'
+import { UiBadge, UiButton, UiCallout, UiPageShell, UiPanel, UiSectionHeader } from '@/components/ui'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 
 const route = useRoute()
@@ -13,6 +12,7 @@ const catalogStore = useStackOsCatalogStore()
 const { plugins, loading, error } = storeToRefs(catalogStore)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const operationsHref = computed(() => `/projects/${projectId.value}/operations`)
 
 async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
@@ -92,28 +92,19 @@ watch(projectId, load)
     <UiPanel class="p-4">
       <UiSectionHeader
         title="Action Contracts"
+        description="Full provider actions are inspected in Operations so the plugin catalog stays scan-friendly."
         as="h3"
       >
         <template #actions>
           <UiBadge>{{ catalogStore.actions.length }}</UiBadge>
+          <UiButton size="sm" :href="operationsHref">Open Operations</UiButton>
         </template>
       </UiSectionHeader>
-      <p
-        v-if="!loading && catalogStore.actions.length === 0"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
-      >
-        No action contracts.
+      <p class="text-sm text-fg-muted">
+        {{ catalogStore.actions.length }} action contracts are available across
+        {{ plugins.length }} installed plugins. Use Operations for schema detail, credential
+        readiness, and entrypoint visibility.
       </p>
-      <div
-        v-else
-        class="space-y-2"
-      >
-        <ActionSchemaRenderer
-          v-for="action in catalogStore.actions"
-          :key="`${action.plugin_slug}.${action.key}`"
-          :action="action"
-        />
-      </div>
     </UiPanel>
   </UiPageShell>
 </template>

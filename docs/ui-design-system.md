@@ -81,7 +81,11 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 **UiBadge.** Status only. Never decorative. Always paired with `status.ts` mapping — never inline string compares.
 
-**Tables.** Compact density (32px row), comfortable for editor density (40px row). Never auto-wrap; use `truncate` + tooltip on overflow. Sticky header. Selection column: 32px.
+**Tables.** Compact density (32px row), comfortable for editor density
+(40px row). Never auto-wrap; use `truncate` + tooltip on overflow. Sticky
+header. Selection column: 32px. Long ledgers and catalog registries should use
+`DataTable`'s `max-height` so rows scroll inside the table region, and
+master/detail pages should pass `selected-id` to keep the active row visible.
 
 **StackOS renderers.** `TemplateRenderer`, `RunPlanRenderer`,
 `ResourceViewRenderer`, `ArtifactRenderer`, `ContextQueryRenderer`,

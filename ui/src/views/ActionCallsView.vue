@@ -19,6 +19,7 @@ import {
   UiFormField,
   UiInput,
   UiJsonBlock,
+  UiMetricCard,
   UiPageShell,
   UiPanel,
   UiSectionHeader,
@@ -227,22 +228,10 @@ watch(projectId, load)
     </UiCallout>
 
     <div class="grid gap-3 md:grid-cols-4">
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">Loaded calls</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ rows.length }}</p>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">Success</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ loadedSuccess }}</p>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">Failed</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ loadedFailed }}</p>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">Dry runs</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ loadedDryRun }}</p>
-      </UiPanel>
+      <UiMetricCard label="Loaded calls" :value="rows.length" density="compact" />
+      <UiMetricCard label="Success" :value="loadedSuccess" density="compact" />
+      <UiMetricCard label="Failed" :value="loadedFailed" density="compact" />
+      <UiMetricCard label="Dry runs" :value="loadedDryRun" density="compact" />
     </div>
 
     <UiPanel
@@ -290,122 +279,123 @@ watch(projectId, load)
       </div>
     </UiPanel>
 
-    <UiPanel class="p-4">
-      <UiSectionHeader
-        title="Audit Ledger"
-        as="h3"
-      >
-        <template #actions>
-          <UiBadge>{{ rows.length }}</UiBadge>
-        </template>
-      </UiSectionHeader>
-      <DataTable
-        :items="rows"
-        :columns="columns"
-        :loading="loading"
-        :next-cursor="nextCursor"
-        aria-label="Action call audit rows"
-        empty-message="No action calls match these filters."
-        interactive
-        @row-click="(row) => (selectedCall = row)"
-        @load-more="fetchCalls({ append: true })"
-      >
-        <template #cell:plugin_slug="{ value }">
-          <UiBadge tone="accent">{{ value }}</UiBadge>
-        </template>
-        <template #cell:action_key="{ row }">
-          <span class="font-mono text-xs">{{ callTitle(row) }}</span>
-        </template>
-        <template #cell:status="{ value }">
-          <StatusBadge
-            :status="String(value)"
-            kind="job"
-            :small="true"
-          />
-        </template>
-        <template #cell:credential_ref="{ value }">
-          <span class="font-mono text-xs">{{ value ?? '-' }}</span>
-        </template>
-      </DataTable>
-    </UiPanel>
+    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)] xl:items-start">
+      <UiPanel class="p-4">
+        <UiSectionHeader
+          title="Audit Ledger"
+          as="h3"
+        >
+          <template #actions>
+            <UiBadge>{{ rows.length }}</UiBadge>
+          </template>
+        </UiSectionHeader>
+        <DataTable
+          :items="rows"
+          :columns="columns"
+          :loading="loading"
+          :next-cursor="nextCursor"
+          :selected-id="selectedCall?.id"
+          max-height="calc(100vh - 24rem)"
+          aria-label="Action call audit rows"
+          empty-message="No action calls match these filters."
+          interactive
+          @row-click="(row) => (selectedCall = row)"
+          @load-more="fetchCalls({ append: true })"
+        >
+          <template #cell:plugin_slug="{ value }">
+            <UiBadge tone="accent">{{ value }}</UiBadge>
+          </template>
+          <template #cell:action_key="{ row }">
+            <span class="font-mono text-xs">{{ callTitle(row) }}</span>
+          </template>
+          <template #cell:status="{ value }">
+            <StatusBadge
+              :status="String(value)"
+              kind="job"
+              :small="true"
+            />
+          </template>
+          <template #cell:credential_ref="{ value }">
+            <span class="font-mono text-xs">{{ value ?? '-' }}</span>
+          </template>
+        </DataTable>
+      </UiPanel>
 
-    <UiPanel
-      v-if="selectedCall"
-      class="p-4"
-    >
-      <UiSectionHeader
-        :title="`Action Call #${selectedCall.id}`"
-        :description="callTitle(selectedCall)"
-        as="h3"
+      <UiPanel
+        v-if="selectedCall"
+        class="p-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto"
       >
-        <template #actions>
-          <StatusBadge
-            :status="selectedCall.status"
-            kind="job"
-            :small="true"
+        <UiSectionHeader
+          :title="`Action Call #${selectedCall.id}`"
+          :description="callTitle(selectedCall)"
+          as="h3"
+        >
+          <template #actions>
+            <StatusBadge
+              :status="selectedCall.status"
+              kind="job"
+              :small="true"
+            />
+          </template>
+        </UiSectionHeader>
+        <dl class="mb-3 grid gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt class="text-xs text-fg-muted">Provider</dt>
+            <dd>{{ selectedCall.provider_key ?? '-' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-fg-muted">Connector</dt>
+            <dd>{{ selectedCall.connector_key ?? '-' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-fg-muted">Operation</dt>
+            <dd class="truncate">{{ selectedCall.operation }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-fg-muted">Run</dt>
+            <dd>{{ selectedCall.run_id ? `#${selectedCall.run_id}` : '-' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-fg-muted">Cost</dt>
+            <dd>{{ selectedCall.cost_cents }} cents</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-fg-muted">Created</dt>
+            <dd>{{ formatDateTime(selectedCall.created_at) }}</dd>
+          </div>
+        </dl>
+        <UiCallout
+          v-if="selectedCall.error"
+          tone="danger"
+          density="compact"
+          class="mb-3"
+        >
+          {{ selectedCall.error }}
+        </UiCallout>
+        <div class="grid gap-3">
+          <UiJsonBlock
+            :data="sanitizeForDisplay(selectedCall.request_json ?? {})"
+            density="compact"
+            max-height="12rem"
+            wrap
+            aria-label="Action call request"
           />
-          <UiBadge v-if="selectedCall.credential_ref">
-            {{ selectedCall.credential_ref }}
-          </UiBadge>
-        </template>
-      </UiSectionHeader>
-      <dl class="mb-3 grid gap-3 text-sm md:grid-cols-3 xl:grid-cols-6">
-        <div>
-          <dt class="text-xs text-fg-muted">Provider</dt>
-          <dd>{{ selectedCall.provider_key ?? '-' }}</dd>
+          <UiJsonBlock
+            :data="sanitizeForDisplay(selectedCall.response_json ?? {})"
+            density="compact"
+            max-height="12rem"
+            wrap
+            aria-label="Action call response"
+          />
+          <UiJsonBlock
+            :data="sanitizeForDisplay(selectedCall.metadata_json ?? {})"
+            density="compact"
+            max-height="12rem"
+            wrap
+            aria-label="Action call metadata"
+          />
         </div>
-        <div>
-          <dt class="text-xs text-fg-muted">Connector</dt>
-          <dd>{{ selectedCall.connector_key ?? '-' }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs text-fg-muted">Operation</dt>
-          <dd class="truncate">{{ selectedCall.operation }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs text-fg-muted">Run</dt>
-          <dd>{{ selectedCall.run_id ? `#${selectedCall.run_id}` : '-' }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs text-fg-muted">Cost</dt>
-          <dd>{{ selectedCall.cost_cents }} cents</dd>
-        </div>
-        <div>
-          <dt class="text-xs text-fg-muted">Created</dt>
-          <dd>{{ formatDateTime(selectedCall.created_at) }}</dd>
-        </div>
-      </dl>
-      <UiCallout
-        v-if="selectedCall.error"
-        tone="danger"
-        density="compact"
-        class="mb-3"
-      >
-        {{ selectedCall.error }}
-      </UiCallout>
-      <div class="grid gap-3 lg:grid-cols-3">
-        <UiJsonBlock
-          :data="sanitizeForDisplay(selectedCall.request_json ?? {})"
-          density="compact"
-          max-height="18rem"
-          wrap
-          aria-label="Action call request"
-        />
-        <UiJsonBlock
-          :data="sanitizeForDisplay(selectedCall.response_json ?? {})"
-          density="compact"
-          max-height="18rem"
-          wrap
-          aria-label="Action call response"
-        />
-        <UiJsonBlock
-          :data="sanitizeForDisplay(selectedCall.metadata_json ?? {})"
-          density="compact"
-          max-height="18rem"
-          wrap
-          aria-label="Action call metadata"
-        />
-      </div>
-    </UiPanel>
+      </UiPanel>
+    </div>
   </UiPageShell>
 </template>

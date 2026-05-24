@@ -35,6 +35,10 @@ interface Props {
   rowKey?: (row: T) => T['id']
   /** Makes rows keyboard/click navigable. */
   interactive?: boolean
+  /** Highlights the active row in read-only master/detail layouts. */
+  selectedId?: T['id'] | null
+  /** Optional desktop table scroll cap. Keeps long ledgers inside the first viewport. */
+  maxHeight?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -47,6 +51,8 @@ const props = withDefaults(defineProps<Props>(), {
   ariaLabel: 'Data table',
   rowKey: undefined,
   interactive: false,
+  selectedId: undefined,
+  maxHeight: undefined,
 })
 
 const emit = defineEmits<{
@@ -94,6 +100,10 @@ function formatCell(col: DataTableColumn<T>, row: T): string {
 
 function isSelected(row: T): boolean {
   return props.selection?.has(keyOf(row)) ?? false
+}
+
+function isActive(row: T): boolean {
+  return props.selectedId !== undefined && props.selectedId !== null && keyOf(row) === props.selectedId
 }
 
 function toggleSelection(row: T): void {
@@ -150,6 +160,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
     <div
       class="hidden overflow-x-auto rounded-md border border-default md:block"
       tabindex="0"
+      :style="maxHeight ? { maxHeight, overflowY: 'auto' } : undefined"
     >
       <table
         class="min-w-full divide-y divide-border-subtle text-sm"
@@ -204,10 +215,11 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
             :tabindex="interactive || selection ? 0 : undefined"
             class="hover:bg-bg-surface-alt"
             :class="{
-              'bg-accent-subtle': isSelected(row),
+              'bg-accent-subtle': isSelected(row) || isActive(row),
               'cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus': interactive || selection,
             }"
             :aria-selected="isSelected(row)"
+            :aria-current="isActive(row) ? 'true' : undefined"
             @click="interactive && emit('row-click', row)"
             @keydown="onKeydown($event, row, idx)"
             @focus="focusedIndex = idx"
@@ -269,8 +281,9 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
         :role="interactive ? 'button' : undefined"
         :tabindex="interactive || selection ? 0 : undefined"
         class="rounded-md border border-default bg-bg-surface p-3 shadow-xs"
-        :class="{ 'bg-accent-subtle': isSelected(row) }"
+        :class="{ 'bg-accent-subtle': isSelected(row) || isActive(row) }"
         :aria-selected="isSelected(row)"
+        :aria-current="isActive(row) ? 'true' : undefined"
         @click="interactive && emit('row-click', row)"
         @keydown="onCardKeydown($event, row)"
       >

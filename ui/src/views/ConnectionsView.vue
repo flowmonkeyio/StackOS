@@ -12,10 +12,12 @@ import {
   UiFormField,
   UiInput,
   UiJsonBlock,
+  UiMetricCard,
   UiPageShell,
   UiPanel,
   UiSecretInput,
   UiSectionHeader,
+  UiSegmentedControl,
   UiSelect,
   UiSidePanel,
   UiTextarea,
@@ -31,6 +33,7 @@ type AuthMethod = NonNullable<SchemaAuthProviderOut['auth_methods']>[number]
 type AuthField = NonNullable<AuthMethod['fields']>[number]
 type MessageTone = 'success' | 'danger' | 'info'
 type BadgeTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent'
+type ConnectionSection = 'services' | 'communications' | 'telegram' | 'diagnostics'
 
 interface ServiceGroup {
   provider: SchemaAuthProviderOut | null
@@ -211,6 +214,7 @@ const fieldsByForm = ref<Record<string, Record<string, string>>>({})
 const busyAction = ref<string | null>(null)
 const providerMessages = ref<Record<string, { tone: MessageTone; text: string }>>({})
 const connectionMessages = ref<Record<string, { tone: MessageTone; text: string }>>({})
+const activeSection = ref<ConnectionSection>('services')
 const telegramProfilePanelOpen = ref(false)
 const telegramProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
 const communicationProfiles = ref<CommunicationProfile[]>([])
@@ -335,6 +339,25 @@ const serviceGroups = computed<ServiceGroup[]>(() => {
 const connectedServiceCount = computed(
   () => new Set(connectedConnections.value.map((connection) => connection.provider_key)).size,
 )
+
+const connectionSectionOptions = computed(() => [
+  { key: 'services', label: `Services ${connections.value.length}` },
+  {
+    key: 'communications',
+    label: `Comms ${
+      communicationProfiles.value.length +
+      communicationSurfaces.value.length +
+      communicationTargets.value.length +
+      (ingressStatus.value?.routes?.length ?? 0)
+    }`,
+  },
+  { key: 'telegram', label: `Telegram ${telegramProfiles.value.length}` },
+  { key: 'diagnostics', label: 'Diagnostics' },
+])
+
+function setActiveSection(value: string | number): void {
+  activeSection.value = String(value) as ConnectionSection
+}
 
 async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
@@ -1195,21 +1218,28 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
     </UiCallout>
 
     <div class="grid gap-3 md:grid-cols-3">
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">Connected services</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ connectedServiceCount }}</p>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">Active connections</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ activeConnections.length }}</p>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">Needs attention</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ attentionConnections.length }}</p>
-      </UiPanel>
+      <UiMetricCard label="Connected services" :value="connectedServiceCount" density="compact" />
+      <UiMetricCard label="Active connections" :value="activeConnections.length" density="compact" />
+      <UiMetricCard label="Needs attention" :value="attentionConnections.length" density="compact" />
     </div>
 
-    <UiPanel class="p-4">
+    <UiPanel class="p-3">
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <UiSegmentedControl
+          :model-value="activeSection"
+          :options="connectionSectionOptions"
+          label="Connection page sections"
+          size="md"
+          @select="setActiveSection"
+        />
+        <p class="max-w-3xl text-sm text-fg-muted">
+          Use this page for local-admin setup and read-only inspection. Agents receive safe refs,
+          not secrets.
+        </p>
+      </div>
+    </UiPanel>
+
+    <UiPanel v-show="activeSection === 'services'" class="p-4">
       <UiSectionHeader
         title="Connected Services"
         description="Each service can have multiple named connections for different accounts, workspaces, or client profiles."
@@ -1401,7 +1431,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
       </ul>
     </UiPanel>
 
-    <UiPanel class="p-4">
+    <UiPanel v-show="activeSection === 'communications'" class="p-4">
       <UiSectionHeader
         title="Communication Setup"
         description="Provider-neutral profiles, named destinations, and public ingress routes used by agents."
@@ -1450,7 +1480,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           >
             No communication profiles configured.
           </div>
-          <ul v-else class="grid gap-2">
+          <ul v-else class="grid max-h-[34rem] gap-2 overflow-y-auto pr-1">
             <li
               v-for="profile in communicationProfiles"
               :key="profile.profile_ref"
@@ -1494,7 +1524,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           >
             No communication surfaces configured.
           </div>
-          <ul v-else class="grid gap-2">
+          <ul v-else class="grid max-h-[34rem] gap-2 overflow-y-auto pr-1">
             <li
               v-for="surface in communicationSurfaces"
               :key="surface.surface_ref"
@@ -1537,7 +1567,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           >
             No named targets configured.
           </div>
-          <ul v-else class="grid gap-2">
+          <ul v-else class="grid max-h-[34rem] gap-2 overflow-y-auto pr-1">
             <li
               v-for="target in communicationTargets"
               :key="target.target_ref"
@@ -1574,7 +1604,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
               </UiBadge>
               <UiBadge>{{ ingressStatus?.endpoint?.driver ?? 'no driver' }}</UiBadge>
             </div>
-            <p class="mt-2 truncate font-mono text-xs text-fg-muted">
+            <p class="mt-2 break-all font-mono text-xs text-fg-muted">
               {{ ingressStatus?.endpoint?.public_base_url ?? 'No public URL configured' }}
             </p>
           </div>
@@ -1582,7 +1612,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
             <li
               v-for="route in ingressStatus.routes"
               :key="`${route.provider_key}:${route.profile_key}`"
-              class="rounded-md border border-subtle bg-bg-surface-alt p-3"
+              class="min-w-0 rounded-md border border-subtle bg-bg-surface-alt p-3"
             >
               <div class="flex flex-wrap items-center gap-2">
                 <h4 class="text-sm font-semibold text-fg-strong">{{ route.profile_key }}</h4>
@@ -1591,7 +1621,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
                   {{ route.remote_status ?? 'local' }}
                 </UiBadge>
               </div>
-              <p class="mt-1 truncate font-mono text-xs text-fg-muted">
+              <p class="mt-1 break-all font-mono text-xs text-fg-muted">
                 {{ route.ingress_url ?? route.local_url ?? '-' }}
               </p>
             </li>
@@ -1600,7 +1630,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
       </div>
     </UiPanel>
 
-    <UiPanel class="p-4">
+    <UiPanel v-show="activeSection === 'telegram'" class="p-4">
       <UiSectionHeader
         title="Telegram Profiles"
         description="Bind a Telegram connection to project-scoped identity, agent guidance, access, trigger, context, and response policy."
@@ -1712,19 +1742,21 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
       </ul>
     </UiPanel>
 
-    <details v-if="authStatus" class="rounded-md border border-default bg-bg-surface shadow-xs">
-      <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-fg-strong focus-ring">
-        Diagnostics
-      </summary>
-      <div class="border-t border-subtle p-3">
+    <UiPanel v-if="authStatus" v-show="activeSection === 'diagnostics'" class="p-4">
+      <UiSectionHeader
+        title="Diagnostics"
+        description="Sanitized daemon-side auth status for support and verification."
+        as="h3"
+      />
+      <div class="mt-3">
         <UiJsonBlock
           :data="sanitizeForDisplay(authStatus)"
           density="compact"
-          max-height="18rem"
+          max-height="34rem"
           wrap
         />
       </div>
-    </details>
+    </UiPanel>
 
     <UiSidePanel
       v-model="addPanelOpen"

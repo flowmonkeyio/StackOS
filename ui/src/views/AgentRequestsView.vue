@@ -14,6 +14,7 @@ import {
   UiDescriptionList,
   UiFormField,
   UiJsonBlock,
+  UiMetricCard,
   UiPageShell,
   UiPanel,
   UiSectionHeader,
@@ -229,22 +230,10 @@ watch(projectId, () => {
     </UiCallout>
 
     <div class="grid gap-3 md:grid-cols-4">
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">Loaded</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ rows.length }}</p>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">New</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ loadedNew }}</p>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">Claimed</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ loadedClaimed }}</p>
-      </UiPanel>
-      <UiPanel class="p-3">
-        <p class="text-xs text-fg-muted">Unread</p>
-        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ loadedUnread }}</p>
-      </UiPanel>
+      <UiMetricCard label="Loaded" :value="rows.length" density="compact" />
+      <UiMetricCard label="New" :value="loadedNew" density="compact" />
+      <UiMetricCard label="Claimed" :value="loadedClaimed" density="compact" />
+      <UiMetricCard label="Unread" :value="loadedUnread" density="compact" />
     </div>
 
     <UiPanel
@@ -283,93 +272,95 @@ watch(projectId, () => {
       </div>
     </UiPanel>
 
-    <UiPanel class="p-4">
-      <UiSectionHeader
-        title="Queue"
-        as="h3"
-      >
-        <template #actions>
-          <UiBadge>{{ totalEstimate }} total</UiBadge>
-          <UiBadge>{{ loadedTerminal }} terminal loaded</UiBadge>
-        </template>
-      </UiSectionHeader>
-      <DataTable
-        :items="rows"
-        :columns="columns"
-        :loading="loading"
-        :next-cursor="nextCursor"
-        aria-label="Agent request queue"
-        empty-message="No agent requests match these filters."
-        interactive
-        @row-click="selectRequest"
-        @load-more="fetchRequests({ append: true })"
-      >
-        <template #cell:title="{ row }">
-          <div class="max-w-xl">
-            <p class="truncate font-medium text-fg-strong">{{ row.title }}</p>
-            <p
-              v-if="row.body_preview"
-              class="mt-1 line-clamp-2 text-xs text-fg-muted"
-            >
-              {{ row.body_preview }}
-            </p>
-          </div>
-        </template>
-        <template #cell:status="{ value }">
-          <StatusBadge
-            :status="String(value)"
-            :kind="requestStatusKind(String(value) as AgentRequestStatus)"
-            :small="true"
-          />
-        </template>
-        <template #cell:attention_status="{ value }">
-          <UiBadge :tone="attentionTone(value as AgentRequestAttentionStatus)">
-            {{ value }}
-          </UiBadge>
-        </template>
-        <template #cell:source_provider="{ row }">
-          <span class="flex flex-wrap gap-1">
-            <UiBadge v-if="row.source_provider">{{ row.source_provider }}</UiBadge>
-            <UiBadge
-              v-if="row.source_kind"
-              tone="accent"
-            >
-              {{ row.source_kind }}
+    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)] xl:items-start">
+      <UiPanel class="p-4">
+        <UiSectionHeader
+          title="Queue"
+          as="h3"
+        >
+          <template #actions>
+            <UiBadge>{{ totalEstimate }} total</UiBadge>
+            <UiBadge>{{ loadedTerminal }} terminal loaded</UiBadge>
+          </template>
+        </UiSectionHeader>
+        <DataTable
+          :items="rows"
+          :columns="columns"
+          :loading="loading"
+          :next-cursor="nextCursor"
+          :selected-id="selectedRequest?.id"
+          max-height="calc(100vh - 24rem)"
+          aria-label="Agent request queue"
+          empty-message="No agent requests match these filters."
+          interactive
+          @row-click="selectRequest"
+          @load-more="fetchRequests({ append: true })"
+        >
+          <template #cell:title="{ row }">
+            <div class="max-w-xl">
+              <p class="truncate font-medium text-fg-strong">{{ row.title }}</p>
+              <p
+                v-if="row.body_preview"
+                class="mt-1 line-clamp-2 text-xs text-fg-muted"
+              >
+                {{ row.body_preview }}
+              </p>
+            </div>
+          </template>
+          <template #cell:status="{ value }">
+            <StatusBadge
+              :status="String(value)"
+              :kind="requestStatusKind(String(value) as AgentRequestStatus)"
+              :small="true"
+            />
+          </template>
+          <template #cell:attention_status="{ value }">
+            <UiBadge :tone="attentionTone(value as AgentRequestAttentionStatus)">
+              {{ value }}
             </UiBadge>
-            <span
-              v-if="!row.source_provider && !row.source_kind"
-              class="text-fg-muted"
-            >
-              -
+          </template>
+          <template #cell:source_provider="{ row }">
+            <span class="flex flex-wrap gap-1">
+              <UiBadge v-if="row.source_provider">{{ row.source_provider }}</UiBadge>
+              <UiBadge
+                v-if="row.source_kind"
+                tone="accent"
+              >
+                {{ row.source_kind }}
+              </UiBadge>
+              <span
+                v-if="!row.source_provider && !row.source_kind"
+                class="text-fg-muted"
+              >
+                -
+              </span>
             </span>
-          </span>
-        </template>
-      </DataTable>
-    </UiPanel>
+          </template>
+        </DataTable>
+      </UiPanel>
 
-    <UiPanel
-      v-if="selectedRequest"
-      class="p-4"
-    >
-      <UiSectionHeader
-        :title="`Agent Request #${selectedRequest.id}`"
-        :description="selectedRequest.request_key"
-        as="h3"
+      <UiPanel
+        v-if="selectedRequest"
+        class="p-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto"
       >
-        <template #actions>
-          <StatusBadge
-            :status="selectedRequest.status"
-            :kind="requestStatusKind(selectedRequest.status)"
-            :small="true"
-          />
-          <UiBadge :tone="attentionTone(selectedRequest.attention_status)">
-            {{ selectedRequest.attention_status }}
-          </UiBadge>
-        </template>
-      </UiSectionHeader>
+        <UiSectionHeader
+          :title="`Request #${selectedRequest.id}`"
+          :description="selectedRequest.request_key"
+          as="h3"
+        >
+          <template #actions>
+            <StatusBadge
+              :status="selectedRequest.status"
+              :kind="requestStatusKind(selectedRequest.status)"
+              :small="true"
+            />
+            <UiBadge :tone="attentionTone(selectedRequest.attention_status)">
+              {{ selectedRequest.attention_status }}
+            </UiBadge>
+          </template>
+        </UiSectionHeader>
 
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section class="space-y-3">
+        <div class="space-y-3">
           <div>
             <p class="text-sm font-semibold text-fg-strong">{{ selectedRequest.title }}</p>
             <p
@@ -379,6 +370,40 @@ watch(projectId, () => {
               {{ selectedRequest.body_preview }}
             </p>
           </div>
+          <UiDescriptionList bordered>
+            <UiDescriptionItem
+              label="Source provider"
+              :value="selectedRequest.source_provider ?? '-'"
+            />
+            <UiDescriptionItem
+              label="Source kind"
+              :value="selectedRequest.source_kind ?? '-'"
+            />
+            <UiDescriptionItem
+              label="Source resource"
+              :value="selectedRequest.source_resource_key ?? '-'"
+            />
+            <UiDescriptionItem
+              label="Source record"
+              :value="selectedRequest.source_resource_record_id ? `#${selectedRequest.source_resource_record_id}` : '-'"
+            />
+            <UiDescriptionItem
+              label="Source message"
+              :value="selectedRequest.source_message_ref ?? '-'"
+            />
+            <UiDescriptionItem
+              label="Claimed by"
+              :value="selectedRequest.claimed_by ?? '-'"
+            />
+            <UiDescriptionItem
+              label="Run plan"
+              :value="selectedRequest.run_plan_id ? `#${selectedRequest.run_plan_id}` : '-'"
+            />
+            <UiDescriptionItem
+              label="Updated"
+              :value="formatDateTime(selectedRequest.updated_at)"
+            />
+          </UiDescriptionList>
           <UiJsonBlock
             :data="sanitizeForDisplay(selectedRequest.metadata_json ?? {})"
             density="compact"
@@ -386,55 +411,8 @@ watch(projectId, () => {
             wrap
             aria-label="Agent request metadata"
           />
-        </section>
-
-        <UiDescriptionList bordered>
-          <UiDescriptionItem
-            label="Source provider"
-            :value="selectedRequest.source_provider ?? '-'"
-          />
-          <UiDescriptionItem
-            label="Source kind"
-            :value="selectedRequest.source_kind ?? '-'"
-          />
-          <UiDescriptionItem
-            label="Source resource"
-            :value="selectedRequest.source_resource_key ?? '-'"
-          />
-          <UiDescriptionItem
-            label="Source record"
-            :value="selectedRequest.source_resource_record_id ? `#${selectedRequest.source_resource_record_id}` : '-'"
-          />
-          <UiDescriptionItem
-            label="Source message"
-            :value="selectedRequest.source_message_ref ?? '-'"
-          />
-          <UiDescriptionItem
-            label="Claimed by"
-            :value="selectedRequest.claimed_by ?? '-'"
-          />
-          <UiDescriptionItem
-            label="Claimed at"
-            :value="formatDateTime(selectedRequest.claimed_at)"
-          />
-          <UiDescriptionItem
-            label="Claim expires"
-            :value="formatDateTime(selectedRequest.claim_expires_at)"
-          />
-          <UiDescriptionItem
-            label="Run plan"
-            :value="selectedRequest.run_plan_id ? `#${selectedRequest.run_plan_id}` : '-'"
-          />
-          <UiDescriptionItem
-            label="Created"
-            :value="formatDateTime(selectedRequest.created_at)"
-          />
-          <UiDescriptionItem
-            label="Updated"
-            :value="formatDateTime(selectedRequest.updated_at)"
-          />
-        </UiDescriptionList>
-      </div>
-    </UiPanel>
+        </div>
+      </UiPanel>
+    </div>
   </UiPageShell>
 </template>

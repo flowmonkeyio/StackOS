@@ -69,6 +69,28 @@ describe('DataTable', () => {
     expect((w.emitted('row-click')![0][0] as Row).name).toBe('banana')
   })
 
+  it('marks the active row for master/detail layouts', () => {
+    const w = mount(DataTable, {
+      props: { items: rows, columns: columns as never, interactive: true, selectedId: 2 },
+    })
+    const tbodyRows = w.findAll('tbody tr')
+    expect(tbodyRows[1].attributes('aria-current')).toBe('true')
+    expect(tbodyRows[1].classes()).toContain('bg-accent-subtle')
+
+    const mobileCards = w.findAll('article')
+    expect(mobileCards[1].attributes('aria-current')).toBe('true')
+    expect(mobileCards[1].classes()).toContain('bg-accent-subtle')
+  })
+
+  it('applies a bounded desktop table height when configured', () => {
+    const w = mount(DataTable, {
+      props: { items: rows, columns: columns as never, maxHeight: '20rem' },
+    })
+    const scroller = w.find('[tabindex="0"]')
+    expect(scroller.attributes('style')).toContain('max-height: 20rem')
+    expect(scroller.attributes('style')).toContain('overflow-y: auto')
+  })
+
   it('does not emit row-click for read-only rows', async () => {
     const w = mount(DataTable, { props: { items: rows, columns: columns as never } })
     const tbodyRows = w.findAll('tbody tr')
