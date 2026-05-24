@@ -40,7 +40,7 @@ def _telegram_credential_ref(
     return status.connections[0].credential_ref
 
 
-def _telegram_bot_profile(
+def _telegram_profile(
     session: Session,
     project_id: int,
     *,
@@ -52,12 +52,8 @@ def _telegram_bot_profile(
 ) -> None:
     data_json = {
         "key": key,
-        "provider_key": "telegram-bot",
-        "auth_profile_key": auth_profile_key,
         "enabled": True,
-        "bot_username": "stackos_bot",
-        "allowed_updates": ["message", "callback_query"],
-        "refs": {"main": "12345"},
+        "profile_ref": f"communication-profile:{key}",
         "identity": {
             "display_name": "Support Bot",
             "purpose": "Handle support requests from approved Telegram users.",
@@ -75,14 +71,37 @@ def _telegram_bot_profile(
             "allowed_chat_refs": ["main", "telegram-chat:12345"],
         },
         "response_policy": response_policy or {},
+        "provider_facets": {
+            "telegram-bot": {
+                "auth_profile_key": auth_profile_key,
+                "bot_username": "stackos_bot",
+                "allowed_updates": ["message", "callback_query"],
+                "refs": {"main": "12345"},
+            }
+        },
     }
     if profile_overrides:
-        data_json.update(profile_overrides)
+        facet = data_json["provider_facets"]["telegram-bot"]
+        for override_key, override_value in profile_overrides.items():
+            if override_key in {
+                "auth_profile_key",
+                "bot_username",
+                "allowed_updates",
+                "refs",
+                "reply_to_message_refs",
+                "thread_refs",
+                "direct_messages_topic_refs",
+                "webhook_base_url",
+                "allowed_webhook_hosts",
+            }:
+                facet[override_key] = override_value
+            else:
+                data_json[override_key] = override_value
     ResourceRepository(session).upsert_record(
         project_id=project_id,
         plugin_slug="communications",
-        resource_key="communication-bot-profile",
-        external_id=f"telegram-bot-profile:{key}",
+        resource_key="communication-profile",
+        external_id=f"communication-profile:{key}",
         title=key,
         data_json=data_json,
         provenance_json={"source": "test"},
@@ -118,7 +137,7 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
         session,
         project_id,
     )
-    _telegram_bot_profile(session, project_id)
+    _telegram_profile(session, project_id)
     httpx_mock.add_response(
         method="POST",
         url=f"{_BASE}/getMe",
@@ -166,7 +185,7 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
             project_id=project_id,
             action_ref="communications.telegram-bot.message.send",
             input_json={
-                "bot_profile_key": "support-bot",
+                "profile_key": "support-bot",
                 "chat_ref": "main",
                 "text": "Ready to review?",
                 "reply_markup": {
@@ -191,7 +210,7 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
             project_id=project_id,
             action_ref="communications.telegram-bot.callback.answer",
             input_json={
-                "bot_profile_key": "support-bot",
+                "profile_key": "support-bot",
                 "callback_query_id": "cbq_1",
                 "text": "Queued",
             },
@@ -203,7 +222,7 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
             project_id=project_id,
             action_ref="communications.telegram-bot.updates.poll",
             input_json={
-                "bot_profile_key": "support-bot",
+                "profile_key": "support-bot",
                 "offset": 100,
                 "limit": 10,
                 "timeout_s": 0,
@@ -273,7 +292,7 @@ def test_telegram_photo_uploads_generated_asset_ref(
         session,
         project_id,
     )
-    _telegram_bot_profile(
+    _telegram_profile(
         session,
         project_id,
         access_policy={
@@ -294,7 +313,7 @@ def test_telegram_photo_uploads_generated_asset_ref(
             project_id=project_id,
             action_ref="communications.telegram-bot.photo.send",
             input_json={
-                "bot_profile_key": "support-bot",
+                "profile_key": "support-bot",
                 "chat_ref": "main",
                 "photo": {"artifact_ref": "/generated-assets/openai-images/sample.webp"},
                 "caption": "Generated option",
@@ -322,7 +341,7 @@ def test_telegram_validation_rejects_unsafe_buttons_and_photo_sources(
         project_id=project_id,
         action_ref="communications.telegram-bot.message.send",
         input_json={
-            "bot_profile_key": "support-bot",
+            "profile_key": "support-bot",
             "chat_ref": "12345",
             "text": "Pick one",
             "reply_markup": {
@@ -335,7 +354,7 @@ def test_telegram_validation_rejects_unsafe_buttons_and_photo_sources(
         project_id=project_id,
         action_ref="communications.telegram-bot.photo.send",
         input_json={
-            "bot_profile_key": "support-bot",
+            "profile_key": "support-bot",
             "chat_ref": "12345",
             "photo": {"file_id": "file_1", "url": "http://example.com/a.jpg"},
         },
@@ -358,7 +377,7 @@ def test_telegram_webhook_actions_execute_against_local_bot_api_server(
         project_id,
         config_json={"api_base_url": "http://127.0.0.1:8081"},
     )
-    _telegram_bot_profile(session, project_id)
+    _telegram_profile(session, project_id)
     httpx_mock.add_response(
         method="POST",
         url=f"http://127.0.0.1:8081/bot{_TOKEN}/setWebhook",
@@ -384,7 +403,7 @@ def test_telegram_webhook_actions_execute_against_local_bot_api_server(
             project_id=project_id,
             action_ref="communications.telegram-bot.webhook.set",
             input_json={
-                "bot_profile_key": "support-bot",
+                "profile_key": "support-bot",
                 "webhook_url": "http://127.0.0.1:5180/api/v1/ingress/telegram/1/support-bot",
                 "allowed_updates": ["message", "callback_query"],
                 "drop_pending_updates": True,
@@ -396,7 +415,7 @@ def test_telegram_webhook_actions_execute_against_local_bot_api_server(
         repo.execute(
             project_id=project_id,
             action_ref="communications.telegram-bot.webhook.info",
-            input_json={"bot_profile_key": "support-bot"},
+            input_json={"profile_key": "support-bot"},
             credential_ref=credential_ref,
         )
     ).data
@@ -404,7 +423,7 @@ def test_telegram_webhook_actions_execute_against_local_bot_api_server(
         repo.execute(
             project_id=project_id,
             action_ref="communications.telegram-bot.webhook.delete",
-            input_json={"bot_profile_key": "support-bot", "drop_pending_updates": True},
+            input_json={"profile_key": "support-bot", "drop_pending_updates": True},
             credential_ref=credential_ref,
         )
     ).data
@@ -430,13 +449,13 @@ def test_telegram_webhook_actions_execute_against_local_bot_api_server(
     assert "telegram-secret" not in rendered
 
 
-def test_telegram_send_rejects_bot_profile_credential_mismatch(
+def test_telegram_send_rejects_communication_profile_credential_mismatch(
     session: Session,
     project_id: int,
     httpx_mock: HTTPXMock,
 ) -> None:
     credential_ref = _telegram_credential_ref(session, project_id)
-    _telegram_bot_profile(
+    _telegram_profile(
         session,
         project_id,
         key="support-bot",
@@ -449,7 +468,7 @@ def test_telegram_send_rejects_bot_profile_credential_mismatch(
                 project_id=project_id,
                 action_ref="communications.telegram-bot.message.send",
                 input_json={
-                    "bot_profile_key": "support-bot",
+                    "profile_key": "support-bot",
                     "chat_ref": "telegram-chat:12345",
                     "text": "hello",
                 },
@@ -461,7 +480,7 @@ def test_telegram_send_rejects_bot_profile_credential_mismatch(
     assert httpx_mock.get_requests() == []
 
 
-def test_telegram_send_rejects_global_credential_for_project_bot_profile(
+def test_telegram_send_rejects_global_credential_for_project_communication_profile(
     session: Session,
     project_id: int,
     httpx_mock: HTTPXMock,
@@ -483,7 +502,7 @@ def test_telegram_send_rejects_global_credential_for_project_bot_profile(
     )
     assert status.connections == []
     credential = AuthRepository(session).sync_credential_for_integration(global_credential.id)
-    _telegram_bot_profile(session, project_id)
+    _telegram_profile(session, project_id)
 
     with pytest.raises(NotFoundError):
         asyncio.run(
@@ -491,7 +510,7 @@ def test_telegram_send_rejects_global_credential_for_project_bot_profile(
                 project_id=project_id,
                 action_ref="communications.telegram-bot.message.send",
                 input_json={
-                    "bot_profile_key": "support-bot",
+                    "profile_key": "support-bot",
                     "chat_ref": "main",
                     "text": "hello",
                 },
@@ -512,7 +531,7 @@ def test_telegram_webhook_set_rejects_wrong_project_or_profile_url(
         project_id,
         config_json={"api_base_url": "http://127.0.0.1:8081"},
     )
-    _telegram_bot_profile(session, project_id)
+    _telegram_profile(session, project_id)
 
     with pytest.raises(ConflictError, match="action connector failed") as exc:
         asyncio.run(
@@ -520,7 +539,7 @@ def test_telegram_webhook_set_rejects_wrong_project_or_profile_url(
                 project_id=project_id,
                 action_ref="communications.telegram-bot.webhook.set",
                 input_json={
-                    "bot_profile_key": "support-bot",
+                    "profile_key": "support-bot",
                     "webhook_url": (
                         f"http://127.0.0.1:5180/api/v1/ingress/telegram/{project_id}/other-bot"
                     ),
@@ -529,7 +548,7 @@ def test_telegram_webhook_set_rejects_wrong_project_or_profile_url(
             )
         )
 
-    assert "must target this project bot profile" in exc.value.data["error"]
+    assert "must target this project communication profile" in exc.value.data["error"]
 
     with pytest.raises(ConflictError, match="action connector failed") as host_exc:
         asyncio.run(
@@ -537,7 +556,7 @@ def test_telegram_webhook_set_rejects_wrong_project_or_profile_url(
                 project_id=project_id,
                 action_ref="communications.telegram-bot.webhook.set",
                 input_json={
-                    "bot_profile_key": "support-bot",
+                    "profile_key": "support-bot",
                     "webhook_url": (
                         f"https://evil.example/api/v1/ingress/telegram/{project_id}/support-bot"
                     ),
@@ -555,7 +574,7 @@ def test_telegram_response_policy_requires_source_origin_and_exact_reply(
     httpx_mock: HTTPXMock,
 ) -> None:
     credential_ref = _telegram_credential_ref(session, project_id)
-    _telegram_bot_profile(
+    _telegram_profile(
         session,
         project_id,
         response_policy={
@@ -579,7 +598,8 @@ def test_telegram_response_policy_requires_source_origin_and_exact_reply(
             source_kind="telegram_message",
             source_message_ref="telegram-message:12345:77",
             metadata_json={
-                "bot_profile_key": "support-bot",
+                "profile_key": "support-bot",
+                "profile_ref": "communication-profile:support-bot",
                 "chat_ref": "telegram-chat:12345",
                 "thread_ref": "telegram-thread:12345:default",
                 "invoker_ref": "telegram-user:555",
@@ -598,7 +618,7 @@ def test_telegram_response_policy_requires_source_origin_and_exact_reply(
             project_id=project_id,
             action_ref="communications.telegram-bot.message.send",
             input_json={
-                "bot_profile_key": "support-bot",
+                "profile_key": "support-bot",
                 "chat_ref": "main",
                 "source_agent_request_id": source.id,
                 "reply_to_message_ref": "telegram-message:12345:77",
@@ -635,7 +655,7 @@ def test_telegram_response_policy_requires_source_origin_and_exact_reply(
                 project_id=project_id,
                 action_ref="communications.telegram-bot.message.send",
                 input_json={
-                    "bot_profile_key": "support-bot",
+                    "profile_key": "support-bot",
                     "chat_ref": "main",
                     "source_agent_request_id": source.id,
                     "reply_to_message_ref": "telegram-message:12345:99",
@@ -654,7 +674,7 @@ def test_telegram_response_policy_rejects_malformed_non_telegram_source(
     httpx_mock: HTTPXMock,
 ) -> None:
     credential_ref = _telegram_credential_ref(session, project_id)
-    _telegram_bot_profile(
+    _telegram_profile(
         session,
         project_id,
         response_policy={"origin_required": True},
@@ -667,7 +687,7 @@ def test_telegram_response_policy_rejects_malformed_non_telegram_source(
             title="Manual task",
             source_provider="manual",
             source_kind="manual",
-            metadata_json={"bot_profile_key": "support-bot"},
+            metadata_json={"profile_key": "support-bot"},
         )
         .data
     )
@@ -678,7 +698,7 @@ def test_telegram_response_policy_rejects_malformed_non_telegram_source(
                 project_id=project_id,
                 action_ref="communications.telegram-bot.message.send",
                 input_json={
-                    "bot_profile_key": "support-bot",
+                    "profile_key": "support-bot",
                     "chat_ref": "main",
                     "source_agent_request_id": source.id,
                     "text": "This should not send.",
@@ -697,7 +717,7 @@ def test_telegram_provider_error_redacts_bot_token_url(
     httpx_mock: HTTPXMock,
 ) -> None:
     credential_ref = _telegram_credential_ref(session, project_id)
-    _telegram_bot_profile(session, project_id)
+    _telegram_profile(session, project_id)
     httpx_mock.add_response(
         method="POST",
         url=f"{_BASE}/sendMessage",
@@ -711,7 +731,7 @@ def test_telegram_provider_error_redacts_bot_token_url(
                 project_id=project_id,
                 action_ref="communications.telegram-bot.message.send",
                 input_json={
-                    "bot_profile_key": "support-bot",
+                    "profile_key": "support-bot",
                     "chat_ref": "main",
                     "text": "hello",
                 },

@@ -86,8 +86,9 @@ model invisibly inside the daemon.
 ## Provider-Neutral Communication Graph
 
 Communication must be modeled as a graph that can span Telegram, Slack, local
-chat, SMTP/IMAP email, and future transports. Telegram bot profiles remain as a
-provider-specific facet, not the universal communications model.
+chat, SMTP/IMAP email, and future transports. Telegram behavior lives as a
+`telegram-bot` facet inside generic `communication-profile` records; it is not a
+separate communications model.
 
 Canonical graph:
 
@@ -349,8 +350,6 @@ channels are added.
 
 Current deviations to remove:
 
-- Telegram still has `communicationBotProfile.*` as a separate profile/policy
-  model, while Slack uses generic `communication-profile` records.
 - Slack, Telegram, SMTP, and IMAP connectors write communication resources
   directly instead of returning normalized outbound effects for shared recording.
 - Provider route derivation in `ingressEndpoint.*` is hard-coded for Slack and
@@ -364,8 +363,8 @@ Required direction:
 
 1. Refactor provider ingress modules to keep only transport verification,
    profile lookup, and provider-specific field mapping.
-2. Collapse Telegram bot policy into provider-neutral communication profiles;
-   keep Telegram transport details in provider facets.
+2. Keep provider transport details in provider facets and prevent new
+   provider-specific profile resources from appearing.
 3. Make connectors return normalized outbound communication effects and record
    them after the action call through shared lifecycle/audit code.
 4. Move ingress route capabilities into provider manifests so adding Slack,
@@ -419,14 +418,15 @@ Connectors do not own:
 
 Telegram bots can receive updates through `getUpdates` long polling or
 webhooks. These modes are mutually exclusive for a bot while a webhook is set.
-StackOS treats a bot profile with `ingress_mode: webhook` as the normal listener
-path. The project owns one provider-neutral public ingress endpoint; provider
-routes are derived from that endpoint and the communication profiles that need
-webhooks. In production, the endpoint is a deployed HTTPS URL. During local
-development, it can be discovered from a local-tunnel driver whose provider is
-configured inside `driver_config`. `updates.poll` remains a bounded
+StackOS treats a communication profile whose `provider_facets.telegram-bot.ingress_mode`
+is `webhook` as the normal listener path. The project owns one
+provider-neutral public ingress endpoint; provider routes are derived from that
+endpoint and the communication profiles that need webhooks. In production, the
+endpoint is a deployed HTTPS URL. During local development, it can be discovered
+from a local-tunnel driver whose provider is configured inside `driver_config`.
+`updates.poll` remains a bounded
 diagnostic/bootstrap action only, for example discovering chat/user ids before
-a bot profile is locked down.
+a communication profile is locked down.
 
 The public ingress endpoint is generic StackOS infrastructure, not a Telegram or
 ngrok resource. Its public API is `driver`, `public_base_url`, `local_base_url`,
@@ -488,19 +488,19 @@ Image/media support has two safe paths:
 
 Inbound callback handling uses the same webhook listener path as message
 updates. The explicit webhook endpoint verifies Telegram's secret-token header,
-resolves the project-scoped bot profile, stores the update idempotently, and
+resolves the project-scoped communication profile, stores the update idempotently, and
 creates resources/requests from static policy. It still does not invoke a model.
 `updates.poll` can inspect callback updates only as a bounded diagnostic action
 and must not become the normal listener loop.
 
-### Telegram Bot Profiles
+### Telegram Profiles
 
 Telegram is not globally connected. A project owns one or more
-`communication-bot-profile` records:
+`communication-profile` records:
 
 ```text
 project
--> communication-bot-profile
+-> communication-profile
 -> telegram credential profile
 -> identity / agent guidance / access / trigger / context / response policies
 ```
@@ -509,7 +509,7 @@ Each profile binds to exactly one project-scoped Telegram credential profile by
 `auth_profile_key`. There is no global Telegram credential, no cross-project
 fallback credential, and no agent-visible token handoff. The credential stores
 only bot token material, webhook secret, and safe transport endpoint
-configuration such as `api_base_url`. The bot profile owns behavior and agent
+configuration such as `api_base_url`. The communication profile owns behavior and agent
 setup:
 
 - `identity`: display name, purpose, and voice. This is the bot's project-level
@@ -534,20 +534,20 @@ setup:
 Setup is exposed through shared StackOS operations, not provider-specific MCP
 tools:
 
-- `communicationBotProfile.upsert`: creates or updates the safe bot-profile
+- `communicationProfile.upsert`: creates or updates the safe communication-profile
   identity, agent guidance, trigger policy, and delivery policy after a
   project-scoped `telegram-bot` credential profile exists.
-- `communicationBotProfile.get`: returns one safe profile, including response
+- `communicationProfile.get`: returns one safe profile, including response
   reference maps such as `reply_to_message_refs`, `thread_refs`, and
   `direct_messages_topic_refs`.
-- `communicationBotProfile.list`: lists safe profiles for a project.
+- `communicationProfile.list`: lists safe profiles for a project.
 
 These operations are available through REST, CLI `ops call`, and MCP. The
 browser UI token may call only this narrow setup mutation because it never
 includes token material; provider secrets still go through the typed auth
 credential setup route and remain daemon-side.
 
-Visibility is not activation. A bot profile may observe and store messages from
+Visibility is not activation. A communication profile may observe and store messages from
 any reachable group/channel/DM for future context, but StackOS creates an
 `agent_request` only when a configured trigger is matched by an allowed invoker.
 If a disallowed user tags or DMs the bot, StackOS may keep the message as
@@ -672,8 +672,9 @@ Example fields:
 - `enabled`
 - `identity`
 - `agent_guidance`
-- `provider_facets`: safe provider refs such as Telegram `bot_profile_key` or
-  Slack `auth_profile_key`/`bot_user_id`; never token material
+- `provider_facets`: safe provider refs such as Telegram `auth_profile_key`
+  and `bot_username`, or Slack `auth_profile_key`/`bot_user_id`; never token
+  material
 - `access_policy`
 - `visibility_policy`
 - `trigger_policy`
@@ -723,7 +724,7 @@ provider action ref.
 `communicationTarget.resolve` returns provider-ready `action_input_defaults`
 where StackOS can derive them safely. Slack targets include `surface_ref`,
 optional `profile_ref`, and optional `thread_ref`. Telegram targets include
-`chat_ref`, optional `thread_ref`, and `bot_profile_key` when it is explicitly
+`chat_ref`, optional `thread_ref`, and `profile_key` when it is explicitly
 stored or resolvable from a `communication-profile` Telegram facet. Agents must
 still add the message body/media/callback payload and validate the final action
 input before execution.
@@ -802,19 +803,15 @@ Provider object ids may be stored in provenance or safe refs after redaction,
 but reusable templates should refer to `channel_ref`, not raw Telegram chat ids
 or mailbox internals.
 
-### `communication-bot-profile`
+### `communication-profile`
 
-Represents one project-scoped bot identity and policy bundle.
+Represents one project-scoped communication identity and policy bundle.
 
 Example fields:
 
 - `key`
-- `provider_key`
-- `auth_profile_key`
-- `bot_username`
-- `ingress_mode`: `webhook` for the active provider webhook listener, or
-  `disabled` to stop storing inbound events for the profile
-- `allowed_updates`
+- `profile_ref`
+- `enabled`
 - `identity`
 - `agent_guidance`
 - `access_policy`
@@ -822,6 +819,17 @@ Example fields:
 - `visibility_policy`
 - `context_policy`
 - `response_policy`
+- `send_policy`
+- `handoff_policy`
+- `approval_policy`
+- `metadata_json`
+- `provider_facets.telegram-bot.auth_profile_key`
+- `provider_facets.telegram-bot.bot_username`
+- `provider_facets.telegram-bot.ingress_mode`: `webhook` for the active
+  Telegram webhook listener, or `disabled` to stop storing inbound events for
+  that provider facet
+- `provider_facets.telegram-bot.allowed_updates`
+- `provider_facets.telegram-bot.refs`
 
 ### `ingress-endpoint`
 
@@ -960,7 +968,7 @@ Stores provider sync position.
 
 Telegram examples:
 
-- `bot_profile_key`
+- `profile_key`
 - `auth_profile_key`
 - `ingress_mode`
 - `last_update_id`
@@ -1158,9 +1166,10 @@ Provider key: `telegram-bot`
 Auth method: `bot-token`
 
 Telegram credentials are project-scoped credential profiles bound from
-`communication-bot-profile.auth_profile_key`. Agents and action payloads name
-the bot profile, not a raw credential. The daemon resolves the credential
-server-side and rejects profile/credential mismatches.
+`communication-profile.provider_facets.telegram-bot.auth_profile_key`. Agents
+and action payloads name the communication profile, not a raw credential. The
+daemon resolves the credential server-side and rejects profile/credential
+mismatches.
 
 Safe config fields:
 
@@ -1176,7 +1185,7 @@ Secret fields:
 Bot behavior fields such as identity, agent guidance, command intent guidance,
 allowed users, optional visible chat constraints, trigger patterns, context
 windows, and response constraints belong to
-`communication-bot-profile` resource records, not credentials.
+`communication-profile` resource records, not credentials.
 
 Credential tests:
 
@@ -1326,20 +1335,20 @@ Deferred until separate tests/contracts:
 
 Validation rules:
 
-- `message.send` requires explicit `bot_profile_key`, `chat_ref` or
+- `message.send` requires explicit `profile_key`, `chat_ref` or
   provider-safe `chat_id` resolved from resources, plus explicit text payload.
 - `message.send`, `photo.send`, `callback.answer`, and webhook actions must
-  resolve the bot profile server-side and verify that the profile's
+  resolve the communication profile server-side and verify that the profile's
   `auth_profile_key` matches the daemon-resolved credential.
-- If the bot profile's response policy requires origin binding, outbound
+- If the communication profile's response policy requires origin binding, outbound
   `message.send` and `photo.send` must include `source_agent_request_id`; the
-  connector verifies the request's bot profile, chat, thread, and source message
+  connector verifies the request's communication profile, chat, thread, and source message
   before sending.
 - `message.send` and `photo.send` may include `reply_markup`. Inline keyboard
   callback buttons must keep `callback_data` within Telegram's 1-64 byte limit
   and must not contain secrets.
 - When `reply_markup` includes callback buttons, StackOS stores outbound
-  `communication-interaction` records keyed by bot profile, provider message
+  `communication-interaction` records keyed by communication profile, provider message
   ref, and callback token so repeated `callback_data` values on different
   messages cannot overwrite one another. `source_agent_request_id`, when
   supplied, ties the button state back to the originating request and defaults
@@ -1351,7 +1360,7 @@ Validation rules:
 - `callback.answer` requires `callback_query_id`. It may include notification
   text, alert mode, URL, and cache time, but it must not claim work was
   completed unless the agent actually completed it.
-- `updates.poll` requires explicit `bot_profile_key`, bounded `limit`,
+- `updates.poll` requires explicit `profile_key`, bounded `limit`,
   `timeout_s`, and `allowed_updates`. It is profile-bound diagnostic/bootstrap
   access, not a background listener.
   `callback_query` may be included only to inspect callback update delivery
@@ -1361,7 +1370,7 @@ Validation rules:
 - `webhook.set` sends Telegram `setWebhook` with the profile-bound
   `webhook_url`, optional `allowed_updates`, optional `drop_pending_updates`,
   and the daemon-side `webhook_secret_token` as Telegram `secret_token`.
-  Public webhook hosts must be explicitly allowlisted on the bot profile;
+  Public webhook hosts must be explicitly allowlisted on the communication profile;
   loopback hosts are only for the official local Bot API server flow.
 - `webhook.delete` and `webhook.info` call Telegram `deleteWebhook` and
   `getWebhookInfo` through the same profile-bound credential.
@@ -1469,29 +1478,32 @@ Validation rules:
 Current webhook endpoint:
 
 ```text
-POST /api/v1/ingress/telegram/{project_id}/{bot_profile_key}
+POST /api/v1/ingress/telegram/{project_id}/{profile_key}
 Header: X-Telegram-Bot-Api-Secret-Token: <configured webhook_secret_token>
 ```
 
 This endpoint is bearer-token whitelisted because Telegram cannot send the
-daemon bearer token. It resolves the `communication-bot-profile`, verifies the
+daemon bearer token. It resolves the `communication-profile`, verifies the
 Telegram secret-token header against the encrypted `telegram-bot` credential
-bound by that profile's `auth_profile_key`, and then applies bot-profile
-policy. For local development, expose the loopback daemon through the configured
-project ingress endpoint, for example a local tunnel provider. Production uses a
-deployed HTTPS endpoint with the same StackOS route shape.
+bound by that profile's `provider_facets.telegram-bot.auth_profile_key`, and
+then applies communication-profile policy. For local development, expose the
+loopback daemon through the configured project ingress endpoint, for example a
+local tunnel provider. Production uses a deployed HTTPS endpoint with the same
+StackOS route shape.
 
 Flow:
 
 1. Operator creates a Telegram credential profile with server-side bot token and
    webhook secret fields.
-2. Operator or setup agent calls `communicationBotProfile.upsert` to create a
-   project-scoped `communication-bot-profile` whose `auth_profile_key` points at
-   that credential profile.
+2. Operator or setup agent calls `communicationProfile.upsert` to create a
+   project-scoped `communication-profile` whose
+   `provider_facets.telegram-bot.auth_profile_key` points at that credential
+   profile.
 3. Operator defines bot identity, default agent guidance, access policy, and
-   optional structured command intents on the bot profile.
-4. Operator keeps `ingress_mode: webhook` and sets an explicit `allowed_updates`
-   list on the bot profile.
+   optional structured command intents on the communication profile.
+4. Operator keeps `provider_facets.telegram-bot.ingress_mode: webhook` and sets
+   an explicit `provider_facets.telegram-bot.allowed_updates` list on the
+   communication profile.
 5. Operator configures `ingressEndpoint` with the deployed HTTPS URL, or uses
    `driver=local-tunnel` with provider details in `driver_config`, then runs
    `ingressEndpoint.sync`.
@@ -1499,12 +1511,12 @@ Flow:
    daemon-held credentials.
 6. The listener verifies Telegram secret token against the daemon-held
    credential bound by `auth_profile_key`.
-7. The listener rejects the wrong project, bot profile, or secret with the same
+7. The listener rejects the wrong project, communication profile, or secret with the same
    invalid-secret response.
-8. The listener applies bot-profile update/chat visibility policy. Blocked
+8. The listener applies communication-profile update/chat visibility policy. Blocked
    chats, disabled profiles, and no-store non-triggers write nothing.
 9. The listener upserts `communication-event`, `communication-message`, and
-   `communication-interaction` records by bot-profile-scoped provider ids.
+   `communication-interaction` records by communication-profile-scoped provider ids.
 10. The listener creates or replays one idempotent generic `agent_requests` row
    only when trigger policy matches and invoker access policy allows it.
 11. The listener copies safe identity, agent guidance, context policy, response
@@ -1516,7 +1528,7 @@ Rules:
 
 - Webhook endpoints must be explicitly authenticated/verified.
 - Token-bearing provider URLs must not be logged.
-- Webhooks must be idempotent by bot-profile-scoped provider update id/event id.
+- Webhooks must be idempotent by communication-profile-scoped provider update id/event id.
 - Visibility is not activation: observed messages may become context without
   creating agent requests.
 - Webhooks must preserve the action-call audit path for outbound ACKs.
@@ -1590,7 +1602,7 @@ Rules:
 ### Diagnostic Telegram Poll
 
 `communications.telegram-bot.updates.poll` is executable, but only as bounded
-diagnostic/bootstrap access. It must require `bot_profile_key`, `limit`,
+diagnostic/bootstrap access. It must require `profile_key`, `limit`,
 `timeout_s`, and `allowed_updates`, and it must resolve the same
 `auth_profile_key` binding as webhook ingress. It may help an operator discover
 safe chat/user refs or inspect a provider issue while no Telegram webhook is
@@ -1603,7 +1615,7 @@ Scheduled ingestion remains useful for providers such as IMAP, or for future
 static maintenance jobs that run inside audited StackOS run plans. For Telegram,
 the scheduled runner is not the normal listener path. Any Telegram provider call
 from a runner must be explicit, granted, bounded, and audited; it must not infer
-intent beyond bot-profile policy, and agents still claim requests and decide
+intent beyond communication-profile policy, and agents still claim requests and decide
 what to do.
 
 ## Agent Flow Examples
@@ -1709,11 +1721,12 @@ describe what StackOS records; they do not imply daemon-side model execution.
 Allowed DM:
 
 ```text
-1. Webhook ingress receives a private message for project A / bot profile support.
-2. profile support resolves auth_profile_key support-telegram server-side.
+1. Webhook ingress receives a private message for project A / communication profile support.
+2. profile support resolves `provider_facets.telegram-bot.auth_profile_key`
+   server-side.
 3. access_policy allows the chat and user; trigger_policy allows DM.
 4. StackOS stores communication-event and communication-message.
-5. StackOS creates one agent_request with bot_profile_key, chat_ref, and source_message_ref.
+5. StackOS creates one agent_request with profile_key, chat_ref, and source_message_ref.
 ```
 
 Allowed group mention with history context:
@@ -1748,7 +1761,7 @@ Unauthorized user:
 
 ```text
 1. Webhook ingress receives a trigger from a visible chat but a disallowed user.
-2. StackOS verifies the bot profile and secret before applying user policy.
+2. StackOS verifies the communication profile and secret before applying user policy.
 3. StackOS may store the event/message as invoker_blocked context.
 4. StackOS creates no agent_request.
 ```
@@ -1756,9 +1769,9 @@ Unauthorized user:
 Outbound reply tied to `source_agent_request_id`:
 
 ```text
-1. Agent claims agent_request 42 from bot profile support and chat telegram-chat:100.
-2. Agent calls message.send with bot_profile_key support, chat_ref telegram-chat:100, and source_agent_request_id 42.
-3. Connector resolves support.auth_profile_key and verifies request/chat/thread origin when response_policy requires it.
+1. Agent claims agent_request 42 from communication profile support and chat telegram-chat:100.
+2. Agent calls message.send with profile_key support, chat_ref telegram-chat:100, and source_agent_request_id 42.
+3. Connector resolves support's Telegram facet `auth_profile_key` and verifies request/chat/thread origin when response_policy requires it.
 4. Telegram sendMessage executes through action.run or action.execute with daemon-held credentials.
 5. StackOS records the outbound communication-message and action-call audit.
 ```
@@ -1771,7 +1784,7 @@ Authorized callback:
 2. StackOS stores a communication-interaction keyed by support /
    telegram-message:100:501 / ixn_123.
 3. Webhook ingress receives callback_query ixn_123 from the allowed user/chat.
-4. StackOS resolves the stored interaction by bot profile, provider message ref,
+4. StackOS resolves the stored interaction by communication profile, provider message ref,
    and callback token, then marks it clicked.
 5. StackOS creates one agent_request with event_ref and interaction_ref; the
    agent can read the interaction's source_agent_request_id.
@@ -1791,9 +1804,9 @@ Multiple bots in one project:
 
 ```text
 1. Project A has profiles support and ops with distinct auth_profile_key values.
-2. Each webhook URL includes its own bot_profile_key path segment.
+2. Each webhook URL includes its own profile_key path segment.
 3. Each incoming update verifies against that profile's own webhook secret.
-4. Provider ids, interactions, and requests are scoped by bot_profile_key.
+4. Provider ids, interactions, and requests are scoped by profile_key.
 5. A support update cannot use ops credentials or wake the ops profile.
 ```
 
@@ -1803,7 +1816,7 @@ Local Bot API webhook:
 1. Operator runs the official telegram-bot-api server with --local.
 2. Credential safe config points api_base_url to the local Bot API server.
 3. Operator calls webhook.set with the loopback StackOS ingress URL.
-4. Local Bot API posts updates to /api/v1/ingress/telegram/{project_id}/{bot_profile_key}.
+4. Local Bot API posts updates to /api/v1/ingress/telegram/{project_id}/{profile_key}.
 5. StackOS verifies the secret token and processes the update through normal webhook policy.
 ```
 
@@ -1875,7 +1888,7 @@ for the next cleanup slice before adding more providers:
   profile, surface, contact, membership, target, route, context, and ingress
   modules once the shared communication processor lands.
 - `ui/src/views/ConnectionsView.vue`: extract reusable panels for connected
-  services, communication setup, Telegram bot profiles, and add-connection
+  services, communication setup, Telegram communication profiles, and add-connection
   forms. The page should keep composing generic setup state, not accumulate
   provider-specific flows.
 - `docs/integration-contracts/communications.md`: keep as the canonical
@@ -1961,7 +1974,7 @@ when the blast radius is meaningful, and a detailed commit message after signoff
 | C10 | Delivered: implement IMAP list/search/fetch/mark connector and credential test. | C01. | Mock IMAP tests for UID search/fetch, `\\Seen`, UIDVALIDITY, size caps, no-secret output, and resource writes. | No sequence-number-only operations. |
 | C11 | Delivered: add communications workflow templates for inbox review, rich Telegram reply, callback follow-up, and outbound notification. | C01, C03, C04, C06, C08, C09, C10 as relevant. | Template loader validation; no-payload template checks. | Templates describe setup/context, not business decisions. |
 | C12 | Add static scheduled ingestion runner. | C03, C04, C06, C08, C10. | Scheduler tests; system run-plan audit; idempotent cursor and optional callback ACK tests. | Runner stores events/requests only; no model invocation. |
-| C13 | Delivered: add Telegram secret-token webhook ingress for message/callback storage and generic agent-request creation through project-scoped bot profiles. | C03, C04, C06, C08. | Route tests for missing/wrong secret, auth_profile_key binding, callback/message resource writes, idempotent request creation, and no secret leakage. | Ingress does not invoke a model, does not bypass queue state, and uses server-side secrets only. |
+| C13 | Delivered: add Telegram secret-token webhook ingress for message/callback storage and generic agent-request creation through project-scoped communication profiles. | C03, C04, C06, C08. | Route tests for missing/wrong secret, auth_profile_key binding, callback/message resource writes, idempotent request creation, and no secret leakage. | Ingress does not invoke a model, does not bypass queue state, and uses server-side secrets only. |
 | C14 | Update connector quality matrix and release signoff docs for executable communications actions. | First executable connector tasks. | `make signoff` or targeted signoff set. | Docs and tests agree on executable/deferred state. |
 | C15 | Delivered: implement Slack connector file for `identity.get`, `message.send`, `conversation.open`, `conversation.info`, `conversation.list`, and `conversation.members`. | C01, C03, C04. | Mocked Slack Web API tests; validation tests; Block Kit button, membership, cursor, resource-write, and no-secret redaction tests. | Connector has official docs links near provider calls and no bearer-token output. |
 | C16 | Delivered: add Slack signed HTTP ingress for Events API and Interactivity payload storage plus generic agent-request creation through project-scoped communication profiles. | C03, C04, C15. | Route tests for missing/wrong signature, URL verification, app mention, Block Kit click lifecycle, duplicate-safe request keys, and no transient secret persistence. | Ingress does not call Slack, does not invoke a model, and verifies daemon-held signing secrets only. |

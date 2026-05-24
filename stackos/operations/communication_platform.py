@@ -12,6 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session, col, select
 
 from stackos.actions import ActionRepository
+from stackos.communications import (
+    communication_profile_record_by_key,
+    communication_profile_ref,
+    merged_provider_profile,
+)
 from stackos.db.models import Credential, Plugin, Resource, ResourceRecord
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
@@ -58,7 +63,7 @@ class CommunicationProfileUpsertInput(MCPInput):
                     "voice": "Calm, explicit, and concise.",
                 },
                 "provider_facets": {
-                    "telegram-bot": {"bot_profile_key": "support-bot"},
+                    "telegram-bot": {"auth_profile_key": "support-bot"},
                     "slack-bot": {"bot_user_id": "U123"},
                 },
                 "send_policy": {
@@ -609,7 +614,7 @@ class CommunicationContextQueryInput(MCPInput):
     project_id: int
     provider_key: str | None = None
     profile_ref: str | None = None
-    bot_profile_key: str | None = None
+    profile_key: str | None = None
     surface_ref: str | None = None
     channel_ref: str | None = None
     thread_ref: str | None = None
@@ -1275,7 +1280,7 @@ async def communication_context_query(
             continue
         if inp.profile_ref is not None and data.get("profile_ref") != inp.profile_ref:
             continue
-        if inp.bot_profile_key is not None and data.get("bot_profile_key") != inp.bot_profile_key:
+        if inp.profile_key is not None and data.get("profile_key") != inp.profile_key:
             continue
         surface = inp.surface_ref or inp.channel_ref
         if surface is not None and surface not in {
@@ -1304,7 +1309,7 @@ async def communication_context_query(
         filters={
             "provider_key": inp.provider_key,
             "profile_ref": inp.profile_ref,
-            "bot_profile_key": inp.bot_profile_key,
+            "profile_key": inp.profile_key,
             "surface_ref": inp.surface_ref,
             "channel_ref": inp.channel_ref,
             "thread_ref": inp.thread_ref,
@@ -1345,7 +1350,7 @@ def _validate_identity(value: dict[str, Any]) -> None:
 
 
 def _communication_profile_ref(key: str) -> str:
-    return f"communication-profile:{key.strip()}"
+    return communication_profile_ref(key)
 
 
 def _communication_target_ref(key: str) -> str:
@@ -1609,29 +1614,21 @@ def _ingress_routes(session: Session, *, endpoint: IngressEndpointOut) -> list[I
                 )
             )
             seen.add(("slack-bot", profile_key))
-    for record in _resource_records(
-        session,
-        project_id=endpoint.project_id,
-        resource_key="communication-bot-profile",
-    ):
-        data = dict(record.data_json or {})
-        profile_key = str(data.get("key") or "")
-        if not profile_key:
-            continue
-        key = ("telegram-bot", profile_key)
-        if key in seen:
-            continue
-        routes.append(
-            _route_out(
-                endpoint=endpoint,
-                provider_key="telegram-bot",
-                profile_key=profile_key,
-                profile_ref=f"telegram-bot-profile:{profile_key}",
-                profile_resource_key="communication-bot-profile",
-                remote_status="provider_webhook_not_checked",
+        if isinstance(facets.get("telegram-bot"), dict):
+            key = ("telegram-bot", profile_key)
+            if key in seen:
+                continue
+            routes.append(
+                _route_out(
+                    endpoint=endpoint,
+                    provider_key="telegram-bot",
+                    profile_key=profile_key,
+                    profile_ref=profile_ref,
+                    profile_resource_key="communication-profile",
+                    remote_status="provider_webhook_not_checked",
+                )
             )
-        )
-        seen.add(key)
+            seen.add(key)
     return routes
 
 
@@ -1719,18 +1716,7 @@ async def _sync_ingress_endpoint(
             )
             if updated:
                 updated_profile_refs.append(route.profile_ref)
-        if (
-            route.provider_key == "telegram-bot"
-            and route.profile_resource_key == "communication-bot-profile"
-        ):
-            updated = _sync_telegram_bot_profile_route(
-                ctx.session,
-                resources=resources,
-                endpoint=endpoint,
-                route=route,
-            )
-            if updated:
-                updated_profile_refs.append(route.profile_ref)
+        if route.provider_key == "telegram-bot":
             provider_results.append(
                 await _maybe_apply_telegram_webhook(
                     ctx,
@@ -1799,6 +1785,28 @@ def _sync_communication_profile_route(
             "ingress_endpoint_ref": endpoint.endpoint_ref,
         }
     )
+    if route.provider_key == "telegram-bot":
+        host = urlparse(route.ingress_url or "").hostname
+        allowed_hosts = {str(item) for item in facet.get("allowed_webhook_hosts") or []}
+        if host:
+            allowed_hosts.add(host.lower())
+        refs = dict(facet.get("refs") or {})
+        refs["ingress_url"] = str(route.ingress_url)
+        refs["ingress_endpoint_ref"] = endpoint.endpoint_ref
+        facet.update(
+            {
+                "ingress_mode": "webhook",
+                "webhook_base_url": endpoint.public_base_url,
+                "allowed_webhook_hosts": sorted(allowed_hosts),
+                "refs": refs,
+                "webhook_policy": {
+                    **dict(facet.get("webhook_policy") or {}),
+                    "driver": endpoint.driver,
+                    "endpoint_ref": endpoint.endpoint_ref,
+                    "allowed_hosts": sorted(allowed_hosts),
+                },
+            }
+        )
     facets[route.provider_key] = facet
     data["provider_facets"] = facets
     data["metadata_json"] = {
@@ -1815,55 +1823,6 @@ def _sync_communication_profile_route(
             or data.get("key")
             or route.profile_key
         ),
-        data_json=data,
-        provenance_json={"source": "ingressEndpoint.sync"},
-    )
-    return True
-
-
-def _sync_telegram_bot_profile_route(
-    session: Session,
-    *,
-    resources: ResourceRepository,
-    endpoint: IngressEndpointOut,
-    route: IngressRouteOut,
-) -> bool:
-    record = _record_by_resource_external_id(
-        session,
-        project_id=endpoint.project_id,
-        resource_key="communication-bot-profile",
-        external_id=route.profile_ref,
-    )
-    if record is None:
-        return False
-    data = dict(record.data_json or {})
-    host = urlparse(route.ingress_url or "").hostname
-    allowed_hosts = {str(item) for item in data.get("allowed_webhook_hosts") or []}
-    if host:
-        allowed_hosts.add(host.lower())
-    refs = dict(data.get("refs") or {})
-    refs["ingress_url"] = str(route.ingress_url)
-    refs["ingress_endpoint_ref"] = endpoint.endpoint_ref
-    data.update(
-        {
-            "ingress_mode": "webhook",
-            "webhook_base_url": endpoint.public_base_url,
-            "allowed_webhook_hosts": sorted(allowed_hosts),
-            "refs": refs,
-            "webhook_policy": {
-                **dict(data.get("webhook_policy") or {}),
-                "driver": endpoint.driver,
-                "endpoint_ref": endpoint.endpoint_ref,
-                "allowed_hosts": sorted(allowed_hosts),
-            },
-        }
-    )
-    resources.upsert_record(
-        project_id=endpoint.project_id,
-        plugin_slug="communications",
-        resource_key="communication-bot-profile",
-        external_id=route.profile_ref,
-        title=str(data.get("key") or route.profile_key),
         data_json=data,
         provenance_json={"source": "ingressEndpoint.sync"},
     )
@@ -1908,7 +1867,7 @@ async def _maybe_apply_telegram_webhook(
             project_id=project_id,
             action_ref="communications.telegram-bot.webhook.set",
             input_json={
-                "bot_profile_key": route.profile_key,
+                "profile_key": route.profile_key,
                 "webhook_url": route.ingress_url,
             },
             credential_ref=credential_ref,
@@ -1935,13 +1894,16 @@ async def _maybe_apply_telegram_webhook(
 
 
 def _telegram_auth_profile_key(session: Session, *, project_id: int, profile_key: str) -> str:
-    record = _record_by_resource_external_id(
+    record = communication_profile_record_by_key(
         session,
         project_id=project_id,
-        resource_key="communication-bot-profile",
-        external_id=f"telegram-bot-profile:{profile_key}",
+        key=profile_key,
     )
-    data = dict(record.data_json or {}) if record is not None else {}
+    data = (
+        merged_provider_profile(dict(record.data_json or {}), "telegram-bot")
+        if record is not None
+        else {}
+    )
     return str(data.get("auth_profile_key") or "default")
 
 
@@ -2204,38 +2166,34 @@ def _target_action_defaults(
             defaults.setdefault("thread_ref", target.thread_ref)
     elif target.provider_key == "telegram-bot":
         defaults.setdefault("chat_ref", target.surface_ref)
-        bot_profile_key = _telegram_bot_profile_key(session, target)
-        if bot_profile_key:
-            defaults.setdefault("bot_profile_key", bot_profile_key)
+        profile_key = _telegram_profile_key(session, target)
+        if profile_key:
+            defaults.setdefault("profile_key", profile_key)
         if target.thread_ref:
             defaults.setdefault("thread_ref", target.thread_ref)
     return defaults
 
 
-def _telegram_bot_profile_key(
+def _telegram_profile_key(
     session: Session,
     target: CommunicationTargetOut,
 ) -> str | None:
-    explicit = target.action_input_defaults.get("bot_profile_key")
+    explicit = target.action_input_defaults.get("profile_key")
     if isinstance(explicit, str) and explicit.strip():
         return explicit.strip()
-    if isinstance(target.profile_ref, str):
-        if target.profile_ref.startswith("telegram-bot-profile:"):
-            return target.profile_ref.split(":", 1)[1].strip() or None
-        if target.profile_ref.startswith("communication-profile:"):
-            row = _record_by_resource_external_id(
-                session,
-                project_id=target.project_id,
-                resource_key="communication-profile",
-                external_id=target.profile_ref,
-            )
-            if row is not None:
-                facets = dict((row.data_json or {}).get("provider_facets") or {})
-                telegram_facet = facets.get("telegram-bot")
-                if isinstance(telegram_facet, dict):
-                    bot_profile_key = telegram_facet.get("bot_profile_key")
-                    if isinstance(bot_profile_key, str) and bot_profile_key.strip():
-                        return bot_profile_key.strip()
+    if isinstance(target.profile_ref, str) and target.profile_ref.startswith(
+        "communication-profile:"
+    ):
+        row = _record_by_resource_external_id(
+            session,
+            project_id=target.project_id,
+            resource_key="communication-profile",
+            external_id=target.profile_ref,
+        )
+        if row is not None:
+            facets = dict((row.data_json or {}).get("provider_facets") or {})
+            if isinstance(facets.get("telegram-bot"), dict):
+                return target.profile_ref.split(":", 1)[1].strip() or None
     return None
 
 
@@ -2295,7 +2253,7 @@ _CONTEXT_ALLOWED_FIELDS = {
     "message_ref",
     "provider_key",
     "profile_ref",
-    "bot_profile_key",
+    "profile_key",
     "direction",
     "surface_ref",
     "channel_ref",

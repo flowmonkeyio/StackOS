@@ -21,9 +21,6 @@ def test_operation_registry_documents_core_operations() -> None:
         "agentRequest.list",
         "agentRequest.prepareRunPlan",
         "agentRequest.release",
-        "communicationBotProfile.get",
-        "communicationBotProfile.list",
-        "communicationBotProfile.upsert",
         "communicationContact.list",
         "communicationContact.upsert",
         "communicationContext.query",
@@ -93,12 +90,12 @@ def test_operation_registry_documents_core_operations() -> None:
     assert prepare_request.grant_policy == "direct-work-queue-write"
     assert any("does not infer intent" in item for item in prepare_request.prerequisites)
 
-    bot_profile = registry.get("communicationBotProfile.upsert").describe_out()
-    assert bot_profile.surfaces["mcp"].enabled is True
-    assert bot_profile.surfaces["rest"].enabled is True
-    assert bot_profile.surfaces["cli"].command == "ops call communicationBotProfile.upsert"
-    assert bot_profile.grant_policy == "direct-setup-write"
-    assert any("telegram-bot credential" in item for item in bot_profile.prerequisites)
+    communication_profile = registry.get("communicationProfile.upsert").describe_out()
+    assert communication_profile.surfaces["mcp"].enabled is True
+    assert communication_profile.surfaces["rest"].enabled is True
+    assert communication_profile.surfaces["cli"].command == "ops call communicationProfile.upsert"
+    assert communication_profile.grant_policy == "direct-setup-write"
+    assert any("provider_facets" in item for item in communication_profile.prerequisites)
 
     target_resolver = registry.get("communicationTarget.resolve").describe_out()
     assert target_resolver.surfaces["mcp"].enabled is True
@@ -158,9 +155,6 @@ def test_operation_registry_surface_filter() -> None:
         "agentRequest.list",
         "agentRequest.prepareRunPlan",
         "agentRequest.release",
-        "communicationBotProfile.get",
-        "communicationBotProfile.list",
-        "communicationBotProfile.upsert",
         "communicationContact.list",
         "communicationContact.upsert",
         "communicationContext.query",

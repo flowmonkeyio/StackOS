@@ -82,8 +82,8 @@ All three checks assert the same invariants:
 ## Telegram Local Slice
 
 Telegram communication setup has its own mocked provider E2E because it spans
-credential setup, bot-profile setup, webhook ingress, agent requests, run plans,
-and provider actions:
+credential setup, communication-profile setup, webhook ingress, agent requests,
+run plans, and provider actions:
 
 ```bash
 TPF_LLM_TOOL=codex tpf uv run pytest \
@@ -95,7 +95,7 @@ TPF_LLM_TOOL=codex tpf uv run pytest \
 
 This does not require a live Telegram account. It uses a fake bot token and
 mocked Bot API responses, while still exercising the real StackOS credential
-boundary, project-scoped bot profile, webhook ingress route, run-plan grant, and
+boundary, project-scoped communication profile, webhook ingress route, run-plan grant, and
 redacted action-call/resource audit.
 
 ## Slack Local Slice

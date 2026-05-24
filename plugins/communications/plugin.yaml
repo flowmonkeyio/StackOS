@@ -31,7 +31,7 @@ providers:
         - docs/integration-contracts/communications.md
   - key: telegram-bot
     name: Telegram Bot
-    description: Telegram Bot API provider for bot identity, project-scoped bot profile messaging, webhook ingress, and diagnostics.
+    description: Telegram Bot API provider for bot identity, project-scoped communication profile messaging, webhook ingress, and diagnostics.
     auth_type: bot-token
     auth_methods:
       - key: bot-token
@@ -59,7 +59,7 @@ providers:
             placeholder: http://127.0.0.1:8081
             description: Leave blank for Telegram's hosted Bot API. Use only with the official self-hosted Telegram Bot API server.
     config:
-      setup_note: Store only Telegram token material and transport endpoints here. Bot identity, agent guidance, command intent guidance, access, trigger, context, and response policy belong to project-scoped communication-bot-profile records.
+      setup_note: Store only Telegram token material and transport endpoints here. Bot identity, agent guidance, command intent guidance, access, trigger, context, and response policy belong on project-scoped communication-profile records. The provider_facets.telegram-bot object stores only safe Telegram-specific refs/settings such as auth_profile_key, bot username, webhook settings, allowed updates, and provider id maps.
       docs:
         - docs/integration-contracts/communications.md
         - https://core.telegram.org/bots/api
@@ -283,10 +283,10 @@ actions:
       additionalProperties: false
       required:
         - chat_ref
-        - bot_profile_key
+        - profile_key
         - text
       properties:
-        bot_profile_key:
+        profile_key:
           type: string
         chat_ref:
           type: string
@@ -362,10 +362,10 @@ actions:
       additionalProperties: false
       required:
         - chat_ref
-        - bot_profile_key
+        - profile_key
         - photo
       properties:
-        bot_profile_key:
+        profile_key:
           type: string
         chat_ref:
           type: string
@@ -458,10 +458,10 @@ actions:
       type: object
       additionalProperties: false
       required:
-        - bot_profile_key
+        - profile_key
         - callback_query_id
       properties:
-        bot_profile_key:
+        profile_key:
           type: string
         callback_query_id:
           type: string
@@ -495,12 +495,12 @@ actions:
       type: object
       additionalProperties: false
       required:
-        - bot_profile_key
+        - profile_key
         - limit
         - timeout_s
         - allowed_updates
       properties:
-        bot_profile_key:
+        profile_key:
           type: string
         cursor_ref:
           type: string
@@ -530,7 +530,7 @@ actions:
         - https://core.telegram.org/bots/api#getupdates
   - key: telegram-bot.webhook.set
     name: Set Telegram Webhook
-    description: Set the Telegram webhook URL for a bot profile after deployment and secret-token verification are configured.
+    description: Set the Telegram webhook URL for a communication profile after deployment and secret-token verification are configured.
     provider: telegram-bot
     capability: agent-triggering
     risk_level: write
@@ -538,10 +538,10 @@ actions:
       type: object
       additionalProperties: false
       required:
-        - bot_profile_key
+        - profile_key
         - webhook_url
       properties:
-        bot_profile_key:
+        profile_key:
           type: string
         webhook_url:
           type: string
@@ -569,7 +569,7 @@ actions:
         - https://core.telegram.org/bots/api#setwebhook
   - key: telegram-bot.webhook.delete
     name: Delete Telegram Webhook
-    description: Remove a Telegram webhook for a project-scoped bot profile.
+    description: Remove a Telegram webhook for a project-scoped communication profile.
     provider: telegram-bot
     capability: agent-triggering
     risk_level: write
@@ -577,9 +577,9 @@ actions:
       type: object
       additionalProperties: false
       required:
-        - bot_profile_key
+        - profile_key
       properties:
-        bot_profile_key:
+        profile_key:
           type: string
         drop_pending_updates:
           type: boolean
@@ -595,7 +595,7 @@ actions:
         - https://core.telegram.org/bots/api#deletewebhook
   - key: telegram-bot.webhook.info
     name: Get Telegram Webhook Info
-    description: Read safe Telegram webhook status for a bot profile.
+    description: Read safe Telegram webhook status for a communication profile.
     provider: telegram-bot
     capability: agent-triggering
     risk_level: read
@@ -603,9 +603,9 @@ actions:
       type: object
       additionalProperties: false
       required:
-        - bot_profile_key
+        - profile_key
       properties:
-        bot_profile_key:
+        profile_key:
           type: string
     output_schema: *object_schema
     config:
@@ -1102,10 +1102,6 @@ resources:
   - key: communication-membership
     name: Communication Membership
     description: Provider-neutral membership, permission, role, and availability state for profiles or contacts inside a communication surface.
-    schema: *object_schema
-  - key: communication-bot-profile
-    name: Communication Bot Profile
-    description: Provider-specific bot profile facet. Telegram currently uses this resource; generic identity and cross-provider policy belong in communication-profile.
     schema: *object_schema
   - key: communication-channel
     name: Communication Channel

@@ -16,6 +16,7 @@ from stackos.mcp.bridge import (
     _AGENT_VISIBLE_TOOL_ORDER,
     AgentBridgeProxy,
     _bridge_cache_step_context,
+    _bridge_compact_profile,
     _bridge_filter_tool_list_response,
     _bridge_toolbox_describe,
 )
@@ -315,9 +316,9 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "communicationRoute.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationRoute.upsert" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationContext.query" in _AGENT_VISIBLE_TOOL_NAMES
-    assert "communicationBotProfile.list" in _AGENT_VISIBLE_TOOL_NAMES
-    assert "communicationBotProfile.get" in _AGENT_VISIBLE_TOOL_NAMES
-    assert "communicationBotProfile.upsert" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationProfile.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationProfile.get" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationProfile.upsert" in _AGENT_VISIBLE_TOOL_NAMES
     assert "toolProfile.resolve" in _AGENT_VISIBLE_TOOL_NAMES
     assert "localAgentChat.createMessage" in _AGENT_VISIBLE_TOOL_NAMES
     assert "context.query" in _AGENT_VISIBLE_TOOL_NAMES
@@ -338,6 +339,45 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "runPlan.update" not in _AGENT_STEP_GATED_TOOL_NAMES
     assert "action.execute" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "agentRequest.create" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+
+
+def test_bridge_compacts_communication_profile_without_flat_provider_fields() -> None:
+    compact = _bridge_compact_profile(
+        {
+            "record_id": 12,
+            "project_id": 1,
+            "profile_ref": "communication-profile:support",
+            "key": "support",
+            "enabled": True,
+            "identity": {"display_name": "Support", "purpose": "Help", "voice": "Calm"},
+            "provider_facets": {
+                "telegram-bot": {
+                    "auth_profile_key": "support-telegram",
+                    "bot_username": "support_bot",
+                    "ingress_mode": "webhook",
+                },
+                "slack-bot": {"auth_profile_key": "support-slack", "bot_user_id": "U123"},
+            },
+            "access_policy": {
+                "dm_mode": "all",
+                "group_mode": "all",
+                "user_mode": "allowlist",
+                "allowed_user_refs": ["telegram-user:555"],
+            },
+            "trigger_policy": {"commands": [{"command": "/support"}]},
+            "response_policy": {"origin_required": True},
+            "send_policy": {"mode": "explicit-targets"},
+            "handoff_policy": {"mode": "explicit-targets"},
+            "approval_policy": {"mode": "none"},
+        }
+    )
+
+    assert compact["profile_ref"] == "communication-profile:support"
+    assert compact["provider_facets"]["telegram-bot"]["auth_profile_key"] == "support-telegram"
+    assert compact["provider_facets"]["slack-bot"]["auth_profile_key"] == "support-slack"
+    assert compact["send_policy"] == {"mode": "explicit-targets"}
+    assert "auth_profile_key" not in compact
+    assert "bot_username" not in compact
     assert "context.query" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "resource.upsert" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "artifact.create" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES

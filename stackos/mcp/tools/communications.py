@@ -30,9 +30,6 @@ def _communication_operations() -> OperationRegistry:
         "communicationRoute.list",
         "communicationRoute.upsert",
         "communicationContext.query",
-        "communicationBotProfile.list",
-        "communicationBotProfile.get",
-        "communicationBotProfile.upsert",
     ):
         operations.register(all_operations.get(name))
     return operations

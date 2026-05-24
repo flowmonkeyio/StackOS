@@ -186,9 +186,9 @@ The current core operation registry includes:
 - `communicationRoute.list`
 - `communicationRoute.upsert`
 - `communicationContext.query`
-- `communicationBotProfile.list`
-- `communicationBotProfile.get`
-- `communicationBotProfile.upsert`
+- `communicationProfile.list`
+- `communicationProfile.get`
+- `communicationProfile.upsert`
 - `ingressEndpoint.configure`
 - `ingressEndpoint.refresh`
 - `ingressEndpoint.routes`
@@ -293,7 +293,7 @@ the communication profile, source surface, and approved human/bot actor. Target
 `allowed_source_surface_refs`, and `allowed_target_refs`; all configured
 allowlists must match. The resolver returns provider-ready defaults when it can
 derive them safely, such as Slack `surface_ref` or Telegram `chat_ref` plus
-`bot_profile_key` from a communication profile Telegram facet. The caller still
+`profile_key` from a communication profile Telegram facet. The caller still
 adds the message-specific fields and validates the final explicit action.
 `communicationContext.query` returns bounded stored communication-message
 history only. Live provider history fetches must be explicit provider actions.
@@ -309,7 +309,7 @@ uses `driver=public-url` with a deployed HTTPS base URL.
 `action.run` or workflow setup when the agent needs one safe execution tuple for
 a provider: optional project tool profile, daemon-held `credential_ref`,
 provider auth status, and a concise setup `next_action` when the tuple is not
-ready. For Telegram it resolves the `communication-bot-profile` plus its
+ready. For Telegram it resolves the `communication-profile` plus its
 credential profile. For SMTP, IMAP, and other provider credentials it resolves
 the requested auth profile directly. It never returns secret payloads and never
 chooses the workflow or provider action for the agent.

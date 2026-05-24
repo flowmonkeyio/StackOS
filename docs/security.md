@@ -102,7 +102,7 @@ to `127.0.0.1:5180` can fetch the UI token by sending `GET
 /api/v1/auth/ui-token` with no credentials. That token is accepted only
 for REST reads, read-only `POST /api/v1/operations/{operation}/call` transport
 calls, `POST /api/v1/projects`, narrow no-secret setup operations such as
-`communicationBotProfile.upsert` and `ingressEndpoint.*`, and the
+`communicationProfile.upsert` and `ingressEndpoint.*`, and the
 provider-auth setup routes under `/api/v1/projects/{id}/auth/*`; it cannot
 access `/mcp` and cannot mutate existing projects, resources, runs, action
 execution, templates, or project data.

@@ -8,9 +8,9 @@ owner:
   team: StackOS
 when_to_use:
   - A Telegram message created an agent_request and the response may need buttons or images.
-  - The agent must respect the originating bot profile, chat, thread, and response policy.
+  - The agent must respect the originating communication profile, chat, thread, and response policy.
 when_not_to_use:
-  - The response is not tied to a Telegram bot profile.
+  - The response is not tied to a Telegram communication profile.
 inputs:
   - key: agent_request_id
     name: Agent Request ID
@@ -69,11 +69,11 @@ action_contracts:
 policies:
   - key: origin_bound_response
     kind: safety
-    description: Reply actions must include source_agent_request_id and match the originating bot profile/chat policy.
+    description: Reply actions must include source_agent_request_id and match the originating communication profile/chat policy.
 steps:
   - id: orient
     title: Read Origin Context
-    purpose: Inspect the request metadata, bot profile guidance, and thread context.
+    purpose: Inspect the request metadata, communication profile guidance, and thread context.
     input_refs:
       - agent_request_id
       - response_goal

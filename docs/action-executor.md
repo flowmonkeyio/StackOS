@@ -178,8 +178,8 @@ and returns local artifact URLs with no `b64_json` payload. Other connectors
 normalize wrapper results into action output JSON and record the provider,
 operation, cost, status, and redacted payloads in `action_calls`.
 
-Communication setup is not an action connector. Telegram bot profile setup uses
-the shared `communicationBotProfile.upsert/get/list` operations across REST,
+Communication setup is not an action connector. Telegram communication profile setup uses
+the shared `communicationProfile.upsert/get/list` operations across REST,
 CLI, and MCP after the project-scoped `telegram-bot` credential exists. Slack
 uses project-scoped `communication-profile` records with a
 `provider_facets.slack-bot.auth_profile_key` binding after the project-scoped

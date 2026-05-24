@@ -108,7 +108,7 @@ def test_ui_token_can_call_read_only_operations(client: TestClient, auth_token: 
     assert body["total_estimate"] == 0
 
 
-def test_ui_token_can_call_telegram_bot_profile_setup_operation(
+def test_ui_token_can_call_telegram_profile_setup_operation(
     client: TestClient,
     auth_token: str,
 ) -> None:
@@ -131,18 +131,18 @@ def test_ui_token_can_call_telegram_bot_profile_setup_operation(
     assert stored.status_code == 201, stored.text
 
     resp = client.post(
-        "/api/v1/operations/communicationBotProfile.upsert/call",
+        "/api/v1/operations/communicationProfile.upsert/call",
         headers={"authorization": f"Bearer {ui_token}"},
         json={
             "arguments": {
                 "project_id": project_id,
                 "key": "support-bot",
-                "auth_profile_key": "support",
                 "identity": {
                     "display_name": "Support Bot",
                     "purpose": "Handle support requests from approved Telegram users.",
                     "voice": "Concise and calm.",
                 },
+                "provider_facets": {"telegram-bot": {"auth_profile_key": "support"}},
                 "access_policy": {
                     "dm_mode": "allowlist",
                     "group_mode": "allowlist",
@@ -155,6 +155,7 @@ def test_ui_token_can_call_telegram_bot_profile_setup_operation(
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["key"] == "support-bot"
+    assert resp.json()["data"]["provider_facets"]["telegram-bot"]["auth_profile_key"] == "support"
     assert "123456:ABC" not in resp.text
     assert "telegram-secret" not in resp.text
 

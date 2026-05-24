@@ -75,13 +75,11 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
     credential_ref = _store_credential(api, project_id)
 
     profile = api.post(
-        "/api/v1/operations/communicationBotProfile.upsert/call",
+        "/api/v1/operations/communicationProfile.upsert/call",
         json={
             "arguments": {
                 "project_id": project_id,
                 "key": "support-bot",
-                "auth_profile_key": "support",
-                "bot_username": "support_bot",
                 "identity": {
                     "display_name": "Support Bot",
                     "purpose": "Handle support requests from approved Telegram users.",
@@ -120,8 +118,16 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
                     "reply_to_source_message": True,
                     "same_thread": True,
                 },
-                "reply_to_message_refs": {"telegram-message:999:88": 88},
-                "thread_refs": {"telegram-thread:999:default": 1},
+                "provider_facets": {
+                    "telegram-bot": {
+                        "auth_profile_key": "support",
+                        "bot_username": "support_bot",
+                        "ingress_mode": "webhook",
+                        "allowed_updates": ["message", "callback_query"],
+                        "reply_to_message_refs": {"telegram-message:999:88": 88},
+                        "thread_refs": {"telegram-thread:999:default": 1},
+                    }
+                },
             }
         },
     )
@@ -198,7 +204,7 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
                 "credential_ref": credential_ref,
                 "action_ref": "communications.telegram-bot.message.send",
                 "input_json": {
-                    "bot_profile_key": "support-bot",
+                    "profile_key": "support-bot",
                     "chat_ref": "telegram-chat:999",
                     "source_agent_request_id": agent_request_id,
                     "reply_to_message_ref": "telegram-message:999:88",

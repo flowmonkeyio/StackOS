@@ -69,7 +69,7 @@ _UI_AUTH_SETUP_ACTIONS: frozenset[str] = frozenset({"test", "revoke"})
 _UI_AUTH_PROVIDER_ACTIONS: frozenset[str] = frozenset({"credentials", "start"})
 _UI_SETUP_OPERATION_CALLS: frozenset[str] = frozenset(
     {
-        "communicationBotProfile.upsert",
+        "communicationProfile.upsert",
         "ingressEndpoint.configure",
         "ingressEndpoint.refresh",
         "ingressEndpoint.sync",

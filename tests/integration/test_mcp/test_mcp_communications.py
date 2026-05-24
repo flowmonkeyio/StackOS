@@ -99,7 +99,7 @@ class _FakeNgrokClient:
         return _FakeNgrokResponse()
 
 
-def test_communication_bot_profile_operations_are_registered(mcp_client: MCPClient) -> None:
+def test_communication_profile_operations_are_registered(mcp_client: MCPClient) -> None:
     tools = {tool["name"] for tool in mcp_client.list_tools()}
 
     assert {
@@ -124,9 +124,6 @@ def test_communication_bot_profile_operations_are_registered(mcp_client: MCPClie
         "communicationRoute.list",
         "communicationRoute.upsert",
         "communicationContext.query",
-        "communicationBotProfile.list",
-        "communicationBotProfile.get",
-        "communicationBotProfile.upsert",
         "toolProfile.resolve",
     } <= tools
 
@@ -146,17 +143,16 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
             "identity": {"display_name": "Support Agent"},
             "provider_facets": {
                 "slack-bot": {"auth_profile_key": "default", "bot_user_id": "U123"},
-                "telegram-bot": {"bot_profile_key": "support-bot"},
             },
         },
     )
     mcp_client.call_tool_structured(
-        "communicationBotProfile.upsert",
+        "communicationProfile.upsert",
         {
             "project_id": project_id,
             "key": "support-bot",
-            "auth_profile_key": "support",
             "identity": {"display_name": "Support Telegram Bot"},
+            "provider_facets": {"telegram-bot": {"auth_profile_key": "support"}},
             "access_policy": {
                 "dm_mode": "all",
                 "group_mode": "all",
@@ -193,7 +189,7 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
         route for route in routes["routes"] if route["provider_key"] == "telegram-bot"
     ]
     assert len(telegram_routes) == 1
-    assert telegram_routes[0]["profile_resource_key"] == "communication-bot-profile"
+    assert telegram_routes[0]["profile_resource_key"] == "communication-profile"
 
     synced = mcp_client.call_tool_structured(
         "ingressEndpoint.sync",
@@ -220,15 +216,16 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
     )
 
     bot = mcp_client.call_tool_structured(
-        "communicationBotProfile.get",
+        "communicationProfile.get",
         {"project_id": project_id, "key": "support-bot"},
     )
-    assert bot["ingress_mode"] == "webhook"
-    assert bot["webhook_base_url"] == "https://stackos.example.com"
-    assert bot["refs"]["ingress_url"] == (
+    telegram_facet = bot["provider_facets"]["telegram-bot"]
+    assert telegram_facet["ingress_mode"] == "webhook"
+    assert telegram_facet["webhook_base_url"] == "https://stackos.example.com"
+    assert telegram_facet["refs"]["ingress_url"] == (
         f"https://stackos.example.com/api/v1/ingress/telegram/{project_id}/support-bot"
     )
-    assert bot["allowed_webhook_hosts"] == ["stackos.example.com"]
+    assert telegram_facet["allowed_webhook_hosts"] == ["stackos.example.com"]
 
     refreshed = mcp_client.call_tool_structured(
         "ingressEndpoint.refresh",
@@ -242,14 +239,15 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
     assert refreshed["data"]["endpoint"]["driver"] == "public-url"
 
     refreshed_bot = mcp_client.call_tool_structured(
-        "communicationBotProfile.get",
+        "communicationProfile.get",
         {"project_id": project_id, "key": "support-bot"},
     )
-    assert refreshed_bot["webhook_base_url"] == "https://fresh.stackos.example.com"
-    assert refreshed_bot["refs"]["ingress_url"] == (
+    refreshed_telegram_facet = refreshed_bot["provider_facets"]["telegram-bot"]
+    assert refreshed_telegram_facet["webhook_base_url"] == "https://fresh.stackos.example.com"
+    assert refreshed_telegram_facet["refs"]["ingress_url"] == (
         f"https://fresh.stackos.example.com/api/v1/ingress/telegram/{project_id}/support-bot"
     )
-    assert refreshed_bot["allowed_webhook_hosts"] == [
+    assert refreshed_telegram_facet["allowed_webhook_hosts"] == [
         "fresh.stackos.example.com",
         "stackos.example.com",
     ]
@@ -302,7 +300,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
                 "purpose": "Coordinate customer issues across chat surfaces.",
             },
             "provider_facets": {
-                "telegram-bot": {"bot_profile_key": "support-bot"},
+                "telegram-bot": {"auth_profile_key": "support"},
                 "slack-bot": {"bot_user_id": "U123"},
             },
             "send_policy": {
@@ -480,7 +478,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
     assert telegram_allowed["allowed"] is True
     assert telegram_allowed["action_ref"] == "communications.telegram-bot.message.send"
     assert telegram_allowed["action_input_defaults"]["chat_ref"] == "telegram-chat:-1001"
-    assert telegram_allowed["action_input_defaults"]["bot_profile_key"] == "support-bot"
+    assert telegram_allowed["action_input_defaults"]["profile_key"] == "support"
 
     default_denied = mcp_client.call_tool_structured(
         "communicationTarget.upsert",
@@ -622,7 +620,7 @@ def test_local_agent_chat_mcp_creates_message_and_request(
     assert replayed["data"]["agent_request"]["id"] == created["data"]["agent_request"]["id"]
 
 
-def test_communication_bot_profile_mcp_lifecycle_has_no_secret_roundtrip(
+def test_communication_profile_mcp_lifecycle_has_no_secret_roundtrip(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -630,16 +628,23 @@ def test_communication_bot_profile_mcp_lifecycle_has_no_secret_roundtrip(
     _seed_telegram_credential(mcp_client, project_id)
 
     created = mcp_client.call_tool_structured(
-        "communicationBotProfile.upsert",
+        "communicationProfile.upsert",
         {
             "project_id": project_id,
             "key": "support-bot",
-            "auth_profile_key": "support",
-            "bot_username": "support_bot",
             "identity": {
                 "display_name": "Support Bot",
                 "purpose": "Handle support requests from approved Telegram users.",
                 "voice": "Concise and calm.",
+            },
+            "provider_facets": {
+                "telegram-bot": {
+                    "auth_profile_key": "support",
+                    "bot_username": "support_bot",
+                    "reply_to_message_refs": {"telegram-message:999:88": 88},
+                    "thread_refs": {"telegram-thread:999:default": 1},
+                    "direct_messages_topic_refs": {"telegram-dm-topic:999:555": 22},
+                }
             },
             "agent_guidance": {
                 "default_instructions": "Triage support requests before replying.",
@@ -652,50 +657,50 @@ def test_communication_bot_profile_mcp_lifecycle_has_no_secret_roundtrip(
                 "allowed_chat_refs": ["telegram-chat:999"],
                 "allowed_user_refs": ["telegram-user:555"],
             },
-            "reply_to_message_refs": {"telegram-message:999:88": 88},
-            "thread_refs": {"telegram-thread:999:default": 1},
-            "direct_messages_topic_refs": {"telegram-dm-topic:999:555": 22},
         },
     )
     assert created["data"]["key"] == "support-bot"
-    assert created["data"]["auth_profile_key"] == "support"
+    telegram_facet = created["data"]["provider_facets"]["telegram-bot"]
+    assert telegram_facet["auth_profile_key"] == "support"
     assert created["data"]["identity"]["display_name"] == "Support Bot"
-    assert created["data"]["reply_to_message_refs"] == {"telegram-message:999:88": 88}
+    assert telegram_facet["reply_to_message_refs"] == {"telegram-message:999:88": 88}
 
     fetched = mcp_client.call_tool_structured(
-        "communicationBotProfile.get",
+        "communicationProfile.get",
         {"project_id": project_id, "key": "support-bot"},
     )
     listed = mcp_client.call_tool_structured(
-        "communicationBotProfile.list",
+        "communicationProfile.list",
         {"project_id": project_id},
     )
 
     assert fetched["key"] == "support-bot"
-    assert fetched["thread_refs"] == {"telegram-thread:999:default": 1}
+    assert fetched["provider_facets"]["telegram-bot"]["thread_refs"] == {
+        "telegram-thread:999:default": 1
+    }
     assert [item["key"] for item in listed["items"]] == ["support-bot"]
     rendered = json.dumps({"created": created, "fetched": fetched, "listed": listed})
     assert "123456:ABC" not in rendered
     assert "telegram-secret" not in rendered
 
 
-def test_communication_bot_profile_mcp_requires_project_scoped_credential(
+def test_tool_profile_resolve_mcp_reports_missing_telegram_credential(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
     project_id = int(seeded_project["data"]["id"])
 
-    err = mcp_client.call_tool_error(
-        "communicationBotProfile.upsert",
+    resolved = mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
         {
             "project_id": project_id,
             "key": "missing-credential",
-            "auth_profile_key": "missing",
             "identity": {
                 "display_name": "Missing Bot",
                 "purpose": "Exercise credential validation.",
                 "voice": "Concise.",
             },
+            "provider_facets": {"telegram-bot": {"auth_profile_key": "missing"}},
             "access_policy": {
                 "dm_mode": "allowlist",
                 "group_mode": "allowlist",
@@ -706,8 +711,18 @@ def test_communication_bot_profile_mcp_requires_project_scoped_credential(
         },
     )
 
-    assert err["code"] == -32602
-    assert err["data"]["auth_profile_key"] == "missing"
+    assert resolved["data"]["provider_facets"]["telegram-bot"]["auth_profile_key"] == "missing"
+    missing = mcp_client.call_tool_structured(
+        "toolProfile.resolve",
+        {
+            "project_id": project_id,
+            "provider_key": "telegram-bot",
+            "tool_profile_key": "missing-credential",
+        },
+    )
+    assert missing["ready"] is False
+    assert missing["tool_profile"]["auth_profile_key"] == "missing"
+    assert "credential" in missing["missing"]
 
 
 def test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential(
@@ -717,16 +732,20 @@ def test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential(
     project_id = int(seeded_project["data"]["id"])
     _seed_telegram_credential(mcp_client, project_id)
     mcp_client.call_tool_structured(
-        "communicationBotProfile.upsert",
+        "communicationProfile.upsert",
         {
             "project_id": project_id,
             "key": "support-bot",
-            "auth_profile_key": "support",
-            "bot_username": "support_bot",
             "identity": {
                 "display_name": "Support Bot",
                 "purpose": "Handle approved support requests.",
                 "voice": "Concise.",
+            },
+            "provider_facets": {
+                "telegram-bot": {
+                    "auth_profile_key": "support",
+                    "bot_username": "support_bot",
+                }
             },
             "agent_guidance": {"default_instructions": "Triage before replying."},
             "access_policy": {
@@ -781,16 +800,16 @@ def test_tool_profile_resolve_mcp_rejects_profile_credential_mismatch(
         profile_key="analytics",
     )
     mcp_client.call_tool_structured(
-        "communicationBotProfile.upsert",
+        "communicationProfile.upsert",
         {
             "project_id": project_id,
             "key": "support-bot",
-            "auth_profile_key": "support",
             "identity": {
                 "display_name": "Support Bot",
                 "purpose": "Handle approved support requests.",
                 "voice": "Concise.",
             },
+            "provider_facets": {"telegram-bot": {"auth_profile_key": "support"}},
             "access_policy": {
                 "dm_mode": "allowlist",
                 "group_mode": "allowlist",
@@ -824,23 +843,27 @@ def test_tool_profile_resolve_mcp_redacts_profile_sections(
     project_id = int(seeded_project["data"]["id"])
     _seed_telegram_credential(mcp_client, project_id)
     mcp_client.call_tool_structured(
-        "communicationBotProfile.upsert",
+        "communicationProfile.upsert",
         {
             "project_id": project_id,
             "key": "support-bot",
-            "auth_profile_key": "support",
             "identity": {
                 "display_name": "Support Bot",
                 "purpose": "Handle support with api_key=profile-secret",
                 "voice": "Concise.",
             },
+            "provider_facets": {
+                "telegram-bot": {
+                    "auth_profile_key": "support",
+                    "refs": {
+                        "api_key": "ref-secret",
+                        "safe_ref": "telegram-chat:999",
+                    },
+                }
+            },
             "context_policy": {
                 "note": "authorization: bearer hidden-token",
                 "nested": {"password": "nested-secret"},
-            },
-            "refs": {
-                "api_key": "ref-secret",
-                "safe_ref": "telegram-chat:999",
             },
             "access_policy": {
                 "dm_mode": "allowlist",

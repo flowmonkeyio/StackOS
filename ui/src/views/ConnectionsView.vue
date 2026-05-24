@@ -38,48 +38,6 @@ interface ServiceGroup {
   connections: ConnectionRow[]
 }
 
-interface TelegramBotProfile {
-  record_id: number
-  project_id: number
-  external_id: string
-  key: string
-  provider_key: string
-  auth_profile_key: string
-  enabled: boolean
-  bot_username: string | null
-  ingress_mode: string
-  allowed_updates: string[]
-  identity: {
-    display_name?: string
-    purpose?: string
-    voice?: string
-  }
-  agent_guidance: {
-    default_instructions?: string
-    boundaries?: string
-    escalation?: string
-  }
-  access_policy: {
-    dm_mode?: string
-    group_mode?: string
-    user_mode?: string
-    allowed_chat_refs?: string[]
-    allowed_user_refs?: string[]
-    denied_chat_refs?: string[]
-    denied_user_refs?: string[]
-  }
-  trigger_policy: {
-    commands?: TelegramCommandSpec[]
-    mention_patterns?: string[]
-  }
-  visibility_policy: Record<string, unknown>
-  context_policy: Record<string, unknown>
-  response_policy: Record<string, unknown>
-  refs: Record<string, string>
-  webhook_base_url: string | null
-  allowed_webhook_hosts: string[]
-}
-
 interface TelegramCommandSpec {
   command: string
   description?: string
@@ -98,12 +56,6 @@ interface TelegramCommandDraft {
   enabled: boolean
 }
 
-interface TelegramBotProfileListOut {
-  items: TelegramBotProfile[]
-  next_cursor: string | number | null
-  total_estimate: number | null
-}
-
 interface CommunicationProfile {
   record_id: number
   project_id: number
@@ -120,13 +72,20 @@ interface CommunicationProfile {
   access_policy: {
     allowed_user_refs?: string[]
     denied_user_refs?: string[]
+    allowed_chat_refs?: string[]
+    denied_chat_refs?: string[]
     user_mode?: string
     dm_mode?: string
     channel_mode?: string
     group_mode?: string
   }
   trigger_policy: Record<string, unknown>
+  visibility_policy: Record<string, unknown>
+  context_policy: Record<string, unknown>
   response_policy: Record<string, unknown>
+  send_policy: Record<string, unknown>
+  handoff_policy: Record<string, unknown>
+  approval_policy: Record<string, unknown>
   metadata_json: Record<string, unknown>
 }
 
@@ -252,17 +211,15 @@ const fieldsByForm = ref<Record<string, Record<string, string>>>({})
 const busyAction = ref<string | null>(null)
 const providerMessages = ref<Record<string, { tone: MessageTone; text: string }>>({})
 const connectionMessages = ref<Record<string, { tone: MessageTone; text: string }>>({})
-const botProfiles = ref<TelegramBotProfile[]>([])
-const botProfilesLoading = ref(false)
-const botProfilePanelOpen = ref(false)
-const botProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
+const telegramProfilePanelOpen = ref(false)
+const telegramProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
 const communicationProfiles = ref<CommunicationProfile[]>([])
 const communicationTargets = ref<CommunicationTarget[]>([])
 const communicationSurfaces = ref<CommunicationSurface[]>([])
 const ingressStatus = ref<IngressEndpointStatusOut | null>(null)
 const communicationSetupLoading = ref(false)
 const communicationSetupMessage = ref<{ tone: MessageTone; text: string } | null>(null)
-const botProfileForm = ref({
+const telegramProfileForm = ref({
   key: 'support-bot',
   auth_profile_key: '',
   bot_username: '',
@@ -355,6 +312,10 @@ const telegramConnectionOptions = computed(() =>
   })),
 )
 
+const telegramProfiles = computed(() =>
+  communicationProfiles.value.filter((profile) => Boolean(profile.provider_facets?.['telegram-bot'])),
+)
+
 const serviceGroups = computed<ServiceGroup[]>(() => {
   const grouped = new Map<string, ConnectionRow[]>()
   for (const connection of connections.value) {
@@ -380,7 +341,6 @@ async function load(): Promise<void> {
   await catalogStore.refresh(projectId.value)
   await catalogStore.refreshAuth(projectId.value)
   await loadCommunicationSetup()
-  await loadBotProfiles()
   syncProviderSelectionFromQuery()
 }
 
@@ -417,25 +377,6 @@ async function loadCommunicationSetup(): Promise<void> {
     }
   } finally {
     communicationSetupLoading.value = false
-  }
-}
-
-async function loadBotProfiles(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
-  botProfilesLoading.value = true
-  try {
-    const response = await callOperation<TelegramBotProfileListOut>(
-      'communicationBotProfile.list',
-      { project_id: projectId.value },
-    )
-    botProfiles.value = response.items ?? []
-  } catch (err) {
-    botProfileMessage.value = {
-      tone: 'danger',
-      text: formatApiError(err, 'failed to load Telegram bot profiles'),
-    }
-  } finally {
-    botProfilesLoading.value = false
   }
 }
 
@@ -562,23 +503,32 @@ function openAddConnection(providerKey?: string): void {
   addPanelOpen.value = true
 }
 
-function openAddBotProfile(): void {
+function openAddTelegramProfile(): void {
   const preferred = preferredTelegramConnection()
-  if (!botProfileForm.value.auth_profile_key && preferred) {
-    botProfileForm.value = {
-      ...botProfileForm.value,
+  if (!telegramProfileForm.value.auth_profile_key && preferred) {
+    telegramProfileForm.value = {
+      ...telegramProfileForm.value,
       auth_profile_key: preferred.profile_key,
     }
   }
-  botProfileMessage.value = null
-  botProfilePanelOpen.value = true
+  telegramProfileMessage.value = null
+  telegramProfilePanelOpen.value = true
 }
 
-function editBotProfile(profile: TelegramBotProfile): void {
-  botProfileForm.value = {
+function editTelegramProfile(profile: CommunicationProfile): void {
+  const facet = telegramFacet(profile)
+  const rawCommands = profile.trigger_policy['commands']
+  const rawMentionPatterns = profile.trigger_policy['mention_patterns']
+  const commands = Array.isArray(rawCommands)
+    ? (rawCommands as TelegramCommandSpec[])
+    : []
+  const mentionPatterns = Array.isArray(rawMentionPatterns)
+    ? (rawMentionPatterns as string[])
+    : []
+  telegramProfileForm.value = {
     key: profile.key,
-    auth_profile_key: profile.auth_profile_key,
-    bot_username: profile.bot_username ?? '',
+    auth_profile_key: telegramProfileAuthKey(profile),
+    bot_username: telegramProfileUsername(profile),
     identity_display_name: String(profile.identity.display_name ?? profile.key),
     identity_purpose: String(profile.identity.purpose ?? ''),
     identity_voice: String(profile.identity.voice ?? ''),
@@ -587,15 +537,18 @@ function editBotProfile(profile: TelegramBotProfile): void {
     agent_escalation: String(profile.agent_guidance.escalation ?? ''),
     allowed_chat_refs: (profile.access_policy.allowed_chat_refs ?? []).join(', '),
     allowed_user_refs: (profile.access_policy.allowed_user_refs ?? []).join(', '),
-    commands: toCommandDrafts(profile.trigger_policy.commands ?? []),
-    mention_patterns: (profile.trigger_policy.mention_patterns ?? []).join(', '),
+    commands: toCommandDrafts(commands),
+    mention_patterns: mentionPatterns.join(', '),
     store_non_trigger_messages: profile.visibility_policy.store_non_trigger_messages !== false,
     origin_required: profile.response_policy.origin_required !== false,
     reply_to_source_message: profile.response_policy.reply_to_source_message === true,
     same_thread: profile.response_policy.same_thread === true,
   }
-  botProfileMessage.value = null
-  botProfilePanelOpen.value = true
+  if (typeof facet.bot_username === 'string' && !telegramProfileForm.value.bot_username) {
+    telegramProfileForm.value.bot_username = facet.bot_username.replace(/^@/, '')
+  }
+  telegramProfileMessage.value = null
+  telegramProfilePanelOpen.value = true
 }
 
 function compareConnections(left: ConnectionRow, right: ConnectionRow): number {
@@ -776,8 +729,38 @@ function botUsernameFromConnection(connection: SchemaCredentialConnectionOut | n
   return displayName.startsWith('@') ? displayName.slice(1) : null
 }
 
+function telegramFacet(profile: CommunicationProfile): Record<string, unknown> {
+  return profile.provider_facets?.['telegram-bot'] ?? {}
+}
+
+function telegramFacetString(profile: CommunicationProfile, key: string): string {
+  const value = telegramFacet(profile)[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function telegramProfileAuthKey(profile: CommunicationProfile): string {
+  return telegramFacetString(profile, 'auth_profile_key') || 'default'
+}
+
+function telegramProfileUsername(profile: CommunicationProfile): string {
+  return telegramFacetString(profile, 'bot_username').replace(/^@/, '')
+}
+
+function telegramProfileIngressMode(profile: CommunicationProfile): string {
+  return telegramFacetString(profile, 'ingress_mode') || 'not configured'
+}
+
+function telegramCommands(profile: CommunicationProfile): TelegramCommandSpec[] {
+  const commands = profile.trigger_policy['commands']
+  return Array.isArray(commands) ? (commands as TelegramCommandSpec[]) : []
+}
+
 function preferredTelegramConnection(): ConnectionRow | null {
   return identifiedTelegramConnections.value[0] ?? telegramConnections.value[0] ?? null
+}
+
+function communicationProfileByKey(key: string): CommunicationProfile | null {
+  return communicationProfiles.value.find((profile) => profile.key === key) ?? null
 }
 
 function connectionActionKey(credentialRef: string, action: string): string {
@@ -891,17 +874,17 @@ function toCommandSpecs(commands: TelegramCommandDraft[]): TelegramCommandSpec[]
 }
 
 function addCommandDraft(): void {
-  botProfileForm.value.commands = [
-    ...botProfileForm.value.commands,
+  telegramProfileForm.value.commands = [
+    ...telegramProfileForm.value.commands,
     { command: '', description: '', guidance: '', enabled: true },
   ]
 }
 
 function removeCommandDraft(index: number): void {
-  botProfileForm.value.commands = botProfileForm.value.commands.filter((_, itemIndex) => {
+  telegramProfileForm.value.commands = telegramProfileForm.value.commands.filter((_, itemIndex) => {
     return itemIndex !== index
   })
-  if (botProfileForm.value.commands.length === 0) addCommandDraft()
+  if (telegramProfileForm.value.commands.length === 0) addCommandDraft()
 }
 
 function commandSummary(commands: TelegramCommandSpec[] | undefined): string {
@@ -912,19 +895,19 @@ function commandSummary(commands: TelegramCommandSpec[] | undefined): string {
   return values.length > 0 ? values.join(', ') : '-'
 }
 
-function ensureBotFormDefaults(): void {
+function ensureTelegramProfileDefaults(): void {
   const preferred = preferredTelegramConnection()
-  if (!botProfileForm.value.auth_profile_key && preferred) {
-    botProfileForm.value = {
-      ...botProfileForm.value,
+  if (!telegramProfileForm.value.auth_profile_key && preferred) {
+    telegramProfileForm.value = {
+      ...telegramProfileForm.value,
       auth_profile_key: preferred.profile_key,
     }
   }
 }
 
-async function saveBotProfile(): Promise<void> {
-  ensureBotFormDefaults()
-  const form = botProfileForm.value
+async function saveTelegramProfile(): Promise<void> {
+  ensureTelegramProfileDefaults()
+  const form = telegramProfileForm.value
   const key = form.key.trim()
   const authProfileKey = form.auth_profile_key.trim()
   const allowedChatRefs = parseCsv(form.allowed_chat_refs)
@@ -932,51 +915,70 @@ async function saveBotProfile(): Promise<void> {
   const identityDisplayName = form.identity_display_name.trim()
   const commands = toCommandSpecs(form.commands)
   if (!key) {
-    botProfileMessage.value = { tone: 'danger', text: 'Bot profile key is required.' }
+    telegramProfileMessage.value = { tone: 'danger', text: 'Telegram profile key is required.' }
     return
   }
   if (!identityDisplayName) {
-    botProfileMessage.value = { tone: 'danger', text: 'Bot display name is required.' }
+    telegramProfileMessage.value = { tone: 'danger', text: 'Bot display name is required.' }
     return
   }
   if (!authProfileKey) {
-    botProfileMessage.value = { tone: 'danger', text: 'Choose a Telegram connection.' }
+    telegramProfileMessage.value = { tone: 'danger', text: 'Choose a Telegram connection.' }
     return
   }
   const selectedTelegramConnection = telegramConnectionForProfile(authProfileKey)
   const botUsername = botUsernameFromConnection(selectedTelegramConnection)
   if (!botUsername) {
-    botProfileMessage.value = {
+    telegramProfileMessage.value = {
       tone: 'danger',
       text: 'Test the Telegram connection first so StackOS can fetch the bot identity from Telegram.',
     }
     return
   }
   if (allowedUserRefs.length === 0) {
-    botProfileMessage.value = {
+    telegramProfileMessage.value = {
       tone: 'danger',
       text: 'Allowlisted users are required before the bot can trigger agents.',
     }
     return
   }
-  busyAction.value = 'telegram-bot-profile:save'
+  busyAction.value = 'telegram-profile:save'
   try {
-    await callOperation('communicationBotProfile.upsert', {
+    const existing = communicationProfileByKey(key)
+    const existingFacets = existing?.provider_facets ?? {}
+    const existingTelegramFacet = existing ? telegramFacet(existing) : {}
+    const existingIngressMode = existing ? telegramProfileIngressMode(existing) : ''
+    await callOperation('communicationProfile.upsert', {
       project_id: projectId.value,
       key,
-      auth_profile_key: authProfileKey,
-      bot_username: botUsername,
       identity: {
+        ...(existing?.identity ?? {}),
         display_name: identityDisplayName,
         purpose: form.identity_purpose.trim(),
         voice: form.identity_voice.trim(),
       },
+      provider_facets: {
+        ...existingFacets,
+        'telegram-bot': {
+          ...existingTelegramFacet,
+          auth_profile_key: authProfileKey,
+          bot_username: botUsername,
+          ingress_mode: existingIngressMode && existingIngressMode !== 'not configured'
+            ? existingIngressMode
+            : 'webhook',
+          allowed_updates: Array.isArray(existingTelegramFacet.allowed_updates)
+            ? existingTelegramFacet.allowed_updates
+            : ['message', 'callback_query'],
+        },
+      },
       agent_guidance: {
+        ...(existing?.agent_guidance ?? {}),
         default_instructions: form.agent_default_instructions.trim(),
         boundaries: form.agent_boundaries.trim(),
         escalation: form.agent_escalation.trim(),
       },
       access_policy: {
+        ...(existing?.access_policy ?? {}),
         dm_mode: 'all',
         group_mode: 'all',
         user_mode: 'allowlist',
@@ -984,6 +986,7 @@ async function saveBotProfile(): Promise<void> {
         allowed_user_refs: allowedUserRefs,
       },
       trigger_policy: {
+        ...(existing?.trigger_policy ?? {}),
         dm_trigger: 'always',
         group_trigger: 'mention_or_command',
         commands,
@@ -991,22 +994,29 @@ async function saveBotProfile(): Promise<void> {
         reply_to_bot_triggers: true,
       },
       visibility_policy: {
+        ...(existing?.visibility_policy ?? {}),
         store_non_trigger_messages: form.store_non_trigger_messages,
       },
+      context_policy: existing?.context_policy ?? {},
       response_policy: {
+        ...(existing?.response_policy ?? {}),
         reply_in_same_chat: true,
         origin_required: form.origin_required,
         reply_to_source_message: form.reply_to_source_message,
         same_thread: form.same_thread,
       },
+      send_policy: existing?.send_policy ?? { mode: 'explicit-targets' },
+      handoff_policy: existing?.handoff_policy ?? { mode: 'explicit-targets' },
+      approval_policy: existing?.approval_policy ?? { mode: 'none' },
+      metadata_json: existing?.metadata_json ?? {},
     })
-    botProfileMessage.value = { tone: 'success', text: `Saved ${key}.` }
-    botProfilePanelOpen.value = false
-    await loadBotProfiles()
+    telegramProfileMessage.value = { tone: 'success', text: `Saved ${key}.` }
+    telegramProfilePanelOpen.value = false
+    await loadCommunicationSetup()
   } catch (err) {
-    botProfileMessage.value = {
+    telegramProfileMessage.value = {
       tone: 'danger',
-      text: formatApiError(err, 'failed to save Telegram bot profile'),
+      text: formatApiError(err, 'failed to save Telegram profile'),
     }
   } finally {
     busyAction.value = null
@@ -1592,26 +1602,26 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
 
     <UiPanel class="p-4">
       <UiSectionHeader
-        title="Telegram Bot Profiles"
+        title="Telegram Profiles"
         description="Bind a Telegram connection to project-scoped identity, agent guidance, access, trigger, context, and response policy."
       >
         <template #actions>
           <div class="flex flex-wrap items-center gap-2">
-            <UiBadge>{{ botProfiles.length }}</UiBadge>
+            <UiBadge>{{ telegramProfiles.length }}</UiBadge>
             <UiButton
               size="sm"
               icon-left="plus"
               :disabled="telegramConnections.length === 0"
-              @click="openAddBotProfile"
+              @click="openAddTelegramProfile"
             >
-              Add bot profile
+              Add Telegram profile
             </UiButton>
           </div>
         </template>
       </UiSectionHeader>
 
       <UiCallout v-if="telegramConnections.length === 0" tone="info">
-        Store a Telegram Bot connection before creating a bot profile.
+        Store a Telegram Bot connection before creating a Telegram profile.
         <UiButton
           class="mt-3"
           size="sm"
@@ -1622,22 +1632,22 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
         </UiButton>
       </UiCallout>
 
-      <UiCallout v-else-if="botProfileMessage" :tone="botProfileMessage.tone">
-        {{ botProfileMessage.text }}
+      <UiCallout v-else-if="telegramProfileMessage" :tone="telegramProfileMessage.tone">
+        {{ telegramProfileMessage.text }}
       </UiCallout>
 
       <div
-        v-if="botProfilesLoading"
+        v-if="communicationSetupLoading"
         class="rounded-md border border-subtle bg-bg-surface p-4 text-sm text-fg-muted"
       >
-        Loading Telegram bot profiles...
+        Loading Telegram profiles...
       </div>
 
       <div
-        v-else-if="telegramConnections.length > 0 && botProfiles.length === 0"
+        v-else-if="telegramConnections.length > 0 && telegramProfiles.length === 0"
         class="rounded-md border border-dashed border-default bg-bg-surface p-5"
       >
-        <p class="font-medium text-fg-strong">No bot profiles configured.</p>
+        <p class="font-medium text-fg-strong">No Telegram profiles configured.</p>
         <p class="mt-1 max-w-3xl text-sm text-fg-muted">
           Create a profile for each Telegram bot identity or access boundary. Profiles are static
           setup; agents still decide which work to run after a trigger arrives.
@@ -1646,8 +1656,8 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
 
       <ul v-else class="grid gap-3">
         <li
-          v-for="profile in botProfiles"
-          :key="profile.external_id"
+          v-for="profile in telegramProfiles"
+          :key="profile.profile_ref"
           class="rounded-md border border-subtle bg-bg-surface px-4 py-4"
         >
           <div
@@ -1661,14 +1671,14 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
                 <UiBadge :tone="profile.enabled ? 'success' : 'warning'">
                   {{ profile.enabled ? 'enabled' : 'disabled' }}
                 </UiBadge>
-                <UiBadge>{{ profile.ingress_mode }}</UiBadge>
+                <UiBadge>{{ telegramProfileIngressMode(profile) }}</UiBadge>
               </div>
               <p class="mt-1 truncate text-xs text-fg-muted">
                 <span class="font-mono">{{ profile.key }}</span>
                 <span aria-hidden="true"> · </span>Connection
-                <span class="font-mono">{{ profile.auth_profile_key }}</span>
-                <template v-if="profile.bot_username">
-                  <span aria-hidden="true"> · </span>@{{ profile.bot_username }}
+                <span class="font-mono">{{ telegramProfileAuthKey(profile) }}</span>
+                <template v-if="telegramProfileUsername(profile)">
+                  <span aria-hidden="true"> · </span>@{{ telegramProfileUsername(profile) }}
                 </template>
               </p>
             </div>
@@ -1688,12 +1698,12 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
               <div>
                 <dt class="text-2xs font-medium uppercase text-fg-muted">Commands</dt>
                 <dd class="mt-0.5 truncate font-mono text-xs text-fg-default">
-                  {{ commandSummary(profile.trigger_policy.commands) }}
+                  {{ commandSummary(telegramCommands(profile)) }}
                 </dd>
               </div>
             </dl>
             <div class="flex justify-start lg:justify-end">
-              <UiButton size="sm" icon-left="settings" @click="editBotProfile(profile)">
+              <UiButton size="sm" icon-left="settings" @click="editTelegramProfile(profile)">
                 Configure
               </UiButton>
             </div>
@@ -2035,25 +2045,25 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
     </UiSidePanel>
 
     <UiSidePanel
-      v-model="botProfilePanelOpen"
-      title="Telegram bot profile"
+      v-model="telegramProfilePanelOpen"
+      title="Telegram profile"
       description="Configure static bot policy. Secrets stay in the selected connection."
       size="lg"
     >
       <div class="grid gap-4">
-        <UiCallout v-if="botProfileMessage" :tone="botProfileMessage.tone">
-          {{ botProfileMessage.text }}
+        <UiCallout v-if="telegramProfileMessage" :tone="telegramProfileMessage.tone">
+          {{ telegramProfileMessage.text }}
         </UiCallout>
 
         <UiFormField
-          label="Bot profile key"
+          label="Profile key"
           help="Project-scoped key used by webhook paths and agent-readable setup."
           required
         >
           <template #default="{ id, describedBy, invalid }">
             <UiInput
               :id="id"
-              v-model="botProfileForm.key"
+              v-model="telegramProfileForm.key"
               :aria-describedby="describedBy"
               :invalid="invalid"
               placeholder="support-bot"
@@ -2069,7 +2079,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           <template #default="{ id, describedBy, invalid }">
             <UiSelect
               :id="id"
-              v-model="botProfileForm.auth_profile_key"
+              v-model="telegramProfileForm.auth_profile_key"
               :options="telegramConnectionOptions"
               :aria-describedby="describedBy"
               :invalid="invalid"
@@ -2078,11 +2088,11 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           </template>
         </UiFormField>
 
-        <UiCallout v-if="botProfileForm.auth_profile_key" tone="info">
+        <UiCallout v-if="telegramProfileForm.auth_profile_key" tone="info">
           Telegram identity:
           {{
-            botUsernameFromConnection(telegramConnectionForProfile(botProfileForm.auth_profile_key))
-              ? `@${botUsernameFromConnection(telegramConnectionForProfile(botProfileForm.auth_profile_key))}`
+            botUsernameFromConnection(telegramConnectionForProfile(telegramProfileForm.auth_profile_key))
+              ? `@${botUsernameFromConnection(telegramConnectionForProfile(telegramProfileForm.auth_profile_key))}`
               : 'test the selected connection to fetch it from Telegram'
           }}
         </UiCallout>
@@ -2091,7 +2101,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           <template #default="{ id, describedBy, invalid }">
             <UiInput
               :id="id"
-              v-model="botProfileForm.identity_display_name"
+              v-model="telegramProfileForm.identity_display_name"
               :aria-describedby="describedBy"
               :invalid="invalid"
               placeholder="Support Bot"
@@ -2103,7 +2113,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           <template #default="{ id, describedBy, invalid }">
             <UiTextarea
               :id="id"
-              v-model="botProfileForm.identity_purpose"
+              v-model="telegramProfileForm.identity_purpose"
               :aria-describedby="describedBy"
               :invalid="invalid"
               :rows="3"
@@ -2116,7 +2126,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           <template #default="{ id, describedBy, invalid }">
             <UiTextarea
               :id="id"
-              v-model="botProfileForm.identity_voice"
+              v-model="telegramProfileForm.identity_voice"
               :aria-describedby="describedBy"
               :invalid="invalid"
               :rows="2"
@@ -2132,7 +2142,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           <template #default="{ id, describedBy, invalid }">
             <UiTextarea
               :id="id"
-              v-model="botProfileForm.agent_default_instructions"
+              v-model="telegramProfileForm.agent_default_instructions"
               :aria-describedby="describedBy"
               :invalid="invalid"
               :rows="4"
@@ -2146,7 +2156,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
             <template #default="{ id, describedBy, invalid }">
               <UiTextarea
                 :id="id"
-                v-model="botProfileForm.agent_boundaries"
+                v-model="telegramProfileForm.agent_boundaries"
                 :aria-describedby="describedBy"
                 :invalid="invalid"
                 :rows="3"
@@ -2159,7 +2169,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
             <template #default="{ id, describedBy, invalid }">
               <UiTextarea
                 :id="id"
-                v-model="botProfileForm.agent_escalation"
+                v-model="telegramProfileForm.agent_escalation"
                 :aria-describedby="describedBy"
                 :invalid="invalid"
                 :rows="3"
@@ -2177,7 +2187,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
             <template #default="{ id, describedBy, invalid }">
               <UiInput
                 :id="id"
-                v-model="botProfileForm.allowed_chat_refs"
+                v-model="telegramProfileForm.allowed_chat_refs"
                 :aria-describedby="describedBy"
                 :invalid="invalid"
                 placeholder="telegram-chat:999"
@@ -2193,7 +2203,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
             <template #default="{ id, describedBy, invalid }">
               <UiInput
                 :id="id"
-                v-model="botProfileForm.allowed_user_refs"
+                v-model="telegramProfileForm.allowed_user_refs"
                 :aria-describedby="describedBy"
                 :invalid="invalid"
                 placeholder="telegram-user:555"
@@ -2207,7 +2217,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
             <template #default="{ id, describedBy, invalid }">
               <UiInput
                 :id="id"
-                v-model="botProfileForm.mention_patterns"
+                v-model="telegramProfileForm.mention_patterns"
                 :aria-describedby="describedBy"
                 :invalid="invalid"
                 placeholder="support, ops"
@@ -2230,7 +2240,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           </div>
 
           <div
-            v-for="(command, index) in botProfileForm.commands"
+            v-for="(command, index) in telegramProfileForm.commands"
             :key="index"
             class="grid gap-3 rounded-md border border-subtle bg-bg-surface p-3"
           >
@@ -2294,19 +2304,19 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           </summary>
           <div class="grid gap-3 border-t border-subtle p-3">
             <UiCheckbox
-              v-model="botProfileForm.store_non_trigger_messages"
+              v-model="telegramProfileForm.store_non_trigger_messages"
               label="Store non-trigger messages"
             />
             <UiCheckbox
-              v-model="botProfileForm.origin_required"
+              v-model="telegramProfileForm.origin_required"
               label="Require origin-bound replies"
             />
             <UiCheckbox
-              v-model="botProfileForm.reply_to_source_message"
+              v-model="telegramProfileForm.reply_to_source_message"
               label="Reply to source message"
             />
             <UiCheckbox
-              v-model="botProfileForm.same_thread"
+              v-model="telegramProfileForm.same_thread"
               label="Use same thread when available"
             />
           </div>
@@ -2314,14 +2324,14 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
       </div>
 
       <template #footer>
-        <UiButton variant="ghost" @click="botProfilePanelOpen = false"> Cancel </UiButton>
+        <UiButton variant="ghost" @click="telegramProfilePanelOpen = false"> Cancel </UiButton>
         <UiButton
           variant="primary"
           icon-left="save"
-          :loading="busyAction === 'telegram-bot-profile:save'"
-          @click="saveBotProfile"
+          :loading="busyAction === 'telegram-profile:save'"
+          @click="saveTelegramProfile"
         >
-          Save bot profile
+          Save Telegram profile
         </UiButton>
       </template>
     </UiSidePanel>

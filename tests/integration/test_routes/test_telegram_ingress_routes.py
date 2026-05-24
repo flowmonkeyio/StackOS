@@ -12,11 +12,11 @@ from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
 
 
-def _store_telegram_bot_profile(
+def _store_telegram_profile(
     api: TestClient,
     project_id: int,
     *,
-    bot_profile_key: str = "support-bot",
+    profile_key: str = "support-bot",
     auth_profile_key: str = "support-credential",
     access_policy: dict | None = None,
     trigger_policy: dict | None = None,
@@ -40,17 +40,13 @@ def _store_telegram_bot_profile(
         ResourceRepository(session).upsert_record(
             project_id=project_id,
             plugin_slug="communications",
-            resource_key="communication-bot-profile",
-            external_id=f"telegram-bot-profile:{bot_profile_key}",
-            title=bot_profile_key,
+            resource_key="communication-profile",
+            external_id=f"communication-profile:{profile_key}",
+            title=profile_key,
             data_json={
-                "key": bot_profile_key,
-                "provider_key": "telegram-bot",
-                "auth_profile_key": auth_profile_key,
+                "key": profile_key,
                 "enabled": True,
-                "bot_username": "support_bot",
-                "ingress_mode": ingress_mode,
-                "allowed_updates": ["message", "callback_query"],
+                "profile_ref": f"communication-profile:{profile_key}",
                 "identity": {
                     "display_name": "Support Bot",
                     "purpose": "Handle support requests from approved Telegram users.",
@@ -83,6 +79,14 @@ def _store_telegram_bot_profile(
                 },
                 "context_policy": {"include_last_messages": 50},
                 "response_policy": {"reply_in_same_chat": True},
+                "provider_facets": {
+                    "telegram-bot": {
+                        "auth_profile_key": auth_profile_key,
+                        "bot_username": "support_bot",
+                        "ingress_mode": ingress_mode,
+                        "allowed_updates": ["message", "callback_query"],
+                    }
+                },
             },
             provenance_json={"source": "test"},
         )
@@ -92,7 +96,7 @@ def _store_outbound_button(
     api: TestClient,
     project_id: int,
     *,
-    bot_profile_key: str = "support-bot",
+    profile_key: str = "support-bot",
     callback_data: str = "ixn_123",
     message_ref: str = "telegram-message:999:77",
     allowed_user_refs: list[str] | None = None,
@@ -104,11 +108,11 @@ def _store_outbound_button(
             project_id=project_id,
             plugin_slug="communications",
             resource_key="communication-interaction",
-            external_id=f"telegram-button:{bot_profile_key}:{message_ref}:{callback_data}",
+            external_id=f"telegram-button:{profile_key}:{message_ref}:{callback_data}",
             title="Review",
             data_json={
                 "provider_key": "telegram-bot",
-                "bot_profile_key": bot_profile_key,
+                "profile_key": profile_key,
                 "interaction_type": "outbound_inline_button",
                 "callback_data": callback_data,
                 "message_ref": message_ref,
@@ -124,7 +128,7 @@ def _store_outbound_message(
     api: TestClient,
     project_id: int,
     *,
-    bot_profile_key: str = "support-bot",
+    profile_key: str = "support-bot",
     chat_id: int = 999,
     message_id: int = 77,
 ) -> None:
@@ -134,11 +138,11 @@ def _store_outbound_message(
             project_id=project_id,
             plugin_slug="communications",
             resource_key="communication-message",
-            external_id=f"telegram-message:{bot_profile_key}:{chat_id}:{message_id}",
+            external_id=f"telegram-message:{profile_key}:{chat_id}:{message_id}",
             title="Telegram outbound message",
             data_json={
                 "provider_key": "telegram-bot",
-                "bot_profile_key": bot_profile_key,
+                "profile_key": profile_key,
                 "direction": "outbound",
                 "channel_ref": f"telegram-chat:{chat_id}",
                 "message_ref": f"telegram-message:{chat_id}:{message_id}",
@@ -155,7 +159,7 @@ def test_telegram_ingress_records_callback_and_creates_agent_request_without_bea
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(api, project_id)
+    _store_telegram_profile(api, project_id)
     _store_outbound_message(api, project_id)
     _store_outbound_button(api, project_id)
     update = {
@@ -225,7 +229,7 @@ def test_telegram_ingress_records_callback_and_creates_agent_request_without_bea
     assert requests.total_estimate == 1
     assert requests.items[0].request_key == "telegram-update:support-bot:123"
     assert requests.items[0].source_resource_key == "communication-interaction"
-    assert requests.items[0].metadata_json["bot_profile_key"] == "support-bot"
+    assert requests.items[0].metadata_json["profile_key"] == "support-bot"
     assert requests.items[0].metadata_json["identity"]["display_name"] == "Support Bot"
     assert (
         requests.items[0].metadata_json["agent_guidance"]["boundaries"] == "Do not expose secrets."
@@ -239,7 +243,7 @@ def test_telegram_ingress_rejects_wrong_secret_without_writes(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(api, project_id)
+    _store_telegram_profile(api, project_id)
     original_auth = api.headers.pop("Authorization", None)
     try:
         response = api.post(
@@ -262,10 +266,10 @@ def test_telegram_ingress_rejects_disabled_ingress_profile_without_writes(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(
+    _store_telegram_profile(
         api,
         project_id,
-        bot_profile_key="disabled",
+        profile_key="disabled",
         ingress_mode="disabled",
     )
     original_auth = api.headers.pop("Authorization", None)
@@ -291,7 +295,7 @@ def test_telegram_ingress_observes_unlisted_chat_without_creating_request(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(
+    _store_telegram_profile(
         api,
         project_id,
         access_policy={
@@ -343,7 +347,7 @@ def test_telegram_ingress_observes_allowed_group_message_without_triggering_requ
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(api, project_id)
+    _store_telegram_profile(api, project_id)
     original_auth = api.headers.pop("Authorization", None)
     try:
         response = api.post(
@@ -385,7 +389,7 @@ def test_telegram_ingress_allowed_group_mention_creates_agent_request(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(api, project_id)
+    _store_telegram_profile(api, project_id)
     original_auth = api.headers.pop("Authorization", None)
     try:
         response = api.post(
@@ -421,7 +425,7 @@ def test_telegram_ingress_allows_approved_actor_in_any_visible_channel(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(
+    _store_telegram_profile(
         api,
         project_id,
         access_policy={
@@ -467,7 +471,7 @@ def test_telegram_ingress_allows_dm_by_user_allowlist_without_chat_ref(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(
+    _store_telegram_profile(
         api,
         project_id,
         access_policy={
@@ -511,7 +515,7 @@ def test_telegram_ingress_non_trigger_can_be_no_store(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(
+    _store_telegram_profile(
         api,
         project_id,
         visibility_policy={"store_non_trigger_messages": False},
@@ -553,7 +557,7 @@ def test_telegram_ingress_blocks_disallowed_invoker_but_keeps_observed_context(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(api, project_id)
+    _store_telegram_profile(api, project_id)
     original_auth = api.headers.pop("Authorization", None)
     try:
         response = api.post(
@@ -596,7 +600,7 @@ def test_telegram_ingress_blocks_callback_from_unissued_user(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(
+    _store_telegram_profile(
         api,
         project_id,
         access_policy={
@@ -651,27 +655,27 @@ def test_telegram_ingress_blocks_callback_from_unissued_user(
     assert requests.total_estimate == 0
 
 
-def test_telegram_ingress_scopes_same_update_id_per_bot_profile(
+def test_telegram_ingress_scopes_same_update_id_per_communication_profile(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(
+    _store_telegram_profile(
         api,
         project_id,
-        bot_profile_key="support-bot",
+        profile_key="support-bot",
         auth_profile_key="support-credential",
     )
-    _store_telegram_bot_profile(
+    _store_telegram_profile(
         api,
         project_id,
-        bot_profile_key="analytics-bot",
+        profile_key="analytics-bot",
         auth_profile_key="analytics-credential",
     )
     original_auth = api.headers.pop("Authorization", None)
     try:
-        for bot_profile_key in ("support-bot", "analytics-bot"):
+        for profile_key in ("support-bot", "analytics-bot"):
             response = api.post(
-                f"/api/v1/ingress/telegram/{project_id}/{bot_profile_key}",
+                f"/api/v1/ingress/telegram/{project_id}/{profile_key}",
                 headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
                 json={
                     "update_id": 465,
@@ -727,7 +731,7 @@ def test_telegram_ingress_redacts_secret_like_inbound_callback_data(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(api, project_id)
+    _store_telegram_profile(api, project_id)
     original_auth = api.headers.pop("Authorization", None)
     try:
         response = api.post(

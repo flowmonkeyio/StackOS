@@ -126,7 +126,7 @@ def test_cli_ops_call_merges_common_arguments(
     assert json.loads(result.stdout)["ok"] is True
 
 
-def test_cli_ops_call_forwards_communication_bot_profile_setup(
+def test_cli_ops_call_forwards_communication_profile_setup(
     tmp_path: Path,
     monkeypatch,
 ) -> None:  # type: ignore[no-untyped-def]
@@ -171,7 +171,7 @@ def test_cli_ops_call_forwards_communication_bot_profile_setup(
         [
             "ops",
             "call",
-            "communicationBotProfile.upsert",
+            "communicationProfile.upsert",
             "--input",
             str(input_path),
             "--project",
@@ -184,7 +184,7 @@ def test_cli_ops_call_forwards_communication_bot_profile_setup(
     assert calls == [
         (
             "POST",
-            "/api/v1/operations/communicationBotProfile.upsert/call",
+            "/api/v1/operations/communicationProfile.upsert/call",
             {
                 "arguments": {
                     "key": "support-bot",

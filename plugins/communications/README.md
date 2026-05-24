@@ -9,7 +9,7 @@ The plugin is implemented in slices. Generic agent request operations are
 executable in core StackOS. Telegram bot identity checks, text sends, photo
 sends, callback answers, bounded diagnostic `updates.poll`, and webhook
 set/delete/info are executable through the generic action registry. Telegram
-secret-token ingress resolves project-scoped bot profiles, stores
+secret-token ingress resolves project-scoped communication profiles, stores
 callback/message events as resources, and creates generic agent requests only
 when trigger/access policy allows it. Slack bot identity, message send,
 conversation discovery, membership sync, and signed HTTP Events
@@ -41,7 +41,7 @@ operations; they do not call providers or models.
 - `communication-target`
 - `communication-route`
 - `communication-membership`
-- `communication-bot-profile`
+- `communication-profile`
 - `communication-channel`
 - `communication-thread`
 - `communication-message`
@@ -59,10 +59,10 @@ step that explicitly grants `agentRequest.create`.
 a caller-supplied run plan; it claims, creates, links, and returns the claim
 token without choosing strategy or executing tools.
 
-Telegram bot profiles are project scoped. Each profile binds to one credential
+Telegram communication profiles are project scoped. Each profile binds to one credential
 profile through `auth_profile_key`; there are no global Telegram credentials or
 agent-visible bot tokens. Credentials store token material, webhook secrets, and
-safe transport endpoints only; bot profiles store identity, agent guidance,
+safe transport endpoints only; communication profiles store identity, agent guidance,
 structured command intents, access policy, trigger policy, context policy,
 response policy, and ingress mode. Visibility is
 not activation: visible messages may be stored as bounded context without
@@ -114,9 +114,9 @@ Project setup uses shared StackOS operations:
   not send messages or choose workflow behavior.
 - `communicationContext.query` returns bounded stored communication-message
   history. It never fetches live provider history.
-- `communicationBotProfile.upsert` creates or updates safe bot identity,
+- `communicationProfile.upsert` creates or updates safe bot identity,
   guidance, and policy after the typed `telegram-bot` credential profile exists.
-- `communicationBotProfile.get` and `communicationBotProfile.list` let agents
+- `communicationProfile.get` and `communicationProfile.list` let agents
   inspect profiles without receiving token material.
 - `ingressEndpoint.*` stores one project-level public ingress endpoint, derives
   provider webhook URLs, and syncs safe route metadata into profiles. Applying
@@ -159,7 +159,7 @@ reuse shared communication profile, target, route, context, and agent-request
 infrastructure.
 
 Telegram inline buttons use opaque `callback_data` only. Store the meaningful
-state in `communication-interaction` resources keyed by bot profile, provider
+state in `communication-interaction` resources keyed by communication profile, provider
 message ref, and callback token, then let the agent read that resource before
 deciding whether to respond, create a run plan, or ignore the event. Replies
 that are bound to inbound work should carry

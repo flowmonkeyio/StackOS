@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.auth_providers import AuthRepository, AuthStatusOut, CredentialConnectionOut
+from stackos.communications import merged_provider_profile
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput
 from stackos.mcp.streaming import ProgressEmitter
@@ -22,7 +23,7 @@ from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.resources import ResourceRecordOut, ResourceRepository
 
 _NO_AUTH_TYPES = {"none", "local"}
-_COMMUNICATION_BOT_PROFILE = "communication-bot-profile"
+_COMMUNICATION_PROFILE = "communication-profile"
 
 
 class ToolProfileResolveInput(MCPInput):
@@ -41,7 +42,7 @@ class ToolProfileResolveInput(MCPInput):
     provider_key: str = Field(min_length=1, max_length=160)
     tool_profile_key: str | None = Field(
         default=None,
-        description=("Provider-specific project profile key, such as a Telegram bot profile key."),
+        description=("Provider-specific project profile key, such as a communication profile key."),
     )
     auth_profile_key: str | None = Field(
         default=None,
@@ -147,7 +148,7 @@ async def tool_profile_resolve(
             ResourceRepository(ctx.session).query_records(
                 project_id=inp.project_id,
                 plugin_slug="communications",
-                resource_key=_COMMUNICATION_BOT_PROFILE,
+                resource_key=_COMMUNICATION_PROFILE,
                 limit=100,
             ),
             requested_key=_clean(inp.tool_profile_key),
@@ -236,31 +237,43 @@ def _resolve_telegram_profile(
     *,
     requested_key: str | None,
 ) -> tuple[ToolProfileOut | None, list[str], list[str]]:
-    profiles = [_telegram_profile_out(record) for record in page.items]
+    profiles = [
+        profile for record in page.items if (profile := _telegram_profile_out(record)) is not None
+    ]
     if requested_key is not None:
         for profile in profiles:
             if profile.key == requested_key:
                 return profile, [], []
-        return None, ["tool_profile"], [f"telegram bot profile {requested_key!r} was not found"]
+        return (
+            None,
+            ["tool_profile"],
+            [f"telegram communication profile {requested_key!r} was not found"],
+        )
     enabled = [profile for profile in profiles if profile.enabled]
     if len(enabled) == 1:
         return enabled[0], [], []
     if not profiles:
-        return None, ["tool_profile"], ["telegram-bot requires a communication bot profile"]
+        return (
+            None,
+            ["tool_profile"],
+            ["telegram-bot requires a communication profile with a telegram-bot facet"],
+        )
     return (
         None,
         ["tool_profile_key"],
-        ["multiple Telegram bot profiles exist; pass tool_profile_key"],
+        ["multiple Telegram communication profiles exist; pass tool_profile_key"],
     )
 
 
-def _telegram_profile_out(record: ResourceRecordOut) -> ToolProfileOut:
-    data = record.data_json or {}
+def _telegram_profile_out(record: ResourceRecordOut) -> ToolProfileOut | None:
+    data = merged_provider_profile(record.data_json or {}, "telegram-bot")
+    if not data.get("provider_facets", {}).get("telegram-bot"):
+        return None
     key = str(data.get("key") or record.title or "").strip()
     return ToolProfileOut(
-        kind=_COMMUNICATION_BOT_PROFILE,
+        kind=_COMMUNICATION_PROFILE,
         key=key,
-        ref=f"telegram-bot-profile:{key}" if key else str(record.external_id or ""),
+        ref=f"communication-profile:{key}" if key else str(record.external_id or ""),
         record_id=record.id,
         enabled=bool(data.get("enabled", True)),
         auth_profile_key=str(data.get("auth_profile_key") or "default"),
@@ -440,7 +453,7 @@ def operation_specs() -> list[OperationSpec]:
                 "secret payloads and it does not decide business workflow intent."
             ),
             when_to_use=(
-                "Resolve Telegram bot profile + credential before sending or inspecting messages.",
+                "Resolve Telegram communication profile + credential before sending messages.",
                 "Resolve one provider credential profile before a direct action.run call.",
                 "Diagnose missing setup without listing every provider and profile separately.",
             ),

@@ -20,7 +20,6 @@ from typing import Any
 from urllib.parse import quote, urlparse
 
 import httpx
-from sqlmodel import col, select
 
 from stackos.actions.connectors import (
     ActionConnectorRequest,
@@ -37,8 +36,11 @@ from stackos.actions.provider_utils import (
     unknown_operation,
 )
 from stackos.artifacts import redact_secret_text
+from stackos.communications import (
+    communication_profile_record_by_key,
+    merged_provider_profile,
+)
 from stackos.config import Settings
-from stackos.db.models import Plugin, Resource, ResourceRecord
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ResourceRepository
@@ -94,7 +96,7 @@ class TelegramBotActionConnector:
             case "identity.get":
                 return []
             case "message.send":
-                _required_text(payload, "bot_profile_key", issues)
+                _required_text(payload, "profile_key", issues)
                 _required_text(payload, "chat_ref", issues)
                 _required_text(payload, "text", issues, max_chars=_MAX_MESSAGE_TEXT)
                 _optional_parse_mode(payload, issues)
@@ -111,7 +113,7 @@ class TelegramBotActionConnector:
                 _optional_text(payload, "direct_messages_topic_ref", issues)
                 _reply_markup(payload.get("reply_markup"), issues, "$.reply_markup")
             case "photo.send":
-                _required_text(payload, "bot_profile_key", issues)
+                _required_text(payload, "profile_key", issues)
                 _required_text(payload, "chat_ref", issues)
                 _photo_source(payload.get("photo"), issues)
                 _optional_text(payload, "caption", issues, max_chars=_MAX_CAPTION_TEXT)
@@ -129,31 +131,31 @@ class TelegramBotActionConnector:
                 _optional_text(payload, "direct_messages_topic_ref", issues)
                 _reply_markup(payload.get("reply_markup"), issues, "$.reply_markup")
             case "callback.answer":
-                _required_text(payload, "bot_profile_key", issues)
+                _required_text(payload, "profile_key", issues)
                 _required_text(payload, "callback_query_id", issues)
                 _optional_text(payload, "text", issues, max_chars=_MAX_CALLBACK_TEXT)
                 _optional_bool(payload, "show_alert", issues)
                 _optional_text(payload, "url", issues)
                 _optional_int(payload, "cache_time", issues, minimum=0, maximum=3600)
             case "updates.poll":
-                _required_text(payload, "bot_profile_key", issues)
+                _required_text(payload, "profile_key", issues)
                 _optional_text(payload, "cursor_ref", issues)
                 _optional_int(payload, "offset", issues, minimum=0, maximum=2_147_483_647)
                 _optional_int(payload, "limit", issues, minimum=1, maximum=100)
                 _optional_int(payload, "timeout_s", issues, minimum=0, maximum=60)
                 _allowed_updates(payload.get("allowed_updates"), issues)
             case "webhook.set":
-                _required_text(payload, "bot_profile_key", issues)
+                _required_text(payload, "profile_key", issues)
                 _required_text(payload, "webhook_url", issues, max_chars=2048)
                 _allowed_updates(payload.get("allowed_updates"), issues, required=False)
                 _optional_bool(payload, "drop_pending_updates", issues)
                 _optional_int(payload, "max_connections", issues, minimum=1, maximum=100)
                 _optional_text(payload, "ip_address", issues)
             case "webhook.delete":
-                _required_text(payload, "bot_profile_key", issues)
+                _required_text(payload, "profile_key", issues)
                 _optional_bool(payload, "drop_pending_updates", issues)
             case "webhook.info":
-                _required_text(payload, "bot_profile_key", issues)
+                _required_text(payload, "profile_key", issues)
             case _:
                 issues.extend(unknown_operation(request))
         return issues
@@ -209,7 +211,7 @@ class TelegramBotActionConnector:
                 chat_id = _chat_id(request, profile)
                 return await _send_photo(request, chat_id, profile)
             case "callback.answer":
-                _enforce_bot_profile(request)
+                _enforce_telegram_profile(request)
                 # Telegram answerCallbackQuery:
                 # https://core.telegram.org/bots/api#answercallbackquery
                 status, body, headers = await send_json(
@@ -226,7 +228,7 @@ class TelegramBotActionConnector:
                     metadata={"telegram_method": "answerCallbackQuery"},
                 )
             case "updates.poll":
-                profile = _enforce_bot_profile(request)
+                profile = _enforce_telegram_profile(request)
                 _enforce_allowed_updates(request, profile)
                 # Telegram getUpdates: https://core.telegram.org/bots/api#getupdates
                 status, body, headers = await send_json(
@@ -244,7 +246,7 @@ class TelegramBotActionConnector:
                     metadata={"telegram_method": "getUpdates"},
                 )
             case "webhook.set":
-                profile = _enforce_bot_profile(request)
+                profile = _enforce_telegram_profile(request)
                 body_json = _webhook_set_payload(request, profile)
                 # Telegram setWebhook:
                 # https://core.telegram.org/bots/api#setwebhook
@@ -262,7 +264,7 @@ class TelegramBotActionConnector:
                     metadata={"telegram_method": "setWebhook"},
                 )
             case "webhook.delete":
-                _enforce_bot_profile(request)
+                _enforce_telegram_profile(request)
                 # Telegram deleteWebhook:
                 # https://core.telegram.org/bots/api#deletewebhook
                 status, body, headers = await send_json(
@@ -279,7 +281,7 @@ class TelegramBotActionConnector:
                     metadata={"telegram_method": "deleteWebhook"},
                 )
             case "webhook.info":
-                _enforce_bot_profile(request)
+                _enforce_telegram_profile(request)
                 # Telegram getWebhookInfo:
                 # https://core.telegram.org/bots/api#getwebhookinfo
                 status, body, headers = await send_json(
@@ -353,13 +355,13 @@ def _enforce_webhook_url(
     request: ActionConnectorRequest,
     profile: Mapping[str, Any],
 ) -> None:
-    profile_key = str(request.input_json["bot_profile_key"]).strip()
+    profile_key = _request_profile_key(request)
     webhook_url = str(request.input_json["webhook_url"]).strip()
     parsed = urlparse(webhook_url)
     expected_path = f"/api/v1/ingress/telegram/{request.project_id}/{quote(profile_key, safe='')}"
     if parsed.path.rstrip("/") != expected_path:
         raise ValidationError(
-            "Telegram webhook_url must target this project bot profile ingress route"
+            "Telegram webhook_url must target this project communication profile ingress route"
         )
     host = (parsed.hostname or "").lower()
     if not host or parsed.scheme not in {"http", "https"}:
@@ -541,58 +543,37 @@ def _artifact_path(request: ActionConnectorRequest, artifact_ref: str) -> Path:
     return path
 
 
-def _resource_record_by_external_id(
-    session: Any,
-    *,
-    project_id: int,
-    resource_key: str,
-    external_id: str,
-) -> ResourceRecord | None:
-    ResourceRepository(session).list_resources(
-        plugin_slug="communications",
-        project_id=project_id,
-    )
-    return session.exec(
-        select(ResourceRecord)
-        .join(Resource, col(ResourceRecord.resource_id) == col(Resource.id))
-        .join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
-        .where(
-            col(ResourceRecord.project_id) == project_id,
-            col(ResourceRecord.external_id) == external_id,
-            col(Resource.key) == resource_key,
-            col(Plugin.slug) == "communications",
-        )
-    ).first()
-
-
-def _enforce_bot_profile(request: ActionConnectorRequest) -> dict[str, Any]:
-    profile_key = request.input_json.get("bot_profile_key")
+def _request_profile_key(request: ActionConnectorRequest) -> str:
+    profile_key = request.input_json.get("profile_key")
     if not isinstance(profile_key, str) or not profile_key.strip():
-        raise ValidationError("Telegram bot_profile_key is required")
+        raise ValidationError("Telegram profile_key is required")
+    return profile_key.strip()
+
+
+def _enforce_telegram_profile(request: ActionConnectorRequest) -> dict[str, Any]:
+    profile_key = _request_profile_key(request)
     if request.session is None:
-        raise ValidationError("Telegram bot profile enforcement requires a repository session")
-    profile_key = profile_key.strip()
-    record = _resource_record_by_external_id(
+        raise ValidationError("Telegram profile enforcement requires a repository session")
+    record = communication_profile_record_by_key(
         request.session,
         project_id=request.project_id,
-        resource_key="communication-bot-profile",
-        external_id=f"telegram-bot-profile:{profile_key}",
+        key=profile_key,
     )
     if record is None:
-        raise ValidationError("Telegram bot profile was not found")
-    data = dict(record.data_json or {})
-    if data.get("key") != profile_key or data.get("provider_key", "telegram-bot") != "telegram-bot":
-        raise ValidationError("Telegram bot profile was not found")
-    _validate_bot_profile(data)
+        raise ValidationError("Telegram communication profile was not found")
+    data = merged_provider_profile(dict(record.data_json or {}), "telegram-bot")
+    if data.get("key") != profile_key or data.get("provider_key") != "telegram-bot":
+        raise ValidationError("Telegram communication profile was not found")
+    _validate_telegram_profile(data)
     expected_profile = data.get("auth_profile_key")
     actual_profile = request.credential.integration.profile_key if request.credential else None
     actual_project = request.credential.integration.project_id if request.credential else None
     if actual_project != request.project_id:
-        raise ValidationError("Telegram bot profile requires a project-scoped credential")
+        raise ValidationError("Telegram communication profile requires a project-scoped credential")
     if expected_profile != actual_profile:
-        raise ValidationError("Telegram bot profile does not match credential profile")
+        raise ValidationError("Telegram communication profile does not match credential profile")
     if data.get("enabled") is False:
-        raise ValidationError("Telegram bot profile is disabled")
+        raise ValidationError("Telegram communication profile is disabled")
     return data
 
 
@@ -600,7 +581,7 @@ def _enforce_profile_chat(
     request: ActionConnectorRequest,
     raw_ref: str,
 ) -> dict[str, Any]:
-    profile = _enforce_bot_profile(request)
+    profile = _enforce_telegram_profile(request)
     resolved_ref = _resolve_profile_ref(profile, raw_ref, "chats", "chat_refs")
     access = profile.get("access_policy")
     response = profile.get("response_policy")
@@ -609,18 +590,18 @@ def _enforce_profile_chat(
     denied = _profile_refs(access_policy, "denied_chat_refs", "denied_chat_ids", "denied_chats")
     candidates = _candidate_refs(raw_ref, resolved_ref, "telegram-chat")
     if denied and any(candidate in denied for candidate in candidates):
-        raise ValidationError(f"Telegram bot profile does not allow chat {raw_ref!r}")
+        raise ValidationError(f"Telegram communication profile does not allow chat {raw_ref!r}")
     _enforce_response_origin(request, profile, candidates)
     if response_policy.get("reply_to_source_message") is True and not request.input_json.get(
         "reply_to_message_ref"
     ):
-        raise ValidationError("Telegram bot profile requires reply_to_message_ref for responses")
+        raise ValidationError("Telegram communication profile requires reply_to_message_ref")
     allowed = _profile_refs(access_policy, "allowed_chat_refs", "allowed_chat_ids", "allowed_chats")
     if not allowed:
         return profile
     if any(candidate in allowed for candidate in candidates):
         return profile
-    raise ValidationError(f"Telegram bot profile does not allow chat {raw_ref!r}")
+    raise ValidationError(f"Telegram communication profile does not allow chat {raw_ref!r}")
 
 
 def _enforce_response_origin(
@@ -646,8 +627,10 @@ def _enforce_response_origin(
     if not source.source_message_ref:
         raise ValidationError("Telegram response source must include a Telegram source message")
     metadata = source.metadata_json or {}
-    if metadata.get("bot_profile_key") != request.input_json.get("bot_profile_key"):
-        raise ValidationError("Telegram response source does not match bot profile")
+    profile_key = _request_profile_key(request)
+    profile_ref = profile.get("profile_ref")
+    if metadata.get("profile_key") != profile_key or metadata.get("profile_ref") != profile_ref:
+        raise ValidationError("Telegram response source does not match communication profile")
     source_chat = metadata.get("chat_ref")
     if not isinstance(source_chat, str) or source_chat not in chat_candidates:
         raise ValidationError("Telegram response chat does not match request origin")
@@ -665,14 +648,14 @@ def _enforce_response_origin(
         raise ValidationError("Telegram response thread does not match request origin")
 
 
-def _validate_bot_profile(profile: Mapping[str, Any]) -> None:
+def _validate_telegram_profile(profile: Mapping[str, Any]) -> None:
     access = profile.get("access_policy")
     if not isinstance(access, Mapping):
-        raise ValidationError("Telegram bot profile requires access_policy")
+        raise ValidationError("Telegram communication profile requires access_policy")
     for key in ("dm_mode", "group_mode", "user_mode"):
         mode = access.get(key)
         if mode not in {"all", "allowlist", "denylist", "disabled"}:
-            raise ValidationError(f"Telegram bot profile access_policy.{key} is required")
+            raise ValidationError(f"Telegram communication profile access_policy.{key} is required")
         if key == "user_mode" and mode == "allowlist":
             has_user_allowlist = bool(
                 _profile_refs(
@@ -685,7 +668,8 @@ def _validate_bot_profile(profile: Mapping[str, Any]) -> None:
             )
             if not has_user_allowlist:
                 raise ValidationError(
-                    "Telegram bot profile access_policy.user_mode=allowlist requires allowed users"
+                    "Telegram communication profile access_policy.user_mode=allowlist "
+                    "requires allowed users"
                 )
 
 
@@ -772,20 +756,22 @@ def _store_outbound_message(
     chat = result_body.get("chat")
     chat_id = chat.get("id") if isinstance(chat, Mapping) else None
     message_id = result_body.get("message_id")
-    bot_profile_key = str(request.input_json["bot_profile_key"])
+    profile_key = _request_profile_key(request)
+    profile_ref = str(profile.get("profile_ref") or f"communication-profile:{profile_key}")
     resources = ResourceRepository(request.session)
     if chat_id is not None:
         resources.upsert_record(
             project_id=request.project_id,
             plugin_slug="communications",
             resource_key="communication-channel",
-            external_id=f"telegram-chat:{bot_profile_key}:{chat_id}",
+            external_id=f"telegram-chat:{profile_key}:{chat_id}",
             title=str(chat.get("title") or chat.get("username") or chat_id)
             if isinstance(chat, Mapping)
             else str(chat_id),
             data_json={
                 "provider_key": "telegram-bot",
-                "bot_profile_key": bot_profile_key,
+                "profile_key": profile_key,
+                "profile_ref": profile_ref,
                 "provider_chat_id": str(chat_id),
                 "channel_type": chat.get("type") if isinstance(chat, Mapping) else None,
             },
@@ -795,11 +781,12 @@ def _store_outbound_message(
         project_id=request.project_id,
         plugin_slug="communications",
         resource_key="communication-message",
-        external_id=f"telegram-message:{bot_profile_key}:{chat_id}:{message_id}",
+        external_id=f"telegram-message:{profile_key}:{chat_id}:{message_id}",
         title="Telegram outbound message",
         data_json={
             "provider_key": "telegram-bot",
-            "bot_profile_key": bot_profile_key,
+            "profile_key": profile_key,
+            "profile_ref": profile_ref,
             "direction": "outbound",
             "channel_ref": f"telegram-chat:{chat_id}" if chat_id is not None else None,
             "message_ref": message_ref,
@@ -850,19 +837,22 @@ def _store_callback_buttons(
             allowed_chat_refs = _split_config_values(button.get("allowed_chat_refs"))
             if not allowed_chat_refs:
                 allowed_chat_refs = source_scope.get("allowed_chat_refs", [])
+            profile_key = _request_profile_key(request)
+            profile_ref = str(profile.get("profile_ref") or f"communication-profile:{profile_key}")
             resources.upsert_record(
                 project_id=request.project_id,
                 plugin_slug="communications",
                 resource_key="communication-interaction",
                 external_id=_callback_button_external_id(
-                    str(request.input_json["bot_profile_key"]),
+                    profile_key,
                     message_ref,
                     callback_data,
                 ),
                 title=str(button.get("text") or callback_data),
                 data_json={
                     "provider_key": "telegram-bot",
-                    "bot_profile_key": request.input_json["bot_profile_key"],
+                    "profile_key": profile_key,
+                    "profile_ref": profile_ref,
                     "interaction_type": "outbound_inline_button",
                     "callback_data": callback_data,
                     "message_ref": message_ref,
@@ -898,11 +888,11 @@ def _source_button_scope(request: ActionConnectorRequest) -> dict[str, list[str]
 
 
 def _callback_button_external_id(
-    bot_profile_key: str,
+    profile_key: str,
     message_ref: str,
     callback_data: str,
 ) -> str:
-    return f"telegram-button:{bot_profile_key}:{message_ref}:{callback_data}"
+    return f"telegram-button:{profile_key}:{message_ref}:{callback_data}"
 
 
 def _provider_message_ref(result_body: Any) -> str | None:

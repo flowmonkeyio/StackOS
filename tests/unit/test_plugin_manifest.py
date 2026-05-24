@@ -150,7 +150,7 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     assert actions["telegram-bot.photo.send"].config["operation"] == "photo.send"
     assert actions["telegram-bot.photo.send"].input_schema["required"] == [
         "chat_ref",
-        "bot_profile_key",
+        "profile_key",
         "photo",
     ]
     photo_schema = actions["telegram-bot.photo.send"].input_schema["properties"]["photo"]
@@ -196,7 +196,6 @@ def test_communications_plugin_yaml_facade_validates() -> None:
         "communication-target",
         "communication-route",
         "communication-membership",
-        "communication-bot-profile",
         "communication-channel",
         "communication-thread",
         "communication-message",

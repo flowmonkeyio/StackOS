@@ -47,17 +47,20 @@ does not run an assistant, classify intent, or decide workflows.
 - Use `localAgentChat.createMessage` for local chat ingress. It stores
   communication resources and optionally creates a generic agent request; it
   must not invoke a model or select a workflow.
-- Telegram behavior is project-scoped through `communication-bot-profile`
+- Telegram behavior is project-scoped through `communication-profile`
   records. Credentials store token material and transport endpoints only.
-- Bot profiles store identity, default agent guidance, and optional structured
-  command intents. Commands are not plain strings; each command may carry
-  guidance/configuration for the operating agent.
-- Each Telegram bot profile binds to one credential profile through
+- Generic communication profiles store identity, default agent guidance, and
+  optional structured command intents. Commands are not plain strings; each
+  command may carry guidance/configuration for the operating agent. Telegram
+  profile facets store only safe Telegram-specific refs/settings such as
+  `auth_profile_key`, bot username, webhook settings, allowed updates, and
+  provider id maps.
+- Each Telegram communication profile binds to one credential profile through
   `auth_profile_key`; do not add global Telegram credentials or fallback token
   lookup.
-- Create and update bot profiles through `communicationBotProfile.upsert`.
-  Inspect them through `communicationBotProfile.get` and
-  `communicationBotProfile.list`. These are setup operations shared by REST,
+- Create and update communication profiles through `communicationProfile.upsert`.
+  Inspect them through `communicationProfile.get` and
+  `communicationProfile.list`. These are setup operations shared by REST,
   CLI, MCP, and UI; do not bypass them with raw resource writes in product code.
 - `webhook` is the normal Telegram listener path. Local StackOS uses a public
   ingress endpoint, usually discovered from `driver=local-tunnel`; production
@@ -68,9 +71,9 @@ does not run an assistant, classify intent, or decide workflows.
   `ingressEndpoint.status` for project-level public ingress setup. The endpoint
   is generic; local tunnel provider settings belong only under `driver_config`.
 - Telegram webhook set/delete/info actions are executable through
-  `action.execute`; they must resolve the bot profile and daemon-held credential
+  `action.execute`; they must resolve the communication profile and daemon-held credential
   server-side.
-- Visibility is not activation. A bot profile may observe/store messages from
+- Visibility is not activation. A communication profile may observe/store messages from
   any reachable chat/channel as context, but StackOS creates an `agent_request`
   or sends a reply only when trigger policy matches and invoker access policy
   allows that user.
@@ -80,12 +83,12 @@ does not run an assistant, classify intent, or decide workflows.
   Telegram's 1-64 byte limit and never place secrets, prompts, credentials, or
   business decisions in it.
 - Store button/callback state as `communication-interaction` resources keyed by
-  bot profile, provider message ref, and callback token. Treat callback payloads
+  communication profile, provider message ref, and callback token. Treat callback payloads
   as untrusted routing hints until the agent has read the linked project, run,
   resource, and interaction context.
 - Outbound replies that are tied to inbound work should include
-  `source_agent_request_id` so response policy can enforce the originating bot
-  profile, chat, thread, and message.
+  `source_agent_request_id` so response policy can enforce the originating
+  communication profile, chat, thread, and message.
 - `telegram-bot.callback.answer` may clear Telegram's client-side loading state
   with static acknowledgement text. It must not claim a workflow was completed
   unless the responsible agent or granted run actually completed it.
@@ -146,12 +149,12 @@ For Slack-like, Telegram-like, email, or future chat providers:
 
 Telegram bot identity checks, text messages, photo sends, callback answers,
 bounded diagnostic `updates.poll`, webhook set/delete/info, and
-bot-profile-scoped secret-token ingress are executable through `action.run` for
+communication-profile-scoped secret-token ingress are executable through `action.run` for
 one explicit direct call or `action.execute` inside granted run-plan steps, via
-the `telegram-bot` connector. Bot-profile setup is executable through
-`communicationBotProfile.*` across REST, CLI, and MCP. Webhook ingress stores
+the `telegram-bot` connector. Communication-profile setup is executable through
+`communicationProfile.*` across REST, CLI, and MCP. Webhook ingress stores
 communication resources and creates generic agent requests only after
-bot-profile trigger and access policy allow it.
+communication-profile trigger and access policy allow it.
 
 Provider-neutral setup operations for profiles, surfaces, memberships, targets,
 and stored communication context are executable through REST, CLI, and MCP. They

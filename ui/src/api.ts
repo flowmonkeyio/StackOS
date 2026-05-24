@@ -234,7 +234,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ingress/telegram/{project_id}/{bot_profile_key}": {
+    "/api/v1/ingress/telegram/{project_id}/{profile_key}": {
         parameters: {
             query?: never;
             header?: never;
@@ -252,7 +252,7 @@ export interface paths {
          *     creates an `agent_requests` row, and stops. It does not call a model, infer
          *     intent, approve work, or choose follow-up tools.
          */
-        post: operations["ingest_telegram_update_api_v1_ingress_telegram__project_id___bot_profile_key__post"];
+        post: operations["ingest_telegram_update_api_v1_ingress_telegram__project_id___profile_key__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3748,8 +3748,10 @@ export interface components {
         TelegramIngressOut: {
             /** Agent Request Id */
             agent_request_id?: number | null;
-            /** Bot Profile Key */
-            bot_profile_key: string;
+            /** Profile Key */
+            profile_key: string;
+            /** Profile Ref */
+            profile_ref: string;
             /** Event Record Id */
             event_record_id?: number | null;
             /** Interaction Record Id */
@@ -4661,7 +4663,7 @@ export interface operations {
             };
         };
     };
-    ingest_telegram_update_api_v1_ingress_telegram__project_id___bot_profile_key__post: {
+    ingest_telegram_update_api_v1_ingress_telegram__project_id___profile_key__post: {
         parameters: {
             query?: never;
             header?: {
@@ -4669,7 +4671,7 @@ export interface operations {
             };
             path: {
                 project_id: number;
-                bot_profile_key: string;
+                profile_key: string;
             };
             cookie?: never;
         };

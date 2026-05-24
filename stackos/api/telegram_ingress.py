@@ -23,11 +23,12 @@ from stackos.communications import (
     NormalizedResourcePatch,
     NormalizedResourceWrite,
     candidate_refs,
-    communication_record_by_external_id,
+    communication_profile_record_by_key,
     config_nested,
     config_refs,
     config_string_list,
     evaluate_inbound_policy,
+    merged_provider_profile,
     process_inbound_event,
 )
 from stackos.db.models import IntegrationCredential
@@ -42,7 +43,8 @@ class TelegramIngressOut(BaseModel):
 
     ok: bool
     update_id: int
-    bot_profile_key: str
+    profile_key: str
+    profile_ref: str
     policy_status: str
     event_record_id: int | None = None
     message_record_id: int | None = None
@@ -51,20 +53,21 @@ class TelegramIngressOut(BaseModel):
 
 
 @dataclass(frozen=True)
-class TelegramBotProfile:
+class TelegramProfile:
     key: str
+    profile_ref: str
     auth_profile_key: str
     data: dict[str, Any]
 
 
 @router.post(
-    "/{project_id}/{bot_profile_key}",
+    "/{project_id}/{profile_key}",
     response_model=TelegramIngressOut,
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def ingest_telegram_update(
     project_id: int,
-    bot_profile_key: str,
+    profile_key: str,
     update: dict[str, Any] = Body(...),
     secret_token: str | None = Header(
         default=None,
@@ -80,10 +83,10 @@ async def ingest_telegram_update(
     model, infer intent, approve work, or choose follow-up tools.
     """
 
-    profile = _require_bot_profile(
+    profile = _require_telegram_profile(
         session,
         project_id=project_id,
-        bot_profile_key=bot_profile_key,
+        profile_key=profile_key,
     )
     _verify_secret(session, project_id=project_id, profile=profile, header=secret_token)
     stored = _store_update(
@@ -99,7 +102,7 @@ def _verify_secret(
     session: Session,
     *,
     project_id: int,
-    profile: TelegramBotProfile,
+    profile: TelegramProfile,
     header: str | None,
 ) -> None:
     if not header:
@@ -122,29 +125,30 @@ def _verify_secret(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Telegram secret")
 
 
-def _require_bot_profile(
+def _require_telegram_profile(
     session: Session,
     *,
     project_id: int,
-    bot_profile_key: str,
-) -> TelegramBotProfile:
-    record = communication_record_by_external_id(
+    profile_key: str,
+) -> TelegramProfile:
+    record = communication_profile_record_by_key(
         session,
         project_id=project_id,
-        resource_key="communication-bot-profile",
-        external_id=f"telegram-bot-profile:{bot_profile_key}",
+        key=profile_key,
     )
     if record is not None:
-        data = dict(record.data_json or {})
-        provider_key = data.get("provider_key", "telegram-bot")
+        data = merged_provider_profile(dict(record.data_json or {}), "telegram-bot")
+        provider_key = data.get("provider_key")
         auth_profile_key = data.get("auth_profile_key")
         if (
-            data.get("key") == bot_profile_key
+            data.get("key") == profile_key
             and provider_key == "telegram-bot"
             and isinstance(auth_profile_key, str)
         ):
-            return TelegramBotProfile(
-                key=bot_profile_key,
+            profile_ref = str(data.get("profile_ref") or f"communication-profile:{profile_key}")
+            return TelegramProfile(
+                key=profile_key,
+                profile_ref=profile_ref,
                 auth_profile_key=auth_profile_key,
                 data=data,
             )
@@ -171,7 +175,7 @@ def _store_update(
     session: Session,
     *,
     project_id: int,
-    profile: TelegramBotProfile,
+    profile: TelegramProfile,
     update: dict[str, Any],
 ) -> dict[str, Any]:
     update_id = update.get("update_id")
@@ -197,11 +201,11 @@ def _store_update(
 def _policy_decision(
     session: Session,
     project_id: int,
-    profile: TelegramBotProfile,
+    profile: TelegramProfile,
     parsed: dict[str, Any],
 ) -> CommunicationDecision:
     data = profile.data
-    _validate_bot_profile(data)
+    _validate_telegram_profile(data)
     allowed_updates = config_string_list(data.get("allowed_updates"))
     if not allowed_updates:
         allowed_updates = config_string_list(
@@ -214,7 +218,7 @@ def _policy_decision(
             provider_key="telegram-bot",
             profile_key=profile.key,
             data=profile.data,
-            disabled_status="bot_profile_disabled",
+            disabled_status="profile_disabled",
             store_non_trigger_default=True,
             visibility_blocked_status="chat_blocked",
             ingress_mode_key="ingress_mode",
@@ -228,7 +232,7 @@ def _policy_decision(
 
 
 def _telegram_policy_event(
-    profile: TelegramBotProfile,
+    profile: TelegramProfile,
     parsed: Mapping[str, Any],
 ) -> CommunicationPolicyEvent:
     bot_username = _bot_username(profile)
@@ -285,7 +289,7 @@ def _telegram_policy_event(
 
 
 def _telegram_interaction_check(
-    profile: TelegramBotProfile,
+    profile: TelegramProfile,
     parsed: Mapping[str, Any],
 ) -> CommunicationInteractionCheck | None:
     if parsed.get("update_type") != "callback_query":
@@ -304,19 +308,19 @@ def _telegram_interaction_check(
 
 
 def _callback_button_external_id(
-    bot_profile_key: str,
+    profile_key: str,
     message_ref: str,
     callback_data: str,
 ) -> str:
-    return f"telegram-button:{bot_profile_key}:{message_ref}:{callback_data}"
+    return f"telegram-button:{profile_key}:{message_ref}:{callback_data}"
 
 
-def _validate_bot_profile(data: Mapping[str, Any]) -> None:
+def _validate_telegram_profile(data: Mapping[str, Any]) -> None:
     identity = data.get("identity")
     if not isinstance(identity, Mapping) or not str(identity.get("display_name") or "").strip():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="invalid Telegram bot profile",
+            detail="invalid Telegram communication profile",
         )
     trigger = data.get("trigger_policy")
     commands = trigger.get("commands") if isinstance(trigger, Mapping) else []
@@ -325,20 +329,20 @@ def _validate_bot_profile(data: Mapping[str, Any]) -> None:
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="invalid Telegram bot profile",
+            detail="invalid Telegram communication profile",
         )
     access = data.get("access_policy")
     if not isinstance(access, Mapping):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="invalid Telegram bot profile",
+            detail="invalid Telegram communication profile",
         )
     for key in ("dm_mode", "group_mode", "user_mode"):
         mode = access.get(key)
         if mode not in {"all", "allowlist", "denylist", "disabled"}:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="invalid Telegram bot profile",
+                detail="invalid Telegram communication profile",
             )
         if key == "user_mode" and mode == "allowlist":
             has_user_allowlist = bool(
@@ -358,11 +362,11 @@ def _validate_bot_profile(data: Mapping[str, Any]) -> None:
             if not has_user_allowlist:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="invalid Telegram bot profile",
+                    detail="invalid Telegram communication profile",
                 )
 
 
-def _is_reply_to_bot(message: Mapping[str, Any], profile: TelegramBotProfile) -> bool:
+def _is_reply_to_bot(message: Mapping[str, Any], profile: TelegramProfile) -> bool:
     reply = message.get("reply_to_message")
     if not isinstance(reply, dict):
         return False
@@ -375,7 +379,7 @@ def _is_reply_to_bot(message: Mapping[str, Any], profile: TelegramBotProfile) ->
     return str(sender.get("username") or "").lower() == bot_username.lower()
 
 
-def _bot_username(profile: TelegramBotProfile) -> str | None:
+def _bot_username(profile: TelegramProfile) -> str | None:
     value = profile.data.get("bot_username")
     if isinstance(value, str) and value.strip():
         return value.strip().lstrip("@")
@@ -384,7 +388,7 @@ def _bot_username(profile: TelegramBotProfile) -> str | None:
 
 def _normalized_telegram_event(
     *,
-    profile: TelegramBotProfile,
+    profile: TelegramProfile,
     parsed: dict[str, Any],
     update_id: int,
     mark_interaction_clicked: bool,
@@ -406,7 +410,8 @@ def _normalized_telegram_event(
             title=f"Telegram update {update_id}",
             data_json={
                 "provider_key": "telegram-bot",
-                "bot_profile_key": profile.key,
+                "profile_key": profile.key,
+                "profile_ref": profile.profile_ref,
                 "auth_profile_key": profile.auth_profile_key,
                 "update_id": update_id,
                 "update_type": parsed["update_type"],
@@ -424,7 +429,8 @@ def _normalized_telegram_event(
             else []
         ),
         request_metadata_json={
-            "bot_profile_key": profile.key,
+            "profile_key": profile.key,
+            "profile_ref": profile.profile_ref,
             "auth_profile_key": profile.auth_profile_key,
             "update_id": update_id,
             "interaction_ref": parsed.get("interaction_ref"),
@@ -438,13 +444,14 @@ def _normalized_telegram_event(
         },
         response_json={
             "update_id": update_id,
-            "bot_profile_key": profile.key,
+            "profile_key": profile.key,
+            "profile_ref": profile.profile_ref,
         },
     )
 
 
 def _telegram_message_write(
-    profile: TelegramBotProfile,
+    profile: TelegramProfile,
     parsed: dict[str, Any],
 ) -> NormalizedResourceWrite | None:
     if parsed.get("update_type") == "callback_query":
@@ -464,7 +471,8 @@ def _telegram_message_write(
         title=parsed["message_title"],
         data_json={
             "provider_key": "telegram-bot",
-            "bot_profile_key": profile.key,
+            "profile_key": profile.key,
+            "profile_ref": profile.profile_ref,
             "direction": "inbound",
             "channel_ref": f"telegram-chat:{chat_id}",
             "thread_ref": _thread_ref(message),
@@ -485,7 +493,7 @@ def _telegram_message_write(
 
 
 def _telegram_interaction_write(
-    profile: TelegramBotProfile,
+    profile: TelegramProfile,
     parsed: dict[str, Any],
 ) -> NormalizedResourceWrite | None:
     callback = parsed.get("callback_query")
@@ -500,7 +508,8 @@ def _telegram_interaction_write(
         title=f"Telegram callback {callback_id}",
         data_json={
             "provider_key": "telegram-bot",
-            "bot_profile_key": profile.key,
+            "profile_key": profile.key,
+            "profile_ref": profile.profile_ref,
             "interaction_ref": parsed["interaction_ref"],
             "interaction_type": "inline_callback",
             "callback_query_id": str(callback_id),
@@ -516,7 +525,7 @@ def _telegram_interaction_write(
 
 
 def _telegram_click_patch(
-    profile: TelegramBotProfile,
+    profile: TelegramProfile,
     parsed: Mapping[str, Any],
 ) -> NormalizedResourcePatch:
     callback = parsed.get("callback_query")
@@ -535,7 +544,7 @@ def _telegram_click_patch(
 
 
 def _telegram_surface_write(
-    profile: TelegramBotProfile,
+    profile: TelegramProfile,
     parsed: Mapping[str, Any],
 ) -> NormalizedResourceWrite | None:
     message = parsed.get("message")
@@ -553,7 +562,8 @@ def _telegram_surface_write(
         title=_chat_title(chat),
         data_json={
             "provider_key": "telegram-bot",
-            "bot_profile_key": profile.key,
+            "profile_key": profile.key,
+            "profile_ref": profile.profile_ref,
             "surface_ref": f"telegram-chat:{chat_id}",
             "channel_ref": f"telegram-chat:{chat_id}",
             "provider_chat_id": str(chat_id),

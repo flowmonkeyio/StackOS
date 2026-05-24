@@ -94,7 +94,7 @@ class ActionRunInput(MCPInput):
                 "confirm_direct": True,
                 "idempotency_key": "telegram-send-1",
                 "input_json": {
-                    "bot_profile_key": "support",
+                    "profile_key": "support",
                     "chat_ref": "telegram-chat:123",
                     "text": "Done.",
                 },
@@ -677,7 +677,7 @@ def operation_specs() -> list[OperationSpec]:
                         "intent_summary": "User asked to send one status message.",
                         "idempotency_key": "telegram-send-status-1",
                         "input_json": {
-                            "bot_profile_key": "support",
+                            "profile_key": "support",
                             "chat_ref": "telegram-chat:123",
                             "text": "Done.",
                         },

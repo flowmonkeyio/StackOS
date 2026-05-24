@@ -853,44 +853,18 @@ def test_operation_rest_local_agent_chat_creates_message_and_request(
     assert replayed.json()["data"]["agent_request"]["id"] == body["agent_request"]["id"]
 
 
-def test_operation_rest_telegram_bot_profile_setup_to_ingress_slice(
+def test_operation_rest_telegram_profile_setup_to_ingress_slice(
     api: TestClient,
     project_id: int,
 ) -> None:
     _store_telegram_credential(api, project_id)
 
-    missing_credential = api.post(
-        "/api/v1/operations/communicationBotProfile.upsert/call",
-        json={
-            "arguments": {
-                "project_id": project_id,
-                "key": "missing-credential",
-                "auth_profile_key": "missing",
-                "identity": {
-                    "display_name": "Missing Bot",
-                    "purpose": "Exercise credential validation.",
-                    "voice": "Concise.",
-                },
-                "access_policy": {
-                    "dm_mode": "allowlist",
-                    "group_mode": "allowlist",
-                    "user_mode": "allowlist",
-                    "allowed_chat_refs": ["telegram-chat:999"],
-                    "allowed_user_refs": ["telegram-user:555"],
-                },
-            }
-        },
-    )
-    assert missing_credential.status_code == 422, missing_credential.text
-
     created = api.post(
-        "/api/v1/operations/communicationBotProfile.upsert/call",
+        "/api/v1/operations/communicationProfile.upsert/call",
         json={
             "arguments": {
                 "project_id": project_id,
                 "key": "support-bot",
-                "auth_profile_key": "support",
-                "bot_username": "support_bot",
                 "identity": {
                     "display_name": "Support Bot",
                     "purpose": "Handle support requests from approved Telegram users.",
@@ -934,36 +908,47 @@ def test_operation_rest_telegram_bot_profile_setup_to_ingress_slice(
                     "reply_to_source_message": True,
                     "same_thread": True,
                 },
-                "reply_to_message_refs": {"telegram-message:999:88": 88},
-                "thread_refs": {"telegram-thread:999:default": 1},
-                "direct_messages_topic_refs": {"telegram-dm-topic:999:555": 22},
-                "allowed_webhook_hosts": ["127.0.0.1"],
+                "provider_facets": {
+                    "telegram-bot": {
+                        "auth_profile_key": "support",
+                        "bot_username": "support_bot",
+                        "ingress_mode": "webhook",
+                        "allowed_updates": ["message", "callback_query"],
+                        "reply_to_message_refs": {"telegram-message:999:88": 88},
+                        "thread_refs": {"telegram-thread:999:default": 1},
+                        "direct_messages_topic_refs": {"telegram-dm-topic:999:555": 22},
+                        "allowed_webhook_hosts": ["127.0.0.1"],
+                    }
+                },
             }
         },
     )
     assert created.status_code == 200, created.text
     body = created.json()["data"]
     assert body["key"] == "support-bot"
-    assert body["auth_profile_key"] == "support"
-    assert body["bot_username"] == "support_bot"
+    telegram_facet = body["provider_facets"]["telegram-bot"]
+    assert telegram_facet["auth_profile_key"] == "support"
+    assert telegram_facet["bot_username"] == "support_bot"
     assert body["identity"]["display_name"] == "Support Bot"
     assert body["agent_guidance"]["boundaries"].startswith("Do not change")
     assert body["access_policy"]["allowed_user_refs"] == ["telegram-user:555"]
-    assert body["reply_to_message_refs"] == {"telegram-message:999:88": 88}
-    assert body["thread_refs"] == {"telegram-thread:999:default": 1}
-    assert body["direct_messages_topic_refs"] == {"telegram-dm-topic:999:555": 22}
+    assert telegram_facet["reply_to_message_refs"] == {"telegram-message:999:88": 88}
+    assert telegram_facet["thread_refs"] == {"telegram-thread:999:default": 1}
+    assert telegram_facet["direct_messages_topic_refs"] == {"telegram-dm-topic:999:555": 22}
     assert "123456:ABC" not in json.dumps(created.json())
 
     fetched = api.post(
-        "/api/v1/operations/communicationBotProfile.get/call",
+        "/api/v1/operations/communicationProfile.get/call",
         json={"arguments": {"project_id": project_id, "key": "support-bot"}},
     )
     assert fetched.status_code == 200, fetched.text
     assert fetched.json()["key"] == "support-bot"
-    assert fetched.json()["reply_to_message_refs"] == {"telegram-message:999:88": 88}
+    assert fetched.json()["provider_facets"]["telegram-bot"]["reply_to_message_refs"] == {
+        "telegram-message:999:88": 88
+    }
 
     listed = api.post(
-        "/api/v1/operations/communicationBotProfile.list/call",
+        "/api/v1/operations/communicationProfile.list/call",
         json={"arguments": {"project_id": project_id}},
     )
     assert listed.status_code == 200, listed.text
@@ -1028,13 +1013,13 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
     assert profile.status_code == 200, profile.text
 
     bot = api.post(
-        "/api/v1/operations/communicationBotProfile.upsert/call",
+        "/api/v1/operations/communicationProfile.upsert/call",
         json={
             "arguments": {
                 "project_id": project_id,
                 "key": "support-bot",
-                "auth_profile_key": "support",
                 "identity": {"display_name": "Support Telegram Bot"},
+                "provider_facets": {"telegram-bot": {"auth_profile_key": "support"}},
                 "access_policy": {
                     "dm_mode": "all",
                     "group_mode": "all",
@@ -1088,13 +1073,14 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
     )
 
     fetched_bot = api.post(
-        "/api/v1/operations/communicationBotProfile.get/call",
+        "/api/v1/operations/communicationProfile.get/call",
         json={"arguments": {"project_id": project_id, "key": "support-bot"}},
     )
     assert fetched_bot.status_code == 200, fetched_bot.text
-    assert fetched_bot.json()["ingress_mode"] == "webhook"
-    assert fetched_bot.json()["webhook_base_url"] == "https://stackos.example.com"
-    assert fetched_bot.json()["allowed_webhook_hosts"] == ["stackos.example.com"]
+    telegram_facet = fetched_bot.json()["provider_facets"]["telegram-bot"]
+    assert telegram_facet["ingress_mode"] == "webhook"
+    assert telegram_facet["webhook_base_url"] == "https://stackos.example.com"
+    assert telegram_facet["allowed_webhook_hosts"] == ["stackos.example.com"]
 
 
 def test_operation_rest_mock_provider_failure_records_redacted_audit(

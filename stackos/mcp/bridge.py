@@ -49,9 +49,6 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "communicationRoute.list",
     "communicationRoute.upsert",
     "communicationContext.query",
-    "communicationBotProfile.list",
-    "communicationBotProfile.get",
-    "communicationBotProfile.upsert",
     "action.describe",
     "action.validate",
     "action.run",
@@ -107,8 +104,6 @@ _AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
         "communicationProfile.get",
         "communicationTarget.list",
         "communicationTarget.resolve",
-        "communicationBotProfile.list",
-        "communicationBotProfile.get",
         "action.describe",
         "catalog.describe",
     }
@@ -844,9 +839,9 @@ def _bridge_compact_structured(tool_name: str, structured: dict[str, Any]) -> di
         return _bridge_compact_auth_status(structured)
     if tool_name == "toolProfile.resolve":
         return _bridge_compact_tool_profile_resolve(structured)
-    if tool_name == "communicationBotProfile.list":
+    if tool_name == "communicationProfile.list":
         return _bridge_compact_profile_page(structured)
-    if tool_name == "communicationBotProfile.get":
+    if tool_name == "communicationProfile.get":
         return _bridge_compact_profile(structured)
     if tool_name == "action.describe":
         return _bridge_compact_action_describe(structured)
@@ -1020,6 +1015,11 @@ def _bridge_compact_profile(profile: dict[str, Any]) -> dict[str, Any]:
     trigger = _bridge_dict(profile.get("trigger_policy"))
     identity = _bridge_dict(profile.get("identity"))
     response = _bridge_dict(profile.get("response_policy"))
+    provider_facets = {
+        str(key): _bridge_dict(value)
+        for key, value in _bridge_dict(profile.get("provider_facets")).items()
+        if isinstance(value, dict)
+    }
     commands = [
         {
             "command": item.get("command"),
@@ -1032,14 +1032,10 @@ def _bridge_compact_profile(profile: dict[str, Any]) -> dict[str, Any]:
     return {
         "record_id": profile.get("record_id"),
         "project_id": profile.get("project_id"),
-        "profile_ref": profile.get("external_id"),
+        "profile_ref": profile.get("profile_ref") or profile.get("external_id"),
         "key": profile.get("key"),
-        "provider_key": profile.get("provider_key"),
-        "auth_profile_key": profile.get("auth_profile_key"),
         "enabled": profile.get("enabled"),
-        "bot_username": profile.get("bot_username"),
-        "ingress_mode": profile.get("ingress_mode"),
-        "allowed_updates": profile.get("allowed_updates", []),
+        "provider_facets": provider_facets,
         "identity": {
             "display_name": identity.get("display_name"),
             "purpose": identity.get("purpose"),
@@ -1062,7 +1058,9 @@ def _bridge_compact_profile(profile: dict[str, Any]) -> dict[str, Any]:
             "commands": commands,
         },
         "response_policy": response,
-        "refs": profile.get("refs", {}),
+        "send_policy": _bridge_dict(profile.get("send_policy")),
+        "handoff_policy": _bridge_dict(profile.get("handoff_policy")),
+        "approval_policy": _bridge_dict(profile.get("approval_policy")),
     }
 
 
