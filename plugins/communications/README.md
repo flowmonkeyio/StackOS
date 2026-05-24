@@ -1,8 +1,9 @@
 # Communications Plugin
 
-The communications plugin is the StackOS package for Telegram bot messaging,
-rich chat interactions, SMTP email send, IMAP mailbox/message lifecycle, and
-communication-driven agent requests.
+The communications plugin is the StackOS package for provider-neutral
+communication state plus Telegram bot messaging, local chat interactions, SMTP
+email send, IMAP mailbox/message lifecycle, and communication-driven agent
+requests.
 
 The plugin is implemented in slices. Generic agent request operations are
 executable in core StackOS. Telegram bot identity checks, text sends, photo
@@ -12,7 +13,9 @@ secret-token ingress resolves project-scoped bot profiles, stores
 callback/message events as resources, and creates generic agent requests only
 when trigger/access policy allows it. SMTP send and IMAP mailbox/message
 lifecycle actions are executable through daemon-side credentials and mocked
-contract tests.
+contract tests. Generic communication profile/surface/membership/target/context
+operations are executable setup/read operations; they do not call providers or
+models.
 
 ## Providers
 
@@ -25,9 +28,18 @@ contract tests.
   read confirmation.
 - `imap`: password/app-password mailbox listing, search, fetch, and `Seen` flag
   lifecycle using UIDs.
+- `slack-bot`: planned provider. It requires a Slack-specific contract for
+  Events API/Socket Mode ingress, request verification, scopes, conversations,
+  memberships, threads, Block Kit actions, and `chat.postMessage` before any
+  Slack connector action is marked executable.
 
 ## Resources
 
+- `communication-profile`
+- `communication-contact`
+- `communication-target`
+- `communication-route`
+- `communication-membership`
 - `communication-bot-profile`
 - `communication-channel`
 - `communication-thread`
@@ -70,6 +82,20 @@ Project setup uses shared StackOS operations:
 - `localAgentChat.createMessage` stores local human/agent chat messages as
   communication resources and can create a generic agent request for inbound
   messages. It does not run a model or decide workflow intent.
+- `communicationProfile.*` stores provider-neutral identity, guidance, facets,
+  and static policy.
+- `communicationSurface.*` stores safe channel/DM/mailbox/local-chat surface
+  metadata on the `communication-channel` resource.
+- `communicationContact.*` stores safe cross-provider person, customer, team,
+  bot, or organization refs.
+- `communicationMembership.*` stores provider-neutral membership, permission,
+  role, and scope state.
+- `communicationTarget.*` stores and resolves named send destinations to
+  explicit provider action refs. It does not send messages.
+- `communicationRoute.*` stores static cross-surface handoff policy. It does
+  not send messages or choose workflow behavior.
+- `communicationContext.query` returns bounded stored communication-message
+  history. It never fetches live provider history.
 - `communicationBotProfile.upsert` creates or updates safe bot identity,
   guidance, and policy after the typed `telegram-bot` credential profile exists.
 - `communicationBotProfile.get` and `communicationBotProfile.list` let agents

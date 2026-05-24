@@ -21,6 +21,11 @@ is the local gate for provider-specific contract work.
 - Prefer provider-specific action refs when provider schemas differ. Avoid
   generic one-level actions such as `campaign.create` or `contact.upsert` unless
   the user has configured a local abstraction through a project-local plugin.
+- Communications providers must fit the generic communication graph: profile,
+  surface/channel, membership, contact, target/route, thread, message, event,
+  interaction, and agent request. Generic target/context operations may resolve
+  or read state, but provider sends and live provider history fetches remain
+  explicit provider actions with provider-specific contracts.
 - Use safe reference fields such as `account_ref`, `company_ref`, `contact_ref`,
   `campaign_ref`, `sequence_ref`, and `record_refs`; do not require provider
   object ids in reusable templates.

@@ -300,6 +300,21 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "artifact.get" in _AGENT_VISIBLE_TOOL_NAMES
     assert "auth.status" in _AGENT_VISIBLE_TOOL_NAMES
     assert "auth.test" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationProfile.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationProfile.get" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationProfile.upsert" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationSurface.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationSurface.upsert" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationContact.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationContact.upsert" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationMembership.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationMembership.upsert" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationTarget.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationTarget.resolve" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationTarget.upsert" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationRoute.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationRoute.upsert" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communicationContext.query" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationBotProfile.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationBotProfile.get" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationBotProfile.upsert" in _AGENT_VISIBLE_TOOL_NAMES

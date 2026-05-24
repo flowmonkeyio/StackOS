@@ -171,6 +171,21 @@ The current core operation registry includes:
 - `agentRequest.linkRunPlan`
 - `agentRequest.complete`
 - `agentRequest.ignore`
+- `communicationProfile.list`
+- `communicationProfile.get`
+- `communicationProfile.upsert`
+- `communicationSurface.list`
+- `communicationSurface.upsert`
+- `communicationContact.list`
+- `communicationContact.upsert`
+- `communicationMembership.list`
+- `communicationMembership.upsert`
+- `communicationTarget.list`
+- `communicationTarget.resolve`
+- `communicationTarget.upsert`
+- `communicationRoute.list`
+- `communicationRoute.upsert`
+- `communicationContext.query`
 - `communicationBotProfile.list`
 - `communicationBotProfile.get`
 - `communicationBotProfile.upsert`
@@ -255,6 +270,16 @@ Use `action.execute` when the action belongs to a workflow:
 communications resources and may create a generic `agent_request` for inbound
 human messages. It does not run a model, choose a workflow, call a provider, or
 send an external reply.
+
+`communicationProfile.*`, `communicationSurface.*`,
+`communicationContact.*`, `communicationMembership.*`, `communicationTarget.*`,
+and `communicationRoute.*` are setup/read
+operations for provider-neutral communication state. They store identities,
+surfaces, contacts, memberships, named destinations, and handoff routes.
+`communicationTarget.resolve` returns an explicit provider action ref and safe
+defaults; it does not send. `communicationContext.query` returns bounded stored
+communication-message history only. Live provider history fetches must be
+explicit provider actions.
 
 `toolProfile.resolve` is the agent-friendly target resolver. Use it before
 `action.run` or workflow setup when the agent needs one safe execution tuple for

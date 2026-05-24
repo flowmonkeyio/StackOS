@@ -178,6 +178,11 @@ def test_communications_plugin_yaml_facade_validates() -> None:
         is False
     )
     assert {resource.key for resource in manifest.resources} >= {
+        "communication-profile",
+        "communication-contact",
+        "communication-target",
+        "communication-route",
+        "communication-membership",
         "communication-bot-profile",
         "communication-channel",
         "communication-thread",

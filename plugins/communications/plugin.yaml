@@ -807,13 +807,33 @@ actions:
         - docs/integration-contracts/communications.md
         - https://www.rfc-editor.org/rfc/rfc9051.html
 resources:
+  - key: communication-profile
+    name: Communication Profile
+    description: Provider-neutral agent communication identity, guidance, policy, and provider facets for chat, email, and future transports.
+    schema: *object_schema
+  - key: communication-contact
+    name: Communication Contact
+    description: Safe project-local person, bot, customer, or organization identity linked to provider-specific user/email refs.
+    schema: *object_schema
+  - key: communication-target
+    name: Communication Target
+    description: Named, policy-checked destination alias that resolves to an explicit provider surface/thread/action target.
+    schema: *object_schema
+  - key: communication-route
+    name: Communication Route
+    description: Static cross-surface routing policy such as Telegram customer issue to internal Slack channel.
+    schema: *object_schema
+  - key: communication-membership
+    name: Communication Membership
+    description: Provider-neutral membership, permission, role, and availability state for profiles or contacts inside a communication surface.
+    schema: *object_schema
   - key: communication-bot-profile
     name: Communication Bot Profile
-    description: Project-scoped bot identity, agent guidance, credential binding, access policy, trigger policy, context policy, and response policy for Telegram or future chat transports.
+    description: Provider-specific bot profile facet. Telegram currently uses this resource; generic identity and cross-provider policy belong in communication-profile.
     schema: *object_schema
   - key: communication-channel
     name: Communication Channel
-    description: Safe metadata for a Telegram chat/channel, SMTP identity, IMAP mailbox, or future communication surface.
+    description: Safe communication surface metadata for a Telegram chat/channel, Slack conversation, SMTP identity, IMAP mailbox, local chat, or future transport.
     schema: *object_schema
   - key: communication-thread
     name: Communication Thread

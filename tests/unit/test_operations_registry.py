@@ -24,6 +24,21 @@ def test_operation_registry_documents_core_operations() -> None:
         "communicationBotProfile.get",
         "communicationBotProfile.list",
         "communicationBotProfile.upsert",
+        "communicationContact.list",
+        "communicationContact.upsert",
+        "communicationContext.query",
+        "communicationMembership.list",
+        "communicationMembership.upsert",
+        "communicationProfile.get",
+        "communicationProfile.list",
+        "communicationProfile.upsert",
+        "communicationRoute.list",
+        "communicationRoute.upsert",
+        "communicationSurface.list",
+        "communicationSurface.upsert",
+        "communicationTarget.list",
+        "communicationTarget.resolve",
+        "communicationTarget.upsert",
         "localAgentChat.createMessage",
         "runPlan.claimStep",
         "runPlan.create",
@@ -80,6 +95,18 @@ def test_operation_registry_documents_core_operations() -> None:
     assert bot_profile.grant_policy == "direct-setup-write"
     assert any("telegram-bot credential" in item for item in bot_profile.prerequisites)
 
+    target_resolver = registry.get("communicationTarget.resolve").describe_out()
+    assert target_resolver.surfaces["mcp"].enabled is True
+    assert target_resolver.surfaces["rest"].enabled is True
+    assert target_resolver.surfaces["cli"].command == "ops call communicationTarget.resolve"
+    assert target_resolver.grant_policy == "direct-read"
+    assert any("before sending" in item for item in [target_resolver.purpose])
+
+    context_query = registry.get("communicationContext.query").describe_out()
+    assert context_query.surfaces["mcp"].enabled is True
+    assert context_query.grant_policy == "direct-read"
+    assert any("never fetches live provider history" in item for item in [context_query.purpose])
+
     local_chat = registry.get("localAgentChat.createMessage").describe_out()
     assert local_chat.surfaces["mcp"].enabled is True
     assert local_chat.surfaces["rest"].enabled is True
@@ -122,6 +149,21 @@ def test_operation_registry_surface_filter() -> None:
         "communicationBotProfile.get",
         "communicationBotProfile.list",
         "communicationBotProfile.upsert",
+        "communicationContact.list",
+        "communicationContact.upsert",
+        "communicationContext.query",
+        "communicationMembership.list",
+        "communicationMembership.upsert",
+        "communicationProfile.get",
+        "communicationProfile.list",
+        "communicationProfile.upsert",
+        "communicationRoute.list",
+        "communicationRoute.upsert",
+        "communicationSurface.list",
+        "communicationSurface.upsert",
+        "communicationTarget.list",
+        "communicationTarget.resolve",
+        "communicationTarget.upsert",
         "localAgentChat.createMessage",
         "runPlan.claimStep",
         "runPlan.create",

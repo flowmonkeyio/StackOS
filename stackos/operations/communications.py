@@ -12,6 +12,9 @@ from stackos.db.models import IntegrationCredential, Plugin, Resource, ResourceR
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
+from stackos.operations.communication_platform import (
+    operation_specs as communication_platform_operation_specs,
+)
 from stackos.operations.spec import (
     OperationExample,
     OperationSpec,
@@ -699,6 +702,7 @@ def operation_specs() -> list[OperationSpec]:
             mutating=False,
             grant_policy="direct-read",
         ),
+        *communication_platform_operation_specs(),
         OperationSpec(
             name="communicationBotProfile.get",
             summary="Get one project-scoped Telegram bot profile by key.",

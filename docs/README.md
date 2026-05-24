@@ -11,6 +11,7 @@ obvious without loading every document.
 | Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
 | Adding providers, auth, or credentials | [`auth-providers.md`](./auth-providers.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |
+| Adding or changing communications, chat, email, targets, or memberships | [`integration-contracts/communications.md`](./integration-contracts/communications.md), [`operations.md`](./operations.md), [`resources-and-artifacts.md`](./resources-and-artifacts.md) |
 | Adding or changing plugins | [`plugins.md`](./plugins.md), [`extending.md`](./extending.md), [`workflow-templates.md`](./workflow-templates.md) |
 | Changing workflow templates or runs | [`workflow-templates.md`](./workflow-templates.md), [`run-plans.md`](./run-plans.md), [`project-memory.md`](./project-memory.md) |
 | Changing resources or artifacts | [`resources-and-artifacts.md`](./resources-and-artifacts.md), [`project-memory.md`](./project-memory.md) |

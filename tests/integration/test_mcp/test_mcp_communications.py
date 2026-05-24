@@ -7,6 +7,7 @@ import json
 from sqlmodel import Session
 
 from stackos.repositories.projects import IntegrationCredentialRepository
+from stackos.repositories.resources import ResourceRepository
 
 from .conftest import MCPClient
 
@@ -72,11 +73,224 @@ def test_communication_bot_profile_operations_are_registered(mcp_client: MCPClie
 
     assert {
         "localAgentChat.createMessage",
+        "communicationProfile.list",
+        "communicationProfile.get",
+        "communicationProfile.upsert",
+        "communicationSurface.list",
+        "communicationSurface.upsert",
+        "communicationContact.list",
+        "communicationContact.upsert",
+        "communicationMembership.list",
+        "communicationMembership.upsert",
+        "communicationTarget.list",
+        "communicationTarget.resolve",
+        "communicationTarget.upsert",
+        "communicationRoute.list",
+        "communicationRoute.upsert",
+        "communicationContext.query",
         "communicationBotProfile.list",
         "communicationBotProfile.get",
         "communicationBotProfile.upsert",
         "toolProfile.resolve",
     } <= tools
+
+
+def test_provider_neutral_communication_setup_resolves_targets_and_context(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+
+    profile = mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support",
+            "identity": {
+                "display_name": "Support Agent",
+                "purpose": "Coordinate customer issues across chat surfaces.",
+            },
+            "provider_facets": {
+                "telegram-bot": {"bot_profile_key": "support-bot"},
+                "slack-bot": {"bot_user_id": "U123"},
+            },
+            "send_policy": {
+                "mode": "explicit-targets",
+                "allowed_target_refs": ["communication-target:internal-support"],
+            },
+        },
+    )
+    surface = mcp_client.call_tool_structured(
+        "communicationSurface.upsert",
+        {
+            "project_id": project_id,
+            "surface_ref": "slack-channel:C123",
+            "provider_key": "slack-bot",
+            "kind": "slack-channel",
+            "display_name": "internal-support",
+            "capabilities": {"can_read": True, "can_write": True, "can_thread": True},
+        },
+    )
+    contact = mcp_client.call_tool_structured(
+        "communicationContact.upsert",
+        {
+            "project_id": project_id,
+            "key": "customer-acme",
+            "display_name": "Acme Inc.",
+            "kind": "organization",
+            "provider_refs": {
+                "telegram": ["telegram-chat:-1001"],
+                "slack": ["slack-channel:C123"],
+            },
+        },
+    )
+    membership = mcp_client.call_tool_structured(
+        "communicationMembership.upsert",
+        {
+            "project_id": project_id,
+            "surface_ref": "slack-channel:C123",
+            "member_ref": "communication-profile:support",
+            "provider_key": "slack-bot",
+            "membership_kind": "profile",
+            "status": "joined",
+            "roles": ["bot"],
+            "permissions": {"can_read": True, "can_write": True},
+        },
+    )
+    target = mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "internal-support",
+            "display_name": "Internal support",
+            "provider_key": "slack-bot",
+            "surface_ref": "slack-channel:C123",
+            "action_input_defaults": {"channel_ref": "slack-channel:C123"},
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:support"],
+                "allowed_source_surface_refs": ["telegram-chat:-1001"],
+            },
+        },
+    )
+    route = mcp_client.call_tool_structured(
+        "communicationRoute.upsert",
+        {
+            "project_id": project_id,
+            "key": "customer-issue-to-internal-support",
+            "source_surface_refs": ["telegram-chat:-1001"],
+            "target_refs": ["communication-target:internal-support"],
+            "allowed_profile_refs": ["communication-profile:support"],
+            "requires_approval": False,
+        },
+    )
+
+    assert profile["data"]["profile_ref"] == "communication-profile:support"
+    assert surface["data"]["surface_ref"] == "slack-channel:C123"
+    assert contact["data"]["provider_refs"]["telegram"] == ["telegram-chat:-1001"]
+    assert membership["data"]["permissions"]["can_write"] is True
+    assert target["data"]["action_ref"] == "communications.slack-bot.message.send"
+    assert route["data"]["target_refs"] == ["communication-target:internal-support"]
+
+    allowed = mcp_client.call_tool_structured(
+        "communicationTarget.resolve",
+        {
+            "project_id": project_id,
+            "key": "internal-support",
+            "profile_ref": "communication-profile:support",
+            "source_surface_ref": "telegram-chat:-1001",
+        },
+    )
+    denied = mcp_client.call_tool_structured(
+        "communicationTarget.resolve",
+        {
+            "project_id": project_id,
+            "key": "internal-support",
+            "profile_ref": "communication-profile:analytics",
+            "source_surface_ref": "telegram-chat:-1001",
+        },
+    )
+
+    assert allowed["allowed"] is True
+    assert allowed["action_ref"] == "communications.slack-bot.message.send"
+    assert allowed["surface_ref"] == "slack-channel:C123"
+    assert denied["allowed"] is False
+    assert denied["denial_reason"] == "profile_not_allowed"
+
+    default_denied = mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "default-denied",
+            "provider_key": "slack-bot",
+            "surface_ref": "slack-channel:C999",
+        },
+    )
+    assert default_denied["data"]["send_policy"]["mode"] == "deny"
+    default_denied_resolution = mcp_client.call_tool_structured(
+        "communicationTarget.resolve",
+        {
+            "project_id": project_id,
+            "key": "default-denied",
+            "profile_ref": "communication-profile:support",
+        },
+    )
+    assert default_denied_resolution["allowed"] is False
+    assert default_denied_resolution["denial_reason"] == "send_policy_disabled"
+
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        resources = ResourceRepository(session)
+        for index, text in enumerate(["Customer reported billing issue", "Support asked for id"]):
+            resources.upsert_record(
+                project_id=project_id,
+                plugin_slug="communications",
+                resource_key="communication-message",
+                external_id=f"slack-message:C123:{index}",
+                title="Slack message",
+                data_json={
+                    "provider_key": "slack-bot",
+                    "profile_ref": "communication-profile:support",
+                    "direction": "inbound",
+                    "surface_ref": "slack-channel:C123",
+                    "channel_ref": "slack-channel:C123",
+                    "thread_ref": "slack-thread:C123:1710000000.000100",
+                    "message_ref": f"slack-message:C123:{index}",
+                    "sender_ref": f"slack-user:U{index}",
+                    "text_preview": text,
+                    "body_artifact_ref": "artifact:secret-body",
+                },
+                provenance_json={"source": "test"},
+            )
+
+    context = mcp_client.call_tool_structured(
+        "communicationContext.query",
+        {
+            "project_id": project_id,
+            "surface_ref": "slack-channel:C123",
+            "thread_ref": "slack-thread:C123:1710000000.000100",
+            "limit": 10,
+            "fields": ["message_ref", "sender_ref", "text_preview"],
+        },
+    )
+
+    assert [item["fields"]["text_preview"] for item in context["items"]] == [
+        "Customer reported billing issue",
+        "Support asked for id",
+    ]
+    rendered = json.dumps(context)
+    assert "secret-body" not in rendered
+
+    err = mcp_client.call_tool_error(
+        "communicationContext.query",
+        {
+            "project_id": project_id,
+            "surface_ref": "slack-channel:C123",
+            "fields": ["raw_artifact_ref"],
+        },
+    )
+    assert err["code"] == -32602
+    assert err["data"]["fields"] == ["raw_artifact_ref"]
 
 
 def test_local_agent_chat_mcp_creates_message_and_request(

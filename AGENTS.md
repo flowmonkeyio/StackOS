@@ -41,6 +41,15 @@ work, start here:
 - Agents should use `toolProfile.resolve` when they need one provider/profile
   execution target. It returns a compact safe tuple and avoids broad auth/profile
   discovery calls when the provider intent is already known.
+- Communications are provider-neutral state plus explicit provider actions.
+  Use `communicationProfile.*`, `communicationSurface.*`,
+  `communicationContact.*`, `communicationMembership.*`,
+  `communicationTarget.*`, `communicationRoute.*`, and
+  `communicationContext.query` for identities, surfaces, contacts, memberships,
+  named destinations, handoff routes, and stored history.
+  `communicationTarget.resolve` does not send; it returns the explicit provider
+  action ref/defaults an agent can validate and execute through `action.run` or
+  `action.execute`.
 - MCP is an adapter, not the core abstraction. Register callable behavior once
   as a StackOS operation, then expose it through allowed MCP, REST, CLI, and UI
   surfaces from that spec.

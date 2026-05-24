@@ -17,6 +17,12 @@ Official provider and protocol references:
 - Telegram Bot API: https://core.telegram.org/bots/api
 - Telegram bot features: https://core.telegram.org/bots/features
 - Official local Telegram Bot API server: https://github.com/tdlib/telegram-bot-api
+- Slack Events API: https://docs.slack.dev/apis/events-api/
+- Slack Socket Mode: https://docs.slack.dev/apis/events-api/using-socket-mode/
+- Slack request verification: https://docs.slack.dev/authentication/verifying-requests-from-slack/
+- Slack message events: https://docs.slack.dev/reference/events/message/
+- Slack `chat.postMessage`: https://docs.slack.dev/reference/methods/chat.postMessage/
+- Slack Conversations API: https://docs.slack.dev/tools/python-slack-sdk/legacy/conversations/
 - SMTP: https://www.rfc-editor.org/rfc/rfc5321.html
 - SMTP AUTH: https://www.rfc-editor.org/rfc/rfc4954
 - IMAP4rev2: https://www.rfc-editor.org/rfc/rfc9051.html
@@ -73,6 +79,51 @@ StackOS may store communication records, cursors, claim state, safe provider
 metadata, and static trigger configuration. StackOS must not interpret intent,
 choose business actions, decide whether SEO/media/GTM work is needed, or run a
 model invisibly inside the daemon.
+
+## Provider-Neutral Communication Graph
+
+Communication must be modeled as a graph that can span Telegram, Slack, local
+chat, SMTP/IMAP email, and future transports. Telegram bot profiles remain as a
+provider-specific facet, not the universal communications model.
+
+Canonical graph:
+
+```text
+communication-profile
+-> provider facets / credential profile refs
+-> communication-channel surfaces
+-> communication-membership permission state
+-> communication-thread / communication-message / communication-event
+-> communication-target / communication-route
+-> agent_request
+-> explicit provider action
+```
+
+The graph is configuration and state, not workflow logic. A profile can say
+"support agent may send to internal-support target"; the agent still decides
+whether sending is the right next action. A target can resolve to
+`communications.slack-bot.message.send` or
+`communications.telegram-bot.message.send`; StackOS still requires the agent to
+validate and execute that explicit action.
+
+Policies are split so one concept does not silently authorize another:
+
+- `access_policy`: which users/surfaces may invoke or be observed.
+- `visibility_policy`: what can be stored without creating work.
+- `trigger_policy`: DM, mention, command, email criteria, reaction, button, or
+  provider event shapes that create agent requests.
+- `context_policy`: what stored history can be retrieved and which fields are
+  safe.
+- `response_policy`: same-origin reply constraints.
+- `send_policy`: explicit allowed outbound targets and static denials.
+- `handoff_policy`: allowed movement from one surface to another.
+- `approval_policy`: whether target use requires human or run-plan approval.
+
+Default stance is deny for new send/handoff routes until a target or route is
+configured. Read/context operations are bounded and field-selected. Live
+provider history fetches are not part of `communicationContext.query`; they must
+be separate provider actions with scopes, pagination, rate-limit handling, and
+audit.
 
 ## Product Boundary
 
@@ -266,6 +317,35 @@ caused the outbound message. A later callback query can only wake an agent after
 the webhook handler resolves that stored interaction and access policy permits
 the click.
 
+### Slack Provider Contract
+
+Slack must use the same communication graph, but its provider contract is richer
+than Telegram:
+
+- Events can arrive through HTTP Events API or Socket Mode. HTTP ingress must
+  verify Slack's signing secret using the raw body, request timestamp,
+  `X-Slack-Signature`, replay-window checks, and constant-time comparison.
+- Socket Mode requires an app-level token, `apps.connections.open`,
+  reconnect/refresh behavior, and acknowledgement by `envelope_id`.
+- Slack event ingestion must acknowledge quickly and idempotently store events.
+  Retry headers and duplicate event ids must not create duplicate agent work.
+- `app_mention` is not a substitute for all messages. DMs require `message.im`;
+  public channels, private channels, MPIMs, and DMs have separate event/scopes.
+- `chat.postMessage` posts to public channels, private channels, MPIMs, or DMs
+  only when the token/scopes and membership permit it. Threads use `thread_ts`.
+- `conversations.open`, `conversations.info`, `conversations.list`, and
+  `conversations.members` are provider actions for resolving Slack DMs,
+  surfaces, and memberships. They must record safe surface/membership state
+  and never expose bot/user tokens.
+- Block Kit actions and buttons map to `communication-interaction` records.
+  Action payloads are untrusted routing hints until the agent reads the stored
+  interaction and source context.
+
+Slack-specific support must land as explicit actions and ingress routes. A
+generic target resolver may return `communications.slack-bot.message.send`, but
+it must not pretend Slack execution exists before the connector, auth, mocked
+contract tests, and docs are delivered.
+
 ### SMTP
 
 SMTP sends mail. It can report that the SMTP server accepted or rejected a
@@ -312,11 +392,111 @@ The plugin may later add Slack, Discord, WhatsApp Business, Twilio, Gmail API,
 Microsoft Graph mail, or project-local communication connectors, but those
 providers need their own contract review before execution.
 
+`slack-bot` is the next expected chat provider. Slack support must not be
+claimed executable until its provider contract covers app credentials, HTTP or
+Socket Mode ingress, event ACK/retry/idempotency, conversation membership,
+scopes, message send, threads, block actions, and no-secret audit.
+
 ## Resource Model
 
 Communication records should be plugin resources first. Avoid bespoke
 provider-specific core tables unless a generic queue or lock invariant requires
 one.
+
+### `communication-profile`
+
+Represents a provider-neutral agent/human-facing communication identity.
+
+Example fields:
+
+- `profile_ref`
+- `key`
+- `enabled`
+- `identity`
+- `agent_guidance`
+- `provider_facets`: safe provider refs such as Telegram `bot_profile_key` or
+  Slack `bot_user_id`; never token material
+- `access_policy`
+- `visibility_policy`
+- `trigger_policy`
+- `context_policy`
+- `response_policy`
+- `send_policy`
+- `handoff_policy`
+- `approval_policy`
+- `metadata_json`
+
+### `communication-contact`
+
+Represents a project-local person, customer, team, bot, or organization identity
+that can be linked to provider user/email refs.
+
+Example fields:
+
+- `contact_ref`
+- `display_name`
+- `kind`: `person`, `customer`, `team`, `bot`, `organization`
+- `provider_refs`
+- `safe_external_refs`
+- `status`
+- `metadata_json`
+
+### `communication-target`
+
+Represents a named destination alias that resolves to one explicit provider
+action plus safe action defaults.
+
+Example fields:
+
+- `target_ref`
+- `provider_key`
+- `surface_ref`
+- `profile_ref`
+- `thread_ref`
+- `action_ref`
+- `action_input_defaults`
+- `send_policy`
+- `metadata_json`
+
+Targets do not send messages. Agents resolve a target, inspect `allowed`, then
+call `action.validate` and `action.run` or `action.execute` with the returned
+provider action ref.
+
+### `communication-route`
+
+Represents a static cross-surface policy. Example: Telegram customer issue group
+may hand off to internal Slack support channel, but public client channels
+require approval before posting.
+
+Example fields:
+
+- `route_ref`
+- `source_surface_refs`
+- `target_refs`
+- `allowed_profile_refs`
+- `requires_approval`
+- `field_policy`
+- `metadata_json`
+
+### `communication-membership`
+
+Represents membership, role, permissions, and availability state for a profile
+or contact in a communication surface.
+
+Example fields:
+
+- `membership_ref`
+- `surface_ref`
+- `member_ref`
+- `provider_key`
+- `membership_kind`: `profile`, `contact`, `bot`, `user`, `external`
+- `status`: `joined`, `invited`, `left`, `removed`, `unknown`
+- `roles`
+- `permissions`: `can_read`, `can_write`, `can_reply_thread`,
+  `can_open_dm`, `can_upload_files`
+- `scope_status`
+- `last_verified_at`
+- `metadata_json`
 
 ### `communication-channel`
 
@@ -325,10 +505,12 @@ Represents a durable inbound/outbound communication surface.
 Example fields:
 
 - `channel_ref`
+- `surface_ref`
 - `provider_key`
 - `credential_ref`
 - `kind`: `telegram-private`, `telegram-group`, `telegram-supergroup`,
-  `telegram-channel`, `smtp-identity`, `imap-mailbox`
+  `telegram-channel`, `slack-channel`, `slack-private-channel`, `slack-dm`,
+  `slack-mpim`, `smtp-identity`, `imap-mailbox`, `local-agent-chat`
 - `display_name`
 - `safe_external_ref`
 - `send_enabled`
@@ -572,6 +754,29 @@ Operation policy:
 - `release` should require the active claim token or an admin/system override.
 - None of these operations may call Telegram, SMTP, IMAP, or any provider API.
 - None of these operations may expose secrets.
+
+## Communication Platform Operations
+
+The generic communication setup/read operations are registry-backed operations
+available through MCP, REST, and CLI:
+
+- `communicationProfile.upsert/get/list`: provider-neutral communication
+  identity and policy setup.
+- `communicationSurface.upsert/list`: safe surface metadata, stored on the
+  `communication-channel` resource for current repo alignment.
+- `communicationMembership.upsert/list`: membership, role, permission, and
+  scope state for profiles/contacts/bots inside surfaces.
+- `communicationTarget.upsert/list/resolve`: named destination aliases that
+  resolve to one explicit provider action ref plus safe defaults.
+- `communicationContext.query`: bounded stored-history lookup for agents.
+
+These operations do not execute provider APIs. `communicationTarget.resolve`
+returns `allowed`, `denial_reason`, `action_ref`, `surface_ref`, and
+`action_input_defaults`; the agent must still call `action.validate` and
+`action.run` or `action.execute`. `communicationContext.query` returns stored
+StackOS communication-message records only. Live Slack history, Telegram
+updates, IMAP fetches, or Gmail/Graph reads must be explicit provider actions
+with their own scopes, pagination, rate limits, and audit records.
 
 ## Status Model
 
@@ -1299,7 +1504,9 @@ Recommended delivery order:
 
 - Running an LLM/model from inside the StackOS daemon.
 - Provider-specific MCP tools.
-- Generic `message.send` abstraction across all providers.
+- Generic cross-provider `message.send` execution that hides provider actions.
+  Target resolution may return an explicit provider action ref, but sending
+  still goes through `action.run` or `action.execute`.
 - SMTP delivery/read/open tracking.
 - Telegram read receipts.
 - OAuth/XOAUTH2 for custom SMTP/IMAP.
