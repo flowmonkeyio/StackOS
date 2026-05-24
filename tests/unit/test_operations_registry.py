@@ -33,6 +33,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "runPlan.start",
         "runPlan.update",
         "runPlan.validate",
+        "toolProfile.resolve",
     ]
 
     described = registry.get("action.execute").describe_out()
@@ -86,6 +87,13 @@ def test_operation_registry_documents_core_operations() -> None:
     assert local_chat.grant_policy == "direct-work-queue-write"
     assert any("never invokes a model" in item for item in [local_chat.purpose])
 
+    resolver = registry.get("toolProfile.resolve").describe_out()
+    assert resolver.surfaces["mcp"].enabled is True
+    assert resolver.surfaces["rest"].enabled is True
+    assert resolver.surfaces["cli"].command == "ops call toolProfile.resolve"
+    assert resolver.grant_policy == "direct-read"
+    assert any("credential_ref" in item for item in resolver.returns)
+
     run_plan = registry.get("runPlan.claimStep").describe_out()
     assert run_plan.surfaces["mcp"].enabled is True
     assert run_plan.surfaces["rest"].enabled is True
@@ -122,6 +130,7 @@ def test_operation_registry_surface_filter() -> None:
         "runPlan.recordStep",
         "runPlan.start",
         "runPlan.validate",
+        "toolProfile.resolve",
     ]
     assert registry.get("runPlan.update").surfaces.cli.enabled is False
     assert registry.list_out(surface="rest").items[0].surfaces["rest"].enabled is True

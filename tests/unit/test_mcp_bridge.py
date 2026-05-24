@@ -303,6 +303,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "communicationBotProfile.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationBotProfile.get" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationBotProfile.upsert" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "toolProfile.resolve" in _AGENT_VISIBLE_TOOL_NAMES
     assert "localAgentChat.createMessage" in _AGENT_VISIBLE_TOOL_NAMES
     assert "context.query" in _AGENT_VISIBLE_TOOL_NAMES
     assert "context.timeline" in _AGENT_VISIBLE_TOOL_NAMES

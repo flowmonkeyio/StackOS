@@ -85,6 +85,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "communicationBotProfile.get",
         "communicationBotProfile.list",
         "communicationBotProfile.upsert",
+        "toolProfile.resolve",
         "budget.list",
         "budget.queryProject",
         "budget.set",

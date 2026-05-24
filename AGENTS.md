@@ -38,6 +38,9 @@ work, start here:
   auth-method keys, status, scopes, diagnostics, and opaque `credential_ref`
   values. `action.run` and `action.execute` resolve credentials inside the
   daemon process.
+- Agents should use `toolProfile.resolve` when they need one provider/profile
+  execution target. It returns a compact safe tuple and avoids broad auth/profile
+  discovery calls when the provider intent is already known.
 - MCP is an adapter, not the core abstraction. Register callable behavior once
   as a StackOS operation, then expose it through allowed MCP, REST, CLI, and UI
   surfaces from that spec.

@@ -114,6 +114,8 @@ Direct/read discovery operations:
 
 - `action.describe`
 - `action.validate`
+- `toolProfile.resolve` when an agent needs a safe provider/profile/credential
+  tuple before choosing an explicit action payload
 
 Run-plan-scoped execution operation:
 

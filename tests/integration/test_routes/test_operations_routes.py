@@ -256,6 +256,36 @@ def test_operation_rest_call_uses_registered_action_handler(api: TestClient) -> 
     assert body["execution_available"] is False
 
 
+def test_operation_rest_tool_profile_resolve_returns_safe_target(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    credential_ref = _store_smtp_credential(api, project_id)
+
+    resp = api.post(
+        "/api/v1/operations/toolProfile.resolve/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "provider_key": "smtp",
+                "auth_profile_key": "primary",
+            }
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    rendered = json.dumps(body)
+    assert body["ready"] is True
+    assert body["provider"]["provider_key"] == "smtp"
+    assert body["provider"]["setup_required"] is False
+    assert body["credential"]["credential_ref"] == credential_ref
+    assert body["credential"]["profile_key"] == "primary"
+    assert body["tool_profile"] is None
+    assert body["missing"] == []
+    assert "smtp-secret" not in rendered
+
+
 def test_operation_rest_run_plan_lifecycle_uses_registered_handlers(
     api: TestClient,
     project_id: int,

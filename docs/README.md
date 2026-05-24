@@ -31,6 +31,8 @@ obvious without loading every document.
   action or `action.execute` inside a granted run-plan step.
 - Agents never receive secrets. They receive safe provider keys, account refs,
   auth status, scopes, diagnostics, and opaque `credential_ref` values.
+- Agents should resolve known provider targets with `toolProfile.resolve`
+  before broad auth/profile discovery.
 - SEO, media buying, GTM, publishing, and utilities are plugins. Core StackOS
   remains domain-agnostic.
 

@@ -17,6 +17,7 @@ from stackos.mcp.tools import (
     resources,
     runs,
     sitemap,
+    tool_profiles,
     workflows,
     workspaces,
 )
@@ -29,6 +30,7 @@ def register_all(registry: ToolRegistry) -> None:
     projects.register(registry)
     auth.register(registry)
     communications.register(registry)
+    tool_profiles.register(registry)
     context.register(registry)
     runs.register(registry)
     cost.register(registry)

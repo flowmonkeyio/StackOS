@@ -175,6 +175,7 @@ The current core operation registry includes:
 - `communicationBotProfile.get`
 - `communicationBotProfile.upsert`
 - `localAgentChat.createMessage`
+- `toolProfile.resolve`
 - `runPlan.validate`
 - `runPlan.create`
 - `runPlan.start`
@@ -254,6 +255,15 @@ Use `action.execute` when the action belongs to a workflow:
 communications resources and may create a generic `agent_request` for inbound
 human messages. It does not run a model, choose a workflow, call a provider, or
 send an external reply.
+
+`toolProfile.resolve` is the agent-friendly target resolver. Use it before
+`action.run` or workflow setup when the agent needs one safe execution tuple for
+a provider: optional project tool profile, daemon-held `credential_ref`,
+provider auth status, and a concise setup `next_action` when the tuple is not
+ready. For Telegram it resolves the `communication-bot-profile` plus its
+credential profile. For SMTP, IMAP, and other provider credentials it resolves
+the requested auth profile directly. It never returns secret payloads and never
+chooses the workflow or provider action for the agent.
 
 No operation adapter should bypass repository/connector auth, grant, idempotency,
 or audit code.

@@ -53,6 +53,7 @@ action execution shape because workflow steps usually need complete audit data.
 
 ```text
 agent receives one explicit user request
+-> toolProfile.resolve when provider/auth/profile selection is needed
 -> action.describe / action.validate when needed
 -> action.run
 -> daemon-side credential resolution
@@ -70,6 +71,12 @@ Direct non-read actions require:
 - `intent_summary`
 - an explicit `action_ref` or plugin/action pair
 - only safe refs, such as `credential_ref`, never secret values
+
+When the provider target is not already obvious, call `toolProfile.resolve`
+once instead of chaining broad provider/profile/auth discovery calls. The
+resolver returns a compact safe tuple: provider status, optional project tool
+profile, the daemon-held `credential_ref` to use, `ready`, `missing`, and
+`next_action`. It does not select business strategy or action payloads.
 
 Agents may pass `intent_id` or `idempotency_key` when they need stable retry
 semantics. If neither is supplied, StackOS derives a request-scoped

@@ -42,6 +42,7 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("communicationBotProfile.list", SYSTEM_SKILL)
     check_grant("communicationBotProfile.get", SYSTEM_SKILL)
     check_grant("communicationBotProfile.upsert", SYSTEM_SKILL)
+    check_grant("toolProfile.resolve", SYSTEM_SKILL)
     check_grant("context.query", SYSTEM_SKILL)
     check_grant("learning.query", SYSTEM_SKILL)
     check_grant("experiment.query", SYSTEM_SKILL)

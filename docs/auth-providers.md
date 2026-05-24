@@ -30,6 +30,8 @@ Normal agents may use:
 
 - `auth.status`: list provider metadata and sanitized connection status.
 - `auth.test`: run a daemon-side health probe and return a sanitized result.
+- `toolProfile.resolve`: resolve one safe provider/profile/credential tuple
+  for execution without dumping the broader auth/provider catalog into context.
 
 Normal agents may not use:
 
@@ -37,12 +39,15 @@ Normal agents may not use:
 - `auth.revoke`: removes daemon-held secrets and is a human/admin operation.
 - plaintext credential setup routes or local UI admin mutations.
 
-The MCP bridge advertises only `auth.status` and `auth.test`.
+The MCP bridge advertises `toolProfile.resolve`, `auth.status`, and `auth.test`.
+Agents should prefer `toolProfile.resolve` when they already know which
+provider/profile they need; `auth.status` is still available for diagnostics.
 
 ## Setup Flow
 
 1. The agent inspects required providers through plugin/catalog metadata.
-2. The agent calls `auth.status` for the project and provider key.
+2. The agent calls `toolProfile.resolve` for the project and provider key, or
+   `auth.status` when it needs full sanitized diagnostics.
 3. If setup is missing, the agent points the operator to
    `/projects/{project_id}/connections?provider_key={provider_key}` in the local
    UI. Only the operator/local admin uses setup routes or interactive OAuth

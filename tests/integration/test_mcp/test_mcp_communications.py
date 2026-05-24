@@ -16,6 +16,7 @@ def _seed_telegram_credential(
     project_id: int,
     *,
     profile_key: str = "support",
+    bot_token: str = "123456:ABC",
 ) -> None:
     engine = mcp.test_client.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
@@ -24,9 +25,46 @@ def _seed_telegram_credential(
             kind="telegram-bot",
             profile_key=profile_key,
             secret_payload=json.dumps(
-                {"bot_token": "123456:ABC", "webhook_secret_token": "telegram-secret"}
+                {"bot_token": bot_token, "webhook_secret_token": "telegram-secret"}
             ).encode("utf-8"),
         )
+
+
+def _seed_smtp_credential(mcp: MCPClient, project_id: int, *, profile_key: str = "primary") -> None:
+    engine = mcp.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        IntegrationCredentialRepository(session).set(
+            project_id=project_id,
+            kind="smtp",
+            profile_key=profile_key,
+            secret_payload=json.dumps({"password": "smtp-secret"}).encode("utf-8"),
+            config_json={
+                "auth_method_key": "smtp-password",
+                "profile_key": profile_key,
+                "host": "smtp.example.test",
+                "port": 587,
+                "tls_mode": "none",
+                "username": "mailer@example.test",
+                "from_email": "mailer@example.test",
+            },
+        )
+
+
+def _credential_ref(
+    mcp: MCPClient,
+    *,
+    project_id: int,
+    provider_key: str,
+    profile_key: str,
+) -> str:
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": provider_key},
+    )
+    for connection in status["connections"]:
+        if connection["profile_key"] == profile_key:
+            return str(connection["credential_ref"])
+    raise AssertionError(f"credential profile {profile_key!r} not found")
 
 
 def test_communication_bot_profile_operations_are_registered(mcp_client: MCPClient) -> None:
@@ -37,6 +75,7 @@ def test_communication_bot_profile_operations_are_registered(mcp_client: MCPClie
         "communicationBotProfile.list",
         "communicationBotProfile.get",
         "communicationBotProfile.upsert",
+        "toolProfile.resolve",
     } <= tools
 
 
@@ -163,3 +202,227 @@ def test_communication_bot_profile_mcp_requires_project_scoped_credential(
 
     assert err["code"] == -32602
     assert err["data"]["auth_profile_key"] == "missing"
+
+
+def test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_telegram_credential(mcp_client, project_id)
+    mcp_client.call_tool_structured(
+        "communicationBotProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support-bot",
+            "auth_profile_key": "support",
+            "bot_username": "support_bot",
+            "identity": {
+                "display_name": "Support Bot",
+                "purpose": "Handle approved support requests.",
+                "voice": "Concise.",
+            },
+            "agent_guidance": {"default_instructions": "Triage before replying."},
+            "access_policy": {
+                "dm_mode": "allowlist",
+                "group_mode": "allowlist",
+                "user_mode": "allowlist",
+                "allowed_chat_refs": ["telegram-chat:999"],
+                "allowed_user_refs": ["telegram-user:555"],
+            },
+        },
+    )
+
+    resolved = mcp_client.call_tool_structured(
+        "toolProfile.resolve",
+        {
+            "project_id": project_id,
+            "provider_key": "telegram-bot",
+            "tool_profile_key": "support-bot",
+        },
+    )
+
+    rendered = json.dumps(resolved)
+    assert resolved["ready"] is True
+    assert resolved["provider"]["provider_key"] == "telegram-bot"
+    assert resolved["provider"]["setup_required"] is False
+    assert resolved["tool_profile"]["key"] == "support-bot"
+    assert resolved["tool_profile"]["auth_profile_key"] == "support"
+    assert resolved["tool_profile"]["access_policy"]["allowed_user_refs"] == [
+        "telegram-user:555"
+    ]
+    assert resolved["credential"]["credential_ref"].startswith("cred_")
+    assert resolved["credential"]["profile_key"] == "support"
+    assert resolved["missing"] == []
+    assert "123456:ABC" not in rendered
+    assert "telegram-secret" not in rendered
+
+
+def test_tool_profile_resolve_mcp_rejects_profile_credential_mismatch(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_telegram_credential(mcp_client, project_id, profile_key="support")
+    _seed_telegram_credential(
+        mcp_client,
+        project_id,
+        profile_key="analytics",
+        bot_token="654321:XYZ",
+    )
+    analytics_ref = _credential_ref(
+        mcp_client,
+        project_id=project_id,
+        provider_key="telegram-bot",
+        profile_key="analytics",
+    )
+    mcp_client.call_tool_structured(
+        "communicationBotProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support-bot",
+            "auth_profile_key": "support",
+            "identity": {
+                "display_name": "Support Bot",
+                "purpose": "Handle approved support requests.",
+                "voice": "Concise.",
+            },
+            "access_policy": {
+                "dm_mode": "allowlist",
+                "group_mode": "allowlist",
+                "user_mode": "allowlist",
+                "allowed_chat_refs": ["telegram-chat:999"],
+                "allowed_user_refs": ["telegram-user:555"],
+            },
+        },
+    )
+
+    err = mcp_client.call_tool_error(
+        "toolProfile.resolve",
+        {
+            "project_id": project_id,
+            "provider_key": "telegram-bot",
+            "tool_profile_key": "support-bot",
+            "credential_ref": analytics_ref,
+        },
+    )
+
+    assert err["code"] == -32602
+    assert err["message"] == "ValidationError"
+    assert err["data"]["credential_profile_key"] == "analytics"
+    assert err["data"]["requested_auth_profile_key"] == "support"
+
+
+def test_tool_profile_resolve_mcp_redacts_profile_sections(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_telegram_credential(mcp_client, project_id)
+    mcp_client.call_tool_structured(
+        "communicationBotProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support-bot",
+            "auth_profile_key": "support",
+            "identity": {
+                "display_name": "Support Bot",
+                "purpose": "Handle support with api_key=profile-secret",
+                "voice": "Concise.",
+            },
+            "context_policy": {
+                "note": "authorization: bearer hidden-token",
+                "nested": {"password": "nested-secret"},
+            },
+            "refs": {
+                "api_key": "ref-secret",
+                "safe_ref": "telegram-chat:999",
+            },
+            "access_policy": {
+                "dm_mode": "allowlist",
+                "group_mode": "allowlist",
+                "user_mode": "allowlist",
+                "allowed_chat_refs": ["telegram-chat:999"],
+                "allowed_user_refs": ["telegram-user:555"],
+            },
+        },
+    )
+
+    resolved = mcp_client.call_tool_structured(
+        "toolProfile.resolve",
+        {
+            "project_id": project_id,
+            "provider_key": "telegram-bot",
+            "tool_profile_key": "support-bot",
+        },
+    )
+
+    rendered = json.dumps(resolved)
+    assert "profile-secret" not in rendered
+    assert "hidden-token" not in rendered
+    assert "nested-secret" not in rendered
+    assert "ref-secret" not in rendered
+    assert (
+        resolved["tool_profile"]["identity"]["purpose"]
+        == "Handle support with api_key=[redacted]"
+    )
+    assert resolved["tool_profile"]["context_policy"]["nested"]["password"] == "[redacted]"
+    assert resolved["tool_profile"]["refs"]["api_key"] == "[redacted]"
+    assert resolved["tool_profile"]["refs"]["safe_ref"] == "telegram-chat:999"
+
+
+def test_tool_profile_resolve_mcp_resolves_generic_credential_profile(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_smtp_credential(mcp_client, project_id)
+
+    resolved = mcp_client.call_tool_structured(
+        "toolProfile.resolve",
+        {
+            "project_id": project_id,
+            "provider_key": "smtp",
+            "auth_profile_key": "primary",
+        },
+    )
+
+    rendered = json.dumps(resolved)
+    assert resolved["ready"] is True
+    assert resolved["provider"]["setup_required"] is False
+    assert resolved["tool_profile"] is None
+    assert resolved["credential"]["provider_key"] == "smtp"
+    assert resolved["credential"]["profile_key"] == "primary"
+    assert resolved["credential"]["credential_ref"].startswith("cred_")
+    assert resolved["next_action"] is None
+    assert "smtp-secret" not in rendered
+
+
+def test_tool_profile_resolve_mcp_rejects_generic_credential_profile_mismatch(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_smtp_credential(mcp_client, project_id, profile_key="primary")
+    _seed_smtp_credential(mcp_client, project_id, profile_key="secondary")
+    secondary_ref = _credential_ref(
+        mcp_client,
+        project_id=project_id,
+        provider_key="smtp",
+        profile_key="secondary",
+    )
+
+    err = mcp_client.call_tool_error(
+        "toolProfile.resolve",
+        {
+            "project_id": project_id,
+            "provider_key": "smtp",
+            "auth_profile_key": "primary",
+            "credential_ref": secondary_ref,
+        },
+    )
+
+    assert err["code"] == -32602
+    assert err["message"] == "ValidationError"
+    assert err["data"]["credential_profile_key"] == "secondary"
+    assert err["data"]["requested_auth_profile_key"] == "primary"

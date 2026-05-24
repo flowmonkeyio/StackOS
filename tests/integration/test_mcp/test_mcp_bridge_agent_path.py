@@ -144,6 +144,7 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "toolbox.describe" in names
     assert "toolbox.call" in names
     assert "action.run" in names
+    assert "toolProfile.resolve" in names
     assert "schedule.remove" not in names
     assert "integration.set" not in names
     assert "project.list" not in names
@@ -165,7 +166,11 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "action.execute" not in names
     assert "dataforseo.serp" not in names
     auth_tool = next(tool for tool in envelope["result"]["tools"] if tool["name"] == "auth.status")
+    resolver_tool = next(
+        tool for tool in envelope["result"]["tools"] if tool["name"] == "toolProfile.resolve"
+    )
     assert "response_mode" in auth_tool["inputSchema"]["properties"]
+    assert "response_mode" in resolver_tool["inputSchema"]["properties"]
 
 
 def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient) -> None:
@@ -214,13 +219,37 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
             request_id="auth-standard",
         )
     )
+    resolved_compact = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolProfile.resolve",
+            {"provider_key": "mock-provider"},
+            request_id="resolver-compact",
+        )
+    )
+    resolved_standard = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolProfile.resolve",
+            {"provider_key": "mock-provider", "response_mode": "standard"},
+            request_id="resolver-standard",
+        )
+    )
 
     assert compact["project_id"] == project_id
     assert compact["connections"][0]["credential_ref"].startswith("cred_")
     assert compact["providers"][0]["status"] == "connected"
     assert "auth_methods" not in compact["providers"][0]
     assert "auth_methods" in standard["providers"][0]
+    assert resolved_compact["project_id"] == project_id
+    assert resolved_compact["ready"] is True
+    assert resolved_compact["credential"]["credential_ref"].startswith("cred_")
+    assert "scopes" not in resolved_compact["credential"]
+    assert "scopes" in resolved_standard["credential"]
     assert "mock-secret" not in json.dumps(compact)
+    assert "mock-secret" not in json.dumps(resolved_compact)
 
 
 def test_bridge_scopes_project_from_workspace_and_injects_project_id(
@@ -299,10 +328,14 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
 
     tools = _send(proxy, client, method="tools/list", request_id="tools")
     auth_tool = next(tool for tool in tools["result"]["tools"] if tool["name"] == "auth.status")
+    resolver_tool = next(
+        tool for tool in tools["result"]["tools"] if tool["name"] == "toolProfile.resolve"
+    )
     workspace_connect_tool = next(
         tool for tool in tools["result"]["tools"] if tool["name"] == "workspace.connect"
     )
     auth_required = auth_tool["inputSchema"].get("required", [])
+    resolver_required = resolver_tool["inputSchema"].get("required", [])
     workspace_connect_required = workspace_connect_tool["inputSchema"].get("required", [])
     resolved = _structured(
         _tool_call(
@@ -320,6 +353,15 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
             "auth.status",
             {"provider_key": "mock-provider"},
             request_id="auth-status",
+        )
+    )
+    resolved_tool = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolProfile.resolve",
+            {"provider_key": "mock-provider"},
+            request_id="tool-profile-resolve",
         )
     )
     connected = _structured(
@@ -413,10 +455,13 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
     )
 
     assert "project_id" not in auth_required
+    assert "project_id" not in resolver_required
     assert "project_id" not in workspace_connect_required
     assert "repo_fingerprint" not in workspace_connect_required
     assert resolved["project_id"] == project_id
     assert status["project_id"] == project_id
+    assert resolved_tool["project_id"] == project_id
+    assert resolved_tool["provider"]["provider_key"] == "mock-provider"
     assert connected["project_id"] == project_id
     assert connected["data"]["repo_fingerprint"] == "path:bridge-scoped"
     assert connected["data"]["last_known_root"] == str(Path("/tmp/bridge-scoped-project").resolve())

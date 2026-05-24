@@ -27,6 +27,7 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "workspace.updateProfile",
     "auth.status",
     "auth.test",
+    "toolProfile.resolve",
     "localAgentChat.createMessage",
     "communicationBotProfile.list",
     "communicationBotProfile.get",
@@ -79,6 +80,7 @@ _AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
         "workspace.resolve",
         "workspace.connect",
         "auth.status",
+        "toolProfile.resolve",
         "communicationBotProfile.list",
         "communicationBotProfile.get",
         "action.describe",
@@ -816,6 +818,8 @@ def _bridge_compact_structured(tool_name: str, structured: dict[str, Any]) -> di
         return _bridge_compact_workspace(structured)
     if tool_name == "auth.status":
         return _bridge_compact_auth_status(structured)
+    if tool_name == "toolProfile.resolve":
+        return _bridge_compact_tool_profile_resolve(structured)
     if tool_name == "communicationBotProfile.list":
         return _bridge_compact_profile_page(structured)
     if tool_name == "communicationBotProfile.get":
@@ -906,6 +910,74 @@ def _bridge_compact_connection(connection: dict[str, Any]) -> dict[str, Any]:
         "display_name": account.get("display_name"),
         "provider_account_id": account.get("provider_account_id"),
         "setup_required": bool(connection.get("setup_required", False)),
+    }
+
+
+def _bridge_compact_tool_profile_resolve(structured: dict[str, Any]) -> dict[str, Any]:
+    provider = structured.get("provider") if isinstance(structured.get("provider"), dict) else {}
+    credential = (
+        structured.get("credential") if isinstance(structured.get("credential"), dict) else {}
+    )
+    profile = (
+        structured.get("tool_profile") if isinstance(structured.get("tool_profile"), dict) else {}
+    )
+    identity = profile.get("identity") if isinstance(profile.get("identity"), dict) else {}
+    access = profile.get("access_policy") if isinstance(profile.get("access_policy"), dict) else {}
+    trigger = (
+        profile.get("trigger_policy") if isinstance(profile.get("trigger_policy"), dict) else {}
+    )
+    account = credential.get("account") if isinstance(credential.get("account"), dict) else {}
+    return {
+        "project_id": structured.get("project_id"),
+        "provider_key": structured.get("provider_key"),
+        "ready": bool(structured.get("ready")),
+        "missing": structured.get("missing", []),
+        "warnings": structured.get("warnings", []),
+        "next_action": structured.get("next_action"),
+        "provider": {
+            "provider_key": provider.get("provider_key"),
+            "plugin_slug": provider.get("plugin_slug"),
+            "auth_type": provider.get("auth_type"),
+            "setup_required": bool(provider.get("setup_required", False)),
+        },
+        "credential": {
+            "credential_ref": credential.get("credential_ref"),
+            "provider_key": credential.get("provider_key"),
+            "profile_key": credential.get("profile_key"),
+            "status": credential.get("status"),
+            "display_name": account.get("display_name"),
+            "provider_account_id": account.get("provider_account_id"),
+            "setup_required": bool(credential.get("setup_required", False)),
+        }
+        if credential
+        else None,
+        "tool_profile": {
+            "kind": profile.get("kind"),
+            "key": profile.get("key"),
+            "ref": profile.get("ref"),
+            "enabled": profile.get("enabled"),
+            "auth_profile_key": profile.get("auth_profile_key"),
+            "identity": {
+                "display_name": identity.get("display_name"),
+                "purpose": identity.get("purpose"),
+                "voice": identity.get("voice"),
+            },
+            "access": {
+                "dm_mode": access.get("dm_mode"),
+                "group_mode": access.get("group_mode"),
+                "user_mode": access.get("user_mode"),
+                "allowed_chat_refs": access.get("allowed_chat_refs", []),
+                "allowed_user_refs": access.get("allowed_user_refs", []),
+            },
+            "trigger": {
+                "dm_trigger": trigger.get("dm_trigger"),
+                "group_trigger": trigger.get("group_trigger"),
+                "command_count": len(trigger.get("commands", []) or []),
+                "mention_patterns": trigger.get("mention_patterns", []),
+            },
+        }
+        if profile
+        else None,
     }
 
 
