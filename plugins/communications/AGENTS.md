@@ -114,13 +114,16 @@ does not run an assistant, classify intent, or decide workflows.
 - `agent_requests` are generic core queue records. Communications can create
   them only through trusted ingestion or granted run-plan steps.
 - All communication ingress must follow one-brain processing. Provider adapters
-  verify transport auth and normalize payloads; shared communication policy is
-  responsible for visibility, trigger matching, user allowlists, resource
-  storage, and agent-request creation. Do not add a provider-specific second
-  brain for when a bot should answer.
-- Slack and Telegram still contain transitional duplicated policy/storage code.
-  When extending communications, move behavior toward a shared processor instead
-  of copying those provider-specific paths into another channel.
+  verify transport auth and normalize payloads; shared communication code is
+  responsible for resource storage, stable request dedupe, and agent-request
+  creation. Button/callback click-state updates should be normalized as shared
+  processor patches, not committed directly inside provider ingress. Move
+  remaining trigger matching and user allowlist policy toward the shared
+  processor instead of adding provider-specific decision branches.
+- Slack and Telegram now use the shared inbound processor for storage/request
+  creation, but still contain transitional provider-local trigger and access
+  evaluation. Do not copy those provider-local policy paths into another
+  channel.
 
 ## Adding A Communication Provider
 

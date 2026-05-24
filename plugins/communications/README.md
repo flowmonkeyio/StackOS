@@ -148,12 +148,13 @@ message or button click means, create run plans, select actions, and write
 replies. StackOS stores provider state, resolves credentials daemon-side,
 validates explicit payloads, executes configured calls, and records audit.
 
-The long-term architecture is one shared communication processor after
-provider-specific auth/normalization. Current Slack and Telegram ingress paths
-still contain duplicated trigger/policy/storage logic; treat that as transition
-state and avoid copying it into new providers. New channels should normalize
-events into provider-neutral refs and then reuse shared communication profile,
-target, route, context, and agent-request infrastructure.
+The architecture is one shared communication processor after provider-specific
+auth/normalization. Slack and Telegram HTTP ingress now use the shared inbound
+processor for resource storage, stable request dedupe, and agent-request
+creation, including button/callback click-state patches. Their remaining
+provider-local trigger/access policy is transitional; new channels should
+normalize events into provider-neutral refs and reuse shared communication
+profile, target, route, context, and agent-request infrastructure.
 
 Telegram inline buttons use opaque `callback_data` only. Store the meaningful
 state in `communication-interaction` resources keyed by bot profile, provider

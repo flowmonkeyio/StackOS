@@ -338,16 +338,20 @@ adds an explicit send/handoff restriction.
 
 ### One-Brain Architecture Audit
 
-Current status: the product direction is clear, but the implementation is only
-partly converged. Slack, Telegram, local chat, SMTP, and IMAP already write
-provider-neutral communication resources and agent requests, but several
-providers still own logic that should move into one shared communication
-processor before more channels are added.
+Current status: the product direction is clear and the first shared processor
+foundation exists. Slack and Telegram HTTP ingress now verify provider
+transport, normalize payloads, and call the shared inbound communication
+processor for resource writes, stable request dedupe, and `agent_request`
+creation. Button/callback click-state updates are normalized as processor-owned
+resource patches so provider ingress does not mutate outbound interaction state
+before inbound event storage. Local chat, SMTP, IMAP, outbound action recording,
+route derivation, and some trigger/policy evaluation still need to converge
+before more channels are added.
 
 Current deviations to remove:
 
-- Slack and Telegram ingress both verify transport and then independently apply
-  surface, user, trigger, interaction, storage, dedupe, and agent-request logic.
+- Slack and Telegram ingress still apply provider-local trigger/user/interaction
+  policy before handing a normalized event to the shared processor.
 - Telegram still has `communicationBotProfile.*` as a separate profile/policy
   model, while Slack uses generic `communication-profile` records.
 - Slack, Telegram, SMTP, and IMAP connectors write communication resources
@@ -361,9 +365,8 @@ Current deviations to remove:
 
 Required direction:
 
-1. Add a shared `communications` processor that accepts normalized inbound
-   events and owns policy evaluation, resource writes, dedupe, and agent-request
-   creation.
+1. Move remaining trigger/user/interaction policy evaluation into the shared
+   `communications` processor now that shared storage/request creation exists.
 2. Refactor provider ingress modules to stop after auth/signature verification
    and normalization.
 3. Collapse Telegram bot policy into provider-neutral communication profiles;

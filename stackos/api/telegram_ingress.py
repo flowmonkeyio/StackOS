@@ -15,8 +15,14 @@ from sqlmodel import Session, col, select
 
 from stackos.api.deps import get_session
 from stackos.artifacts import redact_secret_text
+from stackos.communications import (
+    CommunicationDecision,
+    NormalizedInboundEvent,
+    NormalizedResourcePatch,
+    NormalizedResourceWrite,
+    process_inbound_event,
+)
 from stackos.db.models import IntegrationCredential, Plugin, Resource, ResourceRecord
-from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
@@ -190,101 +196,32 @@ def _store_update(
         raise ValidationError("Telegram update_id is required")
     parsed = _parse_update(update)
     decision = _policy_decision(session, project_id, profile, parsed)
-    if not decision["store"]:
-        return {
-            "ok": True,
-            "update_id": update_id,
-            "bot_profile_key": profile.key,
-            "policy_status": decision["status"],
-        }
-    resources = ResourceRepository(session)
-    event = resources.upsert_record(
-        project_id=project_id,
-        plugin_slug="communications",
-        resource_key="communication-event",
-        external_id=f"telegram-update:{profile.key}:{update_id}",
-        title=f"Telegram update {update_id}",
-        data_json={
-            "provider_key": "telegram-bot",
-            "bot_profile_key": profile.key,
-            "auth_profile_key": profile.auth_profile_key,
-            "update_id": update_id,
-            "update_type": parsed["update_type"],
-            "policy_status": decision["status"],
-            "triggered": decision["create_request"],
-            "trigger_reason": decision.get("trigger_reason"),
-            "matched_command": decision.get("matched_command"),
-            "message_ref": parsed.get("message_ref"),
-            "interaction_ref": parsed.get("interaction_ref"),
-        },
-        provenance_json={"source": "telegram-ingress"},
-    ).data
-    message_record_id = _store_message(
-        resources,
-        project_id=project_id,
+    normalized = _normalized_telegram_event(
         profile=profile,
         parsed=parsed,
-        policy_status=decision["status"],
+        update_id=update_id,
+        mark_interaction_clicked=bool(decision["create_request"]),
     )
-    interaction_record_id = _store_interaction(
-        resources,
+    result = process_inbound_event(
+        session,
         project_id=project_id,
-        profile=profile,
-        parsed=parsed,
-        policy_status=decision["status"],
+        event=normalized,
+        decision=CommunicationDecision(
+            store=bool(decision["store"]),
+            create_request=bool(decision["create_request"]),
+            status=str(decision["status"]),
+            trigger_reason=decision.get("trigger_reason"),
+            matched_command=decision.get("matched_command"),
+            metadata={
+                key: value
+                for key, value in {
+                    "identity_confidence": decision.get("identity_confidence")
+                }.items()
+                if value is not None
+            },
+        ),
     )
-    source_record_id = interaction_record_id or message_record_id or event.id
-    source_resource_key = (
-        "communication-interaction"
-        if interaction_record_id is not None
-        else "communication-message"
-        if message_record_id is not None
-        else "communication-event"
-    )
-    request_id = None
-    if decision["create_request"]:
-        request = (
-            AgentRequestRepository(session)
-            .create(
-                project_id=project_id,
-                request_key=f"telegram-update:{profile.key}:{update_id}",
-                title=parsed["request_title"],
-                body_preview=parsed["body_preview"],
-                source_provider="telegram-bot",
-                source_kind=parsed["source_kind"],
-                source_resource_key=source_resource_key,
-                source_resource_record_id=source_record_id,
-                source_message_ref=parsed.get("message_ref"),
-                metadata_json={
-                    "bot_profile_key": profile.key,
-                    "auth_profile_key": profile.auth_profile_key,
-                    "update_id": update_id,
-                    "event_record_id": event.id,
-                    "interaction_ref": parsed.get("interaction_ref"),
-                    "invoker_ref": parsed.get("user_ref"),
-                    "chat_ref": parsed.get("chat_ref"),
-                    "thread_ref": parsed.get("thread_ref"),
-                    "trigger_reason": decision.get("trigger_reason"),
-                    "matched_command": decision.get("matched_command"),
-                    "identity": profile.data.get("identity"),
-                    "agent_guidance": profile.data.get("agent_guidance"),
-                    "context_policy": profile.data.get("context_policy"),
-                    "response_policy": profile.data.get("response_policy"),
-                },
-            )
-            .data
-        )
-        request_id = request.id
-    return {
-        "ok": True,
-        "update_id": update_id,
-        "bot_profile_key": profile.key,
-        "policy_status": decision["status"],
-        "event_record_id": event.id,
-        "message_record_id": message_record_id,
-        "interaction_record_id": interaction_record_id,
-        "agent_request_id": request_id,
-    }
+    return result.to_response()
 
 
 def _policy_decision(
@@ -433,7 +370,6 @@ def _callback_match_type(
     allowed_chats = set(_split_config_values(data.get("allowed_chat_refs")))
     if allowed_chats and parsed.get("chat_ref") not in allowed_chats:
         return None
-    _mark_button_clicked(session, record, parsed)
     return "button"
 
 
@@ -443,21 +379,6 @@ def _callback_button_external_id(
     callback_data: str,
 ) -> str:
     return f"telegram-button:{bot_profile_key}:{message_ref}:{callback_data}"
-
-
-def _mark_button_clicked(
-    session: Session,
-    record: ResourceRecord,
-    parsed: dict[str, Any],
-) -> None:
-    data = dict(record.data_json or {})
-    data["status"] = "clicked"
-    data["last_callback_query_id"] = parsed.get("callback_query", {}).get("id")
-    data["last_clicked_by_ref"] = parsed.get("user_ref")
-    data["last_clicked_message_ref"] = parsed.get("message_ref")
-    record.data_json = data
-    session.add(record)
-    session.commit()
 
 
 def _validate_bot_profile(data: Mapping[str, Any]) -> None:
@@ -664,14 +585,71 @@ def _split_config_values(value: Any) -> list[str]:
     return []
 
 
-def _store_message(
-    resources: ResourceRepository,
+def _normalized_telegram_event(
     *,
-    project_id: int,
     profile: TelegramBotProfile,
     parsed: dict[str, Any],
-    policy_status: str,
-) -> int | None:
+    update_id: int,
+    mark_interaction_clicked: bool,
+) -> NormalizedInboundEvent:
+    return NormalizedInboundEvent(
+        provider_key="telegram-bot",
+        profile_key=profile.key,
+        event_key=str(update_id),
+        update_type=str(parsed["update_type"]),
+        source_kind=str(parsed["source_kind"]),
+        request_key=f"telegram-update:{profile.key}:{update_id}",
+        request_title=str(parsed["request_title"]),
+        body_preview=str(parsed["body_preview"] or ""),
+        source_message_ref=parsed.get("message_ref"),
+        surface=_telegram_surface_write(profile, parsed),
+        event=NormalizedResourceWrite(
+            resource_key="communication-event",
+            external_id=f"telegram-update:{profile.key}:{update_id}",
+            title=f"Telegram update {update_id}",
+            data_json={
+                "provider_key": "telegram-bot",
+                "bot_profile_key": profile.key,
+                "auth_profile_key": profile.auth_profile_key,
+                "update_id": update_id,
+                "update_type": parsed["update_type"],
+                "message_ref": parsed.get("message_ref"),
+                "interaction_ref": parsed.get("interaction_ref"),
+            },
+            provenance_json={"source": "telegram-ingress"},
+            preserve_existing_on_dedupe=True,
+        ),
+        message=_telegram_message_write(profile, parsed),
+        interaction=_telegram_interaction_write(profile, parsed),
+        state_patches=(
+            [_telegram_click_patch(profile, parsed)]
+            if mark_interaction_clicked and parsed["update_type"] == "callback_query"
+            else []
+        ),
+        request_metadata_json={
+            "bot_profile_key": profile.key,
+            "auth_profile_key": profile.auth_profile_key,
+            "update_id": update_id,
+            "interaction_ref": parsed.get("interaction_ref"),
+            "invoker_ref": parsed.get("user_ref"),
+            "chat_ref": parsed.get("chat_ref"),
+            "thread_ref": parsed.get("thread_ref"),
+            "identity": profile.data.get("identity"),
+            "agent_guidance": profile.data.get("agent_guidance"),
+            "context_policy": profile.data.get("context_policy"),
+            "response_policy": profile.data.get("response_policy"),
+        },
+        response_json={
+            "update_id": update_id,
+            "bot_profile_key": profile.key,
+        },
+    )
+
+
+def _telegram_message_write(
+    profile: TelegramBotProfile,
+    parsed: dict[str, Any],
+) -> NormalizedResourceWrite | None:
     if parsed.get("update_type") == "callback_query":
         return None
     message = parsed.get("message")
@@ -680,28 +658,10 @@ def _store_message(
     raw_chat = message.get("chat")
     chat: Mapping[str, Any] = raw_chat if isinstance(raw_chat, Mapping) else {}
     chat_id = chat.get("id")
-    if chat_id is not None:
-        resources.upsert_record(
-            project_id=project_id,
-            plugin_slug="communications",
-            resource_key="communication-channel",
-            external_id=f"telegram-chat:{profile.key}:{chat_id}",
-            title=_chat_title(chat),
-            data_json={
-                "provider_key": "telegram-bot",
-                "bot_profile_key": profile.key,
-                "provider_chat_id": str(chat_id),
-                "channel_type": chat.get("type"),
-                "title": _chat_title(chat),
-            },
-            provenance_json={"source": "telegram-ingress"},
-        )
     message_id = message.get("message_id")
     if chat_id is None or message_id is None:
         return None
-    record = resources.upsert_record(
-        project_id=project_id,
-        plugin_slug="communications",
+    return NormalizedResourceWrite(
         resource_key="communication-message",
         external_id=f"telegram-message:{profile.key}:{chat_id}:{message_id}",
         title=parsed["message_title"],
@@ -714,8 +674,8 @@ def _store_message(
             "message_ref": parsed["message_ref"],
             "provider_message_id": str(message_id),
             "content_type": parsed["content_type"],
-            "policy_status": policy_status,
             "text_preview": parsed["body_preview"],
+            "transport_status": "received",
             "attention_status": "unread",
             "attachments": _message_attachments(message),
             "from_ref": _user_ref(message.get("from")),
@@ -723,27 +683,21 @@ def _store_message(
             "date": message.get("date"),
         },
         provenance_json={"source": "telegram-ingress"},
-    ).data
-    return record.id
+        preserve_existing_on_dedupe=True,
+    )
 
 
-def _store_interaction(
-    resources: ResourceRepository,
-    *,
-    project_id: int,
+def _telegram_interaction_write(
     profile: TelegramBotProfile,
     parsed: dict[str, Any],
-    policy_status: str,
-) -> int | None:
+) -> NormalizedResourceWrite | None:
     callback = parsed.get("callback_query")
     if not isinstance(callback, dict):
         return None
     callback_id = callback.get("id")
     if not callback_id:
         return None
-    record = resources.upsert_record(
-        project_id=project_id,
-        plugin_slug="communications",
+    return NormalizedResourceWrite(
         resource_key="communication-interaction",
         external_id=f"telegram-callback:{profile.key}:{callback_id}",
         title=f"Telegram callback {callback_id}",
@@ -756,13 +710,67 @@ def _store_interaction(
             "callback_data": _safe_text(callback.get("data")),
             "button_key": _safe_text(callback.get("data")),
             "message_ref": parsed.get("message_ref"),
-            "status": policy_status,
             "from_ref": _user_ref(callback.get("from")),
             "from_username": _username(callback.get("from")),
         },
         provenance_json={"source": "telegram-ingress"},
-    ).data
-    return record.id
+        preserve_existing_on_dedupe=True,
+    )
+
+
+def _telegram_click_patch(
+    profile: TelegramBotProfile,
+    parsed: Mapping[str, Any],
+) -> NormalizedResourcePatch:
+    callback = parsed.get("callback_query")
+    callback_data = callback.get("data") if isinstance(callback, Mapping) else ""
+    message_ref = str(parsed.get("message_ref") or "")
+    return NormalizedResourcePatch(
+        resource_key="communication-interaction",
+        external_id=_callback_button_external_id(profile.key, message_ref, str(callback_data)),
+        data_json={
+            "status": "clicked",
+            "last_callback_query_id": callback.get("id") if isinstance(callback, Mapping) else None,
+            "last_clicked_by_ref": parsed.get("user_ref"),
+            "last_clicked_message_ref": parsed.get("message_ref"),
+        },
+    )
+
+
+def _telegram_surface_write(
+    profile: TelegramBotProfile,
+    parsed: Mapping[str, Any],
+) -> NormalizedResourceWrite | None:
+    message = parsed.get("message")
+    if not isinstance(message, Mapping):
+        return None
+    raw_chat = message.get("chat")
+    chat: Mapping[str, Any] = raw_chat if isinstance(raw_chat, Mapping) else {}
+    chat_id = chat.get("id")
+    if chat_id is None:
+        return None
+    chat_type = str(chat.get("type") or "unknown") if isinstance(chat, Mapping) else "unknown"
+    return NormalizedResourceWrite(
+        resource_key="communication-channel",
+        external_id=f"telegram-chat:{profile.key}:{chat_id}",
+        title=_chat_title(chat),
+        data_json={
+            "provider_key": "telegram-bot",
+            "bot_profile_key": profile.key,
+            "surface_ref": f"telegram-chat:{chat_id}",
+            "channel_ref": f"telegram-chat:{chat_id}",
+            "provider_chat_id": str(chat_id),
+            "kind": f"telegram-{chat_type}",
+            "channel_type": chat_type,
+            "display_name": _chat_title(chat),
+            "title": _chat_title(chat),
+            "safe_external_ref": f"telegram-chat:{chat_id}",
+            "send_enabled": True,
+            "ingest_enabled": True,
+            "capabilities": {"can_read": True, "can_write": True},
+        },
+        provenance_json={"source": "telegram-ingress"},
+    )
 
 
 def _parse_update(update: dict[str, Any]) -> dict[str, Any]:

@@ -24,8 +24,14 @@ from sqlmodel import Session, col, select
 
 from stackos.api.deps import get_session
 from stackos.artifacts import redact_secret_text
+from stackos.communications import (
+    CommunicationDecision,
+    NormalizedInboundEvent,
+    NormalizedResourcePatch,
+    NormalizedResourceWrite,
+    process_inbound_event,
+)
 from stackos.db.models import IntegrationCredential, Plugin, Resource, ResourceRecord
-from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
@@ -248,121 +254,26 @@ def _store_payload(
 ) -> dict[str, Any]:
     parsed = _parse_slack_event(profile, payload, raw_body=raw_body)
     decision = _policy_decision(session, project_id, profile, parsed)
-    if not decision["store"]:
-        return {
-            "ok": True,
-            "profile_key": profile.key,
-            "event_key": parsed.get("event_key"),
-            "update_type": parsed.get("update_type"),
-            "policy_status": decision["status"],
-        }
-    resources = ResourceRepository(session)
-    request_repo = AgentRequestRepository(session)
-    request_key = _agent_request_key(profile, parsed) if decision["create_request"] else None
-    existing_request = (
-        request_repo.find_by_key(project_id=project_id, request_key=request_key)
-        if request_key is not None
-        else None
-    )
-    create_request = decision["create_request"] and existing_request is None
-    policy_status = "request_deduped" if existing_request is not None else decision["status"]
-
-    event = resources.upsert_record(
-        project_id=project_id,
-        plugin_slug="communications",
-        resource_key="communication-event",
-        external_id=f"slack-event:{profile.key}:{parsed['event_key']}",
-        title=f"Slack {parsed['update_type']}",
-        data_json={
-            "provider_key": "slack-bot",
-            "profile_key": profile.key,
-            "auth_profile_key": profile.auth_profile_key,
-            "event_key": parsed["event_key"],
-            "team_id": parsed.get("team_id"),
-            "update_type": parsed["update_type"],
-            "event_type": parsed.get("event_type"),
-            "policy_status": policy_status,
-            "triggered": create_request,
-            "request_key": request_key,
-            "deduped_request_id": existing_request.id if existing_request is not None else None,
-            "trigger_reason": decision.get("trigger_reason"),
-            "matched_command": decision.get("matched_command"),
-            "surface_ref": parsed.get("surface_ref"),
-            "thread_ref": parsed.get("thread_ref"),
-            "message_ref": parsed.get("message_ref"),
-            "interaction_ref": parsed.get("interaction_ref"),
-            "retry_num": retry_num,
-            "retry_reason": retry_reason,
-        },
-        provenance_json={"source": "slack-ingress"},
-    ).data
-    message_record_id = _store_message(
-        session,
-        resources,
-        project_id=project_id,
+    normalized = _normalized_slack_event(
         profile=profile,
         parsed=parsed,
-        policy_status=policy_status,
+        retry_num=retry_num,
+        retry_reason=retry_reason,
+        mark_interaction_clicked=bool(decision["create_request"]),
     )
-    interaction_record_id = _store_interaction(
+    result = process_inbound_event(
         session,
-        resources,
         project_id=project_id,
-        profile=profile,
-        parsed=parsed,
-        policy_status=policy_status,
+        event=normalized,
+        decision=CommunicationDecision(
+            store=bool(decision["store"]),
+            create_request=bool(decision["create_request"]),
+            status=str(decision["status"]),
+            trigger_reason=decision.get("trigger_reason"),
+            matched_command=decision.get("matched_command"),
+        ),
     )
-    source_record_id = interaction_record_id or message_record_id or event.id
-    source_resource_key = (
-        "communication-interaction"
-        if interaction_record_id is not None
-        else "communication-message"
-        if message_record_id is not None
-        else "communication-event"
-    )
-    request_id = None
-    if create_request and request_key is not None:
-        request = request_repo.create(
-            project_id=project_id,
-            request_key=request_key,
-            title=parsed["request_title"],
-            body_preview=parsed["body_preview"],
-            source_provider="slack-bot",
-            source_kind=parsed["source_kind"],
-            source_resource_key=source_resource_key,
-            source_resource_record_id=source_record_id,
-            source_message_ref=parsed.get("message_ref"),
-            metadata_json={
-                "profile_key": profile.key,
-                "auth_profile_key": profile.auth_profile_key,
-                "event_record_id": event.id,
-                "interaction_ref": parsed.get("interaction_ref"),
-                "invoker_ref": parsed.get("user_ref"),
-                "surface_ref": parsed.get("surface_ref"),
-                "channel_ref": parsed.get("surface_ref"),
-                "thread_ref": parsed.get("thread_ref"),
-                "trigger_reason": decision.get("trigger_reason"),
-                "matched_command": decision.get("matched_command"),
-                "identity": profile.data.get("identity"),
-                "agent_guidance": profile.data.get("agent_guidance"),
-                "context_policy": profile.data.get("context_policy"),
-                "response_policy": profile.data.get("response_policy"),
-            },
-        ).data
-        request_id = request.id
-    elif existing_request is not None:
-        request_id = existing_request.id
-    return {
-        "ok": True,
-        "profile_key": profile.key,
-        "event_key": parsed["event_key"],
-        "update_type": parsed["update_type"],
-        "policy_status": policy_status,
-        "event_record_id": event.id,
-        "message_record_id": message_record_id,
-        "interaction_record_id": interaction_record_id,
-        "agent_request_id": request_id,
-    }
+    return result.to_response()
 
 
 def _parse_slack_event(
@@ -612,42 +523,91 @@ def _known_interaction(
         resource_key="communication-interaction",
         external_id=external_id,
     )
-    if record is None:
-        return False
-    _mark_button_clicked(session, record, parsed)
-    return True
+    return record is not None
 
 
-def _store_message(
-    session: Session,
-    resources: ResourceRepository,
+def _normalized_slack_event(
     *,
-    project_id: int,
     profile: SlackProfile,
     parsed: dict[str, Any],
-    policy_status: str,
-) -> int | None:
+    retry_num: str | None,
+    retry_reason: str | None,
+    mark_interaction_clicked: bool,
+) -> NormalizedInboundEvent:
+    return NormalizedInboundEvent(
+        provider_key="slack-bot",
+        profile_key=profile.key,
+        event_key=str(parsed["event_key"]),
+        update_type=str(parsed["update_type"]),
+        source_kind=str(parsed["source_kind"]),
+        request_key=_agent_request_key(profile, parsed),
+        request_title=str(parsed["request_title"]),
+        body_preview=str(parsed["body_preview"] or ""),
+        source_message_ref=parsed.get("message_ref"),
+        surface=_slack_surface_write(profile, parsed),
+        event=NormalizedResourceWrite(
+            resource_key="communication-event",
+            external_id=f"slack-event:{profile.key}:{parsed['event_key']}",
+            title=f"Slack {parsed['update_type']}",
+            data_json={
+                "provider_key": "slack-bot",
+                "profile_key": profile.key,
+                "auth_profile_key": profile.auth_profile_key,
+                "event_key": parsed["event_key"],
+                "team_id": parsed.get("team_id"),
+                "update_type": parsed["update_type"],
+                "event_type": parsed.get("event_type"),
+                "surface_ref": parsed.get("surface_ref"),
+                "thread_ref": parsed.get("thread_ref"),
+                "message_ref": parsed.get("message_ref"),
+                "interaction_ref": parsed.get("interaction_ref"),
+                "retry_num": retry_num,
+                "retry_reason": retry_reason,
+            },
+            provenance_json={"source": "slack-ingress"},
+            preserve_existing_on_dedupe=True,
+        ),
+        message=_slack_message_write(profile, parsed),
+        interaction=_slack_interaction_write(profile, parsed),
+        state_patches=(
+            [_slack_click_patch(profile, parsed)]
+            if mark_interaction_clicked and parsed["update_type"] == "block_actions"
+            else []
+        ),
+        request_metadata_json={
+            "profile_key": profile.key,
+            "auth_profile_key": profile.auth_profile_key,
+            "interaction_ref": parsed.get("interaction_ref"),
+            "invoker_ref": parsed.get("user_ref"),
+            "surface_ref": parsed.get("surface_ref"),
+            "channel_ref": parsed.get("surface_ref"),
+            "thread_ref": parsed.get("thread_ref"),
+            "identity": profile.data.get("identity"),
+            "agent_guidance": profile.data.get("agent_guidance"),
+            "context_policy": profile.data.get("context_policy"),
+            "response_policy": profile.data.get("response_policy"),
+        },
+        response_json={
+            "profile_key": profile.key,
+            "event_key": parsed.get("event_key"),
+            "update_type": parsed.get("update_type"),
+        },
+    )
+
+
+def _slack_message_write(
+    profile: SlackProfile,
+    parsed: dict[str, Any],
+) -> NormalizedResourceWrite | None:
     if parsed["source_kind"] != "slack-message":
         return None
     channel_id = parsed.get("channel_id")
     message_ts = parsed.get("message_ts")
     if not isinstance(channel_id, str) or not isinstance(message_ts, str):
         return None
-    _upsert_channel(resources, project_id, profile=profile, parsed=parsed)
-    external_id = f"slack-message:{profile.key}:{channel_id}:{message_ts}"
-    existing = _resource_record_by_external_id(
-        session,
-        project_id=project_id,
+    return NormalizedResourceWrite(
         resource_key="communication-message",
-        external_id=external_id,
-    )
-    if existing is not None and policy_status == "request_deduped":
-        return existing.id
-    record = resources.upsert_record(
-        project_id=project_id,
-        plugin_slug="communications",
-        resource_key="communication-message",
-        external_id=external_id,
+        external_id=f"slack-message:{profile.key}:{channel_id}:{message_ts}",
         title=parsed["request_title"],
         data_json={
             "provider_key": "slack-bot",
@@ -661,15 +621,14 @@ def _store_message(
             "message_ref": parsed.get("message_ref"),
             "provider_message_ts": message_ts,
             "content_type": parsed.get("content_type"),
-            "policy_status": policy_status,
             "text_preview": parsed.get("body_preview"),
             "transport_status": "received",
             "attention_status": "unread",
             "from_ref": parsed.get("user_ref"),
         },
         provenance_json={"source": "slack-ingress"},
-    ).data
-    return record.id
+        preserve_existing_on_dedupe=True,
+    )
 
 
 def _agent_request_key(profile: SlackProfile, parsed: Mapping[str, Any]) -> str:
@@ -682,23 +641,16 @@ def _agent_request_key(profile: SlackProfile, parsed: Mapping[str, Any]) -> str:
     return f"slack-event:{profile.key}:{parsed['event_key']}"
 
 
-def _store_interaction(
-    session: Session,
-    resources: ResourceRepository,
-    *,
-    project_id: int,
+def _slack_interaction_write(
     profile: SlackProfile,
     parsed: dict[str, Any],
-    policy_status: str,
-) -> int | None:
+) -> NormalizedResourceWrite | None:
     if parsed["update_type"] != "block_actions":
         return None
     interaction_ref = parsed.get("interaction_ref")
     if not isinstance(interaction_ref, str):
         return None
-    record = resources.upsert_record(
-        project_id=project_id,
-        plugin_slug="communications",
+    return NormalizedResourceWrite(
         resource_key="communication-interaction",
         external_id=f"{profile.key}:{interaction_ref}",
         title=parsed["request_title"],
@@ -714,31 +666,21 @@ def _store_interaction(
             "message_ref": parsed.get("message_ref"),
             "action_id": parsed.get("action_id"),
             "button_value": parsed.get("button_value"),
-            "status": policy_status,
             "from_ref": parsed.get("user_ref"),
         },
         provenance_json={"source": "slack-ingress"},
-    ).data
-    # The known-interaction policy path already marks matching outbound state,
-    # but keep this idempotent fallback for profiles that allow unknown actions.
-    if policy_status == "request_created":
-        _ = _known_interaction(session, project_id, profile, parsed)
-    return record.id
+        preserve_existing_on_dedupe=True,
+    )
 
 
-def _upsert_channel(
-    resources: ResourceRepository,
-    project_id: int,
-    *,
+def _slack_surface_write(
     profile: SlackProfile,
     parsed: Mapping[str, Any],
-) -> None:
+) -> NormalizedResourceWrite | None:
     channel_id = parsed.get("channel_id")
     if not isinstance(channel_id, str) or not channel_id:
-        return
-    resources.upsert_record(
-        project_id=project_id,
-        plugin_slug="communications",
+        return None
+    return NormalizedResourceWrite(
         resource_key="communication-channel",
         external_id=f"slack-channel:{profile.key}:{channel_id}",
         title=channel_id,
@@ -761,19 +703,30 @@ def _upsert_channel(
     )
 
 
-def _mark_button_clicked(
-    session: Session,
-    record: ResourceRecord,
+def _slack_click_patch(
+    profile: SlackProfile,
     parsed: Mapping[str, Any],
-) -> None:
-    data = dict(record.data_json or {})
-    data["status"] = "clicked"
-    data["last_clicked_by_ref"] = parsed.get("user_ref")
-    data["last_clicked_message_ref"] = parsed.get("message_ref")
-    data["last_action_id"] = parsed.get("action_id")
-    record.data_json = data
-    session.add(record)
-    session.commit()
+) -> NormalizedResourcePatch:
+    message_ref = str(parsed.get("message_ref") or "")
+    action_id = str(parsed.get("action_id") or "")
+    value = str(parsed.get("button_value") or "")
+    block_id = str(parsed.get("block_id") or "")
+    return NormalizedResourcePatch(
+        resource_key="communication-interaction",
+        external_id=_outbound_button_external_id(
+            profile_key=profile.key,
+            message_ref=message_ref,
+            action_id=action_id,
+            value=value,
+            block_id=block_id,
+        ),
+        data_json={
+            "status": "clicked",
+            "last_clicked_by_ref": parsed.get("user_ref"),
+            "last_clicked_message_ref": parsed.get("message_ref"),
+            "last_action_id": parsed.get("action_id"),
+        },
+    )
 
 
 def _outbound_button_external_id(
