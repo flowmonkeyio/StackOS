@@ -64,8 +64,8 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     }
   }
 
-  async function refreshAuth(projectId: number): Promise<void> {
-    loading.value = true
+  async function refreshAuth(projectId: number, options: { silent?: boolean } = {}): Promise<void> {
+    if (!options.silent) loading.value = true
     error.value = null
     try {
       const [providerRows, status] = await Promise.all([
@@ -77,7 +77,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     } catch (err) {
       error.value = formatApiError(err, 'failed to load connections')
     } finally {
-      loading.value = false
+      if (!options.silent) loading.value = false
     }
   }
 
@@ -95,7 +95,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         body: JSON.stringify(body),
       },
     )
-    await refreshAuth(projectId)
+    await refreshAuth(projectId, { silent: true })
     return response
   }
 
@@ -113,7 +113,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         body: JSON.stringify(body),
       },
     )
-    await refreshAuth(projectId)
+    await refreshAuth(projectId, { silent: true })
     return response
   }
 
@@ -130,7 +130,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         body: JSON.stringify(body),
       },
     )
-    await refreshAuth(projectId)
+    await refreshAuth(projectId, { silent: true })
     return response
   }
 
@@ -147,7 +147,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         body: JSON.stringify(body),
       },
     )
-    await refreshAuth(projectId)
+    await refreshAuth(projectId, { silent: true })
     return response
   }
 

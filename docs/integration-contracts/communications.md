@@ -891,22 +891,25 @@ Slack credentials are project-scoped credential profiles bound from
 action payloads name the communication profile, surface, channel, user, thread,
 or target refs; they never receive Slack tokens or signing secrets.
 
-Safe config fields:
+Safe profile/account metadata may include:
 
 - `team_id`
 - `app_id`
 - `bot_user_id`
 - `profile_key`
 
-Secret fields:
+Current setup fields:
 
 - `bot_token`
 - `signing_secret`
-- `app_token` for future Socket Mode only
+
+`app_token` is reserved for future Socket Mode support and is not part of the
+current connection setup form.
 
 Credential tests:
 
-- `auth.test` verifies the bot token and returns safe team/user/bot metadata.
+- `auth.test` verifies the bot token, returns safe team/user/bot metadata, and
+  syncs that metadata onto the credential account record.
 - Do not include bearer tokens, signing secrets, `response_url`, `trigger_id`,
   or raw Slack payload secrets in diagnostics or resources.
 

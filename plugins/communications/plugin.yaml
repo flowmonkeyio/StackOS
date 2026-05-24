@@ -84,34 +84,9 @@ providers:
             type: secret
             secret: true
             required: true
-            description: Used only by daemon-side Slack HTTP ingress verification.
-          - key: app_token
-            label: App-Level Token
-            type: secret
-            secret: true
-            required: false
-            placeholder: xapp-...
-            description: Reserved for Socket Mode; listener execution is deferred until the daemon runner is implemented.
-          - key: team_id
-            label: Team ID
-            type: text
-            secret: false
-            required: false
-            placeholder: T0123ABC
-          - key: app_id
-            label: App ID
-            type: text
-            secret: false
-            required: false
-            placeholder: A0123ABC
-          - key: bot_user_id
-            label: Bot User ID
-            type: text
-            secret: false
-            required: false
-            placeholder: U0123ABC
+            description: Used by daemon-side Slack Events API and interaction signature verification.
     config:
-      setup_note: Store only Slack app credential material here. Agent identity, access, trigger, context, response, send, and handoff policy belong to project-scoped communication-profile records with slack-bot provider facets.
+      setup_note: Store only the Slack bot token and signing secret here. StackOS discovers safe workspace and bot identity metadata during credential testing. Agent identity, access, trigger, context, response, send, and handoff policy belong to project-scoped communication-profile records with slack-bot provider facets.
       scopes:
         - chat:write
         - app_mentions:read

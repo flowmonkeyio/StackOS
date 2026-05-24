@@ -451,6 +451,152 @@ describe('ConnectionsView', () => {
     expect(wrapper.text()).not.toContain('123456:ABC')
   })
 
+  it('stores Slack bot credentials with discovery and no deferred setup fields', async () => {
+    let connected = false
+    let slackTested = false
+    let slackTestCount = 0
+    const postedBodies: unknown[] = []
+
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (init?.body) postedBodies.push(JSON.parse(String(init.body)))
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
+      if (url === '/api/v1/auth/providers') {
+        return json([authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({
+          project_id: 1,
+          provider_key: null,
+          providers: [],
+          connections: connected
+            ? [
+                authConnection({
+                  revokedAt: null,
+                  providerKey: 'slack-bot',
+                  credentialRef: 'cred_slack',
+                  authType: 'bot-token',
+                  authMethodKey: 'bot-token',
+                  profileKey: 'support',
+                  label: 'Support Slack',
+                  account: slackTested
+                    ? {
+                        provider_account_id: 'T123',
+                        display_name: 'Acme',
+                        metadata_json: {
+                          team_id: 'T123',
+                          team: 'Acme',
+                          user_id: 'U_BOT',
+                          user: 'stackos',
+                          bot_id: 'B123',
+                        },
+                      }
+                    : null,
+                }),
+              ]
+            : [],
+        })
+      }
+      if (url === '/api/v1/projects/1/auth/slack-bot/credentials') {
+        connected = true
+        return json(
+          {
+            data: authConnection({
+              revokedAt: null,
+              providerKey: 'slack-bot',
+              credentialRef: 'cred_slack',
+              authType: 'bot-token',
+              authMethodKey: 'bot-token',
+              profileKey: 'support',
+              label: 'Support Slack',
+            }),
+          },
+          201,
+        )
+      }
+      if (url === '/api/v1/projects/1/auth/test') {
+        slackTested = true
+        slackTestCount += 1
+        return json({
+          data: {
+            credential_ref: 'cred_slack',
+            provider_key: 'slack-bot',
+            ok: true,
+            status: 'ok',
+            summary: 'slack-bot credentials are reachable',
+            checked_at: '2026-05-23T00:00:00Z',
+            retryable: false,
+            next_action: null,
+            metadata: {
+              team_id: 'T123',
+              team: 'Acme',
+              user_id: 'U_BOT',
+              user: 'stackos',
+              bot_id: 'B123',
+            },
+          },
+          run_id: null,
+          project_id: 1,
+        })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
+    await clickButton(wrapper, 'Add connection')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Slack Bot'))
+
+    expect(wrapper.find<HTMLInputElement>('input[placeholder="xoxb-..."]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Signing Secret')
+    expect(wrapper.text()).not.toContain('App-Level Token')
+    expect(wrapper.text()).not.toContain('Team ID')
+    expect(wrapper.text()).not.toContain('App ID')
+    expect(wrapper.text()).not.toContain('Bot User ID')
+
+    await wrapper.find<HTMLInputElement>('input[placeholder="xoxb-..."]').setValue('xoxb-secret')
+    await wrapper
+      .find<HTMLInputElement>('input[placeholder="Primary account"]')
+      .setValue('Support Slack')
+    await wrapper.find<HTMLInputElement>('input[placeholder="default"]').setValue('support')
+    const signingSecretInput = wrapper
+      .findAll<HTMLInputElement>('input[type="password"]')
+      .find((input) => input.element.placeholder !== 'xoxb-...')
+    expect(signingSecretInput).toBeDefined()
+    await signingSecretInput?.setValue('signing-secret')
+
+    await clickButton(wrapper, 'Save connection')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Acme'))
+
+    expect(slackTestCount).toBe(1)
+    expect(postedBodies).toContainEqual({
+      auth_method_key: 'bot-token',
+      profile_key: 'support',
+      label: 'Support Slack',
+      fields: {
+        bot_token: 'xoxb-secret',
+        signing_secret: 'signing-secret',
+      },
+    })
+    expect(postedBodies).toContainEqual({ credential_ref: 'cred_slack' })
+    expect(wrapper.text()).not.toContain('xoxb-secret')
+    expect(wrapper.text()).not.toContain('signing-secret')
+
+    await clickButton(wrapper, 'Test')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Slack bot verified for Acme.'))
+    expect(slackTestCount).toBe(2)
+    expect(wrapper.text()).not.toContain('Loading connections...')
+  })
+
   it('does not report failed credentials as connected and keeps operator actions available', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
@@ -608,6 +754,40 @@ function telegramBotMethod() {
           placeholder: 'http://127.0.0.1:8081',
           description:
             "Leave blank for Telegram's hosted Bot API. Use only with the official self-hosted Telegram Bot API server.",
+        },
+      ],
+      config: null,
+    },
+  ]
+}
+
+function slackBotMethod() {
+  return [
+    {
+      key: 'bot-token',
+      label: 'Bot token and signing secret',
+      auth_type: 'bot-token',
+      description: '',
+      interactive: false,
+      payload_format: 'json',
+      payload_field: null,
+      fields: [
+        {
+          key: 'bot_token',
+          label: 'Bot Token',
+          type: 'secret',
+          secret: true,
+          required: true,
+          placeholder: 'xoxb-...',
+        },
+        {
+          key: 'signing_secret',
+          label: 'Signing Secret',
+          type: 'secret',
+          secret: true,
+          required: true,
+          placeholder: '',
+          description: 'Used by daemon-side Slack Events API and interaction signature verification.',
         },
       ],
       config: null,

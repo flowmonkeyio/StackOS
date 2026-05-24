@@ -67,9 +67,10 @@ setup is an interactive OAuth-style flow. The Connections UI renders this
 schema directly:
 
 - API-key providers usually have one secret `api_key` field.
-- Slack bot providers expose secret `bot_token` and `signing_secret` fields,
-  plus optional safe workspace/app metadata; communication identity and trigger
-  policy live in project resources, not credentials.
+- Slack bot providers expose only secret `bot_token` and `signing_secret`
+  setup fields. StackOS discovers safe workspace and bot identity metadata with
+  Slack `auth.test`; communication identity and trigger policy live in project
+  resources, not credentials.
 - SMTP-style systems can expose host, port, username, password, TLS, and sender
   fields in a single method, with only password/token fields encrypted.
 - OAuth providers can expose an interactive method or a daemon-side

@@ -593,6 +593,43 @@ function setConnectionMessage(credentialRef: string, tone: MessageTone, text: st
   }
 }
 
+function metadataText(metadata: Record<string, unknown> | undefined, key: string): string {
+  const value = metadata?.[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function credentialDiscoveryLabel(
+  providerKey: string,
+  metadata: Record<string, unknown> | undefined,
+): string {
+  if (providerKey === 'telegram-bot') {
+    const username = metadataText(metadata, 'username')
+    return username ? `@${username}` : metadataText(metadata, 'first_name')
+  }
+  if (providerKey === 'slack-bot') {
+    return (
+      metadataText(metadata, 'team') ||
+      metadataText(metadata, 'team_id') ||
+      metadataText(metadata, 'user') ||
+      metadataText(metadata, 'user_id') ||
+      metadataText(metadata, 'bot_id')
+    )
+  }
+  return ''
+}
+
+function credentialTestMessage(
+  providerKey: string,
+  metadata: Record<string, unknown> | undefined,
+  fallback: string,
+): string {
+  const label = credentialDiscoveryLabel(providerKey, metadata)
+  if (!label) return fallback
+  if (providerKey === 'telegram-bot') return `Telegram bot verified as ${label}.`
+  if (providerKey === 'slack-bot') return `Slack bot verified for ${label}.`
+  return fallback
+}
+
 function parseCsv(value: string): string[] {
   return value
     .split(',')
@@ -797,14 +834,16 @@ async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
     })
     let message = `Stored ${response.data.credential_ref}.`
     let tone: MessageTone = 'success'
-    if (provider.key === 'telegram-bot') {
+    if (provider.key === 'telegram-bot' || provider.key === 'slack-bot') {
       const testResponse = await catalogStore.testCredential(projectId.value, {
         credential_ref: response.data.credential_ref,
       })
-      const rawUsername = testResponse.data.metadata?.username
-      const username = typeof rawUsername === 'string' ? rawUsername : ''
       message = testResponse.data.ok
-        ? `Connected ${username ? `@${username}` : response.data.credential_ref}.`
+        ? credentialTestMessage(
+            provider.key,
+            testResponse.data.metadata,
+            `Connected ${response.data.credential_ref}.`,
+          )
         : testResponse.data.summary
       tone = testResponse.data.ok ? 'success' : 'danger'
     }
@@ -851,7 +890,13 @@ async function testConnection(connection: SchemaCredentialConnectionOut): Promis
     setConnectionMessage(
       connection.credential_ref,
       response.data.ok ? 'success' : 'danger',
-      response.data.summary,
+      response.data.ok
+        ? credentialTestMessage(
+            response.data.provider_key,
+            response.data.metadata,
+            response.data.summary,
+          )
+        : response.data.summary,
     )
   } catch (err) {
     setConnectionMessage(
