@@ -600,6 +600,169 @@ describe('ConnectionsView', () => {
     expect(wrapper.text()).not.toContain('Loading connections...')
   })
 
+  it('renders generic communication profiles, targets, and ingress route state', async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
+      if (url === '/api/v1/auth/providers') {
+        return json([authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({
+          project_id: 1,
+          provider_key: null,
+          providers: [],
+          connections: [
+            authConnection({
+              revokedAt: null,
+              providerKey: 'slack-bot',
+              credentialRef: 'cred_slack',
+              authType: 'bot-token',
+              authMethodKey: 'bot-token',
+              profileKey: 'default',
+              label: 'Revtrix',
+              account: {
+                provider_account_id: 'T123',
+                display_name: 'Revtrix',
+                metadata_json: { team: 'Revtrix', bot_id: 'B123', user_id: 'U_BOT' },
+              },
+            }),
+          ],
+        })
+      }
+      if (url === '/api/v1/operations/communicationProfile.list/call') {
+        return json({
+          items: [
+            {
+              record_id: 20,
+              project_id: 1,
+              profile_ref: 'communication-profile:revtrix-slack',
+              key: 'revtrix-slack',
+              enabled: true,
+              identity: { display_name: 'Revtrix Slack Bot' },
+              agent_guidance: {},
+              provider_facets: { 'slack-bot': { bot_user_id: 'U_BOT' } },
+              access_policy: {
+                user_mode: 'allowlist',
+                allowed_user_refs: ['slack-user:U111'],
+              },
+              trigger_policy: {},
+              response_policy: {},
+              metadata_json: {},
+            },
+          ],
+          next_cursor: null,
+          total_estimate: 1,
+        })
+      }
+      if (url === '/api/v1/operations/communicationTarget.list/call') {
+        return json({
+          items: [
+            {
+              record_id: 60,
+              project_id: 1,
+              target_ref: 'communication-target:slack-roadmap',
+              key: 'slack-roadmap',
+              display_name: 'Slack #roadmap',
+              provider_key: 'slack-bot',
+              surface_ref: 'slack-channel:C123',
+              profile_ref: 'communication-profile:revtrix-slack',
+              thread_ref: null,
+              enabled: true,
+              action_ref: 'communications.slack-bot.message.send',
+              action_input_defaults: { surface_ref: 'slack-channel:C123' },
+              send_policy: {
+                mode: 'explicit-target',
+                allowed_profile_refs: ['communication-profile:revtrix-slack'],
+                allowed_invoker_refs: ['slack-user:U111'],
+              },
+              metadata_json: {},
+            },
+          ],
+          next_cursor: null,
+          total_estimate: 1,
+        })
+      }
+      if (url === '/api/v1/operations/communicationSurface.list/call') {
+        return json({
+          items: [
+            {
+              record_id: 50,
+              project_id: 1,
+              surface_ref: 'slack-channel:C123',
+              channel_ref: 'slack-channel:C123',
+              provider_key: 'slack-bot',
+              kind: 'slack-channel',
+              display_name: 'Roadmap channel',
+              ingest_enabled: true,
+              send_enabled: true,
+              capabilities: { can_read: true, can_write: true, can_thread: true },
+              audience: 'internal',
+              intent: {
+                category: 'roadmap-planning',
+                summary: 'Internal roadmap planning and critical architecture alignment.',
+              },
+              agent_guidance: {
+                default_instructions: 'Keep sensitive customer data out of this channel.',
+              },
+              data_scope: { classification: 'internal' },
+              external_context: {},
+              metadata_json: {},
+            },
+          ],
+          next_cursor: null,
+          total_estimate: 1,
+        })
+      }
+      if (url === '/api/v1/operations/ingressEndpoint.status/call') {
+        return json({
+          configured: true,
+          ready: true,
+          endpoint: {
+            driver: 'local-tunnel',
+            status: 'running',
+            public_base_url: 'https://example.ngrok-free.app',
+          },
+          routes: [
+            {
+              provider_key: 'slack-bot',
+              profile_key: 'revtrix-slack',
+              ingress_url: 'https://example.ngrok-free.app/api/v1/ingress/slack/1/revtrix-slack',
+              remote_status: 'manual_provider_update_required',
+            },
+          ],
+          notes: [],
+        })
+      }
+      if (url === '/api/v1/operations/communicationBotProfile.list/call') {
+        return json({ items: [], next_cursor: null, total_estimate: 0 })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Revtrix Slack Bot'))
+
+    expect(wrapper.text()).toContain('Communication Setup')
+    expect(wrapper.text()).toContain('1 operators')
+    expect(wrapper.text()).toContain('Roadmap channel')
+    expect(wrapper.text()).toContain('Internal roadmap planning and critical architecture alignment.')
+    expect(wrapper.text()).toContain('internal')
+    expect(wrapper.text()).toContain('Slack #roadmap')
+    expect(wrapper.text()).toContain('slack-roadmap -> slack-channel:C123')
+    expect(wrapper.text()).toContain('ingress ready')
+    expect(wrapper.text()).toContain('manual_provider_update_required')
+  })
+
   it('does not report failed credentials as connected and keeps operator actions available', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)

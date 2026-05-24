@@ -210,6 +210,78 @@ def test_slack_ingress_records_app_mention_and_creates_agent_request_without_bea
     )
 
 
+def test_slack_ingress_dedupes_message_and_app_mention_for_same_source_message(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_slack_profile(api, project_id)
+    event = {
+        "user": "U111",
+        "channel": "C123",
+        "channel_type": "channel",
+        "text": "<@U_BOT> summarize this customer issue",
+        "ts": "1770000000.000201",
+        "event_ts": "1770000000.000201",
+    }
+    first_payload = {
+        "type": "event_callback",
+        "team_id": "T123",
+        "event_id": "EvMessage",
+        "event": {"type": "message", **event},
+    }
+    second_payload = {
+        "type": "event_callback",
+        "team_id": "T123",
+        "event_id": "EvMention",
+        "event": {"type": "app_mention", **event},
+    }
+
+    first_raw_body = json.dumps(first_payload).encode("utf-8")
+    first = _post_without_bearer(
+        api,
+        f"/api/v1/ingress/slack/{project_id}/support-agent",
+        raw_body=first_raw_body,
+        headers={**_signed_headers(first_raw_body), "Content-Type": "application/json"},
+    )
+    second_raw_body = json.dumps(second_payload).encode("utf-8")
+    second = _post_without_bearer(
+        api,
+        f"/api/v1/ingress/slack/{project_id}/support-agent",
+        raw_body=second_raw_body,
+        headers={**_signed_headers(second_raw_body), "Content-Type": "application/json"},
+    )
+
+    assert first.status_code == 200, first.text  # type: ignore[attr-defined]
+    assert second.status_code == 200, second.text  # type: ignore[attr-defined]
+    first_body = first.json()  # type: ignore[attr-defined]
+    second_body = second.json()  # type: ignore[attr-defined]
+    assert first_body["policy_status"] == "request_created"
+    assert second_body["policy_status"] == "request_deduped"
+    assert second_body["agent_request_id"] == first_body["agent_request_id"]
+
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        events = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-event",
+        )
+        messages = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-message",
+        )
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+
+    assert len(events.items) == 2
+    assert len(messages.items) == 1
+    assert len(requests.items) == 1
+    assert requests.items[0].request_key == (
+        "slack-message-trigger:support-agent:slack-message:C123:1770000000.000201"
+    )
+    assert messages.items[0].data_json["policy_status"] == "request_created"
+
+
 def test_slack_ingress_records_known_button_click_and_does_not_store_transient_secrets(
     api: TestClient,
     project_id: int,

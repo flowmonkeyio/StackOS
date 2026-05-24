@@ -98,13 +98,18 @@ Project setup uses shared StackOS operations:
 - `communicationProfile.*` stores provider-neutral identity, guidance, facets,
   and static policy.
 - `communicationSurface.*` stores safe channel/DM/mailbox/local-chat surface
-  metadata on the `communication-channel` resource.
+  metadata on the `communication-channel` resource, including audience,
+  durable intent, per-surface agent guidance, data-scope/share boundaries, and
+  safe external customer/account/ticket refs.
 - `communicationContact.*` stores safe cross-provider person, customer, team,
   bot, or organization refs.
 - `communicationMembership.*` stores provider-neutral membership, permission,
   role, and scope state.
 - `communicationTarget.*` stores and resolves named send destinations to
-  explicit provider action refs. It does not send messages.
+  explicit provider action refs. It does not send messages. Resolve with
+  `profile_ref`, `source_surface_ref`, and `invoker_ref` when available so the
+  target can enforce both project profile policy and the approved human/bot
+  actor that requested the send.
 - `communicationRoute.*` stores static cross-surface handoff policy. It does
   not send messages or choose workflow behavior.
 - `communicationContext.query` returns bounded stored communication-message
@@ -114,10 +119,27 @@ Project setup uses shared StackOS operations:
 - `communicationBotProfile.get` and `communicationBotProfile.list` let agents
   inspect profiles without receiving token material.
 - `ingressEndpoint.*` stores one project-level public ingress endpoint, derives
-  provider webhook URLs, syncs safe route metadata into profiles, and can apply
-  Telegram `setWebhook` through daemon-held credentials.
+  provider webhook URLs, and syncs safe route metadata into profiles. Applying
+  Telegram webhooks uses `communications.telegram-bot.webhook.set/delete/info`
+  through `action.run` or granted `action.execute`.
 - REST, CLI `ops call`, MCP, and the local Connections UI all use the same
   operation registry path for this setup.
+
+## Business Flow Model
+
+Agents should treat communication surfaces as business context. A surface says
+who is present, why the channel exists, what data may appear there, and which
+external customer/account/ticket refs are safe to use. A target says where a
+message can be sent. A route says what can move between the source surface and
+target. StackOS stores and validates that setup; the agent still decides the
+workflow, reads bounded context, and executes explicit provider actions.
+
+Common examples:
+
+- Customer Telegram support group -> internal Slack support target.
+- Internal Slack roadmap channel -> operator DM target.
+- Customer issue email -> internal investigation channel, with raw attachments
+  requiring approval before forwarding.
 
 ## Architecture Boundary
 
@@ -125,6 +147,13 @@ Communications is an input/output and trigger layer. Agents decide what a
 message or button click means, create run plans, select actions, and write
 replies. StackOS stores provider state, resolves credentials daemon-side,
 validates explicit payloads, executes configured calls, and records audit.
+
+The long-term architecture is one shared communication processor after
+provider-specific auth/normalization. Current Slack and Telegram ingress paths
+still contain duplicated trigger/policy/storage logic; treat that as transition
+state and avoid copying it into new providers. New channels should normalize
+events into provider-neutral refs and then reuse shared communication profile,
+target, route, context, and agent-request infrastructure.
 
 Telegram inline buttons use opaque `callback_data` only. Store the meaningful
 state in `communication-interaction` resources keyed by bot profile, provider

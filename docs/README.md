@@ -34,6 +34,9 @@ obvious without loading every document.
   auth status, scopes, diagnostics, and opaque `credential_ref` values.
 - Agents should resolve known provider targets with `toolProfile.resolve`
   before broad auth/profile discovery.
+- Communications are provider-neutral state plus explicit provider actions. Use
+  one-brain ingress, surface intent/data-scope metadata, allowlisted invokers,
+  named targets, and route policy instead of provider-specific bot decisions.
 - SEO, media buying, GTM, publishing, and utilities are plugins. Core StackOS
   remains domain-agnostic.
 

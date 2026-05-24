@@ -23,6 +23,14 @@ does not run an assistant, classify intent, or decide workflows.
   `communicationTarget.*`, `communicationRoute.*`, and
   `communicationContext.query` for generic setup and stored-context reads.
   Provider-specific actions still execute through explicit action refs.
+- Set surface intent before using a channel for real work. A
+  `communication-channel` should describe its `audience`, `intent`,
+  `agent_guidance`, `data_scope`, and safe `external_context` when it can
+  contain internal, customer, partner, vendor, public, or mixed data. Do not put
+  credentials, tokens, private headers, or raw provider secrets in those fields.
+- Treat surface intent and data scope as agent guidance, not daemon business
+  logic. The agent still decides the workflow and must use target/route policy
+  plus explicit action validation before sending or forwarding anything.
 - `communicationTarget.resolve` is not a send abstraction. It returns static
   allow/deny state plus the explicit provider action ref/defaults an agent may
   validate and execute.
@@ -110,6 +118,27 @@ does not run an assistant, classify intent, or decide workflows.
   responsible for visibility, trigger matching, user allowlists, resource
   storage, and agent-request creation. Do not add a provider-specific second
   brain for when a bot should answer.
+- Slack and Telegram still contain transitional duplicated policy/storage code.
+  When extending communications, move behavior toward a shared processor instead
+  of copying those provider-specific paths into another channel.
+
+## Adding A Communication Provider
+
+For Slack-like, Telegram-like, email, or future chat providers:
+
+1. Add typed auth setup and safe auth tests; never expose credential payloads.
+2. Add provider facets to `communication-profile` instead of a provider-specific
+   global setup path.
+3. Store channels, DMs, mailboxes, and rooms as `communicationSurface.*` records
+   with audience, intent, data scope, and safe external context.
+4. Normalize inbound provider payloads into the shared communication processor;
+   provider adapters should stop after transport verification and field mapping.
+5. Expose sends, live history reads, discovery, and membership sync as explicit
+   plugin actions with manifest entries, mocked connector tests, pagination,
+   rate-limit handling, and audit.
+6. Use named `communicationTarget.*` records for outbound destinations and
+   `communicationRoute.*` for cross-surface handoff guidance.
+7. Do not add provider-specific MCP tools or daemon-side workflow decisions.
 
 ## Current Status
 

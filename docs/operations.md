@@ -281,10 +281,22 @@ send an external reply.
 and `communicationRoute.*` are setup/read
 operations for provider-neutral communication state. They store identities,
 surfaces, contacts, memberships, named destinations, and handoff routes.
+Surfaces should carry `audience`, `intent`, `agent_guidance`, `data_scope`, and
+`external_context` when a channel/DM/mailbox can contain customer or internal
+operational context. These fields are static guidance for the operating agent:
+they do not authorize a send, choose a workflow, or fetch live provider history.
 `communicationTarget.resolve` returns an explicit provider action ref and safe
-defaults; it does not send. `communicationContext.query` returns bounded stored
-communication-message history only. Live provider history fetches must be
-explicit provider actions.
+defaults; it does not send. Pass `profile_ref`, `source_surface_ref`, and
+`invoker_ref` when the source request has them so target policy can evaluate
+the communication profile, source surface, and approved human/bot actor. Target
+`send_policy` supports `allowed_profile_refs`, `allowed_invoker_refs`,
+`allowed_source_surface_refs`, and `allowed_target_refs`; all configured
+allowlists must match. The resolver returns provider-ready defaults when it can
+derive them safely, such as Slack `surface_ref` or Telegram `chat_ref` plus
+`bot_profile_key` from a communication profile Telegram facet. The caller still
+adds the message-specific fields and validates the final explicit action.
+`communicationContext.query` returns bounded stored communication-message
+history only. Live provider history fetches must be explicit provider actions.
 
 `ingressEndpoint.*` stores the project-level public webhook endpoint for
 communications. Configure stores the generic endpoint, refresh updates it from

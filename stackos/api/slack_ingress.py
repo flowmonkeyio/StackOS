@@ -257,6 +257,16 @@ def _store_payload(
             "policy_status": decision["status"],
         }
     resources = ResourceRepository(session)
+    request_repo = AgentRequestRepository(session)
+    request_key = _agent_request_key(profile, parsed) if decision["create_request"] else None
+    existing_request = (
+        request_repo.find_by_key(project_id=project_id, request_key=request_key)
+        if request_key is not None
+        else None
+    )
+    create_request = decision["create_request"] and existing_request is None
+    policy_status = "request_deduped" if existing_request is not None else decision["status"]
+
     event = resources.upsert_record(
         project_id=project_id,
         plugin_slug="communications",
@@ -271,8 +281,10 @@ def _store_payload(
             "team_id": parsed.get("team_id"),
             "update_type": parsed["update_type"],
             "event_type": parsed.get("event_type"),
-            "policy_status": decision["status"],
-            "triggered": decision["create_request"],
+            "policy_status": policy_status,
+            "triggered": create_request,
+            "request_key": request_key,
+            "deduped_request_id": existing_request.id if existing_request is not None else None,
             "trigger_reason": decision.get("trigger_reason"),
             "matched_command": decision.get("matched_command"),
             "surface_ref": parsed.get("surface_ref"),
@@ -285,11 +297,12 @@ def _store_payload(
         provenance_json={"source": "slack-ingress"},
     ).data
     message_record_id = _store_message(
+        session,
         resources,
         project_id=project_id,
         profile=profile,
         parsed=parsed,
-        policy_status=decision["status"],
+        policy_status=policy_status,
     )
     interaction_record_id = _store_interaction(
         session,
@@ -297,7 +310,7 @@ def _store_payload(
         project_id=project_id,
         profile=profile,
         parsed=parsed,
-        policy_status=decision["status"],
+        policy_status=policy_status,
     )
     source_record_id = interaction_record_id or message_record_id or event.id
     source_resource_key = (
@@ -308,45 +321,43 @@ def _store_payload(
         else "communication-event"
     )
     request_id = None
-    if decision["create_request"]:
-        request = (
-            AgentRequestRepository(session)
-            .create(
-                project_id=project_id,
-                request_key=f"slack-event:{profile.key}:{parsed['event_key']}",
-                title=parsed["request_title"],
-                body_preview=parsed["body_preview"],
-                source_provider="slack-bot",
-                source_kind=parsed["source_kind"],
-                source_resource_key=source_resource_key,
-                source_resource_record_id=source_record_id,
-                source_message_ref=parsed.get("message_ref"),
-                metadata_json={
-                    "profile_key": profile.key,
-                    "auth_profile_key": profile.auth_profile_key,
-                    "event_record_id": event.id,
-                    "interaction_ref": parsed.get("interaction_ref"),
-                    "invoker_ref": parsed.get("user_ref"),
-                    "surface_ref": parsed.get("surface_ref"),
-                    "channel_ref": parsed.get("surface_ref"),
-                    "thread_ref": parsed.get("thread_ref"),
-                    "trigger_reason": decision.get("trigger_reason"),
-                    "matched_command": decision.get("matched_command"),
-                    "identity": profile.data.get("identity"),
-                    "agent_guidance": profile.data.get("agent_guidance"),
-                    "context_policy": profile.data.get("context_policy"),
-                    "response_policy": profile.data.get("response_policy"),
-                },
-            )
-            .data
-        )
+    if create_request and request_key is not None:
+        request = request_repo.create(
+            project_id=project_id,
+            request_key=request_key,
+            title=parsed["request_title"],
+            body_preview=parsed["body_preview"],
+            source_provider="slack-bot",
+            source_kind=parsed["source_kind"],
+            source_resource_key=source_resource_key,
+            source_resource_record_id=source_record_id,
+            source_message_ref=parsed.get("message_ref"),
+            metadata_json={
+                "profile_key": profile.key,
+                "auth_profile_key": profile.auth_profile_key,
+                "event_record_id": event.id,
+                "interaction_ref": parsed.get("interaction_ref"),
+                "invoker_ref": parsed.get("user_ref"),
+                "surface_ref": parsed.get("surface_ref"),
+                "channel_ref": parsed.get("surface_ref"),
+                "thread_ref": parsed.get("thread_ref"),
+                "trigger_reason": decision.get("trigger_reason"),
+                "matched_command": decision.get("matched_command"),
+                "identity": profile.data.get("identity"),
+                "agent_guidance": profile.data.get("agent_guidance"),
+                "context_policy": profile.data.get("context_policy"),
+                "response_policy": profile.data.get("response_policy"),
+            },
+        ).data
         request_id = request.id
+    elif existing_request is not None:
+        request_id = existing_request.id
     return {
         "ok": True,
         "profile_key": profile.key,
         "event_key": parsed["event_key"],
         "update_type": parsed["update_type"],
-        "policy_status": decision["status"],
+        "policy_status": policy_status,
         "event_record_id": event.id,
         "message_record_id": message_record_id,
         "interaction_record_id": interaction_record_id,
@@ -608,6 +619,7 @@ def _known_interaction(
 
 
 def _store_message(
+    session: Session,
     resources: ResourceRepository,
     *,
     project_id: int,
@@ -622,11 +634,20 @@ def _store_message(
     if not isinstance(channel_id, str) or not isinstance(message_ts, str):
         return None
     _upsert_channel(resources, project_id, profile=profile, parsed=parsed)
+    external_id = f"slack-message:{profile.key}:{channel_id}:{message_ts}"
+    existing = _resource_record_by_external_id(
+        session,
+        project_id=project_id,
+        resource_key="communication-message",
+        external_id=external_id,
+    )
+    if existing is not None and policy_status == "request_deduped":
+        return existing.id
     record = resources.upsert_record(
         project_id=project_id,
         plugin_slug="communications",
         resource_key="communication-message",
-        external_id=f"slack-message:{profile.key}:{channel_id}:{message_ts}",
+        external_id=external_id,
         title=parsed["request_title"],
         data_json={
             "provider_key": "slack-bot",
@@ -649,6 +670,16 @@ def _store_message(
         provenance_json={"source": "slack-ingress"},
     ).data
     return record.id
+
+
+def _agent_request_key(profile: SlackProfile, parsed: Mapping[str, Any]) -> str:
+    message_ref = parsed.get("message_ref")
+    if parsed.get("source_kind") == "slack-message" and isinstance(message_ref, str):
+        return f"slack-message-trigger:{profile.key}:{message_ref}"
+    interaction_ref = parsed.get("interaction_ref")
+    if isinstance(interaction_ref, str):
+        return f"slack-interaction:{profile.key}:{interaction_ref}"
+    return f"slack-event:{profile.key}:{parsed['event_key']}"
 
 
 def _store_interaction(

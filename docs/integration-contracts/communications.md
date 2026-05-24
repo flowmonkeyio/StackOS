@@ -130,6 +130,189 @@ Read/context operations are bounded and field-selected. Live provider history
 fetches are not part of `communicationContext.query`; they must be separate
 provider actions with scopes, pagination, rate-limit handling, and audit.
 
+## Surface Intent And Data Scope
+
+Communication surfaces are the main safety boundary for cross-platform work.
+A Slack channel, Telegram group, email mailbox, customer DM, or local chat
+thread must carry enough static context for an agent to understand where it is
+acting before it reads history, forwards content, or sends a reply.
+
+`communicationSurface.upsert` stores this provider-neutral setup on the
+`communication-channel` resource:
+
+- `audience`: `internal`, `customer`, `partner`, `vendor`, `public`, `mixed`,
+  or `unknown`. This is a context label for agents and operators, not a hidden
+  authorization engine.
+- `intent`: durable purpose for the surface, for example
+  `customer-support`, `roadmap-planning`, `customer-onboarding`, or
+  `incident-review`, with a short summary of what belongs there.
+- `agent_guidance`: per-surface instructions such as "customer-visible",
+  "internal coordination only", escalation rules, voice overrides, or topics
+  that should not be shared.
+- `data_scope`: classification and sharing guidance, for example
+  `internal`, `customer-confidential`, `public`, allowed target refs,
+  restricted topics, and whether approval is expected before moving data to
+  another surface.
+- `external_context`: safe cross-system metadata such as customer safe refs,
+  CRM account ids, support ticket ids, account owner refs, and public contact
+  email addresses. It must not contain secrets, private tokens, or raw provider
+  credentials.
+
+This metadata deliberately does not decide the workflow. It gives the operating
+agent the context needed to decide whether to use a workflow, ask for approval,
+retrieve bounded history, resolve a named target, or refuse a risky handoff.
+
+### Surface Vs Channel Terminology
+
+Use `surface_ref` as the policy and routing identifier. It is the stable ref an
+agent should pass to `communicationContext.query`, `communicationTarget.resolve`
+as `source_surface_ref`, `communicationMembership.*`, `communicationRoute.*`,
+and reusable templates.
+
+`channel_ref` is retained as the stored resource's compatibility alias and may
+match `surface_ref` for current records. New docs, tests, targets, routes, and
+agent guidance should prefer `surface_ref`. Provider-native ids such as Slack
+channel ids, Telegram chat ids, email addresses, and mailbox paths belong in
+safe refs, provenance, or provider metadata after redaction; they should not be
+the reusable workflow contract.
+
+### Data Sharing And Field Policy
+
+`data_scope` tells the agent what kind of information the surface can contain.
+`communicationRoute.field_policy` tells the agent what can move between
+surfaces when a handoff is configured. Both are static guidance and both should
+be conservative for customer or mixed-audience surfaces.
+
+Recommended `field_policy` keys:
+
+- `allowed_fields`: fields safe to move automatically, for example
+  `body_preview`, `summary`, `message_ref`, `sender_ref`, or `ticket_ref`.
+- `redact_fields`: fields that must not be copied to the target, for example
+  raw bodies, artifacts, attachments, secrets, pricing, or unrelated customer
+  identifiers.
+- `requires_approval_fields`: fields that require approval before sharing,
+  often `raw_body_artifact_ref`, generated files, attachments, and internal
+  notes.
+- `customer_visible_summary`: whether the route expects a rewritten
+  customer-safe summary instead of a direct quote or transcript.
+- `approval_reason`: short human-readable reason shown to the agent/operator.
+
+Example:
+
+```json
+{
+  "route_ref": "communication-route:customer-acme-to-internal-support",
+  "source_surface_refs": ["telegram-chat:-100123"],
+  "target_refs": ["communication-target:internal-support"],
+  "field_policy": {
+    "allowed_fields": ["message_ref", "sender_ref", "body_preview", "ticket_ref"],
+    "redact_fields": ["raw_body_artifact_ref", "attachments", "other_customer_refs"],
+    "requires_approval_fields": ["generated_report_artifact_ref"],
+    "customer_visible_summary": false
+  }
+}
+```
+
+### Audience-Aware Routing Examples
+
+- Customer Telegram group -> internal Slack support: the customer surface has
+  `audience: customer`, customer safe refs, and customer-confidential
+  `data_scope`. The internal Slack target is resolved by name. The agent sends a
+  summary or allowed fields internally, not a raw transcript unless the route
+  permits it.
+- Internal Slack -> customer email: the source surface is internal, the target
+  is a customer-visible email or customer chat target, and the route should
+  require a customer-safe summary plus approval for attachments or raw evidence.
+- Internal roadmap channel -> operator DM: both surfaces are internal, but
+  `allowed_invoker_refs` still determines who can ask the bot to send the DM.
+- Mixed channel -> any customer target: treat as high risk. Use route policy,
+  field redaction, and approval before moving details out of the mixed surface.
+
+### Origin, Invoker, And Response Binding
+
+Provider visibility is not authority to answer. Store these refs when an
+inbound event creates work:
+
+- `source_surface_ref`: where the request came from.
+- `invoker_ref`: who asked, for example `slack-user:U111` or
+  `telegram-user:7151482796`.
+- `source_agent_request_id`: the request that caused an outbound reply or
+  callback acknowledgement.
+- `thread_ref` and provider message refs when same-thread replies are expected.
+
+Same-origin replies should use the source surface/thread defaults from the
+stored request. Cross-surface replies or proactive sends should resolve a named
+target and pass `profile_ref`, `source_surface_ref`, and `invoker_ref` to
+`communicationTarget.resolve`. A target may allow broad reachable destinations,
+but it must never bypass the invoker allowlist or route/data-scope guidance.
+
+### Named Target Resolution Flow
+
+Targets are project vocabulary for destinations an agent can safely reason
+about. Use names such as `internal-support`, `customer-acme-support`,
+`ops-alerts`, `roadmap`, or `operator-dm` instead of raw provider ids in
+workflow guidance.
+
+The send flow is always explicit:
+
+1. Resolve the named target with `communicationTarget.resolve`.
+2. Inspect `allowed`, `denial_reason`, `surface_ref`, `thread_ref`, policy, and
+   defaults.
+3. Check source surface intent/data-scope and any route field policy.
+4. Add message-specific fields to the returned `action_ref` defaults and
+   validate the final payload through `action.validate`.
+5. Execute the explicit provider action with `action.run` or granted
+   `action.execute`.
+
+Example surfaces:
+
+```json
+{
+  "surface_ref": "slack-channel:C0B5W8YPAKT",
+  "provider_key": "slack-bot",
+  "kind": "slack-channel",
+  "display_name": "roadmap",
+  "audience": "internal",
+  "intent": {
+    "category": "roadmap-planning",
+    "summary": "Internal roadmap and architecture coordination."
+  },
+  "data_scope": {
+    "classification": "internal",
+    "restricted_topics": ["secrets", "raw customer exports"]
+  }
+}
+```
+
+```json
+{
+  "surface_ref": "telegram-chat:-100123",
+  "provider_key": "telegram-bot",
+  "kind": "telegram-supergroup",
+  "display_name": "Acme support",
+  "audience": "customer",
+  "intent": {
+    "category": "customer-support",
+    "summary": "Customer-facing support group for Acme."
+  },
+  "agent_guidance": {
+    "default_instructions": "Assume replies are customer-visible.",
+    "restricted_topics": ["other customers", "internal financials"]
+  },
+  "data_scope": {
+    "classification": "customer-confidential",
+    "requires_approval_for_targets": ["communication-target:public-announcement"]
+  },
+  "external_context": {
+    "customer": {
+      "safe_ref": "customer:acme",
+      "crm_account_id": "crm-account-123",
+      "primary_email": "ops@acme.example"
+    }
+  }
+}
+```
+
 ## One-Brain Ingress Model
 
 Telegram, Slack, email, local chat, and future communication plugins must share
@@ -152,6 +335,44 @@ or DMs the bot, an agent request may be created; if any other user does the same
 the event is ignored for activation. Once an allowlisted user asks for an
 outbound message, the target may be any reachable channel unless the project
 adds an explicit send/handoff restriction.
+
+### One-Brain Architecture Audit
+
+Current status: the product direction is clear, but the implementation is only
+partly converged. Slack, Telegram, local chat, SMTP, and IMAP already write
+provider-neutral communication resources and agent requests, but several
+providers still own logic that should move into one shared communication
+processor before more channels are added.
+
+Current deviations to remove:
+
+- Slack and Telegram ingress both verify transport and then independently apply
+  surface, user, trigger, interaction, storage, dedupe, and agent-request logic.
+- Telegram still has `communicationBotProfile.*` as a separate profile/policy
+  model, while Slack uses generic `communication-profile` records.
+- Slack, Telegram, SMTP, and IMAP connectors write communication resources
+  directly instead of returning normalized outbound effects for shared recording.
+- Provider route derivation in `ingressEndpoint.*` is hard-coded for Slack and
+  Telegram instead of being driven by provider/plugin manifest metadata.
+- Local agent chat can create requests directly instead of feeding the same
+  normalized inbound-event path.
+- The UI now surfaces generic profiles, targets, and ingress state, but the
+  editable setup flow is still deepest for Telegram profiles.
+
+Required direction:
+
+1. Add a shared `communications` processor that accepts normalized inbound
+   events and owns policy evaluation, resource writes, dedupe, and agent-request
+   creation.
+2. Refactor provider ingress modules to stop after auth/signature verification
+   and normalization.
+3. Collapse Telegram bot policy into provider-neutral communication profiles;
+   keep Telegram transport details in provider facets.
+4. Make connectors return normalized outbound communication effects and record
+   them after the action call through shared lifecycle/audit code.
+5. Move ingress route capabilities into provider manifests so adding Slack,
+   Telegram, email, WhatsApp, Discord, or future channels does not require core
+   route code for each provider.
 
 ## Product Boundary
 
@@ -499,6 +720,22 @@ Targets do not send messages. Agents resolve a target, inspect `allowed`, then
 call `action.validate` and `action.run` or `action.execute` with the returned
 provider action ref.
 
+`communicationTarget.resolve` returns provider-ready `action_input_defaults`
+where StackOS can derive them safely. Slack targets include `surface_ref`,
+optional `profile_ref`, and optional `thread_ref`. Telegram targets include
+`chat_ref`, optional `thread_ref`, and `bot_profile_key` when it is explicitly
+stored or resolvable from a `communication-profile` Telegram facet. Agents must
+still add the message body/media/callback payload and validate the final action
+input before execution.
+
+`send_policy` may scope target use by `allowed_profile_refs`,
+`allowed_invoker_refs`, `allowed_source_surface_refs`, and
+`allowed_target_refs`. All supplied allowlists are enforced together. Use
+`invoker_ref` on `communicationTarget.resolve` when the source request has a
+human/bot actor, for example `telegram-user:7151482796` or `slack-user:U111`.
+This keeps the important restriction on who is allowed to ask, while still
+letting an approved user route messages to any explicitly configured target.
+
 ### `communication-route`
 
 Represents a static cross-surface policy. Example: Telegram customer issue group
@@ -552,7 +789,14 @@ Example fields:
 - `safe_external_ref`
 - `send_enabled`
 - `ingest_enabled`
-- `metadata`
+- `audience`: `internal`, `customer`, `partner`, `vendor`, `public`, `mixed`,
+  or `unknown`
+- `intent`: purpose/category/summary that tells agents what belongs on the
+  surface
+- `agent_guidance`: per-surface instructions and share boundaries
+- `data_scope`: classification, restricted topics, and handoff/share guidance
+- `external_context`: safe CRM/customer/account/ticket/contact refs
+- `metadata_json`
 
 Provider object ids may be stored in provenance or safe refs after redaction,
 but reusable templates should refer to `channel_ref`, not raw Telegram chat ids
@@ -825,10 +1069,14 @@ available through MCP, REST, and CLI:
   identity and policy setup.
 - `communicationSurface.upsert/list`: safe surface metadata, stored on the
   `communication-channel` resource for current repo alignment.
+- `communicationContact.upsert/list`: safe cross-provider person, customer,
+  team, bot, or organization refs.
 - `communicationMembership.upsert/list`: membership, role, permission, and
   scope state for profiles/contacts/bots inside surfaces.
 - `communicationTarget.upsert/list/resolve`: named destination aliases that
   resolve to one explicit provider action ref plus safe defaults.
+- `communicationRoute.upsert/list`: static handoff policy between source
+  surfaces and named targets, including field/data-sharing guidance.
 - `communicationContext.query`: bounded stored-history lookup for agents.
 
 These operations do not execute provider APIs. `communicationTarget.resolve`
@@ -1605,6 +1853,9 @@ Keep UI generic and object-driven:
 
 - Plugin catalog shows `communications` with provider setup status.
 - Connections page renders typed Telegram, Slack, SMTP, and IMAP auth methods.
+- Connections page renders generic communication profiles, surfaces, named
+  targets, and ingress readiness so operators can inspect whether agents have
+  the right identity, intent, audience, and destination setup.
 - Resources browser renders communication channels, threads, messages, events,
   interactions, and cursors by schema.
 - A generic Agent Requests view can list claimable work across providers.
@@ -1614,6 +1865,29 @@ Keep UI generic and object-driven:
 Do not build bespoke workflow screens such as "Telegram Command Runner" or
 "Email Assistant" in the first pass. If a specialized operator screen is needed
 later, it must still render the same resources and queue records.
+
+## Refactor Watchlist
+
+Communications moved quickly and several files are now intentionally flagged
+for the next cleanup slice before adding more providers:
+
+- `stackos/operations/communication_platform.py`: split operation groups into
+  profile, surface, contact, membership, target, route, context, and ingress
+  modules once the shared communication processor lands.
+- `ui/src/views/ConnectionsView.vue`: extract reusable panels for connected
+  services, communication setup, Telegram bot profiles, and add-connection
+  forms. The page should keep composing generic setup state, not accumulate
+  provider-specific flows.
+- `docs/integration-contracts/communications.md`: keep as the canonical
+  contract, but move provider-specific method checklists into smaller linked
+  contract files if Slack, Telegram, email, or another channel grows further.
+- `stackos/api/slack_ingress.py` and `stackos/api/telegram_ingress.py`: move
+  duplicated policy/storage/request creation into the shared one-brain
+  processor; provider adapters should only verify and normalize.
+- `stackos/actions/slack_bot.py` and `stackos/actions/telegram_bot.py`: keep
+  provider calls in provider files, but return normalized outbound effects for
+  shared communication recording instead of each connector growing its own
+  resource lifecycle.
 
 ## Security And Privacy
 

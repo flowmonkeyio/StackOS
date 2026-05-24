@@ -104,6 +104,116 @@ interface TelegramBotProfileListOut {
   total_estimate: number | null
 }
 
+interface CommunicationProfile {
+  record_id: number
+  project_id: number
+  profile_ref: string
+  key: string
+  enabled: boolean
+  identity: {
+    display_name?: string
+    purpose?: string
+    voice?: string
+  }
+  agent_guidance: Record<string, unknown>
+  provider_facets: Record<string, Record<string, unknown>>
+  access_policy: {
+    allowed_user_refs?: string[]
+    denied_user_refs?: string[]
+    user_mode?: string
+    dm_mode?: string
+    channel_mode?: string
+    group_mode?: string
+  }
+  trigger_policy: Record<string, unknown>
+  response_policy: Record<string, unknown>
+  metadata_json: Record<string, unknown>
+}
+
+interface CommunicationProfileListOut {
+  items: CommunicationProfile[]
+  next_cursor: string | number | null
+  total_estimate: number | null
+}
+
+interface CommunicationTarget {
+  record_id: number
+  project_id: number
+  target_ref: string
+  key: string
+  display_name: string | null
+  provider_key: string
+  surface_ref: string
+  profile_ref: string | null
+  thread_ref: string | null
+  enabled: boolean
+  action_ref: string | null
+  action_input_defaults: Record<string, unknown>
+  send_policy: {
+    mode?: string
+    allowed_profile_refs?: string[]
+    allowed_invoker_refs?: string[]
+    allowed_source_surface_refs?: string[]
+    allowed_target_refs?: string[]
+    requires_approval?: boolean
+  }
+  metadata_json: Record<string, unknown>
+}
+
+interface CommunicationTargetListOut {
+  items: CommunicationTarget[]
+  next_cursor: string | number | null
+  total_estimate: number | null
+}
+
+interface CommunicationSurface {
+  record_id: number
+  project_id: number
+  surface_ref: string
+  channel_ref: string
+  provider_key: string
+  kind: string
+  display_name: string | null
+  ingest_enabled: boolean
+  send_enabled: boolean
+  capabilities: Record<string, unknown>
+  audience: string
+  intent: Record<string, unknown>
+  agent_guidance: Record<string, unknown>
+  data_scope: Record<string, unknown>
+  external_context: Record<string, unknown>
+  metadata_json: Record<string, unknown>
+}
+
+interface CommunicationSurfaceListOut {
+  items: CommunicationSurface[]
+  next_cursor: string | number | null
+  total_estimate: number | null
+}
+
+interface IngressEndpointRoute {
+  provider_key: string
+  profile_key: string
+  profile_ref?: string
+  ingress_url?: string
+  local_url?: string
+  remote_status?: string
+  notes?: string[]
+}
+
+interface IngressEndpointStatusOut {
+  configured?: boolean
+  ready?: boolean
+  endpoint?: {
+    driver?: string
+    status?: string
+    public_base_url?: string | null
+    local_base_url?: string | null
+  } | null
+  routes?: IngressEndpointRoute[]
+  notes?: string[]
+}
+
 const AUTH_TYPE_LABELS: Record<string, string> = {
   'api-key': 'API key',
   'application-password': 'Application password',
@@ -146,6 +256,12 @@ const botProfiles = ref<TelegramBotProfile[]>([])
 const botProfilesLoading = ref(false)
 const botProfilePanelOpen = ref(false)
 const botProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
+const communicationProfiles = ref<CommunicationProfile[]>([])
+const communicationTargets = ref<CommunicationTarget[]>([])
+const communicationSurfaces = ref<CommunicationSurface[]>([])
+const ingressStatus = ref<IngressEndpointStatusOut | null>(null)
+const communicationSetupLoading = ref(false)
+const communicationSetupMessage = ref<{ tone: MessageTone; text: string } | null>(null)
 const botProfileForm = ref({
   key: 'support-bot',
   auth_profile_key: '',
@@ -263,8 +379,45 @@ async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
   await catalogStore.refresh(projectId.value)
   await catalogStore.refreshAuth(projectId.value)
+  await loadCommunicationSetup()
   await loadBotProfiles()
   syncProviderSelectionFromQuery()
+}
+
+async function loadCommunicationSetup(): Promise<void> {
+  if (!projectId.value || Number.isNaN(projectId.value)) return
+  communicationSetupLoading.value = true
+  try {
+    const [profiles, targets, surfaces, ingress] = await Promise.all([
+      callOperation<CommunicationProfileListOut>('communicationProfile.list', {
+        project_id: projectId.value,
+        limit: 50,
+      }),
+      callOperation<CommunicationTargetListOut>('communicationTarget.list', {
+        project_id: projectId.value,
+        limit: 50,
+      }),
+      callOperation<CommunicationSurfaceListOut>('communicationSurface.list', {
+        project_id: projectId.value,
+        limit: 50,
+      }),
+      callOperation<IngressEndpointStatusOut>('ingressEndpoint.status', {
+        project_id: projectId.value,
+      }),
+    ])
+    communicationProfiles.value = profiles.items ?? []
+    communicationTargets.value = targets.items ?? []
+    communicationSurfaces.value = surfaces.items ?? []
+    ingressStatus.value = ingress ?? null
+    communicationSetupMessage.value = null
+  } catch (err) {
+    communicationSetupMessage.value = {
+      tone: 'danger',
+      text: formatApiError(err, 'failed to load communication setup'),
+    }
+  } finally {
+    communicationSetupLoading.value = false
+  }
 }
 
 async function loadBotProfiles(): Promise<void> {
@@ -508,6 +661,70 @@ function serviceStatusLabel(group: ServiceGroup): string {
   if (connected > 0) return `${connected} connected`
   const first = group.connections[0]
   return first ? first.status : 'not connected'
+}
+
+function communicationProfileTitle(profile: CommunicationProfile): string {
+  return profile.identity.display_name || profile.key
+}
+
+function profileProviderKeys(profile: CommunicationProfile): string[] {
+  return Object.keys(profile.provider_facets ?? {}).sort()
+}
+
+function allowedOperatorRefs(profile: CommunicationProfile): string[] {
+  return profile.access_policy.allowed_user_refs ?? []
+}
+
+function targetTitle(target: CommunicationTarget): string {
+  return target.display_name || target.key
+}
+
+function targetPolicySummary(target: CommunicationTarget): string {
+  const policy = target.send_policy ?? {}
+  const parts = [
+    ...(policy.allowed_profile_refs ?? []),
+    ...(policy.allowed_invoker_refs ?? []),
+    ...(policy.allowed_source_surface_refs ?? []),
+    ...(policy.allowed_target_refs ?? []),
+  ]
+  if (policy.mode === 'deny') return 'disabled'
+  if (policy.requires_approval) return 'approval required'
+  return parts.length > 0 ? `${parts.length} guard${parts.length === 1 ? '' : 's'}` : 'unscoped'
+}
+
+function surfaceTitle(surface: CommunicationSurface): string {
+  return surface.display_name || surface.surface_ref
+}
+
+function surfaceIntentSummary(surface: CommunicationSurface): string {
+  const summary = surface.intent.summary
+  const category = surface.intent.category
+  if (typeof summary === 'string' && summary.trim()) return summary
+  if (typeof category === 'string' && category.trim()) return category
+  return 'No intent configured'
+}
+
+function surfaceDataScope(surface: CommunicationSurface): string {
+  const classification = surface.data_scope.classification
+  return typeof classification === 'string' && classification.trim()
+    ? classification
+    : 'scope unset'
+}
+
+function surfaceAudienceTone(surface: CommunicationSurface): BadgeTone {
+  if (surface.audience === 'internal') return 'success'
+  if (surface.audience === 'customer' || surface.audience === 'public') return 'warning'
+  if (surface.audience === 'mixed') return 'danger'
+  return 'neutral'
+}
+
+function routeStatusTone(route: IngressEndpointRoute): BadgeTone {
+  if (route.remote_status === 'remote_webhook_updated' || route.remote_status === 'ready') {
+    return 'success'
+  }
+  if (route.remote_status === 'manual_provider_update_required') return 'warning'
+  if (route.remote_status?.includes('failed')) return 'danger'
+  return 'neutral'
 }
 
 function connectionCountLabel(group: ServiceGroup): string {
@@ -1172,6 +1389,205 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
           </div>
         </li>
       </ul>
+    </UiPanel>
+
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Communication Setup"
+        description="Provider-neutral profiles, named destinations, and public ingress routes used by agents."
+      >
+        <template #actions>
+          <div class="flex flex-wrap items-center gap-2">
+            <UiBadge>{{ communicationProfiles.length }} profiles</UiBadge>
+            <UiBadge>{{ communicationSurfaces.length }} surfaces</UiBadge>
+            <UiBadge>{{ communicationTargets.length }} targets</UiBadge>
+            <UiBadge :tone="ingressStatus?.ready ? 'success' : 'warning'">
+              {{ ingressStatus?.ready ? 'ingress ready' : 'ingress pending' }}
+            </UiBadge>
+            <UiButton
+              size="sm"
+              variant="secondary"
+              icon-left="rotate-ccw"
+              :loading="communicationSetupLoading"
+              @click="loadCommunicationSetup"
+            >
+              Refresh
+            </UiButton>
+          </div>
+        </template>
+      </UiSectionHeader>
+
+      <UiCallout v-if="communicationSetupMessage" :tone="communicationSetupMessage.tone">
+        {{ communicationSetupMessage.text }}
+      </UiCallout>
+
+      <div
+        v-if="communicationSetupLoading"
+        class="rounded-md border border-subtle bg-bg-surface p-4 text-sm text-fg-muted"
+      >
+        Loading communication setup...
+      </div>
+
+      <div v-else class="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+        <section class="min-w-0">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-fg-strong">Profiles</h3>
+            <UiBadge>{{ communicationProfiles.length }}</UiBadge>
+          </div>
+          <div
+            v-if="communicationProfiles.length === 0"
+            class="rounded-md border border-dashed border-default p-4 text-sm text-fg-muted"
+          >
+            No communication profiles configured.
+          </div>
+          <ul v-else class="grid gap-2">
+            <li
+              v-for="profile in communicationProfiles"
+              :key="profile.profile_ref"
+              class="rounded-md border border-subtle bg-bg-surface-alt p-3"
+            >
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <h4 class="truncate text-sm font-semibold text-fg-strong">
+                  {{ communicationProfileTitle(profile) }}
+                </h4>
+                <UiBadge :tone="profile.enabled ? 'success' : 'warning'">
+                  {{ profile.enabled ? 'enabled' : 'disabled' }}
+                </UiBadge>
+              </div>
+              <p class="mt-1 truncate font-mono text-xs text-fg-muted">
+                {{ profile.profile_ref }}
+              </p>
+              <div class="mt-2 flex flex-wrap gap-1">
+                <UiBadge
+                  v-for="providerKey in profileProviderKeys(profile)"
+                  :key="providerKey"
+                  tone="accent"
+                >
+                  {{ providerKey }}
+                </UiBadge>
+                <UiBadge>
+                  {{ allowedOperatorRefs(profile).length }} operators
+                </UiBadge>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <section class="min-w-0">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-fg-strong">Surfaces</h3>
+            <UiBadge>{{ communicationSurfaces.length }}</UiBadge>
+          </div>
+          <div
+            v-if="communicationSurfaces.length === 0"
+            class="rounded-md border border-dashed border-default p-4 text-sm text-fg-muted"
+          >
+            No communication surfaces configured.
+          </div>
+          <ul v-else class="grid gap-2">
+            <li
+              v-for="surface in communicationSurfaces"
+              :key="surface.surface_ref"
+              class="rounded-md border border-subtle bg-bg-surface-alt p-3"
+            >
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <h4 class="truncate text-sm font-semibold text-fg-strong">
+                  {{ surfaceTitle(surface) }}
+                </h4>
+                <UiBadge :tone="surfaceAudienceTone(surface)">
+                  {{ surface.audience || 'unknown' }}
+                </UiBadge>
+                <UiBadge>{{ surfaceDataScope(surface) }}</UiBadge>
+              </div>
+              <p class="mt-1 truncate font-mono text-xs text-fg-muted">
+                {{ surface.surface_ref }}
+              </p>
+              <p class="mt-1 line-clamp-2 text-xs text-fg-muted">
+                {{ surfaceIntentSummary(surface) }}
+              </p>
+              <div class="mt-2 flex flex-wrap gap-1">
+                <UiBadge tone="accent">{{ surface.provider_key }}</UiBadge>
+                <UiBadge>{{ surface.kind }}</UiBadge>
+                <UiBadge :tone="surface.send_enabled ? 'success' : 'warning'">
+                  {{ surface.send_enabled ? 'send enabled' : 'send disabled' }}
+                </UiBadge>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <section class="min-w-0">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-fg-strong">Named Targets</h3>
+            <UiBadge>{{ communicationTargets.length }}</UiBadge>
+          </div>
+          <div
+            v-if="communicationTargets.length === 0"
+            class="rounded-md border border-dashed border-default p-4 text-sm text-fg-muted"
+          >
+            No named targets configured.
+          </div>
+          <ul v-else class="grid gap-2">
+            <li
+              v-for="target in communicationTargets"
+              :key="target.target_ref"
+              class="rounded-md border border-subtle bg-bg-surface-alt p-3"
+            >
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <h4 class="truncate text-sm font-semibold text-fg-strong">
+                  {{ targetTitle(target) }}
+                </h4>
+                <UiBadge :tone="target.enabled ? 'success' : 'warning'">
+                  {{ target.enabled ? 'enabled' : 'disabled' }}
+                </UiBadge>
+                <UiBadge>{{ targetPolicySummary(target) }}</UiBadge>
+              </div>
+              <p class="mt-1 truncate font-mono text-xs text-fg-muted">
+                {{ target.key }} -> {{ target.surface_ref }}
+              </p>
+              <p class="mt-1 truncate text-xs text-fg-muted">
+                {{ target.action_ref || 'no action ref' }}
+              </p>
+            </li>
+          </ul>
+        </section>
+
+        <section class="min-w-0">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-fg-strong">Ingress Routes</h3>
+            <UiBadge>{{ ingressStatus?.routes?.length ?? 0 }}</UiBadge>
+          </div>
+          <div class="rounded-md border border-subtle bg-bg-surface-alt p-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <UiBadge :tone="ingressStatus?.ready ? 'success' : 'warning'">
+                {{ ingressStatus?.endpoint?.status ?? 'not configured' }}
+              </UiBadge>
+              <UiBadge>{{ ingressStatus?.endpoint?.driver ?? 'no driver' }}</UiBadge>
+            </div>
+            <p class="mt-2 truncate font-mono text-xs text-fg-muted">
+              {{ ingressStatus?.endpoint?.public_base_url ?? 'No public URL configured' }}
+            </p>
+          </div>
+          <ul v-if="ingressStatus?.routes?.length" class="mt-2 grid gap-2">
+            <li
+              v-for="route in ingressStatus.routes"
+              :key="`${route.provider_key}:${route.profile_key}`"
+              class="rounded-md border border-subtle bg-bg-surface-alt p-3"
+            >
+              <div class="flex flex-wrap items-center gap-2">
+                <h4 class="text-sm font-semibold text-fg-strong">{{ route.profile_key }}</h4>
+                <UiBadge tone="accent">{{ route.provider_key }}</UiBadge>
+                <UiBadge :tone="routeStatusTone(route)">
+                  {{ route.remote_status ?? 'local' }}
+                </UiBadge>
+              </div>
+              <p class="mt-1 truncate font-mono text-xs text-fg-muted">
+                {{ route.ingress_url ?? route.local_url ?? '-' }}
+              </p>
+            </li>
+          </ul>
+        </section>
+      </div>
     </UiPanel>
 
     <UiPanel class="p-4">

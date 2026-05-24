@@ -320,6 +320,28 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "kind": "slack-channel",
             "display_name": "internal-support",
             "capabilities": {"can_read": True, "can_write": True, "can_thread": True},
+            "audience": "internal",
+            "intent": {
+                "category": "support-operations",
+                "summary": "Internal operators coordinate customer support issues here.",
+            },
+            "agent_guidance": {
+                "default_instructions": (
+                    "Internal coordination surface; do not quote it to customers."
+                ),
+            },
+            "data_scope": {
+                "classification": "internal",
+                "allowed_share_refs": ["communication-target:internal-support"],
+                "restricted_topics": ["secrets"],
+            },
+            "external_context": {
+                "customer": {
+                    "safe_ref": "customer:acme",
+                    "crm_account_id": "crm-account-123",
+                    "primary_email": "ops@acme.example",
+                }
+            },
         },
     )
     contact = mcp_client.call_tool_structured(
@@ -361,6 +383,8 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
                 "mode": "explicit-target",
                 "allowed_profile_refs": ["communication-profile:support"],
                 "allowed_source_surface_refs": ["telegram-chat:-1001"],
+                "allowed_invoker_refs": ["telegram-user:555"],
+                "allowed_target_refs": ["communication-target:internal-support"],
             },
         },
     )
@@ -378,6 +402,10 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
 
     assert profile["data"]["profile_ref"] == "communication-profile:support"
     assert surface["data"]["surface_ref"] == "slack-channel:C123"
+    assert surface["data"]["audience"] == "internal"
+    assert surface["data"]["intent"]["category"] == "support-operations"
+    assert surface["data"]["data_scope"]["classification"] == "internal"
+    assert surface["data"]["external_context"]["customer"]["safe_ref"] == "customer:acme"
     assert contact["data"]["provider_refs"]["telegram"] == ["telegram-chat:-1001"]
     assert membership["data"]["permissions"]["can_write"] is True
     assert target["data"]["action_ref"] == "communications.slack-bot.message.send"
@@ -390,6 +418,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "key": "internal-support",
             "profile_ref": "communication-profile:support",
             "source_surface_ref": "telegram-chat:-1001",
+            "invoker_ref": "telegram-user:555",
         },
     )
     denied = mcp_client.call_tool_structured(
@@ -399,14 +428,59 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "key": "internal-support",
             "profile_ref": "communication-profile:analytics",
             "source_surface_ref": "telegram-chat:-1001",
+            "invoker_ref": "telegram-user:555",
+        },
+    )
+    denied_invoker = mcp_client.call_tool_structured(
+        "communicationTarget.resolve",
+        {
+            "project_id": project_id,
+            "key": "internal-support",
+            "profile_ref": "communication-profile:support",
+            "source_surface_ref": "telegram-chat:-1001",
+            "invoker_ref": "telegram-user:999",
         },
     )
 
     assert allowed["allowed"] is True
     assert allowed["action_ref"] == "communications.slack-bot.message.send"
     assert allowed["surface_ref"] == "slack-channel:C123"
+    assert allowed["action_input_defaults"]["surface_ref"] == "slack-channel:C123"
     assert denied["allowed"] is False
     assert denied["denial_reason"] == "profile_not_allowed"
+    assert denied_invoker["allowed"] is False
+    assert denied_invoker["denial_reason"] == "invoker_not_allowed"
+
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "customer-telegram",
+            "provider_key": "telegram-bot",
+            "surface_ref": "telegram-chat:-1001",
+            "profile_ref": "communication-profile:support",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:support"],
+                "allowed_invoker_refs": ["telegram-user:555"],
+                "allowed_target_refs": ["communication-target:customer-telegram"],
+            },
+        },
+    )
+    telegram_allowed = mcp_client.call_tool_structured(
+        "communicationTarget.resolve",
+        {
+            "project_id": project_id,
+            "key": "customer-telegram",
+            "profile_ref": "communication-profile:support",
+            "source_surface_ref": "slack-channel:C123",
+            "invoker_ref": "telegram-user:555",
+        },
+    )
+    assert telegram_allowed["allowed"] is True
+    assert telegram_allowed["action_ref"] == "communications.telegram-bot.message.send"
+    assert telegram_allowed["action_input_defaults"]["chat_ref"] == "telegram-chat:-1001"
+    assert telegram_allowed["action_input_defaults"]["bot_profile_key"] == "support-bot"
 
     default_denied = mcp_client.call_tool_structured(
         "communicationTarget.upsert",
@@ -428,6 +502,33 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
     )
     assert default_denied_resolution["allowed"] is False
     assert default_denied_resolution["denial_reason"] == "send_policy_disabled"
+
+    wrong_target_allowlist = mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "wrong-target-allowlist",
+            "provider_key": "slack-bot",
+            "surface_ref": "slack-channel:C999",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_target_refs": ["communication-target:other"],
+            },
+        },
+    )
+    assert wrong_target_allowlist["data"]["send_policy"]["allowed_target_refs"] == [
+        "communication-target:other"
+    ]
+    wrong_target_resolution = mcp_client.call_tool_structured(
+        "communicationTarget.resolve",
+        {
+            "project_id": project_id,
+            "key": "wrong-target-allowlist",
+            "profile_ref": "communication-profile:support",
+        },
+    )
+    assert wrong_target_resolution["allowed"] is False
+    assert wrong_target_resolution["denial_reason"] == "target_not_allowed"
 
     engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:

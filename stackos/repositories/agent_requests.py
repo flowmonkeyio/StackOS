@@ -164,6 +164,19 @@ class AgentRequestRepository:
         self._s.refresh(row)
         return Envelope(data=self._out(row), project_id=project_id)
 
+    def find_by_key(self, *, project_id: int, request_key: str) -> AgentRequestOut | None:
+        """Return one request by stable provider key without changing lifecycle state."""
+        self._require_project(project_id)
+        if not request_key.strip():
+            raise ValidationError("request_key is required")
+        row = self._s.exec(
+            select(AgentRequest).where(
+                AgentRequest.project_id == project_id,
+                AgentRequest.request_key == request_key,
+            )
+        ).first()
+        return self._out(row) if row is not None else None
+
     def get(self, *, project_id: int, request_id: int) -> AgentRequestOut:
         return self._out(self._fetch(project_id=project_id, request_id=request_id))
 

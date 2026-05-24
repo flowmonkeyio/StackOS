@@ -249,6 +249,30 @@ class CommunicationSurfaceUpsertInput(MCPInput):
                 "kind": "slack-channel",
                 "display_name": "customer-issue-war-room",
                 "capabilities": {"can_read": True, "can_write": True, "can_thread": True},
+                "audience": "customer",
+                "intent": {
+                    "category": "customer-support",
+                    "summary": "Customer-facing issue room for Acme billing escalations.",
+                },
+                "agent_guidance": {
+                    "default_instructions": (
+                        "Treat replies as customer-visible unless the target is explicitly "
+                        "internal."
+                    ),
+                    "restricted_topics": ["other customers", "secrets", "internal financials"],
+                },
+                "data_scope": {
+                    "classification": "customer-confidential",
+                    "allowed_share_refs": ["communication-target:internal-support"],
+                    "requires_customer_context": True,
+                },
+                "external_context": {
+                    "customer": {
+                        "safe_ref": "customer:acme",
+                        "crm_account_id": "crm-account-123",
+                        "primary_email": "ops@acme.example",
+                    }
+                },
             }
         },
     )
@@ -263,6 +287,13 @@ class CommunicationSurfaceUpsertInput(MCPInput):
     ingest_enabled: bool = True
     send_enabled: bool = True
     capabilities: dict[str, Any] = Field(default_factory=dict)
+    audience: Literal["internal", "customer", "partner", "vendor", "public", "mixed", "unknown"] = (
+        "unknown"
+    )
+    intent: dict[str, Any] = Field(default_factory=dict)
+    agent_guidance: dict[str, Any] = Field(default_factory=dict)
+    data_scope: dict[str, Any] = Field(default_factory=dict)
+    external_context: dict[str, Any] = Field(default_factory=dict)
     metadata_json: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -291,6 +322,11 @@ class CommunicationSurfaceOut(BaseModel):
     ingest_enabled: bool
     send_enabled: bool
     capabilities: dict[str, Any]
+    audience: str
+    intent: dict[str, Any]
+    agent_guidance: dict[str, Any]
+    data_scope: dict[str, Any]
+    external_context: dict[str, Any]
     metadata_json: dict[str, Any]
 
 
@@ -418,6 +454,7 @@ class CommunicationTargetUpsertInput(MCPInput):
                 "send_policy": {
                     "mode": "explicit-target",
                     "allowed_profile_refs": ["communication-profile:support"],
+                    "allowed_invoker_refs": ["telegram-user:555"],
                 },
             }
         },
@@ -456,6 +493,7 @@ class CommunicationTargetResolveInput(MCPInput):
                 "key": "internal-support",
                 "profile_ref": "communication-profile:support",
                 "source_surface_ref": "telegram-chat:-1001",
+                "invoker_ref": "telegram-user:555",
             }
         },
     )
@@ -464,6 +502,7 @@ class CommunicationTargetResolveInput(MCPInput):
     key: str
     profile_ref: str | None = None
     source_surface_ref: str | None = None
+    invoker_ref: str | None = None
 
 
 class CommunicationTargetOut(BaseModel):
@@ -863,6 +902,11 @@ async def communication_surface_upsert(
         "ingest_enabled": inp.ingest_enabled,
         "send_enabled": inp.send_enabled,
         "capabilities": inp.capabilities,
+        "audience": inp.audience,
+        "intent": inp.intent,
+        "agent_guidance": inp.agent_guidance,
+        "data_scope": inp.data_scope,
+        "external_context": inp.external_context,
         "metadata_json": inp.metadata_json,
     }
     env = ResourceRepository(ctx.session).upsert_record(
@@ -1108,8 +1152,10 @@ async def communication_target_resolve(
     target = _communication_target_out(row.id, row.project_id, row.data_json or {})
     allowed, reason = _target_policy_allowed(
         target.send_policy,
+        target_ref=target.target_ref,
         profile_ref=inp.profile_ref,
         source_surface_ref=inp.source_surface_ref,
+        invoker_ref=inp.invoker_ref,
     )
     if not target.enabled:
         allowed = False
@@ -1129,7 +1175,7 @@ async def communication_target_resolve(
         provider_key=target.provider_key,
         surface_ref=target.surface_ref,
         thread_ref=target.thread_ref,
-        action_input_defaults=target.action_input_defaults,
+        action_input_defaults=_target_action_defaults(ctx.session, target),
         notes=notes,
     )
 
@@ -2029,6 +2075,11 @@ def _communication_surface_out(
         ingest_enabled=bool(data.get("ingest_enabled", True)),
         send_enabled=bool(data.get("send_enabled", True)),
         capabilities=dict(data.get("capabilities") or {}),
+        audience=str(data.get("audience") or "unknown"),
+        intent=dict(data.get("intent") or {}),
+        agent_guidance=dict(data.get("agent_guidance") or {}),
+        data_scope=dict(data.get("data_scope") or {}),
+        external_context=dict(data.get("external_context") or {}),
         metadata_json=dict(data.get("metadata_json") or data.get("metadata") or {}),
     )
 
@@ -2140,24 +2191,93 @@ def _default_action_ref(provider_key: str) -> str | None:
             return None
 
 
+def _target_action_defaults(
+    session: Session,
+    target: CommunicationTargetOut,
+) -> dict[str, Any]:
+    defaults = dict(target.action_input_defaults or {})
+    if target.provider_key == "slack-bot":
+        defaults.setdefault("surface_ref", target.surface_ref)
+        if target.profile_ref:
+            defaults.setdefault("profile_ref", target.profile_ref)
+        if target.thread_ref:
+            defaults.setdefault("thread_ref", target.thread_ref)
+    elif target.provider_key == "telegram-bot":
+        defaults.setdefault("chat_ref", target.surface_ref)
+        bot_profile_key = _telegram_bot_profile_key(session, target)
+        if bot_profile_key:
+            defaults.setdefault("bot_profile_key", bot_profile_key)
+        if target.thread_ref:
+            defaults.setdefault("thread_ref", target.thread_ref)
+    return defaults
+
+
+def _telegram_bot_profile_key(
+    session: Session,
+    target: CommunicationTargetOut,
+) -> str | None:
+    explicit = target.action_input_defaults.get("bot_profile_key")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    if isinstance(target.profile_ref, str):
+        if target.profile_ref.startswith("telegram-bot-profile:"):
+            return target.profile_ref.split(":", 1)[1].strip() or None
+        if target.profile_ref.startswith("communication-profile:"):
+            row = _record_by_resource_external_id(
+                session,
+                project_id=target.project_id,
+                resource_key="communication-profile",
+                external_id=target.profile_ref,
+            )
+            if row is not None:
+                facets = dict((row.data_json or {}).get("provider_facets") or {})
+                telegram_facet = facets.get("telegram-bot")
+                if isinstance(telegram_facet, dict):
+                    bot_profile_key = telegram_facet.get("bot_profile_key")
+                    if isinstance(bot_profile_key, str) and bot_profile_key.strip():
+                        return bot_profile_key.strip()
+    return None
+
+
 def _target_policy_allowed(
     policy: dict[str, Any],
     *,
+    target_ref: str,
     profile_ref: str | None,
     source_surface_ref: str | None,
+    invoker_ref: str | None,
 ) -> tuple[bool, str | None]:
     mode = str(policy.get("mode") or "explicit-target")
     if mode in {"disabled", "deny"}:
         return False, "send_policy_disabled"
+    denied_invokers = set(_string_list(policy.get("denied_invoker_refs")))
+    if invoker_ref is not None and invoker_ref in denied_invokers:
+        return False, "invoker_denied"
     allowed_profiles = set(_string_list(policy.get("allowed_profile_refs")))
     allowed_sources = set(_string_list(policy.get("allowed_source_surface_refs")))
     allowed_targets = set(_string_list(policy.get("allowed_target_refs")))
-    if not allowed_profiles and not allowed_sources and not allowed_targets:
+    allowed_invokers = set(_string_list(policy.get("allowed_invoker_refs")))
+    if mode == "denylist" and not (
+        allowed_profiles or allowed_sources or allowed_targets or allowed_invokers
+    ):
+        if policy.get("requires_approval") is True:
+            return False, "approval_required"
+        return True, None
+    if (
+        not allowed_profiles
+        and not allowed_sources
+        and not allowed_targets
+        and not allowed_invokers
+    ):
         return False, "send_policy_missing_allowlist"
     if allowed_profiles and profile_ref not in allowed_profiles:
         return False, "profile_not_allowed"
     if allowed_sources and source_surface_ref not in allowed_sources:
         return False, "source_surface_not_allowed"
+    if allowed_targets and target_ref not in allowed_targets:
+        return False, "target_not_allowed"
+    if allowed_invokers and invoker_ref not in allowed_invokers:
+        return False, "invoker_not_allowed"
     if policy.get("requires_approval") is True:
         return False, "approval_required"
     return True, None

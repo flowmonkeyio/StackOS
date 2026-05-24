@@ -53,6 +53,15 @@ work, start here:
   `communicationTarget.resolve` does not send; it returns the explicit provider
   action ref/defaults an agent can validate and execute through `action.run` or
   `action.execute`.
+- Communication ingress follows one-brain processing: provider adapters verify
+  signatures/secrets and normalize payloads; shared communication policy owns
+  visibility, trigger matching, allowlisted invokers, storage, and request
+  creation. Do not add provider-specific decision logic for when a bot should
+  answer.
+- Communication surfaces must carry intent and safety context when used for
+  real work: audience, purpose, agent guidance, data-scope/share boundaries, and
+  safe external customer/account/ticket refs. Treat these fields as guidance for
+  agents, not as hidden workflow logic or secret storage.
 - MCP is an adapter, not the core abstraction. Register callable behavior once
   as a StackOS operation, then expose it through allowed MCP, REST, CLI, and UI
   surfaces from that spec.
