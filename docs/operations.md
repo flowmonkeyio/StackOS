@@ -189,6 +189,11 @@ The current core operation registry includes:
 - `communicationBotProfile.list`
 - `communicationBotProfile.get`
 - `communicationBotProfile.upsert`
+- `ingressEndpoint.configure`
+- `ingressEndpoint.refresh`
+- `ingressEndpoint.routes`
+- `ingressEndpoint.sync`
+- `ingressEndpoint.status`
 - `localAgentChat.createMessage`
 - `toolProfile.resolve`
 - `runPlan.validate`
@@ -280,6 +285,13 @@ surfaces, contacts, memberships, named destinations, and handoff routes.
 defaults; it does not send. `communicationContext.query` returns bounded stored
 communication-message history only. Live provider history fetches must be
 explicit provider actions.
+
+`ingressEndpoint.*` stores the project-level public webhook endpoint for
+communications. Configure stores the generic endpoint, refresh updates it from
+explicit input or driver discovery, routes derives provider webhook URLs, sync
+writes safe route metadata into profiles, and status reports readiness. `ngrok`
+is only a local tunnel provider configured under `driver_config`; production
+uses `driver=public-url` with a deployed HTTPS base URL.
 
 `toolProfile.resolve` is the agent-friendly target resolver. Use it before
 `action.run` or workflow setup when the agent needs one safe execution tuple for

@@ -1006,6 +1006,97 @@ def test_operation_rest_telegram_bot_profile_setup_to_ingress_slice(
     assert requests.items[0].metadata_json["matched_command"]["command"] == "/support"
 
 
+def test_operation_rest_ingress_endpoint_syncs_provider_routes(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_telegram_credential(api, project_id)
+
+    profile = api.post(
+        "/api/v1/operations/communicationProfile.upsert/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support",
+                "identity": {"display_name": "Support Agent"},
+                "provider_facets": {
+                    "slack-bot": {"auth_profile_key": "default", "bot_user_id": "U123"}
+                },
+            }
+        },
+    )
+    assert profile.status_code == 200, profile.text
+
+    bot = api.post(
+        "/api/v1/operations/communicationBotProfile.upsert/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support-bot",
+                "auth_profile_key": "support",
+                "identity": {"display_name": "Support Telegram Bot"},
+                "access_policy": {
+                    "dm_mode": "all",
+                    "group_mode": "all",
+                    "user_mode": "all",
+                },
+            }
+        },
+    )
+    assert bot.status_code == 200, bot.text
+
+    configured = api.post(
+        "/api/v1/operations/ingressEndpoint.configure/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "driver": "public-url",
+                "public_base_url": "https://stackos.example.com",
+            }
+        },
+    )
+    assert configured.status_code == 200, configured.text
+    assert configured.json()["data"]["driver_config"] == {}
+
+    routes = api.post(
+        "/api/v1/operations/ingressEndpoint.routes/call",
+        json={"arguments": {"project_id": project_id}},
+    )
+    assert routes.status_code == 200, routes.text
+    urls = {route["provider_key"]: route["ingress_url"] for route in routes.json()["routes"]}
+    assert urls["slack-bot"].endswith(f"/api/v1/ingress/slack/{project_id}/support")
+    assert urls["telegram-bot"].endswith(f"/api/v1/ingress/telegram/{project_id}/support-bot")
+
+    synced = api.post(
+        "/api/v1/operations/ingressEndpoint.sync/call",
+        json={"arguments": {"project_id": project_id}},
+    )
+    assert synced.status_code == 200, synced.text
+    provider_results = synced.json()["data"]["provider_results"]
+    assert {(result["provider_key"], result["status"]) for result in provider_results} == {
+        ("slack-bot", "manual_provider_update_required"),
+        ("telegram-bot", "profile_updated"),
+    }
+
+    fetched_profile = api.post(
+        "/api/v1/operations/communicationProfile.get/call",
+        json={"arguments": {"project_id": project_id, "key": "support"}},
+    )
+    assert fetched_profile.status_code == 200, fetched_profile.text
+    assert fetched_profile.json()["provider_facets"]["slack-bot"]["ingress_url"].endswith(
+        f"/api/v1/ingress/slack/{project_id}/support"
+    )
+
+    fetched_bot = api.post(
+        "/api/v1/operations/communicationBotProfile.get/call",
+        json={"arguments": {"project_id": project_id, "key": "support-bot"}},
+    )
+    assert fetched_bot.status_code == 200, fetched_bot.text
+    assert fetched_bot.json()["ingress_mode"] == "webhook"
+    assert fetched_bot.json()["webhook_base_url"] == "https://stackos.example.com"
+    assert fetched_bot.json()["allowed_webhook_hosts"] == ["stackos.example.com"]
+
+
 def test_operation_rest_mock_provider_failure_records_redacted_audit(
     api: TestClient,
     project_id: int,

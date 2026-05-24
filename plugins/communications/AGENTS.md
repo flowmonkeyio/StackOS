@@ -51,9 +51,14 @@ does not run an assistant, classify intent, or decide workflows.
   Inspect them through `communicationBotProfile.get` and
   `communicationBotProfile.list`. These are setup operations shared by REST,
   CLI, MCP, and UI; do not bypass them with raw resource writes in product code.
-- `local-webhook` is the normal Telegram listener path for local StackOS.
-  `updates.poll` is bounded diagnostic/bootstrap access only, never a
-  background listener.
+- `webhook` is the normal Telegram listener path. Local StackOS uses a public
+  ingress endpoint, usually discovered from `driver=local-tunnel`; production
+  uses a deployed HTTPS URL. `updates.poll` is bounded diagnostic/bootstrap
+  access only, never a background listener.
+- Use `ingressEndpoint.configure`, `ingressEndpoint.refresh`,
+  `ingressEndpoint.routes`, `ingressEndpoint.sync`, and
+  `ingressEndpoint.status` for project-level public ingress setup. The endpoint
+  is generic; local tunnel provider settings belong only under `driver_config`.
 - Telegram webhook set/delete/info actions are executable through
   `action.execute`; they must resolve the bot profile and daemon-held credential
   server-side.

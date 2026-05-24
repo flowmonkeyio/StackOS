@@ -31,7 +31,7 @@ providers:
         - docs/integration-contracts/communications.md
   - key: telegram-bot
     name: Telegram Bot
-    description: Telegram Bot API provider for bot identity, project-scoped bot profile messaging, local-webhook ingress, and diagnostics.
+    description: Telegram Bot API provider for bot identity, project-scoped bot profile messaging, webhook ingress, and diagnostics.
     auth_type: bot-token
     auth_methods:
       - key: bot-token
@@ -1079,6 +1079,10 @@ actions:
         - docs/integration-contracts/communications.md
         - https://www.rfc-editor.org/rfc/rfc9051.html
 resources:
+  - key: ingress-endpoint
+    name: Ingress Endpoint
+    description: Project-level public ingress base URL and route map for provider webhooks such as Slack Events API and Telegram setWebhook.
+    schema: *object_schema
   - key: communication-profile
     name: Communication Profile
     description: Provider-neutral agent communication identity, guidance, policy, and provider facets for chat, email, and future transports.

@@ -190,6 +190,40 @@ the same operation catalog. Run-plan claim/record/action mechanics are
 intentionally explicit because the primary execution user is an agent, not a
 human clicking through a bespoke workflow UI.
 
+## Local Communication Ingress
+
+Telegram, Slack, and future webhook-based communication providers use one
+project-level public ingress endpoint. The daemon still binds to
+`127.0.0.1:5180`; only provider-verified `/api/v1/ingress/*` paths are allowed
+to receive tunnel or deployed Host headers.
+
+Production uses a deployed HTTPS base URL:
+
+```bash
+printf '%s' '{"driver":"public-url","public_base_url":"https://stackos.example.com"}' \
+  | stackos ops call ingressEndpoint.configure --project 1 --input -
+stackos ops call ingressEndpoint.sync --project 1
+```
+
+Local development can use a tunnel driver. For ngrok, start the tunnel to the
+daemon port, then let StackOS discover the public HTTPS URL from the ngrok agent
+API:
+
+```bash
+ngrok http 5180
+printf '%s' '{"driver":"local-tunnel","driver_config":{"provider":"ngrok"}}' \
+  | stackos ops call ingressEndpoint.configure --project 1 --input -
+printf '%s' '{"sync_profiles":true}' \
+  | stackos ops call ingressEndpoint.refresh --project 1 --input -
+```
+
+Agents should prefer the same operations through MCP when available:
+`ingressEndpoint.configure`, `ingressEndpoint.refresh`,
+`ingressEndpoint.routes`, `ingressEndpoint.sync`, and
+`ingressEndpoint.status`. Local tunnel provider settings, including ngrok, belong
+only in `driver_config`; provider routes stay Telegram/Slack-agnostic and are
+regenerated from the stored project endpoint.
+
 ## Health Checks
 
 Run:

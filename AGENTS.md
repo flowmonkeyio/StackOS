@@ -47,6 +47,9 @@ work, start here:
   `communicationTarget.*`, `communicationRoute.*`, and
   `communicationContext.query` for identities, surfaces, contacts, memberships,
   named destinations, handoff routes, and stored history.
+  Use `ingressEndpoint.*` for project-level public webhook setup; local tunnel
+  providers such as ngrok are configured only under `driver_config`, while
+  production uses a deployed HTTPS `public_base_url`.
   `communicationTarget.resolve` does not send; it returns the explicit provider
   action ref/defaults an agent can validate and execute through `action.run` or
   `action.execute`.

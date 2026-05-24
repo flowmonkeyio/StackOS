@@ -298,7 +298,7 @@ def _policy_decision(
         return {"store": False, "create_request": False, "status": "bot_profile_disabled"}
     _validate_bot_profile(data)
     ingress_mode = data.get("ingress_mode", "webhook")
-    if ingress_mode not in {"webhook", "local-webhook"}:
+    if ingress_mode != "webhook":
         return {"store": False, "create_request": False, "status": "ingress_disabled"}
     allowed_updates = _split_config_values(data.get("allowed_updates"))
     if not allowed_updates:

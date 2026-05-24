@@ -1,7 +1,8 @@
 """FastAPI app factory.
 
 Wires middleware in the order: Host header check (outermost so it runs
-even on auth-whitelisted paths) → CORS (same-origin) → bearer-token auth.
+even on auth-whitelisted non-ingress paths) → CORS (same-origin) →
+bearer-token auth.
 Lifespan ensures dirs/seed/token before the first request lands.
 """
 
@@ -56,6 +57,10 @@ _REQUIRED_MODE = 0o600
 # the port here so non-default ports still work; the suffix is stripped
 # before comparison.
 _ALLOWED_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "[::1]", "::1"})
+_PUBLIC_INGRESS_PREFIXES: tuple[str, ...] = (
+    "/api/v1/ingress/telegram",
+    "/api/v1/ingress/slack",
+)
 
 
 class HostHeaderMiddleware(BaseHTTPMiddleware):
@@ -81,12 +86,19 @@ class HostHeaderMiddleware(BaseHTTPMiddleware):
         else:
             host_only = host_header.split(":", 1)[0] if host_header else ""
 
-        if host_only not in _ALLOWED_HOSTS:
+        if host_only not in _ALLOWED_HOSTS and not _is_public_ingress_path(request.url.path):
             return JSONResponse(
                 {"detail": f"Host header {host_header!r} is not loopback"},
                 status_code=421,
             )
         return await call_next(request)
+
+
+def _is_public_ingress_path(path: str) -> bool:
+    """Allow tunnel/deployed hosts only on provider-verified webhook paths."""
+    return any(
+        path == prefix or path.startswith(prefix + "/") for prefix in _PUBLIC_INGRESS_PREFIXES
+    )
 
 
 def _ensure_seed(seed_path: Path) -> None:

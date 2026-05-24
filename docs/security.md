@@ -18,9 +18,11 @@ do not rotate an existing token; operators rotate explicitly with
 Three middlewares form the request gauntlet, applied in this order
 (outermost first):
 
-1. **`HostHeaderMiddleware`** rejects any `Host:` header that is not
-   `localhost`, `127.0.0.1`, or `[::1]` with HTTP 421. Defends against
-   DNS rebinding and stray cross-origin probes.
+1. **`HostHeaderMiddleware`** rejects any non-ingress `Host:` header that is not
+   `localhost`, `127.0.0.1`, or `[::1]` with HTTP 421. Provider webhook ingress
+   paths accept tunnel/deployed hosts because Telegram and Slack must call them
+   from outside the machine; those paths still verify provider secrets or
+   signatures before any write.
 2. **`CORSMiddleware`** is configured `same-origin` only — a cross-origin
    browser fetch can never read responses even if the request went out.
 3. **`BearerTokenMiddleware`** enforces the constant-time bearer check,
@@ -35,8 +37,8 @@ the bearer-token check. Currently:
 |---|---|---|
 | `/api/v1/health` | `doctor` probes liveness before it has resolved the token (when diagnosing token-related failures). | None worth caring about; the response carries only liveness booleans + version. |
 | `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk daemon token file from the browser, so it fetches a derived console bearer token at app boot via this endpoint. | **See below.** |
-| `/api/v1/ingress/telegram/*` | Telegram webhooks and local relay processes cannot carry the daemon bearer token. The route verifies `X-Telegram-Bot-Api-Secret-Token` against the encrypted Telegram credential before writing communication resources or agent requests. | A caller with the webhook secret can submit Telegram-shaped events for that profile. The default daemon remains loopback-only; public ingress requires an explicit relay/deployment boundary. |
-| `/api/v1/ingress/slack/*` | Slack Events API and Interactivity requests cannot carry the daemon bearer token. The route verifies `X-Slack-Signature` against the encrypted Slack signing secret using the raw body and timestamp before writing communication resources or agent requests. | A caller with the Slack signing secret can submit Slack-shaped events for that profile. The default daemon remains loopback-only; public ingress requires an explicit relay/deployment boundary. |
+| `/api/v1/ingress/telegram/*` | Telegram webhooks cannot carry the daemon bearer token. The route verifies `X-Telegram-Bot-Api-Secret-Token` against the encrypted Telegram credential before writing communication resources or agent requests. | A caller with the webhook secret can submit Telegram-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
+| `/api/v1/ingress/slack/*` | Slack Events API and Interactivity requests cannot carry the daemon bearer token. The route verifies `X-Slack-Signature` against the encrypted Slack signing secret using the raw body and timestamp before writing communication resources or agent requests. | A caller with the Slack signing secret can submit Slack-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
 
 ## No-secret auth provider boundary
 
@@ -99,10 +101,11 @@ in a Pinia-store ref).
 to `127.0.0.1:5180` can fetch the UI token by sending `GET
 /api/v1/auth/ui-token` with no credentials. That token is accepted only
 for REST reads, read-only `POST /api/v1/operations/{operation}/call` transport
-calls, `POST /api/v1/projects`, and the narrow provider-auth setup routes under
-`/api/v1/projects/{id}/auth/*`; it cannot access `/mcp` and cannot mutate
-existing projects, resources, runs, action execution, templates, or project
-data.
+calls, `POST /api/v1/projects`, narrow no-secret setup operations such as
+`communicationBotProfile.upsert` and `ingressEndpoint.*`, and the
+provider-auth setup routes under `/api/v1/projects/{id}/auth/*`; it cannot
+access `/mcp` and cannot mutate existing projects, resources, runs, action
+execution, templates, or project data.
 Previously, only a process that could read `auth.token` (mode 0600, owned by
 the daemon's user) could obtain any bearer token. On a single-user macOS or
 Linux box that's a near-zero delta (same-user processes already had file
@@ -117,8 +120,9 @@ and add/test/revoke provider credentials through the local setup surface.
 - The returned token is derived from, but not equal to, the disk-backed
   daemon token. `BearerTokenMiddleware` accepts it only for `GET`,
   `HEAD`, and `OPTIONS` requests under `/api/v1/*`, `POST /api/v1/projects`,
-  read-only operation-registry calls, and `POST` to the exact project auth
-  setup endpoints. It is never accepted for `/mcp`.
+  read-only operation-registry calls, narrow no-secret setup operations, and
+  `POST` to the exact project auth setup endpoints. It is never accepted for
+  `/mcp`.
 - The `HostHeaderMiddleware` rejects requests with a forged `Host:`
   header, so a remote attacker who has somehow proxied to the loopback
   port (e.g. through a compromised tunnel) is rebuffed.

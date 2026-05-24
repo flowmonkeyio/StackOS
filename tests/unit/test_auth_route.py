@@ -41,6 +41,27 @@ def test_ui_token_rejects_non_loopback_host(client: TestClient) -> None:
     assert resp.status_code == 421
 
 
+def test_public_ingress_paths_allow_tunnel_host_but_still_verify_provider(
+    client: TestClient,
+) -> None:
+    """Tunnel/deployed Hosts reach only provider-verified ingress paths."""
+    resp = client.post(
+        "/api/v1/ingress/telegram/1/support-bot",
+        headers={"host": "stackos-local.ngrok-free.app"},
+        json={"update_id": 1},
+    )
+    assert resp.status_code != 421
+
+
+def test_tunnel_host_cannot_reach_non_ingress_api(client: TestClient) -> None:
+    """The public Host bypass is scoped to webhook ingress, not the whole API."""
+    resp = client.get(
+        "/api/v1/projects",
+        headers={"host": "stackos-local.ngrok-free.app"},
+    )
+    assert resp.status_code == 421
+
+
 def test_ui_token_response_shape_only_carries_token(
     client: TestClient,
     auth_token: str,
@@ -136,6 +157,29 @@ def test_ui_token_can_call_telegram_bot_profile_setup_operation(
     assert resp.json()["data"]["key"] == "support-bot"
     assert "123456:ABC" not in resp.text
     assert "telegram-secret" not in resp.text
+
+
+def test_ui_token_can_call_ingress_setup_operation(
+    client: TestClient,
+    auth_token: str,
+) -> None:
+    """The browser setup surface can configure the generic public ingress URL."""
+    project_id = _create_project(client, auth_token)
+    ui_token = derive_ui_token(auth_token)
+
+    resp = client.post(
+        "/api/v1/operations/ingressEndpoint.configure/call",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "driver": "public-url",
+                "public_base_url": "https://stackos.example.com",
+            }
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["public_base_url"] == "https://stackos.example.com"
 
 
 def test_ui_token_cannot_call_mutating_operations(client: TestClient, auth_token: str) -> None:

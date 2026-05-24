@@ -28,7 +28,7 @@ from stackos.repositories.resources import ResourceRepository
 
 _PROFILE_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
 _ACCESS_MODES = {"all", "allowlist", "denylist", "disabled"}
-_INGRESS_MODES = {"local-webhook", "webhook", "disabled"}
+_INGRESS_MODES = {"webhook", "disabled"}
 _ALLOWED_UPDATES = {
     "message",
     "edited_message",
@@ -146,7 +146,7 @@ class TelegramBotProfileUpsertInput(MCPInput):
     auth_profile_key: str = "default"
     enabled: bool = True
     bot_username: str | None = None
-    ingress_mode: Literal["local-webhook", "webhook", "disabled"] = "local-webhook"
+    ingress_mode: Literal["webhook", "disabled"] = "webhook"
     allowed_updates: list[str] = Field(default_factory=lambda: ["message", "callback_query"])
     identity: TelegramBotIdentity
     agent_guidance: TelegramAgentGuidance = Field(default_factory=TelegramAgentGuidance)
@@ -604,7 +604,7 @@ def _out_from_record(
         bot_username=(
             data.get("bot_username") if isinstance(data.get("bot_username"), str) else None
         ),
-        ingress_mode=str(data.get("ingress_mode") or "local-webhook"),
+        ingress_mode=str(data.get("ingress_mode") or "webhook"),
         allowed_updates=[str(item) for item in data.get("allowed_updates") or []],
         identity=dict(data.get("identity") or {}),
         agent_guidance=dict(data.get("agent_guidance") or {}),

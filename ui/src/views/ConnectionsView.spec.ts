@@ -355,7 +355,7 @@ describe('ConnectionsView', () => {
           auth_profile_key: args.auth_profile_key,
           enabled: true,
           bot_username: args.bot_username,
-          ingress_mode: 'local-webhook',
+          ingress_mode: 'webhook',
           allowed_updates: ['message', 'callback_query'],
           identity: args.identity,
           agent_guidance: args.agent_guidance,

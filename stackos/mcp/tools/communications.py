@@ -9,6 +9,11 @@ def _communication_operations() -> OperationRegistry:
     operations = OperationRegistry()
     all_operations = build_operation_registry()
     for name in (
+        "ingressEndpoint.configure",
+        "ingressEndpoint.refresh",
+        "ingressEndpoint.routes",
+        "ingressEndpoint.sync",
+        "ingressEndpoint.status",
         "localAgentChat.createMessage",
         "communicationProfile.list",
         "communicationProfile.get",

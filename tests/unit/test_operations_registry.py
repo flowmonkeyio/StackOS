@@ -39,6 +39,11 @@ def test_operation_registry_documents_core_operations() -> None:
         "communicationTarget.list",
         "communicationTarget.resolve",
         "communicationTarget.upsert",
+        "ingressEndpoint.configure",
+        "ingressEndpoint.refresh",
+        "ingressEndpoint.routes",
+        "ingressEndpoint.status",
+        "ingressEndpoint.sync",
         "localAgentChat.createMessage",
         "runPlan.claimStep",
         "runPlan.create",
@@ -114,6 +119,13 @@ def test_operation_registry_documents_core_operations() -> None:
     assert local_chat.grant_policy == "direct-work-queue-write"
     assert any("never invokes a model" in item for item in [local_chat.purpose])
 
+    ingress = registry.get("ingressEndpoint.configure").describe_out()
+    assert ingress.surfaces["mcp"].enabled is True
+    assert ingress.surfaces["rest"].enabled is True
+    assert ingress.surfaces["cli"].command == "ops call ingressEndpoint.configure"
+    assert ingress.grant_policy == "direct-setup-write"
+    assert any("driver_config" in item for item in ingress.prerequisites)
+
     resolver = registry.get("toolProfile.resolve").describe_out()
     assert resolver.surfaces["mcp"].enabled is True
     assert resolver.surfaces["rest"].enabled is True
@@ -164,6 +176,11 @@ def test_operation_registry_surface_filter() -> None:
         "communicationTarget.list",
         "communicationTarget.resolve",
         "communicationTarget.upsert",
+        "ingressEndpoint.configure",
+        "ingressEndpoint.refresh",
+        "ingressEndpoint.routes",
+        "ingressEndpoint.status",
+        "ingressEndpoint.sync",
         "localAgentChat.createMessage",
         "runPlan.claimStep",
         "runPlan.create",

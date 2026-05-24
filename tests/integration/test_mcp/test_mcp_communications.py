@@ -6,6 +6,7 @@ import json
 
 from sqlmodel import Session
 
+from stackos.operations import communication_platform
 from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
 
@@ -68,10 +69,45 @@ def _credential_ref(
     raise AssertionError(f"credential profile {profile_key!r} not found")
 
 
+class _FakeNgrokResponse:
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, object]:
+        return {
+            "endpoints": [
+                {
+                    "name": "stackos",
+                    "url": "https://stackos-local.ngrok.app",
+                }
+            ]
+        }
+
+
+class _FakeNgrokClient:
+    def __init__(self, *, timeout: float) -> None:
+        self.timeout = timeout
+
+    async def __aenter__(self) -> _FakeNgrokClient:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    async def get(self, url: str) -> _FakeNgrokResponse:
+        assert url == "http://127.0.0.1:4040/api/endpoints"
+        return _FakeNgrokResponse()
+
+
 def test_communication_bot_profile_operations_are_registered(mcp_client: MCPClient) -> None:
     tools = {tool["name"] for tool in mcp_client.list_tools()}
 
     assert {
+        "ingressEndpoint.configure",
+        "ingressEndpoint.refresh",
+        "ingressEndpoint.routes",
+        "ingressEndpoint.sync",
+        "ingressEndpoint.status",
         "localAgentChat.createMessage",
         "communicationProfile.list",
         "communicationProfile.get",
@@ -93,6 +129,161 @@ def test_communication_bot_profile_operations_are_registered(mcp_client: MCPClie
         "communicationBotProfile.upsert",
         "toolProfile.resolve",
     } <= tools
+
+
+def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_telegram_credential(mcp_client, project_id)
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support",
+            "identity": {"display_name": "Support Agent"},
+            "provider_facets": {
+                "slack-bot": {"auth_profile_key": "default", "bot_user_id": "U123"},
+                "telegram-bot": {"bot_profile_key": "support-bot"},
+            },
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationBotProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support-bot",
+            "auth_profile_key": "support",
+            "identity": {"display_name": "Support Telegram Bot"},
+            "access_policy": {
+                "dm_mode": "all",
+                "group_mode": "all",
+                "user_mode": "all",
+            },
+        },
+    )
+
+    configured = mcp_client.call_tool_structured(
+        "ingressEndpoint.configure",
+        {
+            "project_id": project_id,
+            "driver": "public-url",
+            "public_base_url": "https://stackos.example.com",
+        },
+    )
+    assert configured["data"]["key"] == "default"
+
+    routes = mcp_client.call_tool_structured(
+        "ingressEndpoint.routes",
+        {"project_id": project_id},
+    )
+    assert routes["endpoint"]["public_base_url"] == "https://stackos.example.com"
+    assert routes["endpoint"]["driver"] == "public-url"
+    assert routes["endpoint"]["driver_config"] == {}
+    route_urls = {route["provider_key"]: route["ingress_url"] for route in routes["routes"]}
+    assert route_urls["slack-bot"] == (
+        f"https://stackos.example.com/api/v1/ingress/slack/{project_id}/support"
+    )
+    assert route_urls["telegram-bot"] == (
+        f"https://stackos.example.com/api/v1/ingress/telegram/{project_id}/support-bot"
+    )
+    telegram_routes = [
+        route for route in routes["routes"] if route["provider_key"] == "telegram-bot"
+    ]
+    assert len(telegram_routes) == 1
+    assert telegram_routes[0]["profile_resource_key"] == "communication-bot-profile"
+
+    synced = mcp_client.call_tool_structured(
+        "ingressEndpoint.sync",
+        {
+            "project_id": project_id,
+            "apply_provider_webhooks": False,
+        },
+    )
+    statuses = {
+        (result["provider_key"], result["profile_key"]): result["status"]
+        for result in synced["data"]["provider_results"]
+    }
+    assert statuses[("slack-bot", "support")] == "manual_provider_update_required"
+    assert statuses[("telegram-bot", "support-bot")] == "profile_updated"
+    assert synced["data"]["endpoint"]["last_synced_at"]
+
+    profile = mcp_client.call_tool_structured(
+        "communicationProfile.get",
+        {"project_id": project_id, "key": "support"},
+    )
+    assert (
+        profile["provider_facets"]["slack-bot"]["ingress_url"]
+        == f"https://stackos.example.com/api/v1/ingress/slack/{project_id}/support"
+    )
+
+    bot = mcp_client.call_tool_structured(
+        "communicationBotProfile.get",
+        {"project_id": project_id, "key": "support-bot"},
+    )
+    assert bot["ingress_mode"] == "webhook"
+    assert bot["webhook_base_url"] == "https://stackos.example.com"
+    assert bot["refs"]["ingress_url"] == (
+        f"https://stackos.example.com/api/v1/ingress/telegram/{project_id}/support-bot"
+    )
+    assert bot["allowed_webhook_hosts"] == ["stackos.example.com"]
+
+    refreshed = mcp_client.call_tool_structured(
+        "ingressEndpoint.refresh",
+        {
+            "project_id": project_id,
+            "public_base_url": "https://fresh.stackos.example.com",
+            "sync_profiles": True,
+        },
+    )
+    assert refreshed["data"]["endpoint"]["public_base_url"] == "https://fresh.stackos.example.com"
+    assert refreshed["data"]["endpoint"]["driver"] == "public-url"
+
+    refreshed_bot = mcp_client.call_tool_structured(
+        "communicationBotProfile.get",
+        {"project_id": project_id, "key": "support-bot"},
+    )
+    assert refreshed_bot["webhook_base_url"] == "https://fresh.stackos.example.com"
+    assert refreshed_bot["refs"]["ingress_url"] == (
+        f"https://fresh.stackos.example.com/api/v1/ingress/telegram/{project_id}/support-bot"
+    )
+    assert refreshed_bot["allowed_webhook_hosts"] == [
+        "fresh.stackos.example.com",
+        "stackos.example.com",
+    ]
+
+
+def test_ingress_endpoint_refresh_discovers_ngrok_agent_endpoints(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    monkeypatch,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    monkeypatch.setattr(communication_platform.httpx, "AsyncClient", _FakeNgrokClient)
+
+    configured = mcp_client.call_tool_structured(
+        "ingressEndpoint.configure",
+        {
+            "project_id": project_id,
+            "driver": "local-tunnel",
+            "driver_config": {"provider": "ngrok"},
+        },
+    )
+    assert configured["data"]["driver"] == "local-tunnel"
+    assert configured["data"]["driver_config"]["provider"] == "ngrok"
+    assert configured["data"]["driver_config"]["discovery_url"] == (
+        "http://127.0.0.1:4040/api/endpoints"
+    )
+
+    refreshed = mcp_client.call_tool_structured(
+        "ingressEndpoint.refresh",
+        {"project_id": project_id, "sync_profiles": False},
+    )
+    endpoint = refreshed["data"]["endpoint"]
+    assert endpoint["public_base_url"] == "https://stackos-local.ngrok.app"
+    assert endpoint["metadata_json"]["last_refresh"]["resource"] == "endpoints"
 
 
 def test_provider_neutral_communication_setup_resolves_targets_and_context(

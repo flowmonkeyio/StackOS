@@ -24,7 +24,7 @@ operations; they do not call providers or models.
 - `local-agent-chat`: local StackOS conversation surface for direct human-to-agent
   messages, rich response blocks, and button/image/file interactions.
 - `telegram-bot`: bot token auth for identity checks, text/photo sends, inline
-  button callback answers, local-webhook setup through Telegram Bot API, and
+  button callback answers, webhook setup through Telegram Bot API, and
   bounded diagnostics.
 - `slack-bot`: bot token and signing-secret auth for identity checks, text or
   Block Kit sends, conversation discovery, membership sync, and signed HTTP
@@ -48,6 +48,7 @@ operations; they do not call providers or models.
 - `communication-interaction`
 - `communication-event`
 - `communication-cursor`
+- `ingress-endpoint`
 - `agent-request-source`
 
 The generic `agent_requests` queue belongs to core StackOS, not this plugin.
@@ -66,8 +67,9 @@ structured command intents, access policy, trigger policy, context policy,
 response policy, and ingress mode. Visibility is
 not activation: visible messages may be stored as bounded context without
 creating an agent request; only allowlisted users can trigger work or replies.
-`local-webhook` is the normal local listener path;
-`updates.poll` is diagnostic/bootstrap-only.
+`webhook` is the normal listener path. Local development uses the same public
+ingress endpoint contract as production, usually with `driver=local-tunnel` and
+provider details in `driver_config`. `updates.poll` is diagnostic/bootstrap-only.
 
 Slack communication profiles are project scoped. Each profile binds to a
 project-scoped `slack-bot` credential profile through
@@ -111,6 +113,9 @@ Project setup uses shared StackOS operations:
   guidance, and policy after the typed `telegram-bot` credential profile exists.
 - `communicationBotProfile.get` and `communicationBotProfile.list` let agents
   inspect profiles without receiving token material.
+- `ingressEndpoint.*` stores one project-level public ingress endpoint, derives
+  provider webhook URLs, syncs safe route metadata into profiles, and can apply
+  Telegram `setWebhook` through daemon-held credentials.
 - REST, CLI `ops call`, MCP, and the local Connections UI all use the same
   operation registry path for this setup.
 

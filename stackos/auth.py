@@ -45,13 +45,15 @@ PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 #   cannot carry the daemon bearer token. The route validates Telegram's
 #   `X-Telegram-Bot-Api-Secret-Token` against the encrypted provider
 #   credential before it writes resources or agent requests. HostHeaderMiddleware
-#   still keeps the default daemon loopback-only; public ingress requires an
-#   explicit relay/deployment boundary.
+#   permits tunnel/deployed Host headers only on provider ingress paths; every
+#   non-ingress API path remains loopback-host guarded.
 # - ``/api/v1/ingress/slack``: Slack Events API and Interactivity requests
 #   cannot carry the daemon bearer token. The route verifies Slack's
 #   `X-Slack-Signature` HMAC against the encrypted Slack signing secret and
 #   checks the replay-window timestamp before it writes communication resources
-#   or agent requests.
+#   or agent requests. HostHeaderMiddleware permits tunnel/deployed Host headers
+#   only on provider ingress paths; every non-ingress API path remains
+#   loopback-host guarded.
 WHITELIST_PREFIXES: tuple[str, ...] = (
     "/api/v1/health",
     "/api/v1/auth/ui-token",
@@ -65,7 +67,14 @@ _UI_TOKEN_MESSAGE = b"stackos-ui-console-v1"
 _UI_SAFE_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS"})
 _UI_AUTH_SETUP_ACTIONS: frozenset[str] = frozenset({"test", "revoke"})
 _UI_AUTH_PROVIDER_ACTIONS: frozenset[str] = frozenset({"credentials", "start"})
-_UI_SETUP_OPERATION_CALLS: frozenset[str] = frozenset({"communicationBotProfile.upsert"})
+_UI_SETUP_OPERATION_CALLS: frozenset[str] = frozenset(
+    {
+        "communicationBotProfile.upsert",
+        "ingressEndpoint.configure",
+        "ingressEndpoint.refresh",
+        "ingressEndpoint.sync",
+    }
+)
 
 
 class TokenFileError(RuntimeError):

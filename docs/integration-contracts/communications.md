@@ -19,6 +19,7 @@ Official provider and protocol references:
 - Telegram Bot API: https://core.telegram.org/bots/api
 - Telegram bot features: https://core.telegram.org/bots/features
 - Official local Telegram Bot API server: https://github.com/tdlib/telegram-bot-api
+- ngrok agent API: https://ngrok.com/docs/agent/api/
 - Slack Events API: https://docs.slack.dev/apis/events-api/
 - Slack Socket Mode: https://docs.slack.dev/apis/events-api/using-socket-mode/
 - Slack request verification: https://docs.slack.dev/authentication/verifying-requests-from-slack/
@@ -199,18 +200,23 @@ Connectors do not own:
 
 Telegram bots can receive updates through `getUpdates` long polling or
 webhooks. These modes are mutually exclusive for a bot while a webhook is set.
-StackOS treats a bot profile with `ingress_mode: local-webhook` as the normal
-local listener path. It uses webhook ingress through the official local
-`telegram-bot-api --local` server so the loopback daemon can receive updates
-without public tunnels during development. `updates.poll` remains a bounded
-diagnostic/bootstrap action only, for example discovering chat/user ids before a
-bot profile is locked down.
+StackOS treats a bot profile with `ingress_mode: webhook` as the normal listener
+path. The project owns one provider-neutral public ingress endpoint; provider
+routes are derived from that endpoint and the communication profiles that need
+webhooks. In production, the endpoint is a deployed HTTPS URL. During local
+development, it can be discovered from a local-tunnel driver whose provider is
+configured inside `driver_config`. `updates.poll` remains a bounded
+diagnostic/bootstrap action only, for example discovering chat/user ids before
+a bot profile is locked down.
 
-The local Bot API server is official Telegram infrastructure backed by TDLib. In
-`--local` mode it can accept HTTP webhook URLs on local IPs and arbitrary local
-ports, so StackOS can listen at `127.0.0.1:5180` without public tunnels during
-development. If a bot moves from Telegram's cloud Bot API endpoint to the local
-server, Telegram requires `logOut` before the local server can own that bot.
+The public ingress endpoint is generic StackOS infrastructure, not a Telegram or
+ngrok resource. Its public API is `driver`, `public_base_url`, `local_base_url`,
+and `driver_config`. `driver=public-url` stores an explicit deployed HTTPS URL.
+`driver=local-tunnel` is the local-development driver. Its provider-specific
+details live only inside `driver_config`, for example `provider: ngrok` and a
+`discovery_url` pointing at that provider's local agent API. Future drivers can
+implement the same endpoint contract without changing provider routes or bot
+profiles.
 
 Telegram supports private chats, groups, supergroups, channels, callbacks,
 edited messages, channel posts, membership updates, and other update types. The
@@ -261,10 +267,10 @@ Image/media support has two safe paths:
   the public internet. Resolving database artifact ids can be added later
   without changing the agent-facing action shape.
 
-Inbound callback handling uses the local-webhook listener path by default. The
-explicit webhook endpoint verifies Telegram's secret-token header, resolves the
-project-scoped bot profile, stores the update idempotently, and creates
-resources/requests from static policy. It still does not invoke a model.
+Inbound callback handling uses the same webhook listener path as message
+updates. The explicit webhook endpoint verifies Telegram's secret-token header,
+resolves the project-scoped bot profile, stores the update idempotently, and
+creates resources/requests from static policy. It still does not invoke a model.
 `updates.poll` can inspect callback updates only as a bounded diagnostic action
 and must not become the normal listener loop.
 
@@ -562,8 +568,8 @@ Example fields:
 - `provider_key`
 - `auth_profile_key`
 - `bot_username`
-- `ingress_mode`: `local-webhook` for the normal local listener path, or
-  `webhook` for an explicitly hardened public/relay boundary
+- `ingress_mode`: `webhook` for the active provider webhook listener, or
+  `disabled` to stop storing inbound events for the profile
 - `allowed_updates`
 - `identity`
 - `agent_guidance`
@@ -572,6 +578,30 @@ Example fields:
 - `visibility_policy`
 - `context_policy`
 - `response_policy`
+
+### `ingress-endpoint`
+
+Stores the project-level public webhook endpoint used by provider ingress
+routes. This is generic infrastructure, not a Telegram/Slack-specific resource.
+
+Example fields:
+
+- `key`
+- `endpoint_ref`
+- `driver`: `public-url` for deployed HTTPS, or `local-tunnel` for local tunnel
+  discovery
+- `enabled`
+- `status`
+- `public_base_url`
+- `local_base_url`
+- `driver_config`
+- `last_refreshed_at`
+- `last_synced_at`
+
+Agents use `ingressEndpoint.routes` to inspect the exact provider webhook URLs
+and `ingressEndpoint.sync` to write safe route metadata into provider profiles.
+The agent never receives Telegram bot tokens, Slack signing secrets, or webhook
+secret material through this resource.
 
 ### `communication-thread`
 
@@ -1186,9 +1216,9 @@ Validation rules:
 
 ## Trigger And Ingestion Modes
 
-### Normal Telegram Listener: Local Webhook
+### Normal Telegram Listener: Webhook
 
-Current local webhook endpoint:
+Current webhook endpoint:
 
 ```text
 POST /api/v1/ingress/telegram/{project_id}/{bot_profile_key}
@@ -1199,10 +1229,9 @@ This endpoint is bearer-token whitelisted because Telegram cannot send the
 daemon bearer token. It resolves the `communication-bot-profile`, verifies the
 Telegram secret-token header against the encrypted `telegram-bot` credential
 bound by that profile's `auth_profile_key`, and then applies bot-profile
-policy. For local development, run the official local Telegram Bot API server in
-`--local` mode and set the webhook URL directly to the loopback StackOS daemon.
-Direct public Telegram webhooks still require an explicit relay or hardened
-deployment boundary.
+policy. For local development, expose the loopback daemon through the configured
+project ingress endpoint, for example a local tunnel provider. Production uses a
+deployed HTTPS endpoint with the same StackOS route shape.
 
 Flow:
 
@@ -1213,10 +1242,13 @@ Flow:
    that credential profile.
 3. Operator defines bot identity, default agent guidance, access policy, and
    optional structured command intents on the bot profile.
-4. Operator sets `ingress_mode: local-webhook` and an explicit
-   `allowed_updates` list on the bot profile.
-5. Operator runs the official local Telegram Bot API server or a hardened public
-   relay and calls `communications.telegram-bot.webhook.set`.
+4. Operator keeps `ingress_mode: webhook` and sets an explicit `allowed_updates`
+   list on the bot profile.
+5. Operator configures `ingressEndpoint` with the deployed HTTPS URL, or uses
+   `driver=local-tunnel` with provider details in `driver_config`, then runs
+   `ingressEndpoint.sync`.
+   Telegram webhook application can be dry-run first and then applied through
+   daemon-held credentials.
 6. The listener verifies Telegram secret token against the daemon-held
    credential bound by `auth_profile_key`.
 7. The listener rejects the wrong project, bot profile, or secret with the same
@@ -1363,7 +1395,7 @@ Rules:
 
 ```text
 User sends DM to bot
--> local-webhook ingress receives Telegram message update
+-> webhook ingress receives Telegram message update
 -> StackOS stores communication-message
 -> allowlist creates agent_request
 -> agentRequest.list shows unread request
@@ -1396,7 +1428,7 @@ Agent sends message with inline keyboard
 -> action.run or action.execute calls communications.telegram-bot.message.send
 -> StackOS stores outbound communication-message and interaction refs
 -> user presses button
--> local-webhook ingress receives callback_query
+-> webhook ingress receives callback_query
 -> StackOS stores communication-event and marks interaction clicked
 -> optional static callback.answer clears Telegram client loading state
 -> allowlist creates agent_request with event/interaction refs
@@ -1429,7 +1461,7 @@ describe what StackOS records; they do not imply daemon-side model execution.
 Allowed DM:
 
 ```text
-1. local-webhook receives a private message for project A / bot profile support.
+1. Webhook ingress receives a private message for project A / bot profile support.
 2. profile support resolves auth_profile_key support-telegram server-side.
 3. access_policy allows the chat and user; trigger_policy allows DM.
 4. StackOS stores communication-event and communication-message.
@@ -1439,7 +1471,7 @@ Allowed DM:
 Allowed group mention with history context:
 
 ```text
-1. local-webhook receives a group message that mentions @support_bot.
+1. Webhook ingress receives a group message that mentions @support_bot.
 2. profile support can observe the group and allows the user plus mention trigger.
 3. StackOS stores the new message and selects bounded stored history by context_policy.
 4. StackOS creates one agent_request with group/thread refs and context hints.
@@ -1449,7 +1481,7 @@ Allowed group mention with history context:
 Observed non-trigger:
 
 ```text
-1. local-webhook receives a visible group message without mention, command, or reply-to-bot.
+1. Webhook ingress receives a visible group message without mention, command, or reply-to-bot.
 2. visibility_policy permits storing non-trigger messages.
 3. StackOS stores the message with observed policy status.
 4. StackOS creates no agent_request.
@@ -1458,7 +1490,7 @@ Observed non-trigger:
 No-store non-trigger:
 
 ```text
-1. local-webhook receives a visible group message without a configured trigger.
+1. Webhook ingress receives a visible group message without a configured trigger.
 2. visibility_policy.store_non_trigger_messages is false.
 3. StackOS writes no communication records for the update.
 4. StackOS creates no agent_request.
@@ -1467,7 +1499,7 @@ No-store non-trigger:
 Unauthorized user:
 
 ```text
-1. local-webhook receives a trigger from a visible chat but a disallowed user.
+1. Webhook ingress receives a trigger from a visible chat but a disallowed user.
 2. StackOS verifies the bot profile and secret before applying user policy.
 3. StackOS may store the event/message as invoker_blocked context.
 4. StackOS creates no agent_request.
@@ -1490,7 +1522,7 @@ Authorized callback:
    allowed_user_refs.
 2. StackOS stores a communication-interaction keyed by support /
    telegram-message:100:501 / ixn_123.
-3. local-webhook receives callback_query ixn_123 from the allowed user/chat.
+3. Webhook ingress receives callback_query ixn_123 from the allowed user/chat.
 4. StackOS resolves the stored interaction by bot profile, provider message ref,
    and callback token, then marks it clicked.
 5. StackOS creates one agent_request with event_ref and interaction_ref; the
@@ -1500,7 +1532,7 @@ Authorized callback:
 Unauthorized callback:
 
 ```text
-1. local-webhook receives callback_query ixn_123 from a disallowed user or chat.
+1. Webhook ingress receives callback_query ixn_123 from a disallowed user or chat.
 2. StackOS verifies the profile secret and resolves the interaction.
 3. Interaction access policy blocks the click.
 4. StackOS stores the event as callback_blocked when policy permits storage.
@@ -1524,7 +1556,7 @@ Local Bot API webhook:
 2. Credential safe config points api_base_url to the local Bot API server.
 3. Operator calls webhook.set with the loopback StackOS ingress URL.
 4. Local Bot API posts updates to /api/v1/ingress/telegram/{project_id}/{bot_profile_key}.
-5. StackOS verifies the secret token and processes the update through normal local-webhook policy.
+5. StackOS verifies the secret token and processes the update through normal webhook policy.
 ```
 
 ### SMTP Outbound Notification
@@ -1650,12 +1682,12 @@ when the blast radius is meaningful, and a detailed commit message after signoff
 | C05 | Add generic Agent Requests UI page or resource view integration. | C03, C04. | UI unit/build smoke; manual browser pass when server is running. | UI stays generic and object-driven. |
 | C06 | Delivered: implement Telegram connector file for `identity.get`, `message.send`, `photo.send`, `callback.answer`, `updates.poll`, and `webhook.set/delete/info`. | C01. | Mocked Telegram tests; validation tests; inline keyboard, photo, webhook, diagnostic poll, and no-token redaction tests. | Connector has official docs links near provider calls and no token-bearing URLs. |
 | C07 | Add Telegram credential test wrapper and auth diagnostics. | C01, C06. | Auth test success/failure mocks; no token in diagnostics. | `auth.test` returns safe bot identity/status only. |
-| C08 | Add Telegram normalization, cursor, message, interaction, and callback resource flow for local-webhook ingress plus bounded diagnostic poll output. | C03, C04, C06. | Route/connector tests for message/callback normalization, resource writes, idempotency, and diagnostic poll bounds. | Local-webhook is the normal listener path; `updates.poll` is not a daemon listener. |
+| C08 | Add Telegram normalization, cursor, message, interaction, and callback resource flow for webhook ingress plus bounded diagnostic poll output. | C03, C04, C06. | Route/connector tests for message/callback normalization, resource writes, idempotency, and diagnostic poll bounds. | Webhook ingress is the normal listener path; `updates.poll` is not a daemon listener. |
 | C09 | Delivered: implement SMTP send connector and credential test. | C01. | Mock SMTP server tests for accepted/rejected/auth/TLS paths, no-secret output, resource writes, and safe validation. | SMTP output never claims delivery/read state. |
 | C10 | Delivered: implement IMAP list/search/fetch/mark connector and credential test. | C01. | Mock IMAP tests for UID search/fetch, `\\Seen`, UIDVALIDITY, size caps, no-secret output, and resource writes. | No sequence-number-only operations. |
 | C11 | Delivered: add communications workflow templates for inbox review, rich Telegram reply, callback follow-up, and outbound notification. | C01, C03, C04, C06, C08, C09, C10 as relevant. | Template loader validation; no-payload template checks. | Templates describe setup/context, not business decisions. |
 | C12 | Add static scheduled ingestion runner. | C03, C04, C06, C08, C10. | Scheduler tests; system run-plan audit; idempotent cursor and optional callback ACK tests. | Runner stores events/requests only; no model invocation. |
-| C13 | Delivered: add Telegram secret-token local-webhook ingress for message/callback storage and generic agent-request creation through project-scoped bot profiles. | C03, C04, C06, C08. | Route tests for missing/wrong secret, auth_profile_key binding, callback/message resource writes, idempotent request creation, and no secret leakage. | Ingress does not invoke a model, does not bypass queue state, and uses server-side secrets only. |
+| C13 | Delivered: add Telegram secret-token webhook ingress for message/callback storage and generic agent-request creation through project-scoped bot profiles. | C03, C04, C06, C08. | Route tests for missing/wrong secret, auth_profile_key binding, callback/message resource writes, idempotent request creation, and no secret leakage. | Ingress does not invoke a model, does not bypass queue state, and uses server-side secrets only. |
 | C14 | Update connector quality matrix and release signoff docs for executable communications actions. | First executable connector tasks. | `make signoff` or targeted signoff set. | Docs and tests agree on executable/deferred state. |
 | C15 | Delivered: implement Slack connector file for `identity.get`, `message.send`, `conversation.open`, `conversation.info`, `conversation.list`, and `conversation.members`. | C01, C03, C04. | Mocked Slack Web API tests; validation tests; Block Kit button, membership, cursor, resource-write, and no-secret redaction tests. | Connector has official docs links near provider calls and no bearer-token output. |
 | C16 | Delivered: add Slack signed HTTP ingress for Events API and Interactivity payload storage plus generic agent-request creation through project-scoped communication profiles. | C03, C04, C15. | Route tests for missing/wrong signature, URL verification, app mention, Block Kit click lifecycle, duplicate-safe request keys, and no transient secret persistence. | Ingress does not call Slack, does not invoke a model, and verifies daemon-held signing secrets only. |
@@ -1690,7 +1722,7 @@ Recommended delivery order:
 7. C10 IMAP lifecycle.
 8. C11 templates.
 9. C12 scheduled ingestion.
-10. C13 local-webhook ingress.
+10. C13 webhook ingress.
 11. C14 final connector-quality/release signoff.
 
 ## Explicit Non-Goals For First Pass
