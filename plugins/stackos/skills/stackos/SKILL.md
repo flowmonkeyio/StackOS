@@ -40,11 +40,17 @@ directly.
    `action.validate`, and the step-granted `action.execute` path. The daemon
    resolves credentials inside the action process and returns only sanitized
    output.
+7. When the user asks for one explicit action and no workflow state is needed,
+   use `action.run` with `confirm_direct=true`, `intent_summary`, and an
+   `idempotency_key` for non-read actions. Leave `verbose=false` unless the
+   full redacted action payload is needed for debugging.
 
 ## Common Flows
 
-- Connect repo: resolve workspace, create/select project, call
-  `workspace.connect`, then inspect content conventions.
+- Connect repo: resolve workspace; if it is unbound, have the operator choose
+  the project through UI/CLI/admin flow, call `workspace.connect`, then inspect
+  content conventions. The bridge will inject the resolved project on later
+  calls.
 - Connect vendors: inspect the run plan's needed providers, share
   `/projects/{project_id}/connections`, wait for the operator to connect them
   in the UI, then run the relevant health probes.
@@ -53,6 +59,8 @@ directly.
 - Execute a step: claim the run-plan step, follow the referenced guidance, call
   `toolbox.describe` for needed granted tools, invoke them with `toolbox.call`,
   then `runPlan.recordStep`.
-- Execute an action: validate the manifest and input, let the daemon resolve
-  credentials, then store outputs as resources, artifacts, learnings, or run
-  step summaries.
+- Execute one direct action: describe/validate when useful, call `action.run`,
+  and read the compact result.
+- Execute a workflow action: validate the manifest and input, let the daemon
+  resolve credentials through `action.execute`, then store outputs as
+  resources, artifacts, learnings, or run step summaries.

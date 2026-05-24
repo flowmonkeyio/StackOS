@@ -29,6 +29,7 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("project.create", SYSTEM_SKILL)
     check_grant("auth.status", SYSTEM_SKILL)
     check_grant("auth.test", SYSTEM_SKILL)
+    check_grant("action.run", SYSTEM_SKILL)
     check_grant("localAgentChat.createMessage", SYSTEM_SKILL)
     check_grant("agentRequest.list", SYSTEM_SKILL)
     check_grant("agentRequest.get", SYSTEM_SKILL)

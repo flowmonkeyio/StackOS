@@ -10,7 +10,7 @@ from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.server import ToolRegistry, ToolSpec
 from stackos.mcp.streaming import ProgressEmitter
-from stackos.repositories.base import Page
+from stackos.repositories.base import NotFoundError, Page
 from stackos.repositories.resources import ArtifactOut, ArtifactRepository
 
 
@@ -43,6 +43,7 @@ class ArtifactGetInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"artifact_id": 1}})
 
     artifact_id: int
+    project_id: int | None = None
 
 
 class ArtifactQueryInput(MCPInput):
@@ -88,7 +89,13 @@ async def _artifact_get(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> ArtifactOut:
-    return ArtifactRepository(ctx.session).get(inp.artifact_id)
+    artifact = ArtifactRepository(ctx.session).get(inp.artifact_id)
+    if inp.project_id is not None and artifact.project_id != inp.project_id:
+        raise NotFoundError(
+            f"artifact {inp.artifact_id} not found in project {inp.project_id}",
+            data={"project_id": inp.project_id, "artifact_id": inp.artifact_id},
+        )
+    return artifact
 
 
 async def _artifact_query(

@@ -55,6 +55,35 @@ def test_workspace_connect_list_and_start_session(
     assert started["data"]["workspace_binding_id"] == connected["data"]["id"]
 
 
+def test_workspace_resolves_by_current_directory_root(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    connected = mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "project_id": project_id,
+            "repo_fingerprint": "path:rooted",
+            "last_known_root": "/tmp/stackos-rooted-site",
+        },
+    )
+
+    resolved = mcp_client.call_tool_structured(
+        "workspace.resolve",
+        {"cwd": "/tmp/stackos-rooted-site/packages/site"},
+    )
+    started = mcp_client.call_tool_structured(
+        "workspace.startSession",
+        {"runtime": "codex", "cwd": "/tmp/stackos-rooted-site/packages/site"},
+    )
+
+    assert connected["project_id"] == project_id
+    assert resolved["project_id"] == project_id
+    assert resolved["needs_connect"] is False
+    assert started["project_id"] == project_id
+    assert started["data"]["workspace_binding_id"] == connected["data"]["id"]
+
+
 def test_workspace_connect_missing_project_returns_not_found(mcp_client: MCPClient) -> None:
     err = mcp_client.call_tool_error(
         "workspace.connect",

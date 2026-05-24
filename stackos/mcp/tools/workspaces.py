@@ -33,6 +33,7 @@ class WorkspaceResolveInput(MCPInput):
 
     repo_fingerprint: str | None = None
     git_remote_url: str | None = None
+    cwd: str | None = None
 
 
 class WorkspaceConnectInput(MCPInput):
@@ -82,6 +83,7 @@ class WorkspaceUpdateProfileInput(MCPInput):
     )
 
     binding_id: int
+    project_id: int | None = None
     framework: str | None = None
     content_model_json: dict[str, Any] | None = None
 
@@ -114,6 +116,7 @@ async def _workspace_resolve(
     return WorkspaceRepository(ctx.session).resolve(
         repo_fingerprint=inp.repo_fingerprint,
         git_remote_url=inp.git_remote_url,
+        cwd=inp.cwd,
     )
 
 
@@ -145,6 +148,7 @@ async def _workspace_update_profile(
 ) -> WriteEnvelope[WorkspaceBindingOut]:
     env = WorkspaceRepository(ctx.session).update_profile(
         inp.binding_id,
+        project_id=inp.project_id,
         framework=inp.framework,
         content_model_json=inp.content_model_json,
     )

@@ -8,7 +8,7 @@ StackOS:
 ```text
 REST / CLI / MCP
 -> operation registry
--> run-plan grant check
+-> direct-action policy or run-plan grant check
 -> action schema and connector validation
 -> daemon-side credential resolution
 -> connector execution
@@ -24,7 +24,8 @@ REST / CLI / MCP
 - Connector: `mock-provider`
 
 Store any non-empty fake API key through the normal auth setup route, then pass
-only the returned `credential_ref` to `action.execute`.
+only the returned `credential_ref` to `action.run` for one explicit call or
+`action.execute` inside a granted run-plan step.
 
 Example action payload:
 

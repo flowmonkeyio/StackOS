@@ -20,6 +20,7 @@ def test_action_describe_and_validate_are_read_only_discovery_tools(
     assert "action.describe" in tools
     assert "action.validate" in tools
     assert "action.execute" in tools
+    assert "action.run" in tools
 
     described = mcp_client.call_tool_structured(
         "action.describe",
@@ -524,6 +525,107 @@ def test_action_execute_mock_provider_vertical_slice_through_mcp(
     audit = audit_resp.json()
     assert audit["total_estimate"] == 1
     assert "mock-mcp-secret" not in json.dumps(audit)
+
+
+def test_action_run_direct_mock_provider_returns_compact_output(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_mock_credential(mcp_client, project_id, secret="direct-secret")
+
+    out = mcp_client.call_tool_structured(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.mock.echo",
+            "credential_ref": credential_ref,
+            "input_json": {
+                "message": "hello direct action" + ("." * 600),
+                "echo": {"kind": "smoke"},
+                "cost_cents": 3,
+            },
+            "idempotency_key": "direct-mock-provider-1",
+        },
+    )
+
+    data = out["data"]
+    rendered = json.dumps(out)
+    assert data["status"] == "success"
+    assert data["action_ref"] == "utils.mock.echo"
+    assert data["provider_key"] == "mock-provider"
+    assert data["operation"] == "echo"
+    assert data["compact"]["message"].startswith("hello direct action")
+    assert len(data["compact"]["message"]) <= 503
+    assert data["compact"]["status"] == "success"
+    assert data["cost_cents"] == 3
+    assert data["action_call"] is None
+    assert data["output_json"] is None
+    assert "direct-secret" not in rendered
+
+
+def test_action_run_verbose_includes_redacted_full_payload(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_mock_credential(mcp_client, project_id, secret="verbose-secret")
+
+    out = mcp_client.call_tool_structured(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.mock.echo",
+            "credential_ref": credential_ref,
+            "input_json": {"message": "hello verbose"},
+            "verbose": True,
+        },
+    )
+
+    data = out["data"]
+    rendered = json.dumps(out)
+    assert data["action_call"]["provider_key"] == "mock-provider"
+    assert data["output_json"]["leak_check"] == {
+        "authorization": "[redacted]",
+        "api_key": "[redacted]",
+    }
+    assert "verbose-secret" not in rendered
+
+
+def test_action_run_rejects_non_read_without_direct_confirmation(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    err = mcp_client.call_tool_error(
+        "action.run",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "action_ref": "publishing.wordpress.post.create",
+            "input_json": {"post": {"title": "x", "content": "x"}},
+        },
+    )
+
+    assert err["code"] == -32602
+    assert "confirm_direct=true" in err["data"]["detail"]
+
+
+def test_action_run_rejects_non_read_without_idempotency_key(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    err = mcp_client.call_tool_error(
+        "action.run",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "action_ref": "publishing.wordpress.post.create",
+            "input_json": {"post": {"title": "x", "content": "x"}},
+            "confirm_direct": True,
+            "intent_summary": "User asked to create one post directly.",
+        },
+    )
+
+    assert err["code"] == -32602
+    assert "idempotency_key" in err["data"]["detail"]
 
 
 def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(

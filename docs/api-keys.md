@@ -126,8 +126,8 @@ Used by: `publishing.wordpress.post.create` and WordPress credential probes.
 
 The wrapper probes ``GET /wp-json/wp/v2/users/me?context=edit`` using Basic Auth
 with the application password. The publishing action posts the agent-supplied
-``post`` object to ``POST /wp-json/wp/v2/posts`` through run-plan-scoped
-``action.execute``.
+``post`` object to ``POST /wp-json/wp/v2/posts`` through direct ``action.run``
+for one explicit call or run-plan-scoped ``action.execute``.
 
 ---
 
@@ -149,8 +149,8 @@ The wrapper signs a short-lived HS256 JWT with ``aud="/admin/"`` and
 sends it as ``Authorization: Ghost <token>`` with ``Accept-Version``.
 The probe hits ``GET /ghost/api/admin/users/?limit=1&include=roles``. The
 publishing action posts the agent-supplied ``post`` object to
-``POST /ghost/api/admin/posts/?source=html`` through run-plan-scoped
-``action.execute``.
+``POST /ghost/api/admin/posts/?source=html`` through direct ``action.run`` for
+one explicit call or run-plan-scoped ``action.execute``.
 
 ---
 

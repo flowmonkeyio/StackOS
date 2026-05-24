@@ -60,19 +60,24 @@ StackOS setup files.
 ## Agent-Facing MCP Surface
 
 The daemon keeps the full internal MCP catalog for the UI, tests, and advanced
-automation, but the plugin bridge exposes a small agent console:
+automation, but the plugin bridge exposes a small workspace-scoped agent
+console:
 
-- Direct tools: workspace binding/session tools, project list/create/get/update
-  and active-project selection, `meta.enums`, workflow-template tools,
-  run-plan tools, and a few `run.*` status/control calls.
-- Hidden setup helpers: credential metadata, budgets, schedules, sitemap
-  fetches, and setup-only project controls are available through
-  `toolbox.describe` and `toolbox.call`.
+- Direct tools: workspace binding/session tools, safe auth status/test,
+  `action.describe`, `action.validate`, `action.run`, `meta.enums`,
+  workflow-template tools, run-plan tools, project-scoped reads, and a few
+  `run.*` status/control calls.
+- Hidden setup helpers: budgets, schedules, sitemap fetches, cost views, and
+  setup-only run audit helpers are available through `toolbox.describe` and
+  `toolbox.call`.
 - Step tools: when `runPlan.start` and `runPlan.claimStep` establish a running
   step, the bridge reads that step's grants; those tools become callable
   through `toolbox.call` for that run.
 
-Agents should use direct tools for setup and run-plan control, then use
+The bridge derives the current project from the repository that launched it. It
+injects `project_id`, refuses cross-project calls, and blocks project-scoped
+tools until the workspace is connected. Agents should use direct tools for
+setup, direct one-action calls, and run-plan control, then use
 `toolbox.describe` before calling any hidden tool. This keeps the model context
 small without removing the daemon's richer capabilities.
 

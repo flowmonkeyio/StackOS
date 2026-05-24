@@ -59,7 +59,7 @@ The aligned runtime shape is:
 ```text
 Local chat / Telegram / SMTP / IMAP / future communication providers
 -> plugin provider/action manifest
--> action.execute
+-> action.run for one explicit call or action.execute in a run plan
 -> daemon-side credential resolution
 -> one provider connector call
 -> normalized safe output and action-call audit
@@ -733,8 +733,9 @@ Deferred auth methods:
 
 ## Action Contracts
 
-Provider operations must be plugin actions executed through `action.execute`.
-Do not add provider-specific MCP tools such as `telegram.sendMessage` or
+Provider operations must be plugin actions executed through `action.run` for one
+explicit direct call or `action.execute` inside a granted run-plan step. Do not
+add provider-specific MCP tools such as `telegram.sendMessage` or
 `smtp.sendEmail`.
 
 ### Telegram Actions
@@ -1003,7 +1004,7 @@ decides the workflow.
 
 ```text
 Agent sends message with inline keyboard
--> action.execute calls communications.telegram-bot.message.send
+-> action.run or action.execute calls communications.telegram-bot.message.send
 -> StackOS stores outbound communication-message and interaction refs
 -> user presses button
 -> local-webhook ingress receives callback_query
@@ -1089,7 +1090,7 @@ Outbound reply tied to `source_agent_request_id`:
 1. Agent claims agent_request 42 from bot profile support and chat telegram-chat:100.
 2. Agent calls message.send with bot_profile_key support, chat_ref telegram-chat:100, and source_agent_request_id 42.
 3. Connector resolves support.auth_profile_key and verifies request/chat/thread origin when response_policy requires it.
-4. Telegram sendMessage executes through action.execute with daemon-held credentials.
+4. Telegram sendMessage executes through action.run or action.execute with daemon-held credentials.
 5. StackOS records the outbound communication-message and action-call audit.
 ```
 
@@ -1143,7 +1144,7 @@ Local Bot API webhook:
 Agent completes a run plan
 -> run plan has granted SMTP send action
 -> agent composes explicit recipient/subject/body payload
--> action.execute resolves smtp credential
+-> action.run or action.execute resolves smtp credential
 -> connector sends message
 -> StackOS records accepted/rejected status in action_calls
 ```
@@ -1154,7 +1155,7 @@ No delivery/read claim should be made from SMTP acceptance alone.
 
 ```text
 Agent starts inbox-review run plan
--> action.execute calls imap.messages.search with bounded mailbox/query
+-> action.run or action.execute calls imap.messages.search with bounded mailbox/query
 -> agent fetches selected messages by UID
 -> StackOS stores selected mailbox/message/cursor resources from connector output
 -> agent creates or prepares generic agent_requests for messages needing action
@@ -1226,7 +1227,7 @@ Before a communications action is marked executable:
   failures, rate/temporary failures, and provider error bodies.
 - Redaction tests prove Telegram token-bearing URLs are never persisted or
   returned.
-- Run-plan grant tests prove `action.execute` is required for provider calls.
+- Run-plan grant tests prove `action.execute` is required for workflow provider calls.
 - REST/CLI/MCP parity tests cover generic `agentRequest.*` operations.
 - Queue-to-plan tests cover `agentRequest.prepareRunPlan` idempotent replay,
   rollback on invalid plans, and run-plan metadata linkage.

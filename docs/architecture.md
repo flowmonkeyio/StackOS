@@ -61,6 +61,13 @@ A run plan is a specific execution instance. It has concrete inputs, steps,
 statuses, scoped tool grants, outputs, approval state, and audit records. Run
 plans can be created from templates or authored directly by an agent.
 
+### Direct Action
+
+A direct action is a single explicit action call that does not need a workflow
+template or run plan. It is executed through `action.run`, still resolves
+credentials inside the daemon, returns compact output by default, and writes an
+`action_calls` audit row.
+
 ### Action Call
 
 An action call is one validated tool invocation. It records input, output,
@@ -108,28 +115,37 @@ operation registry emits agent-readable docs through `/api/v1/operations` and
 `stackos ops describe`, and MCP tool schemas are generated from the same
 specs when the MCP surface is enabled.
 
-The direct MCP surface is intentionally small:
+The agent-facing MCP bridge surface is intentionally small:
 
-- discovery: workspace, project, plugin, catalog, capability, provider
-- bootstrap/setup: project creation and selection, project configuration,
-  budgets, schedules, safe auth status/test, workflow-template discovery, and
-  run-plan creation/start
-- execution: run-plan controller tools, scoped actions, resource/artifact
-  writes, memory writes, and run audit tools
+- discovery: the current workspace/project, plugin, catalog, capability,
+  provider, resources, artifacts, and project memory
+- bootstrap/setup: workspace binding, budgets, schedules, safe auth
+  status/test, workflow-template discovery, and run-plan creation/start
+- direct execution: `action.run` for one explicit action with compact output
+- workflow execution: run-plan controller tools, `action.execute`, resource and
+  artifact writes, memory writes, and run audit tools
 - memory: context, learnings, experiments, decisions
 
+The bridge derives the active project from the repository that launched it. It
+injects that `project_id` into project-scoped calls and refuses explicit
+cross-project calls. It also injects current workspace hints and refuses calls
+that try to resolve or connect another workspace. Broad project listing,
+creation, deletion, and switching remain daemon/admin capabilities; they are
+not advertised to normal agent bridge clients.
+
 Bootstrap/setup calls are intentionally available before a run token exists so
-an agent can set up StackOS and create the first run plan. They are not a
-workflow execution path. Project-memory writes (`learning.create`,
+an agent can set up the current project and create the first run plan. They are
+not a workflow execution path. Project-memory writes (`learning.create`,
 `experiment.*`, `decision.record`), generic resource/artifact mutations, and
 `action.execute` require a started run plan with a running step and an explicit
 tool grant.
 
 Provider operations are modeled as plugin actions. Agents use
-`action.describe`, `action.validate`, `action.execute`, and scoped run-plan
-grants. Vendor wrappers remain inside daemon-side integrations where auth,
-budget checks, retries, and output normalization can be enforced; they are not
-registered as provider-specific MCP tools.
+`action.describe`, `action.validate`, `action.run` for one explicit action, or
+`action.execute` with scoped run-plan grants for workflow steps. Vendor wrappers
+remain inside daemon-side integrations where auth, budget checks, retries, and
+output normalization can be enforced; they are not registered as
+provider-specific MCP tools.
 
 ## Auth Flow
 

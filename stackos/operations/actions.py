@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from stackos.actions import (
     ActionDescribeOut,
@@ -81,6 +81,57 @@ class ActionExecuteInput(MCPInput):
     metadata_json: dict[str, Any] | None = None
 
 
+class ActionRunInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "action_ref": "communications.telegram-bot.message.send",
+                "intent_summary": "User asked to send one Telegram test message.",
+                "confirm_direct": True,
+                "idempotency_key": "telegram-send-1",
+                "input_json": {
+                    "bot_profile_key": "support",
+                    "chat_ref": "telegram-chat:123",
+                    "text": "Done.",
+                },
+                "credential_ref": "cred_...",
+            }
+        },
+    )
+
+    project_id: int | None = None
+    action_ref: str | None = None
+    plugin_slug: str | None = None
+    action_key: str | None = None
+    input_json: dict[str, Any] | None = None
+    credential_ref: str | None = None
+    idempotency_key: str | None = None
+    dry_run: bool = False
+    metadata_json: dict[str, Any] | None = None
+    intent_summary: str | None = None
+    confirm_direct: bool = False
+    verbose: bool = False
+
+
+class ActionRunOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    action_ref: str
+    action_call_id: int
+    provider_key: str | None = None
+    operation: str
+    credential_ref: str | None = None
+    cost_cents: int = 0
+    dry_run: bool = False
+    compact: dict[str, Any] = Field(default_factory=dict)
+    action_call: dict[str, Any] | None = None
+    output_json: dict[str, Any] | None = None
+    metadata_json: dict[str, Any] | None = None
+
+
 async def action_describe(
     inp: ActionDescribeInput,
     ctx: MCPContext,
@@ -136,6 +187,233 @@ async def action_execute(
         run_id=env.run_id,
         project_id=env.project_id,
     )
+
+
+async def action_run(
+    inp: ActionRunInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[ActionRunOut]:
+    project_id = inp.project_id if inp.project_id is not None else ctx.project_id
+    if project_id is None:
+        from stackos.repositories.base import ValidationError
+
+        raise ValidationError(
+            "project_id is required unless the agent bridge resolved the workspace project"
+        )
+
+    repo = ActionRepository(ctx.session)
+    described = repo.describe(
+        project_id=project_id,
+        action_ref=inp.action_ref,
+        plugin_slug=inp.plugin_slug,
+        action_key=inp.action_key,
+    )
+    _check_direct_action_policy(
+        risk_level=described.manifest.risk_level,
+        config_json=described.manifest.config_json,
+        dry_run=inp.dry_run,
+        confirm_direct=inp.confirm_direct,
+        intent_summary=inp.intent_summary,
+        idempotency_key=inp.idempotency_key,
+    )
+    settings = ctx.extras.get("settings")
+    asset_dir = getattr(settings, "generated_assets_dir", None)
+    metadata = {
+        **(inp.metadata_json or {}),
+        "direct_action": True,
+    }
+    if inp.intent_summary:
+        metadata["intent_summary"] = inp.intent_summary
+    env = await ActionRepository(ctx.session, asset_dir=asset_dir).execute(
+        project_id=project_id,
+        action_ref=described.manifest.action_ref,
+        input_json=inp.input_json,
+        credential_ref=inp.credential_ref,
+        run_id=ctx.run_id,
+        idempotency_key=inp.idempotency_key,
+        dry_run=inp.dry_run,
+        metadata_json=metadata,
+    )
+    out = _action_run_out(env.data, verbose=inp.verbose)
+    return WriteEnvelope[ActionRunOut](
+        data=out,
+        run_id=env.run_id,
+        project_id=env.project_id,
+    )
+
+
+def _check_direct_action_policy(
+    *,
+    risk_level: str,
+    config_json: dict[str, Any],
+    dry_run: bool,
+    confirm_direct: bool,
+    intent_summary: str | None,
+    idempotency_key: str | None,
+) -> None:
+    from stackos.repositories.base import ValidationError
+
+    direct_config = config_json.get("direct_run")
+    if direct_config is False or direct_config == "workflow-only":
+        raise ValidationError("action is configured for workflow execution only")
+    if dry_run or risk_level == "read":
+        return
+    if not confirm_direct or not (intent_summary or "").strip():
+        raise ValidationError(
+            "direct non-read actions require confirm_direct=true and intent_summary",
+            data={"risk_level": risk_level},
+        )
+    if not (idempotency_key or "").strip():
+        raise ValidationError(
+            "direct non-read actions require idempotency_key to prevent duplicate side effects",
+            data={"risk_level": risk_level},
+        )
+
+
+def _action_run_out(execution: ActionExecutionOut, *, verbose: bool) -> ActionRunOut:
+    call = execution.action_call
+    action_ref = f"{call.plugin_slug}.{call.action_key}"
+    return ActionRunOut(
+        status=call.status.value if hasattr(call.status, "value") else str(call.status),
+        action_ref=action_ref,
+        action_call_id=call.id,
+        provider_key=call.provider_key,
+        operation=call.operation,
+        credential_ref=execution.credential_ref,
+        cost_cents=execution.cost_cents,
+        dry_run=execution.dry_run,
+        compact=_compact_action_output(
+            provider_key=call.provider_key,
+            operation=call.operation,
+            output_json=execution.output_json,
+        ),
+        action_call=call.model_dump(mode="json") if verbose else None,
+        output_json=execution.output_json if verbose else None,
+        metadata_json=execution.metadata_json if verbose else None,
+    )
+
+
+def _compact_action_output(
+    *,
+    provider_key: str | None,
+    operation: str,
+    output_json: dict[str, Any],
+) -> dict[str, Any]:
+    if provider_key == "telegram-bot":
+        return _compact_telegram_output(operation, output_json)
+    compact: dict[str, Any] = {}
+    for key, value in output_json.items():
+        if isinstance(value, str | int | float | bool) or value is None:
+            compact[key] = _compact_scalar(value)
+    if "status_code" in output_json:
+        compact["status_code"] = output_json["status_code"]
+    return compact or {"keys": sorted(output_json)}
+
+
+def _compact_scalar(value: str | int | float | bool | None) -> str | int | float | bool | None:
+    if isinstance(value, str) and len(value) > 500:
+        return f"{value[:500]}..."
+    return value
+
+
+def _compact_telegram_output(operation: str, output_json: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {"operation": operation}
+    status_code = output_json.get("status_code")
+    if isinstance(status_code, int):
+        compact["status_code"] = status_code
+    body = output_json.get("body")
+    if not isinstance(body, dict):
+        return compact
+    if isinstance(body.get("ok"), bool):
+        compact["provider_ok"] = body["ok"]
+    result = body.get("result")
+    if operation == "updates.poll" and isinstance(result, list):
+        updates = [
+            _compact_telegram_update(update) for update in result if isinstance(update, dict)
+        ]
+        compact["updates_count"] = len(updates)
+        compact["updates"] = updates
+        update_ids = [
+            item["update_id"] for item in updates if isinstance(item.get("update_id"), int)
+        ]
+        if update_ids:
+            compact["next_offset"] = max(update_ids) + 1
+        return compact
+    if isinstance(result, dict):
+        message_id = result.get("message_id")
+        if isinstance(message_id, int):
+            compact["message_id"] = message_id
+        chat = result.get("chat")
+        if isinstance(chat, dict):
+            chat_id = chat.get("id")
+            if isinstance(chat_id, int):
+                compact["chat_ref"] = f"telegram-chat:{chat_id}"
+            if isinstance(chat.get("type"), str):
+                compact["chat_type"] = chat["type"]
+        if isinstance(result.get("text"), str):
+            compact["text_preview"] = result["text"][:200]
+    return compact
+
+
+def _compact_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
+    item: dict[str, Any] = {}
+    update_id = update.get("update_id")
+    if isinstance(update_id, int):
+        item["update_id"] = update_id
+    if isinstance(update.get("callback_query"), dict):
+        callback = update["callback_query"]
+        item["kind"] = "callback_query"
+        if isinstance(callback.get("id"), str):
+            item["callback_query_id"] = callback["id"]
+        if isinstance(callback.get("data"), str):
+            item["callback_data"] = callback["data"]
+        _add_telegram_user_ref(item, callback.get("from"))
+        message = callback.get("message")
+        if isinstance(message, dict):
+            _add_telegram_chat_ref(item, message.get("chat"))
+            if isinstance(message.get("message_id"), int):
+                item["source_message_id"] = message["message_id"]
+        return item
+    for key, kind in (
+        ("message", "message"),
+        ("edited_message", "edited_message"),
+        ("channel_post", "channel_post"),
+        ("edited_channel_post", "edited_channel_post"),
+    ):
+        message = update.get(key)
+        if not isinstance(message, dict):
+            continue
+        item["kind"] = kind
+        if isinstance(message.get("message_id"), int):
+            item["message_id"] = message["message_id"]
+        _add_telegram_user_ref(item, message.get("from"))
+        _add_telegram_chat_ref(item, message.get("chat"))
+        if isinstance(message.get("text"), str):
+            item["text_preview"] = message["text"][:200]
+        return item
+    item["kind"] = "unknown"
+    return item
+
+
+def _add_telegram_user_ref(out: dict[str, Any], raw: Any) -> None:
+    if not isinstance(raw, dict):
+        return
+    user_id = raw.get("id")
+    if isinstance(user_id, int):
+        out["user_ref"] = f"telegram-user:{user_id}"
+    if isinstance(raw.get("username"), str):
+        out["username"] = raw["username"]
+
+
+def _add_telegram_chat_ref(out: dict[str, Any], raw: Any) -> None:
+    if not isinstance(raw, dict):
+        return
+    chat_id = raw.get("id")
+    if isinstance(chat_id, int):
+        out["chat_ref"] = f"telegram-chat:{chat_id}"
+    if isinstance(raw.get("type"), str):
+        out["chat_type"] = raw["type"]
 
 
 def operation_specs() -> list[OperationSpec]:
@@ -272,15 +550,71 @@ def operation_specs() -> list[OperationSpec]:
             ),
             grant_policy="run-plan-step-action-ref",
         ),
+        OperationSpec(
+            name="action.run",
+            summary="Run one explicit action directly with compact output and audit.",
+            input_model=ActionRunInput,
+            output_model=WriteEnvelope[ActionRunOut],
+            handler=action_run,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True,
+                    path="/api/v1/operations/action.run/call",
+                ),
+                cli=OperationSurface(enabled=True, command="actions run"),
+            ),
+            purpose=(
+                "Use this for a single explicit tool action when no multi-step workflow "
+                "is needed. StackOS still validates inputs, resolves daemon-held "
+                "credentials, enforces provider/profile policy, and records action audit."
+            ),
+            when_to_use=(
+                "The user asked for one concrete action, such as sending one message.",
+                "The work does not need a template, multi-step plan, artifacts, or learning loop.",
+            ),
+            prerequisites=(
+                "The current workspace must resolve to a project, or pass project_id.",
+                "Pass only credential_ref; never pass secret values.",
+                "For non-read actions, pass confirm_direct=true, intent_summary, "
+                "and idempotency_key.",
+                "Use verbose=true only when the full redacted action payload is needed.",
+            ),
+            returns=(
+                "A compact sanitized result by default.",
+                "A redacted action-call audit id linked to the project.",
+                "The full ActionExecutionOut only when verbose=true.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Send one Telegram message directly",
+                    arguments={
+                        "action_ref": "communications.telegram-bot.message.send",
+                        "confirm_direct": True,
+                        "intent_summary": "User asked to send one status message.",
+                        "idempotency_key": "telegram-send-status-1",
+                        "input_json": {
+                            "bot_profile_key": "support",
+                            "chat_ref": "telegram-chat:123",
+                            "text": "Done.",
+                        },
+                    },
+                ),
+            ),
+            grant_policy="direct-action-policy",
+        ),
     ]
 
 
 __all__ = [
     "ActionDescribeInput",
     "ActionExecuteInput",
+    "ActionRunInput",
+    "ActionRunOut",
     "ActionValidateInput",
     "action_describe",
     "action_execute",
+    "action_run",
     "action_validate",
     "operation_specs",
 ]

@@ -29,7 +29,7 @@ StackOS provider work has three states:
 | Domain | Status |
 | --- | --- |
 | `core` | Generic project memory, context, learnings, experiments, decisions, and local daemon primitives are the stable foundation. |
-| `utils` | OpenAI Images, Firecrawl scrape/crawl/map, Jina Reader, Reddit, sitemap, static HTTP connector paths, and the local [mock provider](../integration-testing.md) are executable through `action.execute`; async extract/status-depth remains deferred until status and artifact contracts exist. |
+| `utils` | OpenAI Images, Firecrawl scrape/crawl/map, Jina Reader, Reddit, sitemap, static HTTP connector paths, and the local [mock provider](../integration-testing.md) are executable through `action.run` for one explicit call or `action.execute` in run plans; async extract/status-depth remains deferred until status and artifact contracts exist. |
 | `seo` | DataForSEO keyword/SERP/PAA and Ahrefs competitor/backlink actions are executable. GSC, GA4, crawl imports, and broader DataForSEO/Ahrefs breadth still require explicit action contracts. |
 | `publishing` | WordPress and Ghost post-create actions are executable. Media upload, update, scheduling, taxonomy, and richer CMS operations still need contracts. |
 | `media-buying` | Meta Ads, Google Ads, and Taboola first actions are executable. Outbrain and custom media tools remain deferred or project-local until provider/project contracts are supplied. |
@@ -38,7 +38,7 @@ StackOS provider work has three states:
 
 Provider-specific direct MCP tools are not part of the current architecture.
 Provider calls should enter through plugin action manifests, daemon connectors,
-run-plan grants, and `action.execute`.
+direct-action policy or run-plan grants, and `action.run` or `action.execute`.
 
 ## Delivery Gate
 

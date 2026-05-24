@@ -161,10 +161,12 @@ the bridge attempts a loopback-only auto-start and logs to:
 ~/.local/state/stackos/mcp-bridge-autostart.log
 ```
 
-Agents should first bind the working repository to a StackOS project, inspect
-templates/actions, create or start a run plan, then call granted actions through
-the generic action execution path. Provider-specific actions should be added as
-plugin action contracts, not as one-off MCP tools.
+Agents should first bind the working repository to a StackOS project. After the
+binding exists, the bridge resolves and injects `project_id` from the current
+repo and refuses cross-project calls. Use `action.run` for one explicit direct
+action; use workflow templates, run plans, and step-granted `action.execute`
+for multi-step work. Provider-specific actions should be added as plugin action
+contracts, not as one-off MCP tools.
 
 ## CLI, MCP, REST, And UI Flow
 

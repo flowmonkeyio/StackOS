@@ -462,10 +462,21 @@ class ScheduledJobRepository:
         self._s.refresh(row)
         return Envelope(data=ScheduledJobOut.model_validate(row), project_id=project_id)
 
-    def toggle(self, job_id: int, *, enabled: bool) -> Envelope[ScheduledJobOut]:
+    def toggle(
+        self,
+        job_id: int,
+        *,
+        enabled: bool,
+        project_id: int | None = None,
+    ) -> Envelope[ScheduledJobOut]:
         row = self._s.get(ScheduledJob, job_id)
         if row is None:
             raise NotFoundError(f"scheduled job {job_id} not found")
+        if project_id is not None and row.project_id != project_id:
+            raise NotFoundError(
+                f"scheduled job {job_id} not found in project {project_id}",
+                data={"project_id": project_id, "job_id": job_id},
+            )
         row.enabled = enabled
         self._s.add(row)
         self._s.commit()

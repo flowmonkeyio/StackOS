@@ -478,8 +478,10 @@ class RunPlanRepository:
             project_id=row.project_id,
         )
 
-    def get(self, run_plan_id: int) -> RunPlanOut:
-        return self._plan_out(self._fetch_plan(run_plan_id))
+    def get(self, run_plan_id: int, *, project_id: int | None = None) -> RunPlanOut:
+        row = self._fetch_plan(run_plan_id)
+        self._require_plan_project(row, project_id)
+        return self._plan_out(row)
 
     def list(
         self,
@@ -518,8 +520,10 @@ class RunPlanRepository:
         approval_status: ApprovalRequestStatus | None = None,
         decided_by: str | None = None,
         decision_json: dict[str, Any] | None = None,
+        project_id: int | None = None,
     ) -> Envelope[RunPlanOut]:
         row = self._fetch_plan(run_plan_id)
+        self._require_plan_project(row, project_id)
         changed = False
         now = _utcnow()
         if metadata_json is not None:
@@ -562,8 +566,10 @@ class RunPlanRepository:
         run_id: int | None = None,
         step_id: str | None = None,
         claimed_by: str | None = None,
+        project_id: int | None = None,
     ) -> Envelope[RunPlanStepOut]:
         plan = self._fetch_plan(run_plan_id)
+        self._require_plan_project(plan, project_id)
         self._require_bound_run(plan, run_id)
         if plan.status != RunPlanStatus.STARTED:
             raise ConflictError(
@@ -617,8 +623,10 @@ class RunPlanRepository:
         status: RunPlanStepStatus,
         result_json: dict[str, Any] | None = None,
         error: str | None = None,
+        project_id: int | None = None,
     ) -> Envelope[RunPlanOut]:
         plan = self._fetch_plan(run_plan_id)
+        self._require_plan_project(plan, project_id)
         self._require_bound_run(plan, run_id)
         if plan.status != RunPlanStatus.STARTED:
             raise ConflictError(
@@ -738,6 +746,15 @@ class RunPlanRepository:
     def _require_project(self, project_id: int) -> None:
         if self._s.get(Project, project_id) is None:
             raise NotFoundError(f"project {project_id} not found")
+
+    @staticmethod
+    def _require_plan_project(plan: RunPlan, project_id: int | None) -> None:
+        if project_id is None or plan.project_id == project_id:
+            return
+        raise NotFoundError(
+            f"run plan {plan.id} not found in project {project_id}",
+            data={"project_id": project_id, "run_plan_id": plan.id},
+        )
 
     def _require_context_snapshot(self, project_id: int, snapshot_id: int) -> None:
         row = self._s.get(ContextSnapshot, snapshot_id)

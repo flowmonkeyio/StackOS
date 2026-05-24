@@ -7,6 +7,7 @@ adapter.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -425,6 +426,69 @@ def actions_execute(
         idempotency_key=idempotency_key,
     )
     _echo_json(_operation_call("action.execute", arguments))
+
+
+@actions_app.command(name="run")
+def actions_run(
+    action_ref: Annotated[
+        str | None,
+        typer.Argument(help="Action ref, e.g. communications.telegram-bot.message.send."),
+    ] = None,
+    input_path: Annotated[
+        str | None,
+        typer.Option("--input", "-i", help="JSON action input payload, or '-' for stdin."),
+    ] = None,
+    project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
+    plugin_slug: Annotated[
+        str | None,
+        typer.Option("--plugin", help="Plugin slug when not passing action_ref."),
+    ] = None,
+    action_key: Annotated[
+        str | None,
+        typer.Option("--action-key", help="Action key when paired with --plugin."),
+    ] = None,
+    credential_ref: Annotated[
+        str | None,
+        typer.Option("--credential-ref", help="Opaque credential ref; never a secret value."),
+    ] = None,
+    idempotency_key: Annotated[
+        str | None,
+        typer.Option("--idempotency-key", help="24h dedupe token for the direct action."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Ask the connector to dry-run."),
+    ] = False,
+    confirm_direct: Annotated[
+        bool,
+        typer.Option("--confirm-direct", help="Required for non-read direct actions."),
+    ] = False,
+    intent_summary: Annotated[
+        str | None,
+        typer.Option("--intent-summary", help="Why this direct action is being run."),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", help="Return full redacted action execution details."),
+    ] = False,
+) -> None:
+    """Run one explicit action directly without creating a workflow run plan."""
+    arguments = _merge_common_arguments(
+        {
+            "action_ref": action_ref,
+            "plugin_slug": plugin_slug,
+            "action_key": action_key,
+            "credential_ref": credential_ref,
+            "input_json": _load_operation_arguments(input_path) if input_path else None,
+            "dry_run": dry_run,
+            "confirm_direct": confirm_direct,
+            "intent_summary": intent_summary,
+            "verbose": verbose,
+        },
+        project_id=project_id,
+        idempotency_key=idempotency_key,
+    )
+    _echo_json(_operation_call("action.run", arguments))
 
 
 # ---- run-plan operation aliases ------------------------------------------
@@ -1280,6 +1344,42 @@ def _command_looks_like_daemon(command: str | None) -> bool:
     return "stackos" in normalized and " serve" in f" {normalized} "
 
 
+def _git_output(cwd: Path, args: list[str]) -> str | None:
+    git = shutil.which("git")
+    if git is None:
+        return None
+    try:
+        result = subprocess.run(
+            [git, *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip()
+    return value or None
+
+
+def _mcp_bridge_workspace_hints(cwd: Path) -> dict[str, str]:
+    root = _git_output(cwd, ["rev-parse", "--show-toplevel"])
+    workspace_root = Path(root).resolve() if root else cwd.resolve()
+    remote = _git_output(workspace_root, ["config", "--get", "remote.origin.url"])
+    fingerprint_source = str(workspace_root)
+    digest = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()[:24]
+    hints = {
+        "cwd": str(workspace_root),
+        "repo_fingerprint": f"path:{digest}",
+    }
+    if remote:
+        hints["git_remote_url"] = remote
+    return hints
+
+
 def _listener_pids(port: int) -> list[int]:
     lsof = shutil.which("lsof")
     if not lsof:
@@ -1654,7 +1754,14 @@ def mcp_bridge(
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
     }
-    proxy = AgentBridgeProxy(url=url, headers=headers)
+    workspace_hints = _mcp_bridge_workspace_hints(Path.cwd())
+    proxy = AgentBridgeProxy(
+        url=url,
+        headers=headers,
+        runtime="codex",
+        client_session_id=f"stackos-bridge:{os.getpid()}",
+        **workspace_hints,
+    )
     autostart_attempted = False
 
     with httpx.Client(timeout=None) as client:

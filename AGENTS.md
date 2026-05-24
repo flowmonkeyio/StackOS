@@ -13,7 +13,7 @@ work, start here:
 | Work | Read |
 | --- | --- |
 | Setup, local start, autostart, or repair | [`docs/setup.md`](./docs/setup.md), [`docs/upgrade.md`](./docs/upgrade.md), [`docs/security.md`](./docs/security.md) |
-| Architecture or execution model | [`docs/architecture.md`](./docs/architecture.md), [`docs/operations.md`](./docs/operations.md) |
+| Architecture or execution model | [`docs/architecture.md`](./docs/architecture.md), [`docs/operations.md`](./docs/operations.md), [`docs/agent-operating-model.md`](./docs/agent-operating-model.md) |
 | Callable operations or action execution | [`docs/operations.md`](./docs/operations.md), [`docs/action-executor.md`](./docs/action-executor.md), [`docs/extending.md`](./docs/extending.md) |
 | Provider auth or credentials | [`docs/auth-providers.md`](./docs/auth-providers.md), [`docs/security.md`](./docs/security.md) |
 | Plugins, resources, templates, runs | [`docs/plugins.md`](./docs/plugins.md), [`docs/workflow-templates.md`](./docs/workflow-templates.md), [`docs/run-plans.md`](./docs/run-plans.md) |
@@ -36,16 +36,22 @@ work, start here:
   bespoke workflow UIs for each plugin domain.
 - Agents never receive secrets. They receive safe provider/account refs,
   auth-method keys, status, scopes, diagnostics, and opaque `credential_ref`
-  values. `action.execute` resolves credentials inside the daemon process.
+  values. `action.run` and `action.execute` resolve credentials inside the
+  daemon process.
 - MCP is an adapter, not the core abstraction. Register callable behavior once
   as a StackOS operation, then expose it through allowed MCP, REST, CLI, and UI
   surfaces from that spec.
 - Direct MCP tools are only for generic StackOS primitives. Provider/vendor
-  operations must be plugin actions executed through `action.execute`, with
-  manifest entries, connector tests, grants, and docs updated together.
+  operations must be plugin actions executed through `action.run` for one
+  explicit direct action or `action.execute` inside a granted run-plan step,
+  with manifest entries, connector tests, grants, and docs updated together.
 - Workflow execution writes such as `resource.upsert`, `artifact.create`,
   `learning.create`, `experiment.*`, `decision.record`, and `action.execute`
   require a started run plan, one running step, and an explicit grant snapshot.
+- Normal agent sessions are scoped by the repository that launched the
+  StackOS bridge. The bridge injects the resolved `project_id`, refuses
+  cross-project calls, and blocks project-scoped tools until the workspace is
+  bound.
 - The UI should render generic StackOS objects: projects, plugins, workflow
   templates, run plans, resources, artifacts, auth status, action calls,
   context, learnings, experiments, and decisions.

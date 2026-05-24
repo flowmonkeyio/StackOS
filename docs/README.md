@@ -8,7 +8,7 @@ obvious without loading every document.
 | Work | Primary Docs |
 | --- | --- |
 | Installing, starting, or repairing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md) |
-| Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md) |
+| Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
 | Adding providers, auth, or credentials | [`auth-providers.md`](./auth-providers.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |
 | Adding or changing plugins | [`plugins.md`](./plugins.md), [`extending.md`](./extending.md), [`workflow-templates.md`](./workflow-templates.md) |
@@ -27,7 +27,8 @@ obvious without loading every document.
 - Register callable behavior once as an operation or plugin action contract;
   expose it through MCP, REST, CLI, and UI docs from that contract.
 - Direct MCP tools are only for generic StackOS primitives. Provider/vendor
-  calls belong in plugin actions executed through `action.execute`.
+  calls belong in plugin actions executed through `action.run` for one explicit
+  action or `action.execute` inside a granted run-plan step.
 - Agents never receive secrets. They receive safe provider keys, account refs,
   auth status, scopes, diagnostics, and opaque `credential_ref` values.
 - SEO, media buying, GTM, publishing, and utilities are plugins. Core StackOS

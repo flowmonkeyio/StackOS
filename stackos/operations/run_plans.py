@@ -82,6 +82,7 @@ class RunPlanGetInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_plan_id": 1}})
 
     run_plan_id: int
+    project_id: int | None = None
 
 
 class RunPlanListInput(MCPInput):
@@ -107,6 +108,7 @@ class RunPlanUpdateInput(MCPInput):
     )
 
     run_plan_id: int
+    project_id: int | None = None
     metadata_json: dict[str, Any] | None = None
     approval_key: str | None = None
     approval_status: ApprovalRequestStatus | None = None
@@ -121,6 +123,7 @@ class RunPlanClaimStepInput(MCPInput):
     )
 
     run_plan_id: int
+    project_id: int | None = None
     step_id: str | None = None
     claimed_by: str | None = None
 
@@ -139,6 +142,7 @@ class RunPlanRecordStepInput(MCPInput):
     )
 
     run_plan_id: int
+    project_id: int | None = None
     step_id: str
     status: RunPlanStepStatus
     result_json: dict[str, Any] | None = None
@@ -201,7 +205,7 @@ async def run_plan_get(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> RunPlanOut:
-    return RunPlanRepository(ctx.session).get(inp.run_plan_id)
+    return RunPlanRepository(ctx.session).get(inp.run_plan_id, project_id=inp.project_id)
 
 
 async def run_plan_list(
@@ -230,6 +234,7 @@ async def run_plan_update(
         approval_status=inp.approval_status,
         decided_by=inp.decided_by,
         decision_json=inp.decision_json,
+        project_id=inp.project_id,
     )
     return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
 
@@ -241,6 +246,7 @@ async def run_plan_claim_step(
 ) -> WriteEnvelope[RunPlanStepOut]:
     env = RunPlanRepository(ctx.session).claim_step(
         run_plan_id=inp.run_plan_id,
+        project_id=inp.project_id,
         run_id=ctx.run_id,
         step_id=inp.step_id,
         claimed_by=inp.claimed_by,
@@ -259,6 +265,7 @@ async def run_plan_record_step(
 ) -> WriteEnvelope[RunPlanOut]:
     env = RunPlanRepository(ctx.session).record_step(
         run_plan_id=inp.run_plan_id,
+        project_id=inp.project_id,
         run_id=ctx.run_id,
         step_id=inp.step_id,
         status=inp.status,

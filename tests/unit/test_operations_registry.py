@@ -10,6 +10,7 @@ def test_operation_registry_documents_core_operations() -> None:
     assert names == [
         "action.describe",
         "action.execute",
+        "action.run",
         "action.validate",
         "agentRequest.claim",
         "agentRequest.complete",
@@ -47,6 +48,13 @@ def test_operation_registry_documents_core_operations() -> None:
     assert "WriteEnvelope" in described.output_schema["title"]
     assert any("run_token" in item for item in described.prerequisites)
     assert described.examples[0].arguments["action_ref"] == "utils.sitemap.fetch"
+
+    direct_action = registry.get("action.run").describe_out()
+    assert direct_action.surfaces["mcp"].enabled is True
+    assert direct_action.surfaces["rest"].enabled is True
+    assert direct_action.surfaces["cli"].command == "actions run"
+    assert direct_action.grant_policy == "direct-action-policy"
+    assert any("confirm_direct=true" in item for item in direct_action.prerequisites)
 
     agent_request = registry.get("agentRequest.claim").describe_out()
     assert agent_request.surfaces["mcp"].enabled is True
@@ -92,6 +100,7 @@ def test_operation_registry_surface_filter() -> None:
     assert [item.name for item in registry.by_surface("cli")] == [
         "action.describe",
         "action.execute",
+        "action.run",
         "action.validate",
         "agentRequest.claim",
         "agentRequest.complete",

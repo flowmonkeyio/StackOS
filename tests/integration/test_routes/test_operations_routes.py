@@ -465,6 +465,42 @@ def test_operation_rest_mock_provider_vertical_slice(
     )
 
 
+def test_operation_rest_action_run_mock_provider_returns_compact_output(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    credential_ref = _store_mock_credential(api, project_id, secret="mock-direct-secret")
+
+    executed = api.post(
+        "/api/v1/operations/action.run/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "action_ref": "utils.mock.echo",
+                "credential_ref": credential_ref,
+                "input_json": {
+                    "message": "hello from direct REST action",
+                    "echo": {"source": "rest"},
+                    "cost_cents": 5,
+                },
+                "idempotency_key": "rest-direct-mock-1",
+            }
+        },
+    )
+
+    assert executed.status_code == 200, executed.text
+    body = executed.json()["data"]
+    rendered = json.dumps(executed.json())
+    assert body["status"] == "success"
+    assert body["action_ref"] == "utils.mock.echo"
+    assert body["compact"]["message"] == "hello from direct REST action"
+    assert body["compact"]["status"] == "success"
+    assert body["cost_cents"] == 5
+    assert body["action_call"] is None
+    assert body["output_json"] is None
+    assert "mock-direct-secret" not in rendered
+
+
 def test_operation_rest_smtp_notification_uses_run_plan_action_execute(
     api: TestClient,
     project_id: int,

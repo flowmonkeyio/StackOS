@@ -77,6 +77,7 @@ class RunFinishInput(MCPInput):
 
     run_id: int
     status: RunStatus
+    project_id: int | None = None
     error: str | None = None
     metadata_json: dict[str, Any] | None = None
 
@@ -87,6 +88,7 @@ class RunHeartbeatInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_id": 1}})
 
     run_id: int
+    project_id: int | None = None
 
 
 class RunAbortInput(MCPInput):
@@ -97,6 +99,7 @@ class RunAbortInput(MCPInput):
     )
 
     run_id: int
+    project_id: int | None = None
     cascade: bool = False
 
 
@@ -119,6 +122,7 @@ class RunGetInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_id": 1}})
 
     run_id: int
+    project_id: int | None = None
 
 
 class RunChildrenInput(MCPInput):
@@ -127,6 +131,7 @@ class RunChildrenInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"parent_run_id": 1}})
 
     parent_run_id: int
+    project_id: int | None = None
 
 
 class RunCostInput(MCPInput):
@@ -188,7 +193,11 @@ async def _run_finish(
     inp: RunFinishInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[RunOut]:
     env = RunRepository(ctx.session).finish(
-        inp.run_id, status=inp.status, error=inp.error, metadata_json=inp.metadata_json
+        inp.run_id,
+        status=inp.status,
+        error=inp.error,
+        metadata_json=inp.metadata_json,
+        project_id=inp.project_id,
     )
     return WriteEnvelope[RunOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
 
@@ -196,14 +205,18 @@ async def _run_finish(
 async def _run_heartbeat(
     inp: RunHeartbeatInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[RunOut | None]:
-    env = RunRepository(ctx.session).heartbeat(inp.run_id)
+    env = RunRepository(ctx.session).heartbeat(inp.run_id, project_id=inp.project_id)
     return WriteEnvelope[RunOut | None](data=env.data, run_id=env.run_id, project_id=env.project_id)
 
 
 async def _run_abort(
     inp: RunAbortInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[RunOut]:
-    env = RunRepository(ctx.session).abort(inp.run_id, cascade=inp.cascade)
+    env = RunRepository(ctx.session).abort(
+        inp.run_id,
+        cascade=inp.cascade,
+        project_id=inp.project_id,
+    )
     return WriteEnvelope[RunOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
 
 
@@ -219,13 +232,13 @@ async def _run_list(inp: RunListInput, ctx: MCPContext, _emit: ProgressEmitter) 
 
 
 async def _run_get(inp: RunGetInput, ctx: MCPContext, _emit: ProgressEmitter) -> RunOut:
-    return RunRepository(ctx.session).get(inp.run_id)
+    return RunRepository(ctx.session).get(inp.run_id, project_id=inp.project_id)
 
 
 async def _run_children(
     inp: RunChildrenInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> list[RunOut]:
-    return RunRepository(ctx.session).children(inp.parent_run_id)
+    return RunRepository(ctx.session).children(inp.parent_run_id, project_id=inp.project_id)
 
 
 async def _run_cost(inp: RunCostInput, ctx: MCPContext, _emit: ProgressEmitter) -> dict[str, Any]:
@@ -246,6 +259,7 @@ class RunStepInsertInput(MCPInput):
     )
 
     run_id: int
+    project_id: int | None = None
     step_index: int
     skill_name: str
     input_snapshot_json: dict[str, Any] | None = None
@@ -257,6 +271,7 @@ class RunStepListInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_id": 1}})
 
     run_id: int
+    project_id: int | None = None
 
 
 class RunStepCallRecordInput(MCPInput):
@@ -268,6 +283,7 @@ class RunStepCallRecordInput(MCPInput):
     )
 
     run_step_id: int
+    project_id: int | None = None
     mcp_tool: str
     request_json: dict[str, Any] | None = None
     response_json: dict[str, Any] | None = None
@@ -282,6 +298,7 @@ class RunStepCallListInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_step_id": 1}})
 
     run_step_id: int
+    project_id: int | None = None
 
 
 async def _run_step_insert(
@@ -289,6 +306,7 @@ async def _run_step_insert(
 ) -> WriteEnvelope[RunStepOut]:
     env = RunStepRepository(ctx.session).insert_step(
         run_id=inp.run_id,
+        project_id=inp.project_id,
         step_index=inp.step_index,
         skill_name=inp.skill_name,
         input_snapshot_json=inp.input_snapshot_json,
@@ -299,7 +317,7 @@ async def _run_step_insert(
 async def _run_step_list(
     inp: RunStepListInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> list[RunStepOut]:
-    return RunStepRepository(ctx.session).list_steps(inp.run_id)
+    return RunStepRepository(ctx.session).list_steps(inp.run_id, project_id=inp.project_id)
 
 
 async def _run_step_call_record(
@@ -307,6 +325,7 @@ async def _run_step_call_record(
 ) -> WriteEnvelope[RunStepCallOut]:
     env = RunStepCallRepository(ctx.session).record_call(
         run_step_id=inp.run_step_id,
+        project_id=inp.project_id,
         mcp_tool=inp.mcp_tool,
         request_json=inp.request_json,
         response_json=inp.response_json,
@@ -322,7 +341,7 @@ async def _run_step_call_record(
 async def _run_step_call_list(
     inp: RunStepCallListInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> list[RunStepCallOut]:
-    return RunStepCallRepository(ctx.session).list(inp.run_step_id)
+    return RunStepCallRepository(ctx.session).list(inp.run_step_id, project_id=inp.project_id)
 
 
 # ---------------------------------------------------------------------------

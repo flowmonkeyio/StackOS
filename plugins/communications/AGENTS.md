@@ -13,7 +13,8 @@ does not run an assistant, classify intent, or decide workflows.
 
 ## Rules
 
-- Provider operations are plugin actions executed through `action.execute`.
+- Provider operations are plugin actions executed through `action.run` for one
+  explicit direct call or `action.execute` inside a granted run-plan step.
 - Do not add provider-specific MCP tools for Telegram, SMTP, or IMAP.
 - Keep Telegram, SMTP, and IMAP connectors in separate provider files.
 - Local agent chat is a communication transport, not a model runner hidden in
@@ -73,20 +74,21 @@ does not run an assistant, classify intent, or decide workflows.
 
 Telegram bot identity checks, text messages, photo sends, callback answers,
 bounded diagnostic `updates.poll`, webhook set/delete/info, and
-bot-profile-scoped secret-token ingress are executable through `action.execute`
-and the `telegram-bot` connector. Bot-profile setup is executable through
+bot-profile-scoped secret-token ingress are executable through `action.run` for
+one explicit direct call or `action.execute` inside granted run-plan steps, via
+the `telegram-bot` connector. Bot-profile setup is executable through
 `communicationBotProfile.*` across REST, CLI, and MCP. Webhook ingress stores
 communication resources and creates generic agent requests only after
 bot-profile trigger and access policy allow it.
 
 SMTP send and IMAP mailbox/message lifecycle actions are executable through
-`action.execute` with daemon-held credentials. SMTP covers explicit outbound
-message send only and never claims delivery/read/open/click/reply state. IMAP
-covers mailbox list, bounded UID search, selected message fetch, and mark
-seen/unseen. Automatic background callback ACK jobs, richer Telegram
-media/admin operations, broader chat/mail providers, and SMTP/IMAP OAuth or
-XOAUTH2 remain deferred until their provider-specific contracts, tests, and
-safe auth diagnostics are delivered.
+`action.run` or `action.execute` with daemon-held credentials. SMTP covers
+explicit outbound message send only and never claims delivery/read/open/click/
+reply state. IMAP covers mailbox list, bounded UID search, selected message
+fetch, and mark seen/unseen. Automatic background callback ACK jobs, richer
+Telegram media/admin operations, broader chat/mail providers, and SMTP/IMAP
+OAuth or XOAUTH2 remain deferred until their provider-specific contracts, tests,
+and safe auth diagnostics are delivered.
 
 The core `agentRequest.*` operations are executable through the shared
 operation registry. Use `agentRequest.list`, `agentRequest.get`,

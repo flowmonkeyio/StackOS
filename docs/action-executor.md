@@ -57,7 +57,9 @@ Every internal execution writes an `action_calls` sidecar row with:
 - redacted request/response/metadata
 - status, dry-run flag, duration, cost, error, and idempotency key
 
-`action.execute` returns the public action-call audit shape. Internal database
+`action.execute` returns the public action-call audit shape for workflow runs.
+`action.run` returns a compact direct-action result by default and includes the
+full redacted action call only when `verbose=true`. Internal database
 identifiers such as `credential_id`, `action_id`, and replay-only
 `idempotency_key` stay in storage and are not returned to agents.
 
@@ -87,8 +89,8 @@ Visible catalog action rows and `action.describe` now include a generic
 
 Agents may use this to know what setup is missing, but they still pass exact
 payloads and action refs. StackOS does not infer which action should run.
-`plugin_disabled` and `provider_disabled` are also enforced by `action.execute`
-because they are static setup policy, not agent strategy.
+`plugin_disabled` and `provider_disabled` are also enforced by `action.run` and
+`action.execute` because they are static setup policy, not agent strategy.
 
 ## Operation Surface
 
@@ -98,9 +100,11 @@ allows it. Agents and scripts can inspect the operation contract with:
 
 ```bash
 stackos ops describe action.execute --json
+stackos ops describe action.run --json
 ```
 
-or through `GET /api/v1/operations/action.execute`.
+or through `GET /api/v1/operations/action.execute` and
+`GET /api/v1/operations/action.run`.
 
 Direct/read discovery operations:
 
@@ -110,6 +114,16 @@ Direct/read discovery operations:
 Run-plan-scoped execution operation:
 
 - `action.execute`
+
+Direct one-action execution operation:
+
+- `action.run`
+
+`action.run` is direct execution for one explicit action. Non-read actions
+require `confirm_direct=true`, `intent_summary`, and `idempotency_key`; the
+result is compact unless the caller passes `verbose=true`. It is not a
+substitute for workflow memory, approval gates, artifacts, learnings,
+experiments, or decisions.
 
 `action.execute` is not direct execution surface. It is callable only through a
 started run plan, exactly one active claimed step, an explicit
@@ -159,11 +173,11 @@ operation, cost, status, and redacted payloads in `action_calls`.
 Communication setup is not an action connector. Telegram bot profile setup uses
 the shared `communicationBotProfile.upsert/get/list` operations across REST,
 CLI, and MCP after the project-scoped `telegram-bot` credential exists. Agents
-execute Telegram provider calls only through `action.execute` once a run-plan
-step grants the relevant action ref. SMTP and IMAP credentials are also
-project-scoped auth profiles; agents receive only opaque credential refs and
-safe status, while the connector resolves host/user/password/TLS config inside
-the daemon process.
+execute Telegram provider calls through `action.run` for one explicit message or
+diagnostic call, or through `action.execute` once a run-plan step grants the
+relevant action ref. SMTP and IMAP credentials are also project-scoped auth
+profiles; agents receive only opaque credential refs and safe status, while the
+connector resolves host/user/password/TLS config inside the daemon process.
 
 The generic HTTP connector is a plugin-authoring escape hatch, not a direct
 agent browsing tool. The endpoint, method, auth mode, request mode, static

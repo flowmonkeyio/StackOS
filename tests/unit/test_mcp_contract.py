@@ -51,6 +51,7 @@ from stackos.mcp.server import (
         "auth.test",
         "auth.revoke",
         "action.execute",
+        "action.run",
         "context.snapshot",
         "learning.create",
         "learning.update",

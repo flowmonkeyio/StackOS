@@ -10,7 +10,7 @@ from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.server import ToolRegistry, ToolSpec
 from stackos.mcp.streaming import ProgressEmitter
-from stackos.repositories.base import ValidationError
+from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.resources import (
     ResourceGetOut,
     ResourceQueryOut,
@@ -28,6 +28,7 @@ class ResourceGetInput(MCPInput):
     record_id: int | None = None
     resource_key: str | None = None
     plugin_slug: str | None = None
+    project_id: int | None = None
 
 
 class ResourceQueryInput(MCPInput):
@@ -74,7 +75,13 @@ async def _resource_get(
 ) -> ResourceGetOut:
     repo = ResourceRepository(ctx.session)
     if inp.record_id is not None:
-        return ResourceGetOut(record=repo.get_record(inp.record_id))
+        record = repo.get_record(inp.record_id)
+        if inp.project_id is not None and record.project_id != inp.project_id:
+            raise NotFoundError(
+                f"resource record {inp.record_id} not found in project {inp.project_id}",
+                data={"project_id": inp.project_id, "record_id": inp.record_id},
+            )
+        return ResourceGetOut(record=record)
     if inp.resource_key is not None:
         return ResourceGetOut(
             resource=repo.get_resource(key=inp.resource_key, plugin_slug=inp.plugin_slug)

@@ -9,6 +9,7 @@ helpers used to reach setup/current-step tools intentionally.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from stackos.workflows.run_plan_grants import (
@@ -24,12 +25,6 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "workspace.connect",
     "workspace.listBindings",
     "workspace.updateProfile",
-    "project.list",
-    "project.create",
-    "project.get",
-    "project.update",
-    "project.setActive",
-    "project.getActive",
     "auth.status",
     "auth.test",
     "localAgentChat.createMessage",
@@ -38,6 +33,7 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "communicationBotProfile.upsert",
     "action.describe",
     "action.validate",
+    "action.run",
     "agentRequest.list",
     "agentRequest.get",
     "agentRequest.claim",
@@ -77,6 +73,23 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "run.abort",
 )
 _AGENT_VISIBLE_TOOL_NAMES = frozenset(_AGENT_VISIBLE_TOOL_ORDER)
+_AGENT_GLOBAL_DISCOVERY_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "workspace.startSession",
+        "workspace.resolve",
+        "workspace.connect",
+        "plugin.list",
+        "catalog.list",
+        "catalog.describe",
+        "capability.list",
+        "capability.describe",
+        "provider.list",
+        "provider.describe",
+        "action.describe",
+        "action.validate",
+        "meta.enums",
+    }
+)
 _TOOLBOX_DESCRIBE_TOOL = "toolbox.describe"
 _TOOLBOX_CALL_TOOL = "toolbox.call"
 _TOOLBOX_TOOL_NAMES = frozenset({_TOOLBOX_DESCRIBE_TOOL, _TOOLBOX_CALL_TOOL})
@@ -97,7 +110,6 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "budget.update",
         "cost.queryAll",
         "cost.queryProject",
-        "project.delete",
         "run.children",
         "run.cost",
         "run.finish",
@@ -247,7 +259,12 @@ def _bridge_tool_catalog(response_text: str) -> dict[str, dict[str, Any]]:
     return catalog
 
 
-def _bridge_filter_tool_list_response(response_text: str) -> str:
+def _bridge_filter_tool_list_response(
+    response_text: str,
+    *,
+    scoped_project_id: int | None = None,
+    injected_fields: set[str] | frozenset[str] | None = None,
+) -> str:
     """Filter daemon ``tools/list`` down to the agent-facing bridge surface."""
     try:
         envelope = json.loads(response_text)
@@ -268,9 +285,44 @@ def _bridge_filter_tool_list_response(response_text: str) -> str:
         if isinstance(tool, dict) and isinstance(tool.get("name"), str)
     }
     filtered = [by_name[name] for name in _AGENT_VISIBLE_TOOL_ORDER if name in by_name]
+    injected = set(injected_fields or ())
+    if scoped_project_id is not None:
+        injected.add("project_id")
+    if injected:
+        filtered = [
+            _bridge_relax_injected_schema(tool, injected_fields=injected) for tool in filtered
+        ]
     filtered.extend(_bridge_toolbox_specs())
     result["tools"] = filtered
     return json.dumps(envelope, default=str)
+
+
+def _bridge_relax_injected_schema(
+    tool: dict[str, Any],
+    *,
+    injected_fields: set[str],
+) -> dict[str, Any]:
+    """Make bridge-injected fields optional in advertised schemas."""
+    clone = json.loads(json.dumps(tool, default=str))
+    schema = clone.get("inputSchema")
+    if not isinstance(schema, dict):
+        return clone
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return clone
+    present = injected_fields & set(properties)
+    if not present:
+        return clone
+    required = schema.get("required")
+    if isinstance(required, list):
+        schema["required"] = [item for item in required if item not in present]
+    for field in present:
+        prop = properties.get(field)
+        if isinstance(prop, dict):
+            description = prop.get("description")
+            suffix = "Injected from the current workspace by the StackOS bridge."
+            prop["description"] = f"{description} {suffix}".strip() if description else suffix
+    return clone
 
 
 def _bridge_tool_result(request_id: object, structured: dict[str, Any], *, is_error: bool) -> str:
@@ -448,16 +500,237 @@ def _bridge_make_tool_call_payload(
     )
 
 
+def _bridge_structured_content(response_text: str) -> dict[str, Any] | None:
+    try:
+        envelope = json.loads(response_text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(envelope, dict):
+        return None
+    result = envelope.get("result")
+    if not isinstance(result, dict):
+        return None
+    structured = result.get("structuredContent")
+    return structured if isinstance(structured, dict) else result
+
+
+def _bridge_extract_project_id(response_text: str) -> int | None:
+    structured = _bridge_structured_content(response_text)
+    if structured is None:
+        return None
+    value = _bridge_as_int(structured.get("project_id"))
+    if value is not None:
+        return value
+    data = structured.get("data")
+    if isinstance(data, dict):
+        value = _bridge_as_int(data.get("project_id"))
+        if value is not None:
+            return value
+    binding = structured.get("binding")
+    if isinstance(binding, dict):
+        return _bridge_as_int(binding.get("project_id"))
+    return None
+
+
+def _bridge_tool_accepts_project_id(catalog: dict[str, dict[str, Any]], tool_name: str) -> bool:
+    schema = catalog.get(tool_name, {}).get("inputSchema")
+    if not isinstance(schema, dict):
+        return False
+    properties = schema.get("properties")
+    return isinstance(properties, dict) and "project_id" in properties
+
+
+def _bridge_scoped_arguments(
+    *,
+    catalog: dict[str, dict[str, Any]],
+    tool_name: str,
+    arguments: dict[str, Any],
+    scoped_project_id: int | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if scoped_project_id is None or not _bridge_tool_accepts_project_id(catalog, tool_name):
+        return dict(arguments), None
+    current = arguments.get("project_id")
+    if current is None:
+        merged = dict(arguments)
+        merged["project_id"] = scoped_project_id
+        return merged, None
+    current_id = _bridge_as_int(current)
+    if current_id == scoped_project_id:
+        return dict(arguments), None
+    return None, {
+        "tool": tool_name,
+        "scoped_project_id": scoped_project_id,
+        "requested_project_id": current,
+    }
+
+
+def _bridge_normalized_path(value: str) -> str:
+    try:
+        return str(Path(value).expanduser().resolve(strict=False))
+    except OSError:
+        return str(Path(value).expanduser().absolute())
+
+
+def _bridge_path_is_same_or_child(path: str, root: str) -> bool:
+    normalized_path = _bridge_normalized_path(path)
+    normalized_root = _bridge_normalized_path(root)
+    return normalized_path == normalized_root or normalized_path.startswith(
+        normalized_root.rstrip("/") + "/"
+    )
+
+
+def _bridge_exact_path_match(path: str, expected: str) -> bool:
+    return _bridge_normalized_path(path) == _bridge_normalized_path(expected)
+
+
+def _bridge_apply_expected_argument(
+    *,
+    out: dict[str, Any],
+    tool_name: str,
+    field: str,
+    expected: str | None,
+    path_policy: str | None = None,
+) -> dict[str, Any] | None:
+    if expected is None:
+        return None
+    requested = out.get(field)
+    if requested is None:
+        out[field] = expected
+        return None
+    if not isinstance(requested, str):
+        return {"tool": tool_name, "field": field, "expected": expected, "requested": requested}
+    if path_policy == "same-or-child":
+        matches = _bridge_path_is_same_or_child(requested, expected)
+    elif path_policy == "exact":
+        matches = _bridge_exact_path_match(requested, expected)
+    else:
+        matches = requested == expected
+    if matches:
+        return None
+    return {"tool": tool_name, "field": field, "expected": expected, "requested": requested}
+
+
+def _bridge_workspace_scoped_arguments(
+    *,
+    tool_name: str,
+    arguments: dict[str, Any],
+    runtime: str,
+    cwd: str | None,
+    repo_fingerprint: str | None,
+    git_remote_url: str | None,
+    client_session_id: str | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if tool_name not in {"workspace.resolve", "workspace.startSession", "workspace.connect"}:
+        return dict(arguments), None
+
+    out = dict(arguments)
+    checks: list[tuple[str, str | None, str | None]] = []
+    if tool_name in {"workspace.resolve", "workspace.startSession"}:
+        checks.extend(
+            [
+                ("cwd", cwd, "same-or-child"),
+                ("repo_fingerprint", repo_fingerprint, None),
+                ("git_remote_url", git_remote_url, None),
+            ]
+        )
+    if tool_name == "workspace.startSession":
+        out.setdefault("runtime", runtime)
+        checks.append(("client_session_id", client_session_id, None))
+    if tool_name == "workspace.connect":
+        checks.extend(
+            [
+                ("repo_fingerprint", repo_fingerprint, None),
+                ("git_remote_url", git_remote_url, None),
+                ("last_known_root", cwd, "exact"),
+            ]
+        )
+
+    for field, expected, path_policy in checks:
+        error = _bridge_apply_expected_argument(
+            out=out,
+            tool_name=tool_name,
+            field=field,
+            expected=expected,
+            path_policy=path_policy,
+        )
+        if error is not None:
+            return None, error
+    return out, None
+
+
+def _bridge_scope_visibility_error(
+    *,
+    tool_name: str,
+    arguments: dict[str, Any],
+    has_workspace_hints: bool,
+    scoped_project_id: int | None,
+    workspace_scope_error: str | None,
+) -> dict[str, Any] | None:
+    if not has_workspace_hints:
+        return None
+    if workspace_scope_error is not None and tool_name not in {
+        "workspace.connect",
+        "workspace.resolve",
+        "workspace.startSession",
+    }:
+        return {
+            "tool": tool_name,
+            "reason": "workspace_scope_failed",
+            "detail": workspace_scope_error,
+        }
+    if scoped_project_id is not None:
+        return None
+    if tool_name == "workspace.connect":
+        return None
+    if tool_name in _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES and arguments.get("project_id") is None:
+        return None
+    return {
+        "tool": tool_name,
+        "reason": "workspace_not_connected",
+        "hint": "Bind this repository with workspace.connect before using project-scoped tools.",
+    }
+
+
+def _bridge_replace_tool_call_arguments(
+    payload: dict[str, Any],
+    *,
+    arguments: dict[str, Any],
+) -> str:
+    cloned = json.loads(json.dumps(payload, default=str))
+    params = cloned.setdefault("params", {})
+    if isinstance(params, dict):
+        params["arguments"] = arguments
+    return json.dumps(cloned, default=str)
+
+
 class AgentBridgeProxy:
     """Stateful bridge adapter for one plugin stdio session."""
 
-    def __init__(self, *, url: str, headers: dict[str, str]) -> None:
+    def __init__(
+        self,
+        *,
+        url: str,
+        headers: dict[str, str],
+        runtime: str = "codex",
+        cwd: str | None = None,
+        repo_fingerprint: str | None = None,
+        git_remote_url: str | None = None,
+        client_session_id: str | None = None,
+    ) -> None:
         self.url = url
         self.headers = headers
+        self.runtime = runtime
+        self.cwd = cwd
+        self.repo_fingerprint = repo_fingerprint
+        self.git_remote_url = git_remote_url
+        self.client_session_id = client_session_id
         self.tool_catalog: dict[str, dict[str, Any]] = {}
         self.allowed_by_run: dict[int, set[str]] = {}
         self.tokens_by_run: dict[int, str] = {}
         self.plans_by_run: dict[int, int] = {}
+        self.workspace_scope_checked = False
+        self.workspace_scope_error: str | None = None
+        self.scoped_project_id: int | None = None
 
     def request_daemon(self, client: Any, body: str) -> str:
         response = client.post(self.url, content=body, headers=self.headers)
@@ -468,20 +741,66 @@ class AgentBridgeProxy:
         if not isinstance(payload, dict):
             return self.request_daemon(client, line)
         if payload.get("method") == "tools/list":
+            self._ensure_workspace_scope(client)
             out = self.request_daemon(client, line)
             self.tool_catalog = _bridge_tool_catalog(out) or self.tool_catalog
-            return _bridge_filter_tool_list_response(out)
+            return _bridge_filter_tool_list_response(
+                out,
+                scoped_project_id=self.scoped_project_id,
+                injected_fields=self._injected_fields(),
+            )
         if payload.get("method") != "tools/call":
             return self.request_daemon(client, line)
 
         tool_name = _bridge_tool_call_name(payload)
         arguments = _bridge_tool_call_arguments(payload)
+        self._ensure_workspace_scope(client)
         if tool_name == _TOOLBOX_DESCRIBE_TOOL:
             return self._handle_toolbox_describe(client, request_id, arguments)
         if tool_name == _TOOLBOX_CALL_TOOL:
             return self._handle_toolbox_call(client, request_id, arguments)
         if tool_name in _AGENT_VISIBLE_TOOL_NAMES:
-            out = self.request_daemon(client, line)
+            self._ensure_tool_catalog(client)
+            visibility_error = self._scope_visibility_error(tool_name, arguments)
+            if visibility_error is not None:
+                return _bridge_call_error(
+                    request_id,
+                    -32007,
+                    "Bridge requires the current workspace project for this call.",
+                    visibility_error,
+                )
+            workspace_args, workspace_error = self._scope_workspace_arguments(
+                tool_name,
+                arguments,
+            )
+            if workspace_error is not None:
+                return _bridge_call_error(
+                    request_id,
+                    -32007,
+                    "Bridge refused cross-workspace agent call.",
+                    workspace_error,
+                )
+            assert workspace_args is not None
+            scoped_args, scope_error = _bridge_scoped_arguments(
+                catalog=self.tool_catalog,
+                tool_name=tool_name,
+                arguments=workspace_args,
+                scoped_project_id=self.scoped_project_id,
+            )
+            if scope_error is not None:
+                return _bridge_call_error(
+                    request_id,
+                    -32007,
+                    "Bridge refused cross-project agent call.",
+                    scope_error,
+                )
+            assert scoped_args is not None
+            out = self.request_daemon(
+                client,
+                _bridge_replace_tool_call_arguments(payload, arguments=scoped_args),
+            )
+            if tool_name in {"workspace.connect", "workspace.resolve", "workspace.startSession"}:
+                self._update_workspace_scope(out)
             self._cache_step_context(out)
             return out
         return _bridge_call_error(
@@ -502,6 +821,89 @@ class AgentBridgeProxy:
             return
         self.tool_catalog = _bridge_tool_catalog(
             self.request_daemon(client, self._tool_list_body())
+        )
+
+    def _ensure_workspace_scope(self, client: Any) -> None:
+        if self.workspace_scope_checked:
+            return
+        self.workspace_scope_checked = True
+        if not any((self.cwd, self.repo_fingerprint, self.git_remote_url, self.client_session_id)):
+            return
+        arguments: dict[str, Any] = {"runtime": self.runtime}
+        if self.cwd:
+            arguments["cwd"] = self.cwd
+        if self.repo_fingerprint:
+            arguments["repo_fingerprint"] = self.repo_fingerprint
+        if self.git_remote_url:
+            arguments["git_remote_url"] = self.git_remote_url
+        if self.client_session_id:
+            arguments["client_session_id"] = self.client_session_id
+        try:
+            out = self.request_daemon(
+                client,
+                _bridge_make_tool_call_payload(
+                    "stackos-bridge-session",
+                    "workspace.startSession",
+                    arguments,
+                ),
+            )
+        except Exception:
+            self.workspace_scope_error = "workspace.startSession failed"
+            return
+        self.scoped_project_id = _bridge_extract_project_id(out)
+        self.workspace_scope_error = None
+
+    def _update_workspace_scope(self, response_text: str) -> None:
+        project_id = _bridge_extract_project_id(response_text)
+        if project_id is not None:
+            self.scoped_project_id = project_id
+            self.workspace_scope_error = None
+
+    def _has_workspace_hints(self) -> bool:
+        return any((self.cwd, self.repo_fingerprint, self.git_remote_url, self.client_session_id))
+
+    def _injected_fields(self) -> set[str]:
+        fields: set[str] = set()
+        if self.scoped_project_id is not None:
+            fields.add("project_id")
+        if self.cwd:
+            fields.update({"cwd", "last_known_root"})
+        if self.repo_fingerprint:
+            fields.add("repo_fingerprint")
+        if self.git_remote_url:
+            fields.add("git_remote_url")
+        if self.client_session_id:
+            fields.add("client_session_id")
+        if self.runtime:
+            fields.add("runtime")
+        return fields
+
+    def _scope_workspace_arguments(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        return _bridge_workspace_scoped_arguments(
+            tool_name=tool_name,
+            arguments=arguments,
+            runtime=self.runtime,
+            cwd=self.cwd,
+            repo_fingerprint=self.repo_fingerprint,
+            git_remote_url=self.git_remote_url,
+            client_session_id=self.client_session_id,
+        )
+
+    def _scope_visibility_error(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        return _bridge_scope_visibility_error(
+            tool_name=tool_name,
+            arguments=arguments,
+            has_workspace_hints=self._has_workspace_hints(),
+            scoped_project_id=self.scoped_project_id,
+            workspace_scope_error=self.workspace_scope_error,
         )
 
     @staticmethod
@@ -612,8 +1014,42 @@ class AgentBridgeProxy:
                 "toolbox.call arguments must be an object.",
                 {"tool": target_name},
             )
+        visibility_error = self._scope_visibility_error(target_name, target_args)
+        if visibility_error is not None:
+            return _bridge_call_error(
+                request_id,
+                -32007,
+                "Bridge requires the current workspace project for this call.",
+                visibility_error,
+            )
+        workspace_args, workspace_error = self._scope_workspace_arguments(
+            target_name,
+            target_args,
+        )
+        if workspace_error is not None:
+            return _bridge_call_error(
+                request_id,
+                -32007,
+                "Bridge refused cross-workspace agent call.",
+                workspace_error,
+            )
+        assert workspace_args is not None
+        scoped_args, scope_error = _bridge_scoped_arguments(
+            catalog=self.tool_catalog,
+            tool_name=target_name,
+            arguments=workspace_args,
+            scoped_project_id=self.scoped_project_id,
+        )
+        if scope_error is not None:
+            return _bridge_call_error(
+                request_id,
+                -32007,
+                "Bridge refused cross-project agent call.",
+                scope_error,
+            )
 
-        forwarded_args = dict(target_args)
+        assert scoped_args is not None
+        forwarded_args = dict(scoped_args)
         step_allowed = self.allowed_by_run.get(run_id, set()) if run_id is not None else set()
         if (
             run_id is not None

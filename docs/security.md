@@ -77,9 +77,12 @@ installable MCP bridge keeps the daemon bearer inside the bridge process rather
 than giving it to the agent. Normal agent workflow writes and external action
 execution go through MCP run-plan grants (`runPlan.claimStep` + step-scoped
 `resource.upsert`, `artifact.create`, `learning.create`, `decision.record`,
-`experiment.*`, `context.snapshot`, and `action.execute`). Possession of the
-raw daemon token is therefore treated as local administrator authority, not as a
-normal agent credential.
+`experiment.*`, `context.snapshot`, and `action.execute`). One explicit direct
+provider action can use `action.run`, which still requires workspace project
+scope, daemon-held credentials, direct-action confirmation, idempotency for
+non-read calls, redaction, and action-call audit. Possession of the raw daemon
+token is therefore treated as local administrator authority, not as a normal
+agent credential.
 
 ## UI Token Bootstrap Trade-Off
 

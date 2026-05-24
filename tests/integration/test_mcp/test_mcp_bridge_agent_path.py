@@ -9,6 +9,7 @@ remain reachable through ``toolbox.call``.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from pytest_httpx import HTTPXMock
@@ -35,6 +36,29 @@ def _bridge(mcp: MCPClient) -> tuple[AgentBridgeProxy, _BridgeHttpClient]:
         "Content-Type": "application/json",
     }
     return AgentBridgeProxy(url="http://daemon.test/mcp", headers=headers), _BridgeHttpClient(mcp)
+
+
+def _scoped_bridge(
+    mcp: MCPClient,
+    *,
+    cwd: str,
+    repo_fingerprint: str | None = None,
+) -> tuple[AgentBridgeProxy, _BridgeHttpClient]:
+    headers = {
+        "Authorization": f"Bearer {mcp.auth_token}",
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+    return (
+        AgentBridgeProxy(
+            url="http://daemon.test/mcp",
+            headers=headers,
+            cwd=cwd,
+            repo_fingerprint=repo_fingerprint,
+            client_session_id="pytest-scoped-bridge",
+        ),
+        _BridgeHttpClient(mcp),
+    )
 
 
 def _rpc(method: str, params: dict[str, Any] | None = None, request_id: object = 1) -> str:
@@ -91,6 +115,24 @@ def _structured(envelope: dict[str, Any]) -> dict[str, Any]:
     return envelope["result"].get("structuredContent") or envelope["result"]
 
 
+def _create_project(mcp: MCPClient, slug: str) -> int:
+    created = mcp.call_tool_structured(
+        "project.create",
+        {
+            "slug": slug,
+            "name": slug.replace("-", " ").title(),
+            "domain": f"{slug}.example",
+            "locale": "en-US",
+        },
+    )
+    return int(created["data"]["id"])
+
+
+def _is_bridge_scope_error(envelope: dict[str, Any]) -> bool:
+    result = envelope["result"]
+    return result["isError"] is True and result["structuredContent"]["code"] == -32007
+
+
 def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     proxy, client = _bridge(mcp_client)
     _initialize(proxy, client)
@@ -101,8 +143,12 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert names[: len(_AGENT_VISIBLE_TOOL_ORDER)] == list(_AGENT_VISIBLE_TOOL_ORDER)
     assert "toolbox.describe" in names
     assert "toolbox.call" in names
+    assert "action.run" in names
     assert "schedule.remove" not in names
     assert "integration.set" not in names
+    assert "project.list" not in names
+    assert "project.create" not in names
+    assert "project.setActive" not in names
     assert "agentRequest.list" in names
     assert "agentRequest.claim" in names
     assert "agentRequest.create" not in names
@@ -118,6 +164,268 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "runPlan.claimStep" not in names
     assert "action.execute" not in names
     assert "dataforseo.serp" not in names
+
+
+def test_bridge_scopes_project_from_workspace_and_injects_project_id(
+    mcp_client: MCPClient,
+) -> None:
+    project_id = _create_project(mcp_client, "bridge-scoped-project")
+    other_project_id = _create_project(mcp_client, "bridge-other-project")
+    mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "project_id": project_id,
+            "repo_fingerprint": "path:bridge-scoped",
+            "last_known_root": "/tmp/bridge-scoped-project",
+        },
+    )
+    other_binding = mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "project_id": other_project_id,
+            "repo_fingerprint": "path:bridge-other",
+            "last_known_root": "/tmp/bridge-other-project",
+        },
+    )
+    other_record_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{other_project_id}/resource-records",
+        json={
+            "plugin_slug": "core",
+            "resource_key": "learning",
+            "data_json": {"body": "other project"},
+        },
+        headers=mcp_client._headers(),
+    )
+    other_record_resp.raise_for_status()
+    other_record_id = other_record_resp.json()["data"]["id"]
+    other_artifact_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{other_project_id}/artifacts",
+        json={"kind": "note", "uri": "/tmp/other.txt"},
+        headers=mcp_client._headers(),
+    )
+    other_artifact_resp.raise_for_status()
+    other_artifact_id = other_artifact_resp.json()["data"]["id"]
+    other_run = mcp_client.call_tool_structured(
+        "run.start",
+        {"project_id": other_project_id, "kind": "skill-run"},
+    )
+    other_run_id = other_run["data"]["run_id"]
+    other_plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": other_project_id,
+            "run_plan_json": {
+                "schema_version": "stackos.run-plan.v1",
+                "key": "bridge.other.run",
+                "title": "Other project plan",
+                "steps": [{"id": "other", "title": "Other"}],
+            },
+        },
+    )
+    other_run_plan_id = other_plan["data"]["id"]
+    other_schedule = mcp_client.call_tool_structured(
+        "schedule.set",
+        {
+            "project_id": other_project_id,
+            "kind": "other-weekly-review",
+            "cron_expr": "0 6 * * 1",
+            "enabled": True,
+        },
+    )
+    other_schedule_id = other_schedule["data"]["id"]
+    proxy, client = _scoped_bridge(
+        mcp_client,
+        cwd="/tmp/bridge-scoped-project",
+        repo_fingerprint="path:bridge-scoped",
+    )
+    _initialize(proxy, client)
+
+    tools = _send(proxy, client, method="tools/list", request_id="tools")
+    auth_tool = next(tool for tool in tools["result"]["tools"] if tool["name"] == "auth.status")
+    workspace_connect_tool = next(
+        tool for tool in tools["result"]["tools"] if tool["name"] == "workspace.connect"
+    )
+    auth_required = auth_tool["inputSchema"].get("required", [])
+    workspace_connect_required = workspace_connect_tool["inputSchema"].get("required", [])
+    resolved = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "workspace.resolve",
+            {"cwd": "/tmp/bridge-scoped-project/packages/site"},
+            request_id="workspace-resolve",
+        )
+    )
+    status = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "auth.status",
+            {"provider_key": "mock-provider"},
+            request_id="auth-status",
+        )
+    )
+    connected = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "workspace.connect",
+            {},
+            request_id="workspace-connect",
+        )
+    )
+    cross_project = _tool_call(
+        proxy,
+        client,
+        "auth.status",
+        {"project_id": project_id + 1000, "provider_key": "mock-provider"},
+        request_id="auth-status-cross",
+    )
+    cross_workspace = _tool_call(
+        proxy,
+        client,
+        "workspace.resolve",
+        {"cwd": "/tmp/other-project"},
+        request_id="workspace-resolve-cross",
+    )
+    cross_resource = _tool_call(
+        proxy,
+        client,
+        "resource.get",
+        {"record_id": other_record_id},
+        request_id="resource-get-cross",
+    )
+    cross_artifact = _tool_call(
+        proxy,
+        client,
+        "artifact.get",
+        {"artifact_id": other_artifact_id},
+        request_id="artifact-get-cross",
+    )
+    cross_run_plan = _tool_call(
+        proxy,
+        client,
+        "runPlan.get",
+        {"run_plan_id": other_run_plan_id},
+        request_id="run-plan-get-cross",
+    )
+    cross_run = _tool_call(
+        proxy,
+        client,
+        "run.get",
+        {"run_id": other_run_id},
+        request_id="run-get-cross",
+    )
+    cross_heartbeat = _tool_call(
+        proxy,
+        client,
+        "run.heartbeat",
+        {"run_id": other_run_id},
+        request_id="run-heartbeat-cross",
+    )
+    cross_abort = _tool_call(
+        proxy,
+        client,
+        "run.abort",
+        {"run_id": other_run_id},
+        request_id="run-abort-cross",
+    )
+    cross_binding_update = _tool_call(
+        proxy,
+        client,
+        "workspace.updateProfile",
+        {"binding_id": other_binding["data"]["id"], "framework": "next"},
+        request_id="workspace-update-cross",
+    )
+    cross_schedule_remove = _tool_call(
+        proxy,
+        client,
+        "toolbox.call",
+        {"tool_name": "schedule.remove", "arguments": {"job_id": other_schedule_id}},
+        request_id="schedule-remove-cross",
+    )
+    cross_schedule_toggle = _tool_call(
+        proxy,
+        client,
+        "toolbox.call",
+        {
+            "tool_name": "schedule.toggle",
+            "arguments": {"job_id": other_schedule_id, "enabled": False},
+        },
+        request_id="schedule-toggle-cross",
+    )
+
+    assert "project_id" not in auth_required
+    assert "project_id" not in workspace_connect_required
+    assert "repo_fingerprint" not in workspace_connect_required
+    assert resolved["project_id"] == project_id
+    assert status["project_id"] == project_id
+    assert connected["project_id"] == project_id
+    assert connected["data"]["repo_fingerprint"] == "path:bridge-scoped"
+    assert connected["data"]["last_known_root"] == str(Path("/tmp/bridge-scoped-project").resolve())
+    assert cross_project["result"]["isError"] is True
+    assert cross_project["result"]["structuredContent"]["code"] == -32007
+    assert _is_bridge_scope_error(cross_workspace)
+    assert cross_resource["result"]["isError"] is True
+    assert cross_artifact["result"]["isError"] is True
+    assert cross_run_plan["result"]["isError"] is True
+    assert cross_run["result"]["isError"] is True
+    assert cross_heartbeat["result"]["isError"] is True
+    assert cross_abort["result"]["isError"] is True
+    assert cross_binding_update["result"]["isError"] is True
+    assert cross_schedule_remove["result"]["isError"] is True
+    assert cross_schedule_toggle["result"]["isError"] is True
+
+
+def test_bridge_unbound_workspace_blocks_project_scoped_tools_until_connected(
+    mcp_client: MCPClient,
+) -> None:
+    project_id = _create_project(mcp_client, "bridge-connect-later")
+    proxy, client = _scoped_bridge(
+        mcp_client,
+        cwd="/tmp/bridge-connect-later",
+        repo_fingerprint="path:bridge-connect-later",
+    )
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    denied = _tool_call(
+        proxy,
+        client,
+        "workspace.listBindings",
+        {},
+        request_id="list-bindings-unbound",
+    )
+    discovery = _tool_call(
+        proxy,
+        client,
+        "plugin.list",
+        {},
+        request_id="plugin-list-unbound",
+    )
+    connected = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "workspace.connect",
+            {"project_id": project_id},
+            request_id="workspace-connect-later",
+        )
+    )
+    bindings = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "workspace.listBindings",
+            {},
+            request_id="list-bindings-bound",
+        )
+    )
+
+    assert _is_bridge_scope_error(denied)
+    assert discovery["result"]["isError"] is False
+    assert connected["project_id"] == project_id
+    assert bindings["items"][0]["project_id"] == project_id
 
 
 def test_bridge_describes_setup_tools_and_treats_removed_vendor_tools_as_unknown(
@@ -145,11 +453,10 @@ def test_bridge_describes_setup_tools_and_treats_removed_vendor_tools_as_unknown
     payload = _structured(envelope)
 
     assert [tool["name"] for tool in payload["described_tools"]] == [
-        "project.setActive",
         "schedule.remove",
         "auth.test",
     ]
-    assert payload["denied_tool_names"] == ["auth.start"]
+    assert payload["denied_tool_names"] == ["project.setActive", "auth.start"]
     assert payload["unknown_tool_names"] == ["dataforseo.serp"]
     assert "admin_gated_tool_names" not in payload
 
@@ -162,35 +469,7 @@ def test_bridge_toolbox_operates_setup_actions(
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
 
-    created = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "project.create",
-            {
-                "slug": "bridge-agent-path",
-                "name": "Bridge Agent Path",
-                "domain": "bridge-agent-path.example",
-                "locale": "en-US",
-            },
-            request_id="project-create",
-        )
-    )
-    project_id = created["data"]["id"]
-
-    activated = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "toolbox.call",
-            {
-                "tool_name": "project.setActive",
-                "arguments": {"project_id": project_id},
-            },
-            request_id="project-activate",
-        )
-    )
-    assert activated["data"]["is_active"] is True
+    project_id = _create_project(mcp_client, "bridge-agent-path")
 
     budget = _structured(
         _tool_call(
@@ -280,21 +559,7 @@ def test_bridge_allows_started_run_plan_controller_tools(mcp_client: MCPClient) 
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
 
-    created_project = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "project.create",
-            {
-                "slug": "bridge-run-plan",
-                "name": "Bridge Run Plan",
-                "domain": "bridge-run-plan.example",
-                "locale": "en-US",
-            },
-            request_id="project-create",
-        )
-    )
-    project_id = created_project["data"]["id"]
+    project_id = _create_project(mcp_client, "bridge-run-plan")
     created_plan = _structured(
         _tool_call(
             proxy,
@@ -416,21 +681,7 @@ def test_bridge_exposes_run_plan_granted_generic_tool_after_claim(
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
 
-    created_project = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "project.create",
-            {
-                "slug": "bridge-run-plan-grant",
-                "name": "Bridge Run Plan Grant",
-                "domain": "bridge-run-plan-grant.example",
-                "locale": "en-US",
-            },
-            request_id="project-create",
-        )
-    )
-    project_id = created_project["data"]["id"]
+    project_id = _create_project(mcp_client, "bridge-run-plan-grant")
     created_plan = _structured(
         _tool_call(
             proxy,
@@ -531,21 +782,7 @@ def test_bridge_executes_run_plan_granted_action_with_injected_token(
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
 
-    created_project = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "project.create",
-            {
-                "slug": "bridge-action-grant",
-                "name": "Bridge Action Grant",
-                "domain": "bridge-action-grant.example",
-                "locale": "en-US",
-            },
-            request_id="project-create",
-        )
-    )
-    project_id = created_project["data"]["id"]
+    project_id = _create_project(mcp_client, "bridge-action-grant")
     cred_resp = mcp_client.test_client.post(
         f"/api/v1/projects/{project_id}/auth/openai-images/credentials",
         json={"auth_method_key": "api_key", "fields": {"api_key": "sk-openai"}},

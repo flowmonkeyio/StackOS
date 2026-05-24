@@ -160,7 +160,8 @@ An operation change should define or update:
 - documentation
 
 Direct MCP tools are only for generic StackOS primitives. Provider/vendor
-operations should be plugin actions executed through `action.execute`. If a
+operations should be plugin actions executed through `action.run` for one
+explicit direct action or `action.execute` inside a granted run-plan step. If a
 provider needs a new callable operation, add the provider manifest entry, action
 manifest, connector, grant tests, integration-contract docs, and operation
 visibility together.

@@ -8,6 +8,7 @@ singleton daemon, and the daemon resolves the durable StackOS project.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -19,6 +20,21 @@ from stackos.repositories.base import Envelope, NotFoundError, ValidationError
 
 def _utcnow() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+def _normalize_path(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        return str(Path(value).expanduser().resolve())
+    except OSError:
+        return str(Path(value).expanduser().absolute())
+
+
+def _is_same_or_child(path: str, root: str) -> bool:
+    if path == root:
+        return True
+    return path.startswith(root.rstrip("/") + "/")
 
 
 class WorkspaceBindingOut(BaseModel):
@@ -84,6 +100,7 @@ class WorkspaceRepository:
         if self._s.get(Project, project_id) is None:
             raise NotFoundError(f"project {project_id} not found")
 
+        normalized_root = _normalize_path(last_known_root)
         row = self._s.exec(
             select(WorkspaceBinding).where(WorkspaceBinding.repo_fingerprint == repo_fingerprint)
         ).first()
@@ -94,7 +111,7 @@ class WorkspaceRepository:
                 repo_fingerprint=repo_fingerprint,
                 git_remote_url=git_remote_url,
                 normalized_repo_name=normalized_repo_name,
-                last_known_root=last_known_root,
+                last_known_root=normalized_root,
                 framework=framework,
                 content_model_json=content_model_json,
                 last_seen_at=now,
@@ -106,7 +123,7 @@ class WorkspaceRepository:
             if normalized_repo_name is not None:
                 row.normalized_repo_name = normalized_repo_name
             if last_known_root is not None:
-                row.last_known_root = last_known_root
+                row.last_known_root = normalized_root
             if framework is not None:
                 row.framework = framework
             if content_model_json is not None:
@@ -123,8 +140,9 @@ class WorkspaceRepository:
         *,
         repo_fingerprint: str | None = None,
         git_remote_url: str | None = None,
+        cwd: str | None = None,
     ) -> WorkspaceResolutionOut:
-        """Resolve a workspace by stable fingerprint first, then git remote."""
+        """Resolve a workspace by fingerprint, root directory, then git remote."""
         row: WorkspaceBinding | None = None
         if repo_fingerprint:
             row = self._s.exec(
@@ -132,6 +150,21 @@ class WorkspaceRepository:
                     WorkspaceBinding.repo_fingerprint == repo_fingerprint
                 )
             ).first()
+        normalized_cwd = _normalize_path(cwd)
+        if row is None and normalized_cwd:
+            rows = self._s.exec(
+                select(WorkspaceBinding)
+                .where(col(WorkspaceBinding.last_known_root).is_not(None))
+                .order_by(col(WorkspaceBinding.updated_at).desc())
+            ).all()
+            matching = [
+                candidate
+                for candidate in rows
+                if candidate.last_known_root
+                and _is_same_or_child(normalized_cwd, candidate.last_known_root)
+            ]
+            if matching:
+                row = max(matching, key=lambda candidate: len(candidate.last_known_root or ""))
         if row is None and git_remote_url:
             row = self._s.exec(
                 select(WorkspaceBinding)
@@ -159,12 +192,18 @@ class WorkspaceRepository:
         self,
         binding_id: int,
         *,
+        project_id: int | None = None,
         framework: str | None = None,
         content_model_json: dict[str, Any] | None = None,
     ) -> Envelope[WorkspaceBindingOut]:
         row = self._s.get(WorkspaceBinding, binding_id)
         if row is None:
             raise NotFoundError(f"workspace binding {binding_id} not found")
+        if project_id is not None and row.project_id != project_id:
+            raise NotFoundError(
+                f"workspace binding {binding_id} not found in project {project_id}",
+                data={"project_id": project_id, "binding_id": binding_id},
+            )
         if framework is not None:
             row.framework = framework
         if content_model_json is not None:
@@ -187,7 +226,11 @@ class WorkspaceRepository:
         client_session_id: str | None = None,
     ) -> Envelope[AgentSessionOut]:
         """Register a plugin MCP bridge session and attach binding if known."""
-        resolution = self.resolve(repo_fingerprint=repo_fingerprint, git_remote_url=git_remote_url)
+        resolution = self.resolve(
+            repo_fingerprint=repo_fingerprint,
+            git_remote_url=git_remote_url,
+            cwd=cwd,
+        )
         binding_id = resolution.binding.id if resolution.binding is not None else None
         row = AgentSession(
             project_id=resolution.project_id,

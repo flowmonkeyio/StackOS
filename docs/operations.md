@@ -34,6 +34,7 @@ registry returns an agent-readable description for every registered operation:
 ```bash
 stackos ops list
 stackos ops describe action.execute --json
+stackos ops describe action.run --json
 stackos ops describe runPlan.claimStep --json
 ```
 
@@ -42,6 +43,7 @@ The same metadata is available through REST:
 ```http
 GET /api/v1/operations
 GET /api/v1/operations/action.execute
+GET /api/v1/operations/action.run
 ```
 
 Each description includes:
@@ -122,6 +124,13 @@ stackos actions execute utils.sitemap.fetch \
   --project 1 \
   --run-token "$RUN_TOKEN" \
   --input action-input.json
+stackos actions run communications.telegram-bot.message.send \
+  --project 1 \
+  --credential-ref cred_123 \
+  --confirm-direct \
+  --intent-summary "User asked to send one status message." \
+  --idempotency-key telegram-send-status-1 \
+  --input telegram-message.json
 
 stackos run-plans validate --project 1 --template-key core.project-memory-review
 stackos run-plans create --project 1 --input run-plan.json
@@ -151,6 +160,7 @@ The current core operation registry includes:
 
 - `action.describe`
 - `action.validate`
+- `action.run`
 - `action.execute`
 - `agentRequest.list`
 - `agentRequest.get`
@@ -174,7 +184,23 @@ The current core operation registry includes:
 - `runPlan.claimStep`
 - `runPlan.recordStep`
 
-`action.execute` keeps the same boundary everywhere:
+## Direct Actions Vs Workflows
+
+`action.run` is for one explicit action when no workflow state is needed:
+
+1. The current bridge workspace must resolve to a project, or scripts must pass
+   `project_id`.
+2. The caller must pass an explicit action ref or plugin/action pair.
+3. Non-read actions require `confirm_direct=true`, `intent_summary`, and
+   `idempotency_key`.
+4. Credentials are resolved inside the daemon; callers pass only
+   `credential_ref`.
+5. The response is compact by default. Use `verbose=true` only when the full
+   redacted action call and output payload are needed.
+6. The execution writes the same `action_calls` audit row as workflow
+   execution, but without run-plan linkage.
+
+Use `action.execute` when the action belongs to a workflow:
 
 1. A valid `run_token` is required.
 2. The run token must belong to a started run plan.

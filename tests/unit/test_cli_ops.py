@@ -241,6 +241,73 @@ def test_cli_actions_describe_alias_calls_operation(monkeypatch) -> None:  # typ
     assert json.loads(result.stdout)["manifest"]["action_ref"] == "utils.sitemap.fetch"
 
 
+def test_cli_actions_run_alias_calls_direct_operation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {"data": {"status": "success"}}
+
+    input_path = tmp_path / "telegram-send.json"
+    input_path.write_text(
+        json.dumps({"chat_ref": "telegram-chat:123", "text": "Done."}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "actions",
+            "run",
+            "communications.telegram-bot.message.send",
+            "--project",
+            "7",
+            "--input",
+            str(input_path),
+            "--credential-ref",
+            "cred_123",
+            "--confirm-direct",
+            "--intent-summary",
+            "User asked to send one message.",
+            "--idempotency-key",
+            "send-1",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "POST",
+            "/api/v1/operations/action.run/call",
+            {
+                "arguments": {
+                    "action_ref": "communications.telegram-bot.message.send",
+                    "credential_ref": "cred_123",
+                    "input_json": {"chat_ref": "telegram-chat:123", "text": "Done."},
+                    "dry_run": False,
+                    "confirm_direct": True,
+                    "intent_summary": "User asked to send one message.",
+                    "verbose": False,
+                    "project_id": 7,
+                    "idempotency_key": "send-1",
+                }
+            },
+        )
+    ]
+    assert json.loads(result.stdout)["data"]["status"] == "success"
+
+
 def test_cli_run_plans_create_alias_calls_operation(
     tmp_path: Path,
     monkeypatch,

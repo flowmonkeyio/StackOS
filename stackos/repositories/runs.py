@@ -152,6 +152,7 @@ class RunRepository:
         status: Literal["success", "failed", "aborted"] | RunStatus,
         error: str | None = None,
         metadata_json: dict[str, Any] | None = None,
+        project_id: int | None = None,
     ) -> Envelope[RunOut]:
         """Move the run to a terminal status.
 
@@ -160,6 +161,7 @@ class RunRepository:
         if not isinstance(status, RunStatus):
             status = RunStatus(status)
         row = self._fetch(run_id)
+        self._require_project_match(row, project_id)
         validate_transition(row.status, status, RUN_STATUS_TRANSITIONS, label="run.status")
         row.status = status
         row.ended_at = _utcnow()
@@ -179,7 +181,7 @@ class RunRepository:
             project_id=row.project_id,
         )
 
-    def heartbeat(self, run_id: int) -> Envelope[RunOut | None]:
+    def heartbeat(self, run_id: int, *, project_id: int | None = None) -> Envelope[RunOut | None]:
         """Update ``heartbeat_at`` to now.
 
         Idempotent if the row is missing — we return a stub ``Envelope``
@@ -190,6 +192,7 @@ class RunRepository:
         row = self._s.get(Run, run_id)
         if row is None:
             return Envelope[RunOut | None](data=None, run_id=None)
+        self._require_project_match(row, project_id)
         row.heartbeat_at = _utcnow()
         self._s.add(row)
         self._s.commit()
@@ -200,7 +203,13 @@ class RunRepository:
             project_id=row.project_id,
         )
 
-    def abort(self, run_id: int, *, cascade: bool = False) -> Envelope[RunOut]:
+    def abort(
+        self,
+        run_id: int,
+        *,
+        cascade: bool = False,
+        project_id: int | None = None,
+    ) -> Envelope[RunOut]:
         """Move to ``aborted``; optionally cascade through child runs.
 
         Cascade traverses ``parent_run_id`` recursively for any child
@@ -208,6 +217,7 @@ class RunRepository:
         alone.
         """
         row = self._fetch(run_id)
+        self._require_project_match(row, project_id)
         if row.status == RunStatus.RUNNING:
             validate_transition(
                 row.status, RunStatus.ABORTED, RUN_STATUS_TRANSITIONS, label="run.status"
@@ -255,12 +265,21 @@ class RunRepository:
             converter=RunOut.model_validate,
         )
 
-    def get(self, run_id: int) -> RunOut:
+    def get(self, run_id: int, *, project_id: int | None = None) -> RunOut:
         """Fetch one run by id."""
-        return RunOut.model_validate(self._fetch(run_id))
+        row = self._fetch(run_id)
+        self._require_project_match(row, project_id)
+        return RunOut.model_validate(row)
 
-    def children(self, parent_run_id: int) -> list[RunOut]:  # type: ignore[valid-type]
+    def children(
+        self,
+        parent_run_id: int,
+        *,
+        project_id: int | None = None,
+    ) -> list[RunOut]:  # type: ignore[valid-type]
         """Direct children of a parent run."""
+        parent = self._fetch(parent_run_id)
+        self._require_project_match(parent, project_id)
         rows = self._s.exec(
             select(Run).where(Run.parent_run_id == parent_run_id).order_by(Run.id.asc())  # type: ignore[union-attr,attr-defined]
         ).all()
@@ -351,6 +370,15 @@ class RunRepository:
             raise NotFoundError(f"run {run_id} not found")
         return row
 
+    @staticmethod
+    def _require_project_match(row: Run, project_id: int | None) -> None:
+        if project_id is None or row.project_id == project_id:
+            return
+        raise NotFoundError(
+            f"run {row.id} not found in project {project_id}",
+            data={"project_id": project_id, "run_id": row.id},
+        )
+
     def _cascade_abort(self, root_id: int) -> None:
         """Recursively abort children of ``root_id`` that are still running."""
         frontier = [root_id]
@@ -390,8 +418,10 @@ class RunStepRepository:
         skill_name: str,
         status: RunStepStatus = RunStepStatus.PENDING,
         input_snapshot_json: dict[str, Any] | None = None,
+        project_id: int | None = None,
     ) -> Envelope[RunStepOut]:
         """Insert a per-skill step row."""
+        run = self._fetch_run(run_id, project_id=project_id)
         row = RunStep(
             run_id=run_id,
             step_index=step_index,
@@ -403,7 +433,11 @@ class RunStepRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=RunStepOut.model_validate(row), run_id=run_id)
+        return Envelope(
+            data=RunStepOut.model_validate(row),
+            run_id=run_id,
+            project_id=run.project_id,
+        )
 
     def advance_step(
         self,
@@ -438,12 +472,20 @@ class RunStepRepository:
         self._s.refresh(row)
         return Envelope(data=RunStepOut.model_validate(row), run_id=row.run_id)
 
-    def list_steps(self, run_id: int) -> list[RunStepOut]:
+    def list_steps(self, run_id: int, *, project_id: int | None = None) -> list[RunStepOut]:
         """All run steps for a run, ordered by step_index."""
+        self._fetch_run(run_id, project_id=project_id)
         rows = self._s.exec(
             select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.step_index.asc())  # type: ignore[union-attr,attr-defined]
         ).all()
         return [RunStepOut.model_validate(r) for r in rows]
+
+    def _fetch_run(self, run_id: int, *, project_id: int | None = None) -> Run:
+        row = self._s.get(Run, run_id)
+        if row is None:
+            raise NotFoundError(f"run {run_id} not found")
+        RunRepository._require_project_match(row, project_id)
+        return row
 
 
 # ---------------------------------------------------------------------------
@@ -467,10 +509,12 @@ class RunStepCallRepository:
         duration_ms: int | None = None,
         error: str | None = None,
         cost_cents: int = 0,
+        project_id: int | None = None,
     ) -> Envelope[RunStepCallOut]:
         """Insert a per-MCP-tool call row."""
+        step, run = self._fetch_step_and_run(run_step_id, project_id=project_id)
         row = RunStepCall(
-            run_step_id=run_step_id,
+            run_step_id=step.id,
             mcp_tool=mcp_tool,
             request_json=request_json,
             response_json=response_json,
@@ -481,16 +525,36 @@ class RunStepCallRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=RunStepCallOut.model_validate(row))
+        return Envelope(
+            data=RunStepCallOut.model_validate(row),
+            run_id=run.id,
+            project_id=run.project_id,
+        )
 
-    def list(self, run_step_id: int) -> list[RunStepCallOut]:
+    def list(self, run_step_id: int, *, project_id: int | None = None) -> list[RunStepCallOut]:
         """All calls for a step in id order."""
+        self._fetch_step_and_run(run_step_id, project_id=project_id)
         rows = self._s.exec(
             select(RunStepCall)
             .where(RunStepCall.run_step_id == run_step_id)
             .order_by(RunStepCall.id.asc())  # type: ignore[union-attr,attr-defined]
         ).all()
         return [RunStepCallOut.model_validate(r) for r in rows]
+
+    def _fetch_step_and_run(
+        self,
+        run_step_id: int,
+        *,
+        project_id: int | None = None,
+    ) -> tuple[RunStep, Run]:
+        row = self._s.get(RunStep, run_step_id)
+        if row is None:
+            raise NotFoundError(f"run step {run_step_id} not found")
+        run = self._s.get(Run, row.run_id)
+        if run is None:
+            raise NotFoundError(f"run {row.run_id} not found")
+        RunRepository._require_project_match(run, project_id)
+        return row, run
 
 
 # ---------------------------------------------------------------------------

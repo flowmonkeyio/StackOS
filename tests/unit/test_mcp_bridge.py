@@ -284,6 +284,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "plugin.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "action.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "action.validate" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "action.run" in _AGENT_VISIBLE_TOOL_NAMES
     assert "agentRequest.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "agentRequest.get" in _AGENT_VISIBLE_TOOL_NAMES
     assert "agentRequest.claim" in _AGENT_VISIBLE_TOOL_NAMES
@@ -336,6 +337,9 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "agentRequest.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.start" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.revoke" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "project.create" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "project.list" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "project.setActive" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "learning.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "experiment.recordDecision" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "decision.record" not in _AGENT_BASE_TOOLBOX_NAMES
@@ -376,9 +380,6 @@ def test_bridge_setup_surface_covers_core_setup_mutations() -> None:
     core_setup_mutations = {
         "budget.set",
         "budget.update",
-        "project.create",
-        "project.update",
-        "project.setActive",
         "schedule.remove",
         "schedule.set",
         "schedule.toggle",
@@ -416,6 +417,7 @@ def test_registered_product_mutations_are_agent_reachable() -> None:
         and name not in agent_surface
         and name not in _AGENT_GATED_TOOL_NAMES
         and name not in _AGENT_STEP_GATED_TOOL_NAMES
+        and not name.startswith("project.")
         and not name.startswith(
             (
                 "dataforseo.",

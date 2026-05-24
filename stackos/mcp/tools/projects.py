@@ -139,17 +139,23 @@ class ScheduleSetInput(MCPInput):
 
 class ScheduleToggleInput(MCPInput):
     model_config = ConfigDict(
-        extra="forbid", json_schema_extra={"example": {"job_id": 1, "enabled": False}}
+        extra="forbid",
+        json_schema_extra={"example": {"project_id": 1, "job_id": 1, "enabled": False}},
     )
 
     job_id: int
+    project_id: int | None = None
     enabled: bool
 
 
 class ScheduleRemoveInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"job_id": 1}})
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"project_id": 1, "job_id": 1}},
+    )
 
     job_id: int
+    project_id: int | None = None
 
 
 async def _project_list(
@@ -264,7 +270,11 @@ async def _schedule_set(
 async def _schedule_toggle(
     inp: ScheduleToggleInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[ScheduledJobOut]:
-    env = ScheduledJobRepository(ctx.session).toggle(inp.job_id, enabled=inp.enabled)
+    env = ScheduledJobRepository(ctx.session).toggle(
+        inp.job_id,
+        enabled=inp.enabled,
+        project_id=inp.project_id,
+    )
     return WriteEnvelope[ScheduledJobOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
     )
@@ -273,7 +283,11 @@ async def _schedule_toggle(
 async def _schedule_remove(
     inp: ScheduleRemoveInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[ScheduledJobOut]:
-    env = ScheduledJobRepository(ctx.session).toggle(inp.job_id, enabled=False)
+    env = ScheduledJobRepository(ctx.session).toggle(
+        inp.job_id,
+        enabled=False,
+        project_id=inp.project_id,
+    )
     return WriteEnvelope[ScheduledJobOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
     )
