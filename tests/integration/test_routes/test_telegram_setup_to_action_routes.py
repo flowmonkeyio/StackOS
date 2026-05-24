@@ -94,8 +94,8 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
                     "boundaries": "Do not mutate external systems unless the run plan grants it.",
                 },
                 "access_policy": {
-                    "dm_mode": "allowlist",
-                    "group_mode": "allowlist",
+                    "dm_mode": "all",
+                    "group_mode": "all",
                     "user_mode": "allowlist",
                     "allowed_chat_refs": ["telegram-chat:999"],
                     "allowed_user_refs": ["telegram-user:555"],

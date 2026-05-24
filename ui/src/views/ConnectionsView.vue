@@ -735,10 +735,10 @@ async function saveBotProfile(): Promise<void> {
     }
     return
   }
-  if (allowedChatRefs.length === 0 || allowedUserRefs.length === 0) {
+  if (allowedUserRefs.length === 0) {
     botProfileMessage.value = {
       tone: 'danger',
-      text: 'Allowlisted chats and users are required before the bot can trigger agents.',
+      text: 'Allowlisted users are required before the bot can trigger agents.',
     }
     return
   }
@@ -760,8 +760,8 @@ async function saveBotProfile(): Promise<void> {
         escalation: form.agent_escalation.trim(),
       },
       access_policy: {
-        dm_mode: 'allowlist',
-        group_mode: 'allowlist',
+        dm_mode: 'all',
+        group_mode: 'all',
         user_mode: 'allowlist',
         allowed_chat_refs: allowedChatRefs,
         allowed_user_refs: allowedUserRefs,
@@ -1755,9 +1755,8 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
 
         <div class="grid gap-4 sm:grid-cols-2">
           <UiFormField
-            label="Allowed chats"
-            help="Comma-separated StackOS refs, for example telegram-chat:999."
-            required
+            label="Visible chats"
+            help="Optional comma-separated StackOS refs. Leave blank to let the bot observe any chat it has access to; only allowlisted users can trigger replies."
           >
             <template #default="{ id, describedBy, invalid }">
               <UiInput
@@ -1772,7 +1771,7 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
 
           <UiFormField
             label="Allowed users"
-            help="Comma-separated StackOS refs, for example telegram-user:555."
+            help="Comma-separated StackOS refs. Only these users can trigger work or replies."
             required
           >
             <template #default="{ id, describedBy, invalid }">

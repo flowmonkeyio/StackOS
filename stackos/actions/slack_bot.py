@@ -804,16 +804,19 @@ def _communication_profile_key(request: ActionConnectorRequest) -> str:
     if isinstance(raw, str) and raw.strip():
         text = raw.strip()
         profile_key = text.removeprefix("communication-profile:")
-        _require_profile_bound_to_credential(request, profile_key=profile_key)
+        _communication_profile_data(request, profile_key=profile_key)
         return profile_key
-    return _credential_profile_key(request)
+    profile_key = _credential_profile_key(request)
+    if request.operation in {"message.send", "conversation.open"}:
+        _communication_profile_data(request, profile_key=profile_key)
+    return profile_key
 
 
-def _require_profile_bound_to_credential(
+def _communication_profile_data(
     request: ActionConnectorRequest,
     *,
     profile_key: str,
-) -> None:
+) -> dict[str, Any]:
     session = request.session
     if not isinstance(session, Session):
         raise ValidationError("Slack profile_ref requires a database session")
@@ -852,6 +855,7 @@ def _require_profile_bound_to_credential(
                 "credential_profile_key": credential_profile_key,
             },
         )
+    return data
 
 
 def _resource_record_by_external_id(

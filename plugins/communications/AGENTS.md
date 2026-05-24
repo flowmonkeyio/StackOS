@@ -57,9 +57,10 @@ does not run an assistant, classify intent, or decide workflows.
 - Telegram webhook set/delete/info actions are executable through
   `action.execute`; they must resolve the bot profile and daemon-held credential
   server-side.
-- Visibility is not activation. A bot profile may observe/store allowed chat
-  messages as context, but StackOS creates an `agent_request` only when trigger
-  policy matches and invoker access policy allows it.
+- Visibility is not activation. A bot profile may observe/store messages from
+  any reachable chat/channel as context, but StackOS creates an `agent_request`
+  or sends a reply only when trigger policy matches and invoker access policy
+  allows that user.
 - Agents never receive bot tokens, SMTP passwords, IMAP passwords, webhook
   secrets, OAuth tokens, refresh tokens, or raw authorization headers.
 - Telegram inline buttons must use opaque `callback_data` only. Keep it within
@@ -99,6 +100,11 @@ does not run an assistant, classify intent, or decide workflows.
   and return previews/selected fields unless a granted run needs full content.
 - `agent_requests` are generic core queue records. Communications can create
   them only through trusted ingestion or granted run-plan steps.
+- All communication ingress must follow one-brain processing. Provider adapters
+  verify transport auth and normalize payloads; shared communication policy is
+  responsible for visibility, trigger matching, user allowlists, resource
+  storage, and agent-request creation. Do not add a provider-specific second
+  brain for when a bot should answer.
 
 ## Current Status
 

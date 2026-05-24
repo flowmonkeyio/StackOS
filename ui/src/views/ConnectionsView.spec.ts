@@ -434,6 +434,9 @@ describe('ConnectionsView', () => {
           voice: 'Clear, concise, and operational.',
         },
         access_policy: {
+          dm_mode: 'all',
+          group_mode: 'all',
+          user_mode: 'allowlist',
           allowed_chat_refs: ['telegram-chat:999'],
           allowed_user_refs: ['telegram-user:555'],
         },

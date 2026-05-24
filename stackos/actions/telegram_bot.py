@@ -618,9 +618,9 @@ def _enforce_profile_chat(
     allowed = _profile_refs(access_policy, "allowed_chat_refs", "allowed_chat_ids", "allowed_chats")
     if not allowed:
         return profile
-    if not any(candidate in allowed for candidate in candidates):
-        raise ValidationError(f"Telegram bot profile does not allow chat {raw_ref!r}")
-    return profile
+    if any(candidate in allowed for candidate in candidates):
+        return profile
+    raise ValidationError(f"Telegram bot profile does not allow chat {raw_ref!r}")
 
 
 def _enforce_response_origin(

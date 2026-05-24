@@ -69,10 +69,9 @@ def _store_slack_profile(
                 },
                 "access_policy": access_policy
                 or {
-                    "dm_mode": "allowlist",
-                    "channel_mode": "allowlist",
+                    "dm_mode": "all",
+                    "channel_mode": "all",
                     "user_mode": "allowlist",
-                    "allowed_channel_refs": ["slack-channel:C123"],
                     "allowed_user_refs": ["slack-user:U111"],
                 },
                 "visibility_policy": visibility_policy or {"store_non_trigger_messages": True},

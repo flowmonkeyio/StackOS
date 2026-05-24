@@ -62,10 +62,9 @@ def _store_telegram_bot_profile(
                 },
                 "access_policy": access_policy
                 or {
-                    "dm_mode": "allowlist",
-                    "group_mode": "allowlist",
+                    "dm_mode": "all",
+                    "group_mode": "all",
                     "user_mode": "allowlist",
-                    "allowed_chat_refs": ["telegram-chat:999"],
                     "allowed_user_refs": ["telegram-user:555"],
                 },
                 "visibility_policy": visibility_policy or {"store_non_trigger_messages": True},
@@ -292,7 +291,17 @@ def test_telegram_ingress_rejects_disallowed_chat_without_writes(
     api: TestClient,
     project_id: int,
 ) -> None:
-    _store_telegram_bot_profile(api, project_id)
+    _store_telegram_bot_profile(
+        api,
+        project_id,
+        access_policy={
+            "dm_mode": "allowlist",
+            "group_mode": "allowlist",
+            "user_mode": "allowlist",
+            "allowed_chat_refs": ["telegram-chat:999"],
+            "allowed_user_refs": ["telegram-user:555"],
+        },
+    )
     original_auth = api.headers.pop("Authorization", None)
     try:
         response = api.post(

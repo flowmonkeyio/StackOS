@@ -64,8 +64,9 @@ agent-visible bot tokens. Credentials store token material, webhook secrets, and
 safe transport endpoints only; bot profiles store identity, agent guidance,
 structured command intents, access policy, trigger policy, context policy,
 response policy, and ingress mode. Visibility is
-not activation: allowed group messages may be stored as bounded context without
-creating an agent request. `local-webhook` is the normal local listener path;
+not activation: visible messages may be stored as bounded context without
+creating an agent request; only allowlisted users can trigger work or replies.
+`local-webhook` is the normal local listener path;
 `updates.poll` is diagnostic/bootstrap-only.
 
 Slack communication profiles are project scoped. Each profile binds to a

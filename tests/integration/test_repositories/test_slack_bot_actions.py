@@ -67,7 +67,16 @@ def _slack_communication_profile(
                 }
             },
             "identity": {"display_name": "Support Agent"},
-            "access_policy": {},
+            "access_policy": {
+                "channel_mode": "all",
+                "dm_mode": "all",
+                "user_mode": "allowlist",
+                "allowed_user_refs": ["slack-user:U111"],
+            },
+            "send_policy": {
+                "mode": "authorized-invoker",
+                "allowed_user_refs": ["slack-user:U111"],
+            },
             "trigger_policy": {},
             "context_policy": {},
             "response_policy": {},
@@ -411,6 +420,7 @@ def test_slack_provider_error_redacts_token_text(
     httpx_mock: HTTPXMock,
 ) -> None:
     credential_ref = _slack_credential_ref(session, project_id)
+    _slack_communication_profile(session, project_id)
     httpx_mock.add_response(
         method="POST",
         url=f"{_BASE}/chat.postMessage",
@@ -423,7 +433,11 @@ def test_slack_provider_error_redacts_token_text(
             ActionRepository(session).execute(
                 project_id=project_id,
                 action_ref="communications.slack-bot.message.send",
-                input_json={"channel_ref": "slack-channel:C123", "text": "hello"},
+                input_json={
+                    "profile_ref": "communication-profile:support-agent",
+                    "channel_ref": "slack-channel:C123",
+                    "text": "hello",
+                },
                 credential_ref=credential_ref,
             )
         )

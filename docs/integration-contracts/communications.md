@@ -110,22 +110,47 @@ validate and execute that explicit action.
 
 Policies are split so one concept does not silently authorize another:
 
-- `access_policy`: which users/surfaces may invoke or be observed.
+- `access_policy`: which users may invoke/respond and, optionally, which
+  surfaces may be observed. The normal bot stance is broad visibility with a
+  narrow user allowlist.
 - `visibility_policy`: what can be stored without creating work.
 - `trigger_policy`: DM, mention, command, email criteria, reaction, button, or
   provider event shapes that create agent requests.
 - `context_policy`: what stored history can be retrieved and which fields are
   safe.
 - `response_policy`: same-origin reply constraints.
-- `send_policy`: explicit allowed outbound targets and static denials.
+- `send_policy`: explicit outbound/handoff constraints when the project wants
+  stricter limits than "approved invoker may choose any reachable target."
 - `handoff_policy`: allowed movement from one surface to another.
 - `approval_policy`: whether target use requires human or run-plan approval.
 
-Default stance is deny for new send/handoff routes until a target or route is
-configured. Read/context operations are bounded and field-selected. Live
-provider history fetches are not part of `communicationContext.query`; they must
-be separate provider actions with scopes, pagination, rate-limit handling, and
-audit.
+Default trigger stance is deny for unknown users, not for every visible channel.
+Read/context operations are bounded and field-selected. Live provider history
+fetches are not part of `communicationContext.query`; they must be separate
+provider actions with scopes, pagination, rate-limit handling, and audit.
+
+## One-Brain Ingress Model
+
+Telegram, Slack, email, local chat, and future communication plugins must share
+one processing model after provider verification:
+
+1. The provider adapter verifies the transport secret/signature and normalizes
+   the payload into provider-neutral fields such as `profile_ref`,
+   `surface_ref`, `user_ref`, `thread_ref`, `message_ref`, `text`,
+   `interaction_ref`, and `event_type`.
+2. The shared communication processor applies the profile's visibility,
+   trigger, and user access policy.
+3. The same processor stores communication resources and creates at most one
+   `agent_request` when the normalized trigger is from an allowlisted user.
+4. Provider-specific code may parse fields and map capabilities; it must not
+   invent separate business rules for when a bot should answer.
+
+The approval boundary is the invoker user, not the channel. A bot may observe any
+reachable channel/DM/group when visibility allows it. If an allowlisted user tags
+or DMs the bot, an agent request may be created; if any other user does the same,
+the event is ignored for activation. Once an allowlisted user asks for an
+outbound message, the target may be any reachable channel unless the project
+adds an explicit send/handoff restriction.
 
 ## Product Boundary
 
@@ -272,8 +297,8 @@ setup:
   reply-to-bot, callback button, or configured wake patterns. Command intents
   may carry their own description, guidance, expected inputs, and output
   expectations for the operating agent.
-- `visibility_policy`: whether allowed chats may be observed without triggering
-  a request.
+- `visibility_policy`: whether visible chats/channels may be observed without
+  triggering a request.
 - `context_policy`: bounded history selection from messages StackOS already
   stored, filtered by project/profile/chat/thread/lookback/fields.
 - `response_policy`: same chat/thread defaults, invoker-only behavior,
@@ -295,11 +320,11 @@ browser UI token may call only this narrow setup mutation because it never
 includes token material; provider secrets still go through the typed auth
 credential setup route and remain daemon-side.
 
-Visibility is not activation. A bot profile may observe and store allowed group
-messages for future context, but StackOS creates an `agent_request` only when a
-configured trigger is matched by an allowed invoker. If a disallowed user tags
-the bot in an observed chat, StackOS may keep the message as context but must
-not create a request.
+Visibility is not activation. A bot profile may observe and store messages from
+any reachable group/channel/DM for future context, but StackOS creates an
+`agent_request` only when a configured trigger is matched by an allowed invoker.
+If a disallowed user tags or DMs the bot, StackOS may keep the message as
+context but must not create a request or send a reply.
 
 Bot API updates are not arbitrary historical chat access. Telegram keeps updates
 temporarily until delivered; StackOS "history" means messages StackOS has
@@ -871,8 +896,8 @@ Secret fields:
 - `webhook_secret_token`
 
 Bot behavior fields such as identity, agent guidance, command intent guidance,
-allowed users, allowed chats, trigger patterns, context windows, and response
-constraints belong to
+allowed users, optional visible chat constraints, trigger patterns, context
+windows, and response constraints belong to
 `communication-bot-profile` resource records, not credentials.
 
 Credential tests:
@@ -1351,16 +1376,18 @@ User sends DM to bot
 ### Telegram Group Mention
 
 ```text
-Message appears in allowed group
--> update type and chat_ref pass static allowlist
+Message appears in a visible group
+-> update type passes profile configuration
+-> user_ref passes static allowlist
 -> StackOS stores message and source chat metadata
 -> agent_request includes group/thread/message refs
 -> agent prepares or claims request and decides if action is needed
 ```
 
 The connector must not decide that a group message is actionable unless the
-configured allowlist says it should become a request. Even then, the agent
-decides the workflow.
+configured trigger and user allowlist say it should become a request. The target
+chat is context, not the approval boundary. Even then, the agent decides the
+workflow.
 
 ### Telegram Inline Button Flow
 
@@ -1413,7 +1440,7 @@ Allowed group mention with history context:
 
 ```text
 1. local-webhook receives a group message that mentions @support_bot.
-2. profile support allows the group, user, and mention trigger.
+2. profile support can observe the group and allows the user plus mention trigger.
 3. StackOS stores the new message and selects bounded stored history by context_policy.
 4. StackOS creates one agent_request with group/thread refs and context hints.
 5. The agent claims the request and decides whether the history changes the response.
@@ -1422,7 +1449,7 @@ Allowed group mention with history context:
 Observed non-trigger:
 
 ```text
-1. local-webhook receives an allowed group message without mention, command, or reply-to-bot.
+1. local-webhook receives a visible group message without mention, command, or reply-to-bot.
 2. visibility_policy permits storing non-trigger messages.
 3. StackOS stores the message with observed policy status.
 4. StackOS creates no agent_request.
@@ -1431,7 +1458,7 @@ Observed non-trigger:
 No-store non-trigger:
 
 ```text
-1. local-webhook receives an allowed group message without a configured trigger.
+1. local-webhook receives a visible group message without a configured trigger.
 2. visibility_policy.store_non_trigger_messages is false.
 3. StackOS writes no communication records for the update.
 4. StackOS creates no agent_request.
@@ -1440,7 +1467,7 @@ No-store non-trigger:
 Unauthorized user:
 
 ```text
-1. local-webhook receives a trigger from an allowed chat but a disallowed user.
+1. local-webhook receives a trigger from a visible chat but a disallowed user.
 2. StackOS verifies the bot profile and secret before applying user policy.
 3. StackOS may store the event/message as invoker_blocked context.
 4. StackOS creates no agent_request.
