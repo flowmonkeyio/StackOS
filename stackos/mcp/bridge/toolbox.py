@@ -1,0 +1,144 @@
+"""Bridge-local toolbox grants, descriptions, and run context cache."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from .constants import (
+    _AGENT_BASE_TOOLBOX_NAMES,
+    _AGENT_SETUP_TOOLBOX_NAMES,
+    _AGENT_STEP_GATED_TOOL_NAMES,
+    _AGENT_VISIBLE_TOOL_ORDER,
+)
+from .protocol import _bridge_as_int, _bridge_tool_result
+
+
+def _bridge_step_context(structured: object) -> dict[str, Any] | None:
+    if not isinstance(structured, dict):
+        return None
+    if (
+        "run_token" in structured
+        or "run_id" in structured
+        or "allowed_tools" in structured
+        or "plan" in structured
+    ):
+        return structured
+    data = structured.get("data")
+    if isinstance(data, dict) and (
+        "run_token" in data or "run_id" in data or "allowed_tools" in data or "plan" in data
+    ):
+        return data
+    return None
+
+
+def _bridge_cache_step_context(
+    response_text: str,
+    *,
+    allowed_by_run: dict[int, set[str]],
+    tokens_by_run: dict[int, str],
+    plans_by_run: dict[int, int] | None = None,
+) -> None:
+    try:
+        envelope = json.loads(response_text)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(envelope, dict):
+        return
+    result = envelope.get("result")
+    if not isinstance(result, dict):
+        return
+    context = _bridge_step_context(result.get("structuredContent"))
+    if context is None:
+        return
+    run_id = _bridge_as_int(context.get("run_id"))
+    if run_id is None:
+        run_id = _bridge_as_int(result.get("run_id"))
+    data = context.get("data")
+    if isinstance(data, dict) and run_id is None:
+        run_id = _bridge_as_int(data.get("run_id"))
+    if run_id is None:
+        return
+    run_token = context.get("run_token")
+    if not isinstance(run_token, str) and isinstance(data, dict):
+        run_token = data.get("run_token")
+    if isinstance(run_token, str) and run_token:
+        tokens_by_run[run_id] = run_token
+    plan = context.get("plan")
+    if not isinstance(plan, dict) and isinstance(data, dict):
+        plan = data.get("plan")
+    if isinstance(plan, dict):
+        plan_id = _bridge_as_int(plan.get("id"))
+        if plan_id is not None and plans_by_run is not None:
+            plans_by_run[run_id] = plan_id
+    step_package = data if isinstance(data, dict) else context
+    if isinstance(step_package, dict) and isinstance(step_package.get("step_id"), str):
+        allowed_tools = step_package.get("allowed_tools")
+        if isinstance(allowed_tools, list):
+            allowed_by_run[run_id] = set(_AGENT_STEP_GATED_TOOL_NAMES) | {
+                name for name in allowed_tools if isinstance(name, str) and name
+            }
+            return
+    plan_package = data if isinstance(data, dict) and "steps" in data else context
+    if isinstance(plan_package, dict) and isinstance(plan_package.get("steps"), list):
+        running_step_tools: set[str] = set()
+        for step in plan_package["steps"]:
+            if not isinstance(step, dict) or step.get("status") != "running":
+                continue
+            allowed_tools = step.get("allowed_tools")
+            if isinstance(allowed_tools, list):
+                running_step_tools.update(
+                    name for name in allowed_tools if isinstance(name, str) and name
+                )
+        allowed_by_run[run_id] = set(_AGENT_STEP_GATED_TOOL_NAMES) | running_step_tools
+        return
+    if isinstance(plan, dict) and isinstance(run_token, str) and run_token:
+        allowed_by_run.setdefault(run_id, set()).update(_AGENT_STEP_GATED_TOOL_NAMES)
+
+
+def _bridge_allowed_tool_names(
+    run_id: int | None,
+    allowed_by_run: dict[int, set[str]],
+) -> set[str]:
+    allowed = set(_AGENT_BASE_TOOLBOX_NAMES)
+    if run_id is not None:
+        allowed.update(allowed_by_run.get(run_id, set()))
+    return allowed
+
+
+def _bridge_toolbox_describe(
+    request_id: object,
+    *,
+    catalog: dict[str, dict[str, Any]],
+    arguments: dict[str, Any],
+    run_id: int | None,
+    allowed_by_run: dict[int, set[str]],
+) -> str:
+    allowed = _bridge_allowed_tool_names(run_id, allowed_by_run)
+    requested_raw = arguments.get("tool_names")
+    requested: list[str]
+    if isinstance(requested_raw, list):
+        requested = [name for name in requested_raw if isinstance(name, str) and name]
+    elif arguments.get("include_schemas") is True:
+        requested = sorted(name for name in allowed if name in catalog)
+    else:
+        requested = []
+
+    described = [catalog[name] for name in requested if name in catalog and name in allowed]
+    denied = [name for name in requested if name in catalog and name not in allowed]
+    unknown = [name for name in requested if name not in catalog]
+    active_step_tools = sorted(allowed_by_run.get(run_id, set())) if run_id is not None else []
+    payload = {
+        "visible_tool_names": list(_AGENT_VISIBLE_TOOL_ORDER),
+        "setup_toolbox_tool_names": sorted(_AGENT_SETUP_TOOLBOX_NAMES & set(catalog)),
+        "active_step_tool_names": active_step_tools,
+        "available_tool_names": sorted(name for name in allowed if name in catalog),
+        "described_tools": described,
+        "denied_tool_names": denied,
+        "unknown_tool_names": unknown,
+        "usage": (
+            "Use direct visible tools for setup and run-plan control. Use toolbox.call "
+            "only for setup helpers, run-plan controller tools, or run-plan step grants."
+        ),
+    }
+    return _bridge_tool_result(request_id, payload, is_error=False)
