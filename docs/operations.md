@@ -346,7 +346,12 @@ source surface, and approved human/bot actor. Provider actions through
 `action.run`/`action.execute` are lower-level escape hatches for
 provider-specific work, not the default agent path.
 `communicationContext.query` returns bounded stored communication-message
-history only. Live provider history fetches must be explicit provider actions.
+history only. It can return outbound messages StackOS sent, inbound messages or
+interactions delivered through ingress, and state changes StackOS recorded.
+It does not call Slack, Telegram, email, or future providers to recover history
+that never reached StackOS. Live provider history fetches and backfills must be
+explicit provider actions with provider scopes, pagination, rate-limit handling,
+visibility checks, and audit.
 
 `ingressEndpoint.*` stores the project-level public webhook endpoint for
 communications. Configure stores the generic endpoint, refresh updates it from

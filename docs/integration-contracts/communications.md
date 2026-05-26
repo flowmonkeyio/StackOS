@@ -135,6 +135,12 @@ Default trigger stance is deny for unknown users, not for every visible channel.
 Read/context operations are bounded and field-selected. Live provider history
 fetches are not part of `communicationContext.query`; they must be separate
 provider actions with scopes, pagination, rate-limit handling, and audit.
+Practically, agents can read communication state that StackOS sent, ingested, or
+stored. They cannot ask `communicationContext.query` to fetch Slack messages
+that were posted while ingress was disabled, before the bot was configured, or
+outside StackOS visibility. Telegram bots are even narrower: normal bot flows
+receive updates going forward through webhook/polling and should not promise
+arbitrary prior chat history fetch.
 
 ### Setup Secret Boundary
 
@@ -680,7 +686,9 @@ providers need their own contract review before execution.
 reaction add, message delete, conversation discovery, membership sync, and
 signed HTTP Events API/Interactivity ingress. Socket Mode, live history reads,
 files, reaction remove, and administration remain deferred until their provider
-contracts, runner lifecycle, tests, and safe audit paths are delivered.
+contracts, runner lifecycle, tests, and safe audit paths are delivered. Stored
+Slack reads come through StackOS communication records; live channel/thread
+history and backfill require a future explicit Slack history action.
 
 ## Resource Model
 

@@ -48,6 +48,9 @@ First-party plugin coverage currently includes:
   launch/review templates, and first provider connectors.
 - **GTM and RevOps**: CRM, enrichment, outbound, workspace, and pipeline
   provider contracts with reusable GTM templates.
+- **Communications**: provider-neutral send/reply flows, stored communication
+  history, Telegram and Slack bot actions, SMTP send, and IMAP mailbox/message
+  lifecycle.
 - **Publishing**: WordPress and Ghost publishing actions.
 - **Utilities**: image generation, web retrieval, sitemap fetching, Reddit
   research, and generic configured HTTP tools.
@@ -91,6 +94,14 @@ Provider/vendor calls go through plugin actions: `action.run` for one explicit
 direct call, or `action.execute` from a granted run-plan step. Provider-neutral
 messages use `communication.send` and `communication.reply`. Direct MCP tools
 are reserved for generic StackOS primitives.
+
+Communication reads are stored-state reads unless a provider-specific history
+action exists. `communicationContext.query` returns messages and interactions
+that StackOS sent, ingested, or otherwise recorded, and `resource_get` inspects
+those stored records. It does not fetch arbitrary Slack channel history or
+backfill messages that were never delivered to StackOS. Telegram bots are more
+limited by the platform: they generally receive updates going forward through
+webhook/polling rather than fetching prior chat history.
 
 ## Running Locally
 
