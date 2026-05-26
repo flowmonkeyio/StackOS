@@ -283,10 +283,13 @@ Use `action.execute` when the action belongs to a workflow:
 2. `runPlan.claimStep` and `runPlan.recordStep` require the `run_token` returned
    by `runPlan.start`.
 3. `runPlan.claimStep` activates only the frozen grants for the claimed step.
-4. `runPlan.recordStep` persists the terminal result and closes the plan/run
+4. A run plan may have only one running step. Record the running step before
+   claiming another.
+5. `runPlan.recordStep` persists the terminal result and closes the plan/run
    when the last step finishes.
-5. `runPlan.update` remains an admin-only MCP operation and is intentionally not
-   exposed through REST or CLI.
+6. `runPlan.update` records safe metadata or approval-gate decisions through
+   the local REST/CLI admin surface. Direct MCP agents are not base-granted to
+   approve their own gates.
 
 `agentRequest.*` keeps the same boundary everywhere:
 

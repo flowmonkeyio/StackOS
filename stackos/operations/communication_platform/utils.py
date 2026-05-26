@@ -13,6 +13,7 @@ from stackos.db.models import Plugin, Resource, ResourceRecord
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.resources import ResourceRepository
+from stackos.workflows.run_plan_schema import find_run_plan_secret_paths
 
 from .constants import _CONTEXT_ALLOWED_FIELDS, _PROFILE_KEY_RE
 from .schemas import (
@@ -52,6 +53,15 @@ def _validate_identity(value: dict[str, Any]) -> None:
     display_name = value.get("display_name")
     if not isinstance(display_name, str) or not display_name.strip():
         raise ValidationError("identity.display_name is required")
+
+
+def _validate_no_setup_secrets(operation: str, fields: dict[str, Any]) -> None:
+    paths = find_run_plan_secret_paths(fields)
+    if paths:
+        raise ValidationError(
+            f"{operation} setup fields must not contain secrets; use auth profiles "
+            "or opaque credential_ref values: " + ", ".join(paths[:8])
+        )
 
 
 def _communication_profile_ref(key: str) -> str:

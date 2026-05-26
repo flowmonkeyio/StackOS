@@ -585,6 +585,21 @@ class RunPlanRepository:
                 "run plan must be started before claiming steps",
                 data={"run_plan_id": run_plan_id, "status": plan.status.value},
             )
+        running_step = self._s.exec(
+            select(RunPlanStep).where(
+                RunPlanStep.run_plan_id == run_plan_id,
+                RunPlanStep.status == RunPlanStepStatus.RUNNING,
+            )
+        ).first()
+        if running_step is not None:
+            raise ConflictError(
+                "run plan already has a running step; record it before claiming another",
+                data={
+                    "run_plan_id": run_plan_id,
+                    "step_id": running_step.step_id,
+                    "status": running_step.status.value,
+                },
+            )
         step = self._next_step(run_plan_id, step_id)
         pending_approvals = self._pending_approvals(
             run_plan_id,

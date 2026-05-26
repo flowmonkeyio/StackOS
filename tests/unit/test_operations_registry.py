@@ -94,6 +94,7 @@ def test_operation_registry_documents_core_operations() -> None:
     assert direct_action.surfaces["cli"].command == "actions run"
     assert direct_action.grant_policy == "direct-action-policy"
     assert any("confirm_direct=true" in item for item in direct_action.prerequisites)
+    assert any("intent_id or idempotency_key" in item for item in direct_action.prerequisites)
 
     agent_request = registry.get("agentRequest.claim").describe_out()
     assert agent_request.surfaces["mcp"].enabled is True
@@ -232,6 +233,7 @@ def test_operation_registry_surface_filter() -> None:
         "runPlan.list",
         "runPlan.recordStep",
         "runPlan.start",
+        "runPlan.update",
         "runPlan.validate",
         "toolProfile.resolve",
         "tracker.blockers",
@@ -254,5 +256,6 @@ def test_operation_registry_surface_filter() -> None:
         "tracker.verify",
         "tracker.why",
     ]
-    assert registry.get("runPlan.update").surfaces.cli.enabled is False
+    assert registry.get("runPlan.update").surfaces.cli.enabled is True
+    assert registry.get("runPlan.update").surfaces.cli.command == "run-plans approve"
     assert registry.list_out(surface="rest").items[0].surfaces["rest"].enabled is True

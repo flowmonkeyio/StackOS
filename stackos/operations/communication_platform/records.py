@@ -44,6 +44,7 @@ from .utils import (
     _surface_external_id,
     _target_action_defaults,
     _target_policy_allowed,
+    _validate_no_setup_secrets,
     _validate_profile_key,
     _validate_provider_key,
     _validate_ref,
@@ -58,6 +59,12 @@ async def communication_surface_upsert(
     _require_project(ctx.session, inp.project_id)
     _validate_ref(inp.surface_ref, "surface_ref")
     _validate_provider_key(inp.provider_key)
+    _validate_no_setup_secrets(
+        "communicationSurface.upsert",
+        {
+            "metadata_json": inp.metadata_json,
+        },
+    )
     data_json = {
         "surface_ref": inp.surface_ref.strip(),
         "channel_ref": inp.surface_ref.strip(),
@@ -247,6 +254,13 @@ async def communication_target_upsert(
     _validate_profile_key(inp.key)
     _validate_provider_key(inp.provider_key)
     _validate_ref(inp.surface_ref, "surface_ref")
+    _validate_no_setup_secrets(
+        "communicationTarget.upsert",
+        {
+            "action_input_defaults": inp.action_input_defaults,
+            "metadata_json": inp.metadata_json,
+        },
+    )
     data_json = {
         "target_ref": _communication_target_ref(inp.key),
         "key": inp.key.strip(),
@@ -355,6 +369,12 @@ async def communication_route_upsert(
 ) -> WriteEnvelope[CommunicationRouteOut]:
     _require_project(ctx.session, inp.project_id)
     _validate_profile_key(inp.key)
+    _validate_no_setup_secrets(
+        "communicationRoute.upsert",
+        {
+            "metadata_json": inp.metadata_json,
+        },
+    )
     data_json = {
         "route_ref": _communication_route_ref(inp.key),
         "key": inp.key.strip(),

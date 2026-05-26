@@ -87,16 +87,18 @@ operation catalog when allowed.
 
 Agents should inspect operation/action descriptions before calling tools.
 Scripts can use the CLI or REST operation endpoint for the same execution path.
-Provider/vendor calls go through plugin actions and `action.execute`; direct
-MCP tools are reserved for generic StackOS primitives.
+Provider/vendor calls go through plugin actions: `action.run` for one explicit
+direct call, or `action.execute` from a granted run-plan step. Provider-neutral
+messages use `communication.send` and `communication.reply`. Direct MCP tools
+are reserved for generic StackOS primitives.
 
 ## Running Locally
 
 For repository development:
 
 ```bash
-TPF_LLM_TOOL=codex tpf make install
-TPF_LLM_TOOL=codex tpf make serve
+make install
+make serve
 ```
 
 Open the committed StackOS UI bundle:
@@ -138,6 +140,7 @@ Useful technical entrypoints:
 - [`docs/workflow-templates.md`](./docs/workflow-templates.md)
 - [`docs/run-plans.md`](./docs/run-plans.md)
 - [`docs/extending.md`](./docs/extending.md)
+- [`docs/repository-rename.md`](./docs/repository-rename.md)
 
 ## Clean-Cut Rule
 

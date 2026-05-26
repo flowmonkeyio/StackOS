@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## 1.0.0 - 2026-05-26
+
 - Pivoted the product architecture to StackOS: project-scoped plugins,
   workflow templates, run plans, generic resources/artifacts, no-secret auth
   references, context, learnings, experiments, decisions, and action execution.

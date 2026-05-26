@@ -659,8 +659,9 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "The current workspace must resolve to a project, or pass project_id.",
                 "Pass only credential_ref; never pass secret values.",
-                "For non-read actions, pass confirm_direct=true, intent_summary, "
-                "and idempotency_key.",
+                "For non-read actions, pass confirm_direct=true and intent_summary; "
+                "pass intent_id or idempotency_key when stable retries matter. "
+                "If omitted, StackOS derives a request-scoped idempotency key.",
                 "Use verbose=true only when the full redacted action payload is needed.",
             ),
             returns=(

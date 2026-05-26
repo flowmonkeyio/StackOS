@@ -41,6 +41,53 @@ from stackos.repositories.tracker.utils import (
     _utcnow,
 )
 
+_TASK_PATCH_FIELDS = frozenset(
+    {
+        "status",
+        "title",
+        "goal",
+        "description",
+        "owner",
+        "task_type",
+        "priority_key",
+        "lane_key",
+        "source_json",
+        "definition_of_done_json",
+        "constraints_json",
+        "expected_outcomes_json",
+        "completion_evidence_json",
+        "context_json",
+        "metadata_json",
+    }
+)
+_TICKET_PATCH_FIELDS = frozenset(
+    {
+        "status",
+        "title",
+        "goal",
+        "assignee",
+        "priority_key",
+        "lane_key",
+        "blocker_reason",
+        "outcome",
+        "effort",
+        "kind",
+        "parent_ticket_key",
+        "source_json",
+        "definition_of_done_json",
+        "constraints_json",
+        "expected_changes_json",
+        "allowed_paths_json",
+        "completion_evidence_json",
+        "context_json",
+        "metadata_json",
+        "dependency_keys",
+        "add_dependency_keys",
+        "remove_dependency_keys",
+        "references_json",
+    }
+)
+
 
 class TrackerMutationMixin:
     """Tracker task/ticket mutation helpers."""
@@ -313,6 +360,7 @@ class TrackerMutationMixin:
         task = self._s.get(TrackerTask, ticket.task_id)
         if task is None:
             raise NotFoundError("ticket task not found", data={"ticket_key": ticket_key})
+        self._validate_ticket_patch_fields(patch_json)
         if dry_run:
             dependency_preview = self._preview_dependency_patch(tracker, ticket, patch_json)
             warnings = dependency_preview.warnings if dependency_preview is not None else []
@@ -568,6 +616,7 @@ class TrackerMutationMixin:
         return row
 
     def _apply_task_patch(self, task: TrackerTask, patch_json: dict[str, Any]) -> None:
+        self._validate_task_patch_fields(patch_json)
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
@@ -618,6 +667,7 @@ class TrackerMutationMixin:
         ticket: TrackerTicket,
         patch_json: dict[str, Any],
     ) -> None:
+        self._validate_ticket_patch_fields(patch_json)
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
@@ -724,6 +774,26 @@ class TrackerMutationMixin:
                 self._add_reference(tracker, ticket, reference)
         ticket.updated_at = now
         self._s.add(ticket)
+
+    def _validate_task_patch_fields(self, patch_json: dict[str, Any]) -> None:
+        self._validate_patch_fields(patch_json, allowed=_TASK_PATCH_FIELDS, entity_kind="task")
+
+    def _validate_ticket_patch_fields(self, patch_json: dict[str, Any]) -> None:
+        self._validate_patch_fields(patch_json, allowed=_TICKET_PATCH_FIELDS, entity_kind="ticket")
+
+    def _validate_patch_fields(
+        self,
+        patch_json: dict[str, Any],
+        *,
+        allowed: frozenset[str],
+        entity_kind: str,
+    ) -> None:
+        unknown = sorted(set(patch_json) - allowed)
+        if unknown:
+            raise ValidationError(
+                f"unsupported tracker {entity_kind} patch fields: {', '.join(unknown)}",
+                data={"fields": unknown, "entity_kind": entity_kind},
+            )
 
     def _sync_task_status(self, task: TrackerTask, *, now: datetime) -> None:
         tickets = list(self._s.exec(select(TrackerTicket).where(TrackerTicket.task_id == task.id)))

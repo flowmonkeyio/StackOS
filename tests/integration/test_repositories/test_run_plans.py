@@ -296,3 +296,37 @@ def test_explicit_step_claim_enforces_dependencies(session: Session, project_id:
     second = repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="second").data
 
     assert second.status == RunPlanStepStatus.RUNNING
+
+
+def test_run_plan_allows_only_one_running_step(session: Session, project_id: int) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "ops.single-running-step.run",
+            "title": "Single running step",
+            "steps": [
+                {"id": "first", "title": "First"},
+                {"id": "second", "title": "Second"},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+
+    first = repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="first").data
+    with pytest.raises(ConflictError, match="already has a running step") as exc_info:
+        repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="second")
+
+    assert first.status == RunPlanStepStatus.RUNNING
+    assert exc_info.value.data["step_id"] == "first"
+
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="first",
+        status=RunPlanStepStatus.SUCCESS,
+    )
+    second = repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="second").data
+
+    assert second.status == RunPlanStepStatus.RUNNING

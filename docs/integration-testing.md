@@ -86,7 +86,7 @@ credential setup, communication-profile setup, webhook ingress, agent requests,
 run plans, and provider actions:
 
 ```bash
-TPF_LLM_TOOL=codex tpf uv run pytest \
+uv run pytest \
   tests/integration/test_routes/test_telegram_setup_to_action_routes.py \
   tests/integration/test_mcp/test_mcp_communications.py \
   tests/integration/test_repositories/test_telegram_bot_actions.py \
@@ -104,7 +104,7 @@ Slack communication setup has mocked provider coverage for the Web API action
 edge and signed HTTP ingress:
 
 ```bash
-TPF_LLM_TOOL=codex tpf uv run pytest \
+uv run pytest \
   tests/integration/test_repositories/test_slack_bot_actions.py \
   tests/integration/test_routes/test_slack_ingress_routes.py \
   -q

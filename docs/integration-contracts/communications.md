@@ -1,13 +1,13 @@
-# Communications Integration Design And Delivery Plan
+# Communications Integration Contract
 
-Status: implementation in progress. Generic agent request operations, Telegram
-Bot API messaging, Telegram webhook set/delete/info, project-scoped Telegram bot
-profiles, Telegram secret-token ingress, Slack Web API actions, Slack signed
-HTTP ingress, SMTP send, and IMAP mailbox/message lifecycle actions are
-executable. Slack Socket Mode remains deferred until StackOS has a daemon runner
-contract. This document owns the contract for the first StackOS communications
-layer and the generic agent request inbox that lets external agents treat
-messages as triggers.
+Status: first executable slice delivered. Generic agent request operations,
+Telegram Bot API messaging, Telegram webhook set/delete/info, project-scoped
+Telegram bot profiles, Telegram secret-token ingress, Slack Web API actions,
+Slack signed HTTP ingress, SMTP send, and IMAP mailbox/message lifecycle actions
+are executable. Slack Socket Mode remains deferred until StackOS has a daemon
+runner contract. This document owns the current contract and limitation record
+for the StackOS communications layer and generic agent request inbox; it is not
+a delivery task ledger.
 
 Plan review status: signed off with minor implementation notes by sub-agent
 review on 2026-05-23.
@@ -30,7 +30,7 @@ Official provider and protocol references:
 - SMTP AUTH: https://www.rfc-editor.org/rfc/rfc4954
 - IMAP4rev2: https://www.rfc-editor.org/rfc/rfc9051.html
 
-StackOS references this plan must stay aligned with:
+StackOS references this contract must stay aligned with:
 
 - [Architecture](../architecture.md)
 - [Action Executor](../action-executor.md)
@@ -135,6 +135,14 @@ Default trigger stance is deny for unknown users, not for every visible channel.
 Read/context operations are bounded and field-selected. Live provider history
 fetches are not part of `communicationContext.query`; they must be separate
 provider actions with scopes, pagination, rate-limit handling, and audit.
+
+### Setup Secret Boundary
+
+Communication setup operations store durable, agent-readable state. They reject
+secret-like fields in `provider_facets`, `driver_config`,
+`action_input_defaults`, and setup `metadata_json`; use auth profiles and opaque
+`credential_ref` values for credentials instead. Resource redaction remains a
+defense-in-depth output guard, not the normal setup path for secrets.
 
 ## Surface Intent And Data Scope
 
@@ -1990,71 +1998,11 @@ Before a communications action is marked executable:
   [Action Executor](../action-executor.md) connector list when executable, and
   provider setup docs if auth UX changes.
 
-## Delivery Tasks And Dependencies
-
-Each task should be delivered with targeted verification, a sub-agent review
-when the blast radius is meaningful, and a detailed commit message after signoff.
-
-| Task | Scope | Dependencies | Verification | Commit gate |
-| --- | --- | --- | --- | --- |
-| C00 | Approve this design plan. | None. | Plan reviewer signoff; docs diff check. | Plan doc committed. |
-| C01 | Add `plugins/communications/plugin.yaml` with capabilities, providers, auth methods, resources, and initial action metadata. | C00. | Manifest parser tests; plugin catalog sync tests. | Plugin appears in catalog with no executable false claims. |
-| C02 | Add provider setup docs and local `plugins/communications/AGENTS.md`. | C01. | Docs stale-ref scan; auth field review. | Agents can find provider expectations without code archaeology. |
-| C03 | Add `agent_requests` model, migration, repository, and invariants. | C00. | Repository tests for create/list/claim/release/complete/ignore and project isolation. | Queue state is generic and provider-agnostic. |
-| C04 | Register `agentRequest.*` operation specs and REST/CLI/MCP adapters. | C03. | REST/CLI/MCP parity tests against the same operation registry. | No provider-specific MCP tools added. |
-| C05 | Add generic Agent Requests UI page or resource view integration. | C03, C04. | UI unit/build smoke; manual browser pass when server is running. | UI stays generic and object-driven. |
-| C06 | Delivered: implement Telegram connector file for `identity.get`, `message.send`, `photo.send`, `callback.answer`, `updates.poll`, and `webhook.set/delete/info`. | C01. | Mocked Telegram tests; validation tests; inline keyboard, photo, webhook, diagnostic poll, and no-token redaction tests. | Connector has official docs links near provider calls and no token-bearing URLs. |
-| C07 | Add Telegram credential test wrapper and auth diagnostics. | C01, C06. | Auth test success/failure mocks; no token in diagnostics. | `auth.test` returns safe bot identity/status only. |
-| C08 | Add Telegram normalization, cursor, message, interaction, and callback resource flow for webhook ingress plus bounded diagnostic poll output. | C03, C04, C06. | Route/connector tests for message/callback normalization, resource writes, idempotency, and diagnostic poll bounds. | Webhook ingress is the normal listener path; `updates.poll` is not a daemon listener. |
-| C09 | Delivered: implement SMTP send connector and credential test. | C01. | Mock SMTP server tests for accepted/rejected/auth/TLS paths, no-secret output, resource writes, and safe validation. | SMTP output never claims delivery/read state. |
-| C10 | Delivered: implement IMAP list/search/fetch/mark connector and credential test. | C01. | Mock IMAP tests for UID search/fetch, `\\Seen`, UIDVALIDITY, size caps, no-secret output, and resource writes. | No sequence-number-only operations. |
-| C11 | Delivered: add communications workflow templates for inbox review, rich Telegram reply, callback follow-up, and outbound notification. | C01, C03, C04, C06, C08, C09, C10 as relevant. | Template loader validation; no-payload template checks. | Templates describe setup/context, not business decisions. |
-| C12 | Add static scheduled ingestion runner. | C03, C04, C06, C08, C10. | Scheduler tests; system run-plan audit; idempotent cursor and optional callback ACK tests. | Runner stores events/requests only; no model invocation. |
-| C13 | Delivered: add Telegram secret-token webhook ingress for message/callback storage and generic agent-request creation through project-scoped communication profiles. | C03, C04, C06, C08. | Route tests for missing/wrong secret, auth_profile_key binding, callback/message resource writes, idempotent request creation, and no secret leakage. | Ingress does not invoke a model, does not bypass queue state, and uses server-side secrets only. |
-| C14 | Update connector quality matrix and release signoff docs for executable communications actions. | First executable connector tasks. | `make signoff` or targeted signoff set. | Docs and tests agree on executable/deferred state. |
-| C15 | Delivered: implement Slack connector file for `identity.get`, `message.send`, `conversation.open`, `conversation.info`, `conversation.list`, and `conversation.members`. | C01, C03, C04. | Mocked Slack Web API tests; validation tests; Block Kit button, membership, cursor, resource-write, and no-secret redaction tests. | Connector has official docs links near provider calls and no bearer-token output. |
-| C16 | Delivered: add Slack signed HTTP ingress for Events API and Interactivity payload storage plus generic agent-request creation through project-scoped communication profiles. | C03, C04, C15. | Route tests for missing/wrong signature, URL verification, app mention, Block Kit click lifecycle, duplicate-safe request keys, and no transient secret persistence. | Ingress does not call Slack, does not invoke a model, and verifies daemon-held signing secrets only. |
-
-## Dependency Graph
-
-```text
-C00
--> C01
-   -> C02
-   -> C06 -> C07 -> C08 -> C13
-   -> C09
-   -> C10
-   -> C15 -> C16
--> C03 -> C04 -> C05
-   -> C08
-   -> C13
-   -> C16
-   -> C11
-   -> C12
-C06/C09/C10 -> C14
-```
-
-Recommended delivery order:
-
-1. C00.
-2. C01 and C02.
-3. C03 and C04.
-4. C06 and C07.
-5. C08 Telegram resource normalization and callback state.
-6. C09 SMTP send.
-7. C10 IMAP lifecycle.
-8. C11 templates.
-9. C12 scheduled ingestion.
-10. C13 webhook ingress.
-11. C14 final connector-quality/release signoff.
-
-## Explicit Non-Goals For First Pass
+## Current Limitations And Non-Goals
 
 - Running an LLM/model from inside the StackOS daemon.
 - Provider-specific MCP tools.
-- Generic cross-provider `message.send` execution that hides provider actions.
-  Target resolution may return an explicit provider action ref, but sending
-  still goes through `action.run` or `action.execute`.
+- Provider-specific decisions about whether a bot should answer.
 - SMTP delivery/read/open tracking.
 - Telegram read receipts.
 - OAuth/XOAUTH2 for custom SMTP/IMAP.
@@ -2062,16 +2010,19 @@ Recommended delivery order:
   modeled first `photo.send` action.
 - Public webhook deployment automation.
 - Specialized workflow UI for each communication use case.
+- Slack Socket Mode, broad history sync, files, and admin actions.
 
 ## Signoff Criteria
 
-The plan is accepted when:
+The communications surface is release-ready when:
 
-- A reviewer confirms the design preserves StackOS as decision-free tool infra.
-- The delivery tasks have clear dependencies and commit gates.
-- The auth model keeps secrets daemon-side.
-- The trigger model does not invoke models in the daemon.
+- Normal delivery guidance points agents to `communication.send` and
+  `communication.reply`; `action.run` and `action.execute` remain explicit
+  provider escape hatches or workflow-granted actions.
+- Ingress stores provider-normalized state and agent requests without invoking
+  a model.
+- Provider credentials and webhook secrets remain daemon-side.
+- Mock/local tests cover actions, ingress, resource writes, idempotency, and
+  redaction before real provider credentials are required.
 - Provider limitations are documented clearly enough that agents do not infer
-  fake read/delivery semantics.
-- The first executable slice can be verified with mock/local tests before real
-  provider credentials exist.
+  fake read, delivery, or approval semantics.

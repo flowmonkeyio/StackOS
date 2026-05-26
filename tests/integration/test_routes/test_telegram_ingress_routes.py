@@ -7,6 +7,7 @@ import json
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+from stackos.communications import telegram_callback_button_external_id
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
@@ -108,7 +109,11 @@ def _store_outbound_button(
             project_id=project_id,
             plugin_slug="communications",
             resource_key="communication-interaction",
-            external_id=f"telegram-button:{profile_key}:{message_ref}:{callback_data}",
+            external_id=telegram_callback_button_external_id(
+                profile_key=profile_key,
+                message_ref=message_ref,
+                callback_data=callback_data,
+            ),
             title="Review",
             data_json={
                 "provider_key": "telegram-bot",

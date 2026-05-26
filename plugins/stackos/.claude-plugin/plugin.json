@@ -4,7 +4,7 @@
   "description": "Repo-agnostic StackOS project, plugin, workflow-template, run-plan, and action runtime for Claude Code.",
   "author": {
     "name": "StackOS",
-    "url": "https://github.com/flowmonkey-io/stackos"
+    "url": "https://github.com/flowmonkeyio/stackos"
   },
   "skills": "./skills/",
   "mcpServers": "./.mcp.json"

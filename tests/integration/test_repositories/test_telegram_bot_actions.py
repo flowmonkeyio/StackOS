@@ -12,6 +12,7 @@ from sqlmodel import Session
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
+from stackos.communications import telegram_callback_button_external_id
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ConflictError, NotFoundError
 from stackos.repositories.projects import IntegrationCredentialRepository
@@ -264,9 +265,15 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
     buttons = [
         item
         for item in interactions.items
-        if item.external_id == "telegram-button:support-bot:telegram-message:12345:7:ixn_123"
+        if item.external_id
+        == telegram_callback_button_external_id(
+            profile_key="support-bot",
+            message_ref="telegram-message:12345:7",
+            callback_data="ixn_123",
+        )
     ]
     assert len(buttons) == 1
+    assert "ixn_123" not in str(buttons[0].external_id)
     assert buttons[0].data_json["allowed_user_refs"] == ["telegram-user:555"]
     assert buttons[0].data_json["allowed_chat_refs"] == ["telegram-chat:12345"]
     messages = ResourceRepository(session).query_records(
@@ -650,8 +657,14 @@ def test_telegram_response_policy_requires_source_origin_and_exact_reply(
     button = next(
         item
         for item in interactions.items
-        if item.external_id == "telegram-button:support-bot:telegram-message:12345:78:done_78"
+        if item.external_id
+        == telegram_callback_button_external_id(
+            profile_key="support-bot",
+            message_ref="telegram-message:12345:78",
+            callback_data="done_78",
+        )
     )
+    assert "done_78" not in str(button.external_id)
     assert button.data_json["allowed_user_refs"] == ["telegram-user:555"]
     assert button.data_json["allowed_chat_refs"] == ["telegram-chat:12345"]
     assert button.data_json["control_action"] == "mark_done"

@@ -37,6 +37,12 @@ ui/playwright/screenshots/
 ui/playwright-report/
 ui/test-results/
 
+# Local browser/manual verification artifacts. Durable screenshots belong in
+# /private/tmp or a tracked docs/assets path with an explicit review.
+.playwright-mcp/
+manual-*.png
+release-*.png
+
 # Note: stackos/ui_dist/ IS committed per D8 (no pnpm at user install)
 
 # Local databases (the canonical DB lives at ~/.local/share/stackos/)

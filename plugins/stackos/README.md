@@ -4,8 +4,11 @@ This is the plugin-first distribution surface for StackOS. The plugin is
 installed once into Codex and/or Claude Code, then used from any website or
 business repository.
 
-The plugin starts a thin MCP bridge (`python -m stackos mcp-bridge` in
-the hydrated install) that connects to the singleton local StackOS daemon.
+The source plugin asset uses the package console script (`stackos mcp-bridge`).
+Installers rewrite the installed `.mcp.json` to the current Python environment
+(`python -m stackos mcp-bridge`) so clone-mode development does not depend on a
+global `stackos` executable on `PATH`. Either form starts the same thin bridge
+to the singleton local StackOS daemon.
 The bridge is disposable; the daemon owns the SQLite database, project
 bindings, credentials, workflow templates, run plans, resources, actions,
 context, learnings, experiments, decisions, and audit trails.
@@ -21,9 +24,6 @@ Installers hydrate the personal Codex plugin location
 directory for the personal marketplace. Restart Codex after install or upgrade,
 then use `/plugins` to inspect or toggle the plugin.
 
-The installed `.mcp.json` is rewritten during install to use the current Python
-environment (`python -m stackos mcp-bridge`), so clone-mode development
-does not require a global `stackos` executable on `PATH`.
 If the daemon is not listening yet, the bridge auto-starts it on the configured
 loopback host and writes startup output to
 `~/.local/state/stackos/mcp-bridge-autostart.log`.
@@ -35,8 +35,8 @@ Canonical setup lives in [`../../docs/setup.md`](../../docs/setup.md).
 Repository development:
 
 ```bash
-TPF_LLM_TOOL=codex tpf make install
-TPF_LLM_TOOL=codex tpf make serve
+make install
+make serve
 ```
 
 Package/operator install:

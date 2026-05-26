@@ -246,6 +246,81 @@ def test_tracker_patch_rejects_unsupported_shapes(
         )
 
 
+def test_tracker_atomic_updates_reject_unknown_patch_fields(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="patch-field-validation",
+        title="Patch field validation",
+        created_by="codex",
+    )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="patch-field-validation",
+        key="field-validation-ticket",
+        title="Field validation ticket",
+        created_by="codex",
+    )
+
+    with pytest.raises(ValidationError, match="unsupported tracker ticket patch fields"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="field-validation-ticket",
+            patch_json={"stauts": "complete"},
+            actor="codex",
+        )
+    with pytest.raises(ValidationError, match="unsupported tracker ticket patch fields"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="field-validation-ticket",
+            patch_json={"stauts": "complete"},
+            dry_run=True,
+            actor="codex",
+        )
+    with pytest.raises(ValidationError, match="unsupported tracker task patch fields"):
+        repo.update_task(
+            project_id=project_id,
+            task_key="patch-field-validation",
+            patch_json={"titel": "Typo"},
+            actor="codex",
+        )
+    with pytest.raises(ValidationError, match="unsupported tracker ticket patch fields"):
+        repo.patch(
+            project_id=project_id,
+            patch_json={
+                "tickets": {
+                    "field-validation-ticket": {"stauts": "complete"},
+                },
+            },
+            actor="codex",
+        )
+
+    invalid = repo.update_ticket_list(
+        project_id=project_id,
+        updates_json=[
+            {
+                "ticket_key": "field-validation-ticket",
+                "patch_json": {"stauts": "complete"},
+            }
+        ],
+        dry_run=True,
+        actor="codex",
+    ).data
+    snapshot = repo.get(
+        project_id=project_id,
+        task_key="patch-field-validation",
+        include_graph=False,
+    )
+
+    assert invalid.valid is False
+    assert invalid.results[0].action == "error"
+    assert invalid.results[0].error == "unsupported tracker ticket patch fields: stauts"
+    assert snapshot.tickets[0].status == TrackerItemStatus.NOT_STARTED
+
+
 def test_tracker_ticket_list_import_review_update_and_evidence(
     session: Session,
     project_id: int,

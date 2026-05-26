@@ -452,8 +452,8 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Use this before sending across channels/providers. It applies static target "
-                "policy and returns the provider action ref/defaults an agent can validate "
-                "and execute with action.run or action.execute."
+                "policy and returns the provider action ref/defaults for planning/debugging; "
+                "normal delivery should use communication.send or communication.reply."
             ),
             prerequisites=("Create a communicationTarget first.",),
             returns=("Allowed/denied status plus explicit provider action ref and safe defaults.",),

@@ -643,6 +643,12 @@ def check_call_grant(tool_name: str, ctx: Any, parsed_arguments: Any | None = No
     what can be called.
     """
     skill_name = getattr(ctx, "skill_name", INVALID_SKILL)
+    if (
+        skill_name == SYSTEM_SKILL
+        and tool_name == "runPlan.update"
+        and getattr(ctx, "extras", {}).get("surface") == "rest"
+    ):
+        return
     check_grant(tool_name, skill_name)
     if skill_name == SYSTEM_SKILL:
         arguments = _model_to_dict(parsed_arguments)

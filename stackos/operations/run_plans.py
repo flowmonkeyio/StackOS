@@ -453,10 +453,11 @@ def operation_specs() -> list[OperationSpec]:
             input_model=RunPlanUpdateInput,
             output_model=WriteEnvelope[RunPlanOut],
             handler=run_plan_update,
-            surfaces=OperationSurfaces(mcp=OperationSurface(enabled=True)),
+            surfaces=_surfaces("runPlan.update", "run-plans approve"),
             purpose=(
                 "Use this for controlled plan administration such as recording an approval "
-                "decision or safe metadata. Normal agents are not granted this operation."
+                "decision or safe metadata. Direct MCP agents are not granted this operation; "
+                "local REST and CLI calls are the admin approval surface."
             ),
             when_to_use=(
                 "A trusted controller has an approval decision to persist.",
@@ -465,6 +466,7 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass run_plan_id.",
                 "Pass approval_key and approval_status together when updating approvals.",
+                "Use the local REST or CLI admin path for human approval decisions.",
                 "Never include secrets in metadata_json or decision_json.",
             ),
             returns=("A WriteEnvelope containing the updated run plan.",),

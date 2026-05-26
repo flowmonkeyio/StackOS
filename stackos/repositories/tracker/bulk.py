@@ -266,6 +266,7 @@ class TrackerBulkMixin:
                 )
                 continue
             try:
+                self._validate_ticket_patch_fields(patch_json)
                 with self._s.begin_nested():
                     ticket = self._ticket_from_list_update(tracker.id, item)
                     task = self._s.get(TrackerTask, ticket.task_id)
@@ -720,6 +721,7 @@ class TrackerBulkMixin:
                 )
                 continue
             try:
+                self._validate_ticket_patch_fields(patch_json)
                 ticket = self._ticket_from_list_update(tracker.id, item)
                 dependency_preview = self._preview_dependency_patch(tracker, ticket, patch_json)
                 if dependency_preview is not None:

@@ -1587,7 +1587,6 @@ def test_tool_profile_resolve_mcp_redacts_profile_sections(
                 "telegram-bot": {
                     "auth_profile_key": "support",
                     "refs": {
-                        "api_key": "ref-secret",
                         "safe_ref": "telegram-chat:999",
                     },
                 }
@@ -1619,13 +1618,38 @@ def test_tool_profile_resolve_mcp_redacts_profile_sections(
     assert "profile-secret" not in rendered
     assert "hidden-token" not in rendered
     assert "nested-secret" not in rendered
-    assert "ref-secret" not in rendered
     assert (
         resolved["tool_profile"]["identity"]["purpose"] == "Handle support with api_key=[redacted]"
     )
     assert resolved["tool_profile"]["context_policy"]["nested"]["password"] == "[redacted]"
-    assert resolved["tool_profile"]["refs"]["api_key"] == "[redacted]"
     assert resolved["tool_profile"]["refs"]["safe_ref"] == "telegram-chat:999"
+
+
+def test_communication_profile_upsert_mcp_rejects_secret_like_setup_fields(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+
+    err = mcp_client.call_tool_error(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support-bot",
+            "identity": {"display_name": "Support Bot"},
+            "provider_facets": {
+                "telegram-bot": {
+                    "auth_profile_key": "support",
+                    "api_key": "raw-secret",
+                }
+            },
+        },
+    )
+
+    assert err["code"] == -32602
+    assert err["message"] == "ValidationError"
+    assert "must not contain secrets" in err["data"]["detail"]
+    assert "raw-secret" not in json.dumps(err)
 
 
 def test_tool_profile_resolve_mcp_resolves_generic_credential_profile(

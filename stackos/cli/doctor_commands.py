@@ -189,10 +189,8 @@ def _installed_asset_count(home: Path, runtime: Literal["codex", "claude"], kind
 
 
 def _installed_plugin_count(home: Path) -> int:
-    target = home / ".codex" / "plugins"
-    if not target.is_dir():
-        return 0
-    return sum(1 for p in target.rglob("plugin.json") if p.parent.name == ".codex-plugin")
+    target = home / ".codex" / "plugins" / "stackos" / ".codex-plugin" / "plugin.json"
+    return 1 if target.is_file() else 0
 
 
 def _plugin_marketplace_has_stackos(home: Path) -> bool:

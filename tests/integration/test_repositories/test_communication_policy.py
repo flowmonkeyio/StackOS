@@ -9,6 +9,7 @@ from stackos.communications import (
     CommunicationPolicyEvent,
     CommunicationPolicyProfile,
     evaluate_inbound_policy,
+    telegram_callback_button_external_id,
 )
 from stackos.repositories.resources import ResourceRepository
 
@@ -103,11 +104,16 @@ def test_policy_enforces_button_actor_scope(
     session: Session,
     project_id: int,
 ) -> None:
+    button_external_id = telegram_callback_button_external_id(
+        profile_key="support",
+        message_ref="message",
+        callback_data="ixn_1",
+    )
     ResourceRepository(session).upsert_record(
         project_id=project_id,
         plugin_slug="communications",
         resource_key="communication-interaction",
-        external_id="telegram-button:support:message:ixn_1",
+        external_id=button_external_id,
         title="Review",
         data_json={
             "interaction_type": "outbound_inline_button",
@@ -125,7 +131,7 @@ def test_policy_enforces_button_actor_scope(
             user_candidate_refs=("telegram-user:777",),
             surface_candidate_refs=("telegram-chat:999",),
             interaction=CommunicationInteractionCheck(
-                external_id="telegram-button:support:message:ixn_1",
+                external_id=button_external_id,
                 trigger_reason="callback",
                 blocked_status="callback_blocked",
             ),
@@ -141,7 +147,7 @@ def test_policy_enforces_button_actor_scope(
             user_candidate_refs=("telegram-user:555",),
             surface_candidate_refs=("telegram-chat:999",),
             interaction=CommunicationInteractionCheck(
-                external_id="telegram-button:support:message:ixn_1",
+                external_id=button_external_id,
                 trigger_reason="callback",
                 blocked_status="callback_blocked",
             ),

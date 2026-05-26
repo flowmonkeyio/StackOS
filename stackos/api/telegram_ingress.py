@@ -30,6 +30,7 @@ from stackos.communications import (
     evaluate_inbound_policy,
     merged_provider_profile,
     process_inbound_event,
+    telegram_callback_button_external_id,
 )
 from stackos.db.models import IntegrationCredential
 from stackos.repositories.base import ValidationError
@@ -299,20 +300,16 @@ def _telegram_interaction_check(
     message_ref = parsed.get("message_ref")
     external_id = None
     if isinstance(callback_data, str) and callback_data and isinstance(message_ref, str):
-        external_id = _callback_button_external_id(profile.key, message_ref, callback_data)
+        external_id = telegram_callback_button_external_id(
+            profile_key=profile.key,
+            message_ref=message_ref,
+            callback_data=callback_data,
+        )
     return CommunicationInteractionCheck(
         external_id=external_id,
         trigger_reason="callback",
         blocked_status="callback_blocked",
     )
-
-
-def _callback_button_external_id(
-    profile_key: str,
-    message_ref: str,
-    callback_data: str,
-) -> str:
-    return f"telegram-button:{profile_key}:{message_ref}:{callback_data}"
 
 
 def _validate_telegram_profile(data: Mapping[str, Any]) -> None:
@@ -533,7 +530,11 @@ def _telegram_click_patch(
     message_ref = str(parsed.get("message_ref") or "")
     return NormalizedResourcePatch(
         resource_key="communication-interaction",
-        external_id=_callback_button_external_id(profile.key, message_ref, str(callback_data)),
+        external_id=telegram_callback_button_external_id(
+            profile_key=profile.key,
+            message_ref=message_ref,
+            callback_data=str(callback_data),
+        ),
         data_json={
             "status": "clicked",
             "last_callback_query_id": callback.get("id") if isinstance(callback, Mapping) else None,

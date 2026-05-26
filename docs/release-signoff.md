@@ -2,9 +2,11 @@
 
 Use this command set when a change touches setup, actions, operation adapters,
 MCP, REST, CLI, UI wiring, provider contracts, or docs that agents rely on.
+Command examples show the operator form. Codex agents working in this repository
+must still apply the shell wrapper rules in [`../AGENTS.md`](../AGENTS.md).
 
 ```bash
-UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf make signoff
+make signoff
 ```
 
 `make signoff` runs:
@@ -24,7 +26,7 @@ For a faster local check while iterating on action execution, run the mock
 provider and connector-contract slice directly:
 
 ```bash
-UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf uv run pytest \
+uv run pytest \
   tests/unit/test_connector_contract_docs.py \
   tests/integration/test_routes/test_operations_routes.py \
   tests/integration/test_routes/test_cli_mock_provider.py \
@@ -40,23 +42,23 @@ UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf uv run pytest \
 For provider connector changes, add the relevant integration wrapper tests:
 
 ```bash
-UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf uv run pytest tests/integration/test_integrations -q
+uv run pytest tests/integration/test_integrations -q
 ```
 
 For documentation-only edits that do not change commands, schemas, operation
 examples, generated API expectations, or UI integration notes:
 
 ```bash
-TPF_LLM_TOOL=codex tpf git diff --check
-UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf uv run pytest tests/unit/test_connector_contract_docs.py -q
+git diff --check
+uv run pytest tests/unit/test_connector_contract_docs.py -q
 ```
 
 Release signoff should include a clean setup smoke after packaging or install
 changes:
 
 ```bash
-UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf make install
-UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf make doctor
+make install
+make doctor
 ```
 
 `doctor` may return daemon-down during first install before `make serve`; that

@@ -8,6 +8,7 @@ from .conftest import MCPClient
 def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
     plugins = mcp_client.call_tool_structured("plugin.list", {})["items"]
     assert [p["slug"] for p in plugins] == [
+        "communications",
         "core",
         "gtm",
         "media-buying",

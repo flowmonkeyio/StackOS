@@ -82,8 +82,9 @@ execution go through MCP run-plan grants (`runPlan.claimStep` + step-scoped
 `resource.upsert`, `artifact.create`, `learning.create`, `decision.record`,
 `experiment.*`, `context.snapshot`, and `action.execute`). One explicit direct
 provider action can use `action.run`, which still requires workspace project
-scope, daemon-held credentials, direct-action confirmation, idempotency for
-non-read calls, redaction, and action-call audit. Possession of the raw daemon
+scope, daemon-held credentials, direct-action confirmation, derived or
+caller-provided idempotency for non-read calls, redaction, and action-call
+audit. Possession of the raw daemon
 token is therefore treated as local administrator authority, not as a normal
 agent credential.
 
@@ -173,11 +174,12 @@ state, plugin, and MCP bridge contract:
   `seed.bin.new` before committing re-encrypted rows; if a crash leaves
   that staged file behind, daemon startup refuses to continue until the
   operator finishes or restores the rotation.
-- **Wheel layout (pipx)**: skills and plugins are bundled under
-  `stackos/_assets/`. The console script hydrates the user-local plugin
-  from those assets via `importlib.resources` so users without the repo on disk
-  get the same install. The committed `ui_dist/` ships inside the package, so
-  no `pnpm` is needed at user install time.
+- **Wheel layout (pipx)**: the StackOS plugin and any root-level skills that
+  exist in the source tree are bundled under `stackos/_assets/`. The console
+  script hydrates the user-local plugin from those assets via
+  `importlib.resources` so users without the repo on disk get the same install.
+  The committed `ui_dist/` ships inside the package, so no `pnpm` is needed at
+  user install time.
 - **launchd plist**: optional. The plist runs the daemon as the invoking user;
   never as root. `stackos autostart install` owns plist generation in
   both clone and package installs; `make install-launchd` delegates to that

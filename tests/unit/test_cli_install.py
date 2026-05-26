@@ -95,6 +95,21 @@ def test_copy_plugins_refreshes_existing_codex_cache(sandbox: Path) -> None:
     }
 
 
+def test_doctor_plugin_count_ignores_other_codex_plugins(sandbox: Path) -> None:
+    stackos_manifest = sandbox / ".codex" / "plugins" / "stackos" / ".codex-plugin"
+    stackos_manifest.mkdir(parents=True)
+    (stackos_manifest / "plugin.json").write_text("{}", encoding="utf-8")
+    other_manifest = sandbox / ".codex" / "plugins" / "other" / ".codex-plugin"
+    other_manifest.mkdir(parents=True)
+    (other_manifest / "plugin.json").write_text("{}", encoding="utf-8")
+
+    checks, details = doctor_cli._check_installed_assets(sandbox)
+
+    assert doctor_cli._installed_plugin_count(sandbox) == 1
+    assert details["plugins_count"] == 1
+    assert checks["plugins_installed"] is True
+
+
 def test_bridge_autostart_spawns_loopback_daemon(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,

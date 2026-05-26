@@ -182,17 +182,18 @@ and returns local artifact URLs with no `b64_json` payload. Other connectors
 normalize wrapper results into action output JSON and record the provider,
 operation, cost, status, and redacted payloads in `action_calls`.
 
-Communication setup is not an action connector. Telegram communication profile setup uses
-the shared `communicationProfile.upsert/get/list` operations across REST,
-CLI, and MCP after the project-scoped `telegram-bot` credential exists. Slack
-uses project-scoped `communication-profile` records with a
+Communication setup is not an action connector. Telegram communication profile
+setup uses the shared `communicationProfile.upsert/get/list` operations across
+REST, CLI, and MCP after the project-scoped `telegram-bot` credential exists.
+Slack uses project-scoped `communication-profile` records with a
 `provider_facets.slack-bot.auth_profile_key` binding after the project-scoped
-`slack-bot` credential exists. Agents execute Telegram or Slack provider calls
-through `action.run` for one explicit message/diagnostic call, or through
-`action.execute` once a run-plan step grants the relevant action ref. SMTP and
-IMAP credentials are also project-scoped auth profiles; agents receive only
-opaque credential refs and safe status, while the connector resolves
-host/user/password/TLS config inside the daemon process.
+`slack-bot` credential exists. Normal agent messaging goes through
+`communication.send` or `communication.reply`; `action.run` and
+`action.execute` remain lower-level escape hatches for explicit provider
+diagnostics, webhook setup, or provider-specific work. SMTP and IMAP credentials
+are also project-scoped auth profiles; agents receive only opaque credential
+refs and safe status, while the connector resolves host/user/password/TLS config
+inside the daemon process.
 
 The generic HTTP connector is a plugin-authoring escape hatch, not a direct
 agent browsing tool. The endpoint, method, auth mode, request mode, static

@@ -308,6 +308,44 @@ def test_cli_actions_run_alias_calls_direct_operation(
     assert json.loads(result.stdout)["data"]["status"] == "success"
 
 
+def test_cli_actions_execute_requires_run_token(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {"data": {}}
+
+    input_path = tmp_path / "payload.json"
+    input_path.write_text(json.dumps({"url": "https://example.test"}), encoding="utf-8")
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "actions",
+            "execute",
+            "utils.sitemap.fetch",
+            "--project",
+            "7",
+            "--input",
+            str(input_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--run-token is required for actions execute" in result.stderr
+    assert calls == []
+
+
 def test_cli_run_plans_create_alias_calls_operation(
     tmp_path: Path,
     monkeypatch,
@@ -362,6 +400,28 @@ def test_cli_run_plans_create_alias_calls_operation(
     assert arguments["created_by"] == "cli"
     assert arguments["run_plan_json"]["key"] == "manual.review.run"
     assert json.loads(result.stdout)["data"]["id"] == 9
+
+
+def test_cli_run_plans_claim_step_requires_run_token(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {"data": {}}
+
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
+
+    result = CliRunner().invoke(app, ["run-plans", "claim-step", "9", "--step-id", "review"])
+
+    assert result.exit_code != 0
+    assert "--run-token is required for run-plans claim-step" in result.stderr
+    assert calls == []
 
 
 def test_cli_run_plans_record_step_alias_merges_result(
@@ -419,6 +479,96 @@ def test_cli_run_plans_record_step_alias_merges_result(
         )
     ]
     assert json.loads(result.stdout)["data"]["status"] == "completed"
+
+
+def test_cli_run_plans_record_step_requires_run_token(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {"data": {}}
+
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run-plans",
+            "record-step",
+            "9",
+            "--step-id",
+            "review",
+            "--status",
+            "success",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--run-token is required for run-plans record-step" in result.stderr
+    assert calls == []
+
+
+def test_cli_run_plans_approve_alias_calls_update_operation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {"data": {"approval_requests": [{"status": "approved"}]}}
+
+    decision_path = tmp_path / "approval.json"
+    decision_path.write_text(json.dumps({"approved": True}), encoding="utf-8")
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run-plans",
+            "approve",
+            "9",
+            "--approval-key",
+            "launch-review",
+            "--status",
+            "approved",
+            "--decided-by",
+            "operator",
+            "--decision",
+            str(decision_path),
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "POST",
+            "/api/v1/operations/runPlan.update/call",
+            {
+                "arguments": {
+                    "run_plan_id": 9,
+                    "approval_key": "launch-review",
+                    "approval_status": "approved",
+                    "decided_by": "operator",
+                    "decision_json": {"approved": True},
+                }
+            },
+        )
+    ]
+    assert json.loads(result.stdout)["data"]["approval_requests"][0]["status"] == "approved"
 
 
 def test_cli_agent_requests_claim_alias_calls_operation(monkeypatch) -> None:  # type: ignore[no-untyped-def]

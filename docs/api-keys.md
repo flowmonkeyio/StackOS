@@ -1,15 +1,15 @@
-# StackOS API Key + OAuth Setup
+# StackOS Connection Credential Setup
 
-This guide walks through obtaining credentials for vendor integrations. Every
-key is stored encrypted at rest in ``integration_credentials`` and exposed to
-agents only as sanitized status plus opaque credential refs.
+This guide walks through obtaining credentials for provider connections. Every
+secret is stored encrypted at rest in `integration_credentials` and exposed to
+agents only as sanitized status plus opaque `credential_ref` values.
 
 Recommended setup flow:
 
 1. Let the agent identify the vendors needed for the current run plan.
 2. Let the agent call `auth.status` to see which provider refs already exist.
-3. Open the project connections page the agent gives you, for example
-   ``http://localhost:5180/projects/1/connections?provider_key=dataforseo``.
+3. Open the project Connections page the agent gives you, for example
+   `http://127.0.0.1:5180/projects/1/connections?provider_key=dataforseo`.
 4. Connect vendors from the named cards. Do not paste secrets into agent
    chat and do not add vendor keys to the website repository.
 5. Return to the agent. The agent should run `auth.test` with the selected
@@ -20,6 +20,11 @@ stores one or more named credential profiles per provider. Secret fields are
 encrypted in `integration_credentials`; safe fields are stored as redacted
 credential config. `auth.status` and `auth.test` return sanitized provider
 state and credential refs only.
+
+Do not paste secrets into tracker tickets, run-plan metadata, communication
+surface metadata, plugin config, or agent chat. If a workflow needs a provider,
+store the credential through Connections and pass the resulting
+`credential_ref`.
 
 ---
 

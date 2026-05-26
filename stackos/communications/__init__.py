@@ -25,6 +25,7 @@ from stackos.communications.profiles import (
     merged_provider_profile,
     provider_facet,
 )
+from stackos.communications.provider_ids import telegram_callback_button_external_id
 from stackos.communications.resources import communication_record_by_external_id
 
 __all__ = [
@@ -48,4 +49,5 @@ __all__ = [
     "merged_provider_profile",
     "process_inbound_event",
     "provider_facet",
+    "telegram_callback_button_external_id",
 ]

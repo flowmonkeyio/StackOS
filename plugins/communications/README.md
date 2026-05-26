@@ -132,7 +132,9 @@ who is present, why the channel exists, what data may appear there, and which
 external customer/account/ticket refs are safe to use. A target says where a
 message can be sent. A route says what can move between the source surface and
 target. StackOS stores and validates that setup; the agent still decides the
-workflow, reads bounded context, and executes explicit provider actions.
+workflow, reads bounded context, and uses `communication.send` or
+`communication.reply` for normal delivery. Direct provider actions are reserved
+for explicit diagnostics, webhook setup, or provider-specific escape hatches.
 
 Common examples:
 

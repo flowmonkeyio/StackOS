@@ -20,6 +20,7 @@ from .utils import (
     _record_by_resource_external_id,
     _require_project,
     _validate_identity,
+    _validate_no_setup_secrets,
     _validate_profile_key,
 )
 
@@ -32,6 +33,13 @@ async def communication_profile_upsert(
     _require_project(ctx.session, inp.project_id)
     _validate_profile_key(inp.key)
     _validate_identity(inp.identity)
+    _validate_no_setup_secrets(
+        "communicationProfile.upsert",
+        {
+            "provider_facets": inp.provider_facets,
+            "metadata_json": inp.metadata_json,
+        },
+    )
     data_json = {
         "key": inp.key.strip(),
         "profile_ref": _communication_profile_ref(inp.key),

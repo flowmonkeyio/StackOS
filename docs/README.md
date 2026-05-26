@@ -8,6 +8,7 @@ obvious without loading every document.
 | Work | Primary Docs |
 | --- | --- |
 | Installing, starting, or repairing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md) |
+| Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |
 | Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
 | Adding or changing task/ticket tracking | [`task-tracker.md`](./task-tracker.md), [`run-plans.md`](./run-plans.md), [`operations.md`](./operations.md) |
@@ -16,7 +17,7 @@ obvious without loading every document.
 | Adding or changing plugins | [`plugins.md`](./plugins.md), [`extending.md`](./extending.md), [`workflow-templates.md`](./workflow-templates.md) |
 | Changing workflow templates or runs | [`workflow-templates.md`](./workflow-templates.md), [`run-plans.md`](./run-plans.md), [`project-memory.md`](./project-memory.md) |
 | Changing resources or artifacts | [`resources-and-artifacts.md`](./resources-and-artifacts.md), [`project-memory.md`](./project-memory.md) |
-| Changing UI | [`ui-design-system.md`](./ui-design-system.md), [`ui-component-inventory.md`](./ui-component-inventory.md), [`ui-usability-audit.md`](./ui-usability-audit.md) |
+| Changing UI | [`ui-design-system.md`](./ui-design-system.md), [`ui-component-inventory.md`](./ui-component-inventory.md) |
 | Reviewing provider contracts | [`integration-contracts/`](./integration-contracts/) |
 | Before-commit or release validation | [`release-signoff.md`](./release-signoff.md) |
 
@@ -50,7 +51,7 @@ For changes that touch setup, actions, operation adapters, MCP, REST, CLI, UI
 wiring, provider contracts, or agent-facing docs, use the canonical signoff:
 
 ```bash
-UV_CACHE_DIR=/private/tmp/uv-cache TPF_LLM_TOOL=codex tpf make signoff
+make signoff
 ```
 
 See [`release-signoff.md`](./release-signoff.md) for the faster targeted slices
@@ -59,17 +60,17 @@ and setup smoke commands.
 For documentation-only edits:
 
 ```bash
-TPF_LLM_TOOL=codex tpf git diff --check
-TPF_LLM_TOOL=codex tpf rg "StackOS" AGENTS.md CLAUDE.md README.md docs plugins -n
-TPF_LLM_TOOL=codex tpf rg "stackos" docs README.md plugins/stackos -n
+git diff --check
+rg "StackOS" AGENTS.md README.md docs plugins -n
+rg "stackos" docs README.md plugins/stackos -n
 ```
 
 Run targeted tests when documentation changes command contracts, generated API
 expectations, operation examples, or UI integration notes:
 
 ```bash
-TPF_LLM_TOOL=codex tpf uv run pytest tests/unit/test_operations_registry.py tests/unit/test_cli_ops.py -q
-TPF_LLM_TOOL=codex tpf pnpm --dir ui type-check
+uv run pytest tests/unit/test_operations_registry.py tests/unit/test_cli_ops.py -q
+pnpm --dir ui type-check
 ```
 
 ## Cleanup Rule

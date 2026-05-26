@@ -59,6 +59,7 @@ class OperationDispatcher:
             ) from exc
 
         ctx = build_context(arguments, session)
+        ctx.extras["surface"] = surface
         if settings is not None:
             ctx.extras["settings"] = settings
         with bind_context(ctx):

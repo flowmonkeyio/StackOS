@@ -45,7 +45,8 @@ work, start here:
 - Agents should use `toolProfile.resolve` when they need one provider/profile
   execution target. It returns a compact safe tuple and avoids broad auth/profile
   discovery calls when the provider intent is already known.
-- Communications are provider-neutral state plus explicit provider actions.
+- Communications are provider-neutral state, provider-neutral delivery
+  operations, and explicit provider actions.
   Use `communicationProfile.*`, `communicationSurface.*`,
   `communicationContact.*`, `communicationMembership.*`,
   `communicationTarget.*`, `communicationRoute.*`, and

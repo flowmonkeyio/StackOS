@@ -25,6 +25,12 @@ def _operation_call(operation_name: str, arguments: dict[str, Any]) -> Any:
     )
 
 
+def _require_run_token(run_token: str | None, command_name: str) -> str:
+    if run_token is None or not run_token.strip():
+        raise typer.BadParameter(f"--run-token is required for {command_name}")
+    return run_token.strip()
+
+
 @ops_app.command(name="list")
 def ops_list(
     json_output: Annotated[
@@ -210,6 +216,7 @@ def actions_execute(
     ] = False,
 ) -> None:
     """Execute an action inside the currently claimed run-plan step."""
+    run_token = _require_run_token(run_token, "actions execute")
     arguments = _merge_common_arguments(
         {
             "action_ref": action_ref,
@@ -421,6 +428,34 @@ def run_plans_list(
     _echo_json(_operation_call("runPlan.list", arguments))
 
 
+@run_plans_app.command(name="approve")
+def run_plans_approve(
+    run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
+    approval_key: Annotated[str, typer.Option("--approval-key", help="Approval gate key.")],
+    status: Annotated[
+        str,
+        typer.Option("--status", help="Approval status: approved, rejected, or cancelled."),
+    ] = "approved",
+    decided_by: Annotated[
+        str | None,
+        typer.Option("--decided-by", help="Approver/operator label."),
+    ] = None,
+    decision_path: Annotated[
+        str | None,
+        typer.Option("--decision", help="JSON decision payload, or '-' for stdin."),
+    ] = None,
+) -> None:
+    """Record an approval-gate decision through the local admin surface."""
+    arguments = {
+        "run_plan_id": run_plan_id,
+        "approval_key": approval_key,
+        "approval_status": status,
+        "decided_by": decided_by,
+        "decision_json": _load_operation_arguments(decision_path) if decision_path else None,
+    }
+    _echo_json(_operation_call("runPlan.update", arguments))
+
+
 @run_plans_app.command(name="claim-step")
 def run_plans_claim_step(
     run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
@@ -429,6 +464,7 @@ def run_plans_claim_step(
     claimed_by: Annotated[str | None, typer.Option("--claimed-by", help="Claimer label.")] = None,
 ) -> None:
     """Claim an eligible step and activate its tool grants."""
+    run_token = _require_run_token(run_token, "run-plans claim-step")
     arguments = _merge_common_arguments(
         {
             "run_plan_id": run_plan_id,
@@ -453,6 +489,7 @@ def run_plans_record_step(
     run_token: Annotated[str, typer.Option("--run-token", help="Run token from start.")] = "",
 ) -> None:
     """Record the terminal result for a running step."""
+    run_token = _require_run_token(run_token, "run-plans record-step")
     arguments = _merge_common_arguments(
         {
             "run_plan_id": run_plan_id,

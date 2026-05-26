@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
+from stackos.actions import ActionRepository
 from stackos.db.models import CredentialUsageEvent
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.resources import ResourceRepository
@@ -242,6 +243,81 @@ def test_operation_docs_are_agent_readable(api: TestClient) -> None:
     assert run_plan_body["grant_policy"] == "run-plan-controller"
     assert run_plan_body["surfaces"]["cli"]["command"] == "run-plans claim-step"
     assert any("run_token" in item for item in run_plan_body["prerequisites"])
+
+
+def test_operation_rest_run_plan_update_approves_gate(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    created = api.post(
+        "/api/v1/operations/runPlan.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_plan_json": {
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "ops.rest-approval.run",
+                    "title": "REST approval",
+                    "approvals": [{"key": "operator-review", "title": "Operator review"}],
+                    "steps": [
+                        {
+                            "id": "approved-step",
+                            "title": "Approved step",
+                            "approval_refs": ["operator-review"],
+                        }
+                    ],
+                },
+            }
+        },
+    )
+    assert created.status_code == 200, created.text
+    run_plan_id = int(created.json()["data"]["id"])
+
+    started = api.post(
+        "/api/v1/operations/runPlan.start/call",
+        json={"arguments": {"project_id": project_id, "run_plan_id": run_plan_id}},
+    )
+    assert started.status_code == 200, started.text
+    run_token = str(started.json()["data"]["run_token"])
+
+    blocked = api.post(
+        "/api/v1/operations/runPlan.claimStep/call",
+        json={
+            "arguments": {
+                "run_plan_id": run_plan_id,
+                "step_id": "approved-step",
+                "run_token": run_token,
+            }
+        },
+    )
+    assert blocked.status_code == 409
+
+    approved = api.post(
+        "/api/v1/operations/runPlan.update/call",
+        json={
+            "arguments": {
+                "run_plan_id": run_plan_id,
+                "approval_key": "operator-review",
+                "approval_status": "approved",
+                "decided_by": "operator",
+            }
+        },
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["data"]["approval_requests"][0]["status"] == "approved"
+
+    claimed = api.post(
+        "/api/v1/operations/runPlan.claimStep/call",
+        json={
+            "arguments": {
+                "run_plan_id": run_plan_id,
+                "step_id": "approved-step",
+                "run_token": run_token,
+            }
+        },
+    )
+    assert claimed.status_code == 200, claimed.text
+    assert claimed.json()["data"]["status"] == "running"
 
 
 def test_operation_rest_call_uses_registered_action_handler(api: TestClient) -> None:
@@ -991,6 +1067,58 @@ def test_operation_rest_telegram_profile_setup_to_ingress_slice(
     assert requests.items[0].metadata_json["matched_command"]["command"] == "/support"
 
 
+def test_operation_rest_communication_setup_rejects_secret_like_fields(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    profile = api.post(
+        "/api/v1/operations/communicationProfile.upsert/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support",
+                "identity": {"display_name": "Support"},
+                "provider_facets": {
+                    "telegram-bot": {
+                        "auth_profile_key": "support",
+                        "webhook_secret_token": "raw-secret",
+                    }
+                },
+            }
+        },
+    )
+    target = api.post(
+        "/api/v1/operations/communicationTarget.upsert/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "operator",
+                "provider_key": "telegram-bot",
+                "surface_ref": "telegram-chat:1",
+                "action_input_defaults": {"credential_ref": "cred_safe", "api_key": "bad"},
+            }
+        },
+    )
+    ingress = api.post(
+        "/api/v1/operations/ingressEndpoint.configure/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "driver": "local-tunnel",
+                "driver_config": {"provider": "ngrok", "access_token": "bad"},
+            }
+        },
+    )
+
+    for response in (profile, target, ingress):
+        assert response.status_code == 422, response.text
+        rendered = response.text
+        assert "must not contain secrets" in rendered
+        assert "auth profiles" in rendered
+        assert "raw-secret" not in rendered
+        assert "bad" not in rendered
+
+
 def test_operation_rest_ingress_endpoint_syncs_provider_routes(
     api: TestClient,
     project_id: int,
@@ -1081,6 +1209,70 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
     assert telegram_facet["ingress_mode"] == "webhook"
     assert telegram_facet["webhook_base_url"] == "https://stackos.example.com"
     assert telegram_facet["allowed_webhook_hosts"] == ["stackos.example.com"]
+
+
+def test_operation_rest_ingress_sync_redacts_provider_failure(
+    api: TestClient,
+    project_id: int,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    _store_telegram_credential(api, project_id)
+
+    bot = api.post(
+        "/api/v1/operations/communicationProfile.upsert/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support-bot",
+                "identity": {"display_name": "Support Telegram Bot"},
+                "provider_facets": {"telegram-bot": {"auth_profile_key": "support"}},
+                "access_policy": {
+                    "dm_mode": "all",
+                    "group_mode": "all",
+                    "user_mode": "all",
+                },
+            }
+        },
+    )
+    assert bot.status_code == 200, bot.text
+
+    configured = api.post(
+        "/api/v1/operations/ingressEndpoint.configure/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "driver": "public-url",
+                "public_base_url": "https://stackos.example.com",
+            }
+        },
+    )
+    assert configured.status_code == 200, configured.text
+
+    async def fail_execute(self, **_kwargs: object) -> object:
+        raise RuntimeError(
+            "Telegram failed https://api.telegram.org/bot123456:ABC/setWebhook "
+            "Authorization: Bearer leaked-token token=telegram-secret"
+        )
+
+    monkeypatch.setattr(ActionRepository, "execute", fail_execute)
+
+    synced = api.post(
+        "/api/v1/operations/ingressEndpoint.sync/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "apply_provider_webhooks": True,
+            }
+        },
+    )
+
+    assert synced.status_code == 200, synced.text
+    result = synced.json()["data"]["provider_results"][0]
+    assert result["status"] == "failed"
+    assert "[redacted]" in result["error"]
+    assert "123456:ABC" not in result["error"]
+    assert "leaked-token" not in result["error"]
+    assert "telegram-secret" not in result["error"]
 
 
 def test_operation_rest_mock_provider_failure_records_redacted_audit(

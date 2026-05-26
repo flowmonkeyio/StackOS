@@ -302,7 +302,6 @@ def _mount_ui(app: FastAPI, settings: Settings) -> None:
     # included so router precedence is deterministic.
     if index.is_file():
         app.mount("/assets", StaticFiles(directory=ui_dist / "assets"), name="ui-assets")
-        index_bytes = index.read_bytes()
 
         @app.get("/{full_path:path}", include_in_schema=False)
         async def _ui_spa(full_path: str) -> Response:
@@ -325,8 +324,8 @@ def _mount_ui(app: FastAPI, settings: Settings) -> None:
                 ui_dist_resolved = ui_dist
             if full_path and target.is_file() and ui_dist_resolved in target_resolved.parents:
                 return FileResponse(target_resolved)
-            return Response(
-                content=index_bytes,
+            return FileResponse(
+                index,
                 media_type="text/html",
                 headers={"cache-control": "no-cache"},
             )

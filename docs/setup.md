@@ -33,8 +33,8 @@ provider/account ids, auth method refs, scopes, status, and diagnostics.
 Use this path when working from this repository:
 
 ```bash
-TPF_LLM_TOOL=codex tpf make install
-TPF_LLM_TOOL=codex tpf make serve
+make install
+make serve
 ```
 
 `make install` syncs Python dependencies, initializes state, runs migrations,
@@ -51,7 +51,7 @@ http://127.0.0.1:5180/
 For UI development, keep the daemon running and start Vite:
 
 ```bash
-TPF_LLM_TOOL=codex tpf make dev-ui
+make dev-ui
 ```
 
 Open:
@@ -113,7 +113,7 @@ stackos autostart install --force
 The clone-mode convenience target delegates to the same CLI-owned behavior:
 
 ```bash
-TPF_LLM_TOOL=codex tpf make install-launchd
+make install-launchd
 ```
 
 ## First Run In The UI
@@ -288,7 +288,7 @@ stackos install
 In clone mode:
 
 ```bash
-TPF_LLM_TOOL=codex tpf make install
+make install
 ```
 
 After token rotation or package upgrades, restart the daemon:

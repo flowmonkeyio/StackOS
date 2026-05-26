@@ -9,6 +9,7 @@ import httpx
 from sqlmodel import Session, col, select
 
 from stackos.actions import ActionRepository
+from stackos.artifacts import redact_secret_text
 from stackos.communications import communication_profile_record_by_key, merged_provider_profile
 from stackos.db.models import Credential, ResourceRecord
 from stackos.mcp.context import MCPContext
@@ -41,6 +42,7 @@ from .utils import (
     _require_project,
     _resource_records,
     _utcnow_iso,
+    _validate_no_setup_secrets,
     _validate_profile_key,
 )
 
@@ -55,6 +57,13 @@ async def ingress_endpoint_configure(
     public_base_url = _normalize_public_base_url(inp.public_base_url)
     local_base_url = _normalize_base_url(inp.local_base_url, require_https=False)
     driver_config = _normalize_driver_config(inp.driver, inp.driver_config)
+    _validate_no_setup_secrets(
+        "ingressEndpoint.configure",
+        {
+            "driver_config": driver_config,
+            "metadata_json": inp.metadata_json,
+        },
+    )
     data_json = {
         "key": inp.key.strip(),
         "endpoint_ref": _ingress_endpoint_ref(inp.key),
@@ -97,6 +106,12 @@ async def ingress_endpoint_refresh(
         {
             **dict(data.get("driver_config") or {}),
             **inp.driver_config,
+        },
+    )
+    _validate_no_setup_secrets(
+        "ingressEndpoint.refresh",
+        {
+            "driver_config": driver_config,
         },
     )
     public_base_url = _normalize_public_base_url(inp.public_base_url)
@@ -690,7 +705,7 @@ async def _maybe_apply_telegram_webhook(
             "profile_key": route.profile_key,
             "status": "failed",
             "webhook_url": route.ingress_url,
-            "error": str(exc),
+            "error": redact_secret_text(str(exc)),
         }
     return {
         "provider_key": "telegram-bot",

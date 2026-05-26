@@ -36,7 +36,9 @@ const router = useRouter()
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 
 const snapshot = ref<TrackerSnapshot | null>(null)
+const graphSnapshot = ref<TrackerSnapshot | null>(null)
 const loading = ref(false)
+const graphLoading = ref(false)
 const error = ref<string | null>(null)
 const viewMode = ref<ViewMode>('graph')
 const statusFilter = ref<StatusFilter>('all')
@@ -52,6 +54,7 @@ const detailPanelOpen = ref(false)
 const taskDetailOpen = ref(false)
 const graphStatusFilters = ref<TrackerStatus[]>([])
 const graphBlockFilters = ref<GraphBlockFilter[]>([])
+let graphRequestSeq = 0
 
 const statusOptions: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'All' },
@@ -299,14 +302,18 @@ const filteredSnapshot = computed<TrackerSnapshot | null>(() => {
   if (!snapshot.value || !activeTaskRow.value) return null
   const activeTask = activeTaskRow.value.task
   const activeTickets = graphVisibleTickets.value
+  const focusedGraph =
+    graphSnapshot.value?.tasks.length === 1 && graphSnapshot.value.tasks[0].key === activeTask.key
+      ? graphSnapshot.value
+      : null
   const visibleTicketIds = new Set(activeTickets.map((ticket) => ticket.id))
   const visibleTaskIds = new Set([activeTask.id])
   const graphNodeIds = new Set(activeTickets.map((ticket) => `ticket:${ticket.key}`))
-  const graph = snapshot.value.graph
+  const graph = focusedGraph?.graph
     ? {
-        ...snapshot.value.graph,
-        nodes: snapshot.value.graph.nodes.filter((node) => graphNodeIds.has(node.id)),
-        edges: snapshot.value.graph.edges.filter(
+        ...focusedGraph.graph,
+        nodes: focusedGraph.graph.nodes.filter((node) => graphNodeIds.has(node.id)),
+        edges: focusedGraph.graph.edges.filter(
           (edge) =>
             edge.type === 'dependency' &&
             graphNodeIds.has(edge.source) &&
@@ -314,16 +321,18 @@ const filteredSnapshot = computed<TrackerSnapshot | null>(() => {
         ),
       }
     : null
+  const dependencies = focusedGraph?.dependencies ?? snapshot.value.dependencies
+  const links = focusedGraph?.links ?? snapshot.value.links
   return {
     ...snapshot.value,
     tasks: [activeTask],
     tickets: activeTickets,
-    dependencies: snapshot.value.dependencies.filter(
+    dependencies: dependencies.filter(
       (dependency) =>
         activeTickets.some((ticket) => ticket.key === dependency.ticket_key) &&
         activeTickets.some((ticket) => ticket.key === dependency.depends_on_ticket_key),
     ),
-    links: snapshot.value.links.filter(
+    links: links.filter(
       (link) =>
         (link.ticket_id !== null && visibleTicketIds.has(link.ticket_id)) ||
         (link.task_id !== null && visibleTaskIds.has(link.task_id)),
@@ -379,6 +388,7 @@ const graphSelectionStats = computed(() => {
 const flowRenderKey = computed(() =>
   [
     activeTaskRow.value?.key ?? 'empty',
+    graphLoading.value ? 'loading-graph' : 'graph-ready',
     graphStatusFilters.value.join(',') || 'all-status',
     graphBlockFilters.value.join(',') || 'all-block',
   ].join(':'),
@@ -427,16 +437,46 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = null
   try {
+    graphSnapshot.value = null
     snapshot.value = await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value,
-      include_graph: true,
+      include_graph: false,
     })
     await nextTick()
     ensureActiveTask()
+    await loadFocusedGraph(activeTaskKey.value)
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'failed to load tracker'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadFocusedGraph(taskKey: string): Promise<void> {
+  if (!projectId.value || Number.isNaN(projectId.value) || !taskKey) {
+    graphSnapshot.value = null
+    return
+  }
+  const requestSeq = ++graphRequestSeq
+  graphLoading.value = true
+  try {
+    const nextGraph = await callOperation<TrackerSnapshot>('tracker.get', {
+      project_id: projectId.value,
+      task_key: taskKey,
+      include_graph: true,
+    })
+    if (requestSeq === graphRequestSeq) {
+      graphSnapshot.value = nextGraph
+    }
+  } catch (err) {
+    if (requestSeq === graphRequestSeq) {
+      graphSnapshot.value = null
+      error.value = err instanceof Error ? err.message : 'failed to load task graph'
+    }
+  } finally {
+    if (requestSeq === graphRequestSeq) {
+      graphLoading.value = false
+    }
   }
 }
 
@@ -715,6 +755,9 @@ function countStatuses(statuses: TrackerStatus[]): Record<TrackerStatus, number>
 
 onMounted(load)
 watch(projectId, load)
+watch(activeTaskKey, (taskKey) => {
+  if (snapshot.value) void loadFocusedGraph(taskKey)
+})
 watch(
   () => route.query.task,
   () => {

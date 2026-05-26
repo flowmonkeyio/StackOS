@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from stackos.actions.connectors import ActionConnectorRequest
+from stackos.communications import telegram_callback_button_external_id
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.resources import ResourceRepository
 
@@ -123,10 +124,10 @@ def _store_callback_buttons(
                 project_id=request.project_id,
                 plugin_slug="communications",
                 resource_key="communication-interaction",
-                external_id=_callback_button_external_id(
-                    profile_key,
-                    message_ref,
-                    callback_data,
+                external_id=telegram_callback_button_external_id(
+                    profile_key=profile_key,
+                    message_ref=message_ref,
+                    callback_data=callback_data,
                 ),
                 title=str(button.get("text") or callback_data),
                 data_json={
@@ -175,14 +176,6 @@ def _source_button_scope(request: ActionConnectorRequest) -> dict[str, list[str]
     if isinstance(chat_ref, str) and chat_ref:
         scope["allowed_chat_refs"] = [chat_ref]
     return scope
-
-
-def _callback_button_external_id(
-    profile_key: str,
-    message_ref: str,
-    callback_data: str,
-) -> str:
-    return f"telegram-button:{profile_key}:{message_ref}:{callback_data}"
 
 
 def _provider_message_ref(result_body: Any) -> str | None:
