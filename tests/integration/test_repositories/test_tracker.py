@@ -119,6 +119,61 @@ def test_manual_task_ticket_lifecycle_and_graph(session: Session, project_id: in
     assert any(edge.type == "dependency" for edge in snapshot.graph.edges)
 
 
+def test_tracker_graph_includes_conservative_advisory_warnings(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="graph-warning-flow",
+        title="Graph warning flow",
+        created_by="codex",
+    )
+    for key in (
+        "warning-impl-a",
+        "warning-impl-b",
+        "warning-isolated-a",
+        "warning-isolated-b",
+        "warning-isolated-c",
+    ):
+        repo.create_ticket(
+            project_id=project_id,
+            task_key="graph-warning-flow",
+            key=key,
+            title=key,
+            created_by="codex",
+        )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="graph-warning-flow",
+        key="warning-review-gate",
+        title="Manual review gate before implementation",
+        lane_key="review",
+        dependency_keys=["warning-impl-a", "warning-impl-b"],
+        created_by="codex",
+    )
+
+    snapshot = repo.get(project_id=project_id, task_key="graph-warning-flow")
+
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == [
+        (
+            "Task graph-warning-flow has 6 nonterminal tickets but only 2 dependency "
+            "relations; review whether the plan is missing blocking edges."
+        ),
+        (
+            "Task graph-warning-flow has 3 nonterminal tickets without dependency links "
+            "(warning-isolated-a, warning-isolated-b, warning-isolated-c); review isolated "
+            "work before implementation."
+        ),
+        (
+            "Review/gate ticket warning-review-gate depends on 2 tickets; confirm dependency "
+            "direction if this gate should unblock implementation work."
+        ),
+    ]
+
+
 def test_tracker_status_ignores_terminal_blocker_notes(
     session: Session,
     project_id: int,
@@ -282,6 +337,314 @@ def test_tracker_ticket_list_import_review_update_and_evidence(
         "summary": "List import contract persisted.",
     }
     assert by_key["ticket-list-ui"].assignee == "codex"
+
+
+def test_tracker_dependency_patch_add_remove_preserves_unspecified_fields(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="dependency-patch-flow",
+        title="Dependency patch flow",
+        created_by="codex",
+    )
+    for key in ("dependency-a", "dependency-b", "dependency-c"):
+        repo.create_ticket(
+            project_id=project_id,
+            task_key="dependency-patch-flow",
+            key=key,
+            title=key,
+            created_by="codex",
+        )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="dependency-patch-flow",
+        key="dependency-target",
+        title="Dependency target",
+        assignee="codex",
+        dependency_keys=["dependency-a"],
+        created_by="codex",
+    )
+
+    added = repo.update_ticket(
+        project_id=project_id,
+        ticket_key="dependency-target",
+        patch_json={"add_dependency_keys": ["dependency-b", "dependency-b"]},
+        actor="codex",
+    ).data.ticket
+    assert added is not None
+    assert added.assignee == "codex"
+    assert added.dependency_keys == ["dependency-a", "dependency-b"]
+
+    removed = repo.update_ticket(
+        project_id=project_id,
+        ticket_key="dependency-target",
+        patch_json={"remove_dependency_keys": ["dependency-a"]},
+        actor="codex",
+    ).data.ticket
+    assert removed is not None
+    assert removed.dependency_keys == ["dependency-b"]
+
+    replaced = repo.update_ticket(
+        project_id=project_id,
+        ticket_key="dependency-target",
+        patch_json={"dependency_keys": ["dependency-c"]},
+        actor="codex",
+    ).data.ticket
+    assert replaced is not None
+    assert replaced.dependency_keys == ["dependency-c"]
+
+    with pytest.raises(ValidationError, match="dependency_keys cannot be combined"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="dependency-target",
+            patch_json={
+                "dependency_keys": ["dependency-a"],
+                "add_dependency_keys": ["dependency-b"],
+            },
+            actor="codex",
+        )
+
+    with pytest.raises(ValidationError, match="ticket dependency edge does not exist"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="dependency-target",
+            patch_json={"remove_dependency_keys": ["dependency-a"]},
+            actor="codex",
+        )
+
+
+def test_tracker_dependency_patch_dry_run_reports_diff_without_writing(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="dependency-preview-flow",
+        title="Dependency preview flow",
+        created_by="codex",
+    )
+    for key in ("preview-a", "preview-b", "preview-c"):
+        repo.create_ticket(
+            project_id=project_id,
+            task_key="dependency-preview-flow",
+            key=key,
+            title=key,
+            created_by="codex",
+        )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="dependency-preview-flow",
+        key="preview-target",
+        title="Preview target",
+        dependency_keys=["preview-a", "preview-b"],
+        created_by="codex",
+    )
+    before = repo.get(
+        project_id=project_id,
+        task_key="dependency-preview-flow",
+        include_graph=False,
+    ).tracker.rev
+
+    preview = repo.update_ticket(
+        project_id=project_id,
+        ticket_key="preview-target",
+        patch_json={
+            "add_dependency_keys": ["preview-c"],
+            "remove_dependency_keys": ["preview-a"],
+        },
+        dry_run=True,
+        actor="codex",
+    ).data
+
+    assert preview.dry_run is True
+    assert preview.rev == before
+    assert preview.dependency_preview is not None
+    assert preview.dependency_preview.current_dependency_keys == ["preview-a", "preview-b"]
+    assert preview.dependency_preview.final_dependency_keys == ["preview-b", "preview-c"]
+    assert preview.dependency_preview.added_dependency_keys == ["preview-c"]
+    assert preview.dependency_preview.removed_dependency_keys == ["preview-a"]
+    assert preview.dependency_preview.kept_dependency_keys == ["preview-b"]
+    assert preview.results[0].action == "validated"
+    assert preview.results[0].dependency_preview == preview.dependency_preview
+
+    after = repo.get(
+        project_id=project_id,
+        task_key="dependency-preview-flow",
+        include_graph=False,
+    )
+    assert after.tracker.rev == before
+    by_key = {ticket.key: ticket for ticket in after.tickets}
+    assert by_key["preview-target"].dependency_keys == ["preview-a", "preview-b"]
+
+
+def test_tracker_ticket_list_update_add_remove_dependency_keys(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="bulk-dependency-patch-flow",
+        title="Bulk dependency patch flow",
+        created_by="codex",
+    )
+    repo.create_ticket_list(
+        project_id=project_id,
+        ticket_list_json={
+            "task_key": "bulk-dependency-patch-flow",
+            "tickets": [
+                {"key": "bulk-dep-a", "title": "Dependency A"},
+                {"key": "bulk-dep-b", "title": "Dependency B"},
+                {
+                    "key": "bulk-target",
+                    "title": "Target",
+                    "dependency_keys": ["bulk-dep-a"],
+                },
+            ],
+        },
+        actor="codex",
+    )
+
+    updated = repo.update_ticket_list(
+        project_id=project_id,
+        updates_json=[
+            {
+                "ticket_key": "bulk-target",
+                "patch_json": {
+                    "add_dependency_keys": ["bulk-dep-b"],
+                    "remove_dependency_keys": ["bulk-dep-a"],
+                },
+            }
+        ],
+        actor="codex",
+    ).data
+    assert updated.valid is True
+    assert updated.results[0].changed_fields == [
+        "add_dependency_keys",
+        "remove_dependency_keys",
+    ]
+    assert updated.tickets[0].dependency_keys == ["bulk-dep-b"]
+
+
+def test_tracker_ticket_list_update_dry_run_reports_dependency_diffs_and_errors(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="bulk-dependency-preview-flow",
+        title="Bulk dependency preview flow",
+        created_by="codex",
+    )
+    repo.create_ticket_list(
+        project_id=project_id,
+        ticket_list_json={
+            "task_key": "bulk-dependency-preview-flow",
+            "tickets": [
+                {"key": "bulk-preview-a", "title": "Dependency A"},
+                {"key": "bulk-preview-b", "title": "Dependency B"},
+                {"key": "bulk-preview-c", "title": "Dependency C"},
+                {"key": "bulk-preview-d", "title": "Dependency D"},
+                {"key": "bulk-preview-target", "title": "Target"},
+            ],
+            "dependencies": [
+                {
+                    "ticket_key": "bulk-preview-target",
+                    "depends_on_ticket_key": "bulk-preview-a",
+                },
+                {
+                    "ticket_key": "bulk-preview-target",
+                    "depends_on_ticket_key": "bulk-preview-b",
+                },
+                {
+                    "ticket_key": "bulk-preview-target",
+                    "depends_on_ticket_key": "bulk-preview-c",
+                },
+                {
+                    "ticket_key": "bulk-preview-target",
+                    "depends_on_ticket_key": "bulk-preview-d",
+                },
+            ],
+        },
+        actor="codex",
+    )
+    before = repo.get(
+        project_id=project_id,
+        task_key="bulk-dependency-preview-flow",
+        include_graph=False,
+    ).tracker.rev
+
+    preview = repo.update_ticket_list(
+        project_id=project_id,
+        updates_json=[
+            {
+                "ticket_key": "bulk-preview-target",
+                "patch_json": {
+                    "remove_dependency_keys": [
+                        "bulk-preview-a",
+                        "bulk-preview-b",
+                        "bulk-preview-c",
+                        "bulk-preview-d",
+                    ],
+                },
+            },
+            {
+                "ticket_key": "bulk-preview-target",
+                "patch_json": {"remove_dependency_keys": ["bulk-preview-a"]},
+            },
+        ],
+        dry_run=True,
+        actor="codex",
+    ).data
+
+    assert preview.dry_run is True
+    assert preview.rev == before
+    assert preview.valid is True
+    assert [result.action for result in preview.results] == ["validated", "validated"]
+    assert preview.results[0].dependency_preview is not None
+    assert preview.results[0].dependency_preview.removed_dependency_keys == [
+        "bulk-preview-a",
+        "bulk-preview-b",
+        "bulk-preview-c",
+        "bulk-preview-d",
+    ]
+    assert preview.results[0].dependency_preview.final_dependency_keys == []
+    assert preview.warnings == [
+        "dependency preview removes 5 edges and adds 0; review direction before applying"
+    ]
+
+    after = repo.get(
+        project_id=project_id,
+        task_key="bulk-dependency-preview-flow",
+        include_graph=False,
+    )
+    assert after.tracker.rev == before
+    by_key = {ticket.key: ticket for ticket in after.tickets}
+    assert by_key["bulk-preview-target"].dependency_keys == [
+        "bulk-preview-a",
+        "bulk-preview-b",
+        "bulk-preview-c",
+        "bulk-preview-d",
+    ]
+
+    invalid = repo.update_ticket_list(
+        project_id=project_id,
+        updates_json=[
+            {
+                "ticket_key": "bulk-preview-target",
+                "patch_json": {"add_dependency_keys": ["missing-preview-ticket"]},
+            }
+        ],
+        dry_run=True,
+        actor="codex",
+    ).data
+    assert invalid.valid is False
+    assert invalid.errors[0].message == "tracker ticket not found"
 
 
 def test_run_plan_lifecycle_mirrors_tracker(session: Session, project_id: int) -> None:

@@ -113,6 +113,16 @@ parallel tracker endpoints for list behavior.
 4. Patch many tickets by calling `tracker.updateTicket` with `updates_json`.
    Each entry identifies one ticket by `ticket_key` or `ticket_id` and supplies
    a `patch_json`. Updates are patch-only: omitted fields are preserved.
+   Dependency edits can use `add_dependency_keys` and `remove_dependency_keys`
+   for small atomic edge changes. Use `dependency_keys` only when intentionally
+   replacing the full dependency list; it cannot be combined with add/remove
+   dependency fields in the same patch.
+5. Before a large dependency cleanup, call `tracker.updateTicket` with
+   `dry_run=true` on the same `patch_json` or `updates_json`. The tracker
+   returns `dependency_preview` entries with current, final, added, removed, and
+   kept dependency keys, plus advisory warnings for suspicious bulk removals.
+   Dry-run preview does not write tickets, dependencies, history, timestamps, or
+   tracker revisions.
 
 ```json
 {
@@ -139,6 +149,7 @@ parallel tracker endpoints for list behavior.
 ```json
 {
   "project_id": 1,
+  "dry_run": true,
   "updates_json": [
     {
       "ticket_key": "manual-comms-schema",
@@ -153,12 +164,17 @@ parallel tracker endpoints for list behavior.
     {
       "ticket_key": "manual-comms-ui",
       "patch_json": {
-        "assignee": "codex"
+        "assignee": "codex",
+        "add_dependency_keys": ["manual-comms-docs"],
+        "remove_dependency_keys": ["manual-comms-schema"]
       }
     }
   ]
 }
 ```
+
+After reviewing the preview, send the same payload without `dry_run` to apply
+the patch.
 
 CLI aliases exist for common calls but still use the same operation adapter:
 
@@ -220,6 +236,14 @@ or the UI graph projection. It can be intentionally large because it includes
 all requested tasks, tickets, dependencies, links, and optional graph nodes.
 Normal agents should prefer `tracker.status`, `tracker.next`, `tracker.brief`,
 `tracker.verify`, `tracker.search`, and `tracker.changed` to keep context small.
+When `include_graph=true`, the graph projection may include advisory warnings.
+These warnings are produced by core tracker analysis and are intentionally
+non-blocking. They call out low-confidence review issues such as sparse
+dependency plans, many isolated active tickets, likely pre-implementation gate
+direction mistakes, or large dependency removals surfaced by dry-run preview.
+Agents should review them before implementation, but normal tracker writes still
+use the existing hard invariants for missing tickets, self-dependencies, and
+cycles.
 
 ## UI
 

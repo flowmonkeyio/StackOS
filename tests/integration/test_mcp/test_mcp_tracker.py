@@ -6,7 +6,8 @@ from .conftest import MCPClient
 
 
 def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
-    tools = {tool["name"] for tool in mcp_client.list_tools()}
+    listed_tools = mcp_client.list_tools()
+    tools = {tool["name"] for tool in listed_tools}
 
     assert {
         "tracker.status",
@@ -29,6 +30,11 @@ def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
         "tracker.release",
         "tracker.linkRunPlan",
     } <= tools
+    by_name = {tool["name"]: tool for tool in listed_tools}
+    create_props = by_name["tracker.createTicket"]["inputSchema"]["properties"]
+    update_props = by_name["tracker.updateTicket"]["inputSchema"]["properties"]
+    assert {"tickets_json", "dependencies_json", "dry_run"} <= set(create_props)
+    assert {"updates_json", "dry_run"} <= set(update_props)
 
 
 def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict) -> None:
@@ -150,6 +156,10 @@ def test_tracker_mcp_create_get_update_accept_ticket_lists(
                 "title": "UI review",
                 "dependency_keys": ["mcp-ticket-list-schema"],
             },
+            {
+                "key": "mcp-ticket-list-docs",
+                "title": "Docs review",
+            },
         ],
         "created_by": "mcp-test",
     }
@@ -160,7 +170,11 @@ def test_tracker_mcp_create_get_update_accept_ticket_lists(
     )
     assert dry_run["data"]["dry_run"] is True
     assert dry_run["data"]["valid"] is True
-    assert [result["action"] for result in dry_run["data"]["results"]] == ["validated", "validated"]
+    assert [result["action"] for result in dry_run["data"]["results"]] == [
+        "validated",
+        "validated",
+        "validated",
+    ]
 
     empty_review = mcp_client.call_tool_structured(
         "tracker.get",
@@ -173,8 +187,30 @@ def test_tracker_mcp_create_get_update_accept_ticket_lists(
     assert [ticket["key"] for ticket in imported["data"]["tickets"]] == [
         "mcp-ticket-list-schema",
         "mcp-ticket-list-ui",
+        "mcp-ticket-list-docs",
     ]
     assert imported["data"]["dependencies"][0]["depends_on_ticket_key"] == "mcp-ticket-list-schema"
+
+    preview = mcp_client.call_tool_structured(
+        "tracker.updateTicket",
+        {
+            "project_id": project_id,
+            "ticket_key": "mcp-ticket-list-ui",
+            "patch_json": {
+                "add_dependency_keys": ["mcp-ticket-list-docs"],
+                "remove_dependency_keys": ["mcp-ticket-list-schema"],
+            },
+            "dry_run": True,
+        },
+    )
+    assert preview["data"]["dry_run"] is True
+    assert preview["data"]["valid"] is True
+    assert preview["data"]["dependency_preview"]["added_dependency_keys"] == [
+        "mcp-ticket-list-docs"
+    ]
+    assert preview["data"]["dependency_preview"]["removed_dependency_keys"] == [
+        "mcp-ticket-list-schema"
+    ]
 
     review = mcp_client.call_tool_structured(
         "tracker.get",
@@ -204,7 +240,11 @@ def test_tracker_mcp_create_get_update_accept_ticket_lists(
                 },
                 {
                     "ticket_key": "mcp-ticket-list-ui",
-                    "patch_json": {"assignee": "codex"},
+                    "patch_json": {
+                        "assignee": "codex",
+                        "add_dependency_keys": ["mcp-ticket-list-docs"],
+                        "remove_dependency_keys": ["mcp-ticket-list-schema"],
+                    },
                 },
             ],
             "actor": "mcp-test",
@@ -222,3 +262,4 @@ def test_tracker_mcp_create_get_update_accept_ticket_lists(
         "Bulk list path verified."
     )
     assert by_key["mcp-ticket-list-ui"]["assignee"] == "codex"
+    assert by_key["mcp-ticket-list-ui"]["dependency_keys"] == ["mcp-ticket-list-docs"]

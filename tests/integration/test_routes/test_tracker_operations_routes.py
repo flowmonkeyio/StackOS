@@ -78,6 +78,7 @@ def test_tracker_operations_rest_create_ticket_accepts_list(
                 "title": "UI",
                 "dependency_keys": ["rest-ticket-list-schema"],
             },
+            {"key": "rest-ticket-list-docs", "title": "Docs"},
         ],
         "created_by": "route-test",
     }
@@ -97,6 +98,27 @@ def test_tracker_operations_rest_create_ticket_accepts_list(
     assert [ticket["key"] for ticket in imported.json()["data"]["tickets"]] == [
         "rest-ticket-list-schema",
         "rest-ticket-list-ui",
+        "rest-ticket-list-docs",
+    ]
+
+    update_preview = api.post(
+        "/api/v1/operations/tracker.updateTicket/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "ticket_key": "rest-ticket-list-ui",
+                "patch_json": {
+                    "add_dependency_keys": ["rest-ticket-list-docs"],
+                    "remove_dependency_keys": ["rest-ticket-list-schema"],
+                },
+                "dry_run": True,
+            }
+        },
+    )
+    assert update_preview.status_code == 200, update_preview.text
+    assert update_preview.json()["data"]["dry_run"] is True
+    assert update_preview.json()["data"]["dependency_preview"]["final_dependency_keys"] == [
+        "rest-ticket-list-docs"
     ]
 
     updated = api.post(
@@ -111,7 +133,11 @@ def test_tracker_operations_rest_create_ticket_accepts_list(
                     },
                     {
                         "ticket_key": "rest-ticket-list-ui",
-                        "patch_json": {"assignee": "codex"},
+                        "patch_json": {
+                            "assignee": "codex",
+                            "add_dependency_keys": ["rest-ticket-list-docs"],
+                            "remove_dependency_keys": ["rest-ticket-list-schema"],
+                        },
                     },
                 ],
             }
@@ -135,4 +161,6 @@ def test_tracker_operations_rest_create_ticket_accepts_list(
         },
     )
     assert reviewed.status_code == 200, reviewed.text
-    assert [ticket["key"] for ticket in reviewed.json()["tickets"]] == ["rest-ticket-list-ui"]
+    reviewed_ticket = reviewed.json()["tickets"][0]
+    assert reviewed_ticket["key"] == "rest-ticket-list-ui"
+    assert reviewed_ticket["dependency_keys"] == ["rest-ticket-list-docs"]

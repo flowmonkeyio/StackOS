@@ -325,13 +325,29 @@ class TrackerUpdateTicketInput(MCPInput):
                     "updates_json": [
                         {
                             "ticket_key": "telegram-ingress",
-                            "patch_json": {"status": "complete"},
+                            "patch_json": {
+                                "status": "complete",
+                                "completion_evidence_json": {"summary": "Webhook verified."},
+                            },
                         },
                         {
                             "ticket_key": "telegram-reply",
-                            "patch_json": {"assignee": "codex"},
+                            "patch_json": {
+                                "assignee": "codex",
+                                "add_dependency_keys": ["telegram-policy"],
+                                "remove_dependency_keys": ["telegram-ingress"],
+                            },
                         },
                     ],
+                },
+                {
+                    "project_id": 1,
+                    "ticket_key": "telegram-reply",
+                    "patch_json": {
+                        "add_dependency_keys": ["telegram-policy"],
+                        "remove_dependency_keys": ["telegram-ingress"],
+                    },
+                    "dry_run": True,
                 },
             ]
         },
@@ -344,7 +360,16 @@ class TrackerUpdateTicketInput(MCPInput):
         default=None,
         description=(
             "Optional list of atomic ticket patch updates. Each item identifies a ticket "
-            "by ticket_id or ticket_key and supplies patch_json."
+            "by ticket_id or ticket_key and supplies patch_json. Use add_dependency_keys "
+            "and remove_dependency_keys for small dependency edits; dependency_keys "
+            "intentionally replaces the full dependency list."
+        ),
+    )
+    dry_run: bool = Field(
+        default=False,
+        description=(
+            "Preview dependency-changing patch_json or updates_json without writing. "
+            "Returns dependency diffs for dependency fields and leaves ordinary updates quiet."
         ),
     )
     actor: str | None = None
@@ -711,6 +736,7 @@ async def tracker_update_ticket(
             project_id=inp.project_id,
             updates_json=inp.updates_json,
             actor=inp.actor,
+            dry_run=inp.dry_run,
         )
         return WriteEnvelope[TrackerMutationOut](
             data=env.data,
@@ -724,6 +750,7 @@ async def tracker_update_ticket(
         ticket_key=inp.ticket_key,
         patch_json=inp.patch_json,
         actor=inp.actor,
+        dry_run=inp.dry_run,
     )
     return WriteEnvelope[TrackerMutationOut](
         data=env.data,
@@ -1060,11 +1087,14 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this for ticket status, assignee, blockers, outcome, evidence, and "
                 "dependencies. Pass updates_json when several tickets need independent "
-                "patch-only updates by ticket_key or ticket_id."
+                "patch-only updates by ticket_key or ticket_id. For dependency changes, "
+                "prefer add_dependency_keys/remove_dependency_keys unless replacing the "
+                "whole dependency list. Add dry_run=true to preview dependency diffs "
+                "without writing before a larger cleanup."
             ),
             examples=(
                 OperationExample(
-                    title="Patch a ticket list",
+                    title="Patch a ticket list with safe dependency edits",
                     arguments={
                         "project_id": 1,
                         "updates_json": [
@@ -1074,9 +1104,25 @@ def operation_specs() -> list[OperationSpec]:
                             },
                             {
                                 "ticket_key": "core-tracker-ui",
-                                "patch_json": {"assignee": "codex"},
+                                "patch_json": {
+                                    "assignee": "codex",
+                                    "add_dependency_keys": ["core-tracker-api"],
+                                    "remove_dependency_keys": ["core-tracker-schema"],
+                                },
                             },
                         ],
+                    },
+                ),
+                OperationExample(
+                    title="Preview dependency changes before applying",
+                    arguments={
+                        "project_id": 1,
+                        "ticket_key": "core-tracker-ui",
+                        "patch_json": {
+                            "add_dependency_keys": ["core-tracker-api"],
+                            "remove_dependency_keys": ["core-tracker-schema"],
+                        },
+                        "dry_run": True,
                     },
                 ),
             ),

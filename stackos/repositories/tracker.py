@@ -65,6 +65,11 @@ TERMINAL_TICKET_STATUSES = {
     TrackerItemStatus.COMPLETE,
     TrackerItemStatus.DEFERRED,
 }
+DEPENDENCY_PATCH_FIELDS = {
+    "dependency_keys",
+    "add_dependency_keys",
+    "remove_dependency_keys",
+}
 
 
 def _utcnow() -> datetime:
@@ -363,12 +368,24 @@ class TrackerListIssueOut(BaseModel):
     message: str
 
 
+class TrackerDependencyPreviewOut(BaseModel):
+    ticket_key: str
+    mode: Literal["none", "replace", "add-remove"]
+    current_dependency_keys: list[str] = Field(default_factory=list)
+    final_dependency_keys: list[str] = Field(default_factory=list)
+    added_dependency_keys: list[str] = Field(default_factory=list)
+    removed_dependency_keys: list[str] = Field(default_factory=list)
+    kept_dependency_keys: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class TrackerListItemResultOut(BaseModel):
     index: int
     action: Literal["validated", "created", "updated", "skipped", "noop", "error"]
     key: str | None = None
     id: int | None = None
     changed_fields: list[str] = Field(default_factory=list)
+    dependency_preview: TrackerDependencyPreviewOut | None = None
     ticket: TrackerTicketOut | None = None
     error: str | None = None
 
@@ -379,6 +396,7 @@ class TrackerMutationOut(BaseModel):
     ticket: TrackerTicketOut | None = None
     tickets: list[TrackerTicketOut] = Field(default_factory=list)
     dependencies: list[TrackerDependencyOut] = Field(default_factory=list)
+    dependency_preview: TrackerDependencyPreviewOut | None = None
     results: list[TrackerListItemResultOut] = Field(default_factory=list)
     errors: list[TrackerListIssueOut] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -883,12 +901,39 @@ class TrackerRepository:
         patch_json: dict[str, Any],
         actor: str | None = None,
         commit: bool = True,
+        dry_run: bool = False,
     ) -> Envelope[TrackerMutationOut]:
         tracker = self.ensure_tracker(project_id=project_id)
         ticket = self._ticket_by_key(tracker.id, ticket_key)
         task = self._s.get(TrackerTask, ticket.task_id)
         if task is None:
             raise NotFoundError("ticket task not found", data={"ticket_key": ticket_key})
+        if dry_run:
+            dependency_preview = self._preview_dependency_patch(tracker, ticket, patch_json)
+            warnings = dependency_preview.warnings if dependency_preview is not None else []
+            return Envelope(
+                data=TrackerMutationOut(
+                    tracker=self._tracker_out(tracker),
+                    task=self._task_out(task),
+                    ticket=self._ticket_out(ticket),
+                    dependency_preview=dependency_preview,
+                    results=[
+                        TrackerListItemResultOut(
+                            index=0,
+                            action="validated",
+                            key=ticket.key,
+                            id=ticket.id,
+                            changed_fields=list(patch_json.keys()),
+                            dependency_preview=dependency_preview,
+                            ticket=self._ticket_out(ticket),
+                        )
+                    ],
+                    warnings=warnings,
+                    dry_run=True,
+                    rev=tracker.rev,
+                ),
+                project_id=project_id,
+            )
         before = self._ticket_snapshot(ticket)
         self._apply_ticket_patch(tracker, ticket, patch_json)
         self._sync_task_status(task, now=_utcnow())
@@ -1160,6 +1205,7 @@ class TrackerRepository:
         project_id: int,
         updates_json: list[dict[str, Any]],
         actor: str | None = None,
+        dry_run: bool = False,
     ) -> Envelope[TrackerMutationOut]:
         tracker = self._tracker_or_none(project_id=project_id)
         if tracker is None:
@@ -1172,6 +1218,12 @@ class TrackerRepository:
             return Envelope(data=out, project_id=project_id)
         if not isinstance(updates_json, list):
             raise ValidationError("updates_json must be a list")
+        if dry_run:
+            return self._preview_ticket_list_update(
+                project_id=project_id,
+                tracker=tracker,
+                updates_json=updates_json,
+            )
 
         results: list[TrackerListItemResultOut] = []
         changed: list[TrackerTicket] = []
@@ -2486,6 +2538,276 @@ class TrackerRepository:
             )
         )
 
+    def _preview_ticket_list_update(
+        self,
+        *,
+        project_id: int,
+        tracker: TaskTracker,
+        updates_json: list[dict[str, Any]],
+    ) -> Envelope[TrackerMutationOut]:
+        results: list[TrackerListItemResultOut] = []
+        tickets: list[TrackerTicket] = []
+        total_added = 0
+        total_removed = 0
+        for index, item in enumerate(updates_json):
+            if not isinstance(item, dict):
+                results.append(
+                    TrackerListItemResultOut(
+                        index=index,
+                        action="error",
+                        error="update entries must be objects",
+                    )
+                )
+                continue
+            patch_json = item.get("patch_json", item.get("patch"))
+            if not isinstance(patch_json, dict):
+                results.append(
+                    TrackerListItemResultOut(
+                        index=index,
+                        action="error",
+                        key=str(item.get("ticket_key") or "") or None,
+                        id=item.get("ticket_id")
+                        if isinstance(item.get("ticket_id"), int)
+                        else None,
+                        error="update entry patch_json must be an object",
+                    )
+                )
+                continue
+            if not patch_json:
+                results.append(
+                    TrackerListItemResultOut(
+                        index=index,
+                        action="noop",
+                        key=str(item.get("ticket_key") or "") or None,
+                        id=item.get("ticket_id")
+                        if isinstance(item.get("ticket_id"), int)
+                        else None,
+                    )
+                )
+                continue
+            try:
+                ticket = self._ticket_from_list_update(tracker.id, item)
+                dependency_preview = self._preview_dependency_patch(tracker, ticket, patch_json)
+                if dependency_preview is not None:
+                    total_added += len(dependency_preview.added_dependency_keys)
+                    total_removed += len(dependency_preview.removed_dependency_keys)
+                tickets.append(ticket)
+                results.append(
+                    TrackerListItemResultOut(
+                        index=index,
+                        action="validated",
+                        key=ticket.key,
+                        id=ticket.id,
+                        changed_fields=list(patch_json.keys()),
+                        dependency_preview=dependency_preview,
+                        ticket=self._ticket_out(ticket),
+                    )
+                )
+            except (ConflictError, NotFoundError, ValidationError, ValueError) as exc:
+                results.append(
+                    TrackerListItemResultOut(
+                        index=index,
+                        action="error",
+                        key=str(item.get("ticket_key") or "") or None,
+                        id=item.get("ticket_id")
+                        if isinstance(item.get("ticket_id"), int)
+                        else None,
+                        error=str(exc),
+                    )
+                )
+
+        errors = [
+            TrackerListIssueOut(
+                index=result.index,
+                key=result.key,
+                message=result.error or "ticket update preview failed",
+            )
+            for result in results
+            if result.action == "error"
+        ]
+        warnings: list[str] = []
+        if total_removed >= 3 and total_removed > max(total_added * 2, total_added + 2):
+            warnings.append(
+                "dependency preview removes "
+                f"{total_removed} edges and adds {total_added}; review direction before applying"
+            )
+        out = TrackerMutationOut(
+            tracker=self._tracker_out(tracker),
+            tickets=self._ticket_out_many(tickets),
+            results=results,
+            errors=errors,
+            warnings=warnings,
+            valid=not errors,
+            dry_run=True,
+            rev=tracker.rev,
+        )
+        return Envelope(data=out, project_id=project_id)
+
+    def _preview_dependency_patch(
+        self,
+        tracker: TaskTracker,
+        ticket: TrackerTicket,
+        patch_json: dict[str, Any],
+    ) -> TrackerDependencyPreviewOut | None:
+        if not any(field in patch_json for field in DEPENDENCY_PATCH_FIELDS):
+            return None
+        if "dependency_keys" in patch_json and (
+            "add_dependency_keys" in patch_json or "remove_dependency_keys" in patch_json
+        ):
+            raise ValidationError(
+                "dependency_keys cannot be combined with add_dependency_keys or "
+                "remove_dependency_keys"
+            )
+
+        current_rows = self._dependency_rows_for_ticket(ticket.id)
+        current_ids = [
+            row.depends_on_ticket_id for row in current_rows if row.depends_on_ticket_id is not None
+        ]
+        current_keys = self._dependency_keys_from_ids(current_ids)
+        final_ids = list(current_ids)
+        requested_by_id: dict[int, str] = {
+            dependency_id: dependency_key
+            for dependency_id, dependency_key in zip(current_ids, current_keys, strict=False)
+        }
+
+        if "dependency_keys" in patch_json:
+            mode: Literal["replace", "add-remove"] = "replace"
+            final_ids = []
+            for dependency_key in self._dependency_patch_keys(patch_json, "dependency_keys"):
+                dependency = self._ticket_by_key(tracker.id, dependency_key)
+                dependency_id = _required_id(dependency.id, "ticket")
+                if dependency_id not in final_ids:
+                    final_ids.append(dependency_id)
+                requested_by_id[dependency_id] = dependency.key
+        else:
+            mode = "add-remove"
+            for dependency_key in self._dependency_patch_keys(patch_json, "remove_dependency_keys"):
+                dependency = self._ticket_by_key(tracker.id, dependency_key)
+                dependency_id = _required_id(dependency.id, "ticket")
+                if dependency_id not in final_ids:
+                    raise ValidationError(
+                        "ticket dependency edge does not exist",
+                        data={"ticket_key": ticket.key, "depends_on": dependency.key},
+                    )
+                final_ids = [item for item in final_ids if item != dependency_id]
+                requested_by_id[dependency_id] = dependency.key
+            for dependency_key in self._dependency_patch_keys(patch_json, "add_dependency_keys"):
+                dependency = self._ticket_by_key(tracker.id, dependency_key)
+                dependency_id = _required_id(dependency.id, "ticket")
+                if dependency_id not in final_ids:
+                    final_ids.append(dependency_id)
+                requested_by_id[dependency_id] = dependency.key
+
+        self._validate_dependency_preview_graph(tracker, ticket, final_ids)
+        final_keys = [
+            requested_by_id.get(dependency_id) or self._dependency_keys_from_ids([dependency_id])[0]
+            for dependency_id in final_ids
+        ]
+        current_id_set = set(current_ids)
+        final_id_set = set(final_ids)
+        added_ids = [
+            dependency_id for dependency_id in final_ids if dependency_id not in current_id_set
+        ]
+        removed_ids = [
+            dependency_id for dependency_id in current_ids if dependency_id not in final_id_set
+        ]
+        kept_ids = [dependency_id for dependency_id in final_ids if dependency_id in current_id_set]
+        warnings: list[str] = []
+        if current_ids and not final_ids:
+            warnings.append("dependency preview removes all existing dependency edges")
+        if len(removed_ids) >= 3 and len(removed_ids) > max(len(added_ids) * 2, len(added_ids) + 2):
+            warnings.append(
+                "dependency preview removes "
+                f"{len(removed_ids)} edges and adds {len(added_ids)}; review direction"
+            )
+        return TrackerDependencyPreviewOut(
+            ticket_key=ticket.key,
+            mode=mode,
+            current_dependency_keys=current_keys,
+            final_dependency_keys=final_keys,
+            added_dependency_keys=[
+                requested_by_id.get(dependency_id)
+                or self._dependency_keys_from_ids([dependency_id])[0]
+                for dependency_id in added_ids
+            ],
+            removed_dependency_keys=[
+                requested_by_id.get(dependency_id)
+                or self._dependency_keys_from_ids([dependency_id])[0]
+                for dependency_id in removed_ids
+            ],
+            kept_dependency_keys=[
+                requested_by_id.get(dependency_id)
+                or self._dependency_keys_from_ids([dependency_id])[0]
+                for dependency_id in kept_ids
+            ],
+            warnings=warnings,
+        )
+
+    def _dependency_patch_keys(self, patch_json: dict[str, Any], field: str) -> list[str]:
+        if field not in patch_json:
+            return []
+        if not isinstance(patch_json[field], list):
+            raise ValidationError(f"{field} must be a list")
+        return list(dict.fromkeys(str(key) for key in patch_json[field]))
+
+    def _dependency_keys_from_ids(self, dependency_ids: list[int]) -> list[str]:
+        keys: list[str] = []
+        for dependency_id in dependency_ids:
+            dependency = self._s.get(TrackerTicket, dependency_id)
+            if dependency is not None:
+                keys.append(dependency.key)
+        return keys
+
+    def _validate_dependency_preview_graph(
+        self,
+        tracker: TaskTracker,
+        ticket: TrackerTicket,
+        final_dependency_ids: list[int],
+    ) -> None:
+        ticket_id = _required_id(ticket.id, "ticket")
+        if ticket_id in final_dependency_ids:
+            raise ValidationError("ticket cannot depend on itself", data={"ticket_key": ticket.key})
+        rows = list(
+            self._s.exec(
+                select(TrackerTicketDependency).where(
+                    TrackerTicketDependency.tracker_id == tracker.id
+                )
+            )
+        )
+        adjacency: dict[int, set[int]] = {}
+        for row in rows:
+            row_ticket_id = row.ticket_id
+            depends_on_id = row.depends_on_ticket_id
+            if row_ticket_id is None or depends_on_id is None or row_ticket_id == ticket_id:
+                continue
+            adjacency.setdefault(row_ticket_id, set()).add(depends_on_id)
+        adjacency[ticket_id] = set(final_dependency_ids)
+        for dependency_id in final_dependency_ids:
+            if self._dependency_graph_reaches(adjacency, dependency_id, ticket_id):
+                dependency_key = self._dependency_keys_from_ids([dependency_id])[0]
+                raise ConflictError(
+                    "ticket dependency would create a cycle",
+                    data={"ticket_key": ticket.key, "depends_on": dependency_key},
+                )
+
+    def _dependency_graph_reaches(
+        self,
+        adjacency: dict[int, set[int]],
+        start_id: int,
+        target_id: int,
+    ) -> bool:
+        stack = [start_id]
+        seen: set[int] = set()
+        while stack:
+            current = stack.pop()
+            if current == target_id:
+                return True
+            if current in seen:
+                continue
+            seen.add(current)
+            stack.extend(adjacency.get(current, set()))
+        return False
+
     def _ticket_from_list_update(
         self,
         tracker_id: int | None,
@@ -2599,9 +2921,91 @@ class TrackerRepository:
         return TrackerGraphOut(
             nodes=nodes,
             edges=edges,
-            warnings=[],
+            warnings=self._graph_advisory_warnings(tasks, tickets, dependencies),
             layout_hints={"direction": "LR", "group_by": "task"},
         )
+
+    def _graph_advisory_warnings(
+        self,
+        tasks: list[TrackerTaskOut],
+        tickets: list[TrackerTicketOut],
+        dependencies: list[TrackerDependencyOut],
+    ) -> list[str]:
+        warnings: list[str] = []
+        tickets_by_task: dict[str, list[TrackerTicketOut]] = {}
+        for ticket in tickets:
+            tickets_by_task.setdefault(ticket.task_key, []).append(ticket)
+        dependency_keys_by_task: dict[str, set[tuple[str, str]]] = {}
+        for task_key, task_tickets in tickets_by_task.items():
+            task_ticket_keys = {ticket.key for ticket in task_tickets}
+            dependency_keys_by_task[task_key] = {
+                (dependency.ticket_key, dependency.depends_on_ticket_key)
+                for dependency in dependencies
+                if dependency.ticket_key in task_ticket_keys
+                and dependency.depends_on_ticket_key in task_ticket_keys
+            }
+
+        task_title_by_key = {task.key: task.title for task in tasks}
+        terminal_statuses = {
+            TrackerItemStatus.COMPLETE.value,
+            TrackerItemStatus.DEFERRED.value,
+        }
+        for task_key, task_tickets in tickets_by_task.items():
+            active_tickets = [
+                ticket for ticket in task_tickets if ticket.status.value not in terminal_statuses
+            ]
+            if len(active_tickets) < 5:
+                continue
+            edges = dependency_keys_by_task.get(task_key, set())
+            minimum_edges = max(2, len(active_tickets) // 2)
+            if len(edges) < minimum_edges:
+                warnings.append(
+                    "Task "
+                    f"{task_key} has {len(active_tickets)} nonterminal tickets but only "
+                    f"{len(edges)} dependency relations; review whether the plan is missing "
+                    "blocking edges."
+                )
+            linked_ticket_keys = {ticket_key for edge in edges for ticket_key in edge}
+            isolated = [
+                ticket.key for ticket in active_tickets if ticket.key not in linked_ticket_keys
+            ]
+            if len(isolated) >= 3 and len(isolated) >= (len(active_tickets) + 1) // 2:
+                sample = ", ".join(isolated[:3])
+                suffix = "..." if len(isolated) > 3 else ""
+                warnings.append(
+                    "Task "
+                    f"{task_key} has {len(isolated)} nonterminal tickets without dependency "
+                    f"links ({sample}{suffix}); review isolated work before implementation."
+                )
+
+        dependencies_by_ticket = {
+            ticket_key: [
+                dependency for dependency in dependencies if dependency.ticket_key == ticket_key
+            ]
+            for ticket_key in {ticket.key for ticket in tickets}
+        }
+        for ticket in tickets:
+            if ticket.status.value in terminal_statuses:
+                continue
+            text = " ".join(
+                [
+                    ticket.key,
+                    ticket.title,
+                    ticket.goal or "",
+                    task_title_by_key.get(ticket.task_key, ""),
+                ]
+            ).lower()
+            looks_like_pre_gate = ("gate" in text or "review" in text) and (
+                "before" in text or "pre-" in text or "pre " in text or ticket.lane_key == "review"
+            )
+            dependency_count = len(dependencies_by_ticket.get(ticket.key, []))
+            if looks_like_pre_gate and dependency_count >= 2:
+                warnings.append(
+                    "Review/gate ticket "
+                    f"{ticket.key} depends on {dependency_count} tickets; confirm dependency "
+                    "direction if this gate should unblock implementation work."
+                )
+        return warnings
 
     def _create_ticket_row(
         self,
@@ -2903,6 +3307,11 @@ class TrackerRepository:
             if field in patch_json:
                 setattr(ticket, field, redact_secrets(_jsonable(patch_json[field])))
         if "dependency_keys" in patch_json:
+            if "add_dependency_keys" in patch_json or "remove_dependency_keys" in patch_json:
+                raise ValidationError(
+                    "dependency_keys cannot be combined with add_dependency_keys or "
+                    "remove_dependency_keys"
+                )
             if not isinstance(patch_json["dependency_keys"], list):
                 raise ValidationError("dependency_keys must be a list")
             for dep in self._dependency_rows_for_ticket(ticket.id):
@@ -2911,6 +3320,33 @@ class TrackerRepository:
             for dependency_key in patch_json["dependency_keys"]:
                 dependency = self._ticket_by_key(tracker.id, str(dependency_key))
                 self._add_dependency(tracker, ticket, dependency)
+        if "add_dependency_keys" in patch_json:
+            if not isinstance(patch_json["add_dependency_keys"], list):
+                raise ValidationError("add_dependency_keys must be a list")
+            for dependency_key in dict.fromkeys(
+                str(key) for key in patch_json["add_dependency_keys"]
+            ):
+                dependency = self._ticket_by_key(tracker.id, dependency_key)
+                self._add_dependency(tracker, ticket, dependency)
+        if "remove_dependency_keys" in patch_json:
+            if not isinstance(patch_json["remove_dependency_keys"], list):
+                raise ValidationError("remove_dependency_keys must be a list")
+            for dependency_key in dict.fromkeys(
+                str(key) for key in patch_json["remove_dependency_keys"]
+            ):
+                dependency = self._ticket_by_key(tracker.id, dependency_key)
+                edge = self._s.exec(
+                    select(TrackerTicketDependency).where(
+                        TrackerTicketDependency.ticket_id == ticket.id,
+                        TrackerTicketDependency.depends_on_ticket_id == dependency.id,
+                    )
+                ).first()
+                if edge is None:
+                    raise ValidationError(
+                        "ticket dependency edge does not exist",
+                        data={"ticket_key": ticket.key, "depends_on": dependency.key},
+                    )
+                self._s.delete(edge)
         if "references_json" in patch_json:
             if not isinstance(patch_json["references_json"], list):
                 raise ValidationError("references_json must be a list")
@@ -3128,6 +3564,7 @@ __all__ = [
     "TrackerBriefOut",
     "TrackerChangedOut",
     "TrackerDependencyOut",
+    "TrackerDependencyPreviewOut",
     "TrackerGraphEdgeOut",
     "TrackerGraphNodeOut",
     "TrackerGraphOut",
