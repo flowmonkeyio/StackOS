@@ -1043,11 +1043,19 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
                   <span>{{ graphEdgeStatLabel }}</span>
                 </div>
                 <UiButton
-                  variant="ghost"
+                  class="tracker-task-details-button"
+                  variant="secondary"
                   size="sm"
                   :disabled="!activeTask"
+                  aria-label="Open task details"
                   @click="taskDetailOpen = true"
                 >
+                  <template #iconLeft>
+                    <span
+                      class="i-lucide-file-text tracker-task-details-button__icon"
+                      aria-hidden="true"
+                    />
+                  </template>
                   Task details
                 </UiButton>
               </div>
@@ -1605,6 +1613,35 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   align-items: center;
   justify-content: flex-end;
   gap: 8px 12px;
+}
+
+.tracker-task-details-button {
+  border-color: color-mix(in srgb, var(--color-accent-primary) 34%, var(--color-border-default));
+  background: color-mix(in srgb, var(--color-accent-primary) 8%, var(--color-bg-surface));
+  color: var(--color-fg-strong);
+  font-weight: var(--fw-semibold);
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--color-fg-default) 8%, transparent);
+}
+
+.tracker-task-details-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-accent-primary) 72%, var(--color-border-strong));
+  background: color-mix(in srgb, var(--color-accent-primary) 13%, var(--color-bg-surface));
+}
+
+.tracker-task-details-button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent-primary) 17%, var(--color-bg-surface));
+}
+
+.tracker-task-details-button:disabled {
+  border-color: var(--color-border-default);
+  background: var(--color-bg-surface);
+  box-shadow: none;
+}
+
+.tracker-task-details-button__icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 
 .tracker-graph-controls {
