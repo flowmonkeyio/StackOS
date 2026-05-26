@@ -25,11 +25,13 @@ behavior. Operations define the callable contract around that behavior:
 
 ## Agent Documentation
 
-Agents are the primary callers for workflow execution operations. Scripts can
-use the same catalog for automation and setup, but run-plan mechanics are
-optimized for agents that need precise schemas, grants, examples, and safe
-return notes. Callers should not guess operation payloads. The operation
-registry returns an agent-readable description for every registered operation:
+Agents are the primary callers for workflow execution operations. Here, agent
+means the MCP/tool consumer calling StackOS, not necessarily a process with
+repository filesystem access. Scripts can use the same catalog for automation
+and setup, but run-plan mechanics are optimized for agents that need precise
+schemas, grants, examples, and safe return notes. Callers should not guess
+operation payloads. The operation registry returns an agent-readable
+description for every registered operation:
 
 ```bash
 stackos ops list
@@ -46,6 +48,14 @@ GET /api/v1/operations/action.execute
 GET /api/v1/operations/action.run
 ```
 
+Native MCP clients can read the same operation catalog without leaving the MCP
+session:
+
+```text
+operation.list({ "surface": "mcp" })
+operation.describe({ "name": "communication.send", "surface": "mcp" })
+```
+
 Each description includes:
 
 - enabled surfaces: `mcp`, `rest`, `cli`
@@ -58,7 +68,10 @@ Each description includes:
 - examples
 
 MCP tools are generated from the same operation specs, so MCP clients still get
-tool schemas through `tools/list`.
+tool schemas through `tools/list`. Native MCP clients should use
+`operation.list` and `operation.describe` for OperationSpec purpose,
+prerequisites, return notes, examples, and schemas. Use `toolbox.describe` for
+hidden setup and step-granted tools that are not advertised directly.
 
 The UI reads the same docs at `/projects/{project_id}/operations`. That page is
 not a second registry; it renders `GET /api/v1/operations` and
@@ -312,7 +325,10 @@ Use `action.execute` when the action belongs to a workflow:
 `localAgentChat.createMessage` stores local human/agent chat messages as
 communications resources and may create a generic `agent_request` for inbound
 human messages. It does not run a model, choose a workflow, call a provider, or
-send an external reply.
+send an external reply. Agent responses in the same local chat thread use the
+same operation with `direction=outbound`, the same `thread_key`, a new
+`message_key`, and `create_request=false`; the result is a stored
+`communication-message`, not a new request.
 
 `communicationProfile.*`, `communicationSurface.*`,
 `communicationContact.*`, `communicationMembership.*`, `communicationTarget.*`,
@@ -340,11 +356,19 @@ must grant `communication.reply` with explicit origin `sources` such as
 
 `communicationTarget.resolve` remains a read-only planning/debug helper. It
 returns an explicit provider action ref and safe defaults; it does not send.
-Pass `profile_ref`, `source_surface_ref`, and `invoker_ref` when the source
-request has them so target policy can evaluate the communication profile,
-source surface, and approved human/bot actor. Provider actions through
-`action.run`/`action.execute` are lower-level escape hatches for
-provider-specific work, not the default agent path.
+It evaluates send policy with the same target/default profile selection that
+`communication.send` uses when `from` is omitted, and returns
+`policy_profile_ref` so agents can see which actor profile was checked. Pass
+`profile_ref`, `source_surface_ref`, and `invoker_ref` when the source request
+has them so target policy can evaluate a specific communication profile, source
+surface, and approved human/bot actor. Provider actions through
+`action.run`/`action.execute` are lower-level escape hatches for provider-specific
+work, not the default agent path.
+
+`communication.send` and `communication.reply` with `dry_run=true` validate the
+provider payload and write a dry-run `action_calls` audit row, but do not call
+the provider connector. The response `effects` field states whether the provider
+connector was called or only validation/audit happened.
 `communicationContext.query` returns bounded stored communication-message
 history only. It can return outbound messages StackOS sent, inbound messages or
 interactions delivered through ingress, and state changes StackOS recorded.
@@ -352,6 +376,8 @@ It does not call Slack, Telegram, email, or future providers to recover history
 that never reached StackOS. Live provider history fetches and backfills must be
 explicit provider actions with provider scopes, pagination, rate-limit handling,
 visibility checks, and audit.
+Invalid `fields` requests return both the rejected `fields` and the
+`allowed_fields` set so agents can repair the query without guessing.
 
 `ingressEndpoint.*` stores the project-level public webhook endpoint for
 communications. Configure stores the generic endpoint, refresh updates it from

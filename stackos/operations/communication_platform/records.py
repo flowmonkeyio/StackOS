@@ -44,6 +44,7 @@ from .utils import (
     _surface_external_id,
     _target_action_defaults,
     _target_policy_allowed,
+    _target_policy_profile_ref,
     _validate_no_setup_secrets,
     _validate_profile_key,
     _validate_provider_key,
@@ -331,10 +332,11 @@ async def communication_target_resolve(
     if row is None:
         raise ValidationError("communication target was not found")
     target = _communication_target_out(row.id, row.project_id, row.data_json or {})
+    policy_profile_ref = _target_policy_profile_ref(target, inp.profile_ref)
     allowed, reason = _target_policy_allowed(
         target.send_policy,
         target_ref=target.target_ref,
-        profile_ref=inp.profile_ref,
+        profile_ref=policy_profile_ref,
         source_surface_ref=inp.source_surface_ref,
         invoker_ref=inp.invoker_ref,
     )
@@ -346,6 +348,16 @@ async def communication_target_resolve(
         "safe defaults for planning/debugging; normal agent delivery should use "
         "communication.send or communication.reply."
     ]
+    if policy_profile_ref is not None:
+        notes.append(
+            "Target policy was evaluated with the same target/default profile selection "
+            "communication.send uses when from is omitted."
+        )
+    elif reason == "profile_not_allowed":
+        notes.append(
+            "Pass profile_ref to debug a specific actor, or call communication.send with "
+            "from set to a configured communication profile."
+        )
     if target.provider_key in {"slack-bot", "smtp", "imap"}:
         notes.append("Provider connector execution depends on the installed provider action.")
     return CommunicationTargetResolveOut(
@@ -357,6 +369,7 @@ async def communication_target_resolve(
         provider_key=target.provider_key,
         surface_ref=target.surface_ref,
         thread_ref=target.thread_ref,
+        policy_profile_ref=policy_profile_ref,
         action_input_defaults=_target_action_defaults(ctx.session, target),
         notes=notes,
     )

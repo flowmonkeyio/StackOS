@@ -284,7 +284,10 @@ The normal agent send flow is one high-level operation:
    `error.repair`. Do not retry unchanged or silently degrade semantics.
 
 `communicationTarget.resolve` is still useful for planning, debugging, or
-provider-specific escape hatches. It does not send.
+provider-specific escape hatches. It does not send. It evaluates target policy
+with the same target/default actor profile that `communication.send` would use
+when `from` is omitted and returns `policy_profile_ref`. Pass `profile_ref`
+when debugging a specific actor profile.
 
 Example surfaces:
 
@@ -1728,6 +1731,10 @@ Rules:
 - `localAgentChat.createMessage` is the current executable local-chat ingress
   path across REST, CLI `ops call`, and MCP. It stores resources and creates
   agent work only; it does not invoke a model.
+- Agent responses in local chat use the same operation with
+  `direction=outbound`, the same `thread_key`, a new `message_key`, and
+  `create_request=false`. This stores an outbound `communication-message` and
+  does not create another `agent_request`.
 
 ### Telegram DM Trigger
 

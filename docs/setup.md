@@ -27,6 +27,9 @@ Every supported setup path should land at the same state:
 Agents never receive the auth token, seed, API keys, OAuth tokens, SMTP
 passwords, app passwords, or encrypted credential payloads. They receive safe
 provider/account ids, auth method refs, scopes, status, and diagnostics.
+In setup docs, agent means the MCP/tool consumer. StackOS project binding does
+not grant repository filesystem access; any repo read/write capability is
+provided separately by the host agent runtime.
 
 ## Dev Clone Setup
 
@@ -163,10 +166,11 @@ the bridge attempts a loopback-only auto-start and logs to:
 
 Agents should first bind the working repository to a StackOS project. After the
 binding exists, the bridge resolves and injects `project_id` from the current
-repo and refuses cross-project calls. Use `action.run` for one explicit direct
-action; use workflow templates, run plans, and step-granted `action.execute`
-for multi-step work. Provider-specific actions should be added as plugin action
-contracts, not as one-off MCP tools.
+repo and refuses cross-project StackOS calls. This binding is not a filesystem
+permission grant and does not let StackOS inspect the repo. Use `action.run`
+for one explicit direct action; use workflow templates, run plans, and
+step-granted `action.execute` for multi-step work. Provider-specific actions
+should be added as plugin action contracts, not as one-off MCP tools.
 
 ## CLI, MCP, REST, And UI Flow
 

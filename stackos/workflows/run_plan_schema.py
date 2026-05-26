@@ -22,7 +22,11 @@ from pydantic import (
 )
 
 from stackos.artifacts import redact_secret_text
-from stackos.workflows.run_plan_grants import validate_run_plan_mcp_tool_grants
+from stackos.workflows.run_plan_grants import (
+    RunPlanMcpToolGrant,
+    parse_run_plan_mcp_tool_grants,
+    validate_run_plan_mcp_tool_grants,
+)
 from stackos.workflows.template_loader import LoadedWorkflowTemplate
 
 RUN_PLAN_SCHEMA_VERSION = "stackos.run-plan.v1"
@@ -344,7 +348,132 @@ def validate_run_plan_obj(data: dict[str, Any]) -> RunPlanValidationOut:
             valid=False,
             errors=[RunPlanIssue(path="$", message=str(exc))],
         )
-    return RunPlanValidationOut(valid=True, plan=plan)
+    return RunPlanValidationOut(
+        valid=True,
+        plan=plan,
+        warnings=_executable_readiness_warnings(plan),
+    )
+
+
+def _grants_for_step(plan: RunPlanSpec, step_id: str) -> list[RunPlanMcpToolGrant]:
+    try:
+        grants = parse_run_plan_mcp_tool_grants(plan.grant_snapshot_json)
+    except ValueError:
+        return []
+    return [grant for grant in grants if grant.step_id == step_id]
+
+
+def _covered_action_refs(grants: list[RunPlanMcpToolGrant]) -> set[str]:
+    refs: set[str] = set()
+    for grant in grants:
+        if grant.tool_name == "action.execute":
+            refs.update(grant.action_refs)
+    return refs
+
+
+def _template_action_contract_map(plan: RunPlanSpec) -> dict[str, str]:
+    snapshot = plan.grant_snapshot_json or {}
+    raw_contracts = snapshot.get("action_contracts")
+    if not isinstance(raw_contracts, list):
+        return {}
+    plugin_slug = snapshot.get("template_plugin_slug")
+    out: dict[str, str] = {}
+    for item in raw_contracts:
+        if not isinstance(item, dict):
+            continue
+        key = item.get("key")
+        action = item.get("action")
+        if not isinstance(key, str) or not isinstance(action, str) or not action:
+            continue
+        if (
+            isinstance(plugin_slug, str)
+            and plugin_slug
+            and not action.startswith(f"{plugin_slug}.")
+        ):
+            action = f"{plugin_slug}.{action}"
+        out[key] = action
+    return out
+
+
+def _action_ref_hint(plan: RunPlanSpec, refs: list[str]) -> str:
+    contract_actions = _template_action_contract_map(plan)
+    mapped = [f"{ref} -> {contract_actions[ref]}" for ref in refs if ref in contract_actions]
+    if not mapped:
+        return "Add concrete executable action_refs to the action.execute grant."
+    return (
+        "Template action refs are planning contract keys, not executable action refs; "
+        "use concrete action refs such as " + ", ".join(mapped[:5]) + "."
+    )
+
+
+def _tool_granted(grants: list[RunPlanMcpToolGrant], tool_name: str) -> bool:
+    return any(grant.tool_name == tool_name for grant in grants)
+
+
+def _executable_readiness_warnings(plan: RunPlanSpec) -> list[RunPlanIssue]:
+    """Return non-blocking warnings for plans that validate but may not run.
+
+    Structural validation answers "is this a valid run-plan object?". These
+    warnings answer the agent-facing follow-up: "will the active run-plan step
+    grants let the agent call the tools implied by the step contracts?".
+    """
+    warnings: list[RunPlanIssue] = []
+    for index, step in enumerate(plan.steps):
+        path = f"steps[{index}]"
+        grants = _grants_for_step(plan, step.id)
+        covered_action_refs = _covered_action_refs(grants)
+        missing_action_refs = [ref for ref in step.action_refs if ref not in covered_action_refs]
+        if missing_action_refs:
+            warnings.append(
+                RunPlanIssue(
+                    path=f"{path}.action_refs",
+                    code="missing_action_execute_grant",
+                    message=(
+                        f"step {step.id!r} declares action_refs that are not covered by an "
+                        "action.execute grant; runPlan.claimStep will not allow those action "
+                        f"calls until grant_snapshot_json.mcp_tool_grants includes step_id "
+                        f"{step.id!r}, tool 'action.execute', and matching action_refs. "
+                        + _action_ref_hint(plan, missing_action_refs)
+                    ),
+                )
+            )
+        if step.resource_refs and not _tool_granted(grants, "resource.upsert"):
+            warnings.append(
+                RunPlanIssue(
+                    path=f"{path}.resource_refs",
+                    code="missing_resource_upsert_grant",
+                    message=(
+                        f"step {step.id!r} references resources but has no resource.upsert "
+                        "grant. Add an mcp_tool_grants entry if the step must write "
+                        "resources during execution."
+                    ),
+                )
+            )
+        if step.context_refs and not _tool_granted(grants, "context.query"):
+            warnings.append(
+                RunPlanIssue(
+                    path=f"{path}.context_refs",
+                    code="missing_context_query_grant",
+                    message=(
+                        f"step {step.id!r} references context but has no context.query grant. "
+                        "Add a context.query grant with explicit sources and fields if the "
+                        "step must fetch bounded context while running."
+                    ),
+                )
+            )
+        if step.output_refs and not _tool_granted(grants, "artifact.create"):
+            warnings.append(
+                RunPlanIssue(
+                    path=f"{path}.output_refs",
+                    code="missing_artifact_create_grant",
+                    message=(
+                        f"step {step.id!r} declares outputs but has no artifact.create grant. "
+                        "Add an artifact.create grant if the step should persist output "
+                        "artifacts during execution."
+                    ),
+                )
+            )
+    return warnings
 
 
 def run_plan_from_template(
@@ -391,6 +520,7 @@ def run_plan_from_template(
         for index, step in enumerate(spec.steps)
     ]
     grants = {
+        "template_plugin_slug": loaded.summary.plugin_slug,
         "capability_requirements": [
             item.model_dump(mode="json", exclude_none=True) for item in spec.capability_requirements
         ],

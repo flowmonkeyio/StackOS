@@ -40,9 +40,15 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass to as a configured communication target key/ref.",
                 "Pass from only when multiple profiles could send; otherwise StackOS resolves it.",
+                "Set dry_run=true to validate payload and write a dry-run "
+                "action_call audit row without calling the provider connector.",
                 "Unsupported rich features reject by default with model-readable repair context.",
             ),
-            returns=("A compact sent/validated result with message_ref and action_call_id.",),
+            returns=(
+                "A compact sent/validated result with message_ref and action_call_id.",
+                "effects states whether the provider connector was called or "
+                "only a dry-run audit row was written.",
+            ),
             examples=(
                 OperationExample(
                     title="Send update to roadmap",
@@ -72,8 +78,14 @@ def operation_specs() -> list[OperationSpec]:
                 "Pass request_id for a stored agent request.",
                 "StackOS resolves origin provider, surface, thread, actor profile, credential, "
                 "provider payload, and idempotency.",
+                "Set dry_run=true to validate payload and write a dry-run "
+                "action_call audit row without calling the provider connector.",
             ),
-            returns=("A compact sent/validated result with message_ref and action_call_id.",),
+            returns=(
+                "A compact sent/validated result with message_ref and action_call_id.",
+                "effects states whether the provider connector was called or "
+                "only a dry-run audit row was written.",
+            ),
             examples=(
                 OperationExample(
                     title="Reply to inbound request",

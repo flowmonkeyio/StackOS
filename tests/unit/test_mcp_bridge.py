@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -24,16 +25,20 @@ from stackos.mcp.bridge import (
 from stackos.mcp.contract import verb_is_mutating
 from stackos.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
 from stackos.mcp.server import ToolRegistry
+from stackos.mcp.streaming import ProgressEmitter
 from stackos.mcp.tools import register_all
 
 
-def _tool(name: str) -> dict[str, object]:
-    return {
+def _tool(name: str, *, operation_name: str | None = None) -> dict[str, object]:
+    out: dict[str, object] = {
         "name": name,
         "description": f"{name} description",
         "inputSchema": {"type": "object"},
         "outputSchema": {"type": "object"},
     }
+    if operation_name is not None:
+        out["_meta"] = {"operation_name": operation_name}
+    return out
 
 
 def _structured(response_text: str) -> dict[str, object]:
@@ -150,6 +155,8 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
             "learning.update",
         ]
     }
+    catalog["action.execute"] = _tool("action.execute", operation_name="action.execute")
+    catalog["resource.upsert"] = _tool("resource.upsert")
     allowed_by_run = {7: {"resource.upsert", "action.execute"}}
 
     response = _bridge_toolbox_describe(
@@ -179,6 +186,8 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
         "cost.queryProject",
     ]
     assert payload["active_step_tool_names"] == ["action.execute", "resource.upsert"]
+    assert payload["tool_categories"]["active_step"] == ["action.execute", "resource.upsert"]
+    assert payload["tool_categories"]["operation_backed"] == ["action.execute"]
     assert set(payload["denied_tool_names"]) == {
         "artifact.create",
         "auth.start",
@@ -283,6 +292,8 @@ def test_bridge_caches_claimed_run_plan_step_grants() -> None:
 
 
 def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> None:
+    assert "operation.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "operation.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "plugin.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "action.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "action.validate" in _AGENT_VISIBLE_TOOL_NAMES
@@ -599,6 +610,38 @@ def test_bridge_setup_surface_is_bootstrap_granted() -> None:
 
     assert set(_AGENT_VISIBLE_TOOL_ORDER) <= system_tools
     assert system_tools >= _AGENT_SETUP_TOOLBOX_NAMES
+
+
+def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
+    registry = ToolRegistry()
+    register_all(registry)
+
+    list_spec = registry.get("operation.list")
+    describe_spec = registry.get("operation.describe")
+
+    listed = asyncio.run(
+        list_spec.handler(
+            list_spec.input_model.model_validate({"surface": "mcp"}),
+            None,  # type: ignore[arg-type]
+            ProgressEmitter(None, None),
+        )
+    )
+    assert "communication.send" in {item.name for item in listed.items}
+    assert all(item.surfaces["mcp"].enabled for item in listed.items)
+
+    described = asyncio.run(
+        describe_spec.handler(
+            describe_spec.input_model.model_validate(
+                {"name": "communication.send", "surface": "mcp"}
+            ),
+            None,  # type: ignore[arg-type]
+            ProgressEmitter(None, None),
+        )
+    )
+    assert described.name == "communication.send"
+    assert described.grant_policy == "direct-communication-send"
+    assert "properties" in described.input_schema
+    assert described.prerequisites
 
 
 def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:

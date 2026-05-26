@@ -148,6 +148,8 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "experiment.query",
         "learning.query",
         "meta.enums",
+        "operation.describe",
+        "operation.list",
         "plugin.list",
         "project.create",
         "project.delete",

@@ -501,6 +501,7 @@ class CommunicationTargetResolveOut(BaseModel):
     provider_key: str
     surface_ref: str
     thread_ref: str | None = None
+    policy_profile_ref: str | None = None
     action_input_defaults: dict[str, Any]
     notes: list[str] = Field(default_factory=list)
 

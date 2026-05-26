@@ -207,10 +207,15 @@ def operation_specs() -> list[OperationSpec]:
                 "Pass a deterministic thread_key and message_key so repeated calls are idempotent.",
                 "Pass explicit text or content_blocks; do not include secrets.",
                 "The caller chooses whether to create an agent request.",
+                "For an agent response in the same local chat thread, pass "
+                "direction=outbound, the same thread_key, a new message_key, "
+                "and create_request=false.",
             ),
             returns=(
                 "A WriteEnvelope with thread/message refs and created AgentRequestOut "
                 "when requested.",
+                "Outbound local-chat messages are stored as communication-message "
+                "resources and do not create agent requests.",
             ),
             examples=(
                 OperationExample(
@@ -223,6 +228,18 @@ def operation_specs() -> list[OperationSpec]:
                         "sender_display_name": "Operator",
                         "text": "Review the latest campaign numbers.",
                         "create_request": True,
+                    },
+                ),
+                OperationExample(
+                    title="Store local chat agent response",
+                    arguments={
+                        "project_id": 1,
+                        "thread_key": "support",
+                        "message_key": "msg-002",
+                        "direction": "outbound",
+                        "sender_ref": "agent:codex",
+                        "text": "I reviewed the campaign numbers and opened a run plan.",
+                        "create_request": False,
                     },
                 ),
             ),

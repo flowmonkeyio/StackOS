@@ -1,9 +1,12 @@
 # StackOS
 
-StackOS is a local operating layer for agent-run business work. It lets a
-project install the tools it needs, connect provider accounts safely, reuse
-workflow templates, and give agents a consistent way to execute work without
-handing them secrets.
+StackOS is a local operating layer for agent-run business work. In StackOS
+docs, an agent means the MCP/tool consumer that calls StackOS operations and
+plugin actions. That caller may also have host-provided repo tools, but
+StackOS itself only scopes project state and executes explicit operations. It
+lets a project install the tools it needs, connect provider accounts safely,
+reuse workflow templates, and give agents a consistent way to execute work
+without handing them secrets.
 
 The core idea is simple: StackOS stores the setup and executes explicit calls.
 The agent or operator decides what to do.
@@ -87,6 +90,10 @@ should render configuration and run state generically.
 Callable behavior is registered once as a StackOS operation or plugin action
 contract. The same contract can be exposed through MCP, REST, CLI, and the UI
 operation catalog when allowed.
+
+Workspace binding resolves which StackOS project the current MCP bridge session
+may access. It does not grant filesystem access to the repository. Reading or
+editing repo files is a separate host-agent capability outside StackOS.
 
 Agents should inspect operation/action descriptions before calling tools.
 Scripts can use the CLI or REST operation endpoint for the same execution path.

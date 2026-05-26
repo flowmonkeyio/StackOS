@@ -31,6 +31,9 @@ work, start here:
 - Agents decide strategy. StackOS stores, validates, resolves daemon-held auth,
   executes explicit calls, and records audit. Tools/connectors must not invent
   workflow logic or business decisions.
+- In StackOS docs and tool contracts, an agent is the MCP/tool consumer. A host
+  may separately provide repository filesystem tools, but StackOS workspace
+  binding only scopes project operations and does not grant file access.
 - Agents are the primary users of run-plan execution mechanics. Humans and
   scripts bootstrap, inspect, approve, and administer; they should not require
   bespoke workflow UIs for each plugin domain.

@@ -36,7 +36,10 @@ does not run an assistant, classify intent, or decide workflows.
   anything.
 - `communicationTarget.resolve` is not a send abstraction. It is a read-only
   planning/debug helper that returns static allow/deny state plus provider
-  defaults. Normal agents should not use it as the default delivery flow.
+  defaults. It evaluates policy with the same target/default actor profile that
+  `communication.send` uses when `from` is omitted and returns
+  `policy_profile_ref`. Normal agents should not use it as the default delivery
+  flow.
 - `communicationContext.query` returns stored StackOS history only. Live Slack
   history, Telegram updates, IMAP fetches, or future Gmail/Graph reads must be
   separate provider actions with scopes, pagination, rate-limit handling, and
@@ -49,7 +52,9 @@ does not run an assistant, classify intent, or decide workflows.
   let the selected agent runner decide the response.
 - Use `localAgentChat.createMessage` for local chat ingress. It stores
   communication resources and optionally creates a generic agent request; it
-  must not invoke a model or select a workflow.
+  must not invoke a model or select a workflow. For a local agent response,
+  call it with `direction=outbound`, the same `thread_key`, a new
+  `message_key`, and `create_request=false`.
 - Telegram behavior is project-scoped through `communication-profile`
   records. Credentials store token material and transport endpoints only.
 - Generic communication profiles store identity, default agent guidance, and

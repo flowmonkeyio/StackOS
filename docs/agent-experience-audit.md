@@ -7,6 +7,11 @@ not only whether APIs exist, but whether an agent can understand what StackOS
 does, how to choose the right path, which schemas apply, what outputs mean, how
 to recover from errors, and where state is written.
 
+For this audit, agent means the MCP/tool consumer of StackOS operations and
+plugin actions. A host may also provide that agent with repository filesystem
+tools, but that capability is outside StackOS. StackOS workspace binding only
+resolves and enforces the project scope for StackOS calls.
+
 ## Verdict
 
 StackOS has strong foundations for an agent-first runtime:
@@ -334,6 +339,10 @@ surfaces to targeted checks:
 - Tracker bulk create/update/dependency graph
 - Communication send/reply/context/ingress
 - UI task tracker smoke
+
+Delivered in [`release-signoff.md`](./release-signoff.md) as the agent flow
+matrix. Keep it current whenever an agent-facing flow, grant, schema, or
+release command changes.
 
 ## What Is Already Agent-Friendly
 

@@ -1,5 +1,12 @@
 # Agent Operating Model
 
+In this document, an agent is the MCP/tool consumer that calls StackOS
+operations and plugin actions. It may be a coding agent, automation script, or
+other runtime, and it may separately receive repository filesystem tools from
+its host. StackOS does not grant that filesystem capability. StackOS resolves
+project scope, validates explicit inputs, executes daemon-side operations, and
+records audit.
+
 StackOS has two execution paths because agents do two different kinds of work:
 
 1. **Workflow work**: multi-step, stateful, repeatable work that should be
@@ -41,6 +48,7 @@ instead of living only in chat context.
 
 ```text
 agent intent
+-> operation.describe / action.describe when the contract is not already clear
 -> workflow template or agent-authored run plan
 -> runPlan.validate/create/start
 -> tracker.brief or tracker.next for bounded work context
@@ -64,6 +72,7 @@ through `action.execute`.
 
 ```text
 agent receives one explicit user request
+-> operation.describe / action.describe when the contract is not already clear
 -> toolProfile.resolve when provider/auth/profile selection is needed
 -> action.describe / action.validate when needed
 -> action.run
@@ -135,6 +144,12 @@ Workspace hints are also scoped. The bridge injects its current
 `cwd`, `repo_fingerprint`, `git_remote_url`, `last_known_root`, runtime, and
 session id where relevant. Calls that try to resolve or connect another
 workspace are refused by the bridge.
+
+These workspace hints are identifiers for StackOS project binding only. They
+help the daemon inject the correct `project_id` and reject cross-project calls.
+They do not let StackOS read, write, or enumerate repository files. Any file
+access an agent has comes from the host environment and should be reasoned
+about separately from StackOS permissions.
 
 ## Setup Path
 

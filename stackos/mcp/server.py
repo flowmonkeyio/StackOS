@@ -238,6 +238,8 @@ def _to_tool(spec: ToolSpec) -> mcp_types.Tool:
         title=spec.name,
     )
     meta: dict[str, Any] = {"streaming": spec.streaming}
+    if spec.operation_name is not None:
+        meta["operation_name"] = spec.operation_name
     return mcp_types.Tool(
         name=spec.name,
         description=spec.description,

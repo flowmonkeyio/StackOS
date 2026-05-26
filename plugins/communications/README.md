@@ -94,7 +94,9 @@ Project setup uses shared StackOS operations:
 
 - `localAgentChat.createMessage` stores local human/agent chat messages as
   communication resources and can create a generic agent request for inbound
-  messages. It does not run a model or decide workflow intent.
+  messages. It does not run a model or decide workflow intent. Agent responses
+  in the same local thread use `direction=outbound`, the same `thread_key`, a
+  new `message_key`, and `create_request=false`.
 - `communicationProfile.*` stores provider-neutral identity, guidance, facets,
   and static policy.
 - `communicationSurface.*` stores safe channel/DM/mailbox/local-chat surface
@@ -109,11 +111,14 @@ Project setup uses shared StackOS operations:
   explicit provider action refs. It does not send messages. Resolve with
   `profile_ref`, `source_surface_ref`, and `invoker_ref` when available so the
   target can enforce both project profile policy and the approved human/bot
-  actor that requested the send.
+  actor that requested the send. If `profile_ref` is omitted, resolve uses the
+  same target/default actor selection as `communication.send` and returns
+  `policy_profile_ref`.
 - `communicationRoute.*` stores static cross-surface handoff policy. It does
   not send messages or choose workflow behavior.
 - `communicationContext.query` returns bounded stored communication-message
-  history. It never fetches live provider history.
+  history. It never fetches live provider history. Invalid field errors return
+  both rejected `fields` and the safe `allowed_fields` set.
 - `communicationProfile.upsert` creates or updates safe bot identity,
   guidance, and policy after the typed `telegram-bot` credential profile exists.
 - `communicationProfile.get` and `communicationProfile.list` let agents

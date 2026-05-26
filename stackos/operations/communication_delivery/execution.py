@@ -65,6 +65,15 @@ async def _execute_delivery(
         thread_ref=_first_str(output, "thread_ref"),
         message_ref=_first_str(output, "message_ref"),
         dry_run=dry_run,
+        effects=(
+            [
+                "validated provider payload",
+                "created dry-run action_call audit row",
+                "did not call provider connector",
+            ]
+            if dry_run
+            else ["called provider connector", "created action_call audit row"]
+        ),
         resolved=resolved,
     )
     return WriteEnvelope(data=out, run_id=env.run_id, project_id=env.project_id)

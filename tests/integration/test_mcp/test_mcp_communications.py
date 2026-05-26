@@ -437,6 +437,15 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "invoker_ref": "telegram-user:555",
         },
     )
+    allowed_default_actor = mcp_client.call_tool_structured(
+        "communicationTarget.resolve",
+        {
+            "project_id": project_id,
+            "key": "internal-support",
+            "source_surface_ref": "telegram-chat:-1001",
+            "invoker_ref": "telegram-user:555",
+        },
+    )
     denied = mcp_client.call_tool_structured(
         "communicationTarget.resolve",
         {
@@ -459,6 +468,9 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
     )
 
     assert allowed["allowed"] is True
+    assert allowed["policy_profile_ref"] == "communication-profile:support"
+    assert allowed_default_actor["allowed"] is True
+    assert allowed_default_actor["policy_profile_ref"] == "communication-profile:support"
     assert allowed["action_ref"] == "communications.slack-bot.message.send"
     assert allowed["surface_ref"] == "slack-channel:C123"
     assert allowed["action_input_defaults"]["surface_ref"] == "slack-channel:C123"
@@ -599,6 +611,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
     )
     assert err["code"] == -32602
     assert err["data"]["fields"] == ["raw_artifact_ref"]
+    assert "text_preview" in err["data"]["allowed_fields"]
 
 
 def test_communication_send_executes_compact_dry_run_through_target(
@@ -663,6 +676,11 @@ def test_communication_send_executes_compact_dry_run_through_target(
     assert sent["data"]["actor_ref"] == "communication-profile:ops-bot"
     assert sent["data"]["surface_ref"] == "slack-channel:CROAD"
     assert sent["data"]["action_call_id"] > 0
+    assert sent["data"]["effects"] == [
+        "validated provider payload",
+        "created dry-run action_call audit row",
+        "did not call provider connector",
+    ]
     assert "credential_ref" not in json.dumps(sent)
 
 
@@ -1349,6 +1367,22 @@ def test_local_agent_chat_mcp_creates_message_and_request(
     assert created["data"]["message_ref"] == "local-agent-chat:message:support:msg-001"
     assert created["data"]["agent_request"]["source_provider"] == "local-agent-chat"
     assert replayed["data"]["agent_request"]["id"] == created["data"]["agent_request"]["id"]
+
+    response = mcp_client.call_tool_structured(
+        "localAgentChat.createMessage",
+        {
+            "project_id": project_id,
+            "thread_key": "support",
+            "message_key": "msg-002",
+            "direction": "outbound",
+            "sender_ref": "agent:codex",
+            "text": "I reviewed it and opened the follow-up plan.",
+            "create_request": False,
+        },
+    )
+    assert response["data"]["thread_ref"] == "local-agent-chat:thread:support"
+    assert response["data"]["message_ref"] == "local-agent-chat:message:support:msg-002"
+    assert response["data"]["agent_request"] is None
 
 
 def test_communication_profile_mcp_lifecycle_has_no_secret_roundtrip(

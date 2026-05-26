@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from stackos.workflows.run_plan_schema import RunPlanSpec, validate_run_plan_obj
+from stackos.workflows.run_plan_schema import (
+    RunPlanSpec,
+    run_plan_from_template,
+    validate_run_plan_obj,
+)
+from stackos.workflows.template_loader import LoadedWorkflowTemplate, WorkflowTemplateSummaryOut
+from stackos.workflows.template_schema import WorkflowTemplateSpec
 
 
 def _plan_dict() -> dict:
@@ -114,6 +120,7 @@ def test_run_plan_schema_accepts_action_execute_with_refs(action_ref: str) -> No
     result = validate_run_plan_obj(data)
 
     assert result.valid is True
+    assert result.warnings == []
 
 
 def test_run_plan_schema_requires_communication_send_targets() -> None:
@@ -143,6 +150,84 @@ def test_run_plan_schema_accepts_communication_send_with_targets() -> None:
     result = validate_run_plan_obj(data)
 
     assert result.valid is True
+
+
+def test_run_plan_schema_warns_when_action_refs_lack_executable_grants() -> None:
+    data = _plan_dict()
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is True
+    assert result.warnings
+    assert result.warnings[0].code == "missing_action_execute_grant"
+    assert "action.execute" in result.warnings[0].message
+
+
+def test_run_plan_schema_warns_for_template_derived_contracts_without_grants() -> None:
+    template = WorkflowTemplateSpec.model_validate(
+        {
+            "schema_version": "stackos.workflow-template.v1",
+            "key": "communications.outbound-notification",
+            "name": "Outbound notification",
+            "version": "0.1.0",
+            "context_requirements": [
+                {
+                    "id": "recent_requests",
+                    "source": "agent_requests",
+                    "fields": ["status", "summary"],
+                }
+            ],
+            "action_contracts": [
+                {
+                    "key": "send_email",
+                    "action": "smtp.email.send",
+                    "risk_level": "write",
+                }
+            ],
+            "resource_contracts": [
+                {
+                    "key": "delivery_summary",
+                    "resource": "communication-delivery",
+                }
+            ],
+            "outputs": [{"key": "operator_receipt"}],
+            "steps": [
+                {
+                    "id": "notify",
+                    "title": "Notify",
+                    "context_refs": ["recent_requests"],
+                    "action_refs": ["send_email"],
+                    "resource_refs": ["delivery_summary"],
+                    "output_refs": ["operator_receipt"],
+                }
+            ],
+        }
+    )
+    plan = run_plan_from_template(
+        LoadedWorkflowTemplate(
+            summary=WorkflowTemplateSummaryOut(
+                key=template.key,
+                name=template.name,
+                version=template.version,
+                source="plugin",
+                precedence=10,
+                plugin_slug="communications",
+            ),
+            spec=template,
+        )
+    )
+
+    result = validate_run_plan_obj(plan.model_dump(mode="json"))
+
+    assert result.valid is True
+    codes = {warning.code for warning in result.warnings}
+    assert {
+        "missing_action_execute_grant",
+        "missing_resource_upsert_grant",
+        "missing_context_query_grant",
+        "missing_artifact_create_grant",
+    } <= codes
+    assert "send_email -> communications.smtp.email.send" in result.warnings[0].message
 
 
 def test_run_plan_schema_requires_communication_reply_sources() -> None:

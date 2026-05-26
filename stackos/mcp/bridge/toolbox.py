@@ -106,6 +106,19 @@ def _bridge_allowed_tool_names(
     return allowed
 
 
+def _bridge_operation_backed_names(
+    *,
+    catalog: dict[str, dict[str, Any]],
+    names: set[str],
+) -> list[str]:
+    backed: list[str] = []
+    for name in names:
+        meta = catalog.get(name, {}).get("_meta")
+        if isinstance(meta, dict) and isinstance(meta.get("operation_name"), str):
+            backed.append(name)
+    return sorted(backed)
+
+
 def _bridge_toolbox_describe(
     request_id: object,
     *,
@@ -128,11 +141,23 @@ def _bridge_toolbox_describe(
     denied = [name for name in requested if name in catalog and name not in allowed]
     unknown = [name for name in requested if name not in catalog]
     active_step_tools = sorted(allowed_by_run.get(run_id, set())) if run_id is not None else []
+    setup_tool_names = sorted(_AGENT_SETUP_TOOLBOX_NAMES & set(catalog))
+    visible_tool_names = [name for name in _AGENT_VISIBLE_TOOL_ORDER if name in catalog]
+    available_tool_names = sorted(name for name in allowed if name in catalog)
     payload = {
         "visible_tool_names": list(_AGENT_VISIBLE_TOOL_ORDER),
-        "setup_toolbox_tool_names": sorted(_AGENT_SETUP_TOOLBOX_NAMES & set(catalog)),
+        "setup_toolbox_tool_names": setup_tool_names,
         "active_step_tool_names": active_step_tools,
-        "available_tool_names": sorted(name for name in allowed if name in catalog),
+        "available_tool_names": available_tool_names,
+        "tool_categories": {
+            "direct_visible": visible_tool_names,
+            "setup_toolbox": setup_tool_names,
+            "active_step": active_step_tools,
+            "operation_backed": _bridge_operation_backed_names(
+                catalog=catalog,
+                names=set(available_tool_names),
+            ),
+        },
         "described_tools": described,
         "denied_tool_names": denied,
         "unknown_tool_names": unknown,

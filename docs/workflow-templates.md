@@ -65,6 +65,13 @@ Steps are defaults, not a prison. A good step defines:
 Agents can adapt a run plan when the project requires it. If a project repeats
 the adapted pattern, the agent should save a project-scoped template version.
 
+Template step refs are planning contracts, not executable grants. For example,
+`action_refs: [send_email]` points at an `action_contracts` entry. When an
+agent derives a run plan, it must resolve that contract to concrete action refs
+and MCP grants such as `action.execute` with `action_refs:
+[communications.smtp.email.send]`. `runPlan.validate` returns warnings when a
+template-derived plan is structurally valid but lacks the grants needed to run.
+
 ## Built-In And Project Templates
 
 StackOS can ship built-in templates through plugins. A project can also save

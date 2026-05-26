@@ -12,6 +12,7 @@ from stackos.mcp.tools import (
     context,
     cost,
     meta,
+    operations,
     plugins,
     projects,
     resources,
@@ -37,6 +38,7 @@ def register_all(registry: ToolRegistry) -> None:
     runs.register(registry)
     cost.register(registry)
     meta.register(registry)
+    operations.register(registry)
     plugins.register(registry)
     resources.register(registry)
     artifacts.register(registry)

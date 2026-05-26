@@ -28,7 +28,10 @@ async def communication_context_query(
     if unsupported:
         raise ValidationError(
             "communicationContext.query fields are not supported",
-            data={"fields": unsupported},
+            data={
+                "fields": unsupported,
+                "allowed_fields": sorted(_CONTEXT_ALLOWED_FIELDS),
+            },
         )
     records = ResourceRepository(ctx.session).query_records(
         project_id=inp.project_id,

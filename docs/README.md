@@ -26,7 +26,9 @@ obvious without loading every document.
 
 - StackOS stores project state, validates explicit inputs, resolves
   daemon-held credentials, executes configured calls, and records audit.
-- Agents and operators make strategy decisions. Tools and connectors stay
+- Agents and operators make strategy decisions. In StackOS docs, an agent is
+  the MCP/tool consumer; repository filesystem access is a separate host
+  capability, not something StackOS grants. Tools and connectors stay
   decision-free.
 - Register callable behavior once as an operation or plugin action contract;
   expose it through MCP, REST, CLI, and UI docs from that contract.
@@ -55,8 +57,8 @@ wiring, provider contracts, or agent-facing docs, use the canonical signoff:
 make signoff
 ```
 
-See [`release-signoff.md`](./release-signoff.md) for the faster targeted slices
-and setup smoke commands.
+See [`release-signoff.md`](./release-signoff.md) for the agent-flow test matrix,
+faster targeted slices, and setup smoke commands.
 
 For documentation-only edits:
 

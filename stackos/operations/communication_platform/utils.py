@@ -80,6 +80,13 @@ def _communication_route_ref(key: str) -> str:
     return f"communication-route:{key.strip()}"
 
 
+def _normalize_profile_ref(value: str) -> str:
+    raw = value.strip()
+    if raw.startswith("communication-profile:"):
+        return raw
+    return _communication_profile_ref(raw)
+
+
 def _surface_external_id(surface_ref: str) -> str:
     return f"communication-surface:{surface_ref.strip()}"
 
@@ -394,6 +401,25 @@ def _target_policy_allowed(
     if policy.get("requires_approval") is True:
         return False, "approval_required"
     return True, None
+
+
+def _target_policy_profile_ref(
+    target: CommunicationTargetOut,
+    requested_profile_ref: str | None,
+) -> str | None:
+    if requested_profile_ref and requested_profile_ref.strip():
+        return _normalize_profile_ref(requested_profile_ref)
+    if target.profile_ref:
+        return _normalize_profile_ref(target.profile_ref)
+    policy = dict(target.send_policy or {})
+    for key in ("default_actor_ref", "default_profile_ref"):
+        value = policy.get(key) or target.metadata_json.get(key)
+        if isinstance(value, str) and value.strip():
+            return _normalize_profile_ref(value)
+    allowed_profiles = _string_list(policy.get("allowed_profile_refs"))
+    if len(allowed_profiles) == 1:
+        return _normalize_profile_ref(allowed_profiles[0])
+    return None
 
 
 def _string_list(value: Any) -> list[str]:

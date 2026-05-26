@@ -144,4 +144,5 @@ class CommunicationSendOut(BaseModel):
     thread_ref: str | None = None
     message_ref: str | None = None
     dry_run: bool = False
+    effects: list[str] = Field(default_factory=list)
     resolved: dict[str, Any] = Field(default_factory=dict)
