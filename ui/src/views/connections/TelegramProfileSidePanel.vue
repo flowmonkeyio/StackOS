@@ -1,0 +1,383 @@
+<script setup lang="ts">
+import {
+  UiButton,
+  UiCallout,
+  UiCheckbox,
+  UiFormField,
+  UiInput,
+  UiSelect,
+  UiSidePanel,
+  UiTextarea,
+} from '@/components/ui'
+
+import { botUsernameFromConnection, telegramConnectionForProfile } from './formatters'
+import type { ConnectionRow, MessageTone, TelegramCommandDraft, TelegramProfileForm } from './types'
+
+const props = defineProps<{
+  modelValue: boolean
+  form: TelegramProfileForm
+  telegramConnectionOptions: Array<{ value: string; label: string }>
+  telegramConnections: ConnectionRow[]
+  message: { tone: MessageTone; text: string } | null
+  busyAction: string | null
+}>()
+
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: boolean): void
+  (e: 'update:form', value: TelegramProfileForm): void
+  (e: 'save'): void
+  (e: 'add-command'): void
+  (e: 'remove-command', index: number): void
+}>()
+
+function updateForm(patch: Partial<TelegramProfileForm>): void {
+  emit('update:form', { ...props.form, ...patch })
+}
+
+function updateTextField(key: keyof TelegramProfileForm, value: string | number | null): void {
+  updateForm({ [key]: String(value ?? '') } as Partial<TelegramProfileForm>)
+}
+
+function updateBooleanField(key: keyof TelegramProfileForm, value: boolean): void {
+  updateForm({ [key]: value } as Partial<TelegramProfileForm>)
+}
+
+function updateCommandText(
+  index: number,
+  key: keyof TelegramCommandDraft,
+  value: string | number | null,
+): void {
+  const commands = props.form.commands.map((command, commandIndex) =>
+    commandIndex === index ? { ...command, [key]: String(value ?? '') } : command,
+  )
+  updateForm({ commands })
+}
+
+function updateCommandEnabled(index: number, value: boolean): void {
+  const commands = props.form.commands.map((command, commandIndex) =>
+    commandIndex === index ? { ...command, enabled: value } : command,
+  )
+  updateForm({ commands })
+}
+</script>
+
+<template>
+  <UiSidePanel
+    :model-value="modelValue"
+    title="Telegram profile"
+    description="Configure static bot policy. Secrets stay in the selected connection."
+    size="lg"
+    @update:model-value="$emit('update:modelValue', $event)"
+  >
+    <div class="grid gap-4">
+      <UiCallout v-if="message" :tone="message.tone">
+        {{ message.text }}
+      </UiCallout>
+
+      <UiFormField
+        label="Profile key"
+        help="Project-scoped key used by webhook paths and agent-readable setup."
+        required
+      >
+        <template #default="{ id, describedBy, invalid }">
+          <UiInput
+            :id="id"
+            :model-value="form.key"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            placeholder="support-bot"
+            @update:model-value="updateTextField('key', $event)"
+          />
+        </template>
+      </UiFormField>
+
+      <UiFormField
+        label="Telegram connection"
+        help="Only the profile key is exposed here; the token stays daemon-side."
+        required
+      >
+        <template #default="{ id, describedBy, invalid }">
+          <UiSelect
+            :id="id"
+            :model-value="form.auth_profile_key"
+            :options="telegramConnectionOptions"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            placeholder="Select connection"
+            @update:model-value="updateTextField('auth_profile_key', $event)"
+          />
+        </template>
+      </UiFormField>
+
+      <UiCallout v-if="form.auth_profile_key" tone="info">
+        Telegram identity:
+        {{
+          botUsernameFromConnection(
+            telegramConnectionForProfile(form.auth_profile_key, telegramConnections),
+          )
+            ? `@${botUsernameFromConnection(
+                telegramConnectionForProfile(form.auth_profile_key, telegramConnections),
+              )}`
+            : 'test the selected connection to fetch it from Telegram'
+        }}
+      </UiCallout>
+
+      <UiFormField label="Display name" required>
+        <template #default="{ id, describedBy, invalid }">
+          <UiInput
+            :id="id"
+            :model-value="form.identity_display_name"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            placeholder="Support Bot"
+            @update:model-value="updateTextField('identity_display_name', $event)"
+          />
+        </template>
+      </UiFormField>
+
+      <UiFormField label="Purpose">
+        <template #default="{ id, describedBy, invalid }">
+          <UiTextarea
+            :id="id"
+            :model-value="form.identity_purpose"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            :rows="3"
+            placeholder="Handle support requests from approved Telegram users."
+            @update:model-value="updateTextField('identity_purpose', $event)"
+          />
+        </template>
+      </UiFormField>
+
+      <UiFormField label="Voice">
+        <template #default="{ id, describedBy, invalid }">
+          <UiTextarea
+            :id="id"
+            :model-value="form.identity_voice"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            :rows="2"
+            placeholder="Clear, concise, and operational."
+            @update:model-value="updateTextField('identity_voice', $event)"
+          />
+        </template>
+      </UiFormField>
+
+      <UiFormField
+        label="Agent instructions"
+        help="Static guidance attached to every agent request created by this bot."
+      >
+        <template #default="{ id, describedBy, invalid }">
+          <UiTextarea
+            :id="id"
+            :model-value="form.agent_default_instructions"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            :rows="4"
+            placeholder="Triage the request, inspect relevant project context, and reply only when the next action is clear."
+            @update:model-value="updateTextField('agent_default_instructions', $event)"
+          />
+        </template>
+      </UiFormField>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <UiFormField label="Boundaries">
+          <template #default="{ id, describedBy, invalid }">
+            <UiTextarea
+              :id="id"
+              :model-value="form.agent_boundaries"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              :rows="3"
+              placeholder="Do not change accounts, spend budget, or promise outcomes without explicit approval."
+              @update:model-value="updateTextField('agent_boundaries', $event)"
+            />
+          </template>
+        </UiFormField>
+
+        <UiFormField label="Escalation">
+          <template #default="{ id, describedBy, invalid }">
+            <UiTextarea
+              :id="id"
+              :model-value="form.agent_escalation"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              :rows="3"
+              placeholder="Escalate billing, legal, or destructive actions before executing."
+              @update:model-value="updateTextField('agent_escalation', $event)"
+            />
+          </template>
+        </UiFormField>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <UiFormField
+          label="Visible chats"
+          help="Optional comma-separated StackOS refs. Leave blank to let the bot observe any chat it has access to; only allowlisted users can trigger replies."
+        >
+          <template #default="{ id, describedBy, invalid }">
+            <UiInput
+              :id="id"
+              :model-value="form.allowed_chat_refs"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              placeholder="telegram-chat:999"
+              @update:model-value="updateTextField('allowed_chat_refs', $event)"
+            />
+          </template>
+        </UiFormField>
+
+        <UiFormField
+          label="Allowed users"
+          help="Comma-separated StackOS refs. Only these users can trigger work or replies."
+          required
+        >
+          <template #default="{ id, describedBy, invalid }">
+            <UiInput
+              :id="id"
+              :model-value="form.allowed_user_refs"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              placeholder="telegram-user:555"
+              @update:model-value="updateTextField('allowed_user_refs', $event)"
+            />
+          </template>
+        </UiFormField>
+      </div>
+
+      <div class="grid gap-4">
+        <UiFormField label="Mentions">
+          <template #default="{ id, describedBy, invalid }">
+            <UiInput
+              :id="id"
+              :model-value="form.mention_patterns"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              placeholder="support, ops"
+              @update:model-value="updateTextField('mention_patterns', $event)"
+            />
+          </template>
+        </UiFormField>
+      </div>
+
+      <div class="grid gap-3 rounded-md border border-subtle bg-bg-surface-alt p-3">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-semibold text-fg-strong">Command intents</h3>
+            <p class="mt-0.5 text-xs text-fg-muted">
+              Optional triggers with guidance passed to the operating agent.
+            </p>
+          </div>
+          <UiButton size="sm" variant="secondary" icon-left="plus" @click="$emit('add-command')">
+            Add command
+          </UiButton>
+        </div>
+
+        <div
+          v-for="(command, index) in form.commands"
+          :key="index"
+          class="grid gap-3 rounded-md border border-subtle bg-bg-surface p-3"
+        >
+          <div class="grid gap-3 sm:grid-cols-[minmax(8rem,12rem)_1fr_auto] sm:items-start">
+            <UiFormField label="Command">
+              <template #default="{ id, describedBy, invalid }">
+                <UiInput
+                  :id="id"
+                  :model-value="command.command"
+                  :aria-describedby="describedBy"
+                  :invalid="invalid"
+                  placeholder="/support"
+                  @update:model-value="updateCommandText(index, 'command', $event)"
+                />
+              </template>
+            </UiFormField>
+
+            <UiFormField label="Description">
+              <template #default="{ id, describedBy, invalid }">
+                <UiInput
+                  :id="id"
+                  :model-value="command.description"
+                  :aria-describedby="describedBy"
+                  :invalid="invalid"
+                  placeholder="Handle support requests"
+                  @update:model-value="updateCommandText(index, 'description', $event)"
+                />
+              </template>
+            </UiFormField>
+
+            <div class="pt-6">
+              <UiButton
+                size="sm"
+                variant="ghost"
+                icon-left="trash"
+                @click="$emit('remove-command', index)"
+              >
+                Remove
+              </UiButton>
+            </div>
+          </div>
+
+          <UiFormField label="Command guidance">
+            <template #default="{ id, describedBy, invalid }">
+              <UiTextarea
+                :id="id"
+                :model-value="command.guidance"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                :rows="3"
+                placeholder="Explain what the agent should gather, decide, and return for this command."
+                @update:model-value="updateCommandText(index, 'guidance', $event)"
+              />
+            </template>
+          </UiFormField>
+
+          <UiCheckbox
+            :model-value="command.enabled"
+            label="Command enabled"
+            @update:model-value="updateCommandEnabled(index, $event)"
+          />
+        </div>
+      </div>
+
+      <details class="rounded-md border border-subtle bg-bg-surface-alt">
+        <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default">
+          Advanced delivery behavior
+        </summary>
+        <div class="grid gap-3 border-t border-subtle p-3">
+          <UiCheckbox
+            :model-value="form.store_non_trigger_messages"
+            label="Store non-trigger messages"
+            @update:model-value="updateBooleanField('store_non_trigger_messages', $event)"
+          />
+          <UiCheckbox
+            :model-value="form.origin_required"
+            label="Require origin-bound replies"
+            @update:model-value="updateBooleanField('origin_required', $event)"
+          />
+          <UiCheckbox
+            :model-value="form.reply_to_source_message"
+            label="Reply to source message"
+            @update:model-value="updateBooleanField('reply_to_source_message', $event)"
+          />
+          <UiCheckbox
+            :model-value="form.same_thread"
+            label="Use same thread when available"
+            @update:model-value="updateBooleanField('same_thread', $event)"
+          />
+        </div>
+      </details>
+    </div>
+
+    <template #footer>
+      <UiButton variant="ghost" @click="$emit('update:modelValue', false)"> Cancel </UiButton>
+      <UiButton
+        variant="primary"
+        icon-left="save"
+        :loading="busyAction === 'telegram-profile:save'"
+        @click="$emit('save')"
+      >
+        Save Telegram profile
+      </UiButton>
+    </template>
+  </UiSidePanel>
+</template>

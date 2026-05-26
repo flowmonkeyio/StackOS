@@ -5,200 +5,59 @@ import { useRoute } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import {
-  UiBadge,
   UiButton,
   UiCallout,
-  UiCheckbox,
-  UiFormField,
-  UiInput,
-  UiJsonBlock,
   UiMetricCard,
   UiPageShell,
   UiPanel,
-  UiSecretInput,
-  UiSectionHeader,
   UiSegmentedControl,
-  UiSelect,
-  UiSidePanel,
-  UiTextarea,
 } from '@/components/ui'
-import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
+import type { SchemaAuthProviderOut } from '@/api'
+import { useConnectionForm } from '@/composables/useConnectionForm'
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
-import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
-
-type ConnectionRow = SchemaCredentialConnectionOut & { id: string }
-type AuthMethod = NonNullable<SchemaAuthProviderOut['auth_methods']>[number]
-type AuthField = NonNullable<AuthMethod['fields']>[number]
-type MessageTone = 'success' | 'danger' | 'info'
-type BadgeTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent'
-type ConnectionSection = 'services' | 'communications' | 'telegram' | 'diagnostics'
-
-interface ServiceGroup {
-  provider: SchemaAuthProviderOut | null
-  providerKey: string
-  connections: ConnectionRow[]
-}
-
-interface TelegramCommandSpec {
-  command: string
-  description?: string
-  guidance?: string
-  enabled?: boolean
-  aliases?: string[]
-  arguments_schema?: Record<string, unknown>
-  required_context?: string[]
-  expected_outputs?: string[]
-}
-
-interface TelegramCommandDraft {
-  command: string
-  description: string
-  guidance: string
-  enabled: boolean
-}
-
-interface CommunicationProfile {
-  record_id: number
-  project_id: number
-  profile_ref: string
-  key: string
-  enabled: boolean
-  identity: {
-    display_name?: string
-    purpose?: string
-    voice?: string
-  }
-  agent_guidance: Record<string, unknown>
-  provider_facets: Record<string, Record<string, unknown>>
-  access_policy: {
-    allowed_user_refs?: string[]
-    denied_user_refs?: string[]
-    allowed_chat_refs?: string[]
-    denied_chat_refs?: string[]
-    user_mode?: string
-    dm_mode?: string
-    channel_mode?: string
-    group_mode?: string
-  }
-  trigger_policy: Record<string, unknown>
-  visibility_policy: Record<string, unknown>
-  context_policy: Record<string, unknown>
-  response_policy: Record<string, unknown>
-  send_policy: Record<string, unknown>
-  handoff_policy: Record<string, unknown>
-  approval_policy: Record<string, unknown>
-  metadata_json: Record<string, unknown>
-}
-
-interface CommunicationProfileListOut {
-  items: CommunicationProfile[]
-  next_cursor: string | number | null
-  total_estimate: number | null
-}
-
-interface CommunicationTarget {
-  record_id: number
-  project_id: number
-  target_ref: string
-  key: string
-  display_name: string | null
-  provider_key: string
-  surface_ref: string
-  profile_ref: string | null
-  thread_ref: string | null
-  enabled: boolean
-  action_ref: string | null
-  action_input_defaults: Record<string, unknown>
-  send_policy: {
-    mode?: string
-    allowed_profile_refs?: string[]
-    allowed_invoker_refs?: string[]
-    allowed_source_surface_refs?: string[]
-    allowed_target_refs?: string[]
-    requires_approval?: boolean
-  }
-  metadata_json: Record<string, unknown>
-}
-
-interface CommunicationTargetListOut {
-  items: CommunicationTarget[]
-  next_cursor: string | number | null
-  total_estimate: number | null
-}
-
-interface CommunicationSurface {
-  record_id: number
-  project_id: number
-  surface_ref: string
-  channel_ref: string
-  provider_key: string
-  kind: string
-  display_name: string | null
-  ingest_enabled: boolean
-  send_enabled: boolean
-  capabilities: Record<string, unknown>
-  audience: string
-  intent: Record<string, unknown>
-  agent_guidance: Record<string, unknown>
-  data_scope: Record<string, unknown>
-  external_context: Record<string, unknown>
-  metadata_json: Record<string, unknown>
-}
-
-interface CommunicationSurfaceListOut {
-  items: CommunicationSurface[]
-  next_cursor: string | number | null
-  total_estimate: number | null
-}
-
-interface IngressEndpointRoute {
-  provider_key: string
-  profile_key: string
-  profile_ref?: string
-  ingress_url?: string
-  local_url?: string
-  remote_status?: string
-  notes?: string[]
-}
-
-interface IngressEndpointStatusOut {
-  configured?: boolean
-  ready?: boolean
-  endpoint?: {
-    driver?: string
-    status?: string
-    public_base_url?: string | null
-    local_base_url?: string | null
-  } | null
-  routes?: IngressEndpointRoute[]
-  notes?: string[]
-}
-
-const AUTH_TYPE_LABELS: Record<string, string> = {
-  'api-key': 'API key',
-  'application-password': 'Application password',
-  basic: 'Username and password',
-  local: 'Local',
-  none: 'No auth',
-  oauth: 'OAuth2',
-  'oauth-client-credentials': 'OAuth2 client credentials',
-}
-
-const STATUS_ORDER: Record<string, number> = {
-  connected: 0,
-  pending: 1,
-  expired: 2,
-  failed: 3,
-  revoked: 4,
-}
-
-const PLUGIN_LABELS: Record<string, string> = {
-  gtm: 'GTM',
-  'media-buying': 'Media Buying',
-  seo: 'SEO',
-}
+import AddConnectionPanel from './connections/AddConnectionPanel.vue'
+import CommunicationSetupPanel from './connections/CommunicationSetupPanel.vue'
+import ConnectedServicesPanel from './connections/ConnectedServicesPanel.vue'
+import ConnectionDiagnosticsPanel from './connections/ConnectionDiagnosticsPanel.vue'
+import TelegramProfileSidePanel from './connections/TelegramProfileSidePanel.vue'
+import TelegramProfilesPanel from './connections/TelegramProfilesPanel.vue'
+import {
+  botUsernameFromConnection,
+  compareConnections,
+  connectionTitle,
+  credentialTestMessage,
+  parseCsv,
+  pluginLabel,
+  preferredTelegramConnection,
+  serviceName,
+  telegramConnectionForProfile,
+  telegramFacet,
+  telegramProfileAuthKey,
+  telegramProfileIngressMode,
+  telegramProfileUsername,
+  toCommandDrafts,
+  toCommandSpecs,
+} from './connections/formatters'
+import type {
+  AuthMethod,
+  CommunicationProfile,
+  CommunicationProfileListOut,
+  CommunicationSurface,
+  CommunicationSurfaceListOut,
+  CommunicationTarget,
+  CommunicationTargetListOut,
+  ConnectionRow,
+  ConnectionSection,
+  IngressEndpointStatusOut,
+  MessageMap,
+  MessageTone,
+  ServiceGroup,
+  TelegramCommandDraft,
+  TelegramCommandSpec,
+  TelegramProfileForm,
+} from './connections/types'
 
 const route = useRoute()
 const catalogStore = useStackOsCatalogStore()
@@ -206,14 +65,32 @@ const { authProviders, authStatus, enabledPlugins, loading, error } = storeToRef
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const addPanelOpen = ref(false)
-const selectedProviderKey = ref('')
-const selectedMethodByProvider = ref<Record<string, string>>({})
-const labelByForm = ref<Record<string, string>>({})
-const profileByForm = ref<Record<string, string>>({})
-const fieldsByForm = ref<Record<string, Record<string, string>>>({})
+const {
+  selectedProviderKey,
+  authMethods,
+  selectedMethodKey,
+  selectedMethod,
+  setSelectedMethod,
+  supportsCredential,
+  canAddProvider,
+  inputType,
+  isSecretField,
+  primaryCredentialFields,
+  advancedCredentialFields,
+  fieldOptions,
+  hasFieldOptions,
+  fieldValue,
+  setFieldValue,
+  profileValue,
+  setProfileValue,
+  labelValue,
+  setLabelValue,
+  setSelectedProvider,
+  clearForm,
+} = useConnectionForm()
 const busyAction = ref<string | null>(null)
-const providerMessages = ref<Record<string, { tone: MessageTone; text: string }>>({})
-const connectionMessages = ref<Record<string, { tone: MessageTone; text: string }>>({})
+const providerMessages = ref<MessageMap>({})
+const connectionMessages = ref<MessageMap>({})
 const activeSection = ref<ConnectionSection>('services')
 const telegramProfilePanelOpen = ref(false)
 const telegramProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
@@ -223,7 +100,7 @@ const communicationSurfaces = ref<CommunicationSurface[]>([])
 const ingressStatus = ref<IngressEndpointStatusOut | null>(null)
 const communicationSetupLoading = ref(false)
 const communicationSetupMessage = ref<{ tone: MessageTone; text: string } | null>(null)
-const telegramProfileForm = ref({
+const telegramProfileForm = ref<TelegramProfileForm>({
   key: 'support-bot',
   auth_profile_key: '',
   bot_username: '',
@@ -317,7 +194,9 @@ const telegramConnectionOptions = computed(() =>
 )
 
 const telegramProfiles = computed(() =>
-  communicationProfiles.value.filter((profile) => Boolean(profile.provider_facets?.['telegram-bot'])),
+  communicationProfiles.value.filter((profile) =>
+    Boolean(profile.provider_facets?.['telegram-bot']),
+  ),
 )
 
 const serviceGroups = computed<ServiceGroup[]>(() => {
@@ -412,112 +291,6 @@ function syncProviderSelectionFromQuery(): void {
   addPanelOpen.value = true
 }
 
-function authMethods(provider: SchemaAuthProviderOut): AuthMethod[] {
-  return provider.auth_methods ?? []
-}
-
-function selectedMethodKey(provider: SchemaAuthProviderOut): string {
-  return selectedMethodByProvider.value[provider.key] ?? authMethods(provider)[0]?.key ?? ''
-}
-
-function selectedMethod(provider: SchemaAuthProviderOut): AuthMethod | null {
-  const key = selectedMethodKey(provider)
-  return (
-    authMethods(provider).find((method) => method.key === key) ?? authMethods(provider)[0] ?? null
-  )
-}
-
-function setSelectedMethod(providerKey: string, value: string | number | null): void {
-  selectedMethodByProvider.value = {
-    ...selectedMethodByProvider.value,
-    [providerKey]: String(value ?? ''),
-  }
-}
-
-function formKey(providerKey: string, methodKey: string): string {
-  return `${providerKey}:${methodKey}`
-}
-
-function supportsCredential(provider: SchemaAuthProviderOut): boolean {
-  return authMethods(provider).some(
-    (method) =>
-      method.payload_format !== 'none' || (method.fields ?? []).length > 0 || method.interactive,
-  )
-}
-
-function canAddProvider(provider: SchemaAuthProviderOut): boolean {
-  return provider.config_json?.connection_setup !== 'project-local-plugin-required'
-}
-
-function inputType(field: AuthField): 'text' | 'url' | 'number' | 'email' {
-  if (field.type === 'url') return 'url'
-  if (field.type === 'number') return 'number'
-  if (field.type === 'email') return 'email'
-  return 'text'
-}
-
-function isSecretField(field: AuthField): boolean {
-  return field.secret || ['secret', 'password'].includes(field.type)
-}
-
-function isAdvancedCredentialField(provider: SchemaAuthProviderOut, field: AuthField): boolean {
-  return provider.key === 'telegram-bot'
-    ? ['api_base_url', 'webhook_secret_token'].includes(field.key)
-    : false
-}
-
-function primaryCredentialFields(
-  provider: SchemaAuthProviderOut,
-  method: AuthMethod | null | undefined,
-): AuthField[] {
-  return (method?.fields ?? []).filter((field) => !isAdvancedCredentialField(provider, field))
-}
-
-function advancedCredentialFields(
-  provider: SchemaAuthProviderOut,
-  method: AuthMethod | null | undefined,
-): AuthField[] {
-  return (method?.fields ?? []).filter((field) => isAdvancedCredentialField(provider, field))
-}
-
-function fieldOptions(field: AuthField): Array<{ value: string; label: string }> {
-  return (field.options ?? [])
-    .map((option) => {
-      const value = option.value ?? option.key ?? option.label
-      const label = option.label ?? option.value ?? option.key
-      return value && label ? { value: String(value), label: String(label) } : null
-    })
-    .filter((option): option is { value: string; label: string } => option !== null)
-}
-
-function hasFieldOptions(field: AuthField): boolean {
-  return field.type === 'select' || fieldOptions(field).length > 0
-}
-
-function fieldValue(providerKey: string, methodKey: string, fieldKey: string): string {
-  return fieldsByForm.value[formKey(providerKey, methodKey)]?.[fieldKey] ?? ''
-}
-
-function setFieldValue(
-  providerKey: string,
-  methodKey: string,
-  fieldKey: string,
-  value: string | number | null,
-): void {
-  const key = formKey(providerKey, methodKey)
-  fieldsByForm.value = {
-    ...fieldsByForm.value,
-    [key]: {
-      ...(fieldsByForm.value[key] ?? {}),
-      [fieldKey]: value === null ? '' : String(value),
-    },
-  }
-}
-
-function setSelectedProvider(value: string | number | null): void {
-  selectedProviderKey.value = String(value ?? '')
-}
-
 function openAddConnection(providerKey?: string): void {
   if (providerKey) selectedProviderKey.value = providerKey
   if (!selectedProviderKey.value && visibleAuthProviders.value[0]) {
@@ -527,7 +300,10 @@ function openAddConnection(providerKey?: string): void {
 }
 
 function openAddTelegramProfile(): void {
-  const preferred = preferredTelegramConnection()
+  const preferred = preferredTelegramConnection(
+    identifiedTelegramConnections.value,
+    telegramConnections.value,
+  )
   if (!telegramProfileForm.value.auth_profile_key && preferred) {
     telegramProfileForm.value = {
       ...telegramProfileForm.value,
@@ -542,12 +318,8 @@ function editTelegramProfile(profile: CommunicationProfile): void {
   const facet = telegramFacet(profile)
   const rawCommands = profile.trigger_policy['commands']
   const rawMentionPatterns = profile.trigger_policy['mention_patterns']
-  const commands = Array.isArray(rawCommands)
-    ? (rawCommands as TelegramCommandSpec[])
-    : []
-  const mentionPatterns = Array.isArray(rawMentionPatterns)
-    ? (rawMentionPatterns as string[])
-    : []
+  const commands = Array.isArray(rawCommands) ? (rawCommands as TelegramCommandSpec[]) : []
+  const mentionPatterns = Array.isArray(rawMentionPatterns) ? (rawMentionPatterns as string[]) : []
   telegramProfileForm.value = {
     key: profile.key,
     auth_profile_key: telegramProfileAuthKey(profile),
@@ -574,214 +346,6 @@ function editTelegramProfile(profile: CommunicationProfile): void {
   telegramProfilePanelOpen.value = true
 }
 
-function compareConnections(left: ConnectionRow, right: ConnectionRow): number {
-  const statusDiff = (STATUS_ORDER[left.status] ?? 99) - (STATUS_ORDER[right.status] ?? 99)
-  if (statusDiff !== 0) return statusDiff
-  return connectionTitle(left).localeCompare(connectionTitle(right))
-}
-
-function serviceName(group: ServiceGroup): string {
-  return group.provider?.name ?? group.providerKey
-}
-
-function pluginLabel(slug: string | null | undefined): string {
-  if (!slug) return 'StackOS'
-  if (PLUGIN_LABELS[slug]) return PLUGIN_LABELS[slug]
-  return slug
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
-
-function providerSetupNote(provider: SchemaAuthProviderOut): string | null {
-  const value = provider.config_json?.setup_note
-  return typeof value === 'string' && value.trim() ? value : null
-}
-
-function formatAuthType(authType: string | null | undefined): string {
-  if (!authType) return 'Auth'
-  return AUTH_TYPE_LABELS[authType] ?? authType
-}
-
-function methodLabel(provider: SchemaAuthProviderOut, methodKey: string): string {
-  return authMethods(provider).find((method) => method.key === methodKey)?.label ?? methodKey
-}
-
-function serviceStatusTone(group: ServiceGroup): BadgeTone {
-  if (
-    group.connections.some(
-      (connection) => connection.status === 'connected' && connection.revoked_at === null,
-    )
-  ) {
-    return 'success'
-  }
-  if (group.connections.some((connection) => ['failed', 'revoked'].includes(connection.status))) {
-    return 'danger'
-  }
-  return 'warning'
-}
-
-function serviceStatusDotClass(group: ServiceGroup): string {
-  const tone = serviceStatusTone(group)
-  if (tone === 'success') return 'bg-success'
-  if (tone === 'danger') return 'bg-danger'
-  if (tone === 'warning') return 'bg-warning'
-  return 'bg-neutral'
-}
-
-function serviceStatusLabel(group: ServiceGroup): string {
-  const connected = group.connections.filter(
-    (connection) => connection.status === 'connected' && connection.revoked_at === null,
-  ).length
-  if (connected > 0) return `${connected} connected`
-  const first = group.connections[0]
-  return first ? first.status : 'not connected'
-}
-
-function communicationProfileTitle(profile: CommunicationProfile): string {
-  return profile.identity.display_name || profile.key
-}
-
-function profileProviderKeys(profile: CommunicationProfile): string[] {
-  return Object.keys(profile.provider_facets ?? {}).sort()
-}
-
-function allowedOperatorRefs(profile: CommunicationProfile): string[] {
-  return profile.access_policy.allowed_user_refs ?? []
-}
-
-function targetTitle(target: CommunicationTarget): string {
-  return target.display_name || target.key
-}
-
-function targetPolicySummary(target: CommunicationTarget): string {
-  const policy = target.send_policy ?? {}
-  const parts = [
-    ...(policy.allowed_profile_refs ?? []),
-    ...(policy.allowed_invoker_refs ?? []),
-    ...(policy.allowed_source_surface_refs ?? []),
-    ...(policy.allowed_target_refs ?? []),
-  ]
-  if (policy.mode === 'deny') return 'disabled'
-  if (policy.requires_approval) return 'approval required'
-  return parts.length > 0 ? `${parts.length} guard${parts.length === 1 ? '' : 's'}` : 'unscoped'
-}
-
-function surfaceTitle(surface: CommunicationSurface): string {
-  return surface.display_name || surface.surface_ref
-}
-
-function surfaceIntentSummary(surface: CommunicationSurface): string {
-  const summary = surface.intent.summary
-  const category = surface.intent.category
-  if (typeof summary === 'string' && summary.trim()) return summary
-  if (typeof category === 'string' && category.trim()) return category
-  return 'No intent configured'
-}
-
-function surfaceDataScope(surface: CommunicationSurface): string {
-  const classification = surface.data_scope.classification
-  return typeof classification === 'string' && classification.trim()
-    ? classification
-    : 'scope unset'
-}
-
-function surfaceAudienceTone(surface: CommunicationSurface): BadgeTone {
-  if (surface.audience === 'internal') return 'success'
-  if (surface.audience === 'customer' || surface.audience === 'public') return 'warning'
-  if (surface.audience === 'mixed') return 'danger'
-  return 'neutral'
-}
-
-function routeStatusTone(route: IngressEndpointRoute): BadgeTone {
-  if (route.remote_status === 'remote_webhook_updated' || route.remote_status === 'ready') {
-    return 'success'
-  }
-  if (route.remote_status === 'manual_provider_update_required') return 'warning'
-  if (route.remote_status?.includes('failed')) return 'danger'
-  return 'neutral'
-}
-
-function connectionCountLabel(group: ServiceGroup): string {
-  const count = group.connections.length
-  return `${count} connection${count === 1 ? '' : 's'}`
-}
-
-function statusTone(connection: SchemaCredentialConnectionOut): BadgeTone {
-  if (connection.status === 'connected' && !connection.setup_required) return 'success'
-  if (connection.status === 'failed' || connection.status === 'revoked') return 'danger'
-  return 'warning'
-}
-
-function statusDotClass(connection: SchemaCredentialConnectionOut): string {
-  const tone = statusTone(connection)
-  if (tone === 'success') return 'bg-success'
-  if (tone === 'danger') return 'bg-danger'
-  if (tone === 'warning') return 'bg-warning'
-  return 'bg-neutral'
-}
-
-function connectionTitle(connection: SchemaCredentialConnectionOut): string {
-  return String(connection.label || connection.account?.display_name || connection.profile_key)
-}
-
-function accountLabel(connection: SchemaCredentialConnectionOut): string {
-  return String(
-    connection.account?.display_name ??
-      connection.account?.provider_account_id ??
-      connection.profile_key ??
-      '-',
-  )
-}
-
-function telegramConnectionForProfile(profileKey: string): ConnectionRow | null {
-  return (
-    telegramConnections.value.find((connection) => connection.profile_key === profileKey) ?? null
-  )
-}
-
-function botUsernameFromConnection(connection: SchemaCredentialConnectionOut | null): string | null {
-  const metadata = connection?.account?.metadata_json
-  const username =
-    metadata && typeof metadata === 'object' && 'username' in metadata
-      ? String((metadata as Record<string, unknown>).username ?? '').trim()
-      : ''
-  if (username) return username.replace(/^@/, '')
-  const displayName = String(connection?.account?.display_name ?? '').trim()
-  return displayName.startsWith('@') ? displayName.slice(1) : null
-}
-
-function telegramFacet(profile: CommunicationProfile): Record<string, unknown> {
-  return profile.provider_facets?.['telegram-bot'] ?? {}
-}
-
-function telegramFacetString(profile: CommunicationProfile, key: string): string {
-  const value = telegramFacet(profile)[key]
-  return typeof value === 'string' ? value : ''
-}
-
-function telegramProfileAuthKey(profile: CommunicationProfile): string {
-  return telegramFacetString(profile, 'auth_profile_key') || 'default'
-}
-
-function telegramProfileUsername(profile: CommunicationProfile): string {
-  return telegramFacetString(profile, 'bot_username').replace(/^@/, '')
-}
-
-function telegramProfileIngressMode(profile: CommunicationProfile): string {
-  return telegramFacetString(profile, 'ingress_mode') || 'not configured'
-}
-
-function telegramCommands(profile: CommunicationProfile): TelegramCommandSpec[] {
-  const commands = profile.trigger_policy['commands']
-  return Array.isArray(commands) ? (commands as TelegramCommandSpec[]) : []
-}
-
-function preferredTelegramConnection(): ConnectionRow | null {
-  return identifiedTelegramConnections.value[0] ?? telegramConnections.value[0] ?? null
-}
-
 function communicationProfileByKey(key: string): CommunicationProfile | null {
   return communicationProfiles.value.find((profile) => profile.key === key) ?? null
 }
@@ -790,16 +354,8 @@ function connectionActionKey(credentialRef: string, action: string): string {
   return `${credentialRef}:${action}`
 }
 
-function isConnectionBusy(credentialRef: string, action: string): boolean {
-  return busyAction.value === connectionActionKey(credentialRef, action)
-}
-
 function providerActionKey(providerKey: string, action: string): string {
   return `${providerKey}:${action}`
-}
-
-function isProviderBusy(providerKey: string, action: string): boolean {
-  return busyAction.value === providerActionKey(providerKey, action)
 }
 
 function setProviderMessage(providerKey: string, tone: MessageTone, text: string): void {
@@ -816,86 +372,6 @@ function setConnectionMessage(credentialRef: string, tone: MessageTone, text: st
   }
 }
 
-function metadataText(metadata: Record<string, unknown> | undefined, key: string): string {
-  const value = metadata?.[key]
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function credentialDiscoveryLabel(
-  providerKey: string,
-  metadata: Record<string, unknown> | undefined,
-): string {
-  if (providerKey === 'telegram-bot') {
-    const username = metadataText(metadata, 'username')
-    return username ? `@${username}` : metadataText(metadata, 'first_name')
-  }
-  if (providerKey === 'slack-bot') {
-    return (
-      metadataText(metadata, 'team') ||
-      metadataText(metadata, 'team_id') ||
-      metadataText(metadata, 'user') ||
-      metadataText(metadata, 'user_id') ||
-      metadataText(metadata, 'bot_id')
-    )
-  }
-  return ''
-}
-
-function credentialTestMessage(
-  providerKey: string,
-  metadata: Record<string, unknown> | undefined,
-  fallback: string,
-): string {
-  const label = credentialDiscoveryLabel(providerKey, metadata)
-  if (!label) return fallback
-  if (providerKey === 'telegram-bot') return `Telegram bot verified as ${label}.`
-  if (providerKey === 'slack-bot') return `Slack bot verified for ${label}.`
-  return fallback
-}
-
-function parseCsv(value: string): string[] {
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
-function normalizeCommand(value: string): string {
-  const command = value.trim()
-  if (!command) return ''
-  return command.startsWith('/') ? command : `/${command}`
-}
-
-function toCommandDrafts(commands: TelegramCommandSpec[]): TelegramCommandDraft[] {
-  const drafts = commands.map((command) => ({
-    command: normalizeCommand(command.command),
-    description: command.description ?? '',
-    guidance: command.guidance ?? '',
-    enabled: command.enabled !== false,
-  }))
-  return drafts.length > 0
-    ? drafts
-    : [
-        {
-          command: '',
-          description: '',
-          guidance: '',
-          enabled: true,
-        },
-      ]
-}
-
-function toCommandSpecs(commands: TelegramCommandDraft[]): TelegramCommandSpec[] {
-  return commands
-    .map((command) => ({
-      command: normalizeCommand(command.command),
-      description: command.description.trim(),
-      guidance: command.guidance.trim(),
-      enabled: command.enabled,
-    }))
-    .filter((command) => command.command)
-}
-
 function addCommandDraft(): void {
   telegramProfileForm.value.commands = [
     ...telegramProfileForm.value.commands,
@@ -910,16 +386,11 @@ function removeCommandDraft(index: number): void {
   if (telegramProfileForm.value.commands.length === 0) addCommandDraft()
 }
 
-function commandSummary(commands: TelegramCommandSpec[] | undefined): string {
-  const values = (commands ?? [])
-    .filter((command) => command.enabled !== false)
-    .map((command) => command.command)
-    .filter(Boolean)
-  return values.length > 0 ? values.join(', ') : '-'
-}
-
 function ensureTelegramProfileDefaults(): void {
-  const preferred = preferredTelegramConnection()
+  const preferred = preferredTelegramConnection(
+    identifiedTelegramConnections.value,
+    telegramConnections.value,
+  )
   if (!telegramProfileForm.value.auth_profile_key && preferred) {
     telegramProfileForm.value = {
       ...telegramProfileForm.value,
@@ -949,7 +420,10 @@ async function saveTelegramProfile(): Promise<void> {
     telegramProfileMessage.value = { tone: 'danger', text: 'Choose a Telegram connection.' }
     return
   }
-  const selectedTelegramConnection = telegramConnectionForProfile(authProfileKey)
+  const selectedTelegramConnection = telegramConnectionForProfile(
+    authProfileKey,
+    telegramConnections.value,
+  )
   const botUsername = botUsernameFromConnection(selectedTelegramConnection)
   if (!botUsername) {
     telegramProfileMessage.value = {
@@ -986,9 +460,10 @@ async function saveTelegramProfile(): Promise<void> {
           ...existingTelegramFacet,
           auth_profile_key: authProfileKey,
           bot_username: botUsername,
-          ingress_mode: existingIngressMode && existingIngressMode !== 'not configured'
-            ? existingIngressMode
-            : 'webhook',
+          ingress_mode:
+            existingIngressMode && existingIngressMode !== 'not configured'
+              ? existingIngressMode
+              : 'webhook',
           allowed_updates: Array.isArray(existingTelegramFacet.allowed_updates)
             ? existingTelegramFacet.allowed_updates
             : ['message', 'callback_query'],
@@ -1067,9 +542,8 @@ async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
   if (!method || method.payload_format === 'none') return
   const fields = credentialFields(provider, method)
   if (fields === null) return
-  const key = formKey(provider.key, method.key)
-  const profileKey = (profileByForm.value[key] ?? 'default').trim() || 'default'
-  const label = (labelByForm.value[key] ?? '').trim()
+  const profileKey = profileValue(provider.key, method.key).trim() || 'default'
+  const label = labelValue(provider.key, method.key).trim()
   if (Object.keys(fields).length === 0 && (method.fields ?? []).some((field) => field.secret)) {
     setProviderMessage(provider.key, 'danger', 'Credential fields are required.')
     return
@@ -1097,9 +571,7 @@ async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
         : testResponse.data.summary
       tone = testResponse.data.ok ? 'success' : 'danger'
     }
-    fieldsByForm.value = { ...fieldsByForm.value, [key]: {} }
-    profileByForm.value = { ...profileByForm.value, [key]: '' }
-    labelByForm.value = { ...labelByForm.value, [key]: '' }
+    clearForm(provider.key, method.key)
     setProviderMessage(provider.key, tone, message)
     addPanelOpen.value = false
   } catch (err) {
@@ -1131,7 +603,7 @@ async function startProvider(provider: SchemaAuthProviderOut): Promise<void> {
   }
 }
 
-async function testConnection(connection: SchemaCredentialConnectionOut): Promise<void> {
+async function testConnection(connection: ConnectionRow): Promise<void> {
   busyAction.value = connectionActionKey(connection.credential_ref, 'test')
   try {
     const response = await catalogStore.testCredential(projectId.value, {
@@ -1159,7 +631,7 @@ async function testConnection(connection: SchemaCredentialConnectionOut): Promis
   }
 }
 
-async function revokeConnection(connection: SchemaCredentialConnectionOut): Promise<void> {
+async function revokeConnection(connection: ConnectionRow): Promise<void> {
   busyAction.value = connectionActionKey(connection.credential_ref, 'revoke')
   try {
     await catalogStore.revokeCredential(projectId.value, {
@@ -1219,8 +691,16 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
 
     <div class="grid gap-3 md:grid-cols-3">
       <UiMetricCard label="Connected services" :value="connectedServiceCount" density="compact" />
-      <UiMetricCard label="Active connections" :value="activeConnections.length" density="compact" />
-      <UiMetricCard label="Needs attention" :value="attentionConnections.length" density="compact" />
+      <UiMetricCard
+        label="Active connections"
+        :value="activeConnections.length"
+        density="compact"
+      />
+      <UiMetricCard
+        label="Needs attention"
+        :value="attentionConnections.length"
+        density="compact"
+      />
     </div>
 
     <UiPanel class="p-3">
@@ -1239,1133 +719,85 @@ watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
       </div>
     </UiPanel>
 
-    <UiPanel v-show="activeSection === 'services'" class="p-4">
-      <UiSectionHeader
-        title="Connected Services"
-        description="Each service can have multiple named connections for different accounts, workspaces, or client profiles."
-      >
-        <template #actions>
-          <UiBadge>{{ connections.length }}</UiBadge>
-        </template>
-      </UiSectionHeader>
+    <ConnectedServicesPanel
+      v-show="activeSection === 'services'"
+      :loading="loading"
+      :service-groups="serviceGroups"
+      :connections-count="connections.length"
+      :connection-messages="connectionMessages"
+      :busy-action="busyAction"
+      :can-add-provider="canAddProvider"
+      @add-connection="openAddConnection"
+      @test-connection="testConnection"
+      @revoke-connection="revokeConnection"
+    />
 
-      <div
-        v-if="loading"
-        class="rounded-md border border-subtle bg-bg-surface p-4 text-sm text-fg-muted"
-      >
-        Loading connections...
-      </div>
+    <CommunicationSetupPanel
+      v-show="activeSection === 'communications'"
+      :profiles="communicationProfiles"
+      :targets="communicationTargets"
+      :surfaces="communicationSurfaces"
+      :ingress-status="ingressStatus"
+      :loading="communicationSetupLoading"
+      :message="communicationSetupMessage"
+      @refresh="loadCommunicationSetup"
+    />
 
-      <div
-        v-else-if="serviceGroups.length === 0"
-        class="rounded-md border border-dashed border-default bg-bg-surface p-6 text-center"
-      >
-        <p class="font-medium text-fg-strong">No services connected.</p>
-        <p class="mx-auto mt-1 max-w-xl text-sm text-fg-muted">
-          Add the first connection for a provider account or internal tool. The daemon stores the
-          secret and exposes only status, labels, and credential refs.
-        </p>
-        <UiButton class="mt-4" variant="primary" icon-left="plus" @click="openAddConnection()">
-          Add connection
-        </UiButton>
-      </div>
+    <TelegramProfilesPanel
+      v-show="activeSection === 'telegram'"
+      :telegram-connections="telegramConnections"
+      :telegram-profiles="telegramProfiles"
+      :loading="communicationSetupLoading"
+      :message="telegramProfileMessage"
+      @add-connection="openAddConnection"
+      @add-profile="openAddTelegramProfile"
+      @edit-profile="editTelegramProfile"
+    />
 
-      <ul v-else class="grid gap-3">
-        <li
-          v-for="group in serviceGroups"
-          :key="group.providerKey"
-          class="overflow-hidden rounded-md border border-subtle bg-bg-surface shadow-xs"
-        >
-          <div class="border-b border-subtle bg-bg-surface-alt px-4 py-4 sm:px-5">
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div class="flex min-w-0 gap-3">
-                <span
-                  :class="['mt-1 h-2.5 w-2.5 shrink-0 rounded-full', serviceStatusDotClass(group)]"
-                  aria-hidden="true"
-                />
-                <div class="min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <h3 class="text-base font-semibold leading-6 text-fg-strong">
-                      {{ serviceName(group) }}
-                    </h3>
-                    <UiBadge v-if="group.provider" tone="accent">
-                      {{ pluginLabel(group.provider.plugin_slug) }}
-                    </UiBadge>
-                    <UiBadge :tone="serviceStatusTone(group)">
-                      {{ serviceStatusLabel(group) }}
-                    </UiBadge>
-                  </div>
-                  <p
-                    v-if="group.provider?.description"
-                    class="mt-1 max-w-3xl text-sm leading-5 text-fg-muted"
-                  >
-                    {{ group.provider.description }}
-                  </p>
-                  <dl class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                    <div class="flex min-w-0 items-center gap-1.5">
-                      <dt class="shrink-0 text-fg-muted">Provider</dt>
-                      <dd class="truncate font-mono text-fg-default">{{ group.providerKey }}</dd>
-                    </div>
-                    <div v-if="group.provider" class="flex items-center gap-1.5">
-                      <dt class="text-fg-muted">Auth</dt>
-                      <dd class="text-fg-default">
-                        {{ formatAuthType(group.provider.auth_type) }}
-                      </dd>
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                      <dt class="text-fg-muted">Saved</dt>
-                      <dd class="text-fg-default">{{ connectionCountLabel(group) }}</dd>
-                    </div>
-                  </dl>
-                </div>
-              </div>
-              <UiButton
-                v-if="group.provider && canAddProvider(group.provider)"
-                class="shrink-0"
-                size="sm"
-                icon-left="plus"
-                @click="openAddConnection(group.provider.key)"
-              >
-                Add another
-              </UiButton>
-            </div>
-          </div>
+    <ConnectionDiagnosticsPanel
+      v-show="activeSection === 'diagnostics'"
+      :auth-status="authStatus"
+    />
 
-          <div class="divide-y divide-subtle">
-            <article
-              v-for="connection in group.connections"
-              :key="connection.credential_ref"
-              class="grid gap-3 px-4 py-4 sm:px-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(26rem,1.5fr)_auto] xl:items-center"
-            >
-              <div class="flex min-w-0 gap-3">
-                <span
-                  :class="['mt-2 h-2 w-2 shrink-0 rounded-full', statusDotClass(connection)]"
-                  aria-hidden="true"
-                />
-                <div class="min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <h4 class="truncate text-sm font-semibold leading-5 text-fg-strong">
-                      {{ connectionTitle(connection) }}
-                    </h4>
-                    <UiBadge :tone="statusTone(connection)">
-                      {{ connection.status }}
-                    </UiBadge>
-                  </div>
-                  <div
-                    class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-fg-muted"
-                  >
-                    <span class="truncate font-mono">{{ connection.credential_ref }}</span>
-                    <span aria-hidden="true">&middot;</span>
-                    <span>{{ formatAuthType(connection.auth_type) }}</span>
-                    <template
-                      v-if="
-                        group.provider &&
-                        methodLabel(group.provider, connection.auth_method_key) !==
-                          formatAuthType(connection.auth_type)
-                      "
-                    >
-                      <span aria-hidden="true">&middot;</span>
-                      <span>{{ methodLabel(group.provider, connection.auth_method_key) }}</span>
-                    </template>
-                  </div>
-                </div>
-              </div>
-
-              <dl class="grid gap-3 text-sm sm:grid-cols-2 2xl:grid-cols-4">
-                <div class="min-w-0">
-                  <dt class="text-2xs font-medium uppercase text-fg-muted">Connection name</dt>
-                  <dd class="mt-0.5 truncate font-mono text-xs text-fg-default">
-                    {{ connection.profile_key }}
-                  </dd>
-                </div>
-                <div class="min-w-0">
-                  <dt class="text-2xs font-medium uppercase text-fg-muted">Account</dt>
-                  <dd class="mt-0.5 truncate text-fg-default">{{ accountLabel(connection) }}</dd>
-                </div>
-                <div class="min-w-0">
-                  <dt class="text-2xs font-medium uppercase text-fg-muted">Expires</dt>
-                  <dd class="mt-0.5 truncate text-fg-default">
-                    {{ formatDateTime(connection.expires_at) }}
-                  </dd>
-                </div>
-                <div class="min-w-0">
-                  <dt class="text-2xs font-medium uppercase text-fg-muted">Last tested</dt>
-                  <dd class="mt-0.5 truncate text-fg-default">
-                    {{ formatDateTime(connection.last_tested_at) }}
-                  </dd>
-                </div>
-              </dl>
-
-              <div class="flex shrink-0 flex-wrap gap-2 xl:justify-end">
-                <UiButton
-                  size="sm"
-                  icon-left="plug-zap"
-                  :loading="isConnectionBusy(connection.credential_ref, 'test')"
-                  :disabled="connection.revoked_at !== null"
-                  @click="testConnection(connection)"
-                >
-                  Test
-                </UiButton>
-                <UiButton
-                  size="sm"
-                  variant="danger"
-                  icon-left="ban"
-                  :loading="isConnectionBusy(connection.credential_ref, 'revoke')"
-                  :disabled="connection.revoked_at !== null"
-                  @click="revokeConnection(connection)"
-                >
-                  Revoke
-                </UiButton>
-              </div>
-
-              <UiCallout
-                v-if="connectionMessages[connection.credential_ref]"
-                :tone="connectionMessages[connection.credential_ref].tone"
-                class="xl:col-span-3"
-              >
-                {{ connectionMessages[connection.credential_ref].text }}
-              </UiCallout>
-            </article>
-          </div>
-        </li>
-      </ul>
-    </UiPanel>
-
-    <UiPanel v-show="activeSection === 'communications'" class="p-4">
-      <UiSectionHeader
-        title="Communication Setup"
-        description="Provider-neutral profiles, named destinations, and public ingress routes used by agents."
-      >
-        <template #actions>
-          <div class="flex flex-wrap items-center gap-2">
-            <UiBadge>{{ communicationProfiles.length }} profiles</UiBadge>
-            <UiBadge>{{ communicationSurfaces.length }} surfaces</UiBadge>
-            <UiBadge>{{ communicationTargets.length }} targets</UiBadge>
-            <UiBadge :tone="ingressStatus?.ready ? 'success' : 'warning'">
-              {{ ingressStatus?.ready ? 'ingress ready' : 'ingress pending' }}
-            </UiBadge>
-            <UiButton
-              size="sm"
-              variant="secondary"
-              icon-left="rotate-ccw"
-              :loading="communicationSetupLoading"
-              @click="loadCommunicationSetup"
-            >
-              Refresh
-            </UiButton>
-          </div>
-        </template>
-      </UiSectionHeader>
-
-      <UiCallout v-if="communicationSetupMessage" :tone="communicationSetupMessage.tone">
-        {{ communicationSetupMessage.text }}
-      </UiCallout>
-
-      <div
-        v-if="communicationSetupLoading"
-        class="rounded-md border border-subtle bg-bg-surface p-4 text-sm text-fg-muted"
-      >
-        Loading communication setup...
-      </div>
-
-      <div v-else class="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
-        <section class="min-w-0">
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <h3 class="text-sm font-semibold text-fg-strong">Profiles</h3>
-            <UiBadge>{{ communicationProfiles.length }}</UiBadge>
-          </div>
-          <div
-            v-if="communicationProfiles.length === 0"
-            class="rounded-md border border-dashed border-default p-4 text-sm text-fg-muted"
-          >
-            No communication profiles configured.
-          </div>
-          <ul v-else class="grid max-h-[34rem] gap-2 overflow-y-auto pr-1">
-            <li
-              v-for="profile in communicationProfiles"
-              :key="profile.profile_ref"
-              class="rounded-md border border-subtle bg-bg-surface-alt p-3"
-            >
-              <div class="flex min-w-0 flex-wrap items-center gap-2">
-                <h4 class="truncate text-sm font-semibold text-fg-strong">
-                  {{ communicationProfileTitle(profile) }}
-                </h4>
-                <UiBadge :tone="profile.enabled ? 'success' : 'warning'">
-                  {{ profile.enabled ? 'enabled' : 'disabled' }}
-                </UiBadge>
-              </div>
-              <p class="mt-1 truncate font-mono text-xs text-fg-muted">
-                {{ profile.profile_ref }}
-              </p>
-              <div class="mt-2 flex flex-wrap gap-1">
-                <UiBadge
-                  v-for="providerKey in profileProviderKeys(profile)"
-                  :key="providerKey"
-                  tone="accent"
-                >
-                  {{ providerKey }}
-                </UiBadge>
-                <UiBadge>
-                  {{ allowedOperatorRefs(profile).length }} operators
-                </UiBadge>
-              </div>
-            </li>
-          </ul>
-        </section>
-
-        <section class="min-w-0">
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <h3 class="text-sm font-semibold text-fg-strong">Surfaces</h3>
-            <UiBadge>{{ communicationSurfaces.length }}</UiBadge>
-          </div>
-          <div
-            v-if="communicationSurfaces.length === 0"
-            class="rounded-md border border-dashed border-default p-4 text-sm text-fg-muted"
-          >
-            No communication surfaces configured.
-          </div>
-          <ul v-else class="grid max-h-[34rem] gap-2 overflow-y-auto pr-1">
-            <li
-              v-for="surface in communicationSurfaces"
-              :key="surface.surface_ref"
-              class="rounded-md border border-subtle bg-bg-surface-alt p-3"
-            >
-              <div class="flex min-w-0 flex-wrap items-center gap-2">
-                <h4 class="truncate text-sm font-semibold text-fg-strong">
-                  {{ surfaceTitle(surface) }}
-                </h4>
-                <UiBadge :tone="surfaceAudienceTone(surface)">
-                  {{ surface.audience || 'unknown' }}
-                </UiBadge>
-                <UiBadge>{{ surfaceDataScope(surface) }}</UiBadge>
-              </div>
-              <p class="mt-1 truncate font-mono text-xs text-fg-muted">
-                {{ surface.surface_ref }}
-              </p>
-              <p class="mt-1 line-clamp-2 text-xs text-fg-muted">
-                {{ surfaceIntentSummary(surface) }}
-              </p>
-              <div class="mt-2 flex flex-wrap gap-1">
-                <UiBadge tone="accent">{{ surface.provider_key }}</UiBadge>
-                <UiBadge>{{ surface.kind }}</UiBadge>
-                <UiBadge :tone="surface.send_enabled ? 'success' : 'warning'">
-                  {{ surface.send_enabled ? 'send enabled' : 'send disabled' }}
-                </UiBadge>
-              </div>
-            </li>
-          </ul>
-        </section>
-
-        <section class="min-w-0">
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <h3 class="text-sm font-semibold text-fg-strong">Named Targets</h3>
-            <UiBadge>{{ communicationTargets.length }}</UiBadge>
-          </div>
-          <div
-            v-if="communicationTargets.length === 0"
-            class="rounded-md border border-dashed border-default p-4 text-sm text-fg-muted"
-          >
-            No named targets configured.
-          </div>
-          <ul v-else class="grid max-h-[34rem] gap-2 overflow-y-auto pr-1">
-            <li
-              v-for="target in communicationTargets"
-              :key="target.target_ref"
-              class="rounded-md border border-subtle bg-bg-surface-alt p-3"
-            >
-              <div class="flex min-w-0 flex-wrap items-center gap-2">
-                <h4 class="truncate text-sm font-semibold text-fg-strong">
-                  {{ targetTitle(target) }}
-                </h4>
-                <UiBadge :tone="target.enabled ? 'success' : 'warning'">
-                  {{ target.enabled ? 'enabled' : 'disabled' }}
-                </UiBadge>
-                <UiBadge>{{ targetPolicySummary(target) }}</UiBadge>
-              </div>
-              <p class="mt-1 truncate font-mono text-xs text-fg-muted">
-                {{ target.key }} -> {{ target.surface_ref }}
-              </p>
-              <p class="mt-1 truncate text-xs text-fg-muted">
-                {{ target.action_ref || 'no action ref' }}
-              </p>
-            </li>
-          </ul>
-        </section>
-
-        <section class="min-w-0">
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <h3 class="text-sm font-semibold text-fg-strong">Ingress Routes</h3>
-            <UiBadge>{{ ingressStatus?.routes?.length ?? 0 }}</UiBadge>
-          </div>
-          <div class="rounded-md border border-subtle bg-bg-surface-alt p-3">
-            <div class="flex flex-wrap items-center gap-2">
-              <UiBadge :tone="ingressStatus?.ready ? 'success' : 'warning'">
-                {{ ingressStatus?.endpoint?.status ?? 'not configured' }}
-              </UiBadge>
-              <UiBadge>{{ ingressStatus?.endpoint?.driver ?? 'no driver' }}</UiBadge>
-            </div>
-            <p class="mt-2 break-all font-mono text-xs text-fg-muted">
-              {{ ingressStatus?.endpoint?.public_base_url ?? 'No public URL configured' }}
-            </p>
-          </div>
-          <ul v-if="ingressStatus?.routes?.length" class="mt-2 grid gap-2">
-            <li
-              v-for="route in ingressStatus.routes"
-              :key="`${route.provider_key}:${route.profile_key}`"
-              class="min-w-0 rounded-md border border-subtle bg-bg-surface-alt p-3"
-            >
-              <div class="flex flex-wrap items-center gap-2">
-                <h4 class="text-sm font-semibold text-fg-strong">{{ route.profile_key }}</h4>
-                <UiBadge tone="accent">{{ route.provider_key }}</UiBadge>
-                <UiBadge :tone="routeStatusTone(route)">
-                  {{ route.remote_status ?? 'local' }}
-                </UiBadge>
-              </div>
-              <p class="mt-1 break-all font-mono text-xs text-fg-muted">
-                {{ route.ingress_url ?? route.local_url ?? '-' }}
-              </p>
-            </li>
-          </ul>
-        </section>
-      </div>
-    </UiPanel>
-
-    <UiPanel v-show="activeSection === 'telegram'" class="p-4">
-      <UiSectionHeader
-        title="Telegram Profiles"
-        description="Bind a Telegram connection to project-scoped identity, agent guidance, access, trigger, context, and response policy."
-      >
-        <template #actions>
-          <div class="flex flex-wrap items-center gap-2">
-            <UiBadge>{{ telegramProfiles.length }}</UiBadge>
-            <UiButton
-              size="sm"
-              icon-left="plus"
-              :disabled="telegramConnections.length === 0"
-              @click="openAddTelegramProfile"
-            >
-              Add Telegram profile
-            </UiButton>
-          </div>
-        </template>
-      </UiSectionHeader>
-
-      <UiCallout v-if="telegramConnections.length === 0" tone="info">
-        Store a Telegram Bot connection before creating a Telegram profile.
-        <UiButton
-          class="mt-3"
-          size="sm"
-          icon-left="plus"
-          @click="openAddConnection('telegram-bot')"
-        >
-          Add Telegram connection
-        </UiButton>
-      </UiCallout>
-
-      <UiCallout v-else-if="telegramProfileMessage" :tone="telegramProfileMessage.tone">
-        {{ telegramProfileMessage.text }}
-      </UiCallout>
-
-      <div
-        v-if="communicationSetupLoading"
-        class="rounded-md border border-subtle bg-bg-surface p-4 text-sm text-fg-muted"
-      >
-        Loading Telegram profiles...
-      </div>
-
-      <div
-        v-else-if="telegramConnections.length > 0 && telegramProfiles.length === 0"
-        class="rounded-md border border-dashed border-default bg-bg-surface p-5"
-      >
-        <p class="font-medium text-fg-strong">No Telegram profiles configured.</p>
-        <p class="mt-1 max-w-3xl text-sm text-fg-muted">
-          Create a profile for each Telegram bot identity or access boundary. Profiles are static
-          setup; agents still decide which work to run after a trigger arrives.
-        </p>
-      </div>
-
-      <ul v-else class="grid gap-3">
-        <li
-          v-for="profile in telegramProfiles"
-          :key="profile.profile_ref"
-          class="rounded-md border border-subtle bg-bg-surface px-4 py-4"
-        >
-          <div
-            class="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,1fr)_auto] lg:items-center"
-          >
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <h3 class="text-sm font-semibold text-fg-strong">
-                  {{ profile.identity.display_name || profile.key }}
-                </h3>
-                <UiBadge :tone="profile.enabled ? 'success' : 'warning'">
-                  {{ profile.enabled ? 'enabled' : 'disabled' }}
-                </UiBadge>
-                <UiBadge>{{ telegramProfileIngressMode(profile) }}</UiBadge>
-              </div>
-              <p class="mt-1 truncate text-xs text-fg-muted">
-                <span class="font-mono">{{ profile.key }}</span>
-                <span aria-hidden="true"> · </span>Connection
-                <span class="font-mono">{{ telegramProfileAuthKey(profile) }}</span>
-                <template v-if="telegramProfileUsername(profile)">
-                  <span aria-hidden="true"> · </span>@{{ telegramProfileUsername(profile) }}
-                </template>
-              </p>
-            </div>
-            <dl class="grid gap-3 text-sm sm:grid-cols-3">
-              <div>
-                <dt class="text-2xs font-medium uppercase text-fg-muted">Chats</dt>
-                <dd class="mt-0.5 font-mono text-xs text-fg-default">
-                  {{ profile.access_policy.allowed_chat_refs?.length ?? 0 }}
-                </dd>
-              </div>
-              <div>
-                <dt class="text-2xs font-medium uppercase text-fg-muted">Users</dt>
-                <dd class="mt-0.5 font-mono text-xs text-fg-default">
-                  {{ profile.access_policy.allowed_user_refs?.length ?? 0 }}
-                </dd>
-              </div>
-              <div>
-                <dt class="text-2xs font-medium uppercase text-fg-muted">Commands</dt>
-                <dd class="mt-0.5 truncate font-mono text-xs text-fg-default">
-                  {{ commandSummary(telegramCommands(profile)) }}
-                </dd>
-              </div>
-            </dl>
-            <div class="flex justify-start lg:justify-end">
-              <UiButton size="sm" icon-left="settings" @click="editTelegramProfile(profile)">
-                Configure
-              </UiButton>
-            </div>
-          </div>
-        </li>
-      </ul>
-    </UiPanel>
-
-    <UiPanel v-if="authStatus" v-show="activeSection === 'diagnostics'" class="p-4">
-      <UiSectionHeader
-        title="Diagnostics"
-        description="Sanitized daemon-side auth status for support and verification."
-        as="h3"
-      />
-      <div class="mt-3">
-        <UiJsonBlock
-          :data="sanitizeForDisplay(authStatus)"
-          density="compact"
-          max-height="34rem"
-          wrap
-        />
-      </div>
-    </UiPanel>
-
-    <UiSidePanel
+    <AddConnectionPanel
       v-model="addPanelOpen"
-      title="Add connection"
-      description="Choose a service and store the credential in the local daemon."
-      size="lg"
-    >
-      <div v-if="selectedProvider" class="grid gap-4">
-        <UiCallout v-if="visibleAuthProviders.length === 0" tone="info">
-          Enable a plugin before adding provider connections.
-        </UiCallout>
+      :selected-provider="selectedProvider"
+      :visible-auth-providers="visibleAuthProviders"
+      :provider-options="providerOptions"
+      :provider-messages="providerMessages"
+      :busy-action="busyAction"
+      :auth-methods="authMethods"
+      :selected-method-key="selectedMethodKey"
+      :selected-method="selectedMethod"
+      :supports-credential="supportsCredential"
+      :input-type="inputType"
+      :is-secret-field="isSecretField"
+      :primary-credential-fields="primaryCredentialFields"
+      :advanced-credential-fields="advancedCredentialFields"
+      :has-field-options="hasFieldOptions"
+      :field-options="fieldOptions"
+      :profile-value="profileValue"
+      :set-profile-value="setProfileValue"
+      :label-value="labelValue"
+      :set-label-value="setLabelValue"
+      :field-value="fieldValue"
+      :set-field-value="setFieldValue"
+      @select-provider="setSelectedProvider"
+      @select-method="setSelectedMethod"
+      @start-provider="startProvider"
+      @save-credential="saveCredential"
+    />
 
-        <UiFormField label="Service">
-          <template #default="{ id, describedBy, invalid }">
-            <UiSelect
-              :id="id"
-              :model-value="selectedProvider.key"
-              :options="providerOptions"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              @update:model-value="setSelectedProvider"
-            />
-          </template>
-        </UiFormField>
-
-        <div class="rounded-md border border-subtle bg-bg-surface-alt p-3">
-          <div class="flex flex-wrap items-center gap-2">
-            <h3 class="text-sm font-semibold text-fg-strong">{{ selectedProvider.name }}</h3>
-            <UiBadge tone="accent">{{ pluginLabel(selectedProvider.plugin_slug) }}</UiBadge>
-            <UiBadge>{{ formatAuthType(selectedProvider.auth_type) }}</UiBadge>
-          </div>
-          <p v-if="selectedProvider.description" class="mt-1 text-sm text-fg-muted">
-            {{ selectedProvider.description }}
-          </p>
-        </div>
-
-        <UiCallout v-if="providerSetupNote(selectedProvider)" tone="info">
-          {{ providerSetupNote(selectedProvider) }}
-        </UiCallout>
-
-        <template v-if="supportsCredential(selectedProvider) && selectedMethod(selectedProvider)">
-          <UiFormField v-if="authMethods(selectedProvider).length > 1" label="Auth method">
-            <template #default="{ id, describedBy, invalid }">
-              <UiSelect
-                :id="id"
-                :model-value="selectedMethodKey(selectedProvider)"
-                :options="
-                  authMethods(selectedProvider).map((method) => ({
-                    value: method.key,
-                    label: method.label,
-                  }))
-                "
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                @update:model-value="setSelectedMethod(selectedProvider.key, $event)"
-              />
-            </template>
-          </UiFormField>
-
-          <UiFormField
-            label="Connection name"
-            help="Leave blank for the default account. Use a short name like client-a or sandbox when this service has more than one account."
-          >
-            <template #default="{ id, describedBy, invalid }">
-              <UiInput
-                :id="id"
-                v-model="
-                  profileByForm[
-                    formKey(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
-                  ]
-                "
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                placeholder="default"
-              />
-            </template>
-          </UiFormField>
-
-          <UiFormField label="Display label" help="Shown to operators and agents as safe metadata.">
-            <template #default="{ id, describedBy, invalid }">
-              <UiInput
-                :id="id"
-                v-model="
-                  labelByForm[
-                    formKey(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
-                  ]
-                "
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                placeholder="Primary account"
-              />
-            </template>
-          </UiFormField>
-
-          <UiFormField
-            v-for="field in primaryCredentialFields(selectedProvider, selectedMethod(selectedProvider))"
-            :key="field.key"
-            :label="field.label"
-            :help="field.description ?? undefined"
-            :required="field.required"
-          >
-            <template #default="{ id, describedBy, invalid }">
-              <UiSelect
-                v-if="hasFieldOptions(field)"
-                :id="id"
-                :model-value="
-                  fieldValue(
-                    selectedProvider.key,
-                    selectedMethod(selectedProvider)?.key ?? '',
-                    field.key,
-                  )
-                "
-                :options="fieldOptions(field)"
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                :placeholder="field.placeholder ?? 'Select'"
-                @update:model-value="
-                  setFieldValue(
-                    selectedProvider.key,
-                    selectedMethod(selectedProvider)?.key ?? '',
-                    field.key,
-                    $event,
-                  )
-                "
-              />
-              <UiSecretInput
-                v-else-if="isSecretField(field)"
-                :id="id"
-                :model-value="
-                  fieldValue(
-                    selectedProvider.key,
-                    selectedMethod(selectedProvider)?.key ?? '',
-                    field.key,
-                  )
-                "
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                no-copy
-                no-reveal
-                :placeholder="field.placeholder ?? ''"
-                @update:model-value="
-                  setFieldValue(
-                    selectedProvider.key,
-                    selectedMethod(selectedProvider)?.key ?? '',
-                    field.key,
-                    $event,
-                  )
-                "
-              />
-              <UiInput
-                v-else
-                :id="id"
-                :model-value="
-                  fieldValue(
-                    selectedProvider.key,
-                    selectedMethod(selectedProvider)?.key ?? '',
-                    field.key,
-                  )
-                "
-                :type="inputType(field)"
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                :placeholder="field.placeholder ?? undefined"
-                @update:model-value="
-                  setFieldValue(
-                    selectedProvider.key,
-                    selectedMethod(selectedProvider)?.key ?? '',
-                    field.key,
-                    $event,
-                  )
-                "
-              />
-            </template>
-          </UiFormField>
-
-          <details
-            v-if="
-              advancedCredentialFields(selectedProvider, selectedMethod(selectedProvider)).length > 0
-            "
-            class="rounded-md border border-subtle bg-bg-surface-alt"
-          >
-            <summary
-              class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring"
-            >
-              Advanced connection settings
-              <span class="ml-2 text-xs font-normal text-fg-muted">
-                self-hosted Bot API and webhook secret overrides
-              </span>
-            </summary>
-            <div class="grid gap-4 border-t border-subtle p-3">
-              <UiFormField
-                v-for="field in advancedCredentialFields(
-                  selectedProvider,
-                  selectedMethod(selectedProvider),
-                )"
-                :key="field.key"
-                :label="field.label"
-                :help="field.description ?? undefined"
-                :required="field.required"
-              >
-                <template #default="{ id, describedBy, invalid }">
-                  <UiSelect
-                    v-if="hasFieldOptions(field)"
-                    :id="id"
-                    :model-value="
-                      fieldValue(
-                        selectedProvider.key,
-                        selectedMethod(selectedProvider)?.key ?? '',
-                        field.key,
-                      )
-                    "
-                    :options="fieldOptions(field)"
-                    :aria-describedby="describedBy"
-                    :invalid="invalid"
-                    :placeholder="field.placeholder ?? 'Select'"
-                    @update:model-value="
-                      setFieldValue(
-                        selectedProvider.key,
-                        selectedMethod(selectedProvider)?.key ?? '',
-                        field.key,
-                        $event,
-                      )
-                    "
-                  />
-                  <UiSecretInput
-                    v-else-if="isSecretField(field)"
-                    :id="id"
-                    :model-value="
-                      fieldValue(
-                        selectedProvider.key,
-                        selectedMethod(selectedProvider)?.key ?? '',
-                        field.key,
-                      )
-                    "
-                    :aria-describedby="describedBy"
-                    :invalid="invalid"
-                    no-copy
-                    no-reveal
-                    :placeholder="field.placeholder ?? ''"
-                    @update:model-value="
-                      setFieldValue(
-                        selectedProvider.key,
-                        selectedMethod(selectedProvider)?.key ?? '',
-                        field.key,
-                        $event,
-                      )
-                    "
-                  />
-                  <UiInput
-                    v-else
-                    :id="id"
-                    :model-value="
-                      fieldValue(
-                        selectedProvider.key,
-                        selectedMethod(selectedProvider)?.key ?? '',
-                        field.key,
-                      )
-                    "
-                    :type="inputType(field)"
-                    :aria-describedby="describedBy"
-                    :invalid="invalid"
-                    :placeholder="field.placeholder ?? undefined"
-                    @update:model-value="
-                      setFieldValue(
-                        selectedProvider.key,
-                        selectedMethod(selectedProvider)?.key ?? '',
-                        field.key,
-                        $event,
-                      )
-                    "
-                  />
-                </template>
-              </UiFormField>
-            </div>
-          </details>
-
-          <UiCallout v-if="selectedMethod(selectedProvider)?.description" tone="info">
-            {{ selectedMethod(selectedProvider)?.description }}
-          </UiCallout>
-
-          <UiCallout
-            v-if="providerMessages[selectedProvider.key]"
-            :tone="providerMessages[selectedProvider.key].tone"
-          >
-            {{ providerMessages[selectedProvider.key].text }}
-          </UiCallout>
-        </template>
-
-        <UiCallout v-else tone="info"> No credential required. </UiCallout>
-      </div>
-
-      <UiCallout v-else tone="info">
-        Enable a plugin before adding provider connections.
-      </UiCallout>
-
-      <template #footer>
-        <UiButton variant="ghost" @click="addPanelOpen = false"> Cancel </UiButton>
-        <UiButton
-          v-if="selectedProvider && selectedMethod(selectedProvider)?.interactive"
-          variant="secondary"
-          icon-left="external-link"
-          :loading="isProviderBusy(selectedProvider.key, 'start')"
-          @click="startProvider(selectedProvider)"
-        >
-          Start setup
-        </UiButton>
-        <UiButton
-          v-if="selectedProvider"
-          variant="primary"
-          icon-left="save"
-          :loading="isProviderBusy(selectedProvider.key, 'save')"
-          :disabled="selectedMethod(selectedProvider)?.payload_format === 'none'"
-          @click="saveCredential(selectedProvider)"
-        >
-          Save connection
-        </UiButton>
-      </template>
-    </UiSidePanel>
-
-    <UiSidePanel
+    <TelegramProfileSidePanel
       v-model="telegramProfilePanelOpen"
-      title="Telegram profile"
-      description="Configure static bot policy. Secrets stay in the selected connection."
-      size="lg"
-    >
-      <div class="grid gap-4">
-        <UiCallout v-if="telegramProfileMessage" :tone="telegramProfileMessage.tone">
-          {{ telegramProfileMessage.text }}
-        </UiCallout>
-
-        <UiFormField
-          label="Profile key"
-          help="Project-scoped key used by webhook paths and agent-readable setup."
-          required
-        >
-          <template #default="{ id, describedBy, invalid }">
-            <UiInput
-              :id="id"
-              v-model="telegramProfileForm.key"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              placeholder="support-bot"
-            />
-          </template>
-        </UiFormField>
-
-        <UiFormField
-          label="Telegram connection"
-          help="Only the profile key is exposed here; the token stays daemon-side."
-          required
-        >
-          <template #default="{ id, describedBy, invalid }">
-            <UiSelect
-              :id="id"
-              v-model="telegramProfileForm.auth_profile_key"
-              :options="telegramConnectionOptions"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              placeholder="Select connection"
-            />
-          </template>
-        </UiFormField>
-
-        <UiCallout v-if="telegramProfileForm.auth_profile_key" tone="info">
-          Telegram identity:
-          {{
-            botUsernameFromConnection(telegramConnectionForProfile(telegramProfileForm.auth_profile_key))
-              ? `@${botUsernameFromConnection(telegramConnectionForProfile(telegramProfileForm.auth_profile_key))}`
-              : 'test the selected connection to fetch it from Telegram'
-          }}
-        </UiCallout>
-
-        <UiFormField label="Display name" required>
-          <template #default="{ id, describedBy, invalid }">
-            <UiInput
-              :id="id"
-              v-model="telegramProfileForm.identity_display_name"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              placeholder="Support Bot"
-            />
-          </template>
-        </UiFormField>
-
-        <UiFormField label="Purpose">
-          <template #default="{ id, describedBy, invalid }">
-            <UiTextarea
-              :id="id"
-              v-model="telegramProfileForm.identity_purpose"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              :rows="3"
-              placeholder="Handle support requests from approved Telegram users."
-            />
-          </template>
-        </UiFormField>
-
-        <UiFormField label="Voice">
-          <template #default="{ id, describedBy, invalid }">
-            <UiTextarea
-              :id="id"
-              v-model="telegramProfileForm.identity_voice"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              :rows="2"
-              placeholder="Clear, concise, and operational."
-            />
-          </template>
-        </UiFormField>
-
-        <UiFormField
-          label="Agent instructions"
-          help="Static guidance attached to every agent request created by this bot."
-        >
-          <template #default="{ id, describedBy, invalid }">
-            <UiTextarea
-              :id="id"
-              v-model="telegramProfileForm.agent_default_instructions"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              :rows="4"
-              placeholder="Triage the request, inspect relevant project context, and reply only when the next action is clear."
-            />
-          </template>
-        </UiFormField>
-
-        <div class="grid gap-4 sm:grid-cols-2">
-          <UiFormField label="Boundaries">
-            <template #default="{ id, describedBy, invalid }">
-              <UiTextarea
-                :id="id"
-                v-model="telegramProfileForm.agent_boundaries"
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                :rows="3"
-                placeholder="Do not change accounts, spend budget, or promise outcomes without explicit approval."
-              />
-            </template>
-          </UiFormField>
-
-          <UiFormField label="Escalation">
-            <template #default="{ id, describedBy, invalid }">
-              <UiTextarea
-                :id="id"
-                v-model="telegramProfileForm.agent_escalation"
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                :rows="3"
-                placeholder="Escalate billing, legal, or destructive actions before executing."
-              />
-            </template>
-          </UiFormField>
-        </div>
-
-        <div class="grid gap-4 sm:grid-cols-2">
-          <UiFormField
-            label="Visible chats"
-            help="Optional comma-separated StackOS refs. Leave blank to let the bot observe any chat it has access to; only allowlisted users can trigger replies."
-          >
-            <template #default="{ id, describedBy, invalid }">
-              <UiInput
-                :id="id"
-                v-model="telegramProfileForm.allowed_chat_refs"
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                placeholder="telegram-chat:999"
-              />
-            </template>
-          </UiFormField>
-
-          <UiFormField
-            label="Allowed users"
-            help="Comma-separated StackOS refs. Only these users can trigger work or replies."
-            required
-          >
-            <template #default="{ id, describedBy, invalid }">
-              <UiInput
-                :id="id"
-                v-model="telegramProfileForm.allowed_user_refs"
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                placeholder="telegram-user:555"
-              />
-            </template>
-          </UiFormField>
-        </div>
-
-        <div class="grid gap-4">
-          <UiFormField label="Mentions">
-            <template #default="{ id, describedBy, invalid }">
-              <UiInput
-                :id="id"
-                v-model="telegramProfileForm.mention_patterns"
-                :aria-describedby="describedBy"
-                :invalid="invalid"
-                placeholder="support, ops"
-              />
-            </template>
-          </UiFormField>
-        </div>
-
-        <div class="grid gap-3 rounded-md border border-subtle bg-bg-surface-alt p-3">
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <h3 class="text-sm font-semibold text-fg-strong">Command intents</h3>
-              <p class="mt-0.5 text-xs text-fg-muted">
-                Optional triggers with guidance passed to the operating agent.
-              </p>
-            </div>
-            <UiButton size="sm" variant="secondary" icon-left="plus" @click="addCommandDraft">
-              Add command
-            </UiButton>
-          </div>
-
-          <div
-            v-for="(command, index) in telegramProfileForm.commands"
-            :key="index"
-            class="grid gap-3 rounded-md border border-subtle bg-bg-surface p-3"
-          >
-            <div class="grid gap-3 sm:grid-cols-[minmax(8rem,12rem)_1fr_auto] sm:items-start">
-              <UiFormField label="Command">
-                <template #default="{ id, describedBy, invalid }">
-                  <UiInput
-                    :id="id"
-                    v-model="command.command"
-                    :aria-describedby="describedBy"
-                    :invalid="invalid"
-                    placeholder="/support"
-                  />
-                </template>
-              </UiFormField>
-
-              <UiFormField label="Description">
-                <template #default="{ id, describedBy, invalid }">
-                  <UiInput
-                    :id="id"
-                    v-model="command.description"
-                    :aria-describedby="describedBy"
-                    :invalid="invalid"
-                    placeholder="Handle support requests"
-                  />
-                </template>
-              </UiFormField>
-
-              <div class="pt-6">
-                <UiButton
-                  size="sm"
-                  variant="ghost"
-                  icon-left="trash"
-                  @click="removeCommandDraft(index)"
-                >
-                  Remove
-                </UiButton>
-              </div>
-            </div>
-
-            <UiFormField label="Command guidance">
-              <template #default="{ id, describedBy, invalid }">
-                <UiTextarea
-                  :id="id"
-                  v-model="command.guidance"
-                  :aria-describedby="describedBy"
-                  :invalid="invalid"
-                  :rows="3"
-                  placeholder="Explain what the agent should gather, decide, and return for this command."
-                />
-              </template>
-            </UiFormField>
-
-            <UiCheckbox v-model="command.enabled" label="Command enabled" />
-          </div>
-        </div>
-
-        <details class="rounded-md border border-subtle bg-bg-surface-alt">
-          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default">
-            Advanced delivery behavior
-          </summary>
-          <div class="grid gap-3 border-t border-subtle p-3">
-            <UiCheckbox
-              v-model="telegramProfileForm.store_non_trigger_messages"
-              label="Store non-trigger messages"
-            />
-            <UiCheckbox
-              v-model="telegramProfileForm.origin_required"
-              label="Require origin-bound replies"
-            />
-            <UiCheckbox
-              v-model="telegramProfileForm.reply_to_source_message"
-              label="Reply to source message"
-            />
-            <UiCheckbox
-              v-model="telegramProfileForm.same_thread"
-              label="Use same thread when available"
-            />
-          </div>
-        </details>
-      </div>
-
-      <template #footer>
-        <UiButton variant="ghost" @click="telegramProfilePanelOpen = false"> Cancel </UiButton>
-        <UiButton
-          variant="primary"
-          icon-left="save"
-          :loading="busyAction === 'telegram-profile:save'"
-          @click="saveTelegramProfile"
-        >
-          Save Telegram profile
-        </UiButton>
-      </template>
-    </UiSidePanel>
+      v-model:form="telegramProfileForm"
+      :telegram-connection-options="telegramConnectionOptions"
+      :telegram-connections="telegramConnections"
+      :message="telegramProfileMessage"
+      :busy-action="busyAction"
+      @save="saveTelegramProfile"
+      @add-command="addCommandDraft"
+      @remove-command="removeCommandDraft"
+    />
   </UiPageShell>
 </template>
