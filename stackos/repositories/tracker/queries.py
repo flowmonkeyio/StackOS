@@ -47,6 +47,7 @@ from stackos.repositories.tracker.schema import (
     TrackerTaskOut,
     TrackerTicketOut,
     TrackerVerifyOut,
+    TrackerWorkflowHandoffOut,
 )
 from stackos.repositories.tracker.utils import (
     TERMINAL_TICKET_STATUSES,
@@ -286,6 +287,7 @@ class TrackerQueryMixin:
             links=[
                 TrackerLinkOut.model_validate(row) for row in self._link_rows_for_ticket(ticket.id)
             ],
+            workflow_handoff=self._workflow_handoff(ticket),
             suggested_next_actions=self._suggest_next_actions(ticket),
         )
 
@@ -669,9 +671,55 @@ class TrackerQueryMixin:
             checks.append(f"Complete dependencies first: {', '.join(blockers)}.")
         if ticket.blocker_reason:
             checks.append(f"Resolve blocker_reason: {ticket.blocker_reason}.")
+        handoff = self._workflow_handoff(ticket)
+        if handoff is not None and not checks:
+            step_ref = handoff.step_id or str(ticket.run_plan_step_id or ticket.key)
+            checks.append(
+                "Workflow ticket: inspect runPlan.get, claim the matching step "
+                f"{step_ref!r}, use the active step's allowed tools, then record "
+                "the step with runPlan.recordStep."
+            )
         if not checks:
             checks.append("Claim or continue the ticket, then update status/outcome when done.")
         return checks
+
+    def _workflow_handoff(self, ticket: TrackerTicket) -> TrackerWorkflowHandoffOut | None:
+        source = dict(ticket.source_json or {})
+        run_plan_id = ticket.run_plan_id or source.get("run_plan_id")
+        if run_plan_id is None:
+            return None
+        try:
+            run_plan_id_int = int(run_plan_id)
+        except (TypeError, ValueError):
+            return None
+        step_id = source.get("step_id")
+        if not isinstance(step_id, str) or not step_id:
+            step_id = None
+        run_plan_key = source.get("run_plan_key")
+        if not isinstance(run_plan_key, str) or not run_plan_key:
+            run_plan_key = None
+        template_key = source.get("template_key")
+        if not isinstance(template_key, str) or not template_key:
+            template_key = None
+        next_operations = ["runPlan.get"]
+        if ticket.run_id is None:
+            next_operations.append("runPlan.start")
+        next_operations.extend(["runPlan.claimStep", "toolbox.describe", "runPlan.recordStep"])
+        return TrackerWorkflowHandoffOut(
+            run_plan_id=run_plan_id_int,
+            run_plan_step_id=ticket.run_plan_step_id,
+            run_id=ticket.run_id,
+            step_id=step_id,
+            run_plan_key=run_plan_key,
+            template_key=template_key,
+            next_operations=next_operations,
+            notes=[
+                "The tracker ticket is a navigation mirror; run-plan grants remain "
+                "authoritative for workflow execution.",
+                "Use the returned run_id/run_token from runPlan.start and the active "
+                "step grants from runPlan.claimStep before calling step-gated tools.",
+            ],
+        )
 
     def _suggest_next_actions_raw(
         self,

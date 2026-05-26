@@ -203,6 +203,14 @@ def operation_specs() -> list[OperationSpec]:
                 "resource and, for inbound human messages, can create a generic "
                 "agent_request. It never invokes a model or decides workflow intent."
             ),
+            when_to_use=(
+                "A local UI/chat integration needs to store one inbound or outbound "
+                "message in StackOS.",
+                "An inbound local human message should optionally create agent-request "
+                "work without invoking a model.",
+                "An agent response should be recorded in the same thread without "
+                "creating another request.",
+            ),
             prerequisites=(
                 "Pass a deterministic thread_key and message_key so repeated calls are idempotent.",
                 "Pass explicit text or content_blocks; do not include secrets.",

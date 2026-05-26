@@ -45,6 +45,18 @@ def compact_tracker_brief(value: Any) -> dict[str, Any]:
                 for item in _as_list(data.get("links"))
                 if isinstance(item, dict | BaseModel)
             ],
+            "workflow_handoff": _compact_mapping(
+                data.get("workflow_handoff"),
+                (
+                    "run_plan_id",
+                    "run_plan_step_id",
+                    "run_id",
+                    "step_id",
+                    "run_plan_key",
+                    "template_key",
+                    "next_operations",
+                ),
+            ),
             "suggested_next_actions": _as_list(data.get("suggested_next_actions")),
         }
     )

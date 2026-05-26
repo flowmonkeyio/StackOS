@@ -259,3 +259,32 @@ def test_operation_registry_surface_filter() -> None:
     assert registry.get("runPlan.update").surfaces.cli.enabled is True
     assert registry.get("runPlan.update").surfaces.cli.command == "run-plans approve"
     assert registry.list_out(surface="rest").items[0].surfaces["rest"].enabled is True
+
+
+def test_tracker_operations_include_agent_examples() -> None:
+    registry = build_operation_registry()
+
+    missing = [
+        operation.name
+        for operation in registry.all()
+        if operation.name.startswith("tracker.") and not operation.examples
+    ]
+
+    assert missing == []
+    assert registry.get("tracker.brief").examples[0].arguments["response_mode"] == "compact"
+    assert "dry_run" in registry.get("tracker.createTicket").examples[0].arguments
+
+
+def test_agent_communication_operations_include_when_to_use_guidance() -> None:
+    registry = build_operation_registry()
+    prefixes = ("agentRequest.", "communication", "ingressEndpoint.", "localAgentChat.")
+
+    missing = [
+        operation.name
+        for operation in registry.all()
+        if operation.name.startswith(prefixes) and not operation.when_to_use
+    ]
+
+    assert missing == []
+    assert any("dry_run=true" in item for item in registry.get("communication.send").when_to_use)
+    assert any("claim token" in item for item in registry.get("agentRequest.claim").when_to_use)

@@ -27,6 +27,7 @@ from stackos.repositories.tracker.schema import (
     TrackerTaskOut,
     TrackerTicketOut,
     TrackerVerifyOut,
+    TrackerWorkflowHandoffOut,
 )
 from stackos.repositories.tracker.utils import DEFAULT_TRACKER_KEY
 
@@ -56,4 +57,5 @@ __all__ = [
     "TrackerTaskOut",
     "TrackerTicketOut",
     "TrackerVerifyOut",
+    "TrackerWorkflowHandoffOut",
 ]

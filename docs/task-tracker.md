@@ -57,6 +57,22 @@ Lifecycle mirroring is mechanical:
 StackOS only mirrors state. It does not invent tickets beyond the concrete
 run-plan steps and it does not decide how to repair failures.
 
+`tracker.brief` and `tracker.execute` include `workflow_handoff` for mirrored
+workflow tickets. That packet carries `run_plan_id`, `run_plan_step_id`,
+`run_id` when available, the template/step refs, and the intended operation
+sequence:
+
+```text
+runPlan.get
+-> runPlan.start when no run exists yet
+-> runPlan.claimStep
+-> toolbox.describe for granted step tools
+-> runPlan.recordStep
+```
+
+The handoff is navigation context only. The run-plan token, active step, and
+grant snapshot remain the execution boundary.
+
 Lifecycle timestamps follow the visible state. Moving a task or ticket into
 `complete` or `deferred` sets `completed_at`; reopening it to `in-progress` or
 `not-started` clears `completed_at` so audits do not treat active work as

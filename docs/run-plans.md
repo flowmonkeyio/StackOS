@@ -27,6 +27,12 @@ for the run plan and one ticket per concrete step. Agents can use
 `tracker.next`, `tracker.brief`, and `tracker.verify` to navigate work without
 scanning the full run-plan payload every time.
 
+For mirrored workflow tickets, `tracker.brief` includes a compact
+`workflow_handoff` packet. Treat it as the bridge from tracker navigation back
+to run-plan execution: inspect `runPlan.get`, start the plan if no run exists,
+claim the matching step, inspect granted tools, then record the step result.
+The tracker packet does not grant execution by itself.
+
 ## Grants
 
 Run-plan grants are frozen in `run_plans.grant_snapshot_json`.

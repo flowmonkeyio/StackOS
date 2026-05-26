@@ -434,6 +434,11 @@ def operation_specs() -> list[OperationSpec]:
             handler=agent_request_get,
             surfaces=_surfaces("agentRequest.get", "agent-requests get"),
             purpose="Use this to inspect one queue item before claiming or linking it.",
+            when_to_use=(
+                "An agent has a request_id from list/search/UI and needs the sanitized "
+                "payload before deciding whether to claim it.",
+                "A script needs to inspect queue state without changing claim ownership.",
+            ),
             prerequisites=("Pass project_id and request_id.",),
             returns=("One sanitized AgentRequestOut record.",),
             examples=(
@@ -499,6 +504,11 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this before creating or linking a run plan for an inbound request. "
                 "The returned claim_token is the only raw claim token StackOS returns."
             ),
+            when_to_use=(
+                "An agent is ready to take ownership of a request and needs a leased claim token.",
+                "A retry-safe queue consumer needs to prevent multiple agents handling "
+                "the same request.",
+            ),
             prerequisites=(
                 "Pass project_id, request_id, claimed_by, and idempotency_key.",
                 "Use the same idempotency_key when retrying a network-lost claim call.",
@@ -528,6 +538,11 @@ def operation_specs() -> list[OperationSpec]:
             handler=agent_request_release,
             surfaces=_surfaces("agentRequest.release", "agent-requests release"),
             purpose="Use this when an agent decides not to handle a claimed request yet.",
+            when_to_use=(
+                "The claiming agent cannot continue and wants another agent to see the "
+                "request as claimable.",
+                "A request was claimed during planning but no run plan should be linked yet.",
+            ),
             prerequisites=("Pass project_id, request_id, and the active claim_token.",),
             returns=("A WriteEnvelope containing the released AgentRequestOut.",),
             examples=(
@@ -549,6 +564,11 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this after agentRequest.claim and runPlan.create so the trigger, plan, "
                 "and later audit trail stay connected."
+            ),
+            when_to_use=(
+                "The agent created a run plan in separate calls and must attach it to "
+                "the claimed request.",
+                "The request should remain traceable from trigger to run-plan execution.",
             ),
             prerequisites=(
                 "Pass project_id, request_id, run_plan_id, and the active claim_token.",
@@ -628,6 +648,12 @@ def operation_specs() -> list[OperationSpec]:
             handler=agent_request_complete,
             surfaces=_surfaces("agentRequest.complete", "agent-requests complete"),
             purpose="Use this after the linked work has reached a terminal outcome.",
+            when_to_use=(
+                "The agent finished or failed the requested work and needs to close the "
+                "queue item.",
+                "The linked run plan has a terminal outcome and the request status should "
+                "match that result.",
+            ),
             prerequisites=(
                 "Pass project_id, request_id, and the active claim_token.",
                 "status must be resolved or failed.",
@@ -656,6 +682,10 @@ def operation_specs() -> list[OperationSpec]:
             handler=agent_request_ignore,
             surfaces=_surfaces("agentRequest.ignore", "agent-requests ignore"),
             purpose="Use this for duplicates, noise, or explicit operator decisions to skip work.",
+            when_to_use=(
+                "A request is duplicate/noise and should not create or continue a run plan.",
+                "An operator or policy explicitly decided the request should be archived.",
+            ),
             prerequisites=(
                 "Pass project_id, request_id, and ignored_by.",
                 "Pass claim_token when the request is already claimed.",

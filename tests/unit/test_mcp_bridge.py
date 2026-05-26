@@ -496,6 +496,21 @@ def test_bridge_compacts_tracker_brief_for_agent_context() -> None:
             "dependents": [],
             "references": [{"id": 1, "ref_type": "file", "ref": "README.md", "title": "Readme"}],
             "links": [{"id": 2, "link_kind": "run-plan", "ref": "run-plan:4"}],
+            "workflow_handoff": {
+                "run_plan_id": 4,
+                "run_plan_step_id": 12,
+                "run_id": 9,
+                "step_id": "deliver",
+                "run_plan_key": "demo-run",
+                "template_key": "demo",
+                "next_operations": [
+                    "runPlan.get",
+                    "runPlan.claimStep",
+                    "toolbox.describe",
+                    "runPlan.recordStep",
+                ],
+                "notes": ["verbose guidance omitted from compact response"],
+            },
             "suggested_next_actions": ["finish the work"],
         },
     )
@@ -543,6 +558,20 @@ def test_bridge_compacts_tracker_brief_for_agent_context() -> None:
                 "ref": "run-plan:4",
             }
         ],
+        "workflow_handoff": {
+            "run_plan_id": 4,
+            "run_plan_step_id": 12,
+            "run_id": 9,
+            "step_id": "deliver",
+            "run_plan_key": "demo-run",
+            "template_key": "demo",
+            "next_operations": [
+                "runPlan.get",
+                "runPlan.claimStep",
+                "toolbox.describe",
+                "runPlan.recordStep",
+            ],
+        },
         "suggested_next_actions": ["finish the work"],
     }
 

@@ -769,13 +769,20 @@ def test_run_plan_lifecycle_mirrors_tracker(session: Session, project_id: int) -
     )
     assert claimed.status == "running"
 
-    running_ticket = tracker.brief(
+    running_brief = tracker.brief(
         project_id=project_id,
         ticket_key=f"workflow-{plan.id}-prepare",
-    ).ticket
+    )
+    running_ticket = running_brief.ticket
     assert running_ticket.status == TrackerItemStatus.IN_PROGRESS
     assert running_ticket.assignee == "codex"
     assert running_ticket.run_id == started.run_id
+    assert running_brief.workflow_handoff is not None
+    assert running_brief.workflow_handoff.run_plan_id == plan.id
+    assert running_brief.workflow_handoff.run_id == started.run_id
+    assert running_brief.workflow_handoff.step_id == "prepare"
+    assert "runPlan.claimStep" in running_brief.workflow_handoff.next_operations
+    assert any("Workflow ticket" in item for item in running_brief.suggested_next_actions)
 
     RunPlanRepository(session).record_step(
         run_plan_id=plan.id,

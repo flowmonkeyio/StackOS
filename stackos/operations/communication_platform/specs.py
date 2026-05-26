@@ -98,6 +98,11 @@ def operation_specs() -> list[OperationSpec]:
                 "The endpoint is provider-neutral; driver-specific details live only in "
                 "driver_config and routes are derived from project communication profiles."
             ),
+            when_to_use=(
+                "A project needs Slack/Telegram/webhook ingress routes derived from one "
+                "public base URL.",
+                "The operator changed deployment or local tunnel configuration.",
+            ),
             prerequisites=(
                 "Use driver=public-url for a deployed/reverse-proxied HTTPS host.",
                 "Use driver=local-tunnel only for local development and keep provider "
@@ -139,6 +144,11 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this after a local tunnel or deployment URL changes. It stores one "
                 "project public_base_url and can sync derived provider routes."
             ),
+            when_to_use=(
+                "A local tunnel URL rotated and StackOS should rediscover the public URL.",
+                "A deployment URL was passed explicitly and provider route metadata should "
+                "refresh from it.",
+            ),
             prerequisites=("Configure ingressEndpoint first.",),
             returns=("A WriteEnvelope with endpoint, route, and provider sync status.",),
             examples=(
@@ -157,6 +167,10 @@ def operation_specs() -> list[OperationSpec]:
             handler=ingress_endpoint_routes,
             surfaces=_surfaces("ingressEndpoint.routes", "ops call ingressEndpoint.routes"),
             purpose="Use this to get exact Slack and Telegram webhook URLs without guessing.",
+            when_to_use=(
+                "An operator or setup agent needs exact webhook URLs to copy or verify.",
+                "The agent is diagnosing route shape without changing provider state.",
+            ),
             prerequisites=("Configure ingressEndpoint first.",),
             returns=("Endpoint metadata plus provider route URLs.",),
             examples=(OperationExample(title="List routes", arguments={"project_id": 1}),),
@@ -174,6 +188,12 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this after configuring profiles or public_base_url. It updates safe route "
                 "metadata and can apply Telegram setWebhook through daemon-held credentials."
             ),
+            when_to_use=(
+                "Communication profiles or public_base_url changed and provider route "
+                "metadata needs to catch up.",
+                "The agent intentionally wants daemon-side provider route sync, such as "
+                "Telegram setWebhook.",
+            ),
             prerequisites=("Configure ingressEndpoint and communication profiles first.",),
             returns=("Updated routes and per-provider sync results.",),
             examples=(OperationExample(title="Sync routes", arguments={"project_id": 1}),),
@@ -187,6 +207,10 @@ def operation_specs() -> list[OperationSpec]:
             handler=ingress_endpoint_status,
             surfaces=_surfaces("ingressEndpoint.status", "ops call ingressEndpoint.status"),
             purpose="Use this before telling an operator to ping Slack or Telegram.",
+            when_to_use=(
+                "An agent needs readiness diagnostics before testing inbound messages.",
+                "A setup flow needs model-readable notes about missing endpoint or route state.",
+            ),
             prerequisites=("Pass project_id.",),
             returns=("Configured/ready booleans, endpoint metadata, routes, and notes.",),
             examples=(OperationExample(title="Ingress status", arguments={"project_id": 1}),),
@@ -207,6 +231,11 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this setup operation for the agent-facing identity and policy bundle "
                 "that can span Telegram, Slack, local chat, SMTP, IMAP, and future transports. "
                 "Provider-specific credentials and sends remain explicit provider actions."
+            ),
+            when_to_use=(
+                "A project needs a safe actor identity for communication sends or replies.",
+                "The agent is configuring provider-neutral policy, guidance, or safe "
+                "provider facets for an actor.",
             ),
             prerequisites=(
                 "Pass identity.display_name.",
@@ -234,6 +263,10 @@ def operation_specs() -> list[OperationSpec]:
             handler=communication_profile_get,
             surfaces=_surfaces("communicationProfile.get", "ops call communicationProfile.get"),
             purpose="Use this to inspect safe profile identity, guidance, facets, and policy.",
+            when_to_use=(
+                "An agent knows the profile key and needs its safe policy/guidance fields.",
+                "A routing failure should be diagnosed without exposing credentials.",
+            ),
             prerequisites=("Pass project_id and key.",),
             returns=("One safe CommunicationProfileOut record.",),
             examples=(
@@ -255,6 +288,10 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this during setup or routing diagnostics to discover communication profiles."
             ),
+            when_to_use=(
+                "An agent needs to choose a sending/reply profile.",
+                "A setup flow needs to inspect which profile identities already exist.",
+            ),
             prerequisites=("Pass project_id.",),
             returns=("A Page of safe CommunicationProfileOut records.",),
             examples=(OperationExample(title="List profiles", arguments={"project_id": 1}),),
@@ -274,6 +311,12 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this to register a Telegram chat, Slack channel/DM, email mailbox, "
                 "or local chat surface with safe capability metadata."
+            ),
+            when_to_use=(
+                "A communication channel, DM, mailbox, or local chat surface should become "
+                "addressable in StackOS.",
+                "The agent needs to store audience, purpose, capability, and data-scope "
+                "guidance for future work.",
             ),
             prerequisites=("Pass provider_key, surface_ref, and kind.",),
             returns=("A WriteEnvelope with CommunicationSurfaceOut.",),
@@ -298,6 +341,11 @@ def operation_specs() -> list[OperationSpec]:
             handler=communication_surface_list,
             surfaces=_surfaces("communicationSurface.list", "ops call communicationSurface.list"),
             purpose="Use this to inspect known channels, DMs, mailboxes, and local chat surfaces.",
+            when_to_use=(
+                "An agent needs to discover available communication surfaces before "
+                "creating a target, route, or membership.",
+                "A setup diagnostic should verify the project knows about a provider surface.",
+            ),
             prerequisites=("Pass project_id. Optional filters are provider_key and kind.",),
             returns=("A Page of CommunicationSurfaceOut records.",),
             examples=(
@@ -323,6 +371,11 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this to map people, customers, teams, bots, or organizations to safe "
                 "provider refs without exposing provider tokens or credentials."
             ),
+            when_to_use=(
+                "A known person/team/customer needs a stable safe ref across providers.",
+                "The agent wants to store external/customer refs for routing context "
+                "without secrets.",
+            ),
             prerequisites=("Pass key and display_name.",),
             returns=("A WriteEnvelope with CommunicationContactOut.",),
             examples=(
@@ -346,6 +399,11 @@ def operation_specs() -> list[OperationSpec]:
             handler=communication_contact_list,
             surfaces=_surfaces("communicationContact.list", "ops call communicationContact.list"),
             purpose="Use this to discover safe cross-provider person/customer/team refs.",
+            when_to_use=(
+                "An agent needs to resolve a person, customer, team, bot, or organization "
+                "before planning a communication flow.",
+                "A setup audit needs to inspect known contacts without provider secrets.",
+            ),
             prerequisites=("Pass project_id.",),
             returns=("A Page of CommunicationContactOut records.",),
             examples=(OperationExample(title="List contacts", arguments={"project_id": 1}),),
@@ -365,6 +423,11 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this to store whether a profile/contact/bot is joined, invited, removed, "
                 "or unknown in a surface, with provider capability and scope diagnostics."
+            ),
+            when_to_use=(
+                "The agent needs to record bot/profile/contact membership and permissions "
+                "for a surface.",
+                "Provider scope or write/read diagnostics should be attached to a surface.",
             ),
             prerequisites=("Pass surface_ref, member_ref, provider_key, and status.",),
             returns=("A WriteEnvelope with CommunicationMembershipOut.",),
@@ -393,6 +456,10 @@ def operation_specs() -> list[OperationSpec]:
                 "ops call communicationMembership.list",
             ),
             purpose="Use this to inspect where profiles, contacts, or bots can read/write.",
+            when_to_use=(
+                "An agent needs to check whether an actor/contact is known in a surface.",
+                "A delivery setup flow needs membership or permission diagnostics.",
+            ),
             prerequisites=("Pass project_id and optional surface/member/provider filters.",),
             returns=("A Page of CommunicationMembershipOut records.",),
             examples=(OperationExample(title="List memberships", arguments={"project_id": 1}),),
@@ -410,6 +477,10 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this setup operation to create named destinations such as internal-support "
                 "or sergey-dm. Targets resolve to explicit provider action refs; they do not "
                 "send messages or choose business behavior."
+            ),
+            when_to_use=(
+                "A recurring destination should be addressed by a stable target key.",
+                "A workflow or direct send needs policy-bound routing through communication.send.",
             ),
             prerequisites=("Pass provider_key and surface_ref.",),
             returns=("A WriteEnvelope with CommunicationTargetOut.",),
@@ -434,6 +505,10 @@ def operation_specs() -> list[OperationSpec]:
             handler=communication_target_list,
             surfaces=_surfaces("communicationTarget.list", "ops call communicationTarget.list"),
             purpose="Use this to discover configured safe send destinations.",
+            when_to_use=(
+                "An agent needs to choose a named send destination.",
+                "A setup audit needs to inspect which targets exist before testing delivery.",
+            ),
             prerequisites=("Pass project_id.",),
             returns=("A Page of CommunicationTargetOut records.",),
             examples=(OperationExample(title="List targets", arguments={"project_id": 1}),),
@@ -454,6 +529,10 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this before sending across channels/providers. It applies static target "
                 "policy and returns the provider action ref/defaults for planning/debugging; "
                 "normal delivery should use communication.send or communication.reply."
+            ),
+            when_to_use=(
+                "An agent wants to debug routing/policy for a target without sending.",
+                "A setup flow needs to confirm which provider action/defaults a target will use.",
             ),
             prerequisites=("Create a communicationTarget first.",),
             returns=("Allowed/denied status plus explicit provider action ref and safe defaults.",),
@@ -481,6 +560,10 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this to declare allowed cross-surface handoffs such as a customer "
                 "Telegram issue to an internal Slack target. It never sends messages."
             ),
+            when_to_use=(
+                "A project needs a named policy route from one surface to another target.",
+                "An agent handoff should be constrained by source surface, target, or profile.",
+            ),
             prerequisites=("Pass source surfaces and target refs explicitly.",),
             returns=("A WriteEnvelope with CommunicationRouteOut.",),
             examples=(
@@ -504,6 +587,11 @@ def operation_specs() -> list[OperationSpec]:
             handler=communication_route_list,
             surfaces=_surfaces("communicationRoute.list", "ops call communicationRoute.list"),
             purpose="Use this to inspect configured cross-surface handoff routes.",
+            when_to_use=(
+                "An agent needs to discover allowed handoff routes before notifying a team.",
+                "A setup diagnostic should explain why a cross-surface handoff is or is not "
+                "configured.",
+            ),
             prerequisites=("Pass project_id and optional source/target/profile filters.",),
             returns=("A Page of CommunicationRouteOut records.",),
             examples=(OperationExample(title="List routes", arguments={"project_id": 1}),),
@@ -520,6 +608,11 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this when an agent needs recent stored conversation context before "
                 "deciding a workflow. It never fetches live provider history."
+            ),
+            when_to_use=(
+                "An agent needs bounded stored message history for planning or reply context.",
+                "The caller wants local StackOS communication records, not a live provider "
+                "history fetch.",
             ),
             prerequisites=(
                 "Pass bounded filters such as surface_ref, thread_ref, provider_key, or profile.",

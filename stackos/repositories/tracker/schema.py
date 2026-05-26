@@ -77,6 +77,17 @@ class TrackerLinkOut(BaseModel):
     created_at: datetime
 
 
+class TrackerWorkflowHandoffOut(BaseModel):
+    run_plan_id: int
+    run_plan_step_id: int | None = None
+    run_id: int | None = None
+    step_id: str | None = None
+    run_plan_key: str | None = None
+    template_key: str | None = None
+    next_operations: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class TrackerTaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -224,6 +235,7 @@ class TrackerBriefOut(BaseModel):
     dependents: list[TrackerTicketOut]
     references: list[TrackerReferenceOut]
     links: list[TrackerLinkOut]
+    workflow_handoff: TrackerWorkflowHandoffOut | None = None
     suggested_next_actions: list[str]
 
 
@@ -331,4 +343,5 @@ __all__ = [
     "TrackerTaskOut",
     "TrackerTicketOut",
     "TrackerVerifyOut",
+    "TrackerWorkflowHandoffOut",
 ]

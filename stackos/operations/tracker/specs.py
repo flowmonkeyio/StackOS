@@ -124,6 +124,12 @@ def operation_specs() -> list[OperationSpec]:
             output_model=TrackerNextOut | dict[str, Any],
             handler=tracker_blockers,
             purpose="Use this to triage stuck project work.",
+            examples=(
+                OperationExample(
+                    title="List blocked tracker work",
+                    arguments={"project_id": 1, "response_mode": "compact"},
+                ),
+            ),
         ),
         _read_spec(
             name="tracker.brief",
@@ -135,6 +141,16 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this before doing ticket work. It is the agent-friendly "
                 "bounded context packet."
             ),
+            examples=(
+                OperationExample(
+                    title="Read one ticket before execution",
+                    arguments={
+                        "project_id": 1,
+                        "ticket_key": "workflow-7-deliver",
+                        "response_mode": "compact",
+                    },
+                ),
+            ),
         ),
         _read_spec(
             name="tracker.why",
@@ -143,6 +159,12 @@ def operation_specs() -> list[OperationSpec]:
             output_model=TrackerBriefOut | dict[str, Any],
             handler=tracker_why,
             purpose="Use this when the agent or operator needs provenance and dependency context.",
+            examples=(
+                OperationExample(
+                    title="Explain ticket provenance",
+                    arguments={"project_id": 1, "ticket_key": "workflow-7-deliver"},
+                ),
+            ),
         ),
         _read_spec(
             name="tracker.execute",
@@ -154,6 +176,12 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this as the llm-tracker-style execution context before "
                 "making code/tool changes."
             ),
+            examples=(
+                OperationExample(
+                    title="Fetch execution context",
+                    arguments={"project_id": 1, "ticket_key": "manual-comms-send"},
+                ),
+            ),
         ),
         _read_spec(
             name="tracker.verify",
@@ -162,6 +190,12 @@ def operation_specs() -> list[OperationSpec]:
             output_model=TrackerVerifyOut | dict[str, Any],
             handler=tracker_verify,
             purpose="Use this before marking a ticket complete or asking a human for signoff.",
+            examples=(
+                OperationExample(
+                    title="Check completion readiness",
+                    arguments={"project_id": 1, "ticket_key": "manual-comms-send"},
+                ),
+            ),
         ),
         _read_spec(
             name="tracker.history",
@@ -170,6 +204,12 @@ def operation_specs() -> list[OperationSpec]:
             output_model=Page[TrackerHistoryOut] | dict[str, Any],
             handler=tracker_history,
             purpose="Use this for audit and context recovery across prior runs.",
+            examples=(
+                OperationExample(
+                    title="Read recent tracker history",
+                    arguments={"project_id": 1, "limit": 20, "response_mode": "compact"},
+                ),
+            ),
         ),
         _read_spec(
             name="tracker.changed",
@@ -178,6 +218,12 @@ def operation_specs() -> list[OperationSpec]:
             output_model=TrackerChangedOut | dict[str, Any],
             handler=tracker_changed,
             purpose="Use this for efficient context refresh without reloading the whole tracker.",
+            examples=(
+                OperationExample(
+                    title="Refresh from a known revision",
+                    arguments={"project_id": 1, "since_rev": 120, "limit": 50},
+                ),
+            ),
         ),
         _read_spec(
             name="tracker.search",
@@ -186,6 +232,16 @@ def operation_specs() -> list[OperationSpec]:
             output_model=TrackerSearchOut | dict[str, Any],
             handler=tracker_search,
             purpose="Use this when the agent has a keyword but not a task/ticket key.",
+            examples=(
+                OperationExample(
+                    title="Find a task or ticket by phrase",
+                    arguments={
+                        "project_id": 1,
+                        "query": "telegram reply",
+                        "response_mode": "compact",
+                    },
+                ),
+            ),
         ),
         _write_spec(
             name="tracker.createTask",
@@ -193,6 +249,18 @@ def operation_specs() -> list[OperationSpec]:
             input_model=TrackerCreateTaskInput,
             handler=tracker_create_task,
             purpose="Use this when an agent/human has a work objective that can own tickets.",
+            examples=(
+                OperationExample(
+                    title="Create an implementation task",
+                    arguments={
+                        "project_id": 1,
+                        "key": "manual-comms",
+                        "title": "Manual communications polish",
+                        "goal": "Tighten agent-facing communication flows.",
+                        "status": "in-progress",
+                    },
+                ),
+            ),
         ),
         _write_spec(
             name="tracker.createTicket",
@@ -229,6 +297,19 @@ def operation_specs() -> list[OperationSpec]:
             input_model=TrackerUpdateTaskInput,
             handler=tracker_update_task,
             purpose="Use this for task status, ownership, lane, priority, and metadata updates.",
+            examples=(
+                OperationExample(
+                    title="Mark a task ready for review",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "manual-comms",
+                        "patch_json": {
+                            "status": "in-progress",
+                            "lane_key": "review",
+                        },
+                    },
+                ),
+            ),
         ),
         _write_spec(
             name="tracker.updateTicket",
@@ -284,6 +365,18 @@ def operation_specs() -> list[OperationSpec]:
             input_model=TrackerPatchInput,
             handler=tracker_patch,
             purpose="Use this when several tracker updates are part of one agent decision.",
+            examples=(
+                OperationExample(
+                    title="Patch task and ticket state together",
+                    arguments={
+                        "project_id": 1,
+                        "patch_json": {
+                            "tasks": {"manual-comms": {"lane_key": "delivery"}},
+                            "tickets": {"manual-comms-send": {"status": "in-progress"}},
+                        },
+                    },
+                ),
+            ),
         ),
         _write_spec(
             name="tracker.pick",
@@ -291,6 +384,16 @@ def operation_specs() -> list[OperationSpec]:
             input_model=TrackerPickInput,
             handler=tracker_pick,
             purpose="Use this before work starts so ownership and in-progress state are recorded.",
+            examples=(
+                OperationExample(
+                    title="Claim one ready ticket",
+                    arguments={
+                        "project_id": 1,
+                        "ticket_key": "manual-comms-send",
+                        "assignee": "codex",
+                    },
+                ),
+            ),
         ),
         _write_spec(
             name="tracker.release",
@@ -298,6 +401,15 @@ def operation_specs() -> list[OperationSpec]:
             input_model=TrackerReleaseInput,
             handler=tracker_release,
             purpose="Use this when an agent stops owning a ticket.",
+            examples=(
+                OperationExample(
+                    title="Release a claimed ticket",
+                    arguments={
+                        "project_id": 1,
+                        "ticket_key": "manual-comms-send",
+                    },
+                ),
+            ),
         ),
         _write_spec(
             name="tracker.linkRunPlan",
@@ -306,6 +418,16 @@ def operation_specs() -> list[OperationSpec]:
             handler=tracker_link_run_plan,
             purpose=(
                 "Use this when a manually created task should point at workflow execution state."
+            ),
+            examples=(
+                OperationExample(
+                    title="Link a manual task to workflow execution",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "manual-comms",
+                        "run_plan_id": 12,
+                    },
+                ),
             ),
         ),
     ]

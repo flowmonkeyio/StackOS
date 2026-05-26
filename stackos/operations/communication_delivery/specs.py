@@ -37,6 +37,13 @@ def operation_specs() -> list[OperationSpec]:
                 "StackOS resolves profile, target, provider action, credential, policy, "
                 "capabilities, idempotency, and audit."
             ),
+            when_to_use=(
+                "An agent needs to send one provider-neutral message to a named target.",
+                "The destination is a configured communication target and not only a "
+                "provider-specific escape hatch.",
+                "Use dry_run=true first when the agent needs to inspect routing, policy, "
+                "and provider payload shape without sending.",
+            ),
             prerequisites=(
                 "Pass to as a configured communication target key/ref.",
                 "Pass from only when multiple profiles could send; otherwise StackOS resolves it.",
@@ -73,6 +80,13 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this when an inbound Telegram or Slack agent request should receive "
                 "a response in its origin surface/thread without manually reconstructing "
                 "provider ids or credentials."
+            ),
+            when_to_use=(
+                "An agent is responding to a stored agent request in the same origin "
+                "surface/thread.",
+                "The caller has request_id and should avoid manually rebuilding provider "
+                "thread/message identifiers.",
+                "Use dry_run=true first when checking reply policy or payload shape.",
             ),
             prerequisites=(
                 "Pass request_id for a stored agent request.",
