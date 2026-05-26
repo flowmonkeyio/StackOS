@@ -81,7 +81,7 @@ function catalogJson(url: string): Response | null {
       },
     ])
   }
-  if (url.includes('/api/v1/catalog')) return json({ plugins: [] })
+  if (url.includes('/api/v1/catalog')) throw new Error('unexpected aggregate catalog request')
   if (url.includes('/api/v1/capabilities')) return json([])
   if (url.includes('/api/v1/providers')) return json([])
   if (url.includes('/api/v1/actions')) {

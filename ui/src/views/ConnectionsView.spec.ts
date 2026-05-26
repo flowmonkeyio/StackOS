@@ -1124,7 +1124,9 @@ function catalogJson(url: string): Response | null {
       },
     ])
   }
-  if (url === '/api/v1/catalog?project_id=1') return json({ plugins: [] })
+  if (url === '/api/v1/catalog?project_id=1') {
+    throw new Error('unexpected aggregate catalog request')
+  }
   if (
     [
       '/api/v1/capabilities?project_id=1',
