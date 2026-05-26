@@ -1017,7 +1017,7 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
               </p>
             </div>
             <div class="tracker-task-summary__progress">
-              <span>{{ activeTaskRow.doneCount }}/{{ activeTaskRow.totalCount }}</span>
+              <span>{{ activeTaskRow.doneCount }}/{{ activeTaskRow.totalCount }} tasks</span>
               <span>{{ activeTaskRow.percent }}%</span>
             </div>
           </div>
@@ -1252,6 +1252,7 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
   align-items: end;
+  min-width: 0;
 }
 
 .tracker-command-panel__segment {
@@ -1271,6 +1272,7 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   display: flex;
   flex-wrap: nowrap;
   gap: 4px;
+  min-width: 0;
   overflow-x: auto;
 }
 
@@ -1356,13 +1358,17 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 .tracker-task-summary {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 14px;
 }
 
 .tracker-task-summary__main {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 16px;
+  min-width: 0;
 }
 
 .tracker-task-summary__title {
@@ -1371,18 +1377,21 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   font-size: 20px;
   font-weight: 700;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .tracker-task-summary__subtitle {
   margin-top: 4px;
+  max-width: 72ch;
   color: var(--color-text-muted);
   font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .tracker-task-summary__progress {
   display: grid;
-  min-width: 72px;
-  flex: none;
+  min-width: 76px;
   justify-items: end;
   color: var(--color-text);
   font-family: var(--font-mono);
@@ -1393,9 +1402,15 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 .tracker-task-summary__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px 12px;
+  min-width: 0;
   color: var(--color-text-muted);
   font-size: 12px;
+}
+
+.tracker-task-summary__meta span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .tracker-main {
@@ -1713,7 +1728,7 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 
 @media (max-width: 720px) {
   .tracker-command-panel__controls {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .tracker-command-panel__search,
@@ -1747,11 +1762,16 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   }
 
   .tracker-task-summary__main {
-    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
 
   .tracker-task-summary__progress {
-    justify-items: start;
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: 8px;
+    justify-content: flex-start;
   }
 }
 </style>
