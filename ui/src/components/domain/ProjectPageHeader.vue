@@ -38,7 +38,6 @@ const project = computed(() => projectsStore.getById(props.projectId))
 const titleText = computed(() => props.title ?? project.value?.name ?? 'Project')
 
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
-  { label: 'Projects', to: '/projects' },
   {
     label: project.value?.name ?? `Project ${props.projectId}`,
     to: `/projects/${props.projectId}/overview`,

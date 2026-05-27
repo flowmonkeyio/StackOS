@@ -31,32 +31,49 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
   const base = `/projects/${projectId}`
   return [
     {
-      key: 'stackos-core',
-      label: 'StackOS',
+      key: 'project-work',
+      label: 'Work',
       items: [
         { key: 'overview', label: 'Overview', to: `${base}/overview` },
-        { key: 'plugins', label: 'Plugins', to: `${base}/plugins` },
-        { key: 'capabilities', label: 'Capabilities', to: `${base}/capabilities` },
-        { key: 'connections', label: 'Connections', to: `${base}/connections` },
-        { key: 'operations', label: 'Operations', to: `${base}/operations` },
-        { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls` },
-        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests` },
-        { key: 'agent-presets', label: 'Agent Presets', to: `${base}/agent-presets` },
         { key: 'tasks', label: 'Tasks', to: `${base}/tasks` },
-        {
-          key: 'workflow-templates',
-          label: 'Workflow Templates',
-          to: `${base}/workflow-templates`,
-        },
         { key: 'runs', label: 'Runs', to: `${base}/runs`, matchPrefix: true },
       ],
     },
     {
-      key: 'project-data',
-      label: 'Project Data',
+      key: 'workflow-ops',
+      label: 'Workflows',
       items: [
-        { key: 'project-data', label: 'Data', to: `${base}/data` },
-        { key: 'resources', label: 'Resources', to: `${base}/resources` },
+        {
+          key: 'workflow-templates',
+          label: 'Workflow Library',
+          to: `${base}/workflow-templates`,
+        },
+        { key: 'agent-presets', label: 'Agent Presets', to: `${base}/agent-presets` },
+        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests` },
+      ],
+    },
+    {
+      key: 'project-data',
+      label: 'Knowledge',
+      items: [
+        { key: 'project-data', label: 'Project Data', to: `${base}/data` },
+      ],
+    },
+    {
+      key: 'integrations',
+      label: 'Integrations',
+      items: [
+        { key: 'connections', label: 'Connections', to: `${base}/connections` },
+        { key: 'plugins', label: 'Plugins', to: `${base}/plugins` },
+        { key: 'capabilities', label: 'Capabilities', to: `${base}/capabilities` },
+      ],
+    },
+    {
+      key: 'system',
+      label: 'System',
+      items: [
+        { key: 'operations', label: 'Operations', to: `${base}/operations` },
+        { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls` },
       ],
     },
   ]

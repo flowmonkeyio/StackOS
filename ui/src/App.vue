@@ -6,7 +6,7 @@
 
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
 
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
@@ -175,21 +175,6 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
         </div>
 
         <nav class="min-h-0 flex-1 overflow-y-auto px-3 py-3 [scrollbar-width:thin]">
-          <div class="mb-3">
-            <RouterLink
-              to="/projects"
-              class="relative block rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-fast"
-              :class="route.path === '/projects'
-                ? 'bg-accent-subtle text-accent-fg shadow-xs before:absolute before:bottom-1.5 before:left-1 before:top-1.5 before:w-0.5 before:rounded-full before:bg-accent'
-                : 'text-fg-default hover:bg-bg-surface-alt'"
-              @click="closeDrawer"
-            >
-              <span class="block min-w-0 truncate pl-2 font-medium">
-                All projects
-              </span>
-            </RouterLink>
-          </div>
-
           <p
             v-if="projectNavSections.length === 0"
             class="rounded-md border border-dashed border-subtle px-3 py-3 text-sm text-fg-muted"

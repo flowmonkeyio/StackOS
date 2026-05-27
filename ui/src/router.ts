@@ -2,7 +2,6 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 import HomeView from './views/HomeView.vue'
 import AuthErrorView from './views/AuthErrorView.vue'
-import ProjectsView from './views/ProjectsView.vue'
 import ProjectDetailView from './views/ProjectDetailView.vue'
 import OverviewTab from './views/project-detail/OverviewTab.vue'
 import SetupStatusTab from './views/project-detail/SetupStatusTab.vue'
@@ -24,7 +23,7 @@ import TaskTrackerView from './views/TaskTrackerView.vue'
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/auth-error', name: 'auth-error', component: AuthErrorView },
-  { path: '/projects', name: 'projects', component: ProjectsView },
+  { path: '/projects', redirect: '/' },
   {
     path: '/projects/:id',
     component: ProjectDetailView,

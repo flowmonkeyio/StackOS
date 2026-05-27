@@ -32,7 +32,7 @@ const errorStatus = computed<number | null>(() => {
 async function retry(): Promise<void> {
   await authStore.bootstrap()
   if (authStore.ready) {
-    window.location.assign('/projects')
+    window.location.assign('/')
   }
 }
 </script>

@@ -167,7 +167,7 @@ const schedulerLabel = computed<string>(() => {
     </UiPanel>
 
     <footer class="text-xs text-fg-muted">
-      Use Projects to pick a workspace and continue operating StackOS.
+      Use the project switcher to choose a workspace and continue operating StackOS.
     </footer>
   </UiPageShell>
 </template>

@@ -9,20 +9,21 @@ import {
 } from './nav'
 
 describe('StackOS nav contributions', () => {
-  it('keeps generic core nav focused on StackOS primitives', () => {
+  it('orders generic project nav by operational semantics', () => {
     const core = coreNavSections(7)
+    const labels = core.map((section) => section.label)
 
-    expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
-      '/projects/7/workflow-templates',
-    )
-    expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
-      '/projects/7/resources',
-    )
+    expect(labels).toEqual(['Work', 'Workflows', 'Knowledge', 'Integrations', 'System'])
+    expect(core[0].items.map((item) => item.label)).toEqual(['Overview', 'Tasks', 'Runs'])
+    expect(core[1].items.map((item) => item.label)).toEqual([
+      'Workflow Library',
+      'Agent Presets',
+      'Agent Requests',
+    ])
+    expect(core[2].items.map((item) => item.label)).toEqual(['Project Data'])
+    expect(core[2].items.map((item) => item.to)).not.toContain('/projects/7/resources')
     expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
       '/projects/7/action-calls',
-    )
-    expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
-      '/projects/7/agent-presets',
     )
   })
 

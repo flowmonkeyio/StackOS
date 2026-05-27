@@ -28,9 +28,14 @@ async function start(): Promise<void> {
   registerAuthStoreWithClient(auth)
   await auth.bootstrap()
 
+  const shouldResolveProjectRoute =
+    router.currentRoute.value.path === '/' || router.currentRoute.value.path === '/projects'
+  let projects: ReturnType<typeof useProjectsStore> | null = null
   if (auth.ready) {
-    const projects = useProjectsStore()
-    void projects.refresh()
+    projects = useProjectsStore()
+    const refresh = projects.refresh()
+    if (shouldResolveProjectRoute) await refresh
+    else void refresh
   }
 
   const toasts = useToastsStore()
@@ -49,8 +54,9 @@ async function start(): Promise<void> {
 
   if (!auth.ready && router.currentRoute.value.name !== 'auth-error') {
     await router.replace('/auth-error')
-  } else if (router.currentRoute.value.path === '/') {
-    await router.replace('/projects')
+  } else if (shouldResolveProjectRoute) {
+    const projectId = projects?.activeProject?.id ?? projects?.items[0]?.id
+    if (projectId) await router.replace(`/projects/${projectId}/overview`)
   }
 
   app.mount('#app')
