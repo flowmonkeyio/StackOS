@@ -2,8 +2,8 @@
 // ProjectSwitcher — read-only project navigation dropdown.
 //
 // Behavior:
-//   - Displays the active project name + chevron in collapsed state
-//   - Click to open dropdown with list of all projects (active first)
+//   - Displays the current route project name + chevron in collapsed state
+//   - Click to open dropdown with list of all projects (archived last)
 //   - Selecting a project only navigates to `/projects/{id}/overview`
 
 import { computed, ref, onBeforeUnmount, onMounted } from 'vue'

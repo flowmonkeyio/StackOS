@@ -5,12 +5,10 @@ from __future__ import annotations
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.tools.projects import (
     ProjectCreateInput,
-    ProjectGetActiveInput,
     ProjectGetInput,
     ProjectListInput,
     _project_create,
     _project_get,
-    _project_get_active,
     _project_list,
 )
 from stackos.mcp.tools.workspaces import (
@@ -18,10 +16,12 @@ from stackos.mcp.tools.workspaces import (
     WorkspaceConnectInput,
     WorkspaceListBindingsInput,
     WorkspaceResolveInput,
+    WorkspaceStartSessionInput,
     _workspace_bootstrap,
     _workspace_connect,
     _workspace_list_bindings,
     _workspace_resolve,
+    _workspace_start_session,
 )
 from stackos.operations.spec import (
     OperationExample,
@@ -32,6 +32,7 @@ from stackos.operations.spec import (
 from stackos.repositories.base import Page
 from stackos.repositories.projects import ProjectOut
 from stackos.repositories.workspaces import (
+    AgentSessionOut,
     WorkspaceBindingOut,
     WorkspaceBootstrapOut,
     WorkspaceResolutionOut,
@@ -91,31 +92,6 @@ def operation_specs() -> list[OperationSpec]:
             secret_policy="no-secret-output",
         ),
         OperationSpec(
-            name="project.getActive",
-            summary="Return the currently active StackOS project if one exists.",
-            input_model=ProjectGetActiveInput,
-            output_model=ProjectOut | None,
-            handler=_project_get_active,
-            surfaces=OperationSurfaces(
-                mcp=OperationSurface(enabled=True),
-                rest=OperationSurface(
-                    enabled=True,
-                    path="/api/v1/operations/project.getActive/call",
-                ),
-                cli=OperationSurface(enabled=True, command="ops call project.getActive"),
-            ),
-            purpose=(
-                "Use this as a convenience hint only. Repository bootstrap should prefer "
-                "workspace bindings over the global active project."
-            ),
-            when_to_use=("The agent needs a human-facing hint about current local admin context.",),
-            returns=("The active project or null.",),
-            examples=(OperationExample(title="Get active project", arguments={}),),
-            mutating=False,
-            grant_policy="direct-setup-read",
-            secret_policy="no-secret-output",
-        ),
-        OperationSpec(
             name="project.create",
             summary="Create a StackOS project for setup or explicit operator intent.",
             input_model=ProjectCreateInput,
@@ -148,6 +124,50 @@ def operation_specs() -> list[OperationSpec]:
                         "domain": "example.com",
                         "locale": "en-US",
                     },
+                ),
+            ),
+            mutating=True,
+            grant_policy="direct-setup-write",
+            secret_policy="no-secret-output",
+        ),
+        OperationSpec(
+            name="workspace.startSession",
+            summary="Register one bridge session and ensure workspace project binding.",
+            input_model=WorkspaceStartSessionInput,
+            output_model=WriteEnvelope[AgentSessionOut],
+            handler=_workspace_start_session,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True,
+                    path="/api/v1/operations/workspace.startSession/call",
+                ),
+                cli=OperationSurface(enabled=True, command="ops call workspace.startSession"),
+            ),
+            purpose=(
+                "Use this as the normal first call for an agent running from a repo or local "
+                "directory. It registers the session and, by default, creates or reuses one "
+                "daemon-owned project and binding for the current workspace when none exists."
+            ),
+            when_to_use=(
+                "An agent starts work and needs the workspace-bound project_id.",
+                "A bridge session needs compact setup guidance, UI paths, and next tools.",
+            ),
+            prerequisites=(
+                "Let the bridge inject cwd, repo_fingerprint, git_remote_url, runtime, and "
+                "client_session_id when possible.",
+                "Set auto_bootstrap=false only for diagnostics when no state should be created.",
+            ),
+            returns=(
+                "A write envelope with project_id, workspace binding status, repo hints, "
+                "UI paths, and next recommended toolbox calls.",
+                "If auto-bootstrap created state, project_was_created and binding_was_created "
+                "describe the side effects.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Start current workspace session",
+                    arguments={"cwd": "/Users/me/Sites/example", "runtime": "codex"},
                 ),
             ),
             mutating=True,

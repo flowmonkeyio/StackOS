@@ -87,7 +87,6 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "validate",
         "abort",
         "fork",
-        "setActive",
         "claimStep",
         "execute",
         "recordStepCall",
@@ -127,7 +126,6 @@ READ_VERBS: frozenset[str] = frozenset(
         "queryProject",
         "queryAll",
         "getReport",
-        "getActive",
         "lookup",
         "fetch",
     }
@@ -161,8 +159,7 @@ def verb_is_mutating(name: str) -> bool:
     if verb in MUTATING_VERBS:
         return True
     # CamelCase verbs inherit the base mutating prefix. Require an uppercase
-    # boundary so read-ish verbs such
-    # as "getActive" stay controlled by the explicit read registry.
+    # boundary so read-ish verbs stay controlled by the explicit read registry.
     return any(
         verb.startswith(prefix) and len(verb) > len(prefix) and verb[len(prefix)].isupper()
         for prefix in MUTATING_VERBS

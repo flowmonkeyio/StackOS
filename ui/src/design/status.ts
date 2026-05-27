@@ -54,9 +54,6 @@ export const stepStatus = defineStatuses({
 });
 
 export const projectState = defineStatuses({
-  active: { label: 'Active', tone: 'success', icon: 'play-circle' },
-  inactive: { label: 'Inactive', tone: 'neutral', icon: 'circle' },
-  paused: { label: 'Paused', tone: 'warning', icon: 'pause' },
   archived: { label: 'Archived', tone: 'neutral', icon: 'archive' },
   setup: { label: 'Setup', tone: 'info', icon: 'settings' },
   blocked: { label: 'Blocked', tone: 'danger', icon: 'octagon-alert' },

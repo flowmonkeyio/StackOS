@@ -34,8 +34,9 @@ obvious without loading every document.
 - Register callable behavior once as an operation or plugin action contract;
   expose it through MCP, REST, CLI, and UI docs from that contract.
 - Direct MCP tools are only for generic StackOS primitives. Provider/vendor
-  calls belong in plugin actions executed through `action.run` for one explicit
-  action or `action.execute` inside a granted run-plan step.
+  calls belong in plugin actions executed through `toolbox.call` for
+  `action.run` on one explicit action, or through `action.execute` inside a
+  granted run-plan step.
 - Agents never receive secrets. They receive safe provider keys, account refs,
   auth status, scopes, diagnostics, and opaque `credential_ref` values.
 - Agents should resolve known provider targets with `toolProfile.resolve`
@@ -46,10 +47,11 @@ obvious without loading every document.
 - Task tracking is project-scoped work state for agents and human navigation.
   Workflow runs mirror into tasks/tickets automatically, and manual agent work
   uses `tracker.*` operations. The tracker stores state; agents decide the work.
-- Project bootstrap is MCP-native. Agents start with `workspace.resolve`; when
-  unbound, `workspace.bootstrap` explicitly creates or reuses one project for
-  the current workspace root and records the daemon-owned binding. `project.*`
-  discovery is available for intentional setup, while project switching and
+- Project bootstrap is MCP-native. Agents start with `workspace.startSession`;
+  when unbound, it creates or reuses one project for the current workspace root
+  and records the daemon-owned binding without writing repo files. `workspace.resolve`
+  remains the read-only diagnostic path, and `project.*` discovery is available
+  through `toolbox.call` for intentional setup while project switching and
   deletion stay admin-only.
 - Agent presets are generic role contracts for MCP/tool consumers. They must be
   adapted to project rules, stack, tracker workflow, references, and signoff

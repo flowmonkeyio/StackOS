@@ -51,9 +51,10 @@ is the encrypted backing store keyed by project, provider, and profile; it is
 not an agent-facing credential API. OAuth state rows remain generic
 infrastructure for provider flows, not a hard-coded product integration.
 
-The agent-facing MCP bridge exposes `auth.status` and `auth.test` only. Local
+In normal agent sessions, the MCP bridge exposes `auth.status` and `auth.test`
+through `toolbox.call`; it does not advertise them as direct tools. Local
 human/admin REST operations such as `auth.start`, `auth.revoke`, and
-`auth/{provider}/credentials` are daemon-admin setup paths, not agent MCP
+`auth/{provider}/credentials` are daemon-admin setup paths, not agent toolbox
 tools. When a tool needs a credential, the agent passes an opaque
 `credential_ref`; the daemon resolves and decrypts the backing secret inside
 the vendor wrapper process.

@@ -50,6 +50,7 @@ def build_operation_registry() -> OperationRegistry:
         actions,
         agent_presets,
         agent_requests,
+        auth,
         communications,
         discovery,
         project_bootstrap,
@@ -64,6 +65,8 @@ def build_operation_registry() -> OperationRegistry:
     for spec in project_bootstrap.operation_specs():
         registry.register(spec)
     for spec in agent_requests.operation_specs():
+        registry.register(spec)
+    for spec in auth.operation_specs():
         registry.register(spec)
     for spec in communications.operation_specs():
         registry.register(spec)

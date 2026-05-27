@@ -1,4 +1,4 @@
-// Projects store — project list, first-run creation, and active project marker.
+// Projects store — project list and local navigation selection.
 
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
@@ -29,8 +29,10 @@ export const useProjectsStore = defineStore('projects', () => {
     items.value = append ? [...items.value, ...page.items] : [...page.items]
     nextCursor.value = page.next_cursor ?? null
     totalEstimate.value = page.total_estimate ?? items.value.length
-    const explicit = items.value.find((project) => project.is_active)
-    if (explicit) activeProjectId.value = explicit.id
+    if (activeProjectId.value === null) {
+      const firstLiveProject = items.value.find((project) => project.is_active)
+      if (firstLiveProject) activeProjectId.value = firstLiveProject.id
+    }
   }
 
   async function refresh(activeOnly = false): Promise<void> {

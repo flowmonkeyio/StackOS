@@ -27,10 +27,6 @@ def test_project_crud_routes(api: TestClient, project_id: int) -> None:
     assert patch.status_code == 200
     assert patch.json()["data"]["name"] == "New Name"
 
-    activated = api.post(f"/api/v1/projects/{project_id}/activate")
-    assert activated.status_code == 200
-    assert activated.json()["data"]["is_active"] is True
-
     deleted = api.delete(f"/api/v1/projects/{project_id}")
     assert deleted.status_code == 200
     assert deleted.json()["data"]["is_active"] is False

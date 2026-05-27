@@ -4,7 +4,7 @@
   consistent label + tone + icon across the app.
 
   <StatusBadge domain="run" status="running" />
-  <StatusBadge domain="project" status="active" />
+  <StatusBadge domain="project" status="archived" />
 -->
 <script setup lang="ts">
 import { computed } from 'vue';

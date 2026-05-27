@@ -73,8 +73,8 @@ watch(() => props.projectId, ensureProject)
       #titleMeta
     >
       <StatusBadge
-        v-if="showProjectStatus && project"
-        :status="project.is_active ? 'active' : 'inactive'"
+        v-if="showProjectStatus && project && !project.is_active"
+        status="archived"
         kind="project"
       />
       <slot name="titleMeta" />

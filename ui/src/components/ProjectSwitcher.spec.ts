@@ -54,7 +54,7 @@ describe('ProjectSwitcher', () => {
     vi.restoreAllMocks()
   })
 
-  it('shows the active project name in the collapsed button', () => {
+  it('shows the selected project name in the collapsed button', () => {
     const projects = useProjectsStore()
     projects.items = sample as never
     projects.activeProjectId = 1
@@ -80,7 +80,7 @@ describe('ProjectSwitcher', () => {
     expect(options[1].text()).toContain('Beta')
   })
 
-  it('uses the routed project as selected without changing server active state', async () => {
+  it('uses the routed project as selected without changing local fallback selection', async () => {
     const projects = useProjectsStore()
     projects.items = sample as never
     projects.activeProjectId = 1
@@ -97,7 +97,7 @@ describe('ProjectSwitcher', () => {
     expect(projects.activeProjectId).toBe(1)
   })
 
-  it('navigates without activating when a non-active project is picked', async () => {
+  it('navigates without mutating project lifecycle when an archived project is picked', async () => {
     const projects = useProjectsStore()
     projects.items = sample as never
     projects.activeProjectId = 1

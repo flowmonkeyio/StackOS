@@ -129,13 +129,6 @@ async def update_project(
     return write_response(ProjectRepository(session).update(project_id, **patch))
 
 
-@router.post("/{project_id}/activate", response_model=WriteResponse[ProjectOut])
-async def activate_project(
-    project_id: int, session: Session = Depends(get_session)
-) -> WriteResponse[ProjectOut]:
-    return write_response(ProjectRepository(session).set_active(project_id))
-
-
 @router.delete("/{project_id}", response_model=WriteResponse[ProjectOut])
 async def delete_project(
     project_id: int, session: Session = Depends(get_session)

@@ -39,14 +39,14 @@ Normal agents may not use:
 - `auth.revoke`: removes daemon-held secrets and is a human/admin operation.
 - plaintext credential setup routes or local UI admin mutations.
 
-The MCP bridge advertises `toolProfile.resolve`, `auth.status`, and `auth.test`.
+The MCP bridge exposes these through `toolbox.call` in normal agent sessions.
 Agents should prefer `toolProfile.resolve` when they already know which
 provider/profile they need; `auth.status` is still available for diagnostics.
 
 ## Setup Flow
 
 1. The agent inspects required providers through plugin/catalog metadata.
-2. The agent calls `toolProfile.resolve` for the project and provider key, or
+2. The agent calls `toolbox.call` for `toolProfile.resolve`, or for
    `auth.status` when it needs full sanitized diagnostics.
 3. If setup is missing, the agent points the operator to
    `/projects/{project_id}/connections?provider_key={provider_key}` in the local
@@ -54,7 +54,8 @@ provider/profile they need; `auth.status` is still available for diagnostics.
    starts.
 4. The operator chooses the provider auth method and enters the fields required
    by that method, or starts the provider OAuth flow when one is configured.
-5. The agent calls `auth.test` with the selected `credential_ref`.
+5. The agent calls `toolbox.call` for `auth.test` with the selected
+   `credential_ref`.
 6. The daemon decrypts the secret inside its process, calls the connector,
    records a redacted usage event, and returns sanitized status/metadata.
 

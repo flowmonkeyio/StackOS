@@ -64,9 +64,9 @@ plans can be created from templates or authored directly by an agent.
 ### Direct Action
 
 A direct action is a single explicit action call that does not need a workflow
-template or run plan. It is executed through `action.run`, still resolves
-credentials inside the daemon, returns compact output by default, and writes an
-`action_calls` audit row.
+template or run plan. In MCP sessions it is executed through `toolbox.call` for
+`action.run`; it still resolves credentials inside the daemon, returns compact
+output by default, and writes an `action_calls` audit row.
 
 ### Action Call
 
@@ -121,19 +121,21 @@ The agent-facing MCP bridge surface is intentionally small:
   provider, resources, artifacts, and project memory
 - bootstrap/setup: workspace binding, budgets, schedules, safe auth
   status/test, workflow-template discovery, and run-plan creation/start
-- direct execution: `action.run` for one explicit action with compact output
+- direct execution: `action.run` through `toolbox.call` for one explicit action
+  with compact output
 - workflow execution: run-plan controller tools, `action.execute`, resource and
   artifact writes, memory writes, and run audit tools
 - memory: context, learnings, experiments, decisions
 
-The bridge derives the active project from the repository that launched it. It
-injects that `project_id` into project-scoped calls and refuses explicit
-cross-project calls. It also injects current workspace hints and refuses calls
-that try to resolve, bootstrap, or connect another workspace. Safe project
-listing/creation and read-only binding diagnostics are available during setup
-so an unbound agent can finish project bootstrap from MCP alone. Project
-switching, deletion, and broad admin mutations remain daemon/admin
-capabilities; they are not advertised to normal agent bridge clients.
+The bridge derives the workspace-bound project from the repository that
+launched it. It injects that `project_id` into project-scoped calls and refuses
+explicit cross-project calls. It also injects current workspace hints and
+refuses calls that try to resolve, bootstrap, or connect another workspace.
+Safe project listing/creation and read-only binding diagnostics are available
+through `toolbox.call` during intentional setup, so an unbound agent can finish
+project bootstrap from MCP alone. Project switching, archiving, and broad admin
+mutations remain daemon/admin capabilities; they are not advertised to normal
+agent bridge clients.
 
 Bootstrap/setup calls are intentionally available before a run token exists so
 an agent can set up the current project and create the first run plan. They are
@@ -143,11 +145,11 @@ not a workflow execution path. Project-memory writes (`learning.create`,
 tool grant.
 
 Provider operations are modeled as plugin actions. Agents use
-`action.describe`, `action.validate`, `action.run` for one explicit action, or
-`action.execute` with scoped run-plan grants for workflow steps. Vendor wrappers
-remain inside daemon-side integrations where auth, budget checks, retries, and
-output normalization can be enforced; they are not registered as
-provider-specific MCP tools.
+`toolbox.call` for `action.describe`, `action.validate`, and `action.run` on
+one explicit action, or for step-granted `action.execute` during workflow
+steps. Vendor wrappers remain inside daemon-side integrations where auth,
+budget checks, retries, and output normalization can be enforced; they are not
+registered as provider-specific MCP tools.
 
 ## Auth Flow
 
@@ -155,7 +157,8 @@ provider-specific MCP tools.
 2. A project connects an account through `auth.start` or a local credential
    ingestion path.
 3. Tokens are encrypted and stored server-side.
-4. Agents query `auth.status` and `auth.test` for safe state.
+4. Agents query `auth.status` and `auth.test` through `toolbox.call` for safe
+   state.
 5. Tools resolve credentials by provider/account reference at execution time.
 6. Every use writes credential usage metadata.
 

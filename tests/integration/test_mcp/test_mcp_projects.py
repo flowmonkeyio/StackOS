@@ -48,14 +48,6 @@ def test_project_update_returns_envelope(mcp_client: MCPClient, seeded_project: 
     assert env["data"]["name"] == "Renamed"
 
 
-def test_project_set_active_writes_envelope(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """project.setActive returns an envelope with project_id."""
-    pid = seeded_project["data"]["id"]
-    env = mcp_client.call_tool_structured("project.setActive", {"project_id": pid})
-    assert env["project_id"] == pid
-    assert env["data"]["is_active"] is True
-
-
 def test_schedule_set_toggle_and_remove(mcp_client: MCPClient, seeded_project: dict) -> None:
     """schedule.remove mirrors REST DELETE by disabling the scheduled job."""
     pid = seeded_project["data"]["id"]

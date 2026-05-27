@@ -29,7 +29,6 @@ from stackos.mcp.server import (
         "run.finish",
         "run.heartbeat",
         "run.abort",
-        "project.setActive",
         "project.delete",
         "workspace.bootstrap",
         "workspace.connect",

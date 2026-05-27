@@ -7,13 +7,14 @@ agents only as sanitized status plus opaque `credential_ref` values.
 Recommended setup flow:
 
 1. Let the agent identify the vendors needed for the current run plan.
-2. Let the agent call `auth.status` to see which provider refs already exist.
+2. Let the agent call `toolbox.call` for `auth.status` to see which provider
+   refs already exist.
 3. Open the project Connections page the agent gives you, for example
    `http://127.0.0.1:5180/projects/1/connections?provider_key=dataforseo`.
 4. Connect vendors from the named cards. Do not paste secrets into agent
    chat and do not add vendor keys to the website repository.
-5. Return to the agent. The agent should run `auth.test` with the selected
-   opaque `credential_ref` before continuing.
+5. Return to the agent. The agent should run `toolbox.call` for `auth.test`
+   with the selected opaque `credential_ref` before continuing.
 
 Providers define typed `auth_methods`. The local UI renders those schemas and
 stores one or more named credential profiles per provider. Secret fields are

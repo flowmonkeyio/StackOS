@@ -156,10 +156,9 @@ def _bridge_compact_workspace(structured: dict[str, Any]) -> dict[str, Any]:
             for item in candidates
             if isinstance(item, dict)
         ]
-    if isinstance(data.get("project_was_created"), bool):
-        compact_data["project_was_created"] = data["project_was_created"]
-    if isinstance(data.get("binding_was_created"), bool):
-        compact_data["binding_was_created"] = data["binding_was_created"]
+    for field in ("auto_bootstrap", "project_was_created", "binding_was_created"):
+        if isinstance(data.get(field), bool):
+            compact_data[field] = data[field]
     if "data" in structured:
         return {
             "data": compact_data,

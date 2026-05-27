@@ -104,16 +104,16 @@ than it is in the live MCP surface.
 | Job | Primary agent surface | Expected inputs | Expected outputs | Current clarity |
 | --- | --- | --- | --- | --- |
 | Start in a repo | `workspace.startSession`, `workspace.resolve` | cwd/repo hints injected by bridge | `project_id`, binding, connect status | Good |
-| Connect repo | `workspace.connect` | repo name/root/framework metadata | daemon-owned binding | Good, admin authority could be clearer |
-| Discover capabilities | `plugin.list`, `catalog.list`, `provider.list`, `capability.list`, `toolbox.describe` | optional plugin/provider filters | plugins, providers, hidden/setup tools | Good inventory, too many first calls |
-| Resolve auth target | `toolProfile.resolve`, `auth.status`, `auth.test` | provider key, optional profile/ref | safe credential ref, status, missing items, next action | Strong |
-| Inspect action | `action.describe` | action ref or plugin/action key | manifest, availability, schema | Standard good, compact loses important schema shape |
-| Validate action | `action.validate` | action input, credential ref when needed | validation issues and estimated cost | Good, but some duplicate issues |
-| Run direct action | `action.run` | explicit input, confirmation for non-read writes | action call audit and redacted result | Good guardrail, repair could be more self-contained |
-| Template discovery | `workflowTemplate.list/describe/validate` | fully qualified template key | template spec and contracts | Good after key pattern is known |
-| Run-plan authoring | `runPlan.validate/create/start` | template key or explicit plan JSON | plan, run token, tracker mirror | Structural validation is not enough execution readiness |
+| Connect repo | `toolbox.call(workspace.connect)` | repo name/root/framework metadata | daemon-owned binding | Good, admin authority could be clearer |
+| Discover capabilities | `toolbox.call(plugin.list/catalog.list/provider.list/capability.list)`, `toolbox.describe(tool_names=[...])` | optional plugin/provider filters or exact tool names | plugins, providers, requested hidden/setup tools | Good inventory, but broad catalog calls should be skill/workflow-directed |
+| Resolve auth target | `toolbox.call(toolProfile.resolve/auth.status/auth.test)` | provider key, optional profile/ref | safe credential ref, status, missing items, next action | Strong |
+| Inspect action | `toolbox.call(action.describe)` | action ref or plugin/action key | manifest, availability, schema | Standard good, compact loses important schema shape |
+| Validate action | `toolbox.call(action.validate)` | action input, credential ref when needed | validation issues and estimated cost | Good, but some duplicate issues |
+| Run direct action | `toolbox.call(action.run)` | explicit input, confirmation for non-read writes | action call audit and redacted result | Good guardrail, repair could be more self-contained |
+| Template discovery | `toolbox.call(workflowTemplate.list/describe/validate)` | fully qualified template key | template spec and contracts | Good after key pattern is known |
+| Run-plan authoring | `toolbox.call(runPlan.validate/create/start)` | template key or explicit plan JSON | plan, run token, tracker mirror | Structural validation is not enough execution readiness |
 | Step execution | `toolbox.describe(run_id)`, `toolbox.call`, `action.execute` | run id, active step, grant-qualified arguments | step/action result and audit | Most confusing path today |
-| Durable data | `resource.*`, `artifact.*`, `context.*`, `learning.*`, `experiment.*`, `decision.*` | filters or granted writes | bounded sanitized data | Reads clear, write examples sparse |
+| Durable data | `toolbox.call(resource.* / artifact.* / context.* / learning.* / experiment.* / decision.*)` | filters or granted writes | bounded sanitized data | Reads clear, write examples sparse |
 | Tracker work | `tracker.*` | task/ticket keys, patches, dry-run lists | compact work state and revisions | Strong |
 | Agent requests | `agentRequest.*` | request id, claim token, idempotency key | claim, linked run plan, terminal status | Good lifecycle, schemas over-broad in spots |
 | Local chat | `localAgentChat.createMessage` | thread/message keys, direction, request flag | stored message, optional request | Inbound clear, outbound reply path unclear |
@@ -131,7 +131,7 @@ dry-run unless the operation itself is designed to update safe project metadata.
 | # | Flow | Simulated path | Result | Agent feedback |
 | --- | --- | --- | --- | --- |
 | 1 | Repo workspace resolution | `workspace.resolve(response_mode=standard)` | Bound to `project_id=1`; no connect needed | Good first call. |
-| 2 | Session/tool discovery | `toolbox.describe(include_schemas=false)` | Direct, setup, and active-step tool lists returned | Useful, but tool categories need descriptions and next-call hints. |
+| 2 | Session/tool discovery | `toolbox.describe(tool_names=[...])` | Direct tools, requested setup tools, and active-step grants returned without dumping the whole catalog | Useful when exact tools are requested; skills/workflows should point agents to the right tool names. |
 | 3 | Legal states | `meta.enums` | State transitions returned compactly | Good for lifecycle-aware agents. |
 | 4 | Plugin/provider inventory | `plugin.list`, `provider.list`, `capability.list` | Broad catalog visible | Useful but high volume. Prefer job-based catalog search. |
 | 5 | Auth status | `auth.status` | Slack and Telegram connected; most others missing | Good overview. |

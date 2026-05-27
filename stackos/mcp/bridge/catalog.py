@@ -21,9 +21,9 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
         {
             "name": _TOOLBOX_DESCRIBE_TOOL,
             "description": (
-                "Describe hidden StackOS daemon tools available through the bridge. "
-                "Use this before toolbox.call when setup, a run-plan step, or the current "
-                "run-plan step mentions a tool that is not listed directly."
+                "Describe StackOS daemon tools available through the bridge for the current "
+                "workspace, setup context, workflow, or run-plan step. Use this before "
+                "toolbox.call instead of loading the full daemon tool surface."
             ),
             "inputSchema": {
                 "type": "object",
@@ -39,7 +39,10 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
                     },
                     "include_schemas": {
                         "type": "boolean",
-                        "description": "When true and tool_names is omitted, include schemas.",
+                        "description": (
+                            "Diagnostics only. When true and tool_names is omitted, include all "
+                            "currently allowed tool names and schemas."
+                        ),
                         "default": False,
                     },
                 },
@@ -51,9 +54,10 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
         {
             "name": _TOOLBOX_CALL_TOOL,
             "description": (
-                "Call one hidden daemon tool by name. The bridge permits setup tools and "
-                "the active run-plan step's allowed tools only; pass run_id so "
-                "the bridge can refresh grants and inject the run token when available."
+                "Call one daemon tool by name through the scoped StackOS toolbox. The bridge "
+                "permits setup/workflow tools and the active run-plan step's allowed tools; "
+                "pass run_id so the bridge can refresh grants and inject the run token when "
+                "available."
             ),
             "inputSchema": {
                 "type": "object",

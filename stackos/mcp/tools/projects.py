@@ -75,10 +75,6 @@ class ProjectIdInput(MCPInput):
     project_id: int
 
 
-class ProjectGetActiveInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {}})
-
-
 class BudgetListInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
 
@@ -200,19 +196,6 @@ async def _project_delete(
     return WriteEnvelope[ProjectOut](data=env.data, run_id=ctx.run_id, project_id=env.project_id)
 
 
-async def _project_set_active(
-    inp: ProjectIdInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[ProjectOut]:
-    env = ProjectRepository(ctx.session).set_active(inp.project_id)
-    return WriteEnvelope[ProjectOut](data=env.data, run_id=ctx.run_id, project_id=env.project_id)
-
-
-async def _project_get_active(
-    _inp: ProjectGetActiveInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> ProjectOut | None:
-    return ProjectRepository(ctx.session).get_active()
-
-
 async def _budget_list(
     inp: BudgetListInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> list[IntegrationBudgetOut]:
@@ -323,28 +306,10 @@ def register(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             "project.delete",
-            "Deactivate a project.",
+            "Archive a project.",
             ProjectIdInput,
             WriteEnvelope[ProjectOut],
             _project_delete,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "project.setActive",
-            "Make a project active.",
-            ProjectIdInput,
-            WriteEnvelope[ProjectOut],
-            _project_set_active,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "project.getActive",
-            "Return the active project.",
-            ProjectGetActiveInput,
-            ProjectOut | None,
-            _project_get_active,
         )
     )
     registry.register(

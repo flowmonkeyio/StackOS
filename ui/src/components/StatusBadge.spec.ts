@@ -17,8 +17,8 @@ describe('StatusBadge', () => {
   })
 
   it('uses the project palette for project statuses', () => {
-    const w = mount(StatusBadge, { props: { status: 'active', domain: 'project' } })
-    expect(w.classes()).toContain('bg-success-subtle')
+    const w = mount(StatusBadge, { props: { status: 'archived', domain: 'project' } })
+    expect(w.classes()).toContain('bg-neutral-subtle')
   })
 
   it('falls back to neutral grey for unknown statuses', () => {
@@ -35,7 +35,7 @@ describe('StatusBadge', () => {
 
   it('renders a custom label via the default slot', () => {
     const w = mount(StatusBadge, {
-      props: { status: 'active', kind: 'project' },
+      props: { status: 'archived', kind: 'project' },
       slots: { default: 'live' },
     })
     expect(w.text()).toBe('live')

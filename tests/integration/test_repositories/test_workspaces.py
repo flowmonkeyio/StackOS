@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from sqlmodel import Session
 
@@ -97,6 +99,7 @@ def test_bootstrap_can_bind_existing_project_by_slug(session: Session) -> None:
     assert bootstrapped.data.project_was_created is False
     assert bootstrapped.data.binding_was_created is True
     assert bootstrapped.data.project.slug == "existing-site"
+    assert bootstrapped.data.project.is_active is True
 
 
 def test_reconnect_preserves_omitted_detected_profile_fields(session: Session) -> None:
@@ -151,6 +154,38 @@ def test_start_session_without_binding_is_allowed(session: Session) -> None:
     assert started.project_id is None
     assert started.data.project_id is None
     assert started.data.workspace_binding_id is None
+    assert started.data.needs_connect is True
+
+
+def test_start_session_autobootstraps_workspace_root(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+
+    started = repo.start_session(
+        runtime="codex",
+        cwd="/tmp/revtrix",
+        git_remote_url="git@github.com:org/revtrix.git",
+    )
+    second = repo.start_session(
+        runtime="codex",
+        cwd="/tmp/revtrix/packages/site",
+        git_remote_url="git@github.com:org/revtrix.git",
+    )
+    bindings = repo.list_bindings(project_id=started.project_id)
+
+    assert started.project_id is not None
+    assert started.data.project_id == started.project_id
+    assert started.data.workspace_binding_id == bindings[0].id
+    assert started.data.needs_connect is False
+    assert started.data.auto_bootstrap is True
+    assert started.data.project_was_created is True
+    assert started.data.binding_was_created is True
+    assert ProjectRepository(session).get(started.project_id).is_active is True
+    assert started.data.next_step is not None
+    assert "workflowTemplate.list" in started.data.next_step["recommended_tools"]
+    assert bindings[0].last_known_root == str(Path("/tmp/revtrix").resolve())
+    assert second.project_id == started.project_id
+    assert second.data.workspace_binding_id == started.data.workspace_binding_id
+    assert second.data.auto_bootstrap is False
 
 
 def test_connect_validates_project_and_fingerprint(session: Session) -> None:

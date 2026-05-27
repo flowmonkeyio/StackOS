@@ -313,6 +313,7 @@ class AgentBridgeProxy:
             arguments=arguments,
             run_id=run_id,
             allowed_by_run=self.allowed_by_run,
+            injected_fields=self._injected_fields(),
         )
 
     def _handle_toolbox_call(

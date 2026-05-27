@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .catalog import _bridge_agent_tool_schema
 from .constants import (
     _AGENT_BASE_TOOLBOX_NAMES,
     _AGENT_SETUP_TOOLBOX_NAMES,
     _AGENT_STEP_GATED_TOOL_NAMES,
     _AGENT_VISIBLE_TOOL_ORDER,
+    _TOOLBOX_CALL_TOOL,
+    _TOOLBOX_DESCRIBE_TOOL,
 )
 from .protocol import _bridge_as_int, _bridge_tool_result
 
@@ -126,6 +129,7 @@ def _bridge_toolbox_describe(
     arguments: dict[str, Any],
     run_id: int | None,
     allowed_by_run: dict[int, set[str]],
+    injected_fields: set[str] | frozenset[str] | None = None,
 ) -> str:
     allowed = _bridge_allowed_tool_names(run_id, allowed_by_run)
     requested_raw = arguments.get("tool_names")
@@ -137,33 +141,47 @@ def _bridge_toolbox_describe(
     else:
         requested = []
 
-    described = [catalog[name] for name in requested if name in catalog and name in allowed]
+    described = [
+        _bridge_agent_tool_schema(catalog[name], injected_fields=set(injected_fields or ()))
+        for name in requested
+        if name in catalog and name in allowed
+    ]
     denied = [name for name in requested if name in catalog and name not in allowed]
     unknown = [name for name in requested if name not in catalog]
-    active_step_tools = sorted(allowed_by_run.get(run_id, set())) if run_id is not None else []
-    setup_tool_names = sorted(_AGENT_SETUP_TOOLBOX_NAMES & set(catalog))
-    visible_tool_names = [name for name in _AGENT_VISIBLE_TOOL_ORDER if name in catalog]
     available_tool_names = sorted(name for name in allowed if name in catalog)
+    active_step_tools = sorted(allowed_by_run.get(run_id, set())) if run_id is not None else []
+    setup_count = len(_AGENT_SETUP_TOOLBOX_NAMES & set(catalog))
+    direct_visible = [
+        name
+        for name in (
+            *_AGENT_VISIBLE_TOOL_ORDER,
+            _TOOLBOX_DESCRIBE_TOOL,
+            _TOOLBOX_CALL_TOOL,
+        )
+        if name in catalog or name in {_TOOLBOX_DESCRIBE_TOOL, _TOOLBOX_CALL_TOOL}
+    ]
     payload = {
-        "visible_tool_names": list(_AGENT_VISIBLE_TOOL_ORDER),
-        "setup_toolbox_tool_names": setup_tool_names,
+        "visible_tool_names": direct_visible,
         "active_step_tool_names": active_step_tools,
-        "available_tool_names": available_tool_names,
+        "available_tool_count": len(available_tool_names),
         "tool_categories": {
-            "direct_visible": visible_tool_names,
-            "setup_toolbox": setup_tool_names,
+            "direct_visible": direct_visible,
+            "setup_toolbox_count": setup_count,
             "active_step": active_step_tools,
             "operation_backed": _bridge_operation_backed_names(
                 catalog=catalog,
-                names=set(available_tool_names),
+                names={tool["name"] for tool in described if isinstance(tool.get("name"), str)},
             ),
         },
         "described_tools": described,
         "denied_tool_names": denied,
         "unknown_tool_names": unknown,
         "usage": (
-            "Use direct visible tools for setup and run-plan control. Use toolbox.call "
-            "only for setup helpers, run-plan controller tools, or run-plan step grants."
+            "Use workspace.startSession to bind the current workspace, then use "
+            "toolbox.describe/toolbox.call for setup helpers, workflow tools, and active "
+            "run-plan step grants. Pass run_id when working inside a run plan."
         ),
     }
+    if arguments.get("include_schemas") is True and not isinstance(requested_raw, list):
+        payload["available_tool_names"] = available_tool_names
     return _bridge_tool_result(request_id, payload, is_error=False)

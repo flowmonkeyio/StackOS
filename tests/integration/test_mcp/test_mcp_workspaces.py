@@ -90,6 +90,31 @@ def test_workspace_connect_list_and_start_session(
     assert started["data"]["workspace_binding_id"] == connected["data"]["id"]
 
 
+def test_workspace_start_session_autobootstraps_unbound_directory(
+    mcp_client: MCPClient,
+) -> None:
+    started = mcp_client.call_tool_structured(
+        "workspace.startSession",
+        {
+            "runtime": "codex",
+            "cwd": "/tmp/mcp-autobootstrap-project",
+        },
+    )
+    bindings_payload = mcp_client.call_tool_structured(
+        "workspace.listBindings",
+        {"project_id": started["project_id"]},
+    )
+    bindings = bindings_payload["items"]
+
+    assert started["project_id"] is not None
+    assert started["data"]["needs_connect"] is False
+    assert started["data"]["auto_bootstrap"] is True
+    assert started["data"]["project_was_created"] is True
+    assert started["data"]["binding_was_created"] is True
+    assert started["data"]["workspace_binding_id"] == bindings[0]["id"]
+    assert started["data"]["next_step"]["status"] == "ready"
+
+
 def test_workspace_resolves_by_current_directory_root(
     mcp_client: MCPClient, seeded_project: dict
 ) -> None:

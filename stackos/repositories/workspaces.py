@@ -136,6 +136,7 @@ def _connect_required_next_step(
     return {
         "status": "bootstrap_required",
         "recommended_tool": "workspace.bootstrap",
+        "call_via": "toolbox.call",
         "recommended_arguments": bootstrap_args,
         "why": (
             "This workspace has no daemon-owned project binding yet. "
@@ -145,14 +146,17 @@ def _connect_required_next_step(
         "alternatives": [
             {
                 "tool": "project.list",
+                "call_via": "toolbox.call",
                 "when": "Choose an existing project intentionally before binding.",
             },
             {
                 "tool": "project.create",
+                "call_via": "toolbox.call",
                 "when": "Create a project with explicit operator-provided metadata.",
             },
             {
                 "tool": "workspace.connect",
+                "call_via": "toolbox.call",
                 "when": "Bind to a known project_id, project_slug, or project_name.",
             },
         ],
@@ -162,6 +166,7 @@ def _connect_required_next_step(
 def _connected_next_step(project_id: int) -> dict[str, Any]:
     return {
         "status": "ready",
+        "call_via": "toolbox.call",
         "recommended_tools": [
             "workflowTemplate.list",
             "agentPreset.list",
@@ -203,6 +208,9 @@ class AgentSessionOut(BaseModel):
     created_at: datetime
     last_seen_at: datetime
     needs_connect: bool = False
+    auto_bootstrap: bool = False
+    project_was_created: bool | None = None
+    binding_was_created: bool | None = None
     candidate_projects: list[WorkspaceProjectCandidateOut] = Field(default_factory=list)
     repo_hints: dict[str, Any] = Field(default_factory=dict)
     ui_paths: dict[str, str] = Field(default_factory=dict)
@@ -339,9 +347,10 @@ class WorkspaceRepository:
         )
         explicit_project = any((project_id is not None, project_slug, project_name))
         project_created = False
+        projects = ProjectRepository(self._s)
 
         if resolution.binding is not None:
-            current_project = ProjectRepository(self._s).get(resolution.project_id or 0)
+            current_project = projects.get(resolution.project_id or 0)
             target_project = current_project
             if explicit_project:
                 target_project, project_created = self._resolve_or_create_project(
@@ -532,6 +541,7 @@ class WorkspaceRepository:
         git_remote_url: str | None = None,
         thread_id: str | None = None,
         client_session_id: str | None = None,
+        auto_bootstrap: bool = True,
     ) -> Envelope[AgentSessionOut]:
         """Register a plugin MCP bridge session and attach binding if known."""
         resolution = self.resolve(
@@ -539,6 +549,23 @@ class WorkspaceRepository:
             git_remote_url=git_remote_url,
             cwd=cwd,
         )
+        bootstrap: Envelope[WorkspaceBootstrapOut] | None = None
+        normalized_cwd = _normalize_path(cwd)
+        if resolution.needs_connect and auto_bootstrap and normalized_cwd is not None:
+            bootstrap = self.bootstrap(
+                repo_fingerprint=repo_fingerprint,
+                git_remote_url=git_remote_url,
+                cwd=normalized_cwd,
+                last_known_root=normalized_cwd,
+            )
+            resolution = WorkspaceResolutionOut(
+                binding=bootstrap.data.binding,
+                project_id=bootstrap.project_id,
+                needs_connect=False,
+                repo_hints=bootstrap.data.repo_hints,
+                ui_paths=bootstrap.data.ui_paths,
+                next_step=bootstrap.data.next_step,
+            )
         binding_id = resolution.binding.id if resolution.binding is not None else None
         row = AgentSession(
             project_id=resolution.project_id,
@@ -568,6 +595,13 @@ class WorkspaceRepository:
             out = out.model_copy(
                 update={
                     "needs_connect": False,
+                    "auto_bootstrap": bootstrap is not None,
+                    "project_was_created": (
+                        bootstrap.data.project_was_created if bootstrap is not None else None
+                    ),
+                    "binding_was_created": (
+                        bootstrap.data.binding_was_created if bootstrap is not None else None
+                    ),
                     "repo_hints": resolution.repo_hints,
                     "ui_paths": resolution.ui_paths,
                     "next_step": resolution.next_step,

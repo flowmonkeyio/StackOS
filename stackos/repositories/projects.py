@@ -108,7 +108,6 @@ class ProjectRepository:
         now = _utcnow()
         if self._s.exec(select(Project.id).where(Project.slug == slug)).first() is not None:
             raise ConflictError(f"project slug {slug!r} already exists")
-        is_first = self._s.exec(select(Project.id).limit(1)).first() is None
         row = Project(
             slug=slug,
             name=name,
@@ -116,7 +115,7 @@ class ProjectRepository:
             niche=niche,
             locale=locale,
             schedule_json=schedule_json,
-            is_active=is_first,
+            is_active=True,
             created_at=now,
             updated_at=now,
         )
@@ -193,28 +192,6 @@ class ProjectRepository:
         self._s.commit()
         self._s.refresh(row)
         return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
-
-    def set_active(self, project_id: int) -> Envelope[ProjectOut]:
-        row = self._fetch_row(project_id)
-        for other in self._s.exec(select(Project).where(col(Project.is_active).is_(True))).all():
-            if other.id != row.id:
-                other.is_active = False
-                other.updated_at = _utcnow()
-                self._s.add(other)
-        row.is_active = True
-        row.updated_at = _utcnow()
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
-        return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
-
-    def get_active(self) -> ProjectOut | None:
-        row = self._s.exec(
-            select(Project)
-            .where(col(Project.is_active).is_(True))
-            .order_by(col(Project.updated_at).desc())
-        ).first()
-        return ProjectOut.model_validate(row) if row is not None else None
 
     def _fetch_row(self, id_or_slug: int | str) -> Project:
         if isinstance(id_or_slug, int):

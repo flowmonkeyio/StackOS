@@ -123,7 +123,7 @@ class WorkspaceUpdateProfileInput(MCPInput):
 
 
 class WorkspaceStartSessionInput(MCPInput):
-    """Register one plugin MCP bridge session."""
+    """Register one plugin MCP bridge session and ensure project binding by default."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -142,6 +142,7 @@ class WorkspaceStartSessionInput(MCPInput):
     git_remote_url: str | None = None
     thread_id: str | None = None
     client_session_id: str | None = None
+    auto_bootstrap: bool = True
 
 
 async def _workspace_resolve(
@@ -230,6 +231,7 @@ async def _workspace_start_session(
         git_remote_url=inp.git_remote_url,
         thread_id=inp.thread_id,
         client_session_id=inp.client_session_id,
+        auto_bootstrap=inp.auto_bootstrap,
     )
     return WriteEnvelope[AgentSessionOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
@@ -285,7 +287,7 @@ def register(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             "workspace.startSession",
-            "Register a plugin MCP bridge session.",
+            "Register a plugin MCP bridge session and ensure project binding.",
             WorkspaceStartSessionInput,
             WriteEnvelope[AgentSessionOut],
             _workspace_start_session,

@@ -95,11 +95,17 @@ work, start here:
   `learning.create`, `experiment.*`, `decision.record`, and `action.execute`
   require a started run plan, one running step, and an explicit grant snapshot.
 - Normal agent sessions are scoped by the repository that launched the
-  StackOS bridge. The bridge injects the resolved `project_id`, refuses
-  cross-project calls, and blocks project-scoped tools until the workspace is
-  bound. If `workspace.resolve` returns `needs_connect=true`, use the explicit
-  idempotent `workspace.bootstrap` setup path to create or reuse one project for
-  the current workspace root; do not rely on read-only calls to create state.
+  StackOS bridge. Start with `workspace.startSession`: it creates or reuses one
+  daemon-owned project and binding for the current workspace when no binding
+  exists, then the bridge injects the resolved `project_id` into project-scoped
+  calls. Use `workspace.resolve` for read-only diagnostics. The workspace-bound
+  project is the source of truth; there is no global active project in the
+  agent path.
+- The agent-facing MCP bridge exposes only `workspace.startSession`,
+  `workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. Project
+  setup, workflows, run plans, tracker, auth, resources, communications, and
+  actions are called through the scoped toolbox. Use `toolbox.describe` with
+  exact `tool_names`; do not request broad schemas unless debugging.
 - Agent-facing MCP setup/discovery responses are compact by default. Use
   `response_mode=standard` or `response_mode=verbose` only when full daemon
   payloads are needed. For direct write actions, pass `intent_id` when stable

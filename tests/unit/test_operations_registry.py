@@ -24,6 +24,8 @@ def test_operation_registry_documents_core_operations() -> None:
         "agentRequest.list",
         "agentRequest.prepareRunPlan",
         "agentRequest.release",
+        "auth.status",
+        "auth.test",
         "communication.reply",
         "communication.send",
         "communicationContact.list",
@@ -51,7 +53,6 @@ def test_operation_registry_documents_core_operations() -> None:
         "operation.list",
         "project.create",
         "project.get",
-        "project.getActive",
         "project.list",
         "runPlan.claimStep",
         "runPlan.create",
@@ -85,6 +86,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "workspace.connect",
         "workspace.listBindings",
         "workspace.resolve",
+        "workspace.startSession",
     ]
 
     described = registry.get("action.execute").describe_out()
@@ -189,6 +191,20 @@ def test_operation_registry_documents_core_operations() -> None:
     assert operation_describe.grant_policy == "direct-read"
     assert operation_describe.examples[1].arguments["name"] == "operation.describe"
 
+    auth_status = registry.get("auth.status").describe_out()
+    assert auth_status.surfaces["mcp"].enabled is True
+    assert auth_status.surfaces["rest"].enabled is True
+    assert auth_status.surfaces["cli"].command == "ops call auth.status"
+    assert auth_status.grant_policy == "direct-read"
+    assert any("credential_ref" in item for item in auth_status.returns)
+
+    auth_test = registry.get("auth.test").describe_out()
+    assert auth_test.surfaces["mcp"].enabled is True
+    assert auth_test.surfaces["rest"].enabled is True
+    assert auth_test.surfaces["cli"].command == "ops call auth.test"
+    assert auth_test.grant_policy == "direct-setup-write"
+    assert any("auth.status" in item for item in auth_test.prerequisites)
+
     project_list = registry.get("project.list").describe_out()
     assert project_list.surfaces["mcp"].enabled is True
     assert project_list.grant_policy == "direct-setup-read"
@@ -199,6 +215,12 @@ def test_operation_registry_documents_core_operations() -> None:
     assert workspace_bootstrap.mutating is True
     assert workspace_bootstrap.grant_policy == "direct-setup-write"
     assert any("idempotent" in item for item in [workspace_bootstrap.purpose])
+
+    workspace_session = registry.get("workspace.startSession").describe_out()
+    assert workspace_session.surfaces["mcp"].enabled is True
+    assert workspace_session.mutating is True
+    assert workspace_session.grant_policy == "direct-setup-write"
+    assert any("auto_bootstrap=false" in item for item in workspace_session.prerequisites)
 
     ingress = registry.get("ingressEndpoint.configure").describe_out()
     assert ingress.surfaces["mcp"].enabled is True
@@ -256,6 +278,8 @@ def test_operation_registry_surface_filter() -> None:
         "agentRequest.list",
         "agentRequest.prepareRunPlan",
         "agentRequest.release",
+        "auth.status",
+        "auth.test",
         "communication.reply",
         "communication.send",
         "communicationContact.list",
@@ -283,7 +307,6 @@ def test_operation_registry_surface_filter() -> None:
         "operation.list",
         "project.create",
         "project.get",
-        "project.getActive",
         "project.list",
         "runPlan.claimStep",
         "runPlan.create",
@@ -317,6 +340,7 @@ def test_operation_registry_surface_filter() -> None:
         "workspace.connect",
         "workspace.listBindings",
         "workspace.resolve",
+        "workspace.startSession",
     ]
     assert registry.get("runPlan.update").surfaces.cli.enabled is True
     assert registry.get("runPlan.update").surfaces.cli.command == "run-plans approve"

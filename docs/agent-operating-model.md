@@ -28,7 +28,7 @@ Use a workflow template and run plan when the task has any of these traits:
 - repeated operational cadence, such as SEO reviews or media buying checks
 - a need to grant specific write tools to a specific step
 
-Use `action.run` when the user asked for one concrete action:
+Use `toolbox.call` for `action.run` when the user asked for one concrete action:
 
 - send one Telegram message
 - poll the current bot updates during setup
@@ -67,7 +67,7 @@ agent intent
 -> runPlan.validate/create/start
 -> tracker.brief or tracker.next for bounded work context
 -> runPlan.claimStep
--> step-granted tools through direct MCP or toolbox.call
+-> step-granted tools through toolbox.call
 -> action.execute for provider actions
 -> runPlan.recordStep
 -> resources/artifacts/learnings/experiments/decisions as needed
@@ -87,16 +87,16 @@ through `action.execute`.
 ```text
 agent receives one explicit user request
 -> operation.describe / action.describe when the contract is not already clear
--> toolProfile.resolve when provider/auth/profile selection is needed
--> action.describe / action.validate when needed
--> action.run
+-> toolbox.call(toolProfile.resolve) when provider/auth/profile selection is needed
+-> toolbox.call(action.describe / action.validate) when needed
+-> toolbox.call(action.run)
 -> daemon-side credential resolution
 -> connector execution
 -> compact result and action_calls audit row
 ```
 
-`action.run` is available through MCP, REST, and CLI. It still uses the same
-connector, auth, redaction, idempotency, cost, and audit code as
+`action.run` is available through the MCP toolbox, REST, and CLI. It still uses
+the same connector, auth, redaction, idempotency, cost, and audit code as
 `action.execute`.
 
 Direct non-read actions require:
@@ -126,7 +126,7 @@ tracker.createTask
 -> tracker.createTicket
 -> tracker.pick
 -> tracker.brief
--> action.run or local work
+-> toolbox.call(action.run) or local work
 -> tracker.patch / tracker.updateTicket
 ```
 
@@ -149,13 +149,14 @@ stackos mcp-bridge
 -> injects the resolved project_id into project-scoped tools
 ```
 
-The agent-facing bridge hides broad project switching, deletion, and admin-only
-changes, but exposes the narrow setup path agents need: `workspace.resolve`,
-`workspace.bootstrap`, `workspace.connect`, `workspace.listBindings`, and safe
-project discovery/creation tools. If a repo is already bound, the bridge
-injects `project_id` and relaxes the advertised schemas so agents do not have to
-keep repeating it. If a caller explicitly passes a different `project_id`, the
-bridge refuses the call.
+The agent-facing bridge exposes only `workspace.startSession`,
+`workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. Setup,
+workflow, tracker, auth, and run-plan tools are reached through
+`toolbox.call`. If a repo is already bound, the bridge injects `project_id` and
+relaxes the advertised schemas so agents do not have to keep repeating it. If a
+caller explicitly passes a different `project_id`, the bridge refuses the call.
+There is no global active project in the agent path; the workspace-bound project
+is the source of truth.
 
 Workspace hints are also scoped. The bridge injects its current
 `cwd`, `repo_fingerprint`, `git_remote_url`, `last_known_root`, runtime, and
@@ -178,18 +179,17 @@ the local repo/directory where the agent is running to one project.
 If a repository or directory is not bound yet, setup should be explicit and
 idempotent:
 
-1. Call `workspace.resolve`.
-2. If it returns `needs_connect=true`, read its `next_step`; the normal next
-   call is `workspace.bootstrap`.
-3. Call `workspace.bootstrap` from the current repo/directory. It creates or
+1. Call `workspace.startSession` from the current repo/directory. It creates or
    reuses one project for that workspace root and stores the binding in the
-   daemon DB. Repeating it for the same root/fingerprint returns the existing
-   project and binding.
-4. Use `project.list`, `project.create`, or `workspace.connect` only when the
+   daemon DB when no binding exists yet. It does not write files into the repo.
+2. Continue with project-scoped tools immediately; the bridge injects the
+   resolved `project_id`.
+3. Use `workspace.resolve` when the caller needs a read-only diagnostic before
+   setup.
+4. Use `toolbox.call` for `project.list`, `project.create`,
+   `workspace.bootstrap`, or `workspace.connect` only when the
    operator intentionally wants to choose a specific existing project or supply
    explicit project metadata.
-5. Continue through `workspace.startSession`; future calls resolve the project
-   automatically from the current workspace.
 
 The bridge sends a path fingerprint by default:
 `path:<sha256(workspace_root)[:24]>`. If git is unavailable, this path identity

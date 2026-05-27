@@ -111,6 +111,22 @@ def _tool_call(
     )
 
 
+def _toolbox_call(
+    proxy: AgentBridgeProxy,
+    client: _BridgeHttpClient,
+    name: str,
+    arguments: dict[str, Any] | None = None,
+    request_id: object = 1,
+) -> dict[str, Any]:
+    return _tool_call(
+        proxy,
+        client,
+        "toolbox.call",
+        {"tool_name": name, "arguments": arguments or {}},
+        request_id=request_id,
+    )
+
+
 def _structured(envelope: dict[str, Any]) -> dict[str, Any]:
     return envelope["result"].get("structuredContent") or envelope["result"]
 
@@ -143,37 +159,40 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert names[: len(_AGENT_VISIBLE_TOOL_ORDER)] == list(_AGENT_VISIBLE_TOOL_ORDER)
     assert "toolbox.describe" in names
     assert "toolbox.call" in names
-    assert "workspace.bootstrap" in names
-    assert "action.run" in names
-    assert "toolProfile.resolve" in names
+    assert names == [
+        "workspace.startSession",
+        "workspace.resolve",
+        "toolbox.describe",
+        "toolbox.call",
+    ]
+    assert "workspace.bootstrap" not in names
+    assert "action.run" not in names
+    assert "toolProfile.resolve" not in names
     assert "schedule.remove" not in names
     assert "integration.set" not in names
-    assert "project.list" in names
-    assert "project.create" in names
-    assert "project.get" in names
-    assert "project.getActive" in names
+    assert "project.list" not in names
+    assert "project.create" not in names
+    assert "project.get" not in names
     assert "project.setActive" not in names
-    assert "agentRequest.list" in names
-    assert "agentRequest.claim" in names
+    assert "agentRequest.list" not in names
+    assert "agentRequest.claim" not in names
     assert "agentRequest.create" not in names
-    assert "context.query" in names
-    assert "learning.query" in names
-    assert "workflowTemplate.list" in names
-    assert "workflowTemplate.validate" in names
-    assert "runPlan.create" in names
-    assert "runPlan.start" in names
+    assert "context.query" not in names
+    assert "learning.query" not in names
+    assert "workflowTemplate.list" not in names
+    assert "workflowTemplate.validate" not in names
+    assert "runPlan.create" not in names
+    assert "runPlan.start" not in names
     assert "learning.create" not in names
     assert "decision.record" not in names
     assert "workflowTemplate.save" not in names
     assert "runPlan.claimStep" not in names
     assert "action.execute" not in names
     assert "dataforseo.serp" not in names
-    auth_tool = next(tool for tool in envelope["result"]["tools"] if tool["name"] == "auth.status")
-    resolver_tool = next(
-        tool for tool in envelope["result"]["tools"] if tool["name"] == "toolProfile.resolve"
+    describe_tool = next(
+        tool for tool in envelope["result"]["tools"] if tool["name"] == "toolbox.describe"
     )
-    assert "response_mode" in auth_tool["inputSchema"]["properties"]
-    assert "response_mode" in resolver_tool["inputSchema"]["properties"]
+    assert "tool_names" in describe_tool["inputSchema"]["properties"]
 
 
 def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient) -> None:
@@ -205,7 +224,7 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
     _send(proxy, client, method="tools/list", request_id="tools")
 
     compact = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "auth.status",
@@ -214,7 +233,7 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
         )
     )
     standard = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "auth.status",
@@ -223,7 +242,7 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
         )
     )
     resolved_compact = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "toolProfile.resolve",
@@ -232,7 +251,7 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
         )
     )
     resolved_standard = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "toolProfile.resolve",
@@ -329,14 +348,26 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
     )
     _initialize(proxy, client)
 
-    tools = _send(proxy, client, method="tools/list", request_id="tools")
-    auth_tool = next(tool for tool in tools["result"]["tools"] if tool["name"] == "auth.status")
-    resolver_tool = next(
-        tool for tool in tools["result"]["tools"] if tool["name"] == "toolProfile.resolve"
+    _send(proxy, client, method="tools/list", request_id="tools")
+    described = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.describe",
+            {
+                "tool_names": [
+                    "auth.status",
+                    "toolProfile.resolve",
+                    "workspace.connect",
+                ]
+            },
+            request_id="describe-schemas",
+        )
     )
-    workspace_connect_tool = next(
-        tool for tool in tools["result"]["tools"] if tool["name"] == "workspace.connect"
-    )
+    by_tool = {tool["name"]: tool for tool in described["described_tools"]}
+    auth_tool = by_tool["auth.status"]
+    resolver_tool = by_tool["toolProfile.resolve"]
+    workspace_connect_tool = by_tool["workspace.connect"]
     auth_required = auth_tool["inputSchema"].get("required", [])
     resolver_required = resolver_tool["inputSchema"].get("required", [])
     workspace_connect_required = workspace_connect_tool["inputSchema"].get("required", [])
@@ -350,7 +381,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
         )
     )
     status = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "auth.status",
@@ -359,7 +390,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
         )
     )
     resolved_tool = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "toolProfile.resolve",
@@ -368,7 +399,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
         )
     )
     connected = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "workspace.connect",
@@ -376,7 +407,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
             request_id="workspace-connect",
         )
     )
-    cross_project = _tool_call(
+    cross_project = _toolbox_call(
         proxy,
         client,
         "auth.status",
@@ -390,49 +421,49 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
         {"cwd": "/tmp/other-project"},
         request_id="workspace-resolve-cross",
     )
-    cross_resource = _tool_call(
+    cross_resource = _toolbox_call(
         proxy,
         client,
         "resource.get",
         {"record_id": other_record_id},
         request_id="resource-get-cross",
     )
-    cross_artifact = _tool_call(
+    cross_artifact = _toolbox_call(
         proxy,
         client,
         "artifact.get",
         {"artifact_id": other_artifact_id},
         request_id="artifact-get-cross",
     )
-    cross_run_plan = _tool_call(
+    cross_run_plan = _toolbox_call(
         proxy,
         client,
         "runPlan.get",
         {"run_plan_id": other_run_plan_id},
         request_id="run-plan-get-cross",
     )
-    cross_run = _tool_call(
+    cross_run = _toolbox_call(
         proxy,
         client,
         "run.get",
         {"run_id": other_run_id},
         request_id="run-get-cross",
     )
-    cross_heartbeat = _tool_call(
+    cross_heartbeat = _toolbox_call(
         proxy,
         client,
         "run.heartbeat",
         {"run_id": other_run_id},
         request_id="run-heartbeat-cross",
     )
-    cross_abort = _tool_call(
+    cross_abort = _toolbox_call(
         proxy,
         client,
         "run.abort",
         {"run_id": other_run_id},
         request_id="run-abort-cross",
     )
-    cross_binding_update = _tool_call(
+    cross_binding_update = _toolbox_call(
         proxy,
         client,
         "workspace.updateProfile",
@@ -482,83 +513,57 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
     assert cross_schedule_toggle["result"]["isError"] is True
 
 
-def test_bridge_unbound_workspace_blocks_project_scoped_tools_until_connected(
+def test_bridge_unbound_workspace_autobootstraps_and_unlocks_project_scoped_tools(
     mcp_client: MCPClient,
 ) -> None:
-    project_id = _create_project(mcp_client, "bridge-connect-later")
     proxy, client = _scoped_bridge(
         mcp_client,
-        cwd="/tmp/bridge-connect-later",
-        repo_fingerprint="path:bridge-connect-later",
+        cwd="/tmp/bridge-auto-start",
+        repo_fingerprint="path:bridge-auto-start",
     )
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
 
+    project_scoped_after_tool_list = _toolbox_call(
+        proxy,
+        client,
+        "workflowTemplate.list",
+        {},
+        request_id="workflow-template-list-after-tools",
+    )
+    tracker_after_tool_list = _structured(
+        _toolbox_call(
+            proxy,
+            client,
+            "tracker.status",
+            {},
+            request_id="tracker-status-after-tools",
+        )
+    )
     resolved = _structured(
         _tool_call(
             proxy,
             client,
             "workspace.resolve",
             {},
-            request_id="resolve-unbound",
+            request_id="resolve-bound",
         )
     )
-    bindings_before = _structured(
-        _tool_call(
+    bindings = _structured(
+        _toolbox_call(
             proxy,
             client,
             "workspace.listBindings",
             {},
-            request_id="list-bindings-unbound",
+            request_id="list-bindings-bound",
         )
     )
-    projects = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "project.list",
-            {"limit": 20},
-            request_id="project-list-unbound",
-        )
-    )
-    blocked_project_scoped = _tool_call(
-        proxy,
-        client,
-        "workflowTemplate.list",
-        {},
-        request_id="workflow-template-list-unbound",
-    )
-    discovery = _tool_call(
+    discovery = _toolbox_call(
         proxy,
         client,
         "plugin.list",
         {},
-        request_id="plugin-list-unbound",
-    )
-    connected = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "workspace.bootstrap",
-            {"project_slug": "bridge-connect-later"},
-            request_id="workspace-bootstrap-later",
-        )
-    )
-    project_scoped_after_bootstrap = _tool_call(
-        proxy,
-        client,
-        "workflowTemplate.list",
-        {},
-        request_id="workflow-template-list-bound",
-    )
-    tracker_after_bootstrap = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "tracker.status",
-            {},
-            request_id="tracker-status-bound",
-        )
+        request_id="plugin-list-bound",
     )
     refreshed = _structured(
         _tool_call(
@@ -569,60 +574,32 @@ def test_bridge_unbound_workspace_blocks_project_scoped_tools_until_connected(
             request_id="workspace-start-session-bound",
         )
     )
-    project_scoped_after_refresh = _tool_call(
+    project_scoped_after_refresh = _toolbox_call(
         proxy,
         client,
         "workflowTemplate.list",
         {},
         request_id="workflow-template-list-after-refresh",
     )
-    bindings = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "workspace.listBindings",
-            {},
-            request_id="list-bindings-bound",
-        )
-    )
-
-    assert resolved["workspace_bound"] is False
-    assert resolved["needs_connect"] is True
-    assert resolved["next_step"]["recommended_tool"] == "workspace.bootstrap"
-    assert any(project["id"] == project_id for project in resolved["candidate_projects"])
-    assert bindings_before["items"] == []
-    assert any(project["id"] == project_id for project in projects["items"])
-    assert _is_bridge_scope_error(blocked_project_scoped)
+    assert project_scoped_after_tool_list["result"]["isError"] is False
+    assert resolved["workspace_bound"] is True
+    assert resolved["needs_connect"] is False
+    assert resolved["project_id"] is not None
+    assert tracker_after_tool_list["project_id"] == resolved["project_id"]
     assert discovery["result"]["isError"] is False
-    assert connected["project_id"] == project_id
-    assert connected["data"]["project_was_created"] is False
-    assert connected["data"]["binding_was_created"] is True
-    assert project_scoped_after_bootstrap["result"]["isError"] is False
-    assert tracker_after_bootstrap["project_id"] == project_id
-    assert refreshed["project_id"] == project_id
+    assert refreshed["project_id"] == resolved["project_id"]
     assert project_scoped_after_refresh["result"]["isError"] is False
-    assert bindings["items"][0]["project_id"] == project_id
+    assert bindings["items"][0]["project_id"] == resolved["project_id"]
 
 
 def test_bridge_toolbox_bootstrap_promotes_workspace_scope(
     mcp_client: MCPClient,
 ) -> None:
     project_id = _create_project(mcp_client, "bridge-toolbox-connect-later")
-    proxy, client = _scoped_bridge(
-        mcp_client,
-        cwd="/tmp/bridge-toolbox-connect-later",
-        repo_fingerprint="path:bridge-toolbox-connect-later",
-    )
+    proxy, client = _bridge(mcp_client)
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
 
-    blocked_project_scoped = _tool_call(
-        proxy,
-        client,
-        "workflowTemplate.list",
-        {},
-        request_id="workflow-template-list-unbound",
-    )
     connected = _structured(
         _tool_call(
             proxy,
@@ -630,12 +607,16 @@ def test_bridge_toolbox_bootstrap_promotes_workspace_scope(
             "toolbox.call",
             {
                 "tool_name": "workspace.bootstrap",
-                "arguments": {"project_slug": "bridge-toolbox-connect-later"},
+                "arguments": {
+                    "cwd": "/tmp/bridge-toolbox-connect-later",
+                    "repo_fingerprint": "path:bridge-toolbox-connect-later",
+                    "project_slug": "bridge-toolbox-connect-later",
+                },
             },
             request_id="toolbox-workspace-bootstrap-later",
         )
     )
-    project_scoped_after_bootstrap = _tool_call(
+    project_scoped_after_bootstrap = _toolbox_call(
         proxy,
         client,
         "workflowTemplate.list",
@@ -643,7 +624,6 @@ def test_bridge_toolbox_bootstrap_promotes_workspace_scope(
         request_id="workflow-template-list-bound",
     )
 
-    assert _is_bridge_scope_error(blocked_project_scoped)
     assert connected["project_id"] == project_id
     assert connected["data"]["project_was_created"] is False
     assert connected["data"]["binding_was_created"] is True
@@ -663,7 +643,7 @@ def test_bridge_describes_setup_tools_and_treats_removed_vendor_tools_as_unknown
         "toolbox.describe",
         {
             "tool_names": [
-                "project.setActive",
+                "project.delete",
                 "schedule.remove",
                 "auth.test",
                 "auth.start",
@@ -678,7 +658,7 @@ def test_bridge_describes_setup_tools_and_treats_removed_vendor_tools_as_unknown
         "schedule.remove",
         "auth.test",
     ]
-    assert payload["denied_tool_names"] == ["project.setActive", "auth.start"]
+    assert payload["denied_tool_names"] == ["project.delete", "auth.start"]
     assert payload["unknown_tool_names"] == ["dataforseo.serp"]
     assert "admin_gated_tool_names" not in payload
 
@@ -754,7 +734,7 @@ def test_bridge_toolbox_operates_setup_actions(
     )
     credential_resp.raise_for_status()
     status = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "auth.status",
@@ -764,7 +744,7 @@ def test_bridge_toolbox_operates_setup_actions(
     )
     credential_ref = status["connections"][0]["credential_ref"]
     tested = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "auth.test",
@@ -783,7 +763,7 @@ def test_bridge_allows_started_run_plan_controller_tools(mcp_client: MCPClient) 
 
     project_id = _create_project(mcp_client, "bridge-run-plan")
     created_plan = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "runPlan.create",
@@ -801,7 +781,7 @@ def test_bridge_allows_started_run_plan_controller_tools(mcp_client: MCPClient) 
     )
     run_plan_id = created_plan["data"]["id"]
     started = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "runPlan.start",
@@ -811,7 +791,7 @@ def test_bridge_allows_started_run_plan_controller_tools(mcp_client: MCPClient) 
     )
     run_id = started["data"]["run_id"]
     second_plan = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "runPlan.create",
@@ -828,7 +808,7 @@ def test_bridge_allows_started_run_plan_controller_tools(mcp_client: MCPClient) 
         )
     )
     _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "runPlan.start",
@@ -905,7 +885,7 @@ def test_bridge_exposes_run_plan_granted_generic_tool_after_claim(
 
     project_id = _create_project(mcp_client, "bridge-run-plan-grant")
     created_plan = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "runPlan.create",
@@ -933,7 +913,7 @@ def test_bridge_exposes_run_plan_granted_generic_tool_after_claim(
     )
     run_plan_id = created_plan["data"]["id"]
     started = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "runPlan.start",
@@ -1012,7 +992,7 @@ def test_bridge_executes_run_plan_granted_action_with_injected_token(
     )
     cred_resp.raise_for_status()
     auth_status = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "auth.status",
@@ -1022,7 +1002,7 @@ def test_bridge_executes_run_plan_granted_action_with_injected_token(
     )
     credential_ref = auth_status["connections"][0]["credential_ref"]
     created_plan = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "runPlan.create",
@@ -1055,7 +1035,7 @@ def test_bridge_executes_run_plan_granted_action_with_injected_token(
     )
     run_plan_id = created_plan["data"]["id"]
     started = _structured(
-        _tool_call(
+        _toolbox_call(
             proxy,
             client,
             "runPlan.start",

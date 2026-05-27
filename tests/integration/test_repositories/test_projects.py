@@ -22,18 +22,18 @@ from stackos.repositories.projects import (
 )
 
 
-def test_project_crud_active_and_pagination(session: Session) -> None:
+def test_project_crud_live_projects_and_pagination(session: Session) -> None:
     repo = ProjectRepository(session)
     first = repo.create(slug="acme", name="Acme", domain="acme.example", locale="en-US")
     second = repo.create(slug="beta", name="Beta", domain="beta.example", locale="en-US")
 
-    repo.set_active(second.data.id)
-
-    assert repo.get(first.data.id).is_active is False
+    assert repo.get(first.data.id).is_active is True
     assert repo.get("beta").is_active is True
-    assert repo.get_active().id == second.data.id
     assert len(repo.list(limit=1).items) == 1
-    assert repo.list(active_only=True).items[0].id == second.data.id
+    assert [project.id for project in repo.list(active_only=True).items] == [
+        first.data.id,
+        second.data.id,
+    ]
 
 
 def test_project_validation_and_soft_delete(session: Session) -> None:
@@ -47,7 +47,6 @@ def test_project_validation_and_soft_delete(session: Session) -> None:
     with pytest.raises(NotFoundError):
         repo.get("missing")
 
-    repo.set_active(env.data.id)
     repo.delete(env.data.id)
     assert repo.get(env.data.id).is_active is False
 
