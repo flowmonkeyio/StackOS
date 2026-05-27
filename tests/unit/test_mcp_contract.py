@@ -31,6 +31,8 @@ from stackos.mcp.server import (
         "run.abort",
         "project.setActive",
         "project.delete",
+        "workspace.bootstrap",
+        "workspace.connect",
         "plugin.enable",
         "plugin.disable",
         "resource.upsert",

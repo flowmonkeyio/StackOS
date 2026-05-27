@@ -129,9 +129,11 @@ The agent-facing MCP bridge surface is intentionally small:
 The bridge derives the active project from the repository that launched it. It
 injects that `project_id` into project-scoped calls and refuses explicit
 cross-project calls. It also injects current workspace hints and refuses calls
-that try to resolve or connect another workspace. Broad project listing,
-creation, deletion, and switching remain daemon/admin capabilities; they are
-not advertised to normal agent bridge clients.
+that try to resolve, bootstrap, or connect another workspace. Safe project
+listing/creation and read-only binding diagnostics are available during setup
+so an unbound agent can finish project bootstrap from MCP alone. Project
+switching, deletion, and broad admin mutations remain daemon/admin
+capabilities; they are not advertised to normal agent bridge clients.
 
 Bootstrap/setup calls are intentionally available before a run token exists so
 an agent can set up the current project and create the first run plan. They are

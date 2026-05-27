@@ -5,7 +5,9 @@ from __future__ import annotations
 from .conftest import MCPClient
 
 
-def test_workspace_resolve_unknown_requests_connect(mcp_client: MCPClient) -> None:
+def test_workspace_resolve_unknown_requests_connect(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
     resolved = mcp_client.call_tool_structured(
         "workspace.resolve",
         {"repo_fingerprint": "git:unknown"},
@@ -14,17 +16,50 @@ def test_workspace_resolve_unknown_requests_connect(mcp_client: MCPClient) -> No
     assert resolved["needs_connect"] is True
     assert resolved["project_id"] is None
     assert resolved["binding"] is None
+    assert resolved["next_step"]["recommended_tool"] == "workspace.bootstrap"
+    assert [project["id"] for project in resolved["candidate_projects"]] == [
+        seeded_project["data"]["id"]
+    ]
+
+
+def test_workspace_bootstrap_creates_project_once_for_workspace_root(
+    mcp_client: MCPClient,
+) -> None:
+    first = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {
+            "cwd": "/tmp/mcp-bootstrap-project",
+            "git_remote_url": "git@github.com:org/mcp-bootstrap-project.git",
+            "framework": "nuxt",
+        },
+    )
+    second = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {
+            "cwd": "/tmp/mcp-bootstrap-project",
+            "git_remote_url": "git@github.com:org/mcp-bootstrap-project.git",
+        },
+    )
+
+    assert first["data"]["project_was_created"] is True
+    assert first["data"]["binding_was_created"] is True
+    assert first["data"]["project"]["slug"] == "mcp-bootstrap-project"
+    assert second["data"]["project_was_created"] is False
+    assert second["data"]["binding_was_created"] is False
+    assert second["data"]["project_id"] == first["data"]["project_id"]
+    assert second["data"]["binding"]["id"] == first["data"]["binding"]["id"]
 
 
 def test_workspace_connect_list_and_start_session(
     mcp_client: MCPClient, seeded_project: dict
 ) -> None:
     project_id = seeded_project["data"]["id"]
+    project_slug = seeded_project["data"]["slug"]
 
     connected = mcp_client.call_tool_structured(
         "workspace.connect",
         {
-            "project_id": project_id,
+            "project_slug": project_slug,
             "repo_fingerprint": "git:abc123",
             "git_remote_url": "git@github.com:org/site.git",
             "normalized_repo_name": "org/site",

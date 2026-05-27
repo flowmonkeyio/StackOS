@@ -143,12 +143,15 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert names[: len(_AGENT_VISIBLE_TOOL_ORDER)] == list(_AGENT_VISIBLE_TOOL_ORDER)
     assert "toolbox.describe" in names
     assert "toolbox.call" in names
+    assert "workspace.bootstrap" in names
     assert "action.run" in names
     assert "toolProfile.resolve" in names
     assert "schedule.remove" not in names
     assert "integration.set" not in names
-    assert "project.list" not in names
-    assert "project.create" not in names
+    assert "project.list" in names
+    assert "project.create" in names
+    assert "project.get" in names
+    assert "project.getActive" in names
     assert "project.setActive" not in names
     assert "agentRequest.list" in names
     assert "agentRequest.claim" in names
@@ -491,12 +494,39 @@ def test_bridge_unbound_workspace_blocks_project_scoped_tools_until_connected(
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
 
-    denied = _tool_call(
+    resolved = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "workspace.resolve",
+            {},
+            request_id="resolve-unbound",
+        )
+    )
+    bindings_before = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "workspace.listBindings",
+            {},
+            request_id="list-bindings-unbound",
+        )
+    )
+    projects = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "project.list",
+            {"limit": 20},
+            request_id="project-list-unbound",
+        )
+    )
+    blocked_project_scoped = _tool_call(
         proxy,
         client,
-        "workspace.listBindings",
+        "workflowTemplate.list",
         {},
-        request_id="list-bindings-unbound",
+        request_id="workflow-template-list-unbound",
     )
     discovery = _tool_call(
         proxy,
@@ -509,9 +539,9 @@ def test_bridge_unbound_workspace_blocks_project_scoped_tools_until_connected(
         _tool_call(
             proxy,
             client,
-            "workspace.connect",
-            {"project_id": project_id},
-            request_id="workspace-connect-later",
+            "workspace.bootstrap",
+            {"project_slug": "bridge-connect-later"},
+            request_id="workspace-bootstrap-later",
         )
     )
     bindings = _structured(
@@ -524,9 +554,17 @@ def test_bridge_unbound_workspace_blocks_project_scoped_tools_until_connected(
         )
     )
 
-    assert _is_bridge_scope_error(denied)
+    assert resolved["workspace_bound"] is False
+    assert resolved["needs_connect"] is True
+    assert resolved["next_step"]["recommended_tool"] == "workspace.bootstrap"
+    assert any(project["id"] == project_id for project in resolved["candidate_projects"])
+    assert bindings_before["items"] == []
+    assert any(project["id"] == project_id for project in projects["items"])
+    assert _is_bridge_scope_error(blocked_project_scoped)
     assert discovery["result"]["isError"] is False
     assert connected["project_id"] == project_id
+    assert connected["data"]["project_was_created"] is False
+    assert connected["data"]["binding_was_created"] is True
     assert bindings["items"][0]["project_id"] == project_id
 
 

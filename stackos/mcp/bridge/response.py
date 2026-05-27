@@ -75,7 +75,12 @@ def _bridge_compact_tool_response(
 
 
 def _bridge_compact_structured(tool_name: str, structured: dict[str, Any]) -> dict[str, Any] | None:
-    if tool_name in {"workspace.startSession", "workspace.resolve", "workspace.connect"}:
+    if tool_name in {
+        "workspace.startSession",
+        "workspace.resolve",
+        "workspace.bootstrap",
+        "workspace.connect",
+    }:
         return _bridge_compact_workspace(structured)
     if tool_name == "auth.status":
         return _bridge_compact_auth_status(structured)
@@ -106,16 +111,55 @@ def _bridge_compact_workspace(structured: dict[str, Any]) -> dict[str, Any]:
     project_id = _bridge_as_int(structured.get("project_id")) or _bridge_as_int(
         data.get("project_id")
     )
-    binding_id = _bridge_as_int(data.get("workspace_binding_id")) or _bridge_as_int(data.get("id"))
-    compact_data = {
+    binding = data.get("binding") if isinstance(data.get("binding"), dict) else {}
+    assert isinstance(binding, dict)
+    project = data.get("project") if isinstance(data.get("project"), dict) else {}
+    assert isinstance(project, dict)
+    binding_id = (
+        _bridge_as_int(data.get("workspace_binding_id"))
+        or _bridge_as_int(data.get("id"))
+        or _bridge_as_int(binding.get("id"))
+    )
+    compact_data: dict[str, Any] = {
         "workspace_bound": project_id is not None,
         "project_id": project_id,
         "workspace_binding_id": binding_id,
     }
+    if isinstance(project.get("slug"), str):
+        compact_data["project_slug"] = project["slug"]
+    if isinstance(project.get("name"), str):
+        compact_data["project_name"] = project["name"]
+    if isinstance(data.get("needs_connect"), bool):
+        compact_data["needs_connect"] = data["needs_connect"]
+    elif isinstance(structured.get("needs_connect"), bool):
+        compact_data["needs_connect"] = structured["needs_connect"]
     if isinstance(data.get("runtime"), str):
         compact_data["runtime"] = data["runtime"]
     if isinstance(data.get("client_session_id"), str):
         compact_data["client_session_id"] = data["client_session_id"]
+    for field in ("repo_hints", "ui_paths", "next_step"):
+        if field in data:
+            compact_data[field] = data[field]
+        elif field in structured:
+            compact_data[field] = structured[field]
+    candidates = data.get("candidate_projects", structured.get("candidate_projects"))
+    if isinstance(candidates, list):
+        compact_data["candidate_projects"] = [
+            {
+                "id": item.get("id"),
+                "slug": item.get("slug"),
+                "name": item.get("name"),
+                "domain": item.get("domain"),
+                "is_active": item.get("is_active"),
+                "ui_paths": item.get("ui_paths"),
+            }
+            for item in candidates
+            if isinstance(item, dict)
+        ]
+    if isinstance(data.get("project_was_created"), bool):
+        compact_data["project_was_created"] = data["project_was_created"]
+    if isinstance(data.get("binding_was_created"), bool):
+        compact_data["binding_was_created"] = data["binding_was_created"]
     if "data" in structured:
         return {
             "data": compact_data,

@@ -63,6 +63,8 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "continuePrivately",
         "patch",
         "pick",
+        "connect",
+        "bootstrap",
         # Bulk verbs.
         "bulkCreate",
         "bulkUpdate",

@@ -21,6 +21,7 @@ def _create_project(session: Session, slug: str = "workspace-site") -> int:
 
 
 def test_resolve_unknown_workspace_requests_connect(session: Session) -> None:
+    project_id = _create_project(session)
     repo = WorkspaceRepository(session)
 
     resolution = repo.resolve(repo_fingerprint="git:unknown")
@@ -28,6 +29,9 @@ def test_resolve_unknown_workspace_requests_connect(session: Session) -> None:
     assert resolution.needs_connect is True
     assert resolution.project_id is None
     assert resolution.binding is None
+    assert resolution.next_step is not None
+    assert resolution.next_step["recommended_tool"] == "workspace.bootstrap"
+    assert [project.id for project in resolution.candidate_projects] == [project_id]
 
 
 def test_connect_resolves_by_fingerprint_and_git_remote(session: Session) -> None:
@@ -53,6 +57,46 @@ def test_connect_resolves_by_fingerprint_and_git_remote(session: Session) -> Non
     assert by_fingerprint.binding is not None
     assert by_fingerprint.binding.framework == "nuxt"
     assert by_remote.project_id == project_id
+
+
+def test_bootstrap_creates_project_once_for_workspace_root(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+
+    first = repo.bootstrap(
+        cwd="/tmp/revtrix",
+        git_remote_url="git@github.com:org/revtrix.git",
+        framework="nuxt",
+    )
+    second = repo.bootstrap(
+        cwd="/tmp/revtrix",
+        git_remote_url="git@github.com:org/revtrix.git",
+    )
+    bindings = repo.list_bindings(project_id=first.project_id)
+
+    assert first.data.project_was_created is True
+    assert first.data.binding_was_created is True
+    assert first.data.project.slug == "revtrix"
+    assert first.data.binding.framework == "nuxt"
+    assert second.data.project_was_created is False
+    assert second.data.binding_was_created is False
+    assert second.data.project_id == first.data.project_id
+    assert second.data.binding.id == first.data.binding.id
+    assert [binding.id for binding in bindings] == [first.data.binding.id]
+
+
+def test_bootstrap_can_bind_existing_project_by_slug(session: Session) -> None:
+    project_id = _create_project(session, slug="existing-site")
+    repo = WorkspaceRepository(session)
+
+    bootstrapped = repo.bootstrap(
+        project_slug="existing-site",
+        cwd="/tmp/existing-site",
+    )
+
+    assert bootstrapped.project_id == project_id
+    assert bootstrapped.data.project_was_created is False
+    assert bootstrapped.data.binding_was_created is True
+    assert bootstrapped.data.project.slug == "existing-site"
 
 
 def test_reconnect_preserves_omitted_detected_profile_fields(session: Session) -> None:

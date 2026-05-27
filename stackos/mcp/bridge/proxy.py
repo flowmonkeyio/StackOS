@@ -142,7 +142,12 @@ class AgentBridgeProxy:
                 client,
                 _bridge_replace_tool_call_arguments(payload, arguments=forwarded_args),
             )
-            if tool_name in {"workspace.connect", "workspace.resolve", "workspace.startSession"}:
+            if tool_name in {
+                "workspace.bootstrap",
+                "workspace.connect",
+                "workspace.resolve",
+                "workspace.startSession",
+            }:
                 self._update_workspace_scope(out)
             self._cache_step_context(out)
             return _bridge_compact_tool_response(

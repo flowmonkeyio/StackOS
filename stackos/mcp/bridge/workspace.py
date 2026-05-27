@@ -90,12 +90,17 @@ def _bridge_workspace_scoped_arguments(
     git_remote_url: str | None,
     client_session_id: str | None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    if tool_name not in {"workspace.resolve", "workspace.startSession", "workspace.connect"}:
+    if tool_name not in {
+        "workspace.resolve",
+        "workspace.startSession",
+        "workspace.bootstrap",
+        "workspace.connect",
+    }:
         return dict(arguments), None
 
     out = dict(arguments)
     checks: list[tuple[str, str | None, str | None]] = []
-    if tool_name in {"workspace.resolve", "workspace.startSession"}:
+    if tool_name in {"workspace.resolve", "workspace.startSession", "workspace.bootstrap"}:
         checks.extend(
             [
                 ("cwd", cwd, "same-or-child"),
@@ -106,7 +111,7 @@ def _bridge_workspace_scoped_arguments(
     if tool_name == "workspace.startSession":
         out.setdefault("runtime", runtime)
         checks.append(("client_session_id", client_session_id, None))
-    if tool_name == "workspace.connect":
+    if tool_name in {"workspace.connect", "workspace.bootstrap"}:
         checks.extend(
             [
                 ("repo_fingerprint", repo_fingerprint, None),
@@ -139,6 +144,7 @@ def _bridge_scope_visibility_error(
     if not has_workspace_hints:
         return None
     if workspace_scope_error is not None and tool_name not in {
+        "workspace.bootstrap",
         "workspace.connect",
         "workspace.resolve",
         "workspace.startSession",
@@ -150,7 +156,7 @@ def _bridge_scope_visibility_error(
         }
     if scoped_project_id is not None:
         return None
-    if tool_name == "workspace.connect":
+    if tool_name in {"workspace.bootstrap", "workspace.connect"}:
         return None
     if tool_name in _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES and arguments.get("project_id") is None:
         return None

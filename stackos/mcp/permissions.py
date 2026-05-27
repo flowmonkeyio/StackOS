@@ -190,6 +190,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "workflowTemplate.describe",
         "workflowTemplate.list",
         "workflowTemplate.validate",
+        "workspace.bootstrap",
         "workspace.connect",
         "workspace.listBindings",
         "workspace.resolve",

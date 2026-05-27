@@ -27,6 +27,8 @@ def test_test_skill_is_full_grant() -> None:
 def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> None:
     check_grant("run.start", SYSTEM_SKILL)
     check_grant("project.create", SYSTEM_SKILL)
+    check_grant("workspace.bootstrap", SYSTEM_SKILL)
+    check_grant("workspace.connect", SYSTEM_SKILL)
     check_grant("auth.status", SYSTEM_SKILL)
     check_grant("auth.test", SYSTEM_SKILL)
     check_grant("action.run", SYSTEM_SKILL)

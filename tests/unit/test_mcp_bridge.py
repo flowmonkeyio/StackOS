@@ -294,6 +294,11 @@ def test_bridge_caches_claimed_run_plan_step_grants() -> None:
 def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> None:
     assert "operation.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "operation.describe" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "workspace.bootstrap" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "project.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "project.get" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "project.getActive" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "project.create" in _AGENT_VISIBLE_TOOL_NAMES
     assert "plugin.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "action.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "action.validate" in _AGENT_VISIBLE_TOOL_NAMES
@@ -412,8 +417,8 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     assert "agentRequest.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.start" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.revoke" not in _AGENT_BASE_TOOLBOX_NAMES
-    assert "project.create" not in _AGENT_BASE_TOOLBOX_NAMES
-    assert "project.list" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "project.create" in _AGENT_BASE_TOOLBOX_NAMES
+    assert "project.list" in _AGENT_BASE_TOOLBOX_NAMES
     assert "project.setActive" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "learning.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "experiment.recordDecision" not in _AGENT_BASE_TOOLBOX_NAMES

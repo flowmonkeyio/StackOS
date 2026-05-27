@@ -97,7 +97,9 @@ work, start here:
 - Normal agent sessions are scoped by the repository that launched the
   StackOS bridge. The bridge injects the resolved `project_id`, refuses
   cross-project calls, and blocks project-scoped tools until the workspace is
-  bound.
+  bound. If `workspace.resolve` returns `needs_connect=true`, use the explicit
+  idempotent `workspace.bootstrap` setup path to create or reuse one project for
+  the current workspace root; do not rely on read-only calls to create state.
 - Agent-facing MCP setup/discovery responses are compact by default. Use
   `response_mode=standard` or `response_mode=verbose` only when full daemon
   payloads are needed. For direct write actions, pass `intent_id` when stable

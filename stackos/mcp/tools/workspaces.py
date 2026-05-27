@@ -15,9 +15,11 @@ from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.server import ToolRegistry, ToolSpec
 from stackos.mcp.streaming import ProgressEmitter
+from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import (
     AgentSessionOut,
     WorkspaceBindingOut,
+    WorkspaceBootstrapOut,
     WorkspaceRepository,
     WorkspaceResolutionOut,
 )
@@ -43,7 +45,7 @@ class WorkspaceConnectInput(MCPInput):
         extra="forbid",
         json_schema_extra={
             "example": {
-                "project_id": 1,
+                "project_slug": "acme",
                 "repo_fingerprint": "git:abc123",
                 "git_remote_url": "git@github.com:org/site.git",
                 "framework": "nuxt",
@@ -51,13 +53,45 @@ class WorkspaceConnectInput(MCPInput):
         },
     )
 
-    project_id: int
+    project_id: int | None = None
+    project_slug: str | None = None
+    project_name: str | None = None
     repo_fingerprint: str
     git_remote_url: str | None = None
     normalized_repo_name: str | None = None
     last_known_root: str | None = None
     framework: str | None = None
     content_model_json: dict[str, Any] | None = None
+
+
+class WorkspaceBootstrapInput(MCPInput):
+    """Ensure one StackOS project and binding for the current workspace root."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "cwd": "/Users/me/Sites/example",
+                "repo_fingerprint": "path:abc123",
+                "git_remote_url": "git@github.com:org/site.git",
+            }
+        },
+    )
+
+    repo_fingerprint: str | None = None
+    git_remote_url: str | None = None
+    normalized_repo_name: str | None = None
+    cwd: str | None = None
+    last_known_root: str | None = None
+    framework: str | None = None
+    content_model_json: dict[str, Any] | None = None
+    project_id: int | None = None
+    project_slug: str | None = None
+    project_name: str | None = None
+    domain: str | None = None
+    niche: str | None = None
+    locale: str = "en-US"
+    rebind_existing: bool = False
 
 
 class WorkspaceListBindingsInput(MCPInput):
@@ -123,8 +157,13 @@ async def _workspace_resolve(
 async def _workspace_connect(
     inp: WorkspaceConnectInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[WorkspaceBindingOut]:
-    env = WorkspaceRepository(ctx.session).connect(
+    project = ProjectRepository(ctx.session).resolve_identifier(
         project_id=inp.project_id,
+        project_slug=inp.project_slug,
+        project_name=inp.project_name,
+    )
+    env = WorkspaceRepository(ctx.session).connect(
+        project_id=project.id,
         repo_fingerprint=inp.repo_fingerprint,
         git_remote_url=inp.git_remote_url,
         normalized_repo_name=inp.normalized_repo_name,
@@ -133,6 +172,30 @@ async def _workspace_connect(
         content_model_json=inp.content_model_json,
     )
     return WriteEnvelope[WorkspaceBindingOut](
+        data=env.data, run_id=ctx.run_id, project_id=env.project_id
+    )
+
+
+async def _workspace_bootstrap(
+    inp: WorkspaceBootstrapInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[WorkspaceBootstrapOut]:
+    env = WorkspaceRepository(ctx.session).bootstrap(
+        repo_fingerprint=inp.repo_fingerprint,
+        git_remote_url=inp.git_remote_url,
+        normalized_repo_name=inp.normalized_repo_name,
+        cwd=inp.cwd,
+        last_known_root=inp.last_known_root,
+        framework=inp.framework,
+        content_model_json=inp.content_model_json,
+        project_id=inp.project_id,
+        project_slug=inp.project_slug,
+        project_name=inp.project_name,
+        domain=inp.domain,
+        niche=inp.niche,
+        locale=inp.locale,
+        rebind_existing=inp.rebind_existing,
+    )
+    return WriteEnvelope[WorkspaceBootstrapOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
     )
 
@@ -190,6 +253,15 @@ def register(registry: ToolRegistry) -> None:
             WorkspaceConnectInput,
             WriteEnvelope[WorkspaceBindingOut],
             _workspace_connect,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            "workspace.bootstrap",
+            "Ensure one project and daemon-owned binding for the current workspace.",
+            WorkspaceBootstrapInput,
+            WriteEnvelope[WorkspaceBootstrapOut],
+            _workspace_bootstrap,
         )
     )
     registry.register(

@@ -129,6 +129,29 @@ class ProjectRepository:
         row = self._fetch_row(id_or_slug)
         return ProjectOut.model_validate(row)
 
+    def resolve_identifier(
+        self,
+        *,
+        project_id: int | None = None,
+        project_slug: str | None = None,
+        project_name: str | None = None,
+    ) -> ProjectOut:
+        """Resolve one project by an agent-discoverable identifier."""
+        if project_id is not None:
+            return self.get(project_id)
+        if project_slug is not None:
+            return self.get(project_slug)
+        if project_name is None:
+            raise ValidationError("one of project_id, project_slug, or project_name is required")
+        rows = self._s.exec(select(Project).where(Project.name == project_name)).all()
+        if len(rows) == 1:
+            return ProjectOut.model_validate(rows[0])
+        if len(rows) > 1:
+            raise ValidationError(
+                "project_name matches multiple projects; pass project_id or project_slug"
+            )
+        raise NotFoundError(f"project named {project_name!r} not found")
+
     def list(
         self,
         *,

@@ -52,6 +52,7 @@ def build_operation_registry() -> OperationRegistry:
         agent_requests,
         communications,
         discovery,
+        project_bootstrap,
         run_plans,
         tool_profiles,
     )
@@ -59,6 +60,8 @@ def build_operation_registry() -> OperationRegistry:
 
     registry = OperationRegistry()
     for spec in discovery.operation_specs():
+        registry.register(spec)
+    for spec in project_bootstrap.operation_specs():
         registry.register(spec)
     for spec in agent_requests.operation_specs():
         registry.register(spec)

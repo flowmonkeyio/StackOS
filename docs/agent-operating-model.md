@@ -149,10 +149,13 @@ stackos mcp-bridge
 -> injects the resolved project_id into project-scoped tools
 ```
 
-The agent-facing bridge hides broad project listing, creation, switching, and
-deletion. If a repo is already bound, the bridge injects `project_id` and
-relaxes the advertised schemas so agents do not have to keep repeating it. If a
-caller explicitly passes a different `project_id`, the bridge refuses the call.
+The agent-facing bridge hides broad project switching, deletion, and admin-only
+changes, but exposes the narrow setup path agents need: `workspace.resolve`,
+`workspace.bootstrap`, `workspace.connect`, `workspace.listBindings`, and safe
+project discovery/creation tools. If a repo is already bound, the bridge
+injects `project_id` and relaxes the advertised schemas so agents do not have to
+keep repeating it. If a caller explicitly passes a different `project_id`, the
+bridge refuses the call.
 
 Workspace hints are also scoped. The bridge injects its current
 `cwd`, `repo_fingerprint`, `git_remote_url`, `last_known_root`, runtime, and
@@ -167,16 +170,36 @@ about separately from StackOS permissions.
 
 ## Setup Path
 
-If a repository is not bound yet, setup should be explicit:
+Project and workspace are separate concepts. A project is the durable StackOS
+container for tasks, tickets, workflows, credentials refs, resources, run
+plans, communications, and audit. A workspace is the daemon-owned binding from
+the local repo/directory where the agent is running to one project.
 
-1. Create or choose the StackOS project through the UI, CLI, REST-admin path, or
-   another operator-approved setup flow.
-2. From the repository, call `workspace.connect` with that project id.
-3. Continue through `workspace.startSession`; future calls resolve the project
-   automatically from the current repo.
+If a repository or directory is not bound yet, setup should be explicit and
+idempotent:
 
-This keeps normal agents focused on the project attached to their workspace
-instead of browsing unrelated projects.
+1. Call `workspace.resolve`.
+2. If it returns `needs_connect=true`, read its `next_step`; the normal next
+   call is `workspace.bootstrap`.
+3. Call `workspace.bootstrap` from the current repo/directory. It creates or
+   reuses one project for that workspace root and stores the binding in the
+   daemon DB. Repeating it for the same root/fingerprint returns the existing
+   project and binding.
+4. Use `project.list`, `project.create`, or `workspace.connect` only when the
+   operator intentionally wants to choose a specific existing project or supply
+   explicit project metadata.
+5. Continue through `workspace.startSession`; future calls resolve the project
+   automatically from the current workspace.
+
+The bridge sends a path fingerprint by default:
+`path:<sha256(workspace_root)[:24]>`. If git is unavailable, this path identity
+is enough for a local directory. If git or a remote is added later, bootstrap can
+attach that metadata to the existing binding when the same root is seen. A
+moved non-git directory without a remote looks like a new workspace unless the
+agent intentionally reconnects or rebinds it.
+
+This keeps normal agents focused on the project attached to their workspace and
+still gives them a complete MCP-native path when no binding exists yet.
 
 ## Design Review
 

@@ -49,6 +49,10 @@ def test_operation_registry_documents_core_operations() -> None:
         "localAgentChat.createMessage",
         "operation.describe",
         "operation.list",
+        "project.create",
+        "project.get",
+        "project.getActive",
+        "project.list",
         "runPlan.claimStep",
         "runPlan.create",
         "runPlan.get",
@@ -77,6 +81,10 @@ def test_operation_registry_documents_core_operations() -> None:
         "tracker.updateTicket",
         "tracker.verify",
         "tracker.why",
+        "workspace.bootstrap",
+        "workspace.connect",
+        "workspace.listBindings",
+        "workspace.resolve",
     ]
 
     described = registry.get("action.execute").describe_out()
@@ -181,6 +189,17 @@ def test_operation_registry_documents_core_operations() -> None:
     assert operation_describe.grant_policy == "direct-read"
     assert operation_describe.examples[1].arguments["name"] == "operation.describe"
 
+    project_list = registry.get("project.list").describe_out()
+    assert project_list.surfaces["mcp"].enabled is True
+    assert project_list.grant_policy == "direct-setup-read"
+    assert any("workspace.resolve" in item for item in project_list.when_to_use)
+
+    workspace_bootstrap = registry.get("workspace.bootstrap").describe_out()
+    assert workspace_bootstrap.surfaces["mcp"].enabled is True
+    assert workspace_bootstrap.mutating is True
+    assert workspace_bootstrap.grant_policy == "direct-setup-write"
+    assert any("idempotent" in item for item in [workspace_bootstrap.purpose])
+
     ingress = registry.get("ingressEndpoint.configure").describe_out()
     assert ingress.surfaces["mcp"].enabled is True
     assert ingress.surfaces["rest"].enabled is True
@@ -262,6 +281,10 @@ def test_operation_registry_surface_filter() -> None:
         "localAgentChat.createMessage",
         "operation.describe",
         "operation.list",
+        "project.create",
+        "project.get",
+        "project.getActive",
+        "project.list",
         "runPlan.claimStep",
         "runPlan.create",
         "runPlan.get",
@@ -290,6 +313,10 @@ def test_operation_registry_surface_filter() -> None:
         "tracker.updateTicket",
         "tracker.verify",
         "tracker.why",
+        "workspace.bootstrap",
+        "workspace.connect",
+        "workspace.listBindings",
+        "workspace.resolve",
     ]
     assert registry.get("runPlan.update").surfaces.cli.enabled is True
     assert registry.get("runPlan.update").surfaces.cli.command == "run-plans approve"
