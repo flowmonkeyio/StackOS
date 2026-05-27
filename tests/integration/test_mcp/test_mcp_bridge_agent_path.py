@@ -544,6 +544,38 @@ def test_bridge_unbound_workspace_blocks_project_scoped_tools_until_connected(
             request_id="workspace-bootstrap-later",
         )
     )
+    project_scoped_after_bootstrap = _tool_call(
+        proxy,
+        client,
+        "workflowTemplate.list",
+        {},
+        request_id="workflow-template-list-bound",
+    )
+    tracker_after_bootstrap = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "tracker.status",
+            {},
+            request_id="tracker-status-bound",
+        )
+    )
+    refreshed = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "workspace.startSession",
+            {},
+            request_id="workspace-start-session-bound",
+        )
+    )
+    project_scoped_after_refresh = _tool_call(
+        proxy,
+        client,
+        "workflowTemplate.list",
+        {},
+        request_id="workflow-template-list-after-refresh",
+    )
     bindings = _structured(
         _tool_call(
             proxy,
@@ -565,7 +597,57 @@ def test_bridge_unbound_workspace_blocks_project_scoped_tools_until_connected(
     assert connected["project_id"] == project_id
     assert connected["data"]["project_was_created"] is False
     assert connected["data"]["binding_was_created"] is True
+    assert project_scoped_after_bootstrap["result"]["isError"] is False
+    assert tracker_after_bootstrap["project_id"] == project_id
+    assert refreshed["project_id"] == project_id
+    assert project_scoped_after_refresh["result"]["isError"] is False
     assert bindings["items"][0]["project_id"] == project_id
+
+
+def test_bridge_toolbox_bootstrap_promotes_workspace_scope(
+    mcp_client: MCPClient,
+) -> None:
+    project_id = _create_project(mcp_client, "bridge-toolbox-connect-later")
+    proxy, client = _scoped_bridge(
+        mcp_client,
+        cwd="/tmp/bridge-toolbox-connect-later",
+        repo_fingerprint="path:bridge-toolbox-connect-later",
+    )
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    blocked_project_scoped = _tool_call(
+        proxy,
+        client,
+        "workflowTemplate.list",
+        {},
+        request_id="workflow-template-list-unbound",
+    )
+    connected = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "workspace.bootstrap",
+                "arguments": {"project_slug": "bridge-toolbox-connect-later"},
+            },
+            request_id="toolbox-workspace-bootstrap-later",
+        )
+    )
+    project_scoped_after_bootstrap = _tool_call(
+        proxy,
+        client,
+        "workflowTemplate.list",
+        {},
+        request_id="workflow-template-list-bound",
+    )
+
+    assert _is_bridge_scope_error(blocked_project_scoped)
+    assert connected["project_id"] == project_id
+    assert connected["data"]["project_was_created"] is False
+    assert connected["data"]["binding_was_created"] is True
+    assert project_scoped_after_bootstrap["result"]["isError"] is False
 
 
 def test_bridge_describes_setup_tools_and_treats_removed_vendor_tools_as_unknown(

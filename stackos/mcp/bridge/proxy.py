@@ -38,6 +38,15 @@ from .workspace import (
     _bridge_workspace_scoped_arguments,
 )
 
+_WORKSPACE_SCOPE_UPDATING_TOOL_NAMES = frozenset(
+    {
+        "workspace.bootstrap",
+        "workspace.connect",
+        "workspace.resolve",
+        "workspace.startSession",
+    }
+)
+
 
 class AgentBridgeProxy:
     """Stateful bridge adapter for one plugin stdio session."""
@@ -142,12 +151,7 @@ class AgentBridgeProxy:
                 client,
                 _bridge_replace_tool_call_arguments(payload, arguments=forwarded_args),
             )
-            if tool_name in {
-                "workspace.bootstrap",
-                "workspace.connect",
-                "workspace.resolve",
-                "workspace.startSession",
-            }:
+            if tool_name in _WORKSPACE_SCOPE_UPDATING_TOOL_NAMES:
                 self._update_workspace_scope(out)
             self._cache_step_context(out)
             return _bridge_compact_tool_response(
@@ -424,6 +428,8 @@ class AgentBridgeProxy:
                 forwarded_args,
             ),
         )
+        if target_name in _WORKSPACE_SCOPE_UPDATING_TOOL_NAMES:
+            self._update_workspace_scope(out)
         self._cache_step_context(out)
         return _bridge_compact_tool_response(
             tool_name=target_name,
