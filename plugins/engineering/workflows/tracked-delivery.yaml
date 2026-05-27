@@ -59,6 +59,9 @@ skill_requirements:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through existing tracker tasks/tickets and record completion evidence; do not keep SDLC state only in chat.
       - Adapt generic SDLC presets to the project's agent file format, tech stack, docs, tests, and release rules before creating local agents.
+      - For Codex-style hosts, inspect .codex/config.toml and existing .codex/agents/*.toml before proposing local agent file changes.
+      - Use operation.list when operation names are unclear, then operation.describe for the few operations the agent intends to use.
+      - Read engineering-decision and engineering-evidence with resource.query; write reusable evidence only inside granted run-plan steps with resource.upsert, artifact.create, or decision.record.
 inputs:
   - key: goal
     name: Goal

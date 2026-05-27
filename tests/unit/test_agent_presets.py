@@ -62,6 +62,13 @@ def test_agent_preset_setup_guidance_names_host_and_toolbox_boundaries() -> None
     assert "engineering.tracked-delivery" in guidance
     assert "normal workflow path" in guidance
     assert "host/project-specific" in guidance
+    assert ".codex/config.toml" in guidance
+    assert ".codex/agents/*.toml" in guidance
+    assert "workspace.updateprofile" in guidance
+    assert "resource.query" in guidance
+    assert "resource.upsert" in guidance
+    assert "artifact.create" in guidance
+    assert "decision.record" in guidance
     assert "toolbox.describe" in guidance
     assert "toolbox.call" in guidance
     assert "toolbox.describe" in action

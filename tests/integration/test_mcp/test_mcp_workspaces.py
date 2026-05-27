@@ -127,6 +127,7 @@ def test_workspace_start_session_autobootstraps_unbound_directory(
     assert started["data"]["binding_was_created"] is True
     assert started["data"]["workspace_binding_id"] == bindings[0]["id"]
     assert started["data"]["next_step"]["status"] == "ready"
+    assert "operation.list" in started["data"]["next_step"]["recommended_tools"]
     assert started["data"]["setup_state"]["state"] == "bound_profile_incomplete"
     assert started["data"]["setup_state"]["profile_missing"] == [
         "framework",

@@ -64,6 +64,13 @@ plugin agent files, or session-only instructions. If a host does not expose a
 recommended StackOS operation directly, the agent should inspect and invoke it
 through the scoped toolbox.
 
+For Codex-style hosts, inspect `.codex/config.toml` and existing
+`.codex/agents/*.toml` before creating or updating local agents. StackOS does
+not scan or register those files because repository filesystem access belongs
+to the host agent, not the daemon. The workflow and preset responses should
+tell the agent what roles are needed; the host-local format decides how those
+roles are materialized.
+
 When a host supports skills, workflow templates may recommend `stackos:stackos`.
 That skill teaches agents how to use StackOS MCP, operations, workflow
 templates, run plans, tracker tasks/tickets, dependencies, and evidence. The
@@ -74,6 +81,7 @@ expectation visible.
 
 ```text
 agent intent
+-> operation.list when the available operation names are not already clear
 -> operation.describe / action.describe when the contract is not already clear
 -> agentPreset.resolveForWorkflow when setting up workflow-specific roles
 -> workflow template or agent-authored run plan
@@ -148,6 +156,12 @@ tools. Pass `response_mode=standard` when the full normal daemon payload is
 needed, or `response_mode=verbose`/`verbose=true` for diagnostics on tools that
 support it. This keeps simple MCP calls from flooding the context window while
 preserving the richer REST/UI contracts.
+
+Workflow evidence follows the same boundary. Read project resources with
+`resource.query`; write reusable evidence from a started run-plan step using
+the granted write operations such as `resource.upsert`, `artifact.create`, or
+`decision.record`. Tracker ticket comments and evidence are good for work
+state; resources/artifacts/decisions are for reusable project memory.
 
 ## Project Scope
 

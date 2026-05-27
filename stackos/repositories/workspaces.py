@@ -204,6 +204,7 @@ def _connected_next_step(project_id: int) -> dict[str, Any]:
         "status": "ready",
         "call_via": "toolbox.call",
         "recommended_tools": [
+            "operation.list",
             "workflowTemplate.list",
             "agentPreset.list",
             "tracker.status",

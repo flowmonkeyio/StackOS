@@ -48,9 +48,18 @@ the work. The workflow references `stackos.sdlc.*` presets as required and
 recommended roles, but the workflow owns the SDLC flow.
 
 The main agent should detect or read the host convention before writing local
-agents. If no convention is available, it should use the resolved workflow
-agents as operating guidance in the current session or ask the operator which
-host format to use.
+agents. For Codex-style projects, inspect `.codex/config.toml` and existing
+`.codex/agents/*.toml` before proposing new files or updates. For other hosts,
+look for that host's agent convention first. StackOS does not scan, write, or
+register those host-local files; it only provides the generic preset contracts
+and workflow role requirements. If no convention is available, use the resolved
+workflow agents as operating guidance in the current session or ask the
+operator which host format to use.
+
+Missing workspace profile fields such as `framework` or `content_model_json`
+mean the project is under-described for future adaptation. They do not block
+project-scoped tools. After reading repo guidance and stack details, record
+durable hints with `workspace.updateProfile` when they will help later agents.
 
 ## StackOS Skill
 
@@ -80,10 +89,16 @@ clear dependencies, no dangling loose ends, and concrete definition of done.
 
 Use these operations through MCP, REST, or CLI:
 
+- `operation.list`: discover available StackOS operations before asking for
+  exact schemas or invoking hidden toolbox tools
 - `agentPreset.list`: discover available generic presets
 - `agentPreset.describe`: read one preset and its adaptation contract
 - `agentPreset.resolveForWorkflow`: resolve a workflow template into required
   and recommended agents plus skill requirements
+- `resource.query`: read existing workflow resources such as
+  `engineering-decision` and `engineering-evidence`
+- `resource.upsert`, `artifact.create`, `decision.record`: write durable
+  workflow evidence only from a started run-plan step with an explicit grant
 
 Example:
 

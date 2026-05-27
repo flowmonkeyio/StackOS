@@ -37,9 +37,10 @@ run token.
    run-plan step grants that are not in the direct list.
 5. Agent presets are contracts, not daemon-run local agents. When asked to set
    up local agents, adapt presets to the host/project's detected format
-   (`.codex`, markdown frontmatter, plugin files, or session-only guidance).
-   Do not register local agents back into StackOS unless the project provides a
-   separate host-specific mechanism.
+   (`.codex/agents/*.toml` referenced by `.codex/config.toml`, markdown
+   frontmatter, plugin files, or session-only guidance). StackOS does not scan,
+   write, or register host-local agent files; the host agent inspects repository
+   files and adapts presets only when local-agent setup is requested.
 6. When a run plan needs missing vendor credentials, do not ask the user to
    paste secrets into chat. Name the missing providers and send the operator to
    `http://localhost:5180/projects/{project_id}/connections`. After the user
@@ -61,7 +62,9 @@ run token.
   or reuse one daemon-owned project binding for that workspace and return UI
   links plus setup/profile state. Treat `workspace_bound=true` as "project tools
   are usable"; missing framework/content-model profile fields are adaptation
-  hints, not blockers.
+  hints, not blockers. After inspecting the repo's stack and content model, use
+  `toolbox.call` for `workspace.updateProfile` when those hints should be
+  durable for future agents.
 - Ongoing repo session: call `workspace.startSession`, use the workspace-bound
   project id, then call only the scoped tools needed for the current task. Do
   not request broad schemas or catalog dumps unless debugging.
@@ -72,10 +75,16 @@ run token.
   `engineering.tracked-delivery`. Describe the workflow, resolve agents with
   `agentPreset.resolveForWorkflow`, then create/start a run plan when
   executing. Adapt the referenced `stackos.sdlc.*` presets to the
-  host/project's local agent format only when local agents are requested.
+  host/project's local agent format only when local agents are requested. For
+  Codex repos, inspect `.codex/config.toml` and existing
+  `.codex/agents/*.toml` before proposing file creates or updates.
   Treat each preset's `recommended_tools` as StackOS operation refs. If those
   refs are not mounted as direct host tools, use `toolbox.describe` and
   `toolbox.call`.
+- Discover operations: if you do not know the exact operation name, call
+  `toolbox.call` for `operation.list` first, then `operation.describe` for the
+  few operations you intend to use. Keep `toolbox.describe` scoped to exact
+  tool names.
 - Connect vendors: inspect the run plan's needed providers, share
   `/projects/{project_id}/connections`, wait for the operator to connect them
   in the UI, then run `toolbox.call` for `auth.status` and `auth.test`.
@@ -94,3 +103,7 @@ run token.
 - Execute a workflow action: validate the manifest and input, let the daemon
   resolve credentials through `action.execute`, then store outputs as
   resources, artifacts, learnings, or run step summaries.
+- Use engineering evidence/resources: read existing `engineering-decision` and
+  `engineering-evidence` records with `resource.query`. Create durable evidence
+  only inside a run-plan step with explicit grants such as `resource.upsert`,
+  `artifact.create`, or `decision.record`.

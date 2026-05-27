@@ -103,6 +103,16 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "stackos.sdlc.planning"
     )
     assert engineering_described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
+    engineering_setup_notes = "\n".join(
+        engineering_described.spec.skill_requirements[0].setup_notes
+    )
+    assert ".codex/config.toml" in engineering_setup_notes
+    assert ".codex/agents/*.toml" in engineering_setup_notes
+    assert "operation.list" in engineering_setup_notes
+    assert "resource.query" in engineering_setup_notes
+    assert "resource.upsert" in engineering_setup_notes
+    assert "artifact.create" in engineering_setup_notes
+    assert "decision.record" in engineering_setup_notes
     assert engineering_described.spec.steps[0].id == "scope-work"
     assert engineering_described.spec.metadata_json["workflow_family"] == "sdlc"
     assert [item.key for item in gtm_listing.templates] == [

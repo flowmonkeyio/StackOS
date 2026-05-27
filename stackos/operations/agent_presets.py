@@ -156,8 +156,14 @@ def _setup_guidance() -> list[str]:
         (
             "Local agent files are host/project-specific. StackOS does not detect, "
             "write, or register .codex, markdown-frontmatter, or other host agent "
-            "formats; the main agent adapts presets into local files only when the "
-            "host/project guidance calls for it."
+            "formats. The main agent should inspect host-local files such as "
+            ".codex/config.toml and .codex/agents/*.toml, then adapt presets into "
+            "local files only when the host/project guidance calls for it."
+        ),
+        (
+            "Incomplete workspace profile fields such as framework or content_model_json "
+            "are adaptation hints, not blockers. After inspecting repository guidance, "
+            "record durable hints with workspace.updateProfile when useful."
         ),
         (
             "recommended_tools are StackOS operation refs. Call them directly only "
@@ -172,6 +178,11 @@ def _setup_guidance() -> list[str]:
         (
             "Workflow templates are inert reusable contracts. Create a concrete run "
             "plan before executing multi-step workflow work."
+        ),
+        (
+            "For engineering decision or evidence records, read existing records with "
+            "resource.query. Write reusable workflow evidence only through run-plan "
+            "grants such as resource.upsert, artifact.create, or decision.record."
         ),
         (
             "Use the StackOS skill when the host supports skills; it teaches MCP, "
