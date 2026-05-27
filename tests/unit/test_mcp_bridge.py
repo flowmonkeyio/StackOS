@@ -24,7 +24,7 @@ from stackos.mcp.bridge import (
 )
 from stackos.mcp.contract import verb_is_mutating
 from stackos.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
-from stackos.mcp.server import ToolRegistry
+from stackos.mcp.server import ToolRegistry, _to_tool
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.mcp.tools import register_all
 
@@ -647,6 +647,14 @@ def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
 
     list_spec = registry.get("operation.list")
     describe_spec = registry.get("operation.describe")
+    assert list_spec.operation_name == "operation.list"
+    assert describe_spec.operation_name == "operation.describe"
+    assert _to_tool(list_spec).model_dump(by_alias=True)["_meta"]["operation_name"] == (
+        "operation.list"
+    )
+    assert _to_tool(describe_spec).model_dump(by_alias=True)["_meta"]["operation_name"] == (
+        "operation.describe"
+    )
 
     listed = asyncio.run(
         list_spec.handler(
@@ -655,7 +663,10 @@ def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
             ProgressEmitter(None, None),
         )
     )
-    assert "communication.send" in {item.name for item in listed.items}
+    listed_names = {item.name for item in listed.items}
+    assert "operation.list" in listed_names
+    assert "operation.describe" in listed_names
+    assert "communication.send" in listed_names
     assert all(item.surfaces["mcp"].enabled for item in listed.items)
 
     described = asyncio.run(
@@ -671,6 +682,19 @@ def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
     assert described.grant_policy == "direct-communication-send"
     assert "properties" in described.input_schema
     assert described.prerequisites
+
+    self_described = asyncio.run(
+        describe_spec.handler(
+            describe_spec.input_model.model_validate(
+                {"name": "operation.describe", "surface": "mcp"}
+            ),
+            None,  # type: ignore[arg-type]
+            ProgressEmitter(None, None),
+        )
+    )
+    assert self_described.name == "operation.describe"
+    assert self_described.grant_policy == "direct-read"
+    assert "name" in self_described.input_schema["properties"]
 
 
 def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:

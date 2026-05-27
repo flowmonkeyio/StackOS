@@ -46,10 +46,19 @@ class OperationRegistry:
 
 
 def build_operation_registry() -> OperationRegistry:
-    from stackos.operations import actions, agent_requests, communications, run_plans, tool_profiles
+    from stackos.operations import (
+        actions,
+        agent_requests,
+        communications,
+        discovery,
+        run_plans,
+        tool_profiles,
+    )
     from stackos.operations import tracker as tracker_operations
 
     registry = OperationRegistry()
+    for spec in discovery.operation_specs():
+        registry.register(spec)
     for spec in agent_requests.operation_specs():
         registry.register(spec)
     for spec in communications.operation_specs():

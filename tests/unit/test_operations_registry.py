@@ -44,6 +44,8 @@ def test_operation_registry_documents_core_operations() -> None:
         "ingressEndpoint.status",
         "ingressEndpoint.sync",
         "localAgentChat.createMessage",
+        "operation.describe",
+        "operation.list",
         "runPlan.claimStep",
         "runPlan.create",
         "runPlan.get",
@@ -151,6 +153,22 @@ def test_operation_registry_documents_core_operations() -> None:
     assert local_chat.grant_policy == "direct-work-queue-write"
     assert any("never invokes a model" in item for item in [local_chat.purpose])
 
+    operation_list = registry.get("operation.list").describe_out()
+    assert operation_list.surfaces["mcp"].enabled is True
+    assert operation_list.surfaces["rest"].enabled is True
+    assert operation_list.surfaces["cli"].command == "ops list"
+    assert operation_list.grant_policy == "direct-read"
+    assert any(
+        "available StackOS operation inventory" in item for item in operation_list.when_to_use
+    )
+
+    operation_describe = registry.get("operation.describe").describe_out()
+    assert operation_describe.surfaces["mcp"].enabled is True
+    assert operation_describe.surfaces["rest"].enabled is True
+    assert operation_describe.surfaces["cli"].command == "ops describe"
+    assert operation_describe.grant_policy == "direct-read"
+    assert operation_describe.examples[1].arguments["name"] == "operation.describe"
+
     ingress = registry.get("ingressEndpoint.configure").describe_out()
     assert ingress.surfaces["mcp"].enabled is True
     assert ingress.surfaces["rest"].enabled is True
@@ -227,6 +245,8 @@ def test_operation_registry_surface_filter() -> None:
         "ingressEndpoint.status",
         "ingressEndpoint.sync",
         "localAgentChat.createMessage",
+        "operation.describe",
+        "operation.list",
         "runPlan.claimStep",
         "runPlan.create",
         "runPlan.get",
