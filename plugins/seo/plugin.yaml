@@ -233,11 +233,11 @@ ui:
     section: SEO
     items:
       - key: seo.resources
-        label: SEO Resources
+        label: Data
         to: resources?plugin_slug=seo
         matchPrefix: true
       - key: seo.templates
-        label: SEO Templates
+        label: Workflows
         to: workflow-templates?plugin_slug=seo
 config:
   schema_version: stackos.plugin.v1

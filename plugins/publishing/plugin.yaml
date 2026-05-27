@@ -187,11 +187,11 @@ ui:
     section: Publishing
     items:
       - key: publishing.resources
-        label: Publishing Resources
+        label: Data
         to: resources?plugin_slug=publishing
         matchPrefix: true
       - key: publishing.templates
-        label: Publishing Templates
+        label: Workflows
         to: workflow-templates?plugin_slug=publishing
 config:
   schema_version: stackos.plugin.v1

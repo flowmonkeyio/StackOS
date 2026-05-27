@@ -1490,11 +1490,11 @@ ui:
     section: Media Buying
     items:
       - key: media-buying.resources
-        label: Media Resources
+        label: Data
         to: resources?plugin_slug=media-buying
         matchPrefix: true
       - key: media-buying.templates
-        label: Media Templates
+        label: Workflows
         to: workflow-templates?plugin_slug=media-buying
 config:
   schema_version: stackos.plugin.v1

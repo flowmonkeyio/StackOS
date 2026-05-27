@@ -1274,11 +1274,11 @@ ui:
     section: Communications
     items:
       - key: communications.resources
-        label: Communications Resources
+        label: Data
         to: resources?plugin_slug=communications
         matchPrefix: true
       - key: communications.templates
-        label: Communications Templates
+        label: Workflows
         to: workflow-templates?plugin_slug=communications
 config:
   schema_version: stackos.plugin.v1

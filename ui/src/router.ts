@@ -14,6 +14,7 @@ import CapabilitiesView from './views/CapabilitiesView.vue'
 import ConnectionsView from './views/ConnectionsView.vue'
 import OperationsView from './views/OperationsView.vue'
 import WorkflowTemplatesView from './views/WorkflowTemplatesView.vue'
+import AgentPresetsView from './views/AgentPresetsView.vue'
 import ProjectDataView from './views/ProjectDataView.vue'
 import ResourceExplorerView from './views/ResourceExplorerView.vue'
 import ActionCallsView from './views/ActionCallsView.vue'
@@ -41,6 +42,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects/:id/operations', name: 'project-operations', component: OperationsView },
   { path: '/projects/:id/action-calls', name: 'project-action-calls', component: ActionCallsView },
   { path: '/projects/:id/agent-requests', name: 'project-agent-requests', component: AgentRequestsView },
+  { path: '/projects/:id/agent-presets', name: 'project-agent-presets', component: AgentPresetsView },
   { path: '/projects/:id/tasks', name: 'project-tasks', component: TaskTrackerView },
   {
     path: '/projects/:id/workflow-templates',

@@ -21,6 +21,9 @@ describe('StackOS nav contributions', () => {
     expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
       '/projects/7/action-calls',
     )
+    expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
+      '/projects/7/agent-presets',
+    )
   })
 
   it('loads plugin nav contributions from sanitized manifest UI metadata', () => {
@@ -83,13 +86,13 @@ describe('StackOS nav contributions', () => {
             items: [
               {
                 key: 'seo.resources',
-                label: 'SEO Resources',
+                label: 'Data',
                 to: 'resources?plugin_slug=seo',
                 matchPrefix: true,
               },
               {
                 key: 'seo.templates',
-                label: 'SEO Templates',
+                label: 'Workflows',
                 to: 'workflow-templates?plugin_slug=seo',
               },
             ],
@@ -100,6 +103,7 @@ describe('StackOS nav contributions', () => {
 
     const sections = pluginContributionSections(7, [plugin])
     expect(sections[0].label).toBe('SEO')
+    expect(sections[0].items.map((item) => item.label)).toEqual(['Data', 'Workflows'])
     expect(sections[0].items.map((item) => item.to)).toEqual([
       '/projects/7/resources?plugin_slug=seo',
       '/projects/7/workflow-templates?plugin_slug=seo',

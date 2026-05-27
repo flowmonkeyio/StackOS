@@ -1325,11 +1325,11 @@ ui:
     section: GTM
     items:
       - key: gtm.resources
-        label: GTM Resources
+        label: Data
         to: resources?plugin_slug=gtm
         matchPrefix: true
       - key: gtm.templates
-        label: GTM Templates
+        label: Workflows
         to: workflow-templates?plugin_slug=gtm
 config:
   schema_version: stackos.plugin.v1

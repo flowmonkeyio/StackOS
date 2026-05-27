@@ -179,7 +179,7 @@ const checklist = computed<ChecklistItem[]>(() => {
           ? `${agentPresets.value.length} generic presets`
           : 'None loaded',
       status: agentPresets.value.length > 0 ? 'done' : 'todo',
-      to: 'operations',
+      to: 'agent-presets',
     },
     {
       key: 'workflow-skills',
