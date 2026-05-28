@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
@@ -54,9 +54,26 @@ class ProjectCreateInput(MCPInput):
 
 
 class ProjectGetInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"id_or_slug": "acme"}})
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {"id_or_slug": "acme"},
+            "examples": [
+                {"id_or_slug": "acme"},
+                {"id_or_slug": 1},
+                {"project_id": 1},
+            ],
+        },
+    )
 
-    id_or_slug: int | str
+    id_or_slug: int | str | None = None
+    project_id: int | None = None
+
+    @model_validator(mode="after")
+    def _requires_identifier(self) -> ProjectGetInput:
+        if self.id_or_slug is None and self.project_id is None:
+            raise ValueError("id_or_slug or project_id is required")
+        return self
 
 
 class ProjectUpdateInput(MCPInput):
@@ -179,7 +196,9 @@ async def _project_create(
 
 
 async def _project_get(inp: ProjectGetInput, ctx: MCPContext, _emit: ProgressEmitter) -> ProjectOut:
-    return ProjectRepository(ctx.session).get(inp.id_or_slug)
+    identifier = inp.id_or_slug if inp.id_or_slug is not None else inp.project_id
+    assert identifier is not None
+    return ProjectRepository(ctx.session).get(identifier)
 
 
 async def _project_update(

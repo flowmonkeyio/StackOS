@@ -35,6 +35,7 @@ _AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
         "tracker.brief",
         "tracker.verify",
         "action.describe",
+        "action.list",
         "catalog.describe",
     }
 )
@@ -59,6 +60,7 @@ _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES: frozenset[str] = frozenset(
         "operation.list",
         "operation.describe",
         "action.describe",
+        "action.list",
         "action.validate",
         "agentPreset.list",
         "agentPreset.describe",
@@ -81,6 +83,7 @@ _AGENT_GATED_TOOL_NAMES: frozenset[str] = (
 _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
     {
         "action.describe",
+        "action.list",
         "action.run",
         "action.validate",
         "agentPreset.describe",

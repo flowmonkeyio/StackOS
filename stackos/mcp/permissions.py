@@ -75,6 +75,7 @@ _SAFE_CONTEXT_FIELDS: dict[str, frozenset[str]] = {
 _SYSTEM_TOOLS: frozenset[str] = frozenset(
     {
         "action.describe",
+        "action.list",
         "action.run",
         "action.validate",
         "agentPreset.describe",

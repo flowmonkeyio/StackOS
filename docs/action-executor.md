@@ -104,18 +104,25 @@ allows it. Agents and scripts can inspect the operation contract with:
 
 ```bash
 stackos ops describe action.execute --json
+stackos ops describe action.list --json
 stackos ops describe action.run --json
 ```
 
-or through `GET /api/v1/operations/action.execute` and
-`GET /api/v1/operations/action.run`.
+or through `GET /api/v1/operations/action.execute`,
+`GET /api/v1/operations/action.list`, and `GET /api/v1/operations/action.run`.
 
 Direct/read discovery operations:
 
+- `action.list`
 - `action.describe`
 - `action.validate`
 - `toolProfile.resolve` when an agent needs a safe provider/profile/credential
   tuple before choosing an explicit action payload
+
+Use `action.list` before `action.describe` when the agent knows the plugin,
+provider, capability, executable state, or search term but does not yet know
+the exact `action_ref`. It returns compact project-aware availability state
+without requiring a broad plugin manifest scan.
 
 Run-plan-scoped execution operation:
 

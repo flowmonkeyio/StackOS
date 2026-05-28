@@ -82,7 +82,7 @@ expectation visible.
 ```text
 agent intent
 -> operation.list when the available operation names are not already clear
--> operation.describe / action.describe when the contract is not already clear
+-> operation.describe / action.list / action.describe when the contract is not already clear
 -> agentPreset.resolveForWorkflow when setting up workflow-specific roles
 -> workflow template or agent-authored run plan
 -> runPlan.validate/create/start
@@ -107,7 +107,7 @@ through `action.execute`.
 
 ```text
 agent receives one explicit user request
--> operation.describe / action.describe when the contract is not already clear
+-> operation.describe / action.list / action.describe when the contract is not already clear
 -> toolbox.call(toolProfile.resolve) when provider/auth/profile selection is needed
 -> toolbox.call(action.describe / action.validate) when needed
 -> toolbox.call(action.run)

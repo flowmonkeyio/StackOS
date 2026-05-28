@@ -17,11 +17,13 @@ def test_action_describe_and_validate_are_read_only_discovery_tools(
 ) -> None:
     tools = {tool["name"] for tool in mcp_client.list_tools()}
 
+    assert "action.list" in tools
     assert "action.describe" in tools
     assert "action.validate" in tools
     assert "action.execute" in tools
     assert "action.run" in tools
 
+    listed = mcp_client.call_tool_structured("action.list", {"query": "catalog"})
     described = mcp_client.call_tool_structured(
         "action.describe",
         {"action_ref": "core.catalog.describe"},
@@ -31,6 +33,9 @@ def test_action_describe_and_validate_are_read_only_discovery_tools(
         {"action_ref": "core.catalog.describe", "input_json": {}},
     )
 
+    assert listed["count"] >= 1
+    assert any(item["action_ref"] == "core.catalog.describe" for item in listed["items"])
+    assert listed["items"][0]["availability_status"]
     assert described["manifest"]["action_ref"] == "core.catalog.describe"
     assert described["execution_available"] is False
     assert described["agent_execute_available"] is False
@@ -55,11 +60,16 @@ def test_action_describe_reports_project_availability(
         "action.describe",
         {"project_id": project_id, "action_ref": "utils.image.generate"},
     )
+    listed = mcp_client.call_tool_structured(
+        "action.list",
+        {"project_id": project_id, "plugin_slug": "utils", "query": "image", "executable": True},
+    )
 
     assert described["availability"]["status"] == "ready"
     assert described["execution_available"] is True
     assert described["availability"]["credential_state"] == "available"
     assert described["availability"]["budget_state"] == "available"
+    assert any(item["action_ref"] == "utils.image.generate" for item in listed["items"])
 
 
 def test_action_validate_rejects_raw_secret_payloads(mcp_client: MCPClient) -> None:

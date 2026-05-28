@@ -7,6 +7,7 @@ from typing import Any
 
 from .catalog import _bridge_filter_tool_list_response, _bridge_tool_catalog
 from .constants import (
+    _AGENT_RUN_PLAN_GATED_TOOL_NAMES,
     _AGENT_VISIBLE_TOOL_NAMES,
     _TOOLBOX_CALL_TOOL,
     _TOOLBOX_DESCRIBE_TOOL,
@@ -364,14 +365,11 @@ class AgentBridgeProxy:
                 request_id,
                 -32007,
                 f"Bridge refused hidden tool {target_name!r}.",
-                {
-                    "tool": target_name,
-                    "run_id": run_id,
-                    "hint": (
-                        "Use setup tools, a started run plan's controller tools, "
-                        "or a running run-plan step whose grants include this tool."
-                    ),
-                },
+                _toolbox_call_denial_repair(
+                    tool_name=target_name,
+                    run_id=run_id,
+                    allowed_by_run=self.allowed_by_run,
+                ),
             )
         if not isinstance(target_args, dict):
             return _bridge_call_error(
@@ -446,3 +444,44 @@ class AgentBridgeProxy:
             response_text=out,
             response_mode=response_mode,
         )
+
+
+def _toolbox_call_denial_repair(
+    *,
+    tool_name: str,
+    run_id: int | None,
+    allowed_by_run: dict[int, set[str]],
+) -> dict[str, Any]:
+    active_step_tools = sorted(allowed_by_run.get(run_id, set())) if run_id is not None else []
+    data: dict[str, Any] = {
+        "tool": tool_name,
+        "run_id": run_id,
+        "hint": (
+            "Use setup tools, a started run plan's controller tools, or a running "
+            "run-plan step whose grants include this tool."
+        ),
+    }
+    if active_step_tools:
+        data["active_step_tool_names"] = active_step_tools
+    if tool_name in _AGENT_RUN_PLAN_GATED_TOOL_NAMES:
+        data["reason"] = "run_plan_step_grant_required"
+        data["repair"] = {
+            "steps": [
+                "Create or validate a run plan whose step grants this tool.",
+                "Start the run plan with runPlan.start.",
+                "Claim the intended step with runPlan.claimStep.",
+                (
+                    "Retry toolbox.call with run_id so the bridge can refresh grants "
+                    "and inject run_token."
+                ),
+            ],
+            "required_tool": tool_name,
+            "retry_arguments": {
+                "tool_name": tool_name,
+                "run_id": "<run_id returned by runPlan.start or runPlan.claimStep>",
+                "arguments": "<original arguments>",
+            },
+        }
+        return data
+    data["reason"] = "tool_not_available_in_current_bridge_scope"
+    return data

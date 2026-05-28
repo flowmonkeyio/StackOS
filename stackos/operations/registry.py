@@ -4,8 +4,44 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from stackos.operations.spec import OperationListOut, OperationSpec
+from stackos.operations.spec import OperationGroupOut, OperationListOut, OperationSpec
 from stackos.repositories.base import NotFoundError
+
+_CATEGORY_ALIASES: dict[str, str] = {
+    "action": "actions",
+    "actions": "actions",
+    "agent": "agents",
+    "agents": "agents",
+    "auth": "auth",
+    "authentication": "auth",
+    "communication": "communications",
+    "communications": "communications",
+    "catalog": "catalog",
+    "catalogs": "catalog",
+    "operation": "operations",
+    "operations": "operations",
+    "resource": "resources",
+    "resources": "resources",
+    "setup": "setup",
+    "system": "system",
+    "tracker": "tracker",
+    "tracking": "tracker",
+    "workflow": "workflow",
+    "workflows": "workflow",
+    "runplan": "workflow",
+    "run-plan": "workflow",
+    "runplans": "workflow",
+    "run-plans": "workflow",
+}
+
+
+def _normalize_category(category: str | None) -> str | None:
+    if category is None:
+        return None
+    normalized = category.strip().lower()
+    if not normalized:
+        return None
+    return _CATEGORY_ALIASES.get(normalized, normalized)
 
 
 class OperationRegistry:
@@ -40,9 +76,47 @@ class OperationRegistry:
     def by_surface(self, surface: str) -> list[OperationSpec]:
         return [spec for spec in self.all() if spec.surfaces.is_enabled(surface)]
 
-    def list_out(self, *, surface: str | None = None) -> OperationListOut:
+    def list_out(
+        self,
+        *,
+        surface: str | None = None,
+        category: str | None = None,
+        query: str | None = None,
+        mode: str = "standard",
+    ) -> OperationListOut:
         rows: Iterable[OperationSpec] = self.all() if surface is None else self.by_surface(surface)
-        return OperationListOut(items=[row.summary_out() for row in rows])
+        filtered = list(rows)
+        normalized_category = _normalize_category(category)
+        if normalized_category is not None:
+            filtered = [row for row in filtered if row.category_name == normalized_category]
+        normalized_query = (query or "").strip().lower()
+        if normalized_query:
+            filtered = [
+                row
+                for row in filtered
+                if normalized_query in row.name.lower()
+                or normalized_query in row.summary.lower()
+                or normalized_query in row.category_name.lower()
+                or normalized_query in row.grant_policy.lower()
+            ]
+        groups = _operation_groups(filtered)
+        if mode == "grouped":
+            return OperationListOut(items=[], groups=groups)
+        return OperationListOut(items=[row.summary_out() for row in filtered], groups=groups)
+
+
+def _operation_groups(rows: list[OperationSpec]) -> list[OperationGroupOut]:
+    grouped: dict[str, list[str]] = {}
+    for row in rows:
+        grouped.setdefault(row.category_name, []).append(row.name)
+    return [
+        OperationGroupOut(
+            category=category,
+            count=len(operation_names),
+            operation_names=operation_names,
+        )
+        for category, operation_names in sorted(grouped.items())
+    ]
 
 
 def build_operation_registry() -> OperationRegistry:

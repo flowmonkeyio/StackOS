@@ -337,6 +337,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "project.create" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "plugin.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "action.describe" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "action.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "action.validate" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "action.run" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "agentPreset.list" in _AGENT_SETUP_TOOLBOX_NAMES
@@ -447,6 +448,7 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     assert "plugin.disable" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "resource.upsert" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "artifact.create" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "action.list" in _AGENT_BASE_TOOLBOX_NAMES
     assert "agentRequest.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.start" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.revoke" not in _AGENT_BASE_TOOLBOX_NAMES
@@ -799,6 +801,37 @@ def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
         "kind": "firecrawl",
         "monthly_budget_usd": 25.0,
     }
+
+
+def test_bridge_proxy_denied_run_plan_tool_returns_repair_steps() -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    client = _FakeClient()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 104,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.call",
+            "arguments": {
+                "tool_name": "resource.upsert",
+                "arguments": {
+                    "project_id": 1,
+                    "plugin_slug": "core",
+                    "resource_key": "learning",
+                    "data_json": {"body": "ok"},
+                },
+            },
+        },
+    }
+
+    response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=104)
+    envelope = json.loads(response)
+    data = envelope["result"]["structuredContent"]["data"]
+
+    assert envelope["result"]["isError"] is True
+    assert data["reason"] == "run_plan_step_grant_required"
+    assert "runPlan.start" in data["repair"]["steps"][1]
+    assert "run_id" in data["repair"]["retry_arguments"]
 
 
 def test_bridge_proxy_refreshes_stale_toolbox_catalog_once() -> None:

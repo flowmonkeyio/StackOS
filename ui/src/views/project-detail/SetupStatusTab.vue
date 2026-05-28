@@ -376,7 +376,14 @@ watch(projectId, load)
               {{ item.detail }}
             </p>
           </div>
-          <UiButton v-if="item.to" class="shrink-0" size="sm" variant="ghost" @click="go(item.to)">
+          <UiButton
+            v-if="item.to"
+            class="shrink-0"
+            size="sm"
+            variant="ghost"
+            :aria-label="`Open ${item.label}`"
+            @click="go(item.to)"
+          >
             Open
           </UiButton>
         </div>

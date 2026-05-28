@@ -70,6 +70,7 @@ class OperationSpec:
     mutating: bool | None = None
     grant_policy: str = "tool-grant"
     secret_policy: str = "no-secret-output"
+    category: str | None = None
 
     @property
     def read_only(self) -> bool:
@@ -81,9 +82,14 @@ class OperationSpec:
     def mcp_description(self) -> str:
         return self.summary
 
+    @property
+    def category_name(self) -> str:
+        return self.category or _category_for_operation_name(self.name)
+
     def summary_out(self) -> OperationSummaryOut:
         return OperationSummaryOut(
             name=self.name,
+            category=self.category_name,
             summary=self.summary,
             read_only=self.read_only,
             mutating=not self.read_only,
@@ -124,6 +130,7 @@ class OperationExampleOut(BaseModel):
 
 class OperationSummaryOut(BaseModel):
     name: str
+    category: str
     summary: str
     read_only: bool
     mutating: bool
@@ -142,8 +149,56 @@ class OperationDescribeOut(OperationSummaryOut):
     examples: list[OperationExampleOut] = Field(default_factory=list)
 
 
+class OperationGroupOut(BaseModel):
+    category: str
+    count: int
+    operation_names: list[str] = Field(default_factory=list)
+
+
 class OperationListOut(BaseModel):
     items: list[OperationSummaryOut]
+    groups: list[OperationGroupOut] = Field(default_factory=list)
+
+
+_OPERATION_CATEGORY_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("action.", "actions"),
+    ("agentPreset.", "agents"),
+    ("agentRequest.", "agents"),
+    ("localAgentChat.", "agents"),
+    ("auth.", "auth"),
+    ("budget.", "auth"),
+    ("cost.", "auth"),
+    ("toolProfile.", "auth"),
+    ("communication", "communications"),
+    ("ingressEndpoint.", "communications"),
+    ("workspace.", "setup"),
+    ("project.", "setup"),
+    ("plugin.", "catalog"),
+    ("catalog.", "catalog"),
+    ("capability.", "catalog"),
+    ("provider.", "catalog"),
+    ("meta.", "catalog"),
+    ("operation.", "operations"),
+    ("workflowTemplate.", "workflow"),
+    ("runPlan.", "workflow"),
+    ("run.", "workflow"),
+    ("tracker.", "tracker"),
+    ("resource.", "resources"),
+    ("artifact.", "resources"),
+    ("context.", "resources"),
+    ("learning.", "resources"),
+    ("experiment.", "resources"),
+    ("decision.", "resources"),
+    ("schedule.", "system"),
+    ("sitemap.", "system"),
+)
+
+
+def _category_for_operation_name(name: str) -> str:
+    for prefix, category in _OPERATION_CATEGORY_PREFIXES:
+        if name.startswith(prefix):
+            return category
+    return "system"
 
 
 def _surfaces_out(surfaces: OperationSurfaces) -> dict[str, OperationSurfaceOut]:
@@ -172,6 +227,7 @@ __all__ = [
     "OperationDescribeOut",
     "OperationExample",
     "OperationExampleOut",
+    "OperationGroupOut",
     "OperationHandler",
     "OperationListOut",
     "OperationSpec",

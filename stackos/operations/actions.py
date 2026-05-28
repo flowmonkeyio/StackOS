@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from stackos.action_availability import ActionAvailabilityOut
 from stackos.actions import (
     ActionDescribeOut,
     ActionExecutionOut,
@@ -24,6 +25,58 @@ from stackos.operations.spec import (
     OperationSurface,
     OperationSurfaces,
 )
+from stackos.repositories.plugins import ActionOut, PluginRepository
+
+
+class ActionListInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "plugin_slug": "utils",
+                "query": "sitemap",
+            }
+        },
+    )
+
+    project_id: int | None = None
+    plugin_slug: str | None = None
+    provider_key: str | None = None
+    capability_key: str | None = None
+    query: str | None = None
+    executable: bool | None = None
+
+
+class ActionListItemOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_ref: str
+    plugin_slug: str
+    key: str
+    name: str
+    description: str
+    provider_key: str | None = None
+    capability_key: str | None = None
+    risk_level: str
+    operation: str
+    connector_key: str | None = None
+    requires_credential: bool
+    allows_credential: bool
+    budget_kind: str | None = None
+    executable: bool
+    availability_status: str
+    availability_reasons: list[str] = Field(default_factory=list)
+    credential_state: str
+    budget_state: str
+
+
+class ActionListOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ActionListItemOut]
+    count: int
+    filters: dict[str, Any] = Field(default_factory=dict)
 
 
 class ActionDescribeInput(MCPInput):
@@ -133,6 +186,101 @@ class ActionRunOut(BaseModel):
     action_call: dict[str, Any] | None = None
     output_json: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None = None
+
+
+async def action_list(
+    inp: ActionListInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> ActionListOut:
+    project_id = inp.project_id if inp.project_id is not None else ctx.project_id
+    rows = PluginRepository(ctx.session).list_actions(
+        plugin_slug=inp.plugin_slug,
+        project_id=project_id,
+    )
+    filtered = [
+        row
+        for row in rows
+        if _matches_action_filters(
+            row,
+            provider_key=inp.provider_key,
+            capability_key=inp.capability_key,
+            query=inp.query,
+            executable=inp.executable,
+        )
+    ]
+    return ActionListOut(
+        items=[_action_list_item(row, row.availability) for row in filtered],
+        count=len(filtered),
+        filters={
+            key: value
+            for key, value in {
+                "project_id": project_id,
+                "plugin_slug": inp.plugin_slug,
+                "provider_key": inp.provider_key,
+                "capability_key": inp.capability_key,
+                "query": inp.query,
+                "executable": inp.executable,
+            }.items()
+            if value is not None
+        },
+    )
+
+
+def _matches_action_filters(
+    row: ActionOut,
+    *,
+    provider_key: str | None,
+    capability_key: str | None,
+    query: str | None,
+    executable: bool | None,
+) -> bool:
+    if provider_key is not None and row.provider_key != provider_key:
+        return False
+    if capability_key is not None and row.capability_key != capability_key:
+        return False
+    if executable is not None and row.availability.executable != executable:
+        return False
+    normalized_query = (query or "").strip().lower()
+    if normalized_query:
+        haystack = " ".join(
+            value
+            for value in (
+                row.action_ref,
+                row.name,
+                row.description,
+                row.operation,
+                row.provider_key or "",
+                row.capability_key or "",
+            )
+            if value
+        ).lower()
+        if normalized_query not in haystack:
+            return False
+    return True
+
+
+def _action_list_item(row: ActionOut, availability: ActionAvailabilityOut) -> ActionListItemOut:
+    return ActionListItemOut(
+        action_ref=row.action_ref,
+        plugin_slug=row.plugin_slug,
+        key=row.key,
+        name=row.name,
+        description=row.description,
+        provider_key=row.provider_key,
+        capability_key=row.capability_key,
+        risk_level=row.risk_level,
+        operation=row.operation,
+        connector_key=row.connector_key,
+        requires_credential=row.requires_credential,
+        allows_credential=row.allows_credential,
+        budget_kind=row.budget_kind,
+        executable=availability.executable,
+        availability_status=availability.status,
+        availability_reasons=list(availability.reasons),
+        credential_state=availability.credential_state,
+        budget_state=availability.budget_state,
+    )
 
 
 async def action_describe(
@@ -502,6 +650,64 @@ def _add_telegram_chat_ref(out: dict[str, Any], raw: Any) -> None:
 def operation_specs() -> list[OperationSpec]:
     return [
         OperationSpec(
+            name="action.list",
+            summary="List or search action contracts with compact availability state.",
+            input_model=ActionListInput,
+            output_model=ActionListOut,
+            handler=action_list,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True,
+                    path="/api/v1/operations/action.list/call",
+                ),
+                cli=OperationSurface(enabled=True, command="actions list"),
+            ),
+            purpose=(
+                "Use this when an agent needs to discover executable action refs without "
+                "walking plugin manifests or broad catalog payloads."
+            ),
+            when_to_use=(
+                (
+                    "An agent knows a plugin, provider, capability, or search term "
+                    "and needs candidate actions."
+                ),
+                "A caller needs project-aware executable/blocked state for many actions at once.",
+            ),
+            prerequisites=(
+                (
+                    "Pass project_id when project-specific credential, budget, and plugin "
+                    "availability matters."
+                ),
+                (
+                    "Use action.describe for the exact schema and connector details before "
+                    "executing an action."
+                ),
+            ),
+            returns=(
+                (
+                    "Compact action summaries with action_ref, provider/capability, risk, "
+                    "operation, and availability."
+                ),
+                (
+                    "Availability state includes executable, credential_state, budget_state, "
+                    "and model-readable reasons."
+                ),
+            ),
+            examples=(
+                OperationExample(
+                    title="Find ready sitemap actions",
+                    arguments={"project_id": 1, "query": "sitemap", "executable": True},
+                ),
+                OperationExample(
+                    title="List communication Slack bot actions",
+                    arguments={"plugin_slug": "communications", "provider_key": "slack-bot"},
+                ),
+            ),
+            mutating=False,
+            grant_policy="direct-read",
+        ),
+        OperationSpec(
             name="action.describe",
             summary=(
                 "Describe one action manifest, connector availability, auth state, "
@@ -693,11 +899,15 @@ def operation_specs() -> list[OperationSpec]:
 __all__ = [
     "ActionDescribeInput",
     "ActionExecuteInput",
+    "ActionListInput",
+    "ActionListItemOut",
+    "ActionListOut",
     "ActionRunInput",
     "ActionRunOut",
     "ActionValidateInput",
     "action_describe",
     "action_execute",
+    "action_list",
     "action_run",
     "action_validate",
     "operation_specs",

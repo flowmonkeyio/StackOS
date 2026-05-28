@@ -10,6 +10,7 @@ def test_operation_registry_documents_core_operations() -> None:
     assert names == [
         "action.describe",
         "action.execute",
+        "action.list",
         "action.run",
         "action.validate",
         "agentPreset.describe",
@@ -110,6 +111,14 @@ def test_operation_registry_documents_core_operations() -> None:
     assert direct_action.grant_policy == "direct-action-policy"
     assert any("confirm_direct=true" in item for item in direct_action.prerequisites)
     assert any("intent_id or idempotency_key" in item for item in direct_action.prerequisites)
+
+    action_list = registry.get("action.list").describe_out()
+    assert action_list.category == "actions"
+    assert action_list.surfaces["mcp"].enabled is True
+    assert action_list.surfaces["rest"].enabled is True
+    assert action_list.surfaces["cli"].command == "actions list"
+    assert action_list.grant_policy == "direct-read"
+    assert any("discover executable action refs" in item for item in [action_list.purpose])
 
     agent_request = registry.get("agentRequest.claim").describe_out()
     assert agent_request.surfaces["mcp"].enabled is True
@@ -264,6 +273,7 @@ def test_operation_registry_surface_filter() -> None:
     assert [item.name for item in registry.by_surface("cli")] == [
         "action.describe",
         "action.execute",
+        "action.list",
         "action.run",
         "action.validate",
         "agentPreset.describe",
@@ -345,6 +355,20 @@ def test_operation_registry_surface_filter() -> None:
     assert registry.get("runPlan.update").surfaces.cli.enabled is True
     assert registry.get("runPlan.update").surfaces.cli.command == "run-plans approve"
     assert registry.list_out(surface="rest").items[0].surfaces["rest"].enabled is True
+
+
+def test_operation_registry_filters_and_groups_operation_list() -> None:
+    registry = build_operation_registry()
+
+    actions = registry.list_out(category="action")
+    assert [item.category for item in actions.items] == ["actions"] * len(actions.items)
+    assert "action.list" in [item.name for item in actions.items]
+    assert any(group.category == "actions" for group in actions.groups)
+
+    queried = registry.list_out(query="workspace", mode="grouped")
+    assert queried.items == []
+    assert any("workspace.startSession" in group.operation_names for group in queried.groups)
+    assert all(group.count == len(group.operation_names) for group in queried.groups)
 
 
 def test_tracker_operations_include_agent_examples() -> None:

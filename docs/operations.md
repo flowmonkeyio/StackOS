@@ -53,6 +53,8 @@ session:
 
 ```text
 operation.list({ "surface": "mcp" })
+operation.list({ "category": "actions", "query": "sitemap" })
+operation.list({ "mode": "grouped" })
 operation.describe({ "name": "communication.send", "surface": "mcp" })
 operation.describe({ "name": "operation.describe", "surface": "mcp" })
 agentPreset.resolveForWorkflow({ "workflow_key": "core.project-memory-review" })
@@ -61,7 +63,8 @@ agentPreset.resolveForWorkflow({ "workflow_key": "core.project-memory-review" })
 The discovery operations are OperationSpecs too. `operation.list` includes
 `operation.list` and `operation.describe`, and `operation.describe` can describe
 both discovery tools with the same schemas, examples, and guidance it returns
-for domain operations.
+for domain operations. Use `category`, `query`, and `mode: "grouped"` when an
+agent only needs a compact operation route instead of the full inventory.
 
 Each description includes:
 
@@ -190,6 +193,7 @@ MCP, or REST only when the full diagnostic row payload is needed.
 The current core operation registry includes:
 
 - `action.describe`
+- `action.list`
 - `action.validate`
 - `action.run`
 - `action.execute`

@@ -19,19 +19,37 @@ from stackos.operations.spec import (
 )
 
 OperationSurfaceName = Literal["mcp", "rest", "cli"]
+OperationListMode = Literal["standard", "grouped"]
 
 
 class OperationListInput(MCPInput):
-    """List operation specs, optionally filtered by adapter surface."""
+    """List operation specs, optionally filtered by adapter surface/category/query."""
 
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"surface": "mcp"}},
+        json_schema_extra={"example": {"surface": "mcp", "category": "actions"}},
     )
 
     surface: OperationSurfaceName | None = Field(
         default=None,
         description="Optional operation surface filter: mcp, rest, or cli.",
+    )
+    category: str | None = Field(
+        default=None,
+        description=(
+            "Optional category filter such as setup, tracker, workflow, resources, auth, "
+            "actions, communications, catalog, operations, or system."
+        ),
+    )
+    query: str | None = Field(
+        default=None,
+        description=(
+            "Optional case-insensitive search over name, summary, category, and grant policy."
+        ),
+    )
+    mode: OperationListMode = Field(
+        default="standard",
+        description="standard returns summaries plus groups; grouped returns only compact groups.",
     )
 
 
@@ -59,7 +77,12 @@ async def operation_list(
 ) -> OperationListOut:
     from stackos.operations.registry import build_operation_registry
 
-    return build_operation_registry().list_out(surface=inp.surface)
+    return build_operation_registry().list_out(
+        surface=inp.surface,
+        category=inp.category,
+        query=inp.query,
+        mode=inp.mode,
+    )
 
 
 async def operation_describe(
@@ -77,7 +100,8 @@ def operation_specs() -> list[OperationSpec]:
         OperationSpec(
             name="operation.list",
             summary=(
-                "List StackOS operation specs with surfaces, grant policy, and secret policy."
+                "List StackOS operation specs with filters, grouping, surfaces, grant policy, "
+                "and secret policy."
             ),
             input_model=OperationListInput,
             output_model=OperationListOut,
@@ -97,18 +121,31 @@ def operation_specs() -> list[OperationSpec]:
             when_to_use=(
                 "An agent needs the available StackOS operation inventory before choosing a tool.",
                 "A caller needs to filter operations by adapter surface such as mcp, rest, or cli.",
+                "A caller wants compact category groups instead of the full operation list.",
             ),
             prerequisites=(
                 "Pass surface only when the caller needs operations exposed on one adapter.",
+                "Pass category or query to keep the result scoped to the current decision.",
+                "Use mode='grouped' for compact category counts and operation names.",
             ),
             returns=(
                 "Sorted operation summaries with surface availability, mutating/read-only flags, "
                 "grant policy, and secret policy.",
+                "Category groups so agents can browse by setup, tracker, workflow, resources, "
+                "auth, actions, communications, catalog, operations, or system.",
             ),
             examples=(
                 OperationExample(
                     title="List MCP operations",
                     arguments={"surface": "mcp"},
+                ),
+                OperationExample(
+                    title="List action operations only",
+                    arguments={"category": "actions"},
+                ),
+                OperationExample(
+                    title="Browse compact operation groups",
+                    arguments={"mode": "grouped"},
                 ),
             ),
             mutating=False,

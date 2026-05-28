@@ -10,7 +10,13 @@ from stackos.operations.registry import OperationRegistry, build_operation_regis
 def _action_operations() -> OperationRegistry:
     operations = OperationRegistry()
     all_operations = build_operation_registry()
-    for name in ("action.describe", "action.validate", "action.execute", "action.run"):
+    for name in (
+        "action.list",
+        "action.describe",
+        "action.validate",
+        "action.execute",
+        "action.run",
+    ):
         operations.register(all_operations.get(name))
     return operations
 

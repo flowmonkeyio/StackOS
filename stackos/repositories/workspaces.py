@@ -113,7 +113,7 @@ def _setup_state(
         profile_missing.append("framework")
     if binding.content_model_json is None:
         profile_missing.append("content_model_json")
-    return {
+    out: dict[str, Any] = {
         "state": "bound_profile_incomplete" if profile_missing else "bound_profile_configured",
         "workspace_bound": True,
         "project_scoped_tools_usable": True,
@@ -124,6 +124,51 @@ def _setup_state(
             "Profile fields are adaptation hints for agents and workflows, not a blocker."
         ),
         "auto_bootstrap": auto_bootstrap,
+    }
+    if profile_missing:
+        out["profile_update_suggestion"] = _profile_update_suggestion(
+            binding=binding,
+            profile_missing=profile_missing,
+        )
+    return out
+
+
+def _profile_update_suggestion(
+    *,
+    binding: WorkspaceBindingOut,
+    profile_missing: list[str],
+) -> dict[str, Any]:
+    recommended_arguments: dict[str, Any] = {
+        "binding_id": binding.id,
+        "project_id": binding.project_id,
+    }
+    if "framework" in profile_missing:
+        recommended_arguments["framework"] = "<detected-framework-or-stack>"
+    if "content_model_json" in profile_missing:
+        recommended_arguments["content_model_json"] = {
+            "project_type": "saas|content|commerce|internal-tool|other",
+            "primary_objects": ["customer", "account", "project"],
+            "primary_workflows": [
+                "Name the durable product/workflow concepts agents should understand."
+            ],
+            "content_heavy": False,
+            "notes": "Replace this with project-specific model hints after reading repo docs.",
+        }
+    return {
+        "tool": "workspace.updateProfile",
+        "call_via": "toolbox.call",
+        "recommended_arguments": recommended_arguments,
+        "guidance": [
+            "This is an adaptation hint, not a setup blocker.",
+            (
+                "Populate framework from local repo evidence such as README, AGENTS, "
+                "package files, or build config."
+            ),
+            (
+                "For non-content SaaS/internal tools, describe domain objects and workflows "
+                "instead of forcing a content taxonomy."
+            ),
+        ],
     }
 
 

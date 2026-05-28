@@ -133,6 +133,14 @@ def test_workspace_start_session_autobootstraps_unbound_directory(
         "framework",
         "content_model_json",
     ]
+    suggestion = started["data"]["setup_state"]["profile_update_suggestion"]
+    assert suggestion["tool"] == "workspace.updateProfile"
+    assert suggestion["call_via"] == "toolbox.call"
+    assert suggestion["recommended_arguments"]["binding_id"] == bindings[0]["id"]
+    assert suggestion["recommended_arguments"]["project_id"] == started["project_id"]
+    assert suggestion["recommended_arguments"]["framework"] == "<detected-framework-or-stack>"
+    assert suggestion["recommended_arguments"]["content_model_json"]["content_heavy"] is False
+    assert any("non-content SaaS" in item for item in suggestion["guidance"])
 
 
 def test_workspace_resolves_by_current_directory_root(

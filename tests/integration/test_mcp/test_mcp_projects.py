@@ -29,6 +29,10 @@ def test_project_get_by_slug(mcp_client: MCPClient, seeded_project: dict) -> Non
         "project.get", {"id_or_slug": seeded_project["data"]["id"]}
     )
     assert proj2["id"] == seeded_project["data"]["id"]
+    proj3 = mcp_client.call_tool_structured(
+        "project.get", {"project_id": seeded_project["data"]["id"]}
+    )
+    assert proj3["slug"] == "test-project"
 
 
 def test_project_list_after_create(mcp_client: MCPClient, seeded_project: dict) -> None:
