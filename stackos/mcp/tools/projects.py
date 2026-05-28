@@ -8,7 +8,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.base import Page
 from stackos.repositories.projects import (
@@ -296,112 +296,25 @@ async def _schedule_remove(
 
 
 def register(registry: ToolRegistry) -> None:
-    registry.register(
-        ToolSpec(
-            "project.list", "List projects.", ProjectListInput, Page[ProjectOut], _project_list
-        )
-    )
-    registry.register(
-        ToolSpec(
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(
+        registry,
+        (
+            "project.list",
             "project.create",
-            "Create a project.",
-            ProjectCreateInput,
-            WriteEnvelope[ProjectOut],
-            _project_create,
-        )
-    )
-    registry.register(
-        ToolSpec("project.get", "Look up a project.", ProjectGetInput, ProjectOut, _project_get)
-    )
-    registry.register(
-        ToolSpec(
+            "project.get",
             "project.update",
-            "Patch project fields.",
-            ProjectUpdateInput,
-            WriteEnvelope[ProjectOut],
-            _project_update,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "project.delete",
-            "Archive a project.",
-            ProjectIdInput,
-            WriteEnvelope[ProjectOut],
-            _project_delete,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "budget.list",
-            "List project budgets.",
-            BudgetListInput,
-            list[IntegrationBudgetOut],
-            _budget_list,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "budget.set",
-            "Set a project budget.",
-            BudgetSetInput,
-            WriteEnvelope[IntegrationBudgetOut],
-            _budget_set,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "budget.update",
-            "Update a project budget.",
-            BudgetUpdateInput,
-            WriteEnvelope[IntegrationBudgetOut],
-            _budget_update,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "budget.queryProject",
-            "Read a project budget.",
-            BudgetQueryProjectInput,
-            IntegrationBudgetOut,
-            _budget_query_project,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "schedule.list",
-            "List project schedules.",
-            ScheduleListInput,
-            list[ScheduledJobOut],
-            _schedule_list,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "schedule.set",
-            "Set a project schedule.",
-            ScheduleSetInput,
-            WriteEnvelope[ScheduledJobOut],
-            _schedule_set,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "schedule.toggle",
-            "Toggle a project schedule.",
-            ScheduleToggleInput,
-            WriteEnvelope[ScheduledJobOut],
-            _schedule_toggle,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "schedule.remove",
-            "Disable a project schedule.",
-            ScheduleRemoveInput,
-            WriteEnvelope[ScheduledJobOut],
-            _schedule_remove,
-        )
+        ),
     )
 
 

@@ -97,6 +97,10 @@ class ToolSpec:
     streaming: bool = False
     read_only: bool = field(init=False)
     operation_name: str | None = None
+    operation_category: str | None = None
+    operation_grant_policy: str | None = None
+    operation_secret_policy: str | None = None
+    operation_purpose: str | None = None
 
     def __post_init__(self) -> None:
         self.read_only = not verb_is_mutating(self.name)
@@ -240,6 +244,14 @@ def _to_tool(spec: ToolSpec) -> mcp_types.Tool:
     meta: dict[str, Any] = {"streaming": spec.streaming}
     if spec.operation_name is not None:
         meta["operation_name"] = spec.operation_name
+    if spec.operation_category is not None:
+        meta["operation_category"] = spec.operation_category
+    if spec.operation_grant_policy is not None:
+        meta["grant_policy"] = spec.operation_grant_policy
+    if spec.operation_secret_policy is not None:
+        meta["secret_policy"] = spec.operation_secret_policy
+    if spec.operation_purpose is not None:
+        meta["purpose"] = spec.operation_purpose
     return mcp_types.Tool(
         name=spec.name,
         description=spec.description,

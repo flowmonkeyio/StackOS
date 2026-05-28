@@ -21,7 +21,7 @@ from stackos.integrations.sitemap import (
 )
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 
 # ---------------------------------------------------------------------------
@@ -129,15 +129,9 @@ async def _sitemap_fetch(
 
 def register(registry: ToolRegistry) -> None:
     """Register every ``sitemap.*`` tool."""
-    registry.register(
-        ToolSpec(
-            name="sitemap.fetch",
-            description="Fetch + parse sitemap URLs (with sitemap-index recursion).",
-            input_model=SitemapFetchInput,
-            output_model=SitemapFetchOutput,
-            handler=_sitemap_fetch,
-        )
-    )
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(registry, ("sitemap.fetch",))
 
 
 __all__ = ["register"]

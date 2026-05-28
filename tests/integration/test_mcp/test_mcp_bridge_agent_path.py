@@ -318,6 +318,43 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
         {"project_id": other_project_id, "kind": "skill-run"},
     )
     other_run_id = other_run["data"]["run_id"]
+    other_grant_plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": other_project_id,
+            "run_plan_json": {
+                "schema_version": "stackos.run-plan.v1",
+                "key": "bridge.other.granted.run",
+                "title": "Other project granted plan",
+                "grants": {
+                    "mcp_tool_grants": [
+                        {
+                            "step_id": "other-write",
+                            "tool": "resource.upsert",
+                            "plugin_slug": "core",
+                            "resource_key": "learning",
+                        }
+                    ]
+                },
+                "steps": [{"id": "other-write", "title": "Other write"}],
+            },
+        },
+    )
+    other_grant_plan_id = other_grant_plan["data"]["id"]
+    other_grant_started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": other_project_id, "run_plan_id": other_grant_plan_id},
+    )
+    other_granted_run_id = other_grant_started["data"]["run_id"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "project_id": other_project_id,
+            "run_plan_id": other_grant_plan_id,
+            "step_id": "other-write",
+            "run_token": other_grant_started["data"]["run_token"],
+        },
+    )
     other_plan = mcp_client.call_tool_structured(
         "runPlan.create",
         {
@@ -487,6 +524,15 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
         },
         request_id="schedule-toggle-cross",
     )
+    cross_grant_describe = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.describe",
+            {"run_id": other_granted_run_id, "tool_names": ["resource.upsert"]},
+            request_id="describe-cross-run-grant",
+        )
+    )
 
     assert "project_id" not in auth_required
     assert "project_id" not in resolver_required
@@ -511,6 +557,12 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
     assert cross_binding_update["result"]["isError"] is True
     assert cross_schedule_remove["result"]["isError"] is True
     assert cross_schedule_toggle["result"]["isError"] is True
+    assert cross_grant_describe["described_tools"] == []
+    assert cross_grant_describe["denied_tool_names"] == ["resource.upsert"]
+    cross_grant_statuses = {item["name"]: item for item in cross_grant_describe["tool_statuses"]}
+    assert cross_grant_statuses["resource.upsert"]["reason_code"] == (
+        "run_plan_step_grant_required"
+    )
 
 
 def test_bridge_unbound_workspace_autobootstraps_and_unlocks_project_scoped_tools(

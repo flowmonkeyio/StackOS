@@ -19,7 +19,7 @@ from stackos.context import (
 )
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 
 
@@ -430,113 +430,24 @@ async def _decision_record(
 
 
 def register(registry: ToolRegistry) -> None:
-    registry.register(
-        ToolSpec(
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(
+        registry,
+        (
             "context.query",
-            "Query bounded, projected, sanitized project context.",
-            ContextQueryInput,
-            ContextQueryOut,
-            _context_query,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "context.timeline",
-            "Read the project memory event timeline.",
-            ContextTimelineInput,
-            ContextPageOut,
-            _context_timeline,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "context.snapshot",
-            "Internal/admin creation of an immutable context snapshot.",
-            ContextSnapshotInput,
-            WriteEnvelope[ContextSnapshotOut],
-            _context_snapshot,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "learning.query",
-            "Query project learnings without deciding which are true.",
-            LearningQueryInput,
-            ContextPageOut,
-            _learning_query,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "learning.create",
-            "Internal/admin record of a supplied project learning.",
-            LearningCreateInput,
-            WriteEnvelope[LearningOut],
-            _learning_create,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "learning.update",
-            "Internal/admin update of supplied learning status/review data.",
-            LearningUpdateInput,
-            WriteEnvelope[LearningOut],
-            _learning_update,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "experiment.query",
-            "Query project experiments without deciding winners.",
-            ExperimentQueryInput,
-            ContextPageOut,
-            _experiment_query,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "experiment.create",
-            "Internal/admin create of a supplied project experiment.",
-            ExperimentCreateInput,
-            WriteEnvelope[ExperimentOut],
-            _experiment_create,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "experiment.recordObservation",
-            "Internal/admin record of supplied experiment observation data.",
-            ExperimentObservationInput,
-            WriteEnvelope[ExperimentObservationOut],
-            _experiment_record_observation,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "experiment.recordDecision",
-            "Internal/admin record of an explicit experiment decision.",
-            ExperimentDecisionInput,
-            WriteEnvelope[DecisionOut],
-            _experiment_record_decision,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "decision.query",
-            "Query explicit project decision records.",
-            DecisionQueryInput,
-            ContextPageOut,
-            _decision_query,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "decision.record",
-            "Internal/admin record of an explicit decision.",
-            DecisionRecordInput,
-            WriteEnvelope[DecisionOut],
-            _decision_record,
-        )
+        ),
     )
 
 

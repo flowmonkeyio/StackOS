@@ -99,6 +99,16 @@ describe('SetupStatusTab', () => {
       if (url === '/api/v1/actions?project_id=1') {
         return json([{ plugin_slug: 'seo', key: 'keyword.discover' }])
       }
+      if (url === '/api/v1/operations?surface=mcp') {
+        return json({
+          items: [
+            operation('workspace.updateProfile'),
+            operation('workflowTemplate.describe'),
+            operation('resource.query'),
+          ],
+          groups: [],
+        })
+      }
       if (url === '/api/v1/operations/agentPreset.list/call') {
         return json({
           presets: [
@@ -113,6 +123,21 @@ describe('SetupStatusTab', () => {
             },
           ],
           include_shadowed: false,
+        })
+      }
+      if (url === '/api/v1/operations/workspace.listBindings/call') {
+        return json({
+          items: [
+            {
+              id: 9,
+              project_id: 1,
+              repo_fingerprint: 'path:abc',
+              normalized_repo_name: 'content-stack',
+              last_known_root: '/Users/example/content-stack',
+              framework: null,
+              content_model_json: null,
+            },
+          ],
         })
       }
       if (url === '/api/v1/projects/1/runs?kind=run-plan&limit=1') {
@@ -140,15 +165,25 @@ describe('SetupStatusTab', () => {
     expect(wrapper.text()).toContain('Workflow templates')
     expect(wrapper.text()).toContain('Agent presets')
     expect(wrapper.text()).toContain('1 generic presets')
+    expect(wrapper.text()).toContain('Workspace profile')
+    expect(wrapper.text()).toContain('Missing framework, content model')
+    expect(wrapper.text()).toContain('Adaptation hints')
     expect(wrapper.text()).toContain('Skills')
     expect(wrapper.text()).toContain('stackos:stackos')
-    expect(wrapper.text()).toContain('Action contracts')
+    expect(wrapper.text()).toContain('Operation contracts')
+    expect(wrapper.text()).toContain('3 registered')
+    expect(wrapper.text()).toContain('Executable actions')
     expect(wrapper.text()).not.toContain('cred_firecrawl')
     expect(wrapper.find('button[aria-label="Open Enabled plugins"]').exists()).toBe(true)
     expect(wrapper.find('button[aria-label="Open Workflow templates"]').exists()).toBe(true)
     expect(wrapper.find('button[aria-label="Open Agent presets"]').exists()).toBe(true)
+    expect(wrapper.find('button[aria-label="Open workspace profile operation"]').exists()).toBe(
+      true,
+    )
     expect(requestedUrls).toContain('/api/v1/health')
     expect(requestedUrls).toContain('/api/v1/projects/1/auth/status')
+    expect(requestedUrls).toContain('/api/v1/operations?surface=mcp')
+    expect(requestedUrls).toContain('/api/v1/operations/workspace.listBindings/call')
   })
 })
 
@@ -164,6 +199,23 @@ function plugin(slug: string, enabled: boolean) {
     manifest_json: {},
     created_at: '2026-05-22T00:00:00Z',
     updated_at: '2026-05-22T00:00:00Z',
+  }
+}
+
+function operation(name: string) {
+  return {
+    name,
+    category: name.split('.')[0],
+    summary: `${name} summary`,
+    read_only: true,
+    mutating: false,
+    surfaces: {
+      mcp: { enabled: true, command: null, path: null, notes: null },
+      rest: { enabled: true, command: null, path: `/api/v1/operations/${name}/call`, notes: null },
+      cli: { enabled: true, command: `ops call ${name}`, path: null, notes: null },
+    },
+    grant_policy: 'direct-read',
+    secret_policy: 'no-secret-output',
   }
 }
 

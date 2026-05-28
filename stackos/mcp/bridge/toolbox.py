@@ -7,7 +7,9 @@ from typing import Any
 
 from .catalog import _bridge_agent_tool_schema
 from .constants import (
+    _AGENT_ADMIN_GATED_TOOL_NAMES,
     _AGENT_BASE_TOOLBOX_NAMES,
+    _AGENT_RUN_PLAN_GATED_TOOL_NAMES,
     _AGENT_SETUP_TOOLBOX_NAMES,
     _AGENT_STEP_GATED_TOOL_NAMES,
     _AGENT_VISIBLE_TOOL_ORDER,
@@ -122,6 +124,169 @@ def _bridge_operation_backed_names(
     return sorted(backed)
 
 
+def _tool_operation_context(tool: dict[str, Any]) -> dict[str, Any] | None:
+    meta = tool.get("_meta")
+    if not isinstance(meta, dict) or not isinstance(meta.get("operation_name"), str):
+        return None
+    out: dict[str, Any] = {
+        "name": meta["operation_name"],
+        "describe_tool": "operation.describe",
+        "describe_arguments": {"name": meta["operation_name"]},
+    }
+    for source_key, output_key in (
+        ("operation_category", "category"),
+        ("grant_policy", "grant_policy"),
+        ("secret_policy", "secret_policy"),
+    ):
+        value = meta.get(source_key)
+        if isinstance(value, str) and value:
+            out[output_key] = value
+    purpose = meta.get("purpose")
+    if isinstance(purpose, str) and purpose:
+        out["summary"] = purpose.split(". ", 1)[0].strip()
+    return out
+
+
+def _grant_policy_is_local_admin(grant_policy: str | None) -> bool:
+    if grant_policy is None:
+        return False
+    normalized = grant_policy.strip().lower()
+    return normalized == "admin-only" or normalized.startswith("local-admin")
+
+
+def _denied_status(
+    *,
+    name: str,
+    run_id: int | None,
+    active_step_tools: set[str],
+    grant_policy: str | None,
+) -> dict[str, Any]:
+    if name in _AGENT_ADMIN_GATED_TOOL_NAMES or _grant_policy_is_local_admin(grant_policy):
+        return {
+            "reason_code": "local_admin_required",
+            "category": "admin",
+            "grant_policy": grant_policy,
+            "repair": {
+                "hint": (
+                    "Use an explicit operator/admin setup flow; this is not available "
+                    "to the normal agent toolbox."
+                ),
+            },
+        }
+    if name in _AGENT_RUN_PLAN_GATED_TOOL_NAMES:
+        return {
+            "reason_code": "run_plan_step_grant_required",
+            "category": "run_plan_step",
+            "requires_run_id": True,
+            "requires_active_step": True,
+            "repair": {
+                "steps": [
+                    "Create or choose a run plan whose step grants this tool.",
+                    "Start the run plan and claim the intended step.",
+                    "Retry toolbox.describe/toolbox.call with run_id.",
+                ],
+            },
+        }
+    if name in _AGENT_STEP_GATED_TOOL_NAMES:
+        return {
+            "reason_code": "run_plan_controller_requires_run",
+            "category": "run_plan_controller",
+            "requires_run_id": True,
+            "repair": {
+                "hint": (
+                    "Pass run_id from runPlan.start or runPlan.get so the bridge can "
+                    "refresh controller grants."
+                ),
+            },
+        }
+    if run_id is not None and active_step_tools:
+        return {
+            "reason_code": "not_granted_to_active_step",
+            "category": "not_granted",
+            "requires_active_step": True,
+            "active_step_tool_names": sorted(active_step_tools),
+            "repair": {
+                "hint": (
+                    "Use a tool granted to the running step, or move to a step "
+                    "that grants this tool."
+                ),
+            },
+        }
+    return {
+        "reason_code": "tool_not_available_in_current_bridge_scope",
+        "category": "not_available",
+        "repair": {
+            "hint": (
+                "Use operation.list to find supported setup/workflow tools, or ask "
+                "the operator for an admin flow."
+            ),
+        },
+    }
+
+
+def _bridge_tool_statuses(
+    *,
+    catalog: dict[str, dict[str, Any]],
+    requested: list[str],
+    allowed: set[str],
+    run_id: int | None,
+    active_step_tools: set[str],
+) -> list[dict[str, Any]]:
+    statuses: list[dict[str, Any]] = []
+    for name in requested:
+        tool = catalog.get(name)
+        if tool is None:
+            statuses.append(
+                {
+                    "name": name,
+                    "exists": False,
+                    "allowed": False,
+                    "reason_code": "unknown_tool",
+                    "repair": {
+                        "hint": "Call operation.list with a query to find the exact tool name."
+                    },
+                }
+            )
+            continue
+        allowed_now = name in allowed
+        row: dict[str, Any] = {
+            "name": name,
+            "exists": True,
+            "allowed": allowed_now,
+            "call_via": "toolbox.call",
+        }
+        operation = _tool_operation_context(tool)
+        if operation is not None:
+            row["operation"] = operation
+        grant_policy = (
+            operation.get("grant_policy")
+            if isinstance(operation, dict) and isinstance(operation.get("grant_policy"), str)
+            else None
+        )
+        if allowed_now:
+            if name in active_step_tools:
+                row["reason_code"] = "active_step_granted"
+                row["category"] = "run_plan_step"
+            elif name in _AGENT_STEP_GATED_TOOL_NAMES:
+                row["reason_code"] = "run_plan_controller"
+                row["category"] = "run_plan_controller"
+            else:
+                row["reason_code"] = "available"
+                row["category"] = "setup"
+            statuses.append(row)
+            continue
+        row.update(
+            _denied_status(
+                name=name,
+                run_id=run_id,
+                active_step_tools=active_step_tools,
+                grant_policy=grant_policy,
+            )
+        )
+        statuses.append(row)
+    return statuses
+
+
 def _bridge_toolbox_describe(
     request_id: object,
     *,
@@ -149,7 +314,10 @@ def _bridge_toolbox_describe(
     denied = [name for name in requested if name in catalog and name not in allowed]
     unknown = [name for name in requested if name not in catalog]
     available_tool_names = sorted(name for name in allowed if name in catalog)
-    active_step_tools = sorted(allowed_by_run.get(run_id, set())) if run_id is not None else []
+    active_step_tool_set = allowed_by_run.get(run_id, set()) if run_id is not None else set()
+    controller_tools = sorted(active_step_tool_set & _AGENT_STEP_GATED_TOOL_NAMES)
+    step_granted_tools = sorted(active_step_tool_set - _AGENT_STEP_GATED_TOOL_NAMES)
+    active_step_tools = sorted(active_step_tool_set)
     setup_count = len(_AGENT_SETUP_TOOLBOX_NAMES & set(catalog))
     direct_visible = [
         name
@@ -163,6 +331,8 @@ def _bridge_toolbox_describe(
     payload = {
         "visible_tool_names": direct_visible,
         "active_step_tool_names": active_step_tools,
+        "run_plan_controller_tool_names": controller_tools,
+        "step_granted_tool_names": step_granted_tools,
         "available_tool_count": len(available_tool_names),
         "tool_categories": {
             "direct_visible": direct_visible,
@@ -176,6 +346,13 @@ def _bridge_toolbox_describe(
         "described_tools": described,
         "denied_tool_names": denied,
         "unknown_tool_names": unknown,
+        "tool_statuses": _bridge_tool_statuses(
+            catalog=catalog,
+            requested=requested,
+            allowed=allowed,
+            run_id=run_id,
+            active_step_tools=active_step_tool_set,
+        ),
         "usage": (
             "Use workspace.startSession to bind the current workspace, then use "
             "toolbox.describe/toolbox.call for setup helpers, workflow tools, and active "

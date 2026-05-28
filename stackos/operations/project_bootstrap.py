@@ -17,11 +17,13 @@ from stackos.mcp.tools.workspaces import (
     WorkspaceListBindingsInput,
     WorkspaceResolveInput,
     WorkspaceStartSessionInput,
+    WorkspaceUpdateProfileInput,
     _workspace_bootstrap,
     _workspace_connect,
     _workspace_list_bindings,
     _workspace_resolve,
     _workspace_start_session,
+    _workspace_update_profile,
 )
 from stackos.operations.spec import (
     OperationExample,
@@ -332,6 +334,56 @@ def operation_specs() -> list[OperationSpec]:
             examples=(OperationExample(title="List bindings", arguments={}),),
             mutating=False,
             grant_policy="direct-setup-read",
+            secret_policy="no-secret-output",
+        ),
+        OperationSpec(
+            name="workspace.updateProfile",
+            summary="Patch durable framework and content-model hints for a workspace binding.",
+            input_model=WorkspaceUpdateProfileInput,
+            output_model=WriteEnvelope[WorkspaceBindingOut],
+            handler=_workspace_update_profile,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True,
+                    path="/api/v1/operations/workspace.updateProfile/call",
+                ),
+                cli=OperationSurface(enabled=True, command="ops call workspace.updateProfile"),
+            ),
+            purpose=(
+                "Use this after an agent inspects the repository and wants future agents to "
+                "receive durable project adaptation hints. Missing profile fields are not "
+                "setup blockers; they tell agents what local stack/content context still "
+                "needs to be recorded."
+            ),
+            when_to_use=(
+                "workspace.startSession setup_state reports missing framework or "
+                "content_model_json.",
+                "A project-local audit identified stack, content model, or workflow hints "
+                "that should persist across agent sessions.",
+            ),
+            prerequisites=(
+                "Call workspace.startSession or workspace.listBindings to identify the binding_id.",
+                "Only store non-secret project guidance such as framework names, data model "
+                "shape, docs to read, or workflow notes.",
+            ),
+            returns=("A write envelope with the updated workspace binding.",),
+            examples=(
+                OperationExample(
+                    title="Record repo profile hints",
+                    arguments={
+                        "binding_id": 1,
+                        "project_id": 1,
+                        "framework": "vue",
+                        "content_model_json": {
+                            "primary_runtime": "StackOS daemon",
+                            "ui": "Vue/Vite",
+                        },
+                    },
+                ),
+            ),
+            mutating=True,
+            grant_policy="direct-setup-write",
             secret_policy="no-secret-output",
         ),
     ]

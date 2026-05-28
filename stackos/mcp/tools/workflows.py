@@ -8,9 +8,9 @@ from pydantic import ConfigDict, Field
 
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
-from stackos.operations.adapters.mcp import register_mcp_operations
+from stackos.operations.adapters.mcp import register_mcp_operation_names, register_mcp_operations
 from stackos.operations.registry import OperationRegistry, build_operation_registry
 from stackos.repositories.base import ValidationError
 from stackos.workflows import (
@@ -230,50 +230,15 @@ def _run_plan_operations() -> OperationRegistry:
 
 
 def register(registry: ToolRegistry) -> None:
-    registry.register(
-        ToolSpec(
+    register_mcp_operation_names(
+        registry,
+        (
             "workflowTemplate.list",
-            "List effective reusable workflow templates without executing them.",
-            WorkflowTemplateListInput,
-            WorkflowTemplateListOut,
-            _template_list,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "workflowTemplate.describe",
-            "Describe one reusable workflow template without executing it.",
-            WorkflowTemplateDescribeInput,
-            LoadedWorkflowTemplate,
-            _template_describe,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "workflowTemplate.validate",
-            "Validate a workflow template specification without saving or executing it.",
-            WorkflowTemplateValidateInput,
-            WorkflowTemplateValidationOut,
-            _template_validate,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "workflowTemplate.save",
-            "Local-admin operation to save a project/user workflow template.",
-            WorkflowTemplateSaveInput,
-            WriteEnvelope[LoadedWorkflowTemplate],
-            _template_save,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "workflowTemplate.fork",
-            "Local-admin operation to fork a workflow template for a project.",
-            WorkflowTemplateForkInput,
-            WriteEnvelope[LoadedWorkflowTemplate],
-            _template_fork,
-        )
+        ),
     )
     register_mcp_operations(registry, _run_plan_operations())
 

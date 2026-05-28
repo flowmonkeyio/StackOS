@@ -8,7 +8,7 @@ from pydantic import ConfigDict
 
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.plugins import (
     CapabilityOut,
@@ -212,86 +212,21 @@ async def _provider_describe(
 
 
 def register(registry: ToolRegistry) -> None:
-    registry.register(
-        ToolSpec(
-            name="plugin.list",
-            description="List installed StackOS plugins; optionally annotate project enablement.",
-            input_model=PluginListInput,
-            output_model=list[PluginOut],
-            handler=_plugin_list,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="plugin.enable",
-            description="Local-admin setup operation to enable a plugin for a project.",
-            input_model=PluginEnableInput,
-            output_model=WriteEnvelope[ProjectPluginOut],
-            handler=_plugin_enable,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="plugin.disable",
-            description="Local-admin setup operation to disable a plugin for a project.",
-            input_model=PluginDisableInput,
-            output_model=WriteEnvelope[ProjectPluginOut],
-            handler=_plugin_disable,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="catalog.list",
-            description="List the installed StackOS plugin catalog.",
-            input_model=CatalogListInput,
-            output_model=CatalogOut,
-            handler=_catalog_list,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="catalog.describe",
-            description="Describe one StackOS plugin catalog contribution.",
-            input_model=CatalogDescribeInput,
-            output_model=CatalogOut,
-            handler=_catalog_describe,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="capability.list",
-            description="List StackOS capabilities.",
-            input_model=CapabilityListInput,
-            output_model=list[CapabilityOut],
-            handler=_capability_list,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="capability.describe",
-            description="Describe one StackOS capability.",
-            input_model=CapabilityDescribeInput,
-            output_model=CapabilityOut,
-            handler=_capability_describe,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="provider.list",
-            description="List StackOS providers.",
-            input_model=ProviderListInput,
-            output_model=list[ProviderOut],
-            handler=_provider_list,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="provider.describe",
-            description="Describe one StackOS provider.",
-            input_model=ProviderDescribeInput,
-            output_model=ProviderOut,
-            handler=_provider_describe,
-        )
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(
+        registry,
+        (
+            "plugin.list",
+            "plugin.enable",
+            "plugin.disable",
+            "catalog.list",
+            "catalog.describe",
+            "capability.list",
+            "capability.describe",
+            "provider.list",
+            "provider.describe",
+        ),
     )
 
 

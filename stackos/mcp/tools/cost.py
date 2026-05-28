@@ -15,7 +15,7 @@ from sqlmodel import select
 from stackos.db.models import Project
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.runs import RunRepository
 
@@ -100,24 +100,9 @@ async def _cost_query_all(
 
 def register(registry: ToolRegistry) -> None:
     """Register cost.* tools."""
-    registry.register(
-        ToolSpec(
-            "cost.queryProject",
-            "Sum cost_cents per kind for a project + month.",
-            CostQueryProjectInput,
-            dict[str, Any],
-            _cost_query_project,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            "cost.queryAll",
-            "Sum cost_cents across every project for a month.",
-            CostQueryAllInput,
-            dict[str, Any],
-            _cost_query_all,
-        )
-    )
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(registry, ("cost.queryProject", "cost.queryAll"))
 
 
 __all__ = ["register"]

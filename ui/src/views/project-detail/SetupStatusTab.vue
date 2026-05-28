@@ -50,6 +50,24 @@ interface ChecklistItem {
   to?: string
 }
 
+interface WorkspaceBindingSummary {
+  id: number
+  project_id: number
+  repo_fingerprint?: string | null
+  normalized_repo_name?: string | null
+  last_known_root?: string | null
+  framework?: string | null
+  content_model_json?: Record<string, unknown> | null
+}
+
+interface OperationItems<T> {
+  items: T[]
+}
+
+interface OperationListSummary {
+  items: unknown[]
+}
+
 const route = useRoute()
 const router = useRouter()
 
@@ -62,9 +80,11 @@ const authProviders = ref<SchemaAuthProviderOut[]>([])
 const authStatus = ref<SchemaAuthStatusOut | null>(null)
 const templates = ref(0)
 const actions = ref(0)
+const operationContracts = ref(0)
 const runPlans = ref(0)
 const agentPresets = ref<AgentPresetSummary[]>([])
 const templateDetails = ref<SchemaLoadedWorkflowTemplate[]>([])
+const workspaceBindings = ref<WorkspaceBindingSummary[]>([])
 
 const enabledPlugins = computed(() =>
   plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
@@ -115,6 +135,28 @@ const skillRefs = computed(() =>
   Array.from(new Set(workflowSkillRequirements.value.map((skill) => skill.skill_ref))).sort(),
 )
 
+const workspaceBinding = computed(
+  () => workspaceBindings.value.find((binding) => binding.project_id === projectId.value) ?? null,
+)
+
+const workspaceProfileMissing = computed(() => {
+  const binding = workspaceBinding.value
+  if (!binding) return ['workspace binding']
+  const missing: string[] = []
+  if (!binding.framework) missing.push('framework')
+  if (!binding.content_model_json) missing.push('content model')
+  return missing
+})
+
+const workspaceProfileDetail = computed(() => {
+  const binding = workspaceBinding.value
+  if (!binding) return 'No workspace binding'
+  if (workspaceProfileMissing.value.length === 0) {
+    return binding.framework ? `${binding.framework} profile` : 'Configured'
+  }
+  return `Missing ${workspaceProfileMissing.value.join(', ')}`
+})
+
 const checklist = computed<ChecklistItem[]>(() => {
   const id = projectId.value
   const healthReady = health.value !== null
@@ -142,6 +184,18 @@ const checklist = computed<ChecklistItem[]>(() => {
       label: 'Project',
       detail: Number.isNaN(id) ? 'Not selected' : `#${id}`,
       status: Number.isNaN(id) ? 'attention' : 'done',
+    },
+    {
+      key: 'workspace-profile',
+      label: 'Workspace profile',
+      detail: workspaceProfileDetail.value,
+      status:
+        workspaceBinding.value === null
+          ? 'attention'
+          : workspaceProfileMissing.value.length === 0
+            ? 'done'
+            : 'todo',
+      to: 'operations',
     },
     {
       key: 'plugins',
@@ -195,11 +249,18 @@ const checklist = computed<ChecklistItem[]>(() => {
       to: 'workflow-templates',
     },
     {
-      key: 'actions',
-      label: 'Action contracts',
-      detail: `${actions.value} callable contracts`,
-      status: actions.value > 0 ? 'done' : 'attention',
+      key: 'operations',
+      label: 'Operation contracts',
+      detail: `${operationContracts.value} registered`,
+      status: operationContracts.value > 0 ? 'done' : 'attention',
       to: 'operations',
+    },
+    {
+      key: 'actions',
+      label: 'Executable actions',
+      detail: `${actions.value} available`,
+      status: actions.value > 0 ? 'done' : 'attention',
+      to: 'plugins',
     },
     {
       key: 'runs',
@@ -258,7 +319,9 @@ async function load(): Promise<void> {
       statusRow,
       templateRows,
       actionRows,
+      operationRows,
       agentPresetRows,
+      bindingRows,
       runPage,
     ] =
       await Promise.all([
@@ -276,7 +339,13 @@ async function load(): Promise<void> {
           include_shadowed: false,
         }),
         fetchOr<SchemaActionOut[]>(`/api/v1/actions?project_id=${id}`, []),
+        fetchOr<OperationListSummary>('/api/v1/operations?surface=mcp', {
+          items: [],
+        }),
         callOperation<AgentPresetListOut>('agentPreset.list', { project_id: id }),
+        callOperation<OperationItems<WorkspaceBindingSummary>>('workspace.listBindings', {
+          project_id: id,
+        }),
         fetchOr<SchemaPageResponseRunOut>(`/api/v1/projects/${id}/runs?kind=run-plan&limit=1`, {
           items: [],
           next_cursor: null,
@@ -290,7 +359,9 @@ async function load(): Promise<void> {
     authStatus.value = statusRow
     templates.value = templateRows.templates.length
     actions.value = actionRows.length
+    operationContracts.value = operationRows.items.length
     agentPresets.value = agentPresetRows.presets
+    workspaceBindings.value = bindingRows.items
     templateDetails.value = detailRows
     runPlans.value = runPage.total_estimate ?? runPage.items.length
   } catch (err) {
@@ -356,6 +427,31 @@ watch(projectId, load)
         show-label
         aria-label="Setup readiness"
       />
+
+      <div
+        v-if="workspaceBinding && workspaceProfileMissing.length > 0"
+        class="mt-4 flex flex-col gap-3 rounded-md border border-warning-border bg-warning-subtle px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <UiBadge tone="warning">Adaptation hints</UiBadge>
+            <p class="text-sm font-medium text-fg-strong">Workspace profile incomplete</p>
+          </div>
+          <p class="mt-1 text-sm text-fg-muted">
+            Project tools are usable; future agents are missing
+            {{ workspaceProfileMissing.join(', ') }} guidance.
+          </p>
+        </div>
+        <UiButton
+          class="shrink-0"
+          size="sm"
+          variant="secondary"
+          aria-label="Open workspace profile operation"
+          @click="go('operations')"
+        >
+          Open operation
+        </UiButton>
+      </div>
 
       <div class="mt-4 grid gap-2 md:grid-cols-2">
         <div

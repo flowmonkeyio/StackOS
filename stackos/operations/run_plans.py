@@ -89,6 +89,7 @@ class RunPlanListInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
 
     project_id: int | None = None
+    run_id: int | None = None
     status: RunPlanStatus | None = None
     template_key: str | None = None
     limit: int | None = None
@@ -215,6 +216,7 @@ async def run_plan_list(
 ) -> Page[RunPlanSummaryOut]:
     return RunPlanRepository(ctx.session).list(
         project_id=inp.project_id,
+        run_id=inp.run_id,
         status=inp.status,
         template_key=inp.template_key,
         limit=inp.limit,

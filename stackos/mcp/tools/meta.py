@@ -13,7 +13,7 @@ from pydantic import ConfigDict
 from stackos.api.meta import EnumLookupResponse, get_meta_enums
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 
 # ---------------------------------------------------------------------------
@@ -51,15 +51,9 @@ async def _meta_enums(
 
 def register(registry: ToolRegistry) -> None:
     """Register every ``meta.*`` tool."""
-    registry.register(
-        ToolSpec(
-            name="meta.enums",
-            description="Return every enum value and legal state-machine transitions.",
-            input_model=MetaEnumsInput,
-            output_model=EnumLookupResponse,
-            handler=_meta_enums,
-        )
-    )
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(registry, ("meta.enums",))
 
 
 __all__ = ["register"]

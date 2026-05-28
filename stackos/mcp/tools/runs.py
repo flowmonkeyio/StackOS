@@ -15,7 +15,7 @@ from stackos.db.models import RunKind, RunStatus
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.permissions import INVALID_SKILL, SYSTEM_SKILL, TEST_SKILL
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.base import Page, ValidationError
 from stackos.repositories.runs import (
@@ -351,101 +351,24 @@ async def _run_step_call_list(
 
 def register(registry: ToolRegistry) -> None:
     """Register every run.* tool."""
-    # run.*
-    registry.register(
-        ToolSpec(
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(
+        registry,
+        (
             "run.start",
-            "Open a run; returns (run_id, run_token).",
-            RunStartInput,
-            WriteEnvelope[RunStartOutput],
-            _run_start,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "run.finish",
-            "Move a run to a terminal status.",
-            RunFinishInput,
-            WriteEnvelope[RunOut],
-            _run_finish,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "run.heartbeat",
-            "Update heartbeat_at to now.",
-            RunHeartbeatInput,
-            WriteEnvelope[RunOut | None],
-            _run_heartbeat,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "run.abort",
-            "Abort a run (optionally cascading to children).",
-            RunAbortInput,
-            WriteEnvelope[RunOut],
-            _run_abort,
-        )
-    )
-    registry.register(
-        ToolSpec("run.list", "List runs with filters.", RunListInput, Page[RunOut], _run_list)
-    )
-    registry.register(ToolSpec("run.get", "Fetch one run by id.", RunGetInput, RunOut, _run_get))
-    registry.register(
-        ToolSpec(
+            "run.list",
+            "run.get",
             "run.children",
-            "List direct children of a parent run.",
-            RunChildrenInput,
-            list[RunOut],
-            _run_children,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "run.cost",
-            "Sum cost_cents per run kind for a project + month.",
-            RunCostInput,
-            dict[str, Any],
-            _run_cost,
-        )
-    )
-    # Run-step audit grain.
-    registry.register(
-        ToolSpec(
             "run.insertStep",
-            "Insert a per-skill run_step row.",
-            RunStepInsertInput,
-            WriteEnvelope[RunStepOut],
-            _run_step_insert,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "run.listSteps",
-            "List per-skill steps for a run.",
-            RunStepListInput,
-            list[RunStepOut],
-            _run_step_list,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "run.recordStepCall",
-            "Record a per-MCP-tool call inside a run step.",
-            RunStepCallRecordInput,
-            WriteEnvelope[RunStepCallOut],
-            _run_step_call_record,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "run.listStepCalls",
-            "List recorded MCP-tool calls for a run step.",
-            RunStepCallListInput,
-            list[RunStepCallOut],
-            _run_step_call_list,
-        )
+        ),
     )
 
 

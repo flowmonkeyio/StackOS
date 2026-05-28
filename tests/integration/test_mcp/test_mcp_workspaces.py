@@ -142,6 +142,29 @@ def test_workspace_start_session_autobootstraps_unbound_directory(
     assert suggestion["recommended_arguments"]["content_model_json"]["content_heavy"] is False
     assert any("non-content SaaS" in item for item in suggestion["guidance"])
 
+    updated = mcp_client.call_tool_structured(
+        "workspace.updateProfile",
+        {
+            "binding_id": bindings[0]["id"],
+            "project_id": started["project_id"],
+            "framework": "vue",
+            "content_model_json": {"content_heavy": False, "primary_runtime": "StackOS"},
+        },
+    )
+    restarted = mcp_client.call_tool_structured(
+        "workspace.startSession",
+        {
+            "runtime": "codex",
+            "cwd": "/tmp/mcp-autobootstrap-project",
+        },
+    )
+
+    assert updated["project_id"] == started["project_id"]
+    assert updated["data"]["framework"] == "vue"
+    assert restarted["data"]["setup_state"]["state"] == "bound_profile_configured"
+    assert restarted["data"]["setup_state"]["profile_missing"] == []
+    assert "profile_update_suggestion" not in restarted["data"]["setup_state"]
+
 
 def test_workspace_resolves_by_current_directory_root(
     mcp_client: MCPClient, seeded_project: dict

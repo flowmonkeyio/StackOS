@@ -8,7 +8,7 @@ from pydantic import ConfigDict
 
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.resources import (
@@ -126,32 +126,11 @@ async def _resource_upsert(
 
 
 def register(registry: ToolRegistry) -> None:
-    registry.register(
-        ToolSpec(
-            name="resource.get",
-            description="Fetch a generic resource schema or resource record.",
-            input_model=ResourceGetInput,
-            output_model=ResourceGetOut,
-            handler=_resource_get,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="resource.query",
-            description="Query generic resource schemas and bounded project records.",
-            input_model=ResourceQueryInput,
-            output_model=ResourceQueryOut,
-            handler=_resource_query,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="resource.upsert",
-            description="Internal/admin upsert for a generic project resource record.",
-            input_model=ResourceUpsertInput,
-            output_model=WriteEnvelope[ResourceRecordOut],
-            handler=_resource_upsert,
-        )
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(
+        registry,
+        ("resource.get", "resource.query", "resource.upsert"),
     )
 
 

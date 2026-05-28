@@ -14,7 +14,7 @@ from pydantic import ConfigDict
 from stackos.config import get_settings
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import (
@@ -294,59 +294,18 @@ async def _workspace_start_session(
 
 
 def register(registry: ToolRegistry) -> None:
-    registry.register(
-        ToolSpec(
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(
+        registry,
+        (
             "workspace.resolve",
-            "Resolve current repo hints to a StackOS project binding.",
-            WorkspaceResolveInput,
-            WorkspaceResolutionOut,
-            _workspace_resolve,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "workspace.connect",
-            "Create/update a daemon-owned repo binding.",
-            WorkspaceConnectInput,
-            WriteEnvelope[WorkspaceBindingOut],
-            _workspace_connect,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "workspace.bootstrap",
-            "Ensure one project and daemon-owned binding for the current workspace.",
-            WorkspaceBootstrapInput,
-            WriteEnvelope[WorkspaceBootstrapOut],
-            _workspace_bootstrap,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "workspace.listBindings",
-            "List daemon-owned repo bindings.",
-            WorkspaceListBindingsInput,
-            list[WorkspaceBindingOut],
-            _workspace_list_bindings,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "workspace.updateProfile",
-            "Patch detected content-model hints for a binding.",
-            WorkspaceUpdateProfileInput,
-            WriteEnvelope[WorkspaceBindingOut],
-            _workspace_update_profile,
-        )
-    )
-    registry.register(
-        ToolSpec(
             "workspace.startSession",
-            "Register a plugin MCP bridge session and ensure project binding.",
-            WorkspaceStartSessionInput,
-            WriteEnvelope[AgentSessionOut],
-            _workspace_start_session,
-        )
+        ),
     )
 
 

@@ -27,17 +27,28 @@ from stackos.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
 from stackos.mcp.server import ToolRegistry, _to_tool
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.mcp.tools import register_all
+from stackos.operations.registry import build_operation_registry
 
 
-def _tool(name: str, *, operation_name: str | None = None) -> dict[str, object]:
+def _tool(
+    name: str,
+    *,
+    operation_name: str | None = None,
+    grant_policy: str | None = None,
+) -> dict[str, object]:
     out: dict[str, object] = {
         "name": name,
         "description": f"{name} description",
         "inputSchema": {"type": "object"},
         "outputSchema": {"type": "object"},
     }
-    if operation_name is not None:
-        out["_meta"] = {"operation_name": operation_name}
+    if operation_name is not None or grant_policy is not None:
+        meta: dict[str, object] = {}
+        if operation_name is not None:
+            meta["operation_name"] = operation_name
+        if grant_policy is not None:
+            meta["grant_policy"] = grant_policy
+        out["_meta"] = meta
     return out
 
 
@@ -189,9 +200,15 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
             "cost.queryProject",
             "artifact.create",
             "learning.update",
+            "project.update",
         ]
     }
     catalog["action.execute"] = _tool("action.execute", operation_name="action.execute")
+    catalog["project.update"] = _tool(
+        "project.update",
+        operation_name="project.update",
+        grant_policy="local-admin-project-write",
+    )
     catalog["resource.upsert"] = _tool("resource.upsert")
     allowed_by_run = {7: {"resource.upsert", "action.execute"}}
 
@@ -208,6 +225,7 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
                 "cost.queryProject",
                 "artifact.create",
                 "learning.update",
+                "project.update",
                 "missing",
             ],
         },
@@ -228,9 +246,18 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
         "artifact.create",
         "auth.start",
         "learning.update",
+        "project.update",
     }
     assert payload["unknown_tool_names"] == ["integration.test", "missing"]
     assert "admin_gated_tool_names" not in payload
+    statuses = {item["name"]: item for item in payload["tool_statuses"]}
+    assert statuses["auth.start"]["reason_code"] == "local_admin_required"
+    assert statuses["artifact.create"]["reason_code"] == "run_plan_step_grant_required"
+    assert statuses["project.update"]["reason_code"] == "local_admin_required"
+    assert statuses["project.update"]["grant_policy"] == "local-admin-project-write"
+    assert statuses["resource.upsert"]["reason_code"] == "active_step_granted"
+    assert statuses["action.execute"]["operation"]["name"] == "action.execute"
+    assert statuses["missing"]["reason_code"] == "unknown_tool"
 
 
 def test_bridge_caches_run_token_and_step_grants() -> None:
@@ -636,6 +663,16 @@ def test_bridge_agent_operation_surface_matches_registered_daemon_tools() -> Non
     registered = set(registry._tools)
 
     assert registered >= _AGENT_BASE_TOOLBOX_NAMES
+
+
+def test_daemon_mcp_tools_are_operation_backed_without_expanding_bridge_surface() -> None:
+    registry = ToolRegistry()
+    register_all(registry)
+    operations = {operation.name for operation in build_operation_registry().all()}
+
+    tool_names = {spec.name for spec in registry.all()}
+    assert tool_names == operations
+    assert all(spec.operation_name == spec.name for spec in registry.all())
 
 
 def test_bridge_system_grant_matches_agent_operation_surface() -> None:

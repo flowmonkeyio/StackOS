@@ -85,6 +85,12 @@ run token.
   `toolbox.call` for `operation.list` first, then `operation.describe` for the
   few operations you intend to use. Keep `toolbox.describe` scoped to exact
   tool names.
+- Repair denied tools: read `toolbox.describe.tool_statuses`. `unknown_tool`
+  means the name is wrong or removed. `local_admin_required` means operator
+  setup is needed. `run_plan_step_grant_required` means create/start the run
+  plan, claim the step, then retry with `run_id`. `not_granted_to_active_step`
+  means the active step exists but the grant snapshot does not cover this tool
+  or argument shape.
 - Connect vendors: inspect the run plan's needed providers, share
   `/projects/{project_id}/connections`, wait for the operator to connect them
   in the UI, then run `toolbox.call` for `auth.status` and `auth.test`.

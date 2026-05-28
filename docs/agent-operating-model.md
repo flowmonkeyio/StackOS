@@ -235,6 +235,29 @@ agent intentionally reconnects or rebinds it.
 This keeps normal agents focused on the project attached to their workspace and
 still gives them a complete MCP-native path when no binding exists yet.
 
+## Toolbox Repair
+
+The bridge keeps the first-level MCP surface small on purpose. If a tool is not
+listed directly, that usually means it is a scoped toolbox tool rather than a
+missing capability.
+
+- `denied_tool_names` means the daemon knows the tool, but it is not callable in
+  the current bridge scope.
+- `tool_statuses[].reason_code == "local_admin_required"` means the tool is a
+  setup/admin control; use an explicit operator flow rather than trying to
+  repair it with run-plan grants.
+- `run_plan_step_grant_required` means the agent needs a started run plan, a
+  claimed running step, and an `mcp_tool_grants` entry for that tool.
+- `not_granted_to_active_step` means the current step exists, but its grant
+  snapshot does not cover the requested tool or arguments.
+- `unknown_tool` means the name is wrong or the flow was removed; call
+  `operation.list` with a narrow `query` to find the current operation name.
+
+When a tool is operation-backed, `toolbox.describe` includes the operation name,
+category, grant policy, and a pointer to `operation.describe`. Agents should ask
+for exact tool names and escalate to `operation.describe` only when they need
+the full schema or examples.
+
 ## Design Review
 
 This model keeps the current StackOS principles intact:

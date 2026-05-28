@@ -7,6 +7,7 @@ from typing import Any
 
 from .catalog import _bridge_filter_tool_list_response, _bridge_tool_catalog
 from .constants import (
+    _AGENT_ADMIN_GATED_TOOL_NAMES,
     _AGENT_RUN_PLAN_GATED_TOOL_NAMES,
     _AGENT_VISIBLE_TOOL_NAMES,
     _TOOLBOX_CALL_TOOL,
@@ -278,13 +279,31 @@ class AgentBridgeProxy:
     def _refresh_run_context(self, client: Any, run_id: int | None) -> None:
         if run_id is None:
             return
+        scope_args: dict[str, Any] = {}
+        if self.scoped_project_id is not None:
+            scope_args["project_id"] = self.scoped_project_id
         run_plan_id = self.plans_by_run.get(run_id)
+        if run_plan_id is None and run_id in self.allowed_by_run and run_id in self.tokens_by_run:
+            return
+        if run_plan_id is None:
+            body = _bridge_make_tool_call_payload(
+                f"stackos-bridge-plan-for-run-{run_id}",
+                "runPlan.list",
+                {"run_id": run_id, **scope_args},
+            )
+            try:
+                out = self.request_daemon(client, body)
+            except Exception:
+                return
+            run_plan_id = _bridge_first_run_plan_id(out)
+            if run_plan_id is not None:
+                self.plans_by_run[run_id] = run_plan_id
         if run_plan_id is None:
             return
         body = _bridge_make_tool_call_payload(
             f"stackos-bridge-plan-{run_plan_id}",
             "runPlan.get",
-            {"run_plan_id": run_plan_id},
+            {"run_plan_id": run_plan_id, **scope_args},
         )
         try:
             out = self.request_daemon(client, body)
@@ -369,6 +388,7 @@ class AgentBridgeProxy:
                     tool_name=target_name,
                     run_id=run_id,
                     allowed_by_run=self.allowed_by_run,
+                    catalog=self.tool_catalog,
                 ),
             )
         if not isinstance(target_args, dict):
@@ -451,6 +471,7 @@ def _toolbox_call_denial_repair(
     tool_name: str,
     run_id: int | None,
     allowed_by_run: dict[int, set[str]],
+    catalog: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     active_step_tools = sorted(allowed_by_run.get(run_id, set())) if run_id is not None else []
     data: dict[str, Any] = {
@@ -463,6 +484,7 @@ def _toolbox_call_denial_repair(
     }
     if active_step_tools:
         data["active_step_tool_names"] = active_step_tools
+    grant_policy = _bridge_tool_grant_policy(catalog.get(tool_name))
     if tool_name in _AGENT_RUN_PLAN_GATED_TOOL_NAMES:
         data["reason"] = "run_plan_step_grant_required"
         data["repair"] = {
@@ -483,5 +505,57 @@ def _toolbox_call_denial_repair(
             },
         }
         return data
+    if tool_name in _AGENT_ADMIN_GATED_TOOL_NAMES or _grant_policy_is_local_admin(grant_policy):
+        data["reason"] = "local_admin_required"
+        data["grant_policy"] = grant_policy
+        data["repair"] = {
+            "hint": (
+                "Use an explicit operator/admin setup flow; this is not available "
+                "to the normal agent toolbox."
+            )
+        }
+        return data
     data["reason"] = "tool_not_available_in_current_bridge_scope"
     return data
+
+
+def _bridge_first_run_plan_id(response_text: str) -> int | None:
+    try:
+        envelope = json.loads(response_text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(envelope, dict):
+        return None
+    result = envelope.get("result")
+    if not isinstance(result, dict):
+        return None
+    structured = result.get("structuredContent")
+    if not isinstance(structured, dict):
+        return None
+    items = structured.get("items")
+    if not isinstance(items, list) and isinstance(structured.get("data"), dict):
+        data = structured["data"]
+        items = data.get("items")
+    if not isinstance(items, list) or not items:
+        return None
+    first = items[0]
+    if not isinstance(first, dict):
+        return None
+    return _bridge_as_int(first.get("id"))
+
+
+def _bridge_tool_grant_policy(tool: dict[str, Any] | None) -> str | None:
+    if not isinstance(tool, dict):
+        return None
+    meta = tool.get("_meta")
+    if not isinstance(meta, dict):
+        return None
+    value = meta.get("grant_policy")
+    return value if isinstance(value, str) and value else None
+
+
+def _grant_policy_is_local_admin(grant_policy: str | None) -> bool:
+    if grant_policy is None:
+        return False
+    normalized = grant_policy.strip().lower()
+    return normalized == "admin-only" or normalized.startswith("local-admin")

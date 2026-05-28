@@ -14,7 +14,7 @@ from stackos.auth_providers import (
 from stackos.config import Settings
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 
 
@@ -130,41 +130,11 @@ async def _auth_revoke(
 
 
 def register(registry: ToolRegistry) -> None:
-    registry.register(
-        ToolSpec(
-            name="auth.status",
-            description="Inspect sanitized auth provider status and credential refs.",
-            input_model=AuthStatusInput,
-            output_model=AuthStatusOut,
-            handler=_auth_status,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="auth.start",
-            description="Local-admin setup flow starter that never accepts or returns secrets.",
-            input_model=AuthStartInput,
-            output_model=WriteEnvelope[AuthStartOut],
-            handler=_auth_start,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="auth.test",
-            description="Run a sanitized provider credential health test.",
-            input_model=AuthTestInput,
-            output_model=WriteEnvelope[AuthTestOut],
-            handler=_auth_test,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="auth.revoke",
-            description="Local-admin revoke for an opaque credential reference.",
-            input_model=AuthRevokeInput,
-            output_model=WriteEnvelope[AuthRevokeOut],
-            handler=_auth_revoke,
-        )
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(
+        registry,
+        ("auth.status", "auth.start", "auth.test", "auth.revoke"),
     )
 
 

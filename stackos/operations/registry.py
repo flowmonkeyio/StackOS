@@ -125,11 +125,18 @@ def build_operation_registry() -> OperationRegistry:
         agent_presets,
         agent_requests,
         auth,
+        catalog,
         communications,
+        cost,
         discovery,
         project_bootstrap,
+        project_setup,
+        resources,
         run_plans,
+        runs,
+        system,
         tool_profiles,
+        workflow_templates,
     )
     from stackos.operations import tracker as tracker_operations
 
@@ -138,9 +145,13 @@ def build_operation_registry() -> OperationRegistry:
         registry.register(spec)
     for spec in project_bootstrap.operation_specs():
         registry.register(spec)
+    for spec in project_setup.operation_specs():
+        registry.register(spec)
     for spec in agent_requests.operation_specs():
         registry.register(spec)
     for spec in auth.operation_specs():
+        registry.register(spec)
+    for spec in catalog.operation_specs():
         registry.register(spec)
     for spec in communications.operation_specs():
         registry.register(spec)
@@ -148,9 +159,19 @@ def build_operation_registry() -> OperationRegistry:
         registry.register(spec)
     for spec in actions.operation_specs():
         registry.register(spec)
+    for spec in cost.operation_specs():
+        registry.register(spec)
     for spec in agent_presets.operation_specs():
         registry.register(spec)
+    for spec in workflow_templates.operation_specs():
+        registry.register(spec)
     for spec in run_plans.operation_specs():
+        registry.register(spec)
+    for spec in runs.operation_specs():
+        registry.register(spec)
+    for spec in system.operation_specs():
+        registry.register(spec)
+    for spec in resources.operation_specs():
         registry.register(spec)
     for spec in tracker_operations.operation_specs():
         registry.register(spec)

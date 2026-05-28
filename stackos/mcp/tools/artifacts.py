@@ -8,7 +8,7 @@ from pydantic import ConfigDict
 
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
-from stackos.mcp.server import ToolRegistry, ToolSpec
+from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.base import NotFoundError, Page
 from stackos.repositories.resources import ArtifactOut, ArtifactRepository
@@ -114,32 +114,11 @@ async def _artifact_query(
 
 
 def register(registry: ToolRegistry) -> None:
-    registry.register(
-        ToolSpec(
-            name="artifact.create",
-            description="Internal/admin create for a generic artifact reference.",
-            input_model=ArtifactCreateInput,
-            output_model=WriteEnvelope[ArtifactOut],
-            handler=_artifact_create,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="artifact.get",
-            description="Fetch one generic artifact reference.",
-            input_model=ArtifactGetInput,
-            output_model=ArtifactOut,
-            handler=_artifact_get,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="artifact.query",
-            description="Query bounded generic artifact references.",
-            input_model=ArtifactQueryInput,
-            output_model=Page[ArtifactOut],
-            handler=_artifact_query,
-        )
+    from stackos.operations.adapters.mcp import register_mcp_operation_names
+
+    register_mcp_operation_names(
+        registry,
+        ("artifact.create", "artifact.get", "artifact.query"),
     )
 
 

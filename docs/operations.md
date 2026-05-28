@@ -49,15 +49,23 @@ GET /api/v1/operations/action.run
 ```
 
 Native MCP clients can read the same operation catalog without leaving the MCP
-session:
+session. In the agent bridge, these calls are hidden setup tools: call them
+through `toolbox.call` rather than expecting them in the first-level MCP tool
+list.
 
 ```text
-operation.list({ "surface": "mcp" })
-operation.list({ "category": "actions", "query": "sitemap" })
-operation.list({ "mode": "grouped" })
-operation.describe({ "name": "communication.send", "surface": "mcp" })
-operation.describe({ "name": "operation.describe", "surface": "mcp" })
-agentPreset.resolveForWorkflow({ "workflow_key": "core.project-memory-review" })
+toolbox.call({
+  "tool_name": "operation.list",
+  "arguments": { "surface": "mcp", "mode": "grouped" }
+})
+toolbox.call({
+  "tool_name": "operation.describe",
+  "arguments": { "name": "communication.send", "surface": "mcp" }
+})
+toolbox.call({
+  "tool_name": "agentPreset.resolveForWorkflow",
+  "arguments": { "workflow_key": "core.project-memory-review" }
+})
 ```
 
 The discovery operations are OperationSpecs too. `operation.list` includes
@@ -77,11 +85,13 @@ Each description includes:
 - return notes
 - examples
 
-MCP tools are generated from the same operation specs, so MCP clients still get
-tool schemas through `tools/list`. Native MCP clients should use
-`operation.list` and `operation.describe` for OperationSpec purpose,
-prerequisites, return notes, examples, and schemas. Use `toolbox.describe` for
-hidden setup and step-granted tools that are not advertised directly.
+MCP tools are generated from the same operation specs, so the daemon has one
+callable contract per StackOS primitive. The agent bridge intentionally
+advertises only `workspace.startSession`, `workspace.resolve`,
+`toolbox.describe`, and `toolbox.call`; use `operation.list` and
+`operation.describe` through the toolbox for purpose, prerequisites, return
+notes, examples, and schemas. Use `toolbox.describe` for exact hidden setup and
+step-granted tools before calling them.
 
 The UI reads the same docs at `/projects/{project_id}/operations`. That page is
 not a second registry; it renders `GET /api/v1/operations` and
