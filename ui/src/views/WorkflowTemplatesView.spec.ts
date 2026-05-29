@@ -87,7 +87,7 @@ describe('WorkflowTemplatesView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Engineering Tracked Delivery'))
 
     expect(wrapper.text()).toContain('engineering.tracked-delivery')
-    expect(wrapper.text()).toContain('Project Extension')
+    expect(wrapper.text()).toContain('Project Setup')
     expect(wrapper.text()).toContain('communication_route_ref')
     expect(wrapper.text()).toContain('support-triage')
     expect(wrapper.text()).toContain('8 agents')

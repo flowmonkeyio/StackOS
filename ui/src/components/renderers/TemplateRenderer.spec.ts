@@ -111,10 +111,11 @@ describe('TemplateRenderer', () => {
     const w = mount(TemplateRenderer, { props: { template } })
 
     expect(w.text()).toContain('Review')
-    expect(w.text()).toContain('Project Extension')
-    expect(w.text()).toContain('configured')
+    expect(w.text()).toContain('Project Setup')
+    expect(w.text()).toContain('active')
     expect(w.text()).toContain('communication_route_ref')
     expect(w.text()).toContain('description')
+    expect(w.text()).toContain('Workflow Changes')
     expect(w.text()).toContain('review')
     expect(w.text()).toContain('recent_runs')
     expect(w.text()).toContain('Agents & Skills')

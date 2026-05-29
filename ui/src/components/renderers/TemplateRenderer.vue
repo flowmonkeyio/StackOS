@@ -88,16 +88,16 @@ function requirementTone(
 
     <UiPanel class="p-4">
       <UiSectionHeader
-        title="Project Extension"
+        title="Project Setup"
         as="h3"
-        description="Project setup and atomic workflow overrides applied at run-plan creation."
+        description="Project-specific defaults, context, guardrails, and workflow changes for this template."
       >
         <template #actions>
           <UiBadge
             v-if="projectExtension?.enabled"
             tone="success"
           >
-            configured
+            active
           </UiBadge>
           <UiBadge
             v-else-if="projectExtension"
@@ -105,7 +105,7 @@ function requirementTone(
           >
             disabled
           </UiBadge>
-          <UiBadge v-else>none</UiBadge>
+          <UiBadge v-else>shared template</UiBadge>
         </template>
       </UiSectionHeader>
 
@@ -113,7 +113,7 @@ function requirementTone(
         v-if="!projectExtension"
         tone="info"
       >
-        No project extension is configured for this workflow.
+        This project is using the shared workflow template as-is.
       </UiCallout>
 
       <div
@@ -228,7 +228,7 @@ function requirementTone(
           </section>
           <section class="rounded-md border border-subtle bg-bg-surface px-3 py-2">
             <h4 class="mb-2 font-semibold uppercase tracking-wide text-fg-muted">
-              Template Overrides
+              Workflow Changes
             </h4>
             <div class="flex flex-wrap gap-1.5">
               <UiBadge
