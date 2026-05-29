@@ -95,6 +95,7 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("tracker.createTask", SYSTEM_SKILL)
     check_grant("tracker.createTicket", SYSTEM_SKILL)
     check_grant("tracker.patch", SYSTEM_SKILL)
+    check_grant("tracker.rejectTask", SYSTEM_SKILL)
 
     with pytest.raises(ToolNotGrantedError):
         check_grant("workflowTemplate.save", SYSTEM_SKILL)
@@ -135,6 +136,7 @@ def test_run_plan_controller_has_dynamic_step_tools() -> None:
     check_grant("communication.reply", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("tracker.brief", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("tracker.patch", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("tracker.rejectTask", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("resource.upsert", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("context.query", RUN_PLAN_CONTROLLER_SKILL)
 

@@ -969,3 +969,32 @@ def tracker_patch(
             },
         )
     )
+
+
+@tracker_app.command(name="reject-task")
+def tracker_reject_task(
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    reason: Annotated[str, typer.Option("--reason", help="Operator rejection reason.")],
+    task_key: Annotated[
+        str | None,
+        typer.Option("--task", help="Tracker task key to reject."),
+    ] = None,
+    run_plan_id: Annotated[
+        int | None,
+        typer.Option("--run-plan", help="Run-plan id whose tracker mirror should be rejected."),
+    ] = None,
+    actor: Annotated[str | None, typer.Option("--actor", help="Actor label.")] = None,
+) -> None:
+    """Reject a tracker task or run-plan mirror and cascade child tickets."""
+    _echo_json(
+        _operation_call(
+            "tracker.rejectTask",
+            {
+                "project_id": project_id,
+                "task_key": task_key,
+                "run_plan_id": run_plan_id,
+                "reason": reason,
+                "actor": actor,
+            },
+        )
+    )

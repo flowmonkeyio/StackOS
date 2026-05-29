@@ -164,3 +164,57 @@ def test_tracker_operations_rest_create_ticket_accepts_list(
     reviewed_ticket = reviewed.json()["tickets"][0]
     assert reviewed_ticket["key"] == "rest-ticket-list-ui"
     assert reviewed_ticket["dependency_keys"] == ["rest-ticket-list-docs"]
+
+
+def test_tracker_operations_rest_reject_task_cascades_tickets(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    created_task = api.post(
+        "/api/v1/operations/tracker.createTask/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "rest-reject-task",
+                "title": "REST reject task",
+                "created_by": "route-test",
+            }
+        },
+    )
+    assert created_task.status_code == 200, created_task.text
+
+    created_tickets = api.post(
+        "/api/v1/operations/tracker.createTicket/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "task_key": "rest-reject-task",
+                "tickets_json": [
+                    {"key": "rest-reject-open", "title": "Open"},
+                    {"key": "rest-reject-next", "title": "Next"},
+                ],
+                "created_by": "route-test",
+            }
+        },
+    )
+    assert created_tickets.status_code == 200, created_tickets.text
+
+    rejected = api.post(
+        "/api/v1/operations/tracker.rejectTask/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "task_key": "rest-reject-task",
+                "reason": "Operator rejected this task.",
+                "actor": "route-test",
+            }
+        },
+    )
+    assert rejected.status_code == 200, rejected.text
+    body = rejected.json()
+    assert body["data"]["task"]["status"] == "deferred"
+    assert body["data"]["task"]["completion_evidence_json"]["decision"] == "rejected"
+    assert [result["action"] for result in body["data"]["results"]] == [
+        "rejected",
+        "rejected",
+    ]

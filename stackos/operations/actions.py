@@ -550,6 +550,18 @@ def _compact_scalar(value: str | int | float | bool | None) -> str | int | float
 
 def _compact_telegram_output(operation: str, output_json: dict[str, Any]) -> dict[str, Any]:
     compact: dict[str, Any] = {"operation": operation}
+    for key in (
+        "artifact_ref",
+        "artifact_id",
+        "filename",
+        "mime_type",
+        "size_bytes",
+        "source_file_id",
+        "source_message_ref",
+    ):
+        value = output_json.get(key)
+        if isinstance(value, str | int | float | bool) or value is None:
+            compact[key] = _compact_scalar(value)
     status_code = output_json.get("status_code")
     if isinstance(status_code, int):
         compact["status_code"] = status_code

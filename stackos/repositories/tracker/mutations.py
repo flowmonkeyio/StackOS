@@ -345,6 +345,141 @@ class TrackerMutationMixin:
             project_id=project_id,
         )
 
+    def reject_task(
+        self,
+        *,
+        project_id: int,
+        task_key: str | None = None,
+        run_plan_id: int | None = None,
+        reason: str,
+        actor: str | None = None,
+        commit: bool = True,
+    ) -> Envelope[TrackerMutationOut]:
+        tracker = self.ensure_tracker(project_id=project_id)
+        if (
+            task_key is not None
+            and run_plan_id is not None
+            and task_key != f"workflow-{run_plan_id}"
+        ):
+            raise ValidationError(
+                "task_key must match workflow-{run_plan_id} when both rejection "
+                "targets are provided",
+                data={"task_key": task_key, "run_plan_id": run_plan_id},
+            )
+        resolved_task_key = task_key or (
+            f"workflow-{run_plan_id}" if run_plan_id is not None else None
+        )
+        if not resolved_task_key:
+            raise ValidationError("task_key or run_plan_id is required to reject a task")
+        reason = _clean_text(reason)
+        if not reason:
+            raise ValidationError("reason is required to reject a task")
+        task = self._task_by_key(tracker.id, resolved_task_key)
+        before = self._task_snapshot(task)
+        now = _utcnow()
+        rejection = {
+            "decision": "rejected",
+            "reason": reason,
+            "rejected_at": now.isoformat(),
+            **({"rejected_by": actor} if actor else {}),
+            **({"run_plan_id": run_plan_id} if run_plan_id is not None else {}),
+        }
+        task.status = TrackerItemStatus.DEFERRED
+        task.lane_key = "done"
+        task.completed_at = now
+        task.updated_at = now
+        task.completion_evidence_json = {
+            **(task.completion_evidence_json or {}),
+            **rejection,
+        }
+        task.metadata_json = {
+            **(task.metadata_json or {}),
+            "rejected": True,
+            "rejection_reason": reason,
+            "rejected_at": now.isoformat(),
+            **({"rejected_by": actor} if actor else {}),
+        }
+        self._s.add(task)
+
+        changed_tickets: list[TrackerTicket] = []
+        previous_ticket_statuses: dict[str, str] = {}
+        for ticket in self._ticket_rows_for_task(task.id):
+            previous_ticket_statuses[ticket.key] = ticket.status.value
+            # Task rejection is an operator terminal override; every child closes
+            # as deferred so the parent cannot look partially deliverable later.
+            ticket.metadata_json = {
+                **(ticket.metadata_json or {}),
+                "parent_task_rejected": True,
+                "rejection_reason": reason,
+                "rejected_at": now.isoformat(),
+                **({"rejected_by": actor} if actor else {}),
+            }
+            ticket.status = TrackerItemStatus.DEFERRED
+            ticket.lane_key = "done"
+            ticket.blocker_reason = None
+            ticket.completed_at = now
+            ticket.outcome = f"Rejected before completion. Reason: {reason}"
+            ticket.updated_at = now
+            self._s.add(ticket)
+            changed_tickets.append(ticket)
+
+        self._record_revision(
+            tracker,
+            actor=actor,
+            change_kind="reject",
+            entity_kind="task",
+            entity_id=task.id,
+            entity_key=task.key,
+            summary=f"Rejected task {task.key}.",
+            before_json=before,
+            after_json=self._task_snapshot(task),
+            patch_json={
+                "task_key": task.key,
+                "run_plan_id": run_plan_id,
+                "reason": reason,
+                "closed_ticket_count": sum(
+                    1 for ticket in changed_tickets if ticket.status == TrackerItemStatus.DEFERRED
+                ),
+            },
+            metadata_json={
+                "previous_ticket_statuses": previous_ticket_statuses,
+            },
+            commit=False,
+        )
+        if commit:
+            self._s.commit()
+            self._s.refresh(task)
+            for ticket in changed_tickets:
+                self._s.refresh(ticket)
+        else:
+            self._s.flush()
+        return Envelope(
+            data=TrackerMutationOut(
+                tracker=self._tracker_out(tracker),
+                task=self._task_out(task),
+                tickets=self._ticket_out_many(changed_tickets),
+                results=[
+                    TrackerListItemResultOut(
+                        index=index,
+                        action="rejected",
+                        key=ticket.key,
+                        id=ticket.id,
+                        changed_fields=[
+                            "status",
+                            "lane_key",
+                            "blocker_reason",
+                            "outcome",
+                            "metadata_json",
+                        ],
+                        ticket=self._ticket_out(ticket),
+                    )
+                    for index, ticket in enumerate(changed_tickets)
+                ],
+                rev=tracker.rev,
+            ),
+            project_id=project_id,
+        )
+
     def update_ticket(
         self,
         *,
@@ -800,7 +935,15 @@ class TrackerMutationMixin:
         if not tickets:
             return
         old = task.status
-        if all(ticket.status == TrackerItemStatus.COMPLETE for ticket in tickets):
+        if (
+            task.metadata_json
+            and task.metadata_json.get("rejected") is True
+            and all(ticket.status in TERMINAL_TICKET_STATUSES for ticket in tickets)
+        ):
+            task.status = TrackerItemStatus.DEFERRED
+            task.completed_at = task.completed_at if old == task.status else now
+            task.lane_key = "done"
+        elif all(ticket.status == TrackerItemStatus.COMPLETE for ticket in tickets):
             task.status = TrackerItemStatus.COMPLETE
             task.completed_at = task.completed_at if old == task.status else now
             task.lane_key = "done"
@@ -833,6 +976,16 @@ class TrackerMutationMixin:
         task_id = _required_id(task_id, "task")
         rows = list(self._s.exec(select(TrackerTicket).where(TrackerTicket.task_id == task_id)))
         return max((row.order_index for row in rows), default=-1) + 1
+
+    def _ticket_rows_for_task(self, task_id: int | None) -> list[TrackerTicket]:
+        task_id = _required_id(task_id, "task")
+        return list(
+            self._s.exec(
+                select(TrackerTicket)
+                .where(TrackerTicket.task_id == task_id)
+                .order_by(TrackerTicket.order_index)
+            )
+        )
 
     def _record_revision(
         self,

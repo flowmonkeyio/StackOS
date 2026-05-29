@@ -26,6 +26,7 @@ def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
         "tracker.updateTask",
         "tracker.updateTicket",
         "tracker.patch",
+        "tracker.rejectTask",
         "tracker.pick",
         "tracker.release",
         "tracker.linkRunPlan",
@@ -33,8 +34,10 @@ def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
     by_name = {tool["name"]: tool for tool in listed_tools}
     create_props = by_name["tracker.createTicket"]["inputSchema"]["properties"]
     update_props = by_name["tracker.updateTicket"]["inputSchema"]["properties"]
+    reject_props = by_name["tracker.rejectTask"]["inputSchema"]["properties"]
     assert {"tickets_json", "dependencies_json", "dry_run"} <= set(create_props)
     assert {"updates_json", "dry_run"} <= set(update_props)
+    assert {"task_key", "run_plan_id", "reason"} <= set(reject_props)
 
 
 def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict) -> None:
@@ -263,3 +266,65 @@ def test_tracker_mcp_create_get_update_accept_ticket_lists(
     )
     assert by_key["mcp-ticket-list-ui"]["assignee"] == "codex"
     assert by_key["mcp-ticket-list-ui"]["dependency_keys"] == ["mcp-ticket-list-docs"]
+
+
+def test_tracker_mcp_reject_task_cascades_tickets(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+
+    mcp_client.call_tool_structured(
+        "tracker.createTask",
+        {
+            "project_id": project_id,
+            "key": "mcp-reject-task",
+            "title": "MCP reject task",
+            "created_by": "mcp-test",
+        },
+    )
+    mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {
+            "project_id": project_id,
+            "task_key": "mcp-reject-task",
+            "tickets_json": [
+                {"key": "mcp-reject-open", "title": "Open"},
+                {"key": "mcp-reject-done", "title": "Done"},
+            ],
+            "created_by": "mcp-test",
+        },
+    )
+    mcp_client.call_tool_structured(
+        "tracker.updateTicket",
+        {
+            "project_id": project_id,
+            "ticket_key": "mcp-reject-done",
+            "patch_json": {"status": "complete", "outcome": "Previously complete."},
+            "actor": "mcp-test",
+        },
+    )
+
+    rejected = mcp_client.call_tool_structured(
+        "tracker.rejectTask",
+        {
+            "project_id": project_id,
+            "task_key": "mcp-reject-task",
+            "reason": "Operator api_key=sk-secret rejected this task.",
+            "actor": "mcp-test",
+        },
+    )
+    snapshot = mcp_client.call_tool_structured(
+        "tracker.get",
+        {"project_id": project_id, "task_key": "mcp-reject-task", "include_graph": False},
+    )
+
+    assert rejected["data"]["task"]["status"] == "deferred"
+    assert rejected["data"]["task"]["completion_evidence_json"]["decision"] == "rejected"
+    assert "[redacted]" in rejected["data"]["task"]["completion_evidence_json"]["reason"]
+    assert "sk-secret" not in str(rejected)
+    assert [result["action"] for result in rejected["data"]["results"]] == [
+        "rejected",
+        "rejected",
+    ]
+    assert {ticket["status"] for ticket in snapshot["tickets"]} == {"deferred"}

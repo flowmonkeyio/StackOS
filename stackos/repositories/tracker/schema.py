@@ -295,7 +295,7 @@ class TrackerDependencyPreviewOut(BaseModel):
 
 class TrackerListItemResultOut(BaseModel):
     index: int
-    action: Literal["validated", "created", "updated", "skipped", "noop", "error"]
+    action: Literal["validated", "created", "updated", "rejected", "skipped", "noop", "error"]
     key: str | None = None
     id: int | None = None
     changed_fields: list[str] = Field(default_factory=list)

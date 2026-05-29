@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 147
+    assert len(names) == 148
     assert {
         "action.execute",
         "auth.status",
@@ -23,6 +23,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "workspace.updateProfile",
         "readiness.check",
         "workflowExtension.upsert",
+        "tracker.rejectTask",
     } <= names
 
     described = registry.get("action.execute").describe_out()
@@ -216,6 +217,13 @@ def test_operation_registry_documents_core_operations() -> None:
     assert tracker_patch.surfaces["cli"].command == "tracker patch"
     assert tracker_patch.grant_policy == "direct-tracker-write"
     assert "WriteEnvelope" in tracker_patch.output_schema["title"]
+
+    tracker_reject = registry.get("tracker.rejectTask").describe_out()
+    assert tracker_reject.surfaces["mcp"].enabled is True
+    assert tracker_reject.surfaces["rest"].enabled is True
+    assert tracker_reject.surfaces["cli"].command == "tracker reject-task"
+    assert tracker_reject.grant_policy == "direct-tracker-write"
+    assert "one clear terminal state" in tracker_reject.purpose
 
 
 def test_operation_registry_surface_filter() -> None:

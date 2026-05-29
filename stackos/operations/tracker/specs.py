@@ -32,6 +32,7 @@ from stackos.operations.tracker.schemas import (
     TrackerPatchInput,
     TrackerPickInput,
     TrackerProjectInput,
+    TrackerRejectTaskInput,
     TrackerReleaseInput,
     TrackerSearchInput,
     TrackerTicketInput,
@@ -48,6 +49,7 @@ from stackos.operations.tracker.write_handlers import (
     tracker_link_run_plan,
     tracker_patch,
     tracker_pick,
+    tracker_reject_task,
     tracker_release,
     tracker_update_task,
     tracker_update_ticket,
@@ -307,6 +309,38 @@ def operation_specs() -> list[OperationSpec]:
                             "status": "in-progress",
                             "lane_key": "review",
                         },
+                    },
+                ),
+            ),
+        ),
+        _write_spec(
+            name="tracker.rejectTask",
+            summary="Reject a tracker task or run-plan mirror and cascade child tickets.",
+            input_model=TrackerRejectTaskInput,
+            handler=tracker_reject_task,
+            purpose=(
+                "Use this when the operator rejects, parks, or supersedes a task/run. "
+                "The task becomes deferred with explicit rejection evidence; every child "
+                "ticket closes as deferred with rejection outcome and metadata so there is "
+                "one clear terminal state."
+            ),
+            examples=(
+                OperationExample(
+                    title="Reject a workflow task by run plan",
+                    arguments={
+                        "project_id": 1,
+                        "run_plan_id": 10,
+                        "reason": "Operator parked this support investigation.",
+                        "actor": "codex",
+                    },
+                ),
+                OperationExample(
+                    title="Reject a manual tracker task",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "manual-comms",
+                        "reason": "No longer needed after product decision.",
+                        "actor": "codex",
                     },
                 ),
             ),

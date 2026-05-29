@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+from stackos.artifacts import redact_secret_text
+from stackos.db.models import RunPlan, RunPlanStatus
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
@@ -11,15 +15,24 @@ from stackos.operations.tracker.schemas import (
     TrackerLinkRunPlanInput,
     TrackerPatchInput,
     TrackerPickInput,
+    TrackerRejectTaskInput,
     TrackerReleaseInput,
     TrackerUpdateTaskInput,
     TrackerUpdateTicketInput,
 )
 from stackos.repositories.base import ValidationError
+from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import (
     TrackerMutationOut,
     TrackerRepository,
 )
+
+
+def _safe_rejection_reason(reason: str) -> str:
+    clean = redact_secret_text(str(reason or "")).strip()
+    if not clean:
+        raise ValidationError("reason is required to reject a task")
+    return clean
 
 
 async def tracker_create_task(
@@ -143,6 +156,59 @@ async def tracker_update_task(
     )
 
 
+async def tracker_reject_task(
+    inp: TrackerRejectTaskInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerMutationOut]:
+    if inp.task_key is None and inp.run_plan_id is None:
+        raise ValidationError("task_key or run_plan_id is required")
+    if (
+        inp.task_key is not None
+        and inp.run_plan_id is not None
+        and inp.task_key != f"workflow-{inp.run_plan_id}"
+    ):
+        raise ValidationError(
+            "task_key must match workflow-{run_plan_id} when both rejection targets are provided",
+            data={"task_key": inp.task_key, "run_plan_id": inp.run_plan_id},
+        )
+    reason = _safe_rejection_reason(inp.reason)
+    if inp.run_plan_id is not None:
+        plan = ctx.session.get(RunPlan, inp.run_plan_id)
+        if plan is not None and plan.project_id == inp.project_id:
+            if plan.status in {RunPlanStatus.DRAFT, RunPlanStatus.STARTED}:
+                RunPlanRepository(ctx.session).abort(
+                    project_id=inp.project_id,
+                    run_plan_id=inp.run_plan_id,
+                    reason=reason,
+                    actor=inp.actor,
+                    commit=False,
+                )
+            else:
+                now = datetime.now(tz=UTC).replace(tzinfo=None)
+                plan.metadata_json = {
+                    **(plan.metadata_json or {}),
+                    "rejected": True,
+                    "rejection_reason": reason,
+                    "rejected_at": now.isoformat(),
+                    **({"rejected_by": inp.actor} if inp.actor else {}),
+                }
+                plan.updated_at = now
+                ctx.session.add(plan)
+    env = TrackerRepository(ctx.session).reject_task(
+        project_id=inp.project_id,
+        task_key=inp.task_key,
+        run_plan_id=inp.run_plan_id,
+        reason=reason,
+        actor=inp.actor,
+    )
+    return WriteEnvelope[TrackerMutationOut](
+        data=env.data,
+        run_id=ctx.run_id,
+        project_id=env.project_id,
+    )
+
+
 async def tracker_update_ticket(
     inp: TrackerUpdateTicketInput,
     ctx: MCPContext,
@@ -251,6 +317,7 @@ __all__ = [
     "tracker_link_run_plan",
     "tracker_patch",
     "tracker_pick",
+    "tracker_reject_task",
     "tracker_release",
     "tracker_update_task",
     "tracker_update_ticket",

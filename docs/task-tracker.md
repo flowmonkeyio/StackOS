@@ -120,6 +120,7 @@ Agent write operations:
 - `tracker.updateTask`
 - `tracker.updateTicket`
 - `tracker.patch`
+- `tracker.rejectTask`
 - `tracker.pick`
 - `tracker.release`
 - `tracker.linkRunPlan`
@@ -129,6 +130,7 @@ REST callers use the generic operation adapter:
 ```http
 POST /api/v1/operations/tracker.get/call
 POST /api/v1/operations/tracker.patch/call
+POST /api/v1/operations/tracker.rejectTask/call
 ```
 
 Ticket list creation and review reuse the same operation names. Do not add
@@ -154,6 +156,10 @@ parallel tracker endpoints for list behavior.
    kept dependency keys, plus advisory warnings for suspicious bulk removals.
    Dry-run preview does not write tickets, dependencies, history, timestamps, or
    tracker revisions.
+6. When an operator rejects, parks, or supersedes a task or workflow run, call
+   `tracker.rejectTask` with either `task_key` or `run_plan_id` plus a reason.
+   It is a task-level operation: the task is marked deferred/rejected and every
+   child ticket is closed deferred with rejection outcome and metadata.
 
 ```json
 {
@@ -269,6 +275,7 @@ tracker.createTask
 -> tracker.brief
 -> do the work
 -> tracker.updateTicket or tracker.patch
+-> tracker.rejectTask when the operator rejects or parks the task
 -> tracker.verify
 ```
 

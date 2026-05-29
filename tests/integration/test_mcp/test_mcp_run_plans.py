@@ -444,6 +444,110 @@ def test_run_plan_abort_retires_started_plan_and_tracker_mirror(
     assert tracker["tickets"][0]["blocker_reason"] is None
 
 
+def test_tracker_reject_task_aborts_started_run_plan_and_cascades_mirror(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _plan_json()},
+    )
+    run_plan_id = created["data"]["id"]
+    mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+
+    rejected = mcp_client.call_tool_structured(
+        "tracker.rejectTask",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "reason": "Operator rejected this workflow run.",
+            "actor": "codex",
+        },
+    )
+    fetched = mcp_client.call_tool_structured("runPlan.get", {"run_plan_id": run_plan_id})
+    tracker = mcp_client.call_tool_structured(
+        "tracker.get",
+        {"project_id": project_id, "task_key": f"workflow-{run_plan_id}", "include_graph": False},
+    )
+
+    assert fetched["status"] == "aborted"
+    assert rejected["data"]["task"]["status"] == "deferred"
+    assert rejected["data"]["task"]["completion_evidence_json"]["decision"] == "rejected"
+    assert {ticket["status"] for ticket in tracker["tickets"]} == {"deferred"}
+    assert [result["action"] for result in rejected["data"]["results"]] == ["rejected"]
+
+
+def test_tracker_reject_task_aborts_draft_run_plan_and_cascades_mirror(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _plan_json()},
+    )
+    run_plan_id = created["data"]["id"]
+
+    rejected = mcp_client.call_tool_structured(
+        "tracker.rejectTask",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "reason": "Operator rejected this draft workflow run.",
+            "actor": "codex",
+        },
+    )
+    fetched = mcp_client.call_tool_structured("runPlan.get", {"run_plan_id": run_plan_id})
+    tracker = mcp_client.call_tool_structured(
+        "tracker.get",
+        {"project_id": project_id, "task_key": f"workflow-{run_plan_id}", "include_graph": False},
+    )
+
+    assert fetched["status"] == "aborted"
+    assert rejected["data"]["task"]["status"] == "deferred"
+    assert {ticket["status"] for ticket in tracker["tickets"]} == {"deferred"}
+
+
+def test_tracker_reject_task_validates_before_aborting_run_plan(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _plan_json()},
+    )
+    run_plan_id = created["data"]["id"]
+    mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+
+    rejected = mcp_client.call_tool_error(
+        "tracker.rejectTask",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "reason": "   ",
+            "actor": "codex",
+        },
+    )
+    fetched = mcp_client.call_tool_structured("runPlan.get", {"run_plan_id": run_plan_id})
+    tracker = mcp_client.call_tool_structured(
+        "tracker.get",
+        {"project_id": project_id, "task_key": f"workflow-{run_plan_id}", "include_graph": False},
+    )
+
+    assert rejected["code"] == -32602
+    assert fetched["status"] == "started"
+    assert tracker["tasks"][0]["status"] == "in-progress"
+    assert tracker["tickets"][0]["status"] == "not-started"
+
+
 def test_run_plan_create_from_template_and_list(
     mcp_client: MCPClient,
     seeded_project: dict,

@@ -119,6 +119,64 @@ def test_manual_task_ticket_lifecycle_and_graph(session: Session, project_id: in
     assert any(edge.type == "dependency" for edge in snapshot.graph.edges)
 
 
+def test_tracker_reject_task_cascades_all_child_tickets(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="reject-cascade",
+        title="Reject cascade",
+        created_by="codex",
+    )
+    for key in ("reject-open", "reject-picked", "reject-complete"):
+        repo.create_ticket(
+            project_id=project_id,
+            task_key="reject-cascade",
+            key=key,
+            title=key,
+            blocker_reason="Waiting on input." if key == "reject-open" else None,
+            created_by="codex",
+        )
+    repo.pick(project_id=project_id, ticket_key="reject-picked", assignee="codex")
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="reject-complete",
+        patch_json={"status": "complete", "outcome": "Already done."},
+        actor="codex",
+    )
+
+    rejected = repo.reject_task(
+        project_id=project_id,
+        task_key="reject-cascade",
+        reason="Operator api_key=sk-secret parked this task.",
+        actor="codex",
+    ).data
+    snapshot = repo.get(project_id=project_id, task_key="reject-cascade", include_graph=False)
+
+    assert rejected.task is not None
+    assert rejected.task.status == TrackerItemStatus.DEFERRED
+    assert rejected.task.completion_evidence_json["decision"] == "rejected"
+    assert rejected.task.completion_evidence_json["reason"] == (
+        "Operator api_key=[redacted] parked this task."
+    )
+    assert "sk-secret" not in str(rejected.model_dump())
+    assert [result.action for result in rejected.results] == [
+        "rejected",
+        "rejected",
+        "rejected",
+    ]
+    assert {ticket.status for ticket in snapshot.tickets} == {TrackerItemStatus.DEFERRED}
+    assert {ticket.lane_key for ticket in snapshot.tickets} == {"done"}
+    assert {ticket.blocker_reason for ticket in snapshot.tickets} == {None}
+    assert all(
+        "Operator api_key=[redacted] parked this task." in (ticket.outcome or "")
+        for ticket in snapshot.tickets
+    )
+    assert all(ticket.metadata_json["parent_task_rejected"] is True for ticket in snapshot.tickets)
+
+
 def test_tracker_graph_includes_conservative_advisory_warnings(
     session: Session,
     project_id: int,

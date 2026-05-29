@@ -260,6 +260,7 @@ The current core operation registry includes:
 - `tracker.updateTask`
 - `tracker.updateTicket`
 - `tracker.patch`
+- `tracker.rejectTask`
 - `tracker.pick`
 - `tracker.release`
 - `tracker.linkRunPlan`
@@ -286,6 +287,9 @@ Tracker list workflows reuse existing tracker operations. Use
 call the same operation without dry-run to create the list, use `tracker.get`
 filters for review, and use `tracker.updateTicket` with `updates_json` for
 atomic per-ticket patches. Do not add separate list-specific tracker endpoints.
+Use `tracker.rejectTask` for operator-level rejection/parking: it accepts a
+task key or run-plan id, marks the parent task deferred/rejected, and cascades
+all child tickets to deferred with rejection evidence.
 
 Agent preset setup reuses the same operation infrastructure. Use
 `agentPreset.list` to discover generic role presets, `agentPreset.describe` to

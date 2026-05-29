@@ -423,6 +423,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "runPlan.abort" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.get" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.list" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "tracker.rejectTask" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.claimStep" in _AGENT_STEP_GATED_TOOL_NAMES
     assert "runPlan.recordStep" in _AGENT_STEP_GATED_TOOL_NAMES
     assert "runPlan.update" not in _AGENT_STEP_GATED_TOOL_NAMES

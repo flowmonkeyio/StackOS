@@ -28,6 +28,7 @@ def _surfaces(name: str, command: str | None = None) -> OperationSurfaces:
         "tracker.createTicket": "tracker create-ticket",
         "tracker.patch": "tracker patch",
         "tracker.pick": "tracker pick",
+        "tracker.rejectTask": "tracker reject-task",
         "tracker.updateTask": "ops call tracker.updateTask",
         "tracker.updateTicket": "ops call tracker.updateTicket",
         "tracker.linkRunPlan": "ops call tracker.linkRunPlan",

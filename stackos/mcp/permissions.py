@@ -134,6 +134,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "tracker.updateTicket",
         "tracker.patch",
         "tracker.pick",
+        "tracker.rejectTask",
         "tracker.release",
         "tracker.linkRunPlan",
         "budget.list",
@@ -230,6 +231,7 @@ _RUN_PLAN_CONTROL: frozenset[str] = frozenset(
         "tracker.updateTicket",
         "tracker.patch",
         "tracker.pick",
+        "tracker.rejectTask",
         "tracker.release",
         "tracker.linkRunPlan",
     }

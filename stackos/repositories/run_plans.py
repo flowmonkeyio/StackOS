@@ -588,6 +588,7 @@ class RunPlanRepository:
         project_id: int | None = None,
         reason: str | None = None,
         actor: str | None = None,
+        commit: bool = True,
     ) -> Envelope[RunPlanOut]:
         plan = self._fetch_plan(run_plan_id)
         self._require_plan_project(plan, project_id)
@@ -681,8 +682,11 @@ class RunPlanRepository:
             reason=reason,
             actor=actor,
         )
-        self._s.commit()
-        self._s.refresh(plan)
+        if commit:
+            self._s.commit()
+            self._s.refresh(plan)
+        else:
+            self._s.flush()
         return Envelope(data=self._plan_out(plan), run_id=plan.run_id, project_id=plan.project_id)
 
     def claim_step(

@@ -209,6 +209,57 @@ def test_cli_ops_call_forwards_communication_profile_setup(
     assert json.loads(result.stdout)["data"]["key"] == "support-bot"
 
 
+def test_cli_tracker_reject_task_alias_calls_operation(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {"data": {"task": {"status": "deferred"}}}
+
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "tracker",
+            "reject-task",
+            "--project",
+            "7",
+            "--run-plan",
+            "9",
+            "--reason",
+            "Operator rejected this workflow run.",
+            "--actor",
+            "codex",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "POST",
+            "/api/v1/operations/tracker.rejectTask/call",
+            {
+                "arguments": {
+                    "project_id": 7,
+                    "task_key": None,
+                    "run_plan_id": 9,
+                    "reason": "Operator rejected this workflow run.",
+                    "actor": "codex",
+                }
+            },
+        )
+    ]
+    assert json.loads(result.stdout)["data"]["task"]["status"] == "deferred"
+
+
 def test_cli_actions_describe_alias_calls_operation(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     calls: list[tuple[str, str, dict[str, Any] | None]] = []
 

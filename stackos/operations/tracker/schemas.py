@@ -290,6 +290,35 @@ class TrackerUpdateTaskInput(MCPInput):
     actor: str | None = None
 
 
+class TrackerRejectTaskInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "task_key": "workflow-10",
+                "reason": "Superseded by operator decision.",
+                "actor": "codex",
+            }
+        },
+    )
+
+    project_id: int
+    task_key: str | None = Field(
+        default=None,
+        description="Task key to reject. Use this for manual tracker tasks.",
+    )
+    run_plan_id: int | None = Field(
+        default=None,
+        description=(
+            "Run-plan id to reject. The tracker task key resolves to workflow-{run_plan_id}; "
+            "draft or started run plans are aborted before tracker cascade."
+        ),
+    )
+    reason: str
+    actor: str | None = None
+
+
 class TrackerUpdateTicketInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
@@ -427,6 +456,7 @@ __all__ = [
     "TrackerPatchInput",
     "TrackerPickInput",
     "TrackerProjectInput",
+    "TrackerRejectTaskInput",
     "TrackerReleaseInput",
     "TrackerResponseMode",
     "TrackerSearchInput",
