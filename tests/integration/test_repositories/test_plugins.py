@@ -23,6 +23,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
 
     assert [p.slug for p in plugins] == [
         "engineering",
+        "support",
         "communications",
         "gtm",
         "media-buying",
@@ -51,6 +52,9 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     assert engineering.name == "Engineering"
     assert engineering.manifest_json["ui"]["nav"]["section"] == "Engineering"
     assert engineering.manifest_json["display_order"] == 10
+    support = repo.get_plugin("support")
+    assert support.name == "Support"
+    assert support.manifest_json["ui"]["nav"]["section"] == "Support"
 
 
 def test_project_enable_disable_plugin(session: Session, project_id: int) -> None:

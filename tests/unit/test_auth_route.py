@@ -150,6 +150,7 @@ def test_ui_token_can_call_telegram_profile_setup_operation(
                     "allowed_chat_refs": ["telegram-chat:999"],
                     "allowed_user_refs": ["telegram-user:555"],
                 },
+                "response_mode": "raw",
             }
         },
     )

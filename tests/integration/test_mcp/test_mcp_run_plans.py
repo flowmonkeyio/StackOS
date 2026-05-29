@@ -180,6 +180,7 @@ def test_run_plan_grant_allows_only_active_claimed_step_tool(
             "external_id": "run-plan-learning",
             "data_json": {"body": "active step can write"},
             "run_token": run_token,
+            "response_mode": "raw",
         },
     )
     completed = mcp_client.call_tool_structured(
@@ -430,10 +431,18 @@ def test_run_plan_abort_retires_started_plan_and_tracker_mirror(
             "actor": "codex",
         },
     )
-    fetched = mcp_client.call_tool_structured("runPlan.get", {"run_plan_id": run_plan_id})
+    fetched = mcp_client.call_tool_structured(
+        "runPlan.get",
+        {"run_plan_id": run_plan_id, "response_mode": "raw"},
+    )
     tracker = mcp_client.call_tool_structured(
         "tracker.get",
-        {"project_id": project_id, "task_key": f"workflow-{run_plan_id}", "include_graph": False},
+        {
+            "project_id": project_id,
+            "task_key": f"workflow-{run_plan_id}",
+            "include_graph": False,
+            "response_mode": "raw",
+        },
     )
 
     assert aborted["data"]["status"] == "aborted"
@@ -466,12 +475,21 @@ def test_tracker_reject_task_aborts_started_run_plan_and_cascades_mirror(
             "run_plan_id": run_plan_id,
             "reason": "Operator rejected this workflow run.",
             "actor": "codex",
+            "response_mode": "raw",
         },
     )
-    fetched = mcp_client.call_tool_structured("runPlan.get", {"run_plan_id": run_plan_id})
+    fetched = mcp_client.call_tool_structured(
+        "runPlan.get",
+        {"run_plan_id": run_plan_id, "response_mode": "raw"},
+    )
     tracker = mcp_client.call_tool_structured(
         "tracker.get",
-        {"project_id": project_id, "task_key": f"workflow-{run_plan_id}", "include_graph": False},
+        {
+            "project_id": project_id,
+            "task_key": f"workflow-{run_plan_id}",
+            "include_graph": False,
+            "response_mode": "raw",
+        },
     )
 
     assert fetched["status"] == "aborted"
@@ -501,10 +519,18 @@ def test_tracker_reject_task_aborts_draft_run_plan_and_cascades_mirror(
             "actor": "codex",
         },
     )
-    fetched = mcp_client.call_tool_structured("runPlan.get", {"run_plan_id": run_plan_id})
+    fetched = mcp_client.call_tool_structured(
+        "runPlan.get",
+        {"run_plan_id": run_plan_id, "response_mode": "raw"},
+    )
     tracker = mcp_client.call_tool_structured(
         "tracker.get",
-        {"project_id": project_id, "task_key": f"workflow-{run_plan_id}", "include_graph": False},
+        {
+            "project_id": project_id,
+            "task_key": f"workflow-{run_plan_id}",
+            "include_graph": False,
+            "response_mode": "raw",
+        },
     )
 
     assert fetched["status"] == "aborted"
@@ -536,10 +562,18 @@ def test_tracker_reject_task_validates_before_aborting_run_plan(
             "actor": "codex",
         },
     )
-    fetched = mcp_client.call_tool_structured("runPlan.get", {"run_plan_id": run_plan_id})
+    fetched = mcp_client.call_tool_structured(
+        "runPlan.get",
+        {"run_plan_id": run_plan_id, "response_mode": "raw"},
+    )
     tracker = mcp_client.call_tool_structured(
         "tracker.get",
-        {"project_id": project_id, "task_key": f"workflow-{run_plan_id}", "include_graph": False},
+        {
+            "project_id": project_id,
+            "task_key": f"workflow-{run_plan_id}",
+            "include_graph": False,
+            "response_mode": "raw",
+        },
     )
 
     assert rejected["code"] == -32602
@@ -567,7 +601,7 @@ def test_run_plan_create_from_template_and_list(
     )
     fetched = mcp_client.call_tool_structured(
         "runPlan.get",
-        {"run_plan_id": created["data"]["id"]},
+        {"run_plan_id": created["data"]["id"], "response_mode": "raw"},
     )
 
     assert created["data"]["template_key"] == "core.project-memory-review"

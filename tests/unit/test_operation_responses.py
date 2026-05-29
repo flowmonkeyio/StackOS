@@ -46,6 +46,13 @@ def test_provider_side_effect_operations_are_raw_only() -> None:
     assert exc.value.data["allowed_modes"] == ["raw"]
 
 
+def test_non_side_effect_default_response_mode_uses_policy_default() -> None:
+    spec = _spec("tracker.get", mutating=False)
+
+    assert resolve_response_mode(spec, {}, surface="rest") == "compact"
+    assert resolve_response_mode(spec, {"response_mode": "standard"}, surface="rest") == "raw"
+
+
 def test_tracker_bulk_compact_keeps_counts_and_refs_without_full_rows() -> None:
     spec = _spec("tracker.createTicket")
     payload = {
@@ -82,6 +89,84 @@ def test_tracker_bulk_compact_keeps_counts_and_refs_without_full_rows() -> None:
     assert compact["warnings"] == ["dependency order checked"]
     assert "source_json" not in str(compact)
     assert "context_json" not in str(compact)
+
+
+def test_tracker_get_compact_summarizes_snapshot_without_full_rows() -> None:
+    spec = _spec("tracker.get", mutating=False)
+    payload = {
+        "tracker": {"id": 3, "project_id": 1, "rev": 17, "name": "Default"},
+        "lanes": [{"key": "implementation", "label": "Implementation"}],
+        "priorities": [{"key": "p1", "label": "P1"}],
+        "tasks": [
+            {
+                "id": 10,
+                "key": "task-a",
+                "title": "Task A",
+                "goal": "Long task goal hidden from snapshot compact output.",
+                "description": "Long task description hidden from snapshot compact output.",
+                "status": "in-progress",
+                "source_json": {"run_plan_id": 42},
+                "context_json": {"large": "hidden"},
+            }
+        ],
+        "tickets": [
+            {
+                "id": index,
+                "key": f"ticket-{index}",
+                "title": f"Ticket {index}",
+                "task_key": "task-a",
+                "status": "not-started",
+                "outcome": "Long ticket outcome hidden from snapshot compact output.",
+                "context_json": {"large": "hidden"},
+            }
+            for index in range(45)
+        ],
+        "dependencies": [{"ticket_key": "ticket-1", "depends_on_ticket_key": "ticket-0"}],
+        "links": [{"ref": "slack:thread"}],
+        "graph": {
+            "nodes": [{"id": "ticket-1"} for _ in range(3)],
+            "edges": [{"id": "edge-1"} for _ in range(2)],
+            "warnings": [
+                "Generic warning 1",
+                "Generic warning 2",
+                "Generic warning 3",
+                "Generic warning 4",
+                "Generic warning 5",
+                "Generic warning 6",
+                "Workflow step workflow-1-deliver has no dependency bridge.",
+                "Generic warning 7",
+            ],
+        },
+    }
+
+    compact = shape_operation_response(spec, payload, response_mode="compact")
+
+    assert compact["operation"] == "tracker.get"
+    assert compact["project_id"] == 1
+    assert compact["rev"] == 17
+    assert compact["data"]["task_count"] == 1
+    assert compact["data"]["ticket_count"] == 45
+    assert len(compact["data"]["tickets"]) == 25
+    assert compact["data"]["truncated"] == {"tickets": True}
+    assert compact["data"]["graph"] == {
+        "node_count": 3,
+        "edge_count": 2,
+        "warnings": [
+            "Workflow step workflow-1-deliver has no dependency bridge.",
+            "Generic warning 1",
+            "Generic warning 2",
+            "Generic warning 3",
+            "Generic warning 4",
+            "Generic warning 5",
+            "Generic warning 6",
+            "Generic warning 7",
+        ],
+    }
+    assert "context_json" not in str(compact)
+    assert "hidden" not in str(compact)
+    assert "Long task goal" not in str(compact)
+    assert "Long task description" not in str(compact)
+    assert "Long ticket outcome" not in str(compact)
 
 
 def test_operation_list_compact_keeps_agent_decision_fields() -> None:

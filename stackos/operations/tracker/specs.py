@@ -274,7 +274,9 @@ def operation_specs() -> list[OperationSpec]:
                 "Pass tickets_json with dry_run=true to draft/review a list before "
                 "creating tickets. For workflow execution, pass run_plan_id and step_id "
                 "so StackOS attaches the work to the mirrored workflow step without "
-                "requiring generated tracker keys."
+                "requiring generated tracker keys. Attachment does not add dependency "
+                "edges; pass dependency_keys or dependencies_json to bridge workflow "
+                "execution order."
             ),
             examples=(
                 OperationExample(
@@ -301,6 +303,7 @@ def operation_specs() -> list[OperationSpec]:
                         "step_id": "deliver",
                         "key": "fix-media-handoff",
                         "title": "Forward source media in the canonical handoff",
+                        "dependency_keys": ["workflow-42-deliver"],
                     },
                 ),
             ),

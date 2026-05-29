@@ -81,6 +81,14 @@ compact or skip optional specialist roles for small work, but it should not
 erase acceptance criteria, dependencies, evidence, or closeout truth from the
 run plan.
 
+For workflow-backed tracker work, attachment is not readiness. A ticket created
+with `run_plan_id` and `step_id` is contained under the mirrored workflow step,
+but no execution dependency exists until the agent adds dependency edges.
+Tracked-delivery planning must bridge child tickets into the workflow spine:
+first executable child depends on its step ticket, the next step depends on the
+prior step's terminal child tickets, and verification/docs/signoff work cannot
+float as a ready branch beside delivery.
+
 The customer feedback baseline is deliberately split. Slack is the canonical
 thread for support work, even when feedback originates in Telegram or another
 surface, but a configured Slack target is not itself route approval. Non-Slack

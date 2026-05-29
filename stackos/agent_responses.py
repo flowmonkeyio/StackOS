@@ -79,6 +79,69 @@ def compact_tracker_status(value: Any) -> dict[str, Any]:
     )
 
 
+def compact_tracker_snapshot(value: Any) -> dict[str, Any]:
+    data = _as_dict(value)
+    tracker = _as_dict(data.get("tracker"))
+    tasks = _as_list(data.get("tasks"))
+    tickets = _as_list(data.get("tickets"))
+    dependencies = _as_list(data.get("dependencies"))
+    links = _as_list(data.get("links"))
+    graph = _as_dict(data.get("graph"))
+    nodes = _as_list(graph.get("nodes"))
+    edges = _as_list(graph.get("edges"))
+    task_limit = 12
+    ticket_limit = 25
+    truncated = {
+        key: value
+        for key, value in {
+            "tasks": len(tasks) > task_limit,
+            "tickets": len(tickets) > ticket_limit,
+        }.items()
+        if value
+    }
+    return _drop_empty(
+        {
+            "project_id": _clean(tracker.get("project_id")),
+            "tracker_id": _clean(tracker.get("id")),
+            "rev": _clean(tracker.get("rev")),
+            "task_count": len(tasks),
+            "ticket_count": len(tickets),
+            "dependency_count": len(dependencies),
+            "link_count": len(links),
+            "tasks": [
+                compact_tracker_snapshot_task(item)
+                for item in tasks[:task_limit]
+                if isinstance(item, dict | BaseModel)
+            ],
+            "tickets": [
+                compact_tracker_snapshot_ticket(item)
+                for item in tickets[:ticket_limit]
+                if isinstance(item, dict | BaseModel)
+            ],
+            "graph": _drop_empty(
+                {
+                    "node_count": len(nodes),
+                    "edge_count": len(edges),
+                    "warnings": _compact_graph_warnings(graph.get("warnings")),
+                }
+            ),
+            "truncated": truncated,
+            "next_actions": [
+                (
+                    "Use tracker.get with task_key, ticket_keys, statuses, or "
+                    "include_graph=false for a narrower snapshot."
+                ),
+                (
+                    "Use tracker.brief for one ticket when dependency, reference, "
+                    "and handoff context is needed."
+                ),
+            ]
+            if truncated
+            else [],
+        }
+    )
+
+
 def compact_tracker_next(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
     return _drop_empty(
@@ -208,6 +271,34 @@ def compact_tracker_task(value: Any) -> dict[str, Any]:
     return result
 
 
+def compact_tracker_snapshot_task(value: Any) -> dict[str, Any]:
+    data = _as_dict(value)
+    source = _as_dict(data.get("source_json"))
+    result = _compact_mapping(
+        data,
+        (
+            "key",
+            "title",
+            "status",
+            "priority_key",
+            "lane_key",
+            "owner",
+            "task_type",
+            "source_kind",
+        ),
+    )
+    result.update(
+        _drop_empty(
+            {
+                "template_key": _clean(source.get("template_key")),
+                "run_plan_key": _clean(source.get("run_plan_key")),
+                "run_plan_id": _clean(source.get("run_plan_id")),
+            }
+        )
+    )
+    return result
+
+
 def compact_tracker_ticket(value: Any) -> dict[str, Any]:
     result = _compact_mapping(
         value,
@@ -216,6 +307,7 @@ def compact_tracker_ticket(value: Any) -> dict[str, Any]:
             "title",
             "status",
             "task_key",
+            "parent_ticket_key",
             "priority_key",
             "lane_key",
             "assignee",
@@ -237,9 +329,46 @@ def compact_tracker_ticket(value: Any) -> dict[str, Any]:
     return result
 
 
+def compact_tracker_snapshot_ticket(value: Any) -> dict[str, Any]:
+    result = _compact_mapping(
+        value,
+        (
+            "key",
+            "title",
+            "status",
+            "task_key",
+            "parent_ticket_key",
+            "priority_key",
+            "lane_key",
+            "assignee",
+            "blocked_by",
+            "blocker_reason",
+            "dependency_keys",
+            "run_plan_id",
+            "run_plan_step_id",
+            "run_id",
+            "agent_request_id",
+            "reference_count",
+            "link_count",
+        ),
+    )
+    for key in ("reference_count", "link_count"):
+        if result.get(key) == 0:
+            result.pop(key)
+    return result
+
+
 def _compact_mapping(value: Any, keys: tuple[str, ...]) -> dict[str, Any]:
     data = _as_dict(value)
     return _drop_empty({key: _clean(data.get(key)) for key in keys})
+
+
+def _compact_graph_warnings(value: Any) -> list[Any]:
+    warnings = [_clean(item) for item in _as_list(value)]
+    warnings = [item for item in warnings if isinstance(item, str) and item]
+    workflow_warnings = [item for item in warnings if "workflow" in item.lower()]
+    other_warnings = [item for item in warnings if "workflow" not in item.lower()]
+    return [*workflow_warnings, *other_warnings][:8]
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -279,6 +408,9 @@ __all__ = [
     "compact_tracker_history_page",
     "compact_tracker_next",
     "compact_tracker_search",
+    "compact_tracker_snapshot",
+    "compact_tracker_snapshot_task",
+    "compact_tracker_snapshot_ticket",
     "compact_tracker_status",
     "compact_tracker_task",
     "compact_tracker_ticket",

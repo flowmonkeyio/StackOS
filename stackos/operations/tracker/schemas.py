@@ -221,6 +221,7 @@ class TrackerCreateTicketInput(MCPInput):
                     "step_id": "deliver",
                     "key": "fix-webhook-media-forwarding",
                     "title": "Forward Telegram media in canonical Slack handoff",
+                    "dependency_keys": ["workflow-42-deliver"],
                 },
                 {
                     "project_id": 1,
@@ -244,15 +245,17 @@ class TrackerCreateTicketInput(MCPInput):
     run_plan_id: int | None = Field(
         default=None,
         description=(
-            "Optional workflow run-plan id. When supplied with step_id, StackOS resolves "
-            "the mirrored workflow task and step ticket instead of requiring generated keys."
+            "Optional workflow run-plan id. When supplied with step_id, StackOS attaches "
+            "the ticket under the mirrored workflow step but does not add dependency edges; "
+            "pass dependency_keys or dependencies_json to bridge execution order."
         ),
     )
     step_id: str | None = Field(
         default=None,
         description=(
-            "Optional workflow step id. Must be supplied with run_plan_id to create "
-            "tickets under that mirrored workflow step."
+            "Optional workflow step id. Must be supplied with run_plan_id to attach "
+            "tickets under that mirrored workflow step. Attachment is containment/linkage "
+            "only and does not block or unblock execution without explicit dependencies."
         ),
     )
     key: str | None = None

@@ -156,13 +156,14 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
         json={
             "arguments": {
                 "project_id": project_id,
-                "request_id": agent_request_id,
-                "claimed_by": "codex",
-                "idempotency_key": "prepare-telegram-setup-to-action",
-                "run_plan_json": _telegram_reply_plan_json(),
-            }
-        },
-    )
+                    "request_id": agent_request_id,
+                    "claimed_by": "codex",
+                    "idempotency_key": "prepare-telegram-setup-to-action",
+                    "run_plan_json": _telegram_reply_plan_json(),
+                    "response_mode": "raw",
+                }
+            },
+        )
     assert prepared.status_code == 200, prepared.text
     claim_token = prepared.json()["data"]["claim_token"]
     assert claim_token

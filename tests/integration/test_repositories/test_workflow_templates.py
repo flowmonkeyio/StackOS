@@ -240,6 +240,15 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "release-closeout",
     ]
     assert engineering_described.spec.metadata_json["workflow_family"] == "sdlc"
+    plan_step = next(step for step in engineering_described.spec.steps if step.id == "plan-tickets")
+    plan_text = plan_step.model_dump_json()
+    assert "attachment only" in plan_text
+    assert "bridge child tickets" in plan_text
+    assert "detached branches" in plan_text
+    audit_step = next(
+        step for step in engineering_described.spec.steps if step.id == "audit-tracker"
+    )
+    assert "detached workflow step ticket" in audit_step.model_dump_json()
     assert engineering_described.spec.metadata_json["agent_subset"] == [
         "requirements-flow-definer",
         "codebase-explorer",

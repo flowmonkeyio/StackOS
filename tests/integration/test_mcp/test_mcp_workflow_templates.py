@@ -261,6 +261,7 @@ def test_workflow_extension_tools_configure_project_overlay(
                 }
             },
             "template_overrides_json": {"description": "Project-specific support intake flow."},
+            "response_mode": "raw",
         },
     )
     upserted = mcp_client.call_tool_structured(
@@ -286,6 +287,7 @@ def test_workflow_extension_tools_configure_project_overlay(
                 }
             },
             "template_overrides_json": {"description": "Project-specific support intake flow."},
+            "response_mode": "raw",
         },
     )
     listed = mcp_client.call_tool_structured(

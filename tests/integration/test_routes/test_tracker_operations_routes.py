@@ -43,7 +43,13 @@ def test_tracker_operations_rest_vertical_slice(api: TestClient, project_id: int
 
     snapshot = api.post(
         "/api/v1/operations/tracker.get/call",
-        json={"arguments": {"project_id": project_id, "include_graph": True}},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "include_graph": True,
+                "response_mode": "raw",
+            }
+        },
     )
     assert snapshot.status_code == 200, snapshot.text
     assert {node["id"] for node in snapshot.json()["graph"]["nodes"]} >= {
@@ -92,7 +98,7 @@ def test_tracker_operations_rest_create_ticket_accepts_list(
 
     imported = api.post(
         "/api/v1/operations/tracker.createTicket/call",
-        json={"arguments": list_arguments},
+        json={"arguments": {**list_arguments, "response_mode": "raw"}},
     )
     assert imported.status_code == 200, imported.text
     assert [ticket["key"] for ticket in imported.json()["data"]["tickets"]] == [
@@ -107,6 +113,7 @@ def test_tracker_operations_rest_create_ticket_accepts_list(
             "arguments": {
                 "project_id": project_id,
                 "ticket_key": "rest-ticket-list-ui",
+                "response_mode": "raw",
                 "patch_json": {
                     "add_dependency_keys": ["rest-ticket-list-docs"],
                     "remove_dependency_keys": ["rest-ticket-list-schema"],
@@ -140,6 +147,7 @@ def test_tracker_operations_rest_create_ticket_accepts_list(
                         },
                     },
                 ],
+                "response_mode": "raw",
             }
         },
     )
@@ -157,6 +165,7 @@ def test_tracker_operations_rest_create_ticket_accepts_list(
                 "task_key": "rest-ticket-list",
                 "ticket_keys": ["rest-ticket-list-ui"],
                 "include_graph": False,
+                "response_mode": "raw",
             }
         },
     )
@@ -207,6 +216,7 @@ def test_tracker_operations_rest_reject_task_cascades_tickets(
                 "task_key": "rest-reject-task",
                 "reason": "Operator rejected this task.",
                 "actor": "route-test",
+                "response_mode": "raw",
             }
         },
     )

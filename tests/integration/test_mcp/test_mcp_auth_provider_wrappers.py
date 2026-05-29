@@ -74,7 +74,7 @@ def test_auth_test_dispatches_to_firecrawl(
 
     out = mcp_client.call_tool_structured(
         "auth.test",
-        {"project_id": project_id, "credential_ref": credential_ref},
+        {"project_id": project_id, "credential_ref": credential_ref, "response_mode": "raw"},
     )
 
     assert out["data"]["ok"] is True
@@ -107,7 +107,7 @@ def test_auth_test_dispatches_to_wordpress_provider_manifest(
 
     out = mcp_client.call_tool_structured(
         "auth.test",
-        {"project_id": project_id, "credential_ref": credential_ref},
+        {"project_id": project_id, "credential_ref": credential_ref, "response_mode": "raw"},
     )
 
     rendered = json.dumps(out)
@@ -139,7 +139,7 @@ def test_auth_test_dispatches_to_ghost_provider_manifest(
 
     out = mcp_client.call_tool_structured(
         "auth.test",
-        {"project_id": project_id, "credential_ref": credential_ref},
+        {"project_id": project_id, "credential_ref": credential_ref, "response_mode": "raw"},
     )
 
     rendered = json.dumps(out)

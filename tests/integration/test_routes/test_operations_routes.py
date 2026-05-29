@@ -303,6 +303,7 @@ def test_operation_rest_run_plan_update_approves_gate(
                 "approval_key": "operator-review",
                 "approval_status": "approved",
                 "decided_by": "operator",
+                "response_mode": "raw",
             }
         },
     )
@@ -743,6 +744,7 @@ def test_operation_rest_agent_request_vertical_slice(
                 "source_provider": "telegram-bot",
                 "source_kind": "telegram-message",
                 "metadata_json": {"access_token": "hidden"},
+                "response_mode": "raw",
             }
         },
     )
@@ -815,6 +817,7 @@ def test_operation_rest_agent_request_vertical_slice(
                 "claim_token": claim_token,
                 "status": "resolved",
                 "metadata_json": {"summary": "done"},
+                "response_mode": "raw",
             }
         },
     )
@@ -883,6 +886,7 @@ def test_operation_rest_agent_request_prepare_run_plan_replays(
             "title": "Route handle request",
             "steps": [{"id": "handle", "title": "Handle request"}],
         },
+        "response_mode": "raw",
     }
 
     prepared = api.post(
@@ -916,6 +920,7 @@ def test_operation_rest_local_agent_chat_creates_message_and_request(
             "sender_display_name": "Operator",
             "text": "Review campaign status.",
             "create_request": True,
+            "response_mode": "raw",
         }
     }
 
@@ -1039,6 +1044,7 @@ def test_operation_rest_telegram_profile_setup_to_ingress_slice(
                         "allowed_webhook_hosts": ["127.0.0.1"],
                     }
                 },
+                "response_mode": "raw",
             }
         },
     )
@@ -1208,6 +1214,7 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
                 "project_id": project_id,
                 "driver": "public-url",
                 "public_base_url": "https://stackos.example.com",
+                "response_mode": "raw",
             }
         },
     )
@@ -1225,7 +1232,7 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
 
     synced = api.post(
         "/api/v1/operations/ingressEndpoint.sync/call",
-        json={"arguments": {"project_id": project_id}},
+        json={"arguments": {"project_id": project_id, "response_mode": "raw"}},
     )
     assert synced.status_code == 200, synced.text
     provider_results = synced.json()["data"]["provider_results"]
@@ -1286,6 +1293,7 @@ def test_operation_rest_ingress_sync_redacts_provider_failure(
                 "project_id": project_id,
                 "driver": "public-url",
                 "public_base_url": "https://stackos.example.com",
+                "response_mode": "raw",
             }
         },
     )
@@ -1305,6 +1313,7 @@ def test_operation_rest_ingress_sync_redacts_provider_failure(
             "arguments": {
                 "project_id": project_id,
                 "apply_provider_webhooks": True,
+                "response_mode": "raw",
             }
         },
     )

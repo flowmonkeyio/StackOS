@@ -48,8 +48,8 @@ EXPECTED_NAMESPACE_COUNTS = {
     "schedule": 4,
     "sitemap": 1,
     "toolProfile": 1,
-    "tracker": 19,
-    "workflowExtension": 4,
+    "tracker": 20,
+    "workflowExtension": 5,
     "workflowTemplate": 5,
     "workspace": 6,
 }

@@ -165,6 +165,9 @@ policies:
   - key: truthful_tracker_state
     kind: delivery
     description: Tracker tasks and tickets must reflect actual progress, blockers, dependencies, deferred scope, and evidence.
+  - key: workflow_dependency_spine
+    kind: delivery
+    description: run_plan_id and step_id attachment is containment/linkage only; workflow-backed delivery tickets must be dependency-bridged into the mirrored workflow step chain.
   - key: main_agent_accountability
     kind: orchestration
     description: The curated SDLC subset supports the work; the main agent remains responsible for integration, final decisions, and user-facing truth.
@@ -245,9 +248,13 @@ steps:
     instructions:
       - "Slice work by ownership and proof surface: requirements/discovery, contracts, data, backend/runtime, UI, tests, docs/signoff, verification, and release when relevant."
       - Give each ticket dependencies, likely files or operation surfaces, acceptance criteria, and completion evidence expectations.
+      - For workflow-backed tickets, treat run_plan_id and step_id as attachment only; add dependency edges that bridge child tickets into the mirrored workflow step chain.
+      - Make the first executable child of a workflow step depend on the workflow step ticket, and make the next workflow step depend on the terminal child tickets from the prior step.
+      - Keep delivery verification, docs, signoff, and release tickets inside the delivery graph so they cannot become ready independently of the workflow spine.
       - Keep the tracker aligned with project rules; the tracker mirrors work, it does not replace policy or verification.
     policy_refs:
       - truthful_tracker_state
+      - workflow_dependency_spine
       - main_agent_accountability
     depends_on:
       - discover-impact
@@ -256,6 +263,8 @@ steps:
     success_criteria:
       - Tickets are executable without rereading the whole conversation.
       - Dependencies match the actual delivery order and no loose ends are hidden.
+      - Workflow-backed work includes an explicit graph check covering parent step ticket, first child dependency, terminal child tickets, next-step handoff, and detached branches.
+      - No detached delivery, verification, docs, signoff, or release branch can become ready independently of the workflow.
   - id: design-approach
     title: Design Approach
     purpose: Identify canonical ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications.
@@ -378,9 +387,11 @@ steps:
     instructions:
       - Compare completed tickets with code, verification, docs, run-plan steps, and evidence.
       - Mark hidden required work, stale blockers, dangling dependencies, and deferred scope explicitly.
+      - Treat a detached workflow step ticket versus child-ticket chain as a blocking tracker-truth finding, not a vague missing-dependencies note.
       - Do not let tracker completion override failed or missing verification.
     policy_refs:
       - truthful_tracker_state
+      - workflow_dependency_spine
       - evidence_over_assertion
     depends_on:
       - review-delivery
@@ -389,6 +400,7 @@ steps:
     success_criteria:
       - No required open work is hidden from the closeout.
       - Tracker status and delivery evidence agree.
+      - Workflow-backed tickets are dependency-bridged into the workflow spine, with no ready detached branch bypassing delivery order.
   - id: release-closeout
     title: Release Closeout
     purpose: Confirm final signoff, docs, known limitations, commit/release state, rollback/watch notes, and post-release checks.

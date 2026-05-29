@@ -5,7 +5,11 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from stackos.agent_responses import compact_tracker_task, compact_tracker_ticket
+from stackos.agent_responses import (
+    compact_tracker_snapshot,
+    compact_tracker_task,
+    compact_tracker_ticket,
+)
 from stackos.operations.spec import OperationSpec, ResponseMode
 from stackos.repositories.base import ValidationError
 
@@ -21,6 +25,7 @@ _REF_FIELD_SUFFIXES = ("_id", "_ids", "_key", "_keys", "_ref", "_refs", "_token"
 _SCALAR_KEEP_FIELDS = frozenset(
     {
         "id",
+        "index",
         "key",
         "title",
         "name",
@@ -29,10 +34,13 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "status",
         "state",
         "phase",
+        "availability_status",
         "created",
         "updated",
         "deleted",
         "dry_run",
+        "driver",
+        "error",
         "count",
         "created_count",
         "updated_count",
@@ -49,6 +57,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "template_key",
         "workflow_key",
         "provider_key",
+        "action",
         "action_ref",
         "action_call_id",
         "message_ref",
@@ -61,11 +70,13 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "record_key",
         "resource_key",
         "plugin_slug",
+        "public_base_url",
         "artifact_id",
         "artifact_ref",
         "learning_id",
         "category",
         "binding_was_created",
+        "body_preview",
         "cron_expr",
         "enabled",
         "grant_policy",
@@ -76,11 +87,30 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "parent_ticket_key",
         "project_was_created",
         "read_only",
+        "ready",
         "remaining_usd",
         "secret_policy",
         "slug",
+        "source",
+        "source_kind",
+        "source_provider",
         "summary",
         "used_usd",
+        "auto_bootstrap",
+        "claimed_by",
+        "daemon_reached",
+        "framework",
+        "git_remote_url",
+        "last_known_root",
+        "needs_connect",
+        "normalized_repo_name",
+        "position",
+        "project_scoped_tools_usable",
+        "purpose",
+        "repo_fingerprint",
+        "runtime",
+        "thread_id",
+        "workspace_binding_id",
     }
 )
 _LIST_KEEP_FIELDS = frozenset(
@@ -88,16 +118,43 @@ _LIST_KEEP_FIELDS = frozenset(
         "allowed_tools",
         "action_refs_json",
         "attachment_refs",
+        "changed_fields",
+        "context_refs_json",
         "default_input_keys",
         "dependency_keys",
+        "depends_on_json",
         "errors",
         "file_refs",
+        "guidance",
+        "input_refs_json",
         "message_refs",
+        "missing",
+        "output_refs_json",
+        "policy_refs_json",
+        "provider_results",
+        "recommended_tools",
         "required_input_keys",
+        "resource_refs_json",
         "selected_context_keys",
+        "success_criteria_json",
         "template_override_keys",
         "ticket_keys",
         "warnings",
+    }
+)
+_VERBATIM_KEEP_FIELDS = frozenset(
+    {
+        "binding",
+        "candidate_projects",
+        "content_model_json",
+        "extension",
+        "fields",
+        "next_step",
+        "project",
+        "provenance",
+        "setup_state",
+        "ui_health",
+        "ui_urls",
     }
 )
 
@@ -114,7 +171,7 @@ def resolve_response_mode(
     explicit = isinstance(arguments, dict) and "response_mode" in arguments
     raw_value = arguments.get("response_mode") if explicit and isinstance(arguments, dict) else None
     if raw_value is None:
-        mode = "raw"
+        mode = policy.default_mode
     elif isinstance(raw_value, str):
         mode = _MODE_ALIASES.get(raw_value)
         if mode is None:
@@ -181,6 +238,17 @@ def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, 
     data = _data(payload)
     if "data" not in payload and "items" in payload:
         return _compact_page(spec, payload)
+    if "data" not in payload and spec.name == "tracker.get":
+        compact_data = _compact_data(spec.name, payload)
+        out = _base_payload(spec, payload)
+        out["data"] = compact_data
+        project_id = compact_data.get("project_id")
+        if out.get("project_id") is None and isinstance(project_id, int):
+            out["project_id"] = project_id
+        rev = compact_data.get("rev")
+        if isinstance(rev, int):
+            out["rev"] = rev
+        return out
     if "data" not in payload:
         return copy.deepcopy(payload)
     compact_data = _compact_data(spec.name, data)
@@ -282,6 +350,8 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name == "tracker.get":
+        return compact_tracker_snapshot(data)
     if operation_name.startswith("tracker."):
         return _compact_tracker_mutation(data)
     if operation_name.startswith("runPlan."):
@@ -345,6 +415,12 @@ def _compact_run_plan(data: dict[str, Any]) -> dict[str, Any]:
     steps = data.get("steps")
     if isinstance(steps, list):
         out["step_count"] = len(steps)
+        out["steps"] = [_compact_mapping(step) for step in steps if isinstance(step, dict)]
+    approvals = data.get("approval_requests")
+    if isinstance(approvals, list):
+        out["approval_requests"] = [
+            _compact_mapping(item) for item in approvals if isinstance(item, dict)
+        ]
     return out
 
 
@@ -367,6 +443,9 @@ def _compact_workflow_extension(data: dict[str, Any]) -> dict[str, Any]:
 def _compact_mapping(value: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, item in value.items():
+        if key in _VERBATIM_KEEP_FIELDS:
+            out[key] = copy.deepcopy(item)
+            continue
         if key in _SCALAR_KEEP_FIELDS or key.endswith(_REF_FIELD_SUFFIXES):
             out[key] = _compact_value(item)
             continue

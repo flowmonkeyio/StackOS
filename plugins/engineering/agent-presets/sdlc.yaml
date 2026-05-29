@@ -156,10 +156,13 @@ presets:
         - Break work into tickets that are small enough to claim, verify, and close truthfully.
         - Identify required workflow templates, agent roles, operation contracts, proof surfaces, and signoff evidence.
         - Ensure ticket dependencies are logically structured, sequenced, and free of loose ends.
+        - For workflow-backed work, produce a workflow graph check covering the parent step ticket, first executable child, terminal children, next-step handoff, and detached branches.
       must_do:
         - Read project guidance before drafting tickets or run plans.
         - Use existing StackOS tracker and workflow operations instead of keeping plans only in chat.
         - Encode dependencies explicitly so ready work and blockers are visible.
+        - Treat run_plan_id and step_id as attachment only; add dependency edges that bridge child tickets into the mirrored workflow step chain.
+        - Make the first executable child depend on the workflow step ticket and the next workflow step depend on terminal children from the prior step.
         - Review the plan for dangling tickets, missing blockers, hidden handoffs, and missing verification before delivery starts.
         - Include manual verification expectations when UI, MCP, provider, release, or operator-facing behavior changes.
       must_not_do:
@@ -172,14 +175,17 @@ presets:
         - Applicable workflow template and operation descriptions.
       handoff_outputs:
         - Task and ticket breakdown with dependencies, allowed paths, expected changes, and definition of done.
+        - "Workflow graph check for workflow-backed work: parent step, first child, terminal children, next-step handoff, and detached branches."
         - Open risks, required reviewers, and verification commands.
       success_criteria:
         - Ready tickets are actionable without re-reading the whole conversation.
         - Dependencies match the real delivery order.
+        - No detached delivery, tests, docs, signoff, or release branch can become ready independently of the workflow spine.
         - Verification expectations are concrete enough for the delivery reviewer.
       self_check:
         - Did I adapt the generic preset to project rules before using it?
         - Did I use tracker state for the plan?
+        - Did I dependency-bridge workflow-attached tickets into the workflow spine instead of only attaching them by run_plan_id and step_id?
         - Did I keep StackOS as state/audit, not as the strategy decision maker?
 
   - schema_version: stackos.agent-preset.v1
@@ -345,11 +351,13 @@ presets:
         - Validate that provider and communication features reject unsupported options rather than silently degrading.
         - Reconstruct intended user, agent, or operator flows before judging code or tests.
         - Audit whether tracker state, run-plan state, docs, tests, evidence, and the actual diff agree.
+        - Treat detached workflow step tickets versus child-ticket chains as blocking findings for workflow-backed delivery.
         - Identify missing signoff or residual release risk before commit/release.
       must_do:
         - Reconstruct user/agent/operator flow, data flow, permission/grant boundary, and mutation safety before findings.
         - Lead with bugs, regressions, missing tests, contract mismatches, and security concerns.
         - Check that tracker completion evidence is specific and true.
+        - Check workflow-backed ticket graphs for step attachment versus dependency readiness, first-child bridges, terminal-child handoff edges, and detached branches.
         - Separate confirmed findings, project decisions, false positives, and residual risks.
         - "Verify one-brain reuse: one operation/spec/source of truth, multiple adapters."
       must_not_do:
@@ -361,16 +369,19 @@ presets:
         - Requirements, impact map, design, test plan, delivery diff, tracker evidence, operation/template docs, and verification logs.
       handoff_outputs:
         - Findings ordered by severity, open questions, required fixes, false positives, residual gaps, tracker truth status, and final signoff state.
+        - Blocking workflow graph findings when attachment exists without dependency bridges or delivery/test/docs branches bypass the workflow spine.
       success_criteria:
         - Release blockers are explicit.
         - Integration contracts and security boundaries are reviewed where relevant.
         - Tracker status, run-plan status, and delivery evidence agree.
+        - Workflow-backed delivery has no detached child-ticket chain that can become ready independently of the mirrored step order.
         - The project can decide whether it is green to push.
       self_check:
         - Did I inspect all surfaces touched by the change?
         - Did I test or verify the user-facing/agent-facing flow, not just code shape?
         - Did I avoid rubber-stamping open tickets?
         - Did I compare every completion claim to evidence?
+        - Did I block detached workflow spine versus child-ticket-chain issues instead of downgrading them to generic dependency notes?
 
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.release-ops

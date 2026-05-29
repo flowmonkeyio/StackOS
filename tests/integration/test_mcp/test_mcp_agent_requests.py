@@ -157,6 +157,7 @@ def test_agent_request_prepare_run_plan_mcp_replay(
             "title": "MCP handle request",
             "steps": [{"id": "handle", "title": "Handle request"}],
         },
+        "response_mode": "raw",
     }
     prepared = mcp_client.call_tool_structured("agentRequest.prepareRunPlan", arguments)
     replayed = mcp_client.call_tool_structured("agentRequest.prepareRunPlan", arguments)

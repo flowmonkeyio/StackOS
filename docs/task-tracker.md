@@ -61,7 +61,23 @@ When an agent needs to create delivery tickets under a workflow step, it should
 call `tracker.createTicket` with `run_plan_id` and `step_id`. StackOS resolves
 the mirrored `workflow-{run_plan_id}` task and step ticket, records the
 workflow refs on the new ticket, and avoids asking the agent to infer generated
-tracker keys.
+tracker keys. Passing `run_plan_id` and `step_id` attaches the ticket under the
+mirrored workflow step but does not add dependency edges. Agents must still add
+`dependency_keys` or `dependencies_json` so workflow-backed tickets are
+dependency-bridged into the workflow spine.
+
+For workflow-backed delivery, graph readiness must be explicit:
+
+- the first executable child ticket for a workflow step depends on the mirrored
+  step ticket
+- the next mirrored workflow step depends on the terminal child ticket or
+  tickets from the prior step
+- delivery verification, docs, signoff, and release tickets sit inside the
+  dependency graph, not beside it
+- no detached delivery, test, docs, or signoff branch can become ready
+  independently of the workflow order
+- completing a mirrored workflow step while attached child tickets remain open
+  is a tracker-truth blocker, not a cosmetic graph issue
 
 For customer feedback, tracker-backed delivery starts after support
 investigation, not during intake. `communications.customer-feedback-intake`
@@ -109,8 +125,8 @@ UI consume the same contracts.
 Agent read operations:
 
 - `tracker.status`
-- `tracker.get` (full snapshot; use for UI/debug/list review audits, not routine
-  agent context)
+- `tracker.get` (compact snapshot by default; request `response_mode: raw` only
+  when UI/debug/list review audits need the full tracker snapshot)
 - `tracker.next`
 - `tracker.blockers`
 - `tracker.brief`
@@ -242,6 +258,7 @@ workflowTemplate.describe
 -> runPlan.create(workflow_key=...)
 -> tracker.status or tracker.brief
 -> tracker.createTicket(run_plan_id=..., step_id=...) when extra delivery tickets are needed
+-> bridge workflow-backed tickets with explicit dependency_keys or dependencies_json
 -> runPlan.start
 -> runPlan.claimStep
 -> do the step
@@ -303,19 +320,20 @@ work: non-terminal tickets with an explicit blocker reason or incomplete
 dependencies. Historical blocker notes on `complete` or `deferred` tickets are
 kept for context, but they do not make the project look actively blocked.
 
-Use `tracker.get` only when the caller needs the full project tracker snapshot
-or the UI graph projection. It can be intentionally large because it includes
-all requested tasks, tickets, dependencies, links, and optional graph nodes.
-Normal agents should prefer `tracker.status`, `tracker.next`, `tracker.brief`,
+Use `tracker.get` only when the caller needs a project tracker snapshot, a
+filtered task/ticket set, or the UI graph projection. It returns a compact
+snapshot by default; request `response_mode: raw` only when the full dependency,
+link, and graph payload is needed for UI/debug/list review audits. Normal agents
+should prefer `tracker.status`, `tracker.next`, `tracker.brief`,
 `tracker.verify`, `tracker.search`, and `tracker.changed` to keep context small.
 When `include_graph=true`, the graph projection may include advisory warnings.
-These warnings are produced by core tracker analysis and are intentionally
-non-blocking. They call out low-confidence review issues such as sparse
-dependency plans, many isolated active tickets, likely pre-implementation gate
-direction mistakes, or large dependency removals surfaced by dry-run preview.
-Agents should review them before implementation, but normal tracker writes still
-use the existing hard invariants for missing tickets, self-dependencies, and
-cycles.
+These warnings are produced by core tracker analysis. Generic warnings call out
+review issues such as sparse dependency plans, many isolated active tickets,
+likely pre-implementation gate direction mistakes, or large dependency removals
+surfaced by dry-run preview. Workflow-spine warnings are stronger tracker-truth
+signals: missing child bridges, detached child branches, next-step handoff gaps,
+and open children under a workflow step should be treated as blocking findings
+before closeout.
 
 ## UI
 

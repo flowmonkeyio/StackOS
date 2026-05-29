@@ -10,6 +10,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     assert plugins.status_code == 200
     assert [p["slug"] for p in plugins.json()] == [
         "engineering",
+        "support",
         "communications",
         "gtm",
         "media-buying",

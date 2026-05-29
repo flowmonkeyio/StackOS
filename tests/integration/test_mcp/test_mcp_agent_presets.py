@@ -8,25 +8,30 @@ from .conftest import MCPClient
 def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     listing = mcp_client.call_tool_structured(
         "agentPreset.list",
-        {"workflow_key": "core.project-memory-review"},
+        {"workflow_key": "core.project-memory-review", "response_mode": "raw"},
     )
     described = mcp_client.call_tool_structured(
         "agentPreset.describe",
-        {"key": "stackos.sdlc.planning"},
+        {"key": "stackos.sdlc.planning", "response_mode": "raw"},
     )
     resolved = mcp_client.call_tool_structured(
         "agentPreset.resolveForWorkflow",
-        {"workflow_key": "core.project-memory-review"},
+        {"workflow_key": "core.project-memory-review", "response_mode": "raw"},
     )
     engineering_resolved = mcp_client.call_tool_structured(
         "agentPreset.resolveForWorkflow",
-        {"workflow_key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
+        {
+            "workflow_key": "engineering.tracked-delivery",
+            "plugin_slug": "engineering",
+            "response_mode": "raw",
+        },
     )
     intake_resolved = mcp_client.call_tool_structured(
         "agentPreset.resolveForWorkflow",
         {
             "workflow_key": "communications.customer-feedback-intake",
             "plugin_slug": "communications",
+            "response_mode": "raw",
         },
     )
     support_resolved = mcp_client.call_tool_structured(
@@ -34,6 +39,7 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
         {
             "workflow_key": "support.issue-investigation",
             "plugin_slug": "support",
+            "response_mode": "raw",
         },
     )
     handoff_resolved = mcp_client.call_tool_structured(
@@ -41,12 +47,23 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
         {
             "workflow_key": "support.delivery-task-handoff",
             "plugin_slug": "support",
+            "response_mode": "raw",
         },
     )
 
     assert "stackos.workflow.project-memory-review" in {item["key"] for item in listing["presets"]}
     assert described["preset"]["summary"]["key"] == "stackos.sdlc.planning"
     assert described["preset"]["summary"]["plugin_slug"] == "engineering"
+    planning_contract = described["preset"]["preset"]["prompt_contract"]
+    assert "workflow graph check" in " ".join(planning_contract["responsibilities"])
+    assert "attachment only" in " ".join(planning_contract["must_do"])
+    reviewer = mcp_client.call_tool_structured(
+        "agentPreset.describe",
+        {"key": "stackos.sdlc.delivery-reviewer", "response_mode": "raw"},
+    )
+    reviewer_contract = reviewer["preset"]["preset"]["prompt_contract"]
+    assert "blocking findings" in " ".join(reviewer_contract["responsibilities"])
+    assert "detached workflow spine" in " ".join(reviewer_contract["self_check"])
     assert described["project_adaptation"]["adaptation_required"] is True
     assert described["project_adaptation"]["do_not_use_verbatim"] is True
     assert "tracker" in described["project_adaptation"]["required_agent_action"].lower()

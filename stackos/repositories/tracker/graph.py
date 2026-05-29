@@ -124,7 +124,15 @@ class TrackerGraphMixin:
             nodes=nodes,
             edges=edges,
             warnings=self._graph_advisory_warnings(tasks, tickets, dependencies),
-            layout_hints={"direction": "LR", "group_by": "task"},
+            layout_hints={
+                "direction": "LR",
+                "group_by": "task",
+                "edge_semantics": {
+                    "contains": "Attached under task or workflow step; does not affect readiness.",
+                    "dependency": "Blocks readiness and carries execution order.",
+                    "link": "External reference only.",
+                },
+            },
         )
 
     def _graph_advisory_warnings(
@@ -207,7 +215,234 @@ class TrackerGraphMixin:
                     f"{ticket.key} depends on {dependency_count} tickets; confirm dependency "
                     "direction if this gate should unblock implementation work."
                 )
+        warnings.extend(
+            self._workflow_graph_advisory_warnings(tickets=tickets, dependencies=dependencies)
+        )
         return warnings
+
+    def _workflow_graph_advisory_warnings(
+        self,
+        *,
+        tickets: list[TrackerTicketOut],
+        dependencies: list[TrackerDependencyOut],
+    ) -> list[str]:
+        warnings: list[str] = []
+        tickets_by_key = {ticket.key: ticket for ticket in tickets}
+        dependency_edges = {
+            (dependency.depends_on_ticket_key, dependency.ticket_key)
+            for dependency in dependencies
+        }
+        children_by_parent: dict[str, list[TrackerTicketOut]] = {}
+        for ticket in tickets:
+            if ticket.parent_ticket_key:
+                children_by_parent.setdefault(ticket.parent_ticket_key, []).append(ticket)
+        terminal_statuses = {
+            TrackerItemStatus.COMPLETE.value,
+            TrackerItemStatus.DEFERRED.value,
+        }
+        for parent_key, children in children_by_parent.items():
+            parent = tickets_by_key.get(parent_key)
+            if parent is None or parent.run_plan_id is None:
+                continue
+            directly_bridged = [
+                child.key for child in children if (parent.key, child.key) in dependency_edges
+            ]
+            if not directly_bridged:
+                warnings.append(
+                    "Workflow step "
+                    f"{parent.key} has attached child tickets but no dependency bridge from "
+                    "the step ticket. Attachment is containment only; add dependency edges "
+                    "before execution."
+                )
+            open_children = [
+                child.key for child in children if child.status.value not in terminal_statuses
+            ]
+            if open_children:
+                sample = ", ".join(open_children[:3])
+                suffix = "..." if len(open_children) > 3 else ""
+                state = (
+                    "is complete while"
+                    if parent.status.value == TrackerItemStatus.COMPLETE.value
+                    else "is not ready for closeout while"
+                )
+                warnings.append(
+                    "Workflow step "
+                    f"{parent.key} {state} attached child tickets remain open "
+                    f"({sample}{suffix})."
+                )
+            for child in children:
+                if not self._graph_dependency_path_exists(parent.key, child.key, dependency_edges):
+                    warnings.append(
+                        "Workflow child "
+                        f"{child.key} is attached to {parent.key} but is not reachable from "
+                        "that step through dependency edges."
+                    )
+            bypassing_gate_children = self._graph_bypassing_gate_child_keys(
+                children=children,
+                dependency_edges=dependency_edges,
+            )
+            if bypassing_gate_children:
+                sample = ", ".join(bypassing_gate_children[:3])
+                suffix = "..." if len(bypassing_gate_children) > 3 else ""
+                warnings.append(
+                    "Workflow step "
+                    f"{parent.key} has verification/docs/signoff/release child tickets that "
+                    f"can bypass delivery work ({sample}{suffix}). Make them depend on "
+                    "terminal delivery child tickets."
+                )
+        step_tickets = [
+            ticket
+            for ticket in tickets
+            if ticket.run_plan_id is not None
+            and ticket.run_plan_step_id is not None
+            and ticket.parent_ticket_key is None
+        ]
+        for step_ticket in step_tickets:
+            prior_steps = [
+                tickets_by_key[dependency_key]
+                for dependency_key, ticket_key in dependency_edges
+                if ticket_key == step_ticket.key
+                and dependency_key in tickets_by_key
+                and tickets_by_key[dependency_key].run_plan_id == step_ticket.run_plan_id
+                and tickets_by_key[dependency_key].run_plan_step_id is not None
+                and tickets_by_key[dependency_key].parent_ticket_key is None
+            ]
+            direct_dependencies = {
+                dependency_key
+                for dependency_key, ticket_key in dependency_edges
+                if ticket_key == step_ticket.key
+            }
+            for prior_step in prior_steps:
+                terminal_children = self._graph_terminal_workflow_children(
+                    prior_step.key,
+                    children_by_parent,
+                    dependency_edges,
+                )
+                missing = [
+                    child.key
+                    for child in terminal_children
+                    if child.key not in direct_dependencies
+                ]
+                if missing:
+                    sample = ", ".join(missing[:3])
+                    suffix = "..." if len(missing) > 3 else ""
+                    warnings.append(
+                        "Workflow step "
+                        f"{step_ticket.key} depends on prior step {prior_step.key} but not "
+                        f"its terminal child tickets ({sample}{suffix}). Add terminal-child "
+                        "handoff dependencies so the next step cannot start early."
+                    )
+        return warnings
+
+    def _graph_terminal_workflow_children(
+        self,
+        parent_key: str,
+        children_by_parent: dict[str, list[TrackerTicketOut]],
+        dependency_edges: set[tuple[str, str]],
+    ) -> list[TrackerTicketOut]:
+        children = children_by_parent.get(parent_key, [])
+        child_keys = {child.key for child in children}
+        depended_on_by_sibling = {
+            dependency_key
+            for dependency_key, ticket_key in dependency_edges
+            if dependency_key in child_keys and ticket_key in child_keys
+        }
+        return [child for child in children if child.key not in depended_on_by_sibling]
+
+    def _graph_bypassing_gate_child_keys(
+        self,
+        *,
+        children: list[TrackerTicketOut],
+        dependency_edges: set[tuple[str, str]],
+    ) -> list[str]:
+        gate_children = [child for child in children if self._graph_is_workflow_gate_child(child)]
+        terminal_delivery_children = self._graph_terminal_workflow_delivery_children(
+            children,
+            dependency_edges,
+        )
+        if not gate_children or not terminal_delivery_children:
+            return []
+        child_keys = {child.key for child in children}
+        scoped_edges = {
+            edge for edge in dependency_edges if edge[0] in child_keys and edge[1] in child_keys
+        }
+        bypassing: list[str] = []
+        for gate_child in gate_children:
+            downstream_of_all_terminal_delivery = all(
+                self._graph_dependency_path_exists(
+                    delivery_child.key,
+                    gate_child.key,
+                    scoped_edges,
+                )
+                for delivery_child in terminal_delivery_children
+            )
+            if not downstream_of_all_terminal_delivery:
+                bypassing.append(gate_child.key)
+        return bypassing
+
+    def _graph_terminal_workflow_delivery_children(
+        self,
+        children: list[TrackerTicketOut],
+        dependency_edges: set[tuple[str, str]],
+    ) -> list[TrackerTicketOut]:
+        delivery_children = [
+            child for child in children if not self._graph_is_workflow_gate_child(child)
+        ]
+        delivery_keys = {child.key for child in delivery_children}
+        depended_on_by_delivery = {
+            dependency_key
+            for dependency_key, ticket_key in dependency_edges
+            if dependency_key in delivery_keys and ticket_key in delivery_keys
+        }
+        return [child for child in delivery_children if child.key not in depended_on_by_delivery]
+
+    def _graph_is_workflow_gate_child(self, ticket: TrackerTicketOut) -> bool:
+        haystack = " ".join(
+            (
+                ticket.key,
+                ticket.title,
+                ticket.goal,
+                ticket.lane_key,
+            )
+        ).lower()
+        if ticket.lane_key in {"verification", "review", "release", "docs", "qa"}:
+            return True
+        return any(
+            keyword in haystack
+            for keyword in (
+                "doc",
+                "documentation",
+                "qa",
+                "review",
+                "release",
+                "sign-off",
+                "signoff",
+                "sign off",
+                "test",
+                "verification",
+                "verify",
+            )
+        )
+
+    def _graph_dependency_path_exists(
+        self,
+        source_key: str,
+        target_key: str,
+        dependency_edges: set[tuple[str, str]],
+    ) -> bool:
+        queue = [source_key]
+        seen: set[str] = set()
+        while queue:
+            current = queue.pop(0)
+            if current == target_key:
+                return True
+            if current in seen:
+                continue
+            seen.add(current)
+            for dependency_key, ticket_key in dependency_edges:
+                if dependency_key == current and ticket_key not in seen:
+                    queue.append(ticket_key)
+        return False
 
 
 __all__ = [

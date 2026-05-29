@@ -160,15 +160,23 @@ All presets are expected to work through the existing StackOS tracker:
 - support investigation tasks/tickets preserve source, thread, conclusion,
   instruction, handoff, and delivery refs in tracker context or references
 - dependencies are encoded so ready work and blockers are visible
+- for workflow-backed work, `run_plan_id` and `step_id` are attachment only;
+  planning agents must dependency-bridge child tickets into the mirrored
+  workflow step chain
 - delivery agents claim/update tickets as work starts and completes
 - verifier and reviewer agents compare completion claims with actual evidence
 - reviewers verify evidence before closeout
 - tracker truth reviewers check that durable state matches code, docs, tests,
   run-plan steps, and verification outcomes
+- detached workflow step tickets versus child-ticket chains are blocking
+  findings, not generic missing-dependency notes
 - release agents compare signoff claims with tracker state
 
 Planning agents should produce deliverable tickets with logical sequencing,
 clear dependencies, no dangling loose ends, and concrete definition of done.
+For workflow-backed work, their plan must include a graph check covering the
+parent step ticket, first executable child, terminal children, next-step
+handoff, and detached branches.
 
 ## Operations
 

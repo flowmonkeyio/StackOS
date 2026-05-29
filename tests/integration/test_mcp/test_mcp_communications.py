@@ -214,6 +214,7 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
         {
             "project_id": project_id,
             "apply_provider_webhooks": False,
+            "response_mode": "raw",
         },
     )
     statuses = {
@@ -251,6 +252,7 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
             "project_id": project_id,
             "public_base_url": "https://fresh.stackos.example.com",
             "sync_profiles": True,
+            "response_mode": "raw",
         },
     )
     assert refreshed["data"]["endpoint"]["public_base_url"] == "https://fresh.stackos.example.com"
@@ -285,6 +287,7 @@ def test_ingress_endpoint_refresh_discovers_ngrok_agent_endpoints(
             "project_id": project_id,
             "driver": "local-tunnel",
             "driver_config": {"provider": "ngrok"},
+            "response_mode": "raw",
         },
     )
     assert configured["data"]["driver"] == "local-tunnel"
@@ -295,7 +298,7 @@ def test_ingress_endpoint_refresh_discovers_ngrok_agent_endpoints(
 
     refreshed = mcp_client.call_tool_structured(
         "ingressEndpoint.refresh",
-        {"project_id": project_id, "sync_profiles": False},
+        {"project_id": project_id, "sync_profiles": False, "response_mode": "raw"},
     )
     endpoint = refreshed["data"]["endpoint"]
     assert endpoint["public_base_url"] == "https://stackos-local.ngrok.app"
@@ -325,6 +328,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
                 "mode": "explicit-targets",
                 "allowed_target_refs": ["communication-target:internal-support"],
             },
+            "response_mode": "raw",
         },
     )
     surface = mcp_client.call_tool_structured(
@@ -358,6 +362,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
                     "primary_email": "ops@acme.example",
                 }
             },
+            "response_mode": "raw",
         },
     )
     contact = mcp_client.call_tool_structured(
@@ -371,6 +376,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
                 "telegram": ["telegram-chat:-1001"],
                 "slack": ["slack-channel:C123"],
             },
+            "response_mode": "raw",
         },
     )
     membership = mcp_client.call_tool_structured(
@@ -384,6 +390,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "status": "joined",
             "roles": ["bot"],
             "permissions": {"can_read": True, "can_write": True},
+            "response_mode": "raw",
         },
     )
     target = mcp_client.call_tool_structured(
@@ -402,6 +409,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
                 "allowed_invoker_refs": ["telegram-user:555"],
                 "allowed_target_refs": ["communication-target:internal-support"],
             },
+            "response_mode": "raw",
         },
     )
     route = mcp_client.call_tool_structured(
@@ -413,6 +421,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "target_refs": ["communication-target:internal-support"],
             "allowed_profile_refs": ["communication-profile:support"],
             "requires_approval": False,
+            "response_mode": "raw",
         },
     )
 
@@ -517,6 +526,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "key": "default-denied",
             "provider_key": "slack-bot",
             "surface_ref": "slack-channel:C999",
+            "response_mode": "raw",
         },
     )
     assert default_denied["data"]["send_policy"]["mode"] == "deny"
@@ -542,6 +552,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
                 "mode": "explicit-target",
                 "allowed_target_refs": ["communication-target:other"],
             },
+            "response_mode": "raw",
         },
     )
     assert wrong_target_allowlist["data"]["send_policy"]["allowed_target_refs"] == [
@@ -1461,6 +1472,7 @@ def test_local_agent_chat_mcp_creates_message_and_request(
             "sender_display_name": "Operator",
             "text": "Review campaign status.",
             "create_request": True,
+            "response_mode": "raw",
         },
     )
     replayed = mcp_client.call_tool_structured(
@@ -1473,6 +1485,7 @@ def test_local_agent_chat_mcp_creates_message_and_request(
             "sender_display_name": "Operator",
             "text": "Review campaign status.",
             "create_request": True,
+            "response_mode": "raw",
         },
     )
 
@@ -1491,6 +1504,7 @@ def test_local_agent_chat_mcp_creates_message_and_request(
             "sender_ref": "agent:codex",
             "text": "I reviewed it and opened the follow-up plan.",
             "create_request": False,
+            "response_mode": "raw",
         },
     )
     assert response["data"]["thread_ref"] == "local-agent-chat:thread:support"
@@ -1535,6 +1549,7 @@ def test_communication_profile_mcp_lifecycle_has_no_secret_roundtrip(
                 "allowed_chat_refs": ["telegram-chat:999"],
                 "allowed_user_refs": ["telegram-user:555"],
             },
+            "response_mode": "raw",
         },
     )
     assert created["data"]["key"] == "support-bot"
@@ -1586,6 +1601,7 @@ def test_tool_profile_resolve_mcp_reports_missing_telegram_credential(
                 "allowed_chat_refs": ["telegram-chat:999"],
                 "allowed_user_refs": ["telegram-user:555"],
             },
+            "response_mode": "raw",
         },
     )
 
@@ -1596,6 +1612,7 @@ def test_tool_profile_resolve_mcp_reports_missing_telegram_credential(
             "project_id": project_id,
             "provider_key": "telegram-bot",
             "tool_profile_key": "missing-credential",
+            "response_mode": "raw",
         },
     )
     assert missing["ready"] is False

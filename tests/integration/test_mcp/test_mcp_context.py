@@ -97,6 +97,7 @@ def test_context_timeline_returns_projected_event_page(
             "event_type": "learning.create",
             "fields": ["event_type", "summary"],
             "limit": 1,
+            "response_mode": "raw",
         },
     )
 
