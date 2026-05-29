@@ -79,6 +79,20 @@ def _conversation_members_params(request: ActionConnectorRequest) -> dict[str, A
     return params
 
 
+def _conversation_history_params(request: ActionConnectorRequest) -> dict[str, Any]:
+    payload = request.input_json
+    params: dict[str, Any] = {
+        "channel": _channel_id(request, payload.get("channel_ref") or payload.get("surface_ref")),
+        "limit": payload.get("limit", 20),
+    }
+    for key in ("cursor", "latest", "oldest"):
+        if payload.get(key):
+            params[key] = payload[key]
+    if "inclusive" in payload:
+        params["inclusive"] = payload["inclusive"]
+    return params
+
+
 def _reaction_add_payload(request: ActionConnectorRequest) -> dict[str, Any]:
     payload = request.input_json
     channel, timestamp = _message_parts(request, payload.get("message_ref"))

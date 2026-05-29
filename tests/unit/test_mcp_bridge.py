@@ -410,12 +410,17 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "learning.query" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "experiment.query" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "decision.query" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "workflowExtension.list" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "workflowExtension.get" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "workflowExtension.validate" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "workflowExtension.upsert" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "workflowTemplate.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "workflowTemplate.describe" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "workflowTemplate.validate" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.create" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.validate" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.start" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "runPlan.abort" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.get" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "runPlan.claimStep" in _AGENT_STEP_GATED_TOOL_NAMES

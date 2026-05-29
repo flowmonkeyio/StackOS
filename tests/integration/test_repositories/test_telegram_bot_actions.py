@@ -116,6 +116,8 @@ def test_telegram_builtin_actions_are_registered(session: Session) -> None:
         "communications.telegram-bot.identity.get": "identity.get",
         "communications.telegram-bot.message.send": "message.send",
         "communications.telegram-bot.photo.send": "photo.send",
+        "communications.telegram-bot.file.download": "file.download",
+        "communications.telegram-bot.file.upload": "file.upload",
         "communications.telegram-bot.callback.answer": "callback.answer",
         "communications.telegram-bot.message.reaction.set": "message.reaction.set",
         "communications.telegram-bot.message.delete": "message.delete",
@@ -401,6 +403,185 @@ def test_telegram_photo_uploads_generated_asset_ref(
     assert b"fake-webp-bytes" in request.content
     assert out.output_json["body"]["result"]["photo"][0]["file_id"] == "file_1"
     assert _TOKEN not in rendered
+
+
+def test_telegram_file_download_and_upload_cover_same_message_caption_and_cleanup(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+    tmp_path: Path,
+) -> None:
+    credential_ref = _telegram_credential_ref(session, project_id)
+    _telegram_profile(
+        session,
+        project_id,
+        access_policy={
+            "dm_mode": "allowlist",
+            "group_mode": "allowlist",
+            "user_mode": "all",
+            "allowed_chat_refs": ["main"],
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/getFile",
+        json={"ok": True, "result": {"file_path": "documents/issue.png", "file_size": 11}},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.telegram.org/file/bot123456:ABC/documents/issue.png",
+        content=b"image-bytes",
+    )
+    downloaded = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="communications.telegram-bot.file.download",
+            input_json={
+                "profile_key": "support-bot",
+                "file_id": "tg_file_1",
+                "filename": "issue.png",
+                "mime_type": "image/png",
+                "source_message_ref": "telegram-message:12345:21",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    artifact_ref = downloaded.output_json["artifact_ref"]
+    assert artifact_ref.startswith("/generated-assets/communication-media/telegram/")
+    assert (
+        tmp_path / artifact_ref.removeprefix("/generated-assets/")
+    ).read_bytes() == b"image-bytes"
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/sendDocument",
+        json={
+            "ok": True,
+            "result": {
+                "message_id": 22,
+                "chat": {"id": 12345},
+                "document": {"file_id": "tg_uploaded_1"},
+            },
+        },
+    )
+    uploaded = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="communications.telegram-bot.file.upload",
+            input_json={
+                "profile_key": "support-bot",
+                "chat_ref": "main",
+                "caption": "Customer attached this screenshot.",
+                "reply_to_message_ref": "telegram-message:12345:21",
+                "file": {
+                    "type": "file",
+                    "artifact_ref": artifact_ref,
+                    "filename": "issue.png",
+                    "mime_type": "image/png",
+                },
+                "delete_after_upload": True,
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    requests = httpx_mock.get_requests()
+    assert [request.url.path for request in requests] == [
+        "/bot123456:ABC/getFile",
+        "/file/bot123456:ABC/documents/issue.png",
+        "/bot123456:ABC/sendDocument",
+    ]
+    assert b"Customer attached this screenshot." in requests[2].content
+    assert b"image-bytes" in requests[2].content
+    assert (tmp_path / artifact_ref.removeprefix("/generated-assets/")).exists() is False
+    assert uploaded.output_json["message_ref"] == "telegram-message:12345:22"
+    assert uploaded.output_json["file_refs"] == ["telegram-file:tg_uploaded_1"]
+    assert uploaded.output_json["local_artifact_deleted"] is True
+    assert _TOKEN not in json.dumps(downloaded.model_dump(mode="json"))
+    assert _TOKEN not in json.dumps(uploaded.model_dump(mode="json"))
+
+
+def test_telegram_file_upload_sends_multiple_files_as_media_group(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "communication-media" / "one.txt"
+    second = tmp_path / "communication-media" / "two.txt"
+    first.parent.mkdir(parents=True)
+    first.write_text("one")
+    second.write_text("two")
+    credential_ref = _telegram_credential_ref(session, project_id)
+    _telegram_profile(
+        session,
+        project_id,
+        access_policy={
+            "dm_mode": "allowlist",
+            "group_mode": "allowlist",
+            "user_mode": "all",
+            "allowed_chat_refs": ["main"],
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/sendMediaGroup",
+        json={
+            "ok": True,
+            "result": [
+                {
+                    "message_id": 31,
+                    "chat": {"id": 12345},
+                    "document": {"file_id": "tg_group_1"},
+                },
+                {
+                    "message_id": 32,
+                    "chat": {"id": 12345},
+                    "document": {"file_id": "tg_group_2"},
+                },
+            ],
+        },
+    )
+
+    out = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="communications.telegram-bot.file.upload",
+            input_json={
+                "profile_key": "support-bot",
+                "chat_ref": "main",
+                "caption": "Two files.",
+                "files": [
+                    {
+                        "type": "file",
+                        "artifact_ref": "/generated-assets/communication-media/one.txt",
+                        "filename": "one.txt",
+                        "mime_type": "text/plain",
+                    },
+                    {
+                        "type": "file",
+                        "artifact_ref": "/generated-assets/communication-media/two.txt",
+                        "filename": "two.txt",
+                        "mime_type": "text/plain",
+                    },
+                ],
+                "delete_after_upload": True,
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    request = httpx_mock.get_requests()[0]
+    assert request.url.path == "/bot123456:ABC/sendMediaGroup"
+    assert b"attach://file0" in request.content
+    assert b"attach://file1" in request.content
+    assert first.exists() is False
+    assert second.exists() is False
+    assert out.output_json["message_refs"] == [
+        "telegram-message:12345:31",
+        "telegram-message:12345:32",
+    ]
+    assert out.output_json["file_refs"] == ["telegram-file:tg_group_1", "telegram-file:tg_group_2"]
 
 
 def test_telegram_validation_rejects_unsafe_buttons_and_photo_sources(

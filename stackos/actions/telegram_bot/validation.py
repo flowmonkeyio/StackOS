@@ -13,8 +13,10 @@ from .constants import (
     _ALLOWED_UPDATES,
     _MAX_CALLBACK_TEXT,
     _MAX_CAPTION_TEXT,
+    _MAX_FILE_DOWNLOAD_BYTES,
     _MAX_INLINE_BUTTONS_PER_ROW,
     _MAX_INLINE_ROWS,
+    _MAX_MEDIA_GROUP_ITEMS,
     _MAX_MESSAGE_TEXT,
     _SECRETISH_CALLBACK_RE,
 )
@@ -61,6 +63,46 @@ def validate_telegram_request(request: ActionConnectorRequest) -> list[ActionVal
             _optional_text(payload, "thread_ref", issues)
             _optional_text(payload, "direct_messages_topic_ref", issues)
             _reply_markup(payload.get("reply_markup"), issues, "$.reply_markup")
+        case "file.download":
+            _required_text(payload, "profile_key", issues)
+            _required_text(payload, "file_id", issues)
+            _optional_text(payload, "filename", issues)
+            _optional_text(payload, "mime_type", issues)
+            _optional_text(payload, "source_message_ref", issues)
+            _optional_int(
+                payload,
+                "max_bytes",
+                issues,
+                minimum=1,
+                maximum=_MAX_FILE_DOWNLOAD_BYTES,
+            )
+        case "file.upload":
+            _required_text(payload, "profile_key", issues)
+            _required_text(payload, "chat_ref", issues)
+            _file_or_files(payload, issues)
+            _optional_text(payload, "caption", issues, max_chars=_MAX_CAPTION_TEXT)
+            _optional_parse_mode(payload, issues)
+            _optional_bool(payload, "disable_notification", issues)
+            _optional_bool(payload, "delete_after_upload", issues)
+            _optional_int(
+                payload,
+                "source_agent_request_id",
+                issues,
+                minimum=1,
+                maximum=2_147_483_647,
+            )
+            _optional_text(payload, "reply_to_message_ref", issues)
+            _optional_text(payload, "thread_ref", issues)
+            _optional_text(payload, "direct_messages_topic_ref", issues)
+            _reply_markup(payload.get("reply_markup"), issues, "$.reply_markup")
+            if isinstance(payload.get("files"), list) and payload.get("reply_markup") is not None:
+                issues.append(
+                    issue(
+                        "$.reply_markup",
+                        "reply_markup is not supported for Telegram media groups",
+                        "unsupported",
+                    )
+                )
         case "callback.answer":
             _required_text(payload, "profile_key", issues)
             _required_text(payload, "callback_query_id", issues)
@@ -192,6 +234,59 @@ def _photo_source(value: Any, issues: list[ActionValidationIssue]) -> None:
             issues.append(issue(f"$.photo.{key}", f"{key} must be a string", "type_error"))
     if "url" in keys and not str(value["url"]).startswith("https://"):
         issues.append(issue("$.photo.url", "photo.url must be a public HTTPS URL", "format"))
+
+
+def _file_or_files(payload: Mapping[str, Any], issues: list[ActionValidationIssue]) -> None:
+    has_file = isinstance(payload.get("file"), Mapping)
+    has_files = isinstance(payload.get("files"), list)
+    if has_file == has_files:
+        issues.append(issue("$", "exactly one of file or files is required", "one_of"))
+        return
+    if has_file:
+        _upload_file(payload.get("file"), issues, "$.file")
+    else:
+        files = payload.get("files")
+        if not isinstance(files, list) or not files:
+            issues.append(issue("$.files", "files must be a non-empty array", "required"))
+            return
+        if len(files) > _MAX_MEDIA_GROUP_ITEMS:
+            issues.append(
+                issue(
+                    "$.files",
+                    f"files must contain at most {_MAX_MEDIA_GROUP_ITEMS} items",
+                    "length",
+                )
+            )
+        for index, item in enumerate(files):
+            _upload_file(item, issues, f"$.files[{index}]")
+
+
+def _upload_file(value: Any, issues: list[ActionValidationIssue], path: str) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(issue(path, "file must be an object", "type_error"))
+        return
+    keys = [key for key in ("file_id", "url", "artifact_ref") if value.get(key)]
+    if len(keys) != 1:
+        issues.append(
+            issue(
+                path,
+                "file must include exactly one of file_id, url, artifact_ref",
+                "one_of",
+            )
+        )
+        return
+    for key in keys:
+        if not isinstance(value[key], str) or not value[key].strip():
+            issues.append(issue(f"{path}.{key}", f"{key} must be a string", "type_error"))
+    if "url" in keys and not str(value["url"]).startswith("https://"):
+        issues.append(issue(f"{path}.url", "file.url must be a public HTTPS URL", "format"))
+    file_type = value.get("type")
+    if file_type is not None and file_type not in {"image", "document", "file"}:
+        issues.append(issue(f"{path}.type", "unsupported file type", "enum"))
+    for key in ("filename", "title", "mime_type", "caption"):
+        raw = value.get(key)
+        if raw is not None and not isinstance(raw, str):
+            issues.append(issue(f"{path}.{key}", f"{key} must be a string", "type_error"))
 
 
 def _reply_markup(

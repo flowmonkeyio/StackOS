@@ -684,6 +684,91 @@ def test_communication_send_executes_compact_dry_run_through_target(
     assert "credential_ref" not in json.dumps(sent)
 
 
+def test_communication_send_uses_single_slack_file_upload_for_text_and_files(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_slack_credential(mcp_client, project_id)
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "ops-bot",
+            "identity": {"display_name": "Ops Bot"},
+            "provider_facets": {"slack-bot": {"auth_profile_key": "default"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationSurface.upsert",
+        {
+            "project_id": project_id,
+            "surface_ref": "slack-channel:CROAD",
+            "provider_key": "slack-bot",
+            "kind": "slack-channel",
+            "display_name": "roadmap",
+            "capabilities": {"can_write": True, "can_thread": True, "images": True},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "slack-roadmap-media",
+            "provider_key": "slack-bot",
+            "surface_ref": "slack-channel:CROAD",
+            "profile_ref": "communication-profile:ops-bot",
+            "metadata_json": {"action_mode": "auto"},
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:ops-bot"],
+                "allowed_target_refs": ["communication-target:slack-roadmap-media"],
+            },
+        },
+    )
+
+    sent = mcp_client.call_tool_structured(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "slack-roadmap-media",
+            "text": "Customer attached these screenshots.",
+            "attachments": [
+                {
+                    "type": "image",
+                    "artifact_ref": "/generated-assets/communication-media/one.png",
+                    "filename": "one.png",
+                    "mime_type": "image/png",
+                },
+                {
+                    "type": "file",
+                    "artifact_ref": "/generated-assets/communication-media/two.log",
+                    "filename": "two.log",
+                    "mime_type": "text/plain",
+                },
+            ],
+            "context": {"thread_ref": "slack-thread:CROAD:1770000000.000001"},
+            "delivery": {"reply_mode": "same_thread"},
+            "dry_run": True,
+        },
+    )
+
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    assert "action_call_id" in sent["data"], sent
+    with Session(engine) as session:
+        call = session.get(ActionCall, sent["data"]["action_call_id"])
+        assert call is not None
+        request_json = call.request_json or {}
+    assert sent["data"]["action_ref"] == "communications.slack-bot.file.upload"
+    assert request_json["initial_comment"] == "Customer attached these screenshots."
+    assert request_json["thread_ref"] == "slack-thread:CROAD:1770000000.000001"
+    assert request_json["delete_after_upload"] is True
+    assert "text" not in request_json
+    assert "blocks" not in request_json
+    assert [item["filename"] for item in request_json["files"]] == ["one.png", "two.log"]
+
+
 def test_communication_send_rejects_ambiguous_actor_with_repair_context(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -810,6 +895,7 @@ def test_communication_send_rejects_unsupported_delivery_and_content_shape(
             "provider_key": "telegram-bot",
             "surface_ref": "telegram-chat:12345",
             "profile_ref": "communication-profile:support-bot",
+            "metadata_json": {"action_mode": "auto"},
             "send_policy": {
                 "mode": "explicit-target",
                 "allowed_profile_refs": ["communication-profile:support-bot"],
@@ -831,7 +917,43 @@ def test_communication_send_rejects_unsupported_delivery_and_content_shape(
     assert private_err["data"]["error"]["code"] == "COMM_UNSUPPORTED_DELIVERY_OPTION"
     assert private_err["data"]["error"]["failed_paths"][0]["path"] == "/delivery/visibility"
 
-    attachments_err = mcp_client.call_tool_error(
+    media_controls_err = mcp_client.call_tool_error(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "customer-telegram",
+            "text": "Images attached.",
+            "attachments": [
+                {"type": "image", "url": "https://example.test/a.png"},
+                {"type": "image", "url": "https://example.test/b.png"},
+            ],
+            "controls": [{"type": "button", "label": "Ack", "value": "ack:media:1"}],
+            "dry_run": True,
+        },
+    )
+    assert media_controls_err["data"]["error"]["code"] == "COMM_UNSUPPORTED_CONTENT_SHAPE"
+    assert (
+        media_controls_err["data"]["error"]["failed_paths"][0]["path"] == "/content/attachments/1"
+    )
+
+    image_sent = mcp_client.call_tool_structured(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "customer-telegram",
+            "attachments": [{"type": "image", "url": "https://example.test/a.png"}],
+            "dry_run": True,
+        },
+    )
+    assert image_sent["data"]["action_ref"] == "communications.telegram-bot.file.upload"
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        call = session.get(ActionCall, image_sent["data"]["action_call_id"])
+        assert call is not None
+        image_request_json = call.request_json or {}
+    assert image_request_json["file"] == {"type": "image", "url": "https://example.test/a.png"}
+
+    multi_sent = mcp_client.call_tool_structured(
         "communication.send",
         {
             "project_id": project_id,
@@ -844,19 +966,7 @@ def test_communication_send_rejects_unsupported_delivery_and_content_shape(
             "dry_run": True,
         },
     )
-    assert attachments_err["data"]["error"]["code"] == "COMM_UNSUPPORTED_CONTENT_SHAPE"
-    assert attachments_err["data"]["error"]["failed_paths"][0]["path"] == "/content/attachments/1"
-
-    image_variant_err = mcp_client.call_tool_error(
-        "communication.send",
-        {
-            "project_id": project_id,
-            "to": "customer-telegram",
-            "attachments": [{"type": "image", "url": "https://example.test/a.png"}],
-            "dry_run": True,
-        },
-    )
-    assert image_variant_err["data"]["error"]["code"] == "COMM_TARGET_ACTION_VARIANT_NOT_ALLOWED"
+    assert multi_sent["data"]["action_ref"] == "communications.telegram-bot.file.upload"
 
     thread_err = mcp_client.call_tool_error(
         "communication.send",

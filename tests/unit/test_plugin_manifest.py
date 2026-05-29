@@ -179,6 +179,13 @@ def test_communications_plugin_yaml_facade_validates() -> None:
         {"required": ["artifact_ref"]},
     ]
     assert photo_schema["properties"]["url"]["pattern"] == "^https://"
+    assert actions["telegram-bot.file.download"].config["operation"] == "file.download"
+    assert (
+        actions["telegram-bot.file.download"].input_schema["properties"]["max_bytes"]["maximum"]
+        == 20 * 1024 * 1024
+    )
+    assert actions["telegram-bot.file.upload"].config["operation"] == "file.upload"
+    assert actions["telegram-bot.file.upload"].input_schema["properties"]["files"]["maxItems"] == 10
     assert actions["telegram-bot.callback.answer"].capability == "agent-triggering"
     assert actions["telegram-bot.callback.answer"].config["operation"] == "callback.answer"
     assert actions["telegram-bot.updates.poll"].capability == "agent-triggering"
@@ -192,6 +199,8 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     assert actions["slack-bot.message.send"].input_schema["properties"]["profile_ref"]["type"] == (
         "string"
     )
+    assert actions["slack-bot.file.upload"].config["operation"] == "file.upload"
+    assert actions["slack-bot.file.upload"].input_schema["properties"]["files"]["maxItems"] == 10
     assert actions["slack-bot.conversation.members"].config["connector"] == "slack-bot"
     assert actions["smtp.email.send"].config["connector"] == "smtp"
     assert actions["smtp.email.send"].config["operation"] == "email.send"

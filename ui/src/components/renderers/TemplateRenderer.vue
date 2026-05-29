@@ -6,8 +6,9 @@ import type {
   SchemaWorkflowAgentRequirementSpec,
   SchemaWorkflowSkillRequirementSpec,
   SchemaWorkflowTemplateSpec,
+  SchemaWorkflowTemplateExtensionOut,
 } from '@/api'
-import { UiBadge, UiJsonBlock, UiPanel, UiSectionHeader } from '@/components/ui'
+import { UiBadge, UiCallout, UiJsonBlock, UiPanel, UiSectionHeader } from '@/components/ui'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
 
 const props = defineProps<{
@@ -15,6 +16,9 @@ const props = defineProps<{
 }>()
 
 const spec = computed<SchemaWorkflowTemplateSpec>(() => props.template.spec)
+const projectExtension = computed<SchemaWorkflowTemplateExtensionOut | null>(
+  () => props.template.project_extension ?? null,
+)
 const contextRequirements = computed(() => spec.value.context_requirements ?? [])
 const agentRequirements = computed(() => spec.value.agent_requirements ?? [])
 const skillRequirements = computed(() => spec.value.skill_requirements ?? [])
@@ -24,6 +28,22 @@ const approvals = computed(() => spec.value.approval_gates ?? [])
 const policies = computed(() => spec.value.policies ?? [])
 const hooks = computed(() => spec.value.learning_hooks ?? [])
 const rawTemplate = computed(() => sanitizeForDisplay(spec.value))
+const extensionJson = computed(() =>
+  projectExtension.value ? sanitizeForDisplay(projectExtension.value) : null,
+)
+const extensionRequiredInputs = computed(() => projectExtension.value?.required_input_keys_json ?? [])
+const extensionDefaultKeys = computed(() => objectKeys(projectExtension.value?.input_defaults_json))
+const extensionContextKeys = computed(() => objectKeys(projectExtension.value?.selected_context_json))
+const extensionStepOverrideKeys = computed(() => objectKeys(projectExtension.value?.step_overrides_json))
+const extensionGuardrailKeys = computed(() => objectKeys(projectExtension.value?.guardrails_json))
+const extensionTemplateOverrideKeys = computed(() =>
+  objectKeys(projectExtension.value?.template_overrides_json),
+)
+
+function objectKeys(value: Record<string, unknown> | null | undefined): string[] {
+  if (!value || typeof value !== 'object') return []
+  return Object.keys(value)
+}
 
 function requirementTone(
   requirement:
@@ -64,6 +84,178 @@ function requirementTone(
           <dd class="truncate font-mono">{{ template.summary.origin_path ?? '-' }}</dd>
         </div>
       </dl>
+    </UiPanel>
+
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Project Extension"
+        as="h3"
+        description="Project setup and atomic workflow overrides applied at run-plan creation."
+      >
+        <template #actions>
+          <UiBadge
+            v-if="projectExtension?.enabled"
+            tone="success"
+          >
+            configured
+          </UiBadge>
+          <UiBadge
+            v-else-if="projectExtension"
+            tone="warning"
+          >
+            disabled
+          </UiBadge>
+          <UiBadge v-else>none</UiBadge>
+        </template>
+      </UiSectionHeader>
+
+      <UiCallout
+        v-if="!projectExtension"
+        tone="info"
+      >
+        No project extension is configured for this workflow.
+      </UiCallout>
+
+      <div
+        v-else
+        class="space-y-4"
+      >
+        <dl class="grid gap-3 text-sm md:grid-cols-2">
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Workflow Key</dt>
+            <dd class="truncate font-mono">{{ projectExtension.workflow_key }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Extension ID</dt>
+            <dd class="truncate font-mono">{{ projectExtension.id }}</dd>
+          </div>
+        </dl>
+
+        <section
+          v-if="extensionRequiredInputs.length"
+          class="space-y-2"
+        >
+          <h4 class="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            Required Inputs
+          </h4>
+          <div class="flex flex-wrap gap-1.5">
+            <UiBadge
+              v-for="key in extensionRequiredInputs"
+              :key="key"
+              tone="warning"
+            >
+              {{ key }}
+            </UiBadge>
+          </div>
+        </section>
+
+        <div class="grid gap-3 text-xs md:grid-cols-2">
+          <section class="rounded-md border border-subtle bg-bg-surface px-3 py-2">
+            <h4 class="mb-2 font-semibold uppercase tracking-wide text-fg-muted">
+              Defaults
+            </h4>
+            <div class="flex flex-wrap gap-1.5">
+              <UiBadge
+                v-for="key in extensionDefaultKeys"
+                :key="key"
+              >
+                {{ key }}
+              </UiBadge>
+              <span
+                v-if="extensionDefaultKeys.length === 0"
+                class="text-fg-muted"
+              >
+                -
+              </span>
+            </div>
+          </section>
+          <section class="rounded-md border border-subtle bg-bg-surface px-3 py-2">
+            <h4 class="mb-2 font-semibold uppercase tracking-wide text-fg-muted">
+              Context
+            </h4>
+            <div class="flex flex-wrap gap-1.5">
+              <UiBadge
+                v-for="key in extensionContextKeys"
+                :key="key"
+              >
+                {{ key }}
+              </UiBadge>
+              <span
+                v-if="extensionContextKeys.length === 0"
+                class="text-fg-muted"
+              >
+                -
+              </span>
+            </div>
+          </section>
+          <section class="rounded-md border border-subtle bg-bg-surface px-3 py-2">
+            <h4 class="mb-2 font-semibold uppercase tracking-wide text-fg-muted">
+              Step Overrides
+            </h4>
+            <div class="flex flex-wrap gap-1.5">
+              <UiBadge
+                v-for="key in extensionStepOverrideKeys"
+                :key="key"
+              >
+                {{ key }}
+              </UiBadge>
+              <span
+                v-if="extensionStepOverrideKeys.length === 0"
+                class="text-fg-muted"
+              >
+                -
+              </span>
+            </div>
+          </section>
+          <section class="rounded-md border border-subtle bg-bg-surface px-3 py-2">
+            <h4 class="mb-2 font-semibold uppercase tracking-wide text-fg-muted">
+              Guardrails
+            </h4>
+            <div class="flex flex-wrap gap-1.5">
+              <UiBadge
+                v-for="key in extensionGuardrailKeys"
+                :key="key"
+              >
+                {{ key }}
+              </UiBadge>
+              <span
+                v-if="extensionGuardrailKeys.length === 0"
+                class="text-fg-muted"
+              >
+                -
+              </span>
+            </div>
+          </section>
+          <section class="rounded-md border border-subtle bg-bg-surface px-3 py-2">
+            <h4 class="mb-2 font-semibold uppercase tracking-wide text-fg-muted">
+              Template Overrides
+            </h4>
+            <div class="flex flex-wrap gap-1.5">
+              <UiBadge
+                v-for="key in extensionTemplateOverrideKeys"
+                :key="key"
+                tone="accent"
+              >
+                {{ key }}
+              </UiBadge>
+              <span
+                v-if="extensionTemplateOverrideKeys.length === 0"
+                class="text-fg-muted"
+              >
+                -
+              </span>
+            </div>
+          </section>
+        </div>
+
+        <UiJsonBlock
+          :data="extensionJson"
+          max-height="18rem"
+          density="compact"
+          wrap
+          aria-label="Project workflow extension JSON"
+        />
+      </div>
     </UiPanel>
 
     <UiPanel class="p-4">

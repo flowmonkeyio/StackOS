@@ -1,0 +1,673 @@
+schema_version: stackos.workflow-template.v1
+key: engineering.customer-support-investigation
+name: Engineering Customer Support Investigation
+version: 0.1.0
+description: Customer support workflow that anchors feedback to one Slack thread, investigates the issue, posts a support investigation conclusion with root-cause evidence when available, waits for same-thread human instruction, then creates delivery tasks with durable chat refs and hands off to tracked delivery.
+domain: engineering
+owner:
+  team: StackOS
+when_to_use:
+  - Customer feedback, bug reports, regressions, or support symptoms arrive from Slack, Telegram, email, local chat, or another communication surface.
+  - The issue needs investigation before implementation or before delivery tickets are created.
+  - A project wants one canonical Slack thread for feedback, support investigation, human instruction, task creation, and delivery handoff.
+when_not_to_use:
+  - The work is already scoped for implementation and can start in engineering.tracked-delivery.
+  - The user explicitly asked for one direct provider/tool action with no durable investigation state.
+  - The operator approved emergency mitigation before support investigation; record that decision separately and return to this workflow for post-incident root cause.
+agent_requirements:
+  - role: communications-customer-support-thread
+    requirement: required
+    agent_preset_ref: communications.workflow.customer-support-thread
+    purpose: Route non-Slack feedback into the approved Slack target, preserve all source media, keep one canonical thread, add reactions, and keep replies thread-bound.
+    applies_to_steps:
+      - intake-feedback
+      - establish-canonical-thread
+      - add-investigation-reaction
+      - read-full-thread
+      - ask-thread-clarifications
+      - post-support-conclusion-in-thread
+      - wait-for-thread-instructions
+      - post-task-handoff-in-thread
+      - add-task-created-reaction
+  - role: support-investigation-analyst
+    requirement: required
+    agent_preset_ref: stackos.sdlc.support-investigation-analyst
+    purpose: Investigate the full thread and project evidence, ask clarifying questions when needed, validate root cause when possible, and produce a thread-posted support investigation conclusion before task creation.
+    applies_to_steps:
+      - read-full-thread
+      - ask-thread-clarifications
+      - investigate-support-issue
+      - post-support-conclusion-in-thread
+  - role: codebase-explorer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.codebase-explorer
+    purpose: Trace real affected code paths, contracts, data, tests, docs, and downstream fallout during support investigation.
+    applies_to_steps:
+      - investigate-support-issue
+  - role: planning
+    requirement: required
+    agent_preset_ref: stackos.sdlc.planning
+    purpose: Create delivery-ready tracker tasks/tickets only after explicit human instruction in the canonical Slack thread.
+    applies_to_steps:
+      - create-delivery-task
+  - role: delivery-reviewer
+    requirement: required
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Challenge the support investigation, task handoff, tracker truth, privacy boundary, and delivery workflow readiness before closeout.
+    applies_to_steps:
+      - post-support-conclusion-in-thread
+      - conclude-and-handoff
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, communication operations, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - Use this workflow when customer feedback or a support issue arrives and the cause is not already proven.
+      - Slack is the canonical investigation surface. If feedback came from another channel, create one Slack message and continue only in that thread.
+      - A named Slack target resolving successfully is not route approval. Non-Slack feedback needs an explicit route match or current operator-provided target before any content is copied.
+      - Preserve and forward every inbound media item allowed by route policy in the same canonical Slack handoff message when supported. If provider capability cannot carry all media with the handoff, stop with a visible blocker instead of sending a text-only or summary-only handoff.
+      - Read the full canonical Slack thread before investigating, before posting the support conclusion, and before creating delivery tasks.
+      - Ask clarification questions only in the canonical Slack thread when missing evidence blocks a safe conclusion or task handoff.
+      - Add an eyes reaction when investigation starts and a semantically matching task-created reaction after task creation succeeds.
+      - Do not create tracker tasks until the operator replies with instructions in the same Slack thread.
+      - Once tasks are created, hand off to engineering.tracked-delivery for implementation, verification, review, and release.
+      - Preserve source, canonical thread, clarification, support conclusion, instruction, task handoff, and delivery refs in tracker references so delivery agents can resume without reconstructing chat history.
+inputs:
+  - key: feedback_summary
+    name: Feedback Summary
+    type: string
+    required: true
+    description: Reporter-visible feedback or symptom that triggered the investigation.
+  - key: source_surface_ref
+    name: Source Surface Ref
+    type: string
+    required: false
+    description: Safe source surface ref, such as a Slack channel, Telegram chat, email inbox, or local chat surface.
+  - key: source_message_ref
+    name: Source Message Ref
+    type: string
+    required: false
+    description: Safe source message ref when the feedback came from a stored communication message.
+  - key: source_media_refs
+    name: Source Media Refs
+    type: object
+    required: false
+    description: Optional safe list or inventory of media/attachment refs from the source message, such as image, document, video, audio, voice, URL, artifact, or provider file refs.
+  - key: canonical_slack_target
+    name: Canonical Slack Target
+    type: string
+    required: false
+    description: Legacy named Slack target alias. Prefer canonical_slack_target_ref from the project workflow extension.
+  - key: communication_route_ref
+    name: Communication Route Ref
+    type: string
+    required: false
+    description: Project workflow extension route ref that approves cross-surface feedback handoff into the canonical Slack thread.
+  - key: canonical_slack_target_ref
+    name: Canonical Slack Target Ref
+    type: string
+    required: false
+    description: Project workflow extension target ref for the canonical Slack channel/thread destination.
+  - key: project_workflow_context
+    name: Project Workflow Context
+    type: object
+    required: false
+    description: Project extension context with channel purpose, audience, safe share boundaries, escalation rules, and operator preferences.
+  - key: severity_hint
+    name: Severity Hint
+    type: string
+    required: false
+    description: Optional initial severity or customer-impact hint from the reporter or operator.
+  - key: release_intent
+    name: Release Intent
+    type: string
+    required: false
+    description: Optional target release, branch, commit, or rollout expectation for later delivery.
+context_requirements:
+  - id: inbound_request
+    source: agent_requests
+    purpose: Read source refs, reporter context, body preview, trigger metadata, and route hints for the feedback.
+    fields:
+      - title
+      - body_preview
+      - source_message_ref
+      - metadata_json
+      - attachments
+      - created_at
+    max_items: 5
+    return_mode: compact
+  - id: communication_thread
+    source: resources
+    purpose: Read stored communication history for the canonical Slack thread and original source thread.
+    filters:
+      plugin_slug: communications
+      resource_keys:
+        - communication-message
+        - communication-interaction
+        - communication-event
+    fields:
+      - title
+      - data_json
+      - updated_at
+    max_items: 50
+    return_mode: compact
+  - id: engineering_context
+    source: resources
+    purpose: Read reusable engineering evidence and decisions that may constrain investigation or delivery handoff.
+    filters:
+      plugin_slug: engineering
+      resource_keys:
+        - engineering-decision
+        - engineering-evidence
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 20
+    return_mode: compact
+  - id: recent_runs
+    source: runs
+    purpose: Check recent failed deliveries, investigations, or signoffs before repeating work.
+    fields:
+      - kind
+      - status
+      - last_step
+      - metadata_json
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: customer-feedback-triage
+    required: true
+    description: Receive and normalize customer feedback into one investigation thread.
+  - key: support-investigation
+    required: true
+    description: Investigate support feedback, validate the root cause when possible, and explain the next delivery handoff before implementation starts.
+  - key: messaging
+    required: true
+    preferred_providers:
+      - slack-bot
+auth_requirements:
+  - key: slack_bot
+    provider: slack-bot
+    auth_type: bot
+    optional: false
+    description: Project-scoped Slack bot auth for canonical message, thread replies, and reactions.
+  - key: telegram_bot
+    provider: telegram-bot
+    auth_type: bot
+    optional: true
+    description: Required only when Telegram source media must be downloaded before cross-surface handoff.
+action_contracts:
+  - key: post_canonical_message
+    action: slack-bot.message.send
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+  - key: upload_canonical_media
+    action: slack-bot.file.upload
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+  - key: download_telegram_media
+    action: telegram-bot.file.download
+    capability: messaging
+    provider: telegram-bot
+    risk_level: read
+    auth_ref: telegram_bot
+  - key: post_thread_reply
+    action: slack-bot.message.send
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+  - key: add_investigation_reaction
+    action: slack-bot.reaction.add
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+  - key: add_task_created_reaction
+    action: slack-bot.reaction.add
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+resource_contracts:
+  - key: evidence
+    resource: engineering-evidence
+    purpose: Store reusable support investigation evidence when the run creates durable proof.
+  - key: decisions
+    resource: engineering-decision
+    purpose: Store explicit investigation or handoff decisions when they constrain delivery.
+policies:
+  - key: canonical_slack_thread
+    kind: communications
+    description: Each feedback item must resolve to one Slack thread. If the source is not Slack, create one canonical Slack message first only after route approval; after that, no new top-level messages are allowed for the same issue.
+  - key: full_thread_source_of_truth
+    kind: investigation
+    description: The complete canonical Slack thread is the investigation source of truth. The agent must read stored thread history, fetch live provider history only when an explicit granted action exists, name any missing-history limitation, and reread before investigation, before support conclusion reply, and before task creation.
+  - key: chat_reference_continuity
+    kind: tracker
+    description: Run-plan metadata, task context, ticket references, and handoff messages must preserve safe source refs plus canonical Slack thread/message, clarification, support conclusion, instruction, task handoff, and tracked-delivery refs when available.
+  - key: media_handoff_fidelity
+    kind: communications
+    description: Every source media item must be inventoried and forwarded when route policy allows it, using the same canonical Slack handoff message when supported. If the current provider path cannot carry all media with the handoff, the agent must stop before partial handoff or ask for explicit text-only approval in the canonical route review.
+  - key: no_automatic_task_creation
+    kind: tracker
+    description: The support investigation may suggest delivery direction, but tracker tasks are created only after explicit human instruction in the canonical Slack thread.
+  - key: evidence_over_assertion
+    kind: verification
+    description: Support investigation conclusions must cite evidence, eliminated hypotheses, reproduction status, and residual uncertainty.
+  - key: no_implementation_in_support_investigation
+    kind: boundary
+    description: This workflow investigates and hands off. Implementation, verification, review, and release happen through engineering.tracked-delivery.
+  - key: route_privacy_boundary
+    kind: safety
+    description: Cross-surface handoff must respect communication route policy, audience, data-scope, and customer privacy boundaries. `communicationTarget.resolve` only proves that a destination alias can resolve; it does not prove source-to-destination route approval.
+  - key: truthful_tracker_handoff
+    kind: delivery
+    description: Created tasks must link to the canonical Slack thread, summarize the support investigation, and include root cause or bounded uncertainty, fix direction, affected surfaces, acceptance criteria, verification expectations, and delivery workflow/run refs.
+approval_gates:
+  - key: communication_route_review
+    description: Required when non-Slack or private feedback must be copied into Slack and route policy is missing or ambiguous.
+    required_when: source_surface_not_slack_or_private_context
+  - key: diagnostic_safety_review
+    description: Required before live diagnostics, production data inspection, customer data expansion, or provider calls beyond stored communication context.
+    required_when: live_or_sensitive_diagnostics
+  - key: task_creation_instruction
+    description: Required before tracker tasks are created. The instruction must arrive in the canonical Slack thread after the support conclusion message.
+    required_when: before_tracker_task_creation
+steps:
+  - id: intake-feedback
+    title: Intake Feedback
+    purpose: Capture the incoming report, source surface, original wording, reporter context, attachments or links, severity hint, and known regression window.
+    instructions:
+      - Preserve the customer's observable wording before interpretation.
+      - Inventory every source attachment/media item from the inbound request and stored source message, including images, documents, video, audio, voice, screenshots, URLs, artifacts, provider file ids, and counts.
+      - Identify whether the source is already Slack and whether a canonical thread already exists.
+      - If source route, privacy, media permissions, or target is ambiguous, stop for route review before copying content into Slack.
+      - Do not treat `communicationTarget.resolve` as route approval; use a matching `communicationRoute` or explicit current operator instruction naming the target.
+    input_refs:
+      - feedback_summary
+      - source_surface_ref
+      - source_message_ref
+      - source_media_refs
+      - canonical_slack_target
+      - communication_route_ref
+      - canonical_slack_target_ref
+      - project_workflow_context
+      - severity_hint
+    context_refs:
+      - inbound_request
+      - communication_thread
+    policy_refs:
+      - canonical_slack_thread
+      - media_handoff_fidelity
+      - route_privacy_boundary
+    output_refs:
+      - feedback_intake
+    success_criteria:
+      - The original feedback and safe source refs are captured.
+      - All source media is inventoried with refs, counts, and forwardability state.
+      - The workflow knows whether to reuse Slack or create the canonical Slack message.
+  - id: establish-canonical-thread
+    title: Establish Canonical Slack Thread
+    purpose: Reuse the existing Slack thread or create one Slack message for non-Slack feedback, then make that thread the only investigation surface.
+    instructions:
+      - If feedback came from Slack, use that message and its thread as canonical.
+      - If feedback came from another channel, first confirm a matching communication route or current operator instruction naming the Slack target; target resolution alone is not enough.
+      - Preflight media forwarding before sending the canonical message. If any media item cannot be forwarded or attached with the available provider path, stop and report the blocker before partial handoff.
+      - If feedback came from another channel and route/media checks pass, send one Slack message with source, reporter context, feedback, links, impact hints, and every allowed source media item attached to that same Slack message when media exists.
+      - For Telegram source media, download each stored `file_id` to a generated artifact first, then send those artifacts through the Slack media handoff. Delete transient artifacts after successful upload.
+      - Do not split the first handoff into a text message plus separate media messages. If the provider path cannot put the allowed files and text into the same canonical Slack handoff, stop before partial handoff unless the operator explicitly approves a degraded fallback.
+      - Store or report the canonical Slack message/thread refs for all later steps and run-plan metadata when available.
+      - Do not create more than one top-level Slack message for the issue.
+      - Prefer `communication.send` for the cross-surface handoff when granted; it must resolve to Slack file upload for media-bearing handoffs and must not send a separate `chat.postMessage` first.
+    action_refs:
+      - post_canonical_message
+      - upload_canonical_media
+      - download_telegram_media
+    input_refs:
+      - source_surface_ref
+      - source_media_refs
+      - canonical_slack_target
+      - communication_route_ref
+      - canonical_slack_target_ref
+      - project_workflow_context
+    policy_refs:
+      - canonical_slack_thread
+      - chat_reference_continuity
+      - media_handoff_fidelity
+      - route_privacy_boundary
+    depends_on:
+      - intake-feedback
+    output_refs:
+      - canonical_thread
+    success_criteria:
+      - A single canonical Slack thread ref exists.
+      - Non-Slack feedback is visible in Slack with allowed context and every allowed media item forwarded, or the workflow is stopped with an explicit no-partial-handoff blocker.
+  - id: add-investigation-reaction
+    title: Add Investigation Reaction
+    purpose: Mark investigation start on the canonical Slack message with an eyes reaction.
+    instructions:
+      - Add the investigation-start reaction only after the canonical Slack message exists.
+      - If Slack reaction capability is unavailable, record the blocker in the thread or run-plan state instead of pretending the reaction was added.
+    action_refs:
+      - add_investigation_reaction
+    depends_on:
+      - establish-canonical-thread
+    output_refs:
+      - investigation_reaction
+    success_criteria:
+      - The canonical message visibly shows investigation has started or the blocker is explicit.
+  - id: read-full-thread
+    title: Read Full Canonical Thread
+    purpose: Load all available stored messages in the canonical Slack thread before analysis.
+    instructions:
+      - Read the full thread, not just the first customer report.
+      - Treat operator replies as clarifications, corrections, constraints, or instructions.
+      - Verify whether source media appears in the canonical Slack thread; missing media must remain a blocker until forwarded or explicitly waived by the operator.
+      - Use stored StackOS communication history first.
+      - Fetch live Slack thread history only when a granted explicit provider-history action exists.
+      - Name any missing live Slack history limitation before proceeding and ask for missing context when it could change the conclusion.
+    context_refs:
+      - communication_thread
+    policy_refs:
+      - full_thread_source_of_truth
+      - chat_reference_continuity
+      - media_handoff_fidelity
+    depends_on:
+      - add-investigation-reaction
+    output_refs:
+      - thread_context_summary
+    success_criteria:
+      - The investigation summary reflects the latest full-thread context.
+      - Stale or superseded initial assumptions are called out.
+  - id: ask-thread-clarifications
+    title: Ask Thread Clarifications
+    purpose: Ask bounded follow-up questions in the canonical Slack thread when missing evidence blocks a safe conclusion or task handoff.
+    instructions:
+      - Skip this step with a reason when the full thread and project evidence are already sufficient.
+      - Ask only inside the canonical Slack thread.
+      - Ask concise questions tied to specific missing evidence, reproduction gaps, route/privacy ambiguity, severity, or delivery scoping risk.
+      - Do not create a new top-level message or ask in a private side channel.
+      - After any clarification reply, reread the full canonical thread before investigating or revising the conclusion.
+    action_refs:
+      - post_thread_reply
+    context_refs:
+      - communication_thread
+    policy_refs:
+      - full_thread_source_of_truth
+      - chat_reference_continuity
+    depends_on:
+      - read-full-thread
+    output_refs:
+      - clarification_request
+    success_criteria:
+      - Missing evidence is either resolved, explicitly bounded, or accepted as uncertainty in the same thread.
+      - Missing or unforwarded media is explicitly handled before task handoff.
+      - Any clarification message refs are preserved for later tracker handoff.
+  - id: investigate-support-issue
+    title: Investigate Support Issue
+    purpose: Reproduce or bound the symptom, trace the failing path, validate root cause, and design a permanent fix direction.
+    instructions:
+      - Start from the full thread context and then trace project evidence.
+      - Separate facts, inferences, hypotheses, eliminated causes, validated cause, and residual uncertainty.
+      - Use narrow diagnostics first; request diagnostic safety review before live or sensitive checks.
+      - Do not implement the fix in this workflow.
+    context_refs:
+      - engineering_context
+      - recent_runs
+    resource_refs:
+      - evidence
+      - decisions
+    policy_refs:
+      - full_thread_source_of_truth
+      - chat_reference_continuity
+      - evidence_over_assertion
+      - no_implementation_in_support_investigation
+    depends_on:
+      - ask-thread-clarifications
+    output_refs:
+      - support_investigation_report
+      - fix_strategy
+    success_criteria:
+      - Root cause is validated or the missing evidence is explicitly bounded.
+      - Fix direction addresses the permanent cause, not only the symptom.
+  - id: post-support-conclusion-in-thread
+    title: Post Support Conclusion In Thread
+    purpose: Re-read the full Slack thread, then post the support investigation conclusion in the same thread and ask for next instructions.
+    instructions:
+      - Re-read the canonical thread before posting so late feedback is included.
+      - Post only inside the canonical Slack thread.
+      - Include symptom, impact, evidence checked, root cause or uncertainty, recommended fix direction, suggested validation, and task-creation readiness.
+      - Preserve the posted support conclusion message ref for tracker references and delivery handoff.
+      - End by waiting for human instructions in the same thread.
+      - Prefer `communication.reply` for the thread reply when granted; use the Slack message action only when the run plan explicitly chooses the provider action path.
+    action_refs:
+      - post_thread_reply
+    policy_refs:
+      - full_thread_source_of_truth
+      - chat_reference_continuity
+      - no_automatic_task_creation
+      - evidence_over_assertion
+    depends_on:
+      - investigate-support-issue
+    output_refs:
+      - support_conclusion_thread_message
+    success_criteria:
+      - The support investigation conclusion is visible in the canonical thread.
+      - No tracker task has been created before human instruction.
+  - id: wait-for-thread-instructions
+    title: Wait For Thread Instructions
+    purpose: Pause after the support conclusion until the operator replies in the same Slack thread with next steps.
+    instructions:
+      - Do not infer approval from silence or from the existence of a support investigation report.
+      - Treat later thread replies as the authoritative instruction source.
+      - If the operator asks for more investigation, return to read-full-thread or investigate-support-issue.
+      - If the operator asks to create tasks, proceed to task creation.
+      - If the operator gives task instructions outside the canonical thread, ask them to confirm in the canonical thread before task creation.
+      - Capture `thread_instruction.thread_ref` and `thread_instruction.message_ref`; task creation must not proceed without them.
+    context_refs:
+      - communication_thread
+    policy_refs:
+      - full_thread_source_of_truth
+      - chat_reference_continuity
+      - no_automatic_task_creation
+    depends_on:
+      - post-support-conclusion-in-thread
+    output_refs:
+      - thread_instruction
+    success_criteria:
+      - Task creation is gated by explicit same-thread instruction.
+      - The instruction is captured with a safe thread/message ref.
+  - id: create-delivery-task
+    title: Create Delivery Task
+    purpose: Re-read the full thread, then create delivery-ready tracker tasks/tickets from the support investigation and human instruction.
+    instructions:
+      - Re-read the canonical thread immediately before creating tasks.
+      - Create tasks only when the thread instruction explicitly asks for them.
+      - Require `thread_instruction.thread_ref` and `thread_instruction.message_ref`.
+      - Include canonical Slack thread ref, canonical Slack message ref, source refs, clarification refs, support conclusion message ref, instruction message ref, support investigation summary, root cause or bounded uncertainty, fix direction, affected surfaces, acceptance criteria, and verification expectations.
+      - Include source media refs, forwarded media message refs, or an explicit operator-approved media waiver.
+      - Store chat continuity in `source_json`, `context_json`, `metadata_json`, and every ticket's `references_json` using `communication-thread` and `communication-message` refs.
+      - Include engineering.tracked-delivery as the handoff workflow for implementation and create or link its run plan when project rules allow.
+      - Use `tracker.brief` after task creation to verify that the created tickets expose the expected references.
+    input_refs:
+      - release_intent
+      - project_workflow_context
+    context_refs:
+      - communication_thread
+    resource_refs:
+      - evidence
+    policy_refs:
+      - full_thread_source_of_truth
+      - chat_reference_continuity
+      - media_handoff_fidelity
+      - no_automatic_task_creation
+      - truthful_tracker_handoff
+      - no_implementation_in_support_investigation
+    depends_on:
+      - wait-for-thread-instructions
+    output_refs:
+      - delivery_task_handoff
+    success_criteria:
+      - Tracker work is delivery-ready and linked back to the canonical Slack thread.
+      - Delivery agents can recover original media refs and forwarded media refs without re-reading the source channel.
+      - Implementation remains assigned to engineering.tracked-delivery, not this workflow.
+      - A delivery agent can recover the source, canonical thread, conclusion, and instruction refs from tracker brief output.
+  - id: post-task-handoff-in-thread
+    title: Post Task Handoff In Thread
+    purpose: Post the created task/ticket keys and tracked-delivery handoff in the canonical Slack thread before adding the task-created reaction.
+    instructions:
+      - Post only inside the canonical Slack thread.
+      - Include created task/ticket keys, root cause or bounded uncertainty, delivery workflow, tracked-delivery run ref when available, and verification expectation.
+      - State that delivery agents can recover this thread through tracker references.
+      - Do not claim implementation has started unless tracked delivery has actually started.
+    action_refs:
+      - post_thread_reply
+    policy_refs:
+      - chat_reference_continuity
+      - truthful_tracker_handoff
+      - no_implementation_in_support_investigation
+    depends_on:
+      - create-delivery-task
+    output_refs:
+      - task_handoff_thread_message
+    success_criteria:
+      - The canonical thread contains a task handoff message with tracker keys and delivery workflow refs.
+      - The task handoff message ref is available for tracker/run-plan metadata when possible.
+  - id: add-task-created-reaction
+    title: Add Task Created Reaction
+    purpose: Acknowledge successful task creation on the canonical Slack thread with a semantically matching reaction.
+    instructions:
+      - Add the reaction only after tracker task creation succeeds.
+      - Choose a reaction that clearly means task created or queued for delivery, following project Slack conventions.
+      - If the reaction cannot be added, report that blocker in the thread or run-plan state without hiding the created task.
+    action_refs:
+      - add_task_created_reaction
+    depends_on:
+      - post-task-handoff-in-thread
+    output_refs:
+      - task_created_reaction
+    success_criteria:
+      - The thread visibly acknowledges task creation or the reaction blocker is explicit.
+  - id: conclude-and-handoff
+    title: Conclude And Handoff
+    purpose: Close the customer support investigation and hand implementation to engineering.tracked-delivery.
+    instructions:
+      - Confirm the canonical thread contains the feedback, investigation marker, support conclusion, human instruction, task creation confirmation, and delivery handoff.
+      - Confirm tracker task/tickets contain the root cause or bounded uncertainty, verification expectations, and references to source, canonical thread, support conclusion, instruction, and task handoff messages.
+      - Confirm engineering.tracked-delivery is linked as a concrete handoff through a run plan or tracker refs that identify the next task/tickets.
+      - Do not implement as part of support investigation closeout.
+    policy_refs:
+      - chat_reference_continuity
+      - truthful_tracker_handoff
+      - no_implementation_in_support_investigation
+    depends_on:
+      - add-task-created-reaction
+    output_refs:
+      - support_investigation_closeout
+    success_criteria:
+      - Support investigation state is closed and implementation has a clean delivery workflow handoff.
+      - No investigation-only ticket is left pretending to be implementation progress.
+outputs:
+  - key: feedback_intake
+    name: Feedback Intake
+    type: object
+    required: true
+  - key: canonical_thread
+    name: Canonical Slack Thread
+    type: object
+    required: true
+  - key: investigation_reaction
+    name: Investigation Reaction
+    type: object
+    required: false
+  - key: thread_context_summary
+    name: Thread Context Summary
+    type: object
+    required: true
+  - key: clarification_request
+    name: Clarification Request
+    type: object
+    required: false
+  - key: support_investigation_report
+    name: Support Investigation Report
+    type: object
+    required: true
+  - key: fix_strategy
+    name: Fix Strategy
+    type: object
+    required: true
+  - key: support_conclusion_thread_message
+    name: Support Conclusion Thread Message
+    type: object
+    required: true
+  - key: thread_instruction
+    name: Thread Instruction
+    type: object
+    required: false
+  - key: delivery_task_handoff
+    name: Delivery Task Handoff
+    type: object
+    required: false
+  - key: task_handoff_thread_message
+    name: Task Handoff Thread Message
+    type: object
+    required: false
+  - key: task_created_reaction
+    name: Task Created Reaction
+    type: object
+    required: false
+  - key: support_investigation_closeout
+    name: Support Investigation Closeout
+    type: object
+    required: false
+learning_hooks:
+  - key: support_investigation_reuse
+    prompt: Capture reusable support-investigation lessons only when the thread and engineering evidence prove a project-scoped pattern.
+    tags:
+      - engineering
+      - support-investigation
+      - customer-feedback
+failure_handling:
+  - If route policy is unclear, stop before copying non-Slack feedback into Slack and request communication route review.
+  - If a named target resolves but no route or current operator instruction approves that source-to-target handoff, stop before copying non-Slack feedback into Slack and request route confirmation.
+  - If one or more media items cannot be forwarded with the canonical handoff, stop before partial handoff or ask for explicit operator approval to proceed text-only; never silently summarize or drop media.
+  - If Slack message or reaction delivery fails, keep the blocker visible and do not pretend thread state changed.
+  - If the full thread cannot be read from stored context, state the limitation before investigating and request the missing context in the canonical thread when it materially affects the conclusion.
+  - If support investigation is inconclusive, post bounded uncertainty, eliminated hypotheses, and the next diagnostic step instead of inventing a cause.
+  - If task creation is requested without enough evidence, ask for either more investigation or explicit acceptance of the uncertainty in the same thread.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan
+  workflow_family: customer_support_investigation
+  baseline: feedback_thread_to_tracked_delivery
+  handoff_workflow: engineering.tracked-delivery
+  canonical_surface: slack_thread
+  investigation_reaction: eyes
+  task_created_reaction_semantics: task_created_or_queued
+  agent_subset:
+    - communications-customer-support-thread
+    - support-investigation-analyst
+    - codebase-explorer
+    - planning
+    - delivery-reviewer
+  step_ids:
+    - intake-feedback
+    - establish-canonical-thread
+    - add-investigation-reaction
+    - read-full-thread
+    - ask-thread-clarifications
+    - investigate-support-issue
+    - post-support-conclusion-in-thread
+    - wait-for-thread-instructions
+    - create-delivery-task
+    - post-task-handoff-in-thread
+    - add-task-created-reaction
+    - conclude-and-handoff

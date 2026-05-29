@@ -29,7 +29,7 @@ from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.migrate import current_alembic_version, upgrade_to_head
 
-HEAD_REVISION = "0016_tracker_completion_evidence"
+HEAD_REVISION = "0018_workflow_template_extension_overrides"
 
 
 @pytest.fixture

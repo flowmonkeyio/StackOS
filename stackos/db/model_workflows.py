@@ -138,6 +138,47 @@ class ProjectWorkflowTemplate(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
+class WorkflowTemplateExtension(SQLModel, table=True):
+    """Project-scoped configuration for a reusable workflow template.
+
+    Extensions intentionally keep the base workflow identity while binding the
+    project-specific setup a run needs. ``template_overrides_json`` is an atomic
+    top-level workflow patch; setup/context fields remain separate run inputs.
+    """
+
+    __tablename__ = "workflow_template_extensions"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "workflow_key",
+            name="uq_workflow_template_extensions_project_key",
+        ),
+        Index("ix_workflow_template_extensions_project", "project_id"),
+        Index("ix_workflow_template_extensions_workflow_key", "workflow_key"),
+        Index("ix_workflow_template_extensions_enabled", "enabled"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            ForeignKey("projects.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    workflow_key: str = Field(max_length=160)
+    enabled: bool = Field(default=True)
+    input_defaults_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    selected_context_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    required_input_keys_json: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    guardrails_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    step_overrides_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    template_overrides_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    created_by: str | None = Field(default=None, max_length=200)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
 class RunPlan(SQLModel, table=True):
     """Concrete agent-authored execution plan derived from a workflow template.
 

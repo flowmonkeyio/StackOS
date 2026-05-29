@@ -271,6 +271,15 @@ The current core operation registry includes:
 - `runPlan.update`
 - `runPlan.claimStep`
 - `runPlan.recordStep`
+- `workflowExtension.list`
+- `workflowExtension.get`
+- `workflowExtension.validate`
+- `workflowExtension.upsert`
+- `workflowTemplate.list`
+- `workflowTemplate.describe`
+- `workflowTemplate.validate`
+- `workflowTemplate.save`
+- `workflowTemplate.fork`
 
 Tracker list workflows reuse existing tracker operations. Use
 `tracker.createTicket` with `tickets_json` and `dry_run=true` for draft review,
@@ -288,6 +297,19 @@ Workflow templates are inert presets/contracts. They do not act by themselves.
 The main agent should resolve preset and skill requirements, adapt generic roles
 to the project, create a concrete run plan with `runPlan.create`, and work
 through tracker tasks/tickets with explicit dependencies and evidence.
+
+Workflow extensions are the project-configuration layer for templates. Use
+`workflowExtension.validate` and `workflowExtension.upsert` when a base workflow
+should stay reusable but a project needs stable input defaults, communication
+route refs, channel/target context, guardrails, extra step guidance, or atomic
+workflow-field overrides. `template_overrides_json` replaces the provided
+top-level workflow keys, then StackOS validates the effective template before
+saving or creating a run. Agents should put project-specific agent or skill
+changes in the existing `agent_requirements` / `skill_requirements` workflow
+fields, not in a new context mechanism. `workflowTemplate.describe` returns the
+attached `project_extension`, and `runPlan.create` applies enabled extension
+defaults before per-run inputs. Use `workflowTemplate.fork` only when a new
+workflow identity or separately reusable method is needed.
 
 Use `readiness.check` before broad setup scans when the agent already knows a
 workflow key or action ref. It answers the scoped question: is this workflow or
@@ -391,6 +413,10 @@ If a requested rich feature cannot be delivered exactly, the operation rejects
 with `effect: none`, failed JSON paths, supported capabilities, and repair
 options. It does not silently convert buttons, attachments, private delivery,
 threads, or notification behavior.
+For media-bearing sends, text/caption and files stay in the provider's native
+media message path: Slack resolves to file upload with `initial_comment`, and
+Telegram resolves to file/photo upload or media group rather than sending an
+extra text message first.
 Simple one-off sends can run directly. Workflow sends can also run with a
 `run_token`; in that case the active step must grant `communication.send` with
 explicit `targets` such as `communication-target:ops-alerts`. Workflow replies

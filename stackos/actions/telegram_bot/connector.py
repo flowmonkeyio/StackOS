@@ -3,8 +3,11 @@
 Official docs verified:
 - Bot API overview: https://core.telegram.org/bots/api
 - getMe: https://core.telegram.org/bots/api#getme
+- getFile: https://core.telegram.org/bots/api#getfile
 - sendMessage: https://core.telegram.org/bots/api#sendmessage
 - sendPhoto: https://core.telegram.org/bots/api#sendphoto
+- sendDocument: https://core.telegram.org/bots/api#senddocument
+- sendMediaGroup: https://core.telegram.org/bots/api#sendmediagroup
 - answerCallbackQuery: https://core.telegram.org/bots/api#answercallbackquery
 - getUpdates: https://core.telegram.org/bots/api#getupdates
 - Inline keyboards: https://core.telegram.org/bots/api#inlinekeyboardmarkup
@@ -20,7 +23,7 @@ from stackos.actions.connectors import (
 from stackos.actions.provider_utils import result, send_json
 from stackos.repositories.base import ValidationError
 
-from .media import _send_photo
+from .media import _download_file, _send_file, _send_photo
 from .payloads import (
     _callback_payload,
     _chat_id,
@@ -105,6 +108,18 @@ class TelegramBotActionConnector:
                 )
                 chat_id = _chat_id(request, profile)
                 return await _send_photo(request, chat_id, profile)
+            case "file.download":
+                _enforce_telegram_profile(request)
+                # Telegram getFile and file download:
+                # https://core.telegram.org/bots/api#getfile
+                return await _download_file(request)
+            case "file.upload":
+                profile = _enforce_profile_chat(
+                    request,
+                    str(payload["chat_ref"]),
+                )
+                chat_id = _chat_id(request, profile)
+                return await _send_file(request, chat_id, profile)
             case "callback.answer":
                 _enforce_telegram_profile(request)
                 # Telegram answerCallbackQuery:

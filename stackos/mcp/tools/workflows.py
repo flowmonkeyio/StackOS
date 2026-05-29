@@ -15,6 +15,10 @@ from stackos.operations.registry import OperationRegistry, build_operation_regis
 from stackos.repositories.base import ValidationError
 from stackos.workflows import (
     LoadedWorkflowTemplate,
+    WorkflowTemplateExtensionGetOut,
+    WorkflowTemplateExtensionListOut,
+    WorkflowTemplateExtensionOut,
+    WorkflowTemplateExtensionValidationOut,
     WorkflowTemplateListOut,
     WorkflowTemplateLoader,
     WorkflowTemplateValidationOut,
@@ -100,6 +104,65 @@ class WorkflowTemplateForkInput(MCPInput):
     created_by: str | None = None
 
 
+class WorkflowExtensionListInput(MCPInput):
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
+
+    project_id: int
+
+
+class WorkflowExtensionGetInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "workflow_key": "engineering.customer-support-investigation",
+            }
+        },
+    )
+
+    project_id: int
+    workflow_key: str
+    include_disabled: bool = True
+
+
+class WorkflowExtensionValidateInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "workflow_key": "engineering.customer-support-investigation",
+                "input_defaults_json": {
+                    "communication_route_ref": "communication-route:support-feedback"
+                },
+                "required_input_keys_json": ["communication_route_ref"],
+                "template_overrides_json": {
+                    "description": "Project-specific support investigation flow."
+                },
+            }
+        },
+    )
+
+    project_id: int
+    workflow_key: str
+    input_defaults_json: dict[str, Any] | None = None
+    selected_context_json: dict[str, Any] | None = None
+    required_input_keys_json: list[str] | None = None
+    guardrails_json: dict[str, Any] | None = None
+    step_overrides_json: dict[str, Any] | None = None
+    template_overrides_json: dict[str, Any] | None = None
+    metadata_json: dict[str, Any] | None = None
+    repo_root: str | None = None
+    plugin_slug: str | None = None
+    source: str | None = None
+
+
+class WorkflowExtensionUpsertInput(WorkflowExtensionValidateInput):
+    enabled: bool = True
+    created_by: str | None = None
+
+
 async def _template_list(
     inp: WorkflowTemplateListInput,
     ctx: MCPContext,
@@ -152,6 +215,77 @@ async def _template_validate(
         repo_root=inp.repo_root,
         plugin_slug=inp.plugin_slug,
         source=inp.source,
+    )
+
+
+async def _extension_list(
+    inp: WorkflowExtensionListInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WorkflowTemplateExtensionListOut:
+    return WorkflowTemplateLoader(ctx.session).list_extensions(project_id=inp.project_id)
+
+
+async def _extension_get(
+    inp: WorkflowExtensionGetInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WorkflowTemplateExtensionGetOut:
+    return WorkflowTemplateExtensionGetOut(
+        extension=WorkflowTemplateLoader(ctx.session).get_extension(
+            project_id=inp.project_id,
+            workflow_key=inp.workflow_key,
+            include_disabled=inp.include_disabled,
+        )
+    )
+
+
+async def _extension_validate(
+    inp: WorkflowExtensionValidateInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WorkflowTemplateExtensionValidationOut:
+    return WorkflowTemplateLoader(ctx.session).validate_extension(
+        project_id=inp.project_id,
+        workflow_key=inp.workflow_key,
+        input_defaults_json=inp.input_defaults_json,
+        selected_context_json=inp.selected_context_json,
+        required_input_keys_json=inp.required_input_keys_json,
+        guardrails_json=inp.guardrails_json,
+        step_overrides_json=inp.step_overrides_json,
+        template_overrides_json=inp.template_overrides_json,
+        metadata_json=inp.metadata_json,
+        repo_root=inp.repo_root,
+        plugin_slug=inp.plugin_slug,
+        source=inp.source,
+    )
+
+
+async def _extension_upsert(
+    inp: WorkflowExtensionUpsertInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[WorkflowTemplateExtensionOut]:
+    env = WorkflowTemplateLoader(ctx.session).upsert_extension(
+        project_id=inp.project_id,
+        workflow_key=inp.workflow_key,
+        enabled=inp.enabled,
+        input_defaults_json=inp.input_defaults_json,
+        selected_context_json=inp.selected_context_json,
+        required_input_keys_json=inp.required_input_keys_json,
+        guardrails_json=inp.guardrails_json,
+        step_overrides_json=inp.step_overrides_json,
+        template_overrides_json=inp.template_overrides_json,
+        metadata_json=inp.metadata_json,
+        repo_root=inp.repo_root,
+        plugin_slug=inp.plugin_slug,
+        source=inp.source,
+        created_by=inp.created_by,
+    )
+    return WriteEnvelope[WorkflowTemplateExtensionOut](
+        data=env.data,
+        run_id=ctx.run_id,
+        project_id=env.project_id,
     )
 
 
@@ -222,6 +356,7 @@ def _run_plan_operations() -> OperationRegistry:
         "runPlan.get",
         "runPlan.list",
         "runPlan.update",
+        "runPlan.abort",
         "runPlan.claimStep",
         "runPlan.recordStep",
     ):
@@ -233,6 +368,10 @@ def register(registry: ToolRegistry) -> None:
     register_mcp_operation_names(
         registry,
         (
+            "workflowExtension.list",
+            "workflowExtension.get",
+            "workflowExtension.validate",
+            "workflowExtension.upsert",
             "workflowTemplate.list",
             "workflowTemplate.describe",
             "workflowTemplate.validate",

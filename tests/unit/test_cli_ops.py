@@ -571,6 +571,55 @@ def test_cli_run_plans_approve_alias_calls_update_operation(
     assert json.loads(result.stdout)["data"]["approval_requests"][0]["status"] == "approved"
 
 
+def test_cli_run_plans_abort_alias_calls_operation(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {"data": {"status": "aborted"}}
+
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run-plans",
+            "abort",
+            "9",
+            "--project",
+            "7",
+            "--reason",
+            "superseded",
+            "--actor",
+            "codex",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "POST",
+            "/api/v1/operations/runPlan.abort/call",
+            {
+                "arguments": {
+                    "run_plan_id": 9,
+                    "reason": "superseded",
+                    "actor": "codex",
+                    "project_id": 7,
+                }
+            },
+        )
+    ]
+    assert json.loads(result.stdout)["data"]["status"] == "aborted"
+
+
 def test_cli_agent_requests_claim_alias_calls_operation(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     calls: list[tuple[str, str, dict[str, Any] | None]] = []
 

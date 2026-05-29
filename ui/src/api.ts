@@ -987,6 +987,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/workflow-template-extensions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workflow Template Extensions
+         * @description List project workflow configuration extensions.
+         */
+        get: operations["list_workflow_template_extensions_api_v1_projects__project_id__workflow_template_extensions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/workflow-templates": {
         parameters: {
             query?: never;
@@ -1021,6 +1041,50 @@ export interface paths {
         get: operations["describe_workflow_template_api_v1_projects__project_id__workflow_templates__template_key__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/workflow-templates/{template_key}/extension": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workflow Template Extension
+         * @description Get the project workflow extension for one template.
+         */
+        get: operations["get_workflow_template_extension_api_v1_projects__project_id__workflow_templates__template_key__extension_get"];
+        /**
+         * Upsert Workflow Template Extension
+         * @description Save project workflow configuration for one template.
+         */
+        put: operations["upsert_workflow_template_extension_api_v1_projects__project_id__workflow_templates__template_key__extension_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/workflow-templates/{template_key}/extension/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Workflow Template Extension
+         * @description Validate a project workflow extension without saving it.
+         */
+        post: operations["validate_workflow_template_extension_api_v1_projects__project_id__workflow_templates__template_key__extension_validate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2677,6 +2741,7 @@ export interface components {
         };
         /** LoadedWorkflowTemplate */
         LoadedWorkflowTemplate: {
+            project_extension?: components["schemas"]["WorkflowTemplateExtensionOut"] | null;
             spec: components["schemas"]["WorkflowTemplateSpec"];
             summary: components["schemas"]["WorkflowTemplateSummaryOut"];
         };
@@ -2736,6 +2801,8 @@ export interface components {
         };
         /** OperationDescribeOut */
         OperationDescribeOut: {
+            /** Category */
+            category: string;
             /** Examples */
             examples?: components["schemas"]["OperationExampleOut"][];
             /** Grant Policy */
@@ -2782,13 +2849,26 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** OperationGroupOut */
+        OperationGroupOut: {
+            /** Category */
+            category: string;
+            /** Count */
+            count: number;
+            /** Operation Names */
+            operation_names?: string[];
+        };
         /** OperationListOut */
         OperationListOut: {
+            /** Groups */
+            groups?: components["schemas"]["OperationGroupOut"][];
             /** Items */
             items: components["schemas"]["OperationSummaryOut"][];
         };
         /** OperationSummaryOut */
         OperationSummaryOut: {
+            /** Category */
+            category: string;
             /** Grant Policy */
             grant_policy: string;
             /** Mutating */
@@ -3909,6 +3989,125 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** WorkflowTemplateExtensionBody */
+        WorkflowTemplateExtensionBody: {
+            /** Created By */
+            created_by?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Guardrails Json */
+            guardrails_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Input Defaults Json */
+            input_defaults_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Plugin Slug */
+            plugin_slug?: string | null;
+            /** Required Input Keys Json */
+            required_input_keys_json?: string[] | null;
+            /** Selected Context Json */
+            selected_context_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Source */
+            source?: string | null;
+            /** Step Overrides Json */
+            step_overrides_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Template Overrides Json */
+            template_overrides_json?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** WorkflowTemplateExtensionListOut */
+        WorkflowTemplateExtensionListOut: {
+            /** Extensions */
+            extensions: components["schemas"]["WorkflowTemplateExtensionOut"][];
+        };
+        /** WorkflowTemplateExtensionOut */
+        WorkflowTemplateExtensionOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Guardrails Json */
+            guardrails_json?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: number;
+            /** Input Defaults Json */
+            input_defaults_json?: {
+                [key: string]: unknown;
+            };
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            };
+            /** Project Id */
+            project_id: number;
+            /** Required Input Keys Json */
+            required_input_keys_json?: string[];
+            /** Selected Context Json */
+            selected_context_json?: {
+                [key: string]: unknown;
+            };
+            /** Step Overrides Json */
+            step_overrides_json?: {
+                [key: string]: unknown;
+            };
+            /** Template Overrides Json */
+            template_overrides_json?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Workflow Key */
+            workflow_key: string;
+        };
+        /** WorkflowTemplateExtensionValidationOut */
+        WorkflowTemplateExtensionValidationOut: {
+            /** Errors */
+            errors?: components["schemas"]["WorkflowTemplateIssue"][];
+            extension?: components["schemas"]["WorkflowTemplateExtensionOut"] | null;
+            /** Valid */
+            valid: boolean;
+            /** Warnings */
+            warnings?: components["schemas"]["WorkflowTemplateIssue"][];
+        };
+        /**
+         * WorkflowTemplateIssue
+         * @description Validation issue returned by non-throwing template validation.
+         */
+        WorkflowTemplateIssue: {
+            /**
+             * Code
+             * @default validation_error
+             */
+            code: string;
+            /** Message */
+            message: string;
+            /** Path */
+            path: string;
+        };
         /** WorkflowTemplateListOut */
         WorkflowTemplateListOut: {
             /**
@@ -4011,6 +4210,13 @@ export interface components {
             plugin_slug?: string | null;
             /** Precedence */
             precedence: number;
+            /**
+             * Project Extension Enabled
+             * @default false
+             */
+            project_extension_enabled: boolean;
+            /** Project Extension Id */
+            project_extension_id?: number | null;
             /** Project Id */
             project_id?: number | null;
             /** Shadowed By */
@@ -4023,6 +4229,14 @@ export interface components {
             version: string;
             /** Version Id */
             version_id?: number | null;
+        };
+        /** WriteEnvelope[WorkflowTemplateExtensionOut] */
+        WriteEnvelope_WorkflowTemplateExtensionOut_: {
+            data: components["schemas"]["WorkflowTemplateExtensionOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
         };
         /**
          * WriteResponse[ArtifactOut]
@@ -4295,6 +4509,7 @@ export type SchemaMetricSnapshotOut = components['schemas']['MetricSnapshotOut']
 export type SchemaOperationCallIn = components['schemas']['OperationCallIn'];
 export type SchemaOperationDescribeOut = components['schemas']['OperationDescribeOut'];
 export type SchemaOperationExampleOut = components['schemas']['OperationExampleOut'];
+export type SchemaOperationGroupOut = components['schemas']['OperationGroupOut'];
 export type SchemaOperationListOut = components['schemas']['OperationListOut'];
 export type SchemaOperationSummaryOut = components['schemas']['OperationSummaryOut'];
 export type SchemaOperationSurfaceOut = components['schemas']['OperationSurfaceOut'];
@@ -4342,9 +4557,15 @@ export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWorkflowAgentRequirementSpec = components['schemas']['WorkflowAgentRequirementSpec'];
 export type SchemaWorkflowSkillRequirementSpec = components['schemas']['WorkflowSkillRequirementSpec'];
 export type SchemaWorkflowStepTemplateSpec = components['schemas']['WorkflowStepTemplateSpec'];
+export type SchemaWorkflowTemplateExtensionBody = components['schemas']['WorkflowTemplateExtensionBody'];
+export type SchemaWorkflowTemplateExtensionListOut = components['schemas']['WorkflowTemplateExtensionListOut'];
+export type SchemaWorkflowTemplateExtensionOut = components['schemas']['WorkflowTemplateExtensionOut'];
+export type SchemaWorkflowTemplateExtensionValidationOut = components['schemas']['WorkflowTemplateExtensionValidationOut'];
+export type SchemaWorkflowTemplateIssue = components['schemas']['WorkflowTemplateIssue'];
 export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTemplateListOut'];
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
+export type SchemaWriteEnvelopeWorkflowTemplateExtensionOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionOut_'];
 export type SchemaWriteResponseArtifactOut = components['schemas']['WriteResponse_ArtifactOut_'];
 export type SchemaWriteResponseAuthCredentialSetOut = components['schemas']['WriteResponse_AuthCredentialSetOut_'];
 export type SchemaWriteResponseAuthRevokeOut = components['schemas']['WriteResponse_AuthRevokeOut_'];
@@ -6455,6 +6676,37 @@ export interface operations {
             };
         };
     };
+    list_workflow_template_extensions_api_v1_projects__project_id__workflow_template_extensions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateExtensionListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_workflow_templates_api_v1_projects__project_id__workflow_templates_get: {
         parameters: {
             query?: {
@@ -6511,6 +6763,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoadedWorkflowTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_template_extension_api_v1_projects__project_id__workflow_templates__template_key__extension_get: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+                template_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateExtensionOut"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_workflow_template_extension_api_v1_projects__project_id__workflow_templates__template_key__extension_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                template_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowTemplateExtensionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteEnvelope_WorkflowTemplateExtensionOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_workflow_template_extension_api_v1_projects__project_id__workflow_templates__template_key__extension_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                template_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowTemplateExtensionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateExtensionValidationOut"];
                 };
             };
             /** @description Validation Error */

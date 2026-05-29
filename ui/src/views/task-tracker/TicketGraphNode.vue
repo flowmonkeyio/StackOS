@@ -8,7 +8,8 @@ const props = defineProps<{
   data: TrackerVueNodeData
 }>()
 
-const isBlocked = computed(() => (props.data.blockedBy?.length ?? 0) > 0)
+const isOpen = computed(() => props.data.status !== 'complete' && props.data.status !== 'deferred')
+const isBlocked = computed(() => isOpen.value && (props.data.blockedBy?.length ?? 0) > 0)
 const statusClass = computed(() => `ticket-graph-node__status--${props.data.status}`)
 </script>
 

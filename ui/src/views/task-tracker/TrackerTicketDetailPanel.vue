@@ -66,7 +66,14 @@ defineEmits<{
           <strong>{{ formatDateTime(ticket.updated_at) }}</strong>
         </div>
       </div>
-      <UiCallout v-if="ticket.blocker_reason || ticket.blocked_by.length" tone="warning">
+      <UiCallout
+        v-if="
+          ticket.status !== 'complete' &&
+          ticket.status !== 'deferred' &&
+          (ticket.blocker_reason || ticket.blocked_by.length)
+        "
+        tone="warning"
+      >
         {{ ticket.blocker_reason || `Blocked by ${ticket.blocked_by.join(', ')}` }}
       </UiCallout>
       <div v-if="ticket.definition_of_done_json.length" class="tracker-detail-section">

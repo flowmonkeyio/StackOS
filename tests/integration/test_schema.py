@@ -64,6 +64,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "tracker_tickets",
         "tracker_tombstones",
         "workflow_template_versions",
+        "workflow_template_extensions",
         "workflow_templates",
         "workspace_bindings",
     }
@@ -128,6 +129,15 @@ def _list_tables(db_path: Path) -> set[str]:
         conn.close()
 
 
+def _table_columns(db_path: Path, table_name: str) -> set[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute(f"PRAGMA table_info({table_name})")
+        return {row[1] for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path) -> None:
     _run_alembic(["upgrade", "head"])
     tables = _list_tables(isolated_alembic)
@@ -145,3 +155,42 @@ def test_alembic_downgrade_then_upgrade_idempotent(isolated_alembic: Path) -> No
 
     _run_alembic(["upgrade", "head"])
     assert _list_tables(isolated_alembic) == EXPECTED_TABLES
+
+
+def test_workflow_extension_migration_recovers_partial_table(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0016_tracker_completion_evidence"])
+
+    conn = sqlite3.connect(isolated_alembic)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE workflow_template_extensions (
+                id INTEGER NOT NULL,
+                project_id INTEGER NOT NULL,
+                workflow_key VARCHAR(160) NOT NULL,
+                enabled BOOLEAN NOT NULL,
+                input_defaults_json JSON,
+                selected_context_json JSON,
+                required_input_keys_json JSON,
+                guardrails_json JSON,
+                step_overrides_json JSON,
+                metadata_json JSON,
+                created_by VARCHAR(200),
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                PRIMARY KEY (id),
+                UNIQUE (project_id, workflow_key),
+                FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _run_alembic(["upgrade", "head"])
+
+    columns = _table_columns(isolated_alembic, "workflow_template_extensions")
+    assert "template_overrides_json" in columns

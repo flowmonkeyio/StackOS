@@ -70,6 +70,42 @@ def test_readiness_check_keeps_engineering_workflow_usable_without_provider_nois
     assert readiness["next_steps"][0]["tool"] == "runPlan.create"
 
 
+def test_readiness_check_reports_customer_support_workflow_slack_setup(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {"project_id": project_id, "workflow_key": "engineering.customer-support-investigation"},
+    )
+
+    assert readiness["scope"] == "workflow"
+    assert readiness["ready"] is True
+    assert readiness["execution_ready"] is False
+    assert readiness["workflow"]["workflow_key"] == ("engineering.customer-support-investigation")
+    assert (
+        "communications-customer-support-thread" in (readiness["workflow"]["required_agent_roles"])
+    )
+    assert "support-investigation-analyst" in readiness["workflow"]["required_agent_roles"]
+    providers = {item["provider_key"] for item in readiness["missing"]}
+    assert providers == {"slack-bot", "telegram-bot"}
+    required_providers = {
+        item["provider_key"]
+        for item in readiness["missing"]
+        if item["required_for"] == "action_execution"
+    }
+    optional_providers = {
+        item["provider_key"]
+        for item in readiness["missing"]
+        if item["required_for"] == "action_execution_optional_provider"
+    }
+    assert required_providers == {"slack-bot"}
+    assert optional_providers == {"telegram-bot"}
+    assert readiness["next_steps"][0]["tool"] == "runPlan.create"
+
+
 def test_readiness_check_reports_only_selected_workflow_provider_gaps(
     mcp_client: MCPClient,
     seeded_project: dict,

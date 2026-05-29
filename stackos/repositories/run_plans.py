@@ -200,6 +200,10 @@ class RunPlanRepository:
         repo_root: str | None = None,
         plugin_slug: str | None = None,
         source: str | None = None,
+        inputs_json: dict[str, Any] | None = None,
+        selected_context_json: dict[str, Any] | None = None,
+        metadata_json: dict[str, Any] | None = None,
+        enforce_required_inputs: bool = False,
     ) -> RunPlanValidationOut:
         if run_plan_json is not None:
             return validate_run_plan_obj(run_plan_json)
@@ -222,7 +226,13 @@ class RunPlanRepository:
                 plugin_slug=plugin_slug,
                 source=source,
             )
-            plan = run_plan_from_template(loaded)
+            plan = run_plan_from_template(
+                loaded,
+                inputs_json=inputs_json,
+                selected_context_json=selected_context_json,
+                metadata_json=metadata_json,
+                enforce_required_inputs=enforce_required_inputs,
+            )
         except Exception as exc:
             return RunPlanValidationOut(
                 valid=False,
@@ -270,15 +280,18 @@ class RunPlanRepository:
                     source=source,
                 )
         elif loaded is not None:
-            plan = run_plan_from_template(
-                loaded,
-                key=key,
-                title=title,
-                inputs_json=inputs_json,
-                context_snapshot_id=context_snapshot_id,
-                selected_context_json=selected_context_json,
-                metadata_json=metadata_json,
-            )
+            try:
+                plan = run_plan_from_template(
+                    loaded,
+                    key=key,
+                    title=title,
+                    inputs_json=inputs_json,
+                    context_snapshot_id=context_snapshot_id,
+                    selected_context_json=selected_context_json,
+                    metadata_json=metadata_json,
+                )
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
         else:
             raise ValidationError("run_plan_json or template_key is required")
 
@@ -567,6 +580,110 @@ class RunPlanRepository:
             self._s.commit()
             self._s.refresh(row)
         return Envelope(data=self._plan_out(row), run_id=row.run_id, project_id=row.project_id)
+
+    def abort(
+        self,
+        *,
+        run_plan_id: int,
+        project_id: int | None = None,
+        reason: str | None = None,
+        actor: str | None = None,
+    ) -> Envelope[RunPlanOut]:
+        plan = self._fetch_plan(run_plan_id)
+        self._require_plan_project(plan, project_id)
+        if plan.status == RunPlanStatus.ABORTED:
+            return Envelope(
+                data=self._plan_out(plan),
+                run_id=plan.run_id,
+                project_id=plan.project_id,
+            )
+        if plan.status in {RunPlanStatus.COMPLETED, RunPlanStatus.FAILED}:
+            raise ConflictError(
+                "terminal run plans cannot be aborted",
+                data={"run_plan_id": run_plan_id, "status": plan.status.value},
+            )
+        validate_transition(
+            plan.status,
+            RunPlanStatus.ABORTED,
+            RUN_PLAN_STATUS_TRANSITIONS,
+            label="run_plan.status",
+        )
+        if reason is not None:
+            _ensure_no_secrets({"reason": reason}, label="run plan abort reason")
+        now = _utcnow()
+        for step in self._step_rows(plan.id):
+            if step.status in {RunPlanStepStatus.PENDING, RunPlanStepStatus.BLOCKED}:
+                validate_transition(
+                    step.status,
+                    RunPlanStepStatus.SKIPPED,
+                    RUN_PLAN_STEP_STATUS_TRANSITIONS,
+                    label="run_plan_step.status",
+                )
+                step.status = RunPlanStepStatus.SKIPPED
+                step.result_json = {
+                    "summary": "Run plan aborted before this step executed.",
+                    **({"reason": reason} if reason else {}),
+                }
+                step.completed_at = now
+                step.updated_at = now
+                self._s.add(step)
+            elif step.status == RunPlanStepStatus.RUNNING:
+                validate_transition(
+                    step.status,
+                    RunPlanStepStatus.SKIPPED,
+                    RUN_PLAN_STEP_STATUS_TRANSITIONS,
+                    label="run_plan_step.status",
+                )
+                step.status = RunPlanStepStatus.SKIPPED
+                step.result_json = {
+                    "summary": "Run plan aborted while this step was running.",
+                    **({"reason": reason} if reason else {}),
+                }
+                step.error = None
+                step.completed_at = now
+                step.updated_at = now
+                self._s.add(step)
+        pending_approvals = self._s.exec(
+            select(ApprovalRequest).where(
+                ApprovalRequest.run_plan_id == plan.id,
+                ApprovalRequest.status == ApprovalRequestStatus.PENDING,
+            )
+        ).all()
+        for approval in pending_approvals:
+            validate_transition(
+                approval.status,
+                ApprovalRequestStatus.CANCELLED,
+                APPROVAL_REQUEST_STATUS_TRANSITIONS,
+                label="approval_request.status",
+            )
+            approval.status = ApprovalRequestStatus.CANCELLED
+            approval.decided_at = now
+            approval.decided_by = actor
+            approval.decision_json = {
+                "summary": "Run plan aborted before this approval was decided.",
+                **({"reason": reason} if reason else {}),
+            }
+            approval.updated_at = now
+            self._s.add(approval)
+        plan.status = RunPlanStatus.ABORTED
+        plan.completed_at = now
+        plan.updated_at = now
+        plan.metadata_json = {
+            **(plan.metadata_json or {}),
+            "aborted_at": now.isoformat(),
+            **({"aborted_by": actor} if actor else {}),
+            **({"abort_reason": reason} if reason else {}),
+        }
+        self._s.add(plan)
+        self._finish_linked_run(plan, RunStatus.ABORTED, error="run-plan-aborted")
+        TrackerRepository(self._s).mirror_run_plan_aborted(
+            plan=plan,
+            reason=reason,
+            actor=actor,
+        )
+        self._s.commit()
+        self._s.refresh(plan)
+        return Envelope(data=self._plan_out(plan), run_id=plan.run_id, project_id=plan.project_id)
 
     def claim_step(
         self,

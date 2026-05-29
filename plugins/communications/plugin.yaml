@@ -102,6 +102,7 @@ providers:
         - im:write
         - mpim:write
         - reactions:write
+        - files:write
       deferred_auth_methods:
         - oauth2-install
       deferred_runtime:
@@ -456,6 +457,163 @@ actions:
       docs:
         - docs/integration-contracts/communications.md
         - https://core.telegram.org/bots/api#sendphoto
+  - key: telegram-bot.file.download
+    name: Download Telegram File
+    description: Download a Telegram bot file_id into a generated StackOS artifact for inspected or forwarded media.
+    provider: telegram-bot
+    capability: messaging
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - profile_key
+        - file_id
+      properties:
+        profile_key:
+          type: string
+        file_id:
+          type: string
+        filename:
+          type: string
+        mime_type:
+          type: string
+        source_message_ref:
+          type: string
+        max_bytes:
+          type: integer
+          minimum: 1
+          maximum: 20971520
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: telegram-bot
+      operation: file.download
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api#getfile
+  - key: telegram-bot.file.upload
+    name: Upload Telegram File
+    description: Send one Telegram file/photo with caption as one message, or send 2-10 files as a Telegram media group.
+    provider: telegram-bot
+    capability: messaging
+    risk_level: write
+    input_schema: &telegram_file_upload_input
+      type: object
+      additionalProperties: false
+      required:
+        - chat_ref
+        - profile_key
+      anyOf:
+        - required:
+            - file
+        - required:
+            - files
+      properties:
+        profile_key:
+          type: string
+        chat_ref:
+          type: string
+        file:
+          &telegram_upload_file_schema
+          type: object
+          additionalProperties: false
+          oneOf:
+            - required:
+                - file_id
+            - required:
+                - url
+            - required:
+                - artifact_ref
+          properties:
+            type:
+              type: string
+              enum:
+                - image
+                - document
+                - file
+            file_id:
+              type: string
+            url:
+              type: string
+              pattern: '^https://'
+            artifact_ref:
+              type: string
+            filename:
+              type: string
+            title:
+              type: string
+            mime_type:
+              type: string
+            caption:
+              type: string
+        files:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            *telegram_upload_file_schema
+        caption:
+          type: string
+        parse_mode:
+          type: string
+        disable_notification:
+          type: boolean
+        delete_after_upload:
+          type: boolean
+        source_agent_request_id:
+          type: integer
+        reply_to_message_ref:
+          type: string
+        thread_ref:
+          type: string
+        direct_messages_topic_ref:
+          type: string
+        control_metadata:
+          type: object
+          additionalProperties: true
+        reply_markup:
+          type: object
+          additionalProperties: false
+          properties:
+            inline_keyboard:
+              type: array
+              maxItems: 20
+              items:
+                type: array
+                maxItems: 8
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - text
+                  properties:
+                    text:
+                      type: string
+                    url:
+                      type: string
+                    callback_data:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                  oneOf:
+                    - required:
+                        - url
+                    - required:
+                        - callback_data
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: telegram-bot
+      operation: file.upload
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api#senddocument
+        - https://core.telegram.org/bots/api#sendmediagroup
   - key: telegram-bot.callback.answer
     name: Answer Telegram Callback
     description: Acknowledge a Telegram inline button callback query with optional notification text.
@@ -763,6 +921,82 @@ actions:
         - docs/integration-contracts/communications.md
         - https://docs.slack.dev/reference/methods/chat.postMessage/
         - https://docs.slack.dev/reference/block-kit/block-elements/button-element/
+  - key: slack-bot.file.upload
+    name: Upload Slack File
+    description: Upload one or more generated StackOS artifacts to Slack with optional initial comment in the same Slack file-upload message.
+    provider: slack-bot
+    capability: messaging
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      anyOf:
+        - required:
+            - channel_ref
+        - required:
+            - surface_ref
+      oneOf:
+        - required:
+            - file
+        - required:
+            - files
+      properties:
+        profile_ref:
+          type: string
+          description: Optional communication-profile key/ref that owns outbound file state. Defaults to the credential profile key when omitted.
+        channel_ref:
+          type: string
+        surface_ref:
+          type: string
+        file:
+          &slack_upload_file_schema
+          type: object
+          additionalProperties: false
+          required:
+            - artifact_ref
+          properties:
+            type:
+              type: string
+              enum:
+                - image
+                - document
+                - file
+            artifact_ref:
+              type: string
+            filename:
+              type: string
+            title:
+              type: string
+            mime_type:
+              type: string
+            caption:
+              type: string
+        files:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            *slack_upload_file_schema
+        initial_comment:
+          type: string
+        thread_ref:
+          type: string
+        delete_after_upload:
+          type: boolean
+        source_agent_request_id:
+          type: integer
+          minimum: 1
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: slack-bot
+      operation: file.upload
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/files.getUploadURLExternal/
+        - https://docs.slack.dev/reference/methods/files.completeUploadExternal/
   - key: slack-bot.reaction.add
     name: Add Slack Message Reaction
     description: Add a native Slack emoji reaction to an explicit Slack message reference.
@@ -982,6 +1216,50 @@ actions:
       docs:
         - docs/integration-contracts/communications.md
         - https://docs.slack.dev/reference/methods/conversations.members/
+  - key: slack-bot.conversation.history
+    name: Inspect Slack Conversation History
+    description: Fetch bounded recent Slack conversation messages so agents can resolve provider message refs for follow-up actions.
+    provider: slack-bot
+    capability: messaging
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      anyOf:
+        - required:
+            - channel_ref
+        - required:
+            - surface_ref
+      properties:
+        profile_ref:
+          type: string
+          description: Optional communication-profile key/ref that owns discovered conversation state. Defaults to the credential profile key when omitted.
+        channel_ref:
+          type: string
+        surface_ref:
+          type: string
+        cursor:
+          type: string
+        latest:
+          type: string
+        oldest:
+          type: string
+        inclusive:
+          type: boolean
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: slack-bot
+      operation: conversation.history
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/conversations.history/
   - key: smtp.email.send
     name: Send SMTP Email
     description: Send email through SMTP from an explicit agent-supplied message payload.
@@ -1290,6 +1568,8 @@ config:
       - telegram-bot.identity.get
       - telegram-bot.message.send
       - telegram-bot.photo.send
+      - telegram-bot.file.download
+      - telegram-bot.file.upload
       - telegram-bot.callback.answer
       - telegram-bot.message.reaction.set
       - telegram-bot.message.delete
@@ -1299,6 +1579,7 @@ config:
       - telegram-bot.webhook.info
       - slack-bot.identity.get
       - slack-bot.message.send
+      - slack-bot.file.upload
       - slack-bot.reaction.add
       - slack-bot.message.delete
       - slack-bot.conversation.open

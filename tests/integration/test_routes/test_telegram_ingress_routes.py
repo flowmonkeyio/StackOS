@@ -516,6 +516,97 @@ def test_telegram_ingress_allows_dm_by_user_allowlist_without_chat_ref(
     assert requests.items[0].metadata_json["invoker_ref"] == "telegram-user:555"
 
 
+def test_telegram_ingress_records_photo_attachment_metadata(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_telegram_profile(api, project_id)
+    original_auth = api.headers.pop("Authorization", None)
+    try:
+        response = api.post(
+            f"/api/v1/ingress/telegram/{project_id}/support-bot",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
+            json={
+                "update_id": 466,
+                "message": {
+                    "message_id": 18,
+                    "date": 1_779_952_600,
+                    "chat": {"id": 555, "type": "private", "username": "ada"},
+                    "from": {"id": 555, "username": "ada"},
+                    "caption": "Campaign editor save bug",
+                    "photo": [
+                        {
+                            "file_id": "photo_small",
+                            "file_unique_id": "unique_small",
+                            "width": 90,
+                            "height": 90,
+                            "file_size": 1_000,
+                        },
+                        {
+                            "file_id": "photo_large",
+                            "file_unique_id": "unique_large",
+                            "width": 1280,
+                            "height": 720,
+                            "file_size": 44_000,
+                        },
+                    ],
+                },
+            },
+        )
+    finally:
+        if original_auth is not None:
+            api.headers["Authorization"] = original_auth
+
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["policy_status"] == "request_created"
+    assert body["message_record_id"] is not None
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        messages = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-message",
+        )
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+
+    assert messages.total_estimate == 1
+    message = messages.items[0].data_json
+    assert message["message_ref"] == "telegram-message:555:18"
+    assert message["text_preview"] == "Campaign editor save bug"
+    assert message["content_type"] == "text"
+    assert message["attachments"] == [
+        {
+            "type": "photo",
+            "media_ref": "photo_large",
+            "file_id": "photo_large",
+            "file_unique_id": "unique_large",
+            "width": 1280,
+            "height": 720,
+            "file_size": 44_000,
+            "variant_count": 2,
+            "variants": [
+                {
+                    "file_id": "photo_small",
+                    "file_unique_id": "unique_small",
+                    "width": 90,
+                    "height": 90,
+                    "file_size": 1_000,
+                },
+                {
+                    "file_id": "photo_large",
+                    "file_unique_id": "unique_large",
+                    "width": 1280,
+                    "height": 720,
+                    "file_size": 44_000,
+                },
+            ],
+        }
+    ]
+    assert requests.total_estimate == 1
+    assert requests.items[0].source_resource_key == "communication-message"
+
+
 def test_telegram_ingress_non_trigger_can_be_no_store(
     api: TestClient,
     project_id: int,

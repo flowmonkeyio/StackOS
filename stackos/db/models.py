@@ -105,6 +105,7 @@ from stackos.db.model_workflows import (
     RunPlan,
     RunPlanStep,
     WorkflowTemplate,
+    WorkflowTemplateExtension,
     WorkflowTemplateVersion,
 )
 
@@ -181,6 +182,7 @@ __all__ = [
     "TrackerTicketReference",
     "TrackerTombstone",
     "WorkflowTemplate",
+    "WorkflowTemplateExtension",
     "WorkflowTemplateVersion",
     "WorkspaceBinding",
 ]

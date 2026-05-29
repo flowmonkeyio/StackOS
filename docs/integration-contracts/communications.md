@@ -484,14 +484,18 @@ Outbound capabilities are still explicit actions:
 
 - `telegram-bot.message.send`: text message through Telegram `sendMessage`.
 - `telegram-bot.photo.send`: image/photo message through Telegram `sendPhoto`.
+- `telegram-bot.file.download`: download a Telegram `file_id` through
+  `getFile` into a generated StackOS artifact for forwarding or inspection.
+- `telegram-bot.file.upload`: send one generated artifact/file id/HTTPS URL as
+  `sendPhoto` or `sendDocument`, or send 2-10 files through `sendMediaGroup`.
 - `telegram-bot.callback.answer`: acknowledge an inline button callback through
   Telegram `answerCallbackQuery`.
 - `telegram-bot.message.reaction.set`: set a native emoji reaction on a
   specific Telegram message through Telegram `setMessageReaction`.
 - `telegram-bot.message.delete`: delete a specific Telegram message through
   Telegram `deleteMessage` when Telegram permits the bot to delete it.
-- Future actions may add edit, document/video/audio sends, and media group
-  sends, but only after each provider method has its own schema and tests.
+- Future actions may add edit and specialized video/audio sends, but only after
+  each provider method has its own schema and tests.
 
 Button support must be modeled as payload, not workflow logic:
 
@@ -1127,7 +1131,10 @@ available through MCP, REST, and CLI:
   surfaces and named targets, including field/data-sharing guidance.
 - `communicationContext.query`: bounded stored-history lookup for agents.
 - `communication.send`: normal provider-neutral outbound delivery to a named
-  target.
+  target. Media-bearing Slack sends resolve to `slack-bot.file.upload` so text
+  and files are completed as one Slack file-upload message; media-bearing
+  Telegram sends resolve to `telegram-bot.file.upload` so one file uses a
+  captioned message and multiple files use Telegram media group semantics.
 - `communication.reply`: normal provider-neutral reply to the origin of a
   stored agent request.
 
@@ -1363,6 +1370,8 @@ Action refs:
 - `communications.telegram-bot.identity.get`
 - `communications.telegram-bot.message.send`
 - `communications.telegram-bot.photo.send`
+- `communications.telegram-bot.file.download`
+- `communications.telegram-bot.file.upload`
 - `communications.telegram-bot.callback.answer`
 - `communications.telegram-bot.message.reaction.set`
 - `communications.telegram-bot.message.delete`
@@ -1376,6 +1385,8 @@ Executable in the current Telegram connector:
 - `identity.get`
 - `message.send`
 - `photo.send`
+- `file.download`
+- `file.upload`
 - `callback.answer`
 - `message.reaction.set`
 - `message.delete`
@@ -1384,10 +1395,15 @@ Executable in the current Telegram connector:
 - `webhook.delete`
 - `webhook.info`
 
-Deferred until separate tests/contracts:
-
-- media downloads, video/audio/document sends, and media groups.
-- edit/delete message.
+- `file.download` uses Telegram `getFile`, downloads the returned provider
+  file path into a generated StackOS artifact, returns only safe artifact and
+  source file refs, and never returns token-bearing file URLs.
+- `file.upload` sends one artifact/file id/public HTTPS URL as `sendPhoto` or
+  `sendDocument` with caption in the same Telegram message. For 2-10 files, it
+  uses `sendMediaGroup`; the first media item carries the caption and Telegram
+  returns multiple message refs. Transient generated artifacts may be deleted
+  after successful upload.
+- edit message.
 - channel administration.
 - database artifact-id resolution for `photo.artifact_ref`; generated asset
   URIs are supported now.
@@ -1452,6 +1468,7 @@ Action refs:
 
 - `communications.slack-bot.identity.get`
 - `communications.slack-bot.message.send`
+- `communications.slack-bot.file.upload`
 - `communications.slack-bot.reaction.add`
 - `communications.slack-bot.message.delete`
 - `communications.slack-bot.conversation.open`
@@ -1463,6 +1480,8 @@ Executable in the current Slack connector:
 
 - `identity.get` through Slack `auth.test`
 - `message.send` through Slack `chat.postMessage`
+- `file.upload` through Slack `files.getUploadURLExternal` and
+  `files.completeUploadExternal`
 - `reaction.add` through Slack `reactions.add`
 - `message.delete` through Slack `chat.delete`
 - `conversation.open` through Slack `conversations.open`
@@ -1484,6 +1503,12 @@ Validation rules:
 - `message.send` stores outbound `communication-message` records and stores
   outbound button `communication-interaction` records scoped by communication
   profile, message ref, block id, action id, and value.
+- `file.upload` requires one or more generated asset `artifact_ref` values. It
+  uploads bytes through Slack's external upload flow, completes the upload with
+  `initial_comment`, channel, and optional `thread_ts`, stores one outbound
+  file-upload `communication-message`, and can delete transient generated
+  artifacts after successful upload. Text plus files must be one Slack file
+  upload completion, not a separate text message plus file messages.
 - `reaction.add` requires a `message_ref` and Slack emoji `name`; optional
   `channel_ref`/`surface_ref` may override the channel resolved from
   `message_ref` when a safe profile ref map is used. It stores a
@@ -1503,7 +1528,7 @@ Validation rules:
 Deferred until separate tests/contracts:
 
 - Socket Mode listener and `apps.connections.open` runtime.
-- Slack history reads, reaction remove, file uploads, user/profile lookup,
+- Slack history reads, reaction remove, user/profile lookup,
   channel administration, and message update.
 - Automatic response URL usage. Slack `response_url` is transient sensitive
   material and is not persisted by ingress.

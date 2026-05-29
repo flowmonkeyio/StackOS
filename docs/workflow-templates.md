@@ -53,6 +53,52 @@ All agents should work through the existing tracker. Planning agents should
 break work into deliverable tickets, encode logical dependencies and sequencing,
 avoid loose ends, and make blockers and definition of done visible.
 
+For engineering workflows, the reusable SDLC baseline should keep the method
+explicit even when a project adapts the role names or host-agent format:
+
+```text
+requirements -> discovery -> planning -> design -> design review -> test design
+-> delivery -> verification -> delivery review -> tracker audit -> release
+```
+
+Reported customer issues use a separate customer-support investigation workflow
+before delivery:
+
+```text
+feedback -> route and media preflight -> canonical Slack thread -> eyes reaction
+-> full-thread read -> same-thread clarification when needed
+-> support investigation conclusion -> wait for same-thread instruction
+-> delivery task creation -> same-thread task handoff
+-> task-created reaction -> tracked-delivery handoff
+```
+
+The baseline separates method from specialization. Requirements and test design
+define what must be true, discovery and architecture map how the current project
+actually works, delivery changes the repo, verification proves the diff, and
+reviewers challenge both behavior and durable tracker truth. A template may
+compact or skip optional specialist roles for small work, but it should not
+erase acceptance criteria, dependencies, evidence, or closeout truth from the
+run plan.
+
+The customer-support baseline is deliberately investigation-first. Slack is
+the canonical thread for support investigation, even when feedback originates
+in Telegram or another surface, but a configured Slack target is not itself
+route approval. Non-Slack feedback needs a matching route or current operator
+instruction naming the Slack target before content is copied. Agents must also
+inventory every source media item and forward all route-approved media in the
+same canonical Slack handoff message when supported; if the provider path
+cannot carry every item, the workflow stops before partial handoff or asks for
+explicit text-only approval. Agents must read the full
+thread before analysis, before posting the support investigation conclusion,
+and before creating tasks. If evidence is missing, they ask clarification
+questions in the same thread and reread before deciding.
+The investigation may recommend a fix direction, but tracker tasks are created
+only after explicit human instruction in that same thread. Created tasks and
+tickets must preserve source, canonical Slack thread/message, clarification,
+support conclusion, instruction, task handoff, source media, forwarded media,
+and tracked-delivery refs in tracker context or `references_json`. Once tasks
+exist, implementation proceeds through `engineering.tracked-delivery`.
+
 ## Context Requirements
 
 Context requirements define how the agent can retrieve history without loading
@@ -88,7 +134,9 @@ Steps are defaults, not a prison. A good step defines:
 - `completion_criteria`
 
 Agents can adapt a run plan when the project requires it. If a project repeats
-the adapted pattern, the agent should save a project-scoped template version.
+the same setup defaults or extra guidance, the agent should save a workflow
+extension. Save a project-scoped template version only when the reusable
+workflow method itself has changed.
 
 Template step refs are planning contracts, not executable grants. For example,
 `action_refs: [send_email]` points at an `action_contracts` entry. When an
@@ -109,6 +157,53 @@ its own templates. Project templates should record their source and version so
 agents can understand whether they are using a built-in pattern or a local
 operating method.
 
+Project-specific setup should normally use a workflow extension instead of a
+fork. A workflow extension is keyed by `project_id` and `workflow_key`, then
+layered over the selected base template when `runPlan.create` materializes a
+run. It can provide:
+
+- `input_defaults_json` for stable project refs such as communication routes,
+  named targets, default handoff workflow keys, or local signoff conventions
+- `selected_context_json` for project guidance, channel purpose, audience,
+  data-scope/share boundaries, and safe external refs
+- `required_input_keys_json` for inputs that must be present after defaults and
+  per-run inputs are merged
+- `guardrails_json` for project policy hints the agent must preserve in the
+  run plan metadata
+- `step_overrides_json` for additive step guidance such as
+  `extra_instructions`, `instructions_prepend`, `success_criteria`, or
+  metadata
+- `template_overrides_json` for an atomic top-level workflow patch. Each key in
+  this object replaces the matching key on the base workflow, then StackOS
+  validates the resulting effective `WorkflowTemplateSpec` before saving or
+  creating a run. Use the same workflow keys agents already see in templates,
+  such as `agent_requirements`, `skill_requirements`, `steps`, `policies`, or
+  YAML aliases like `metadata`, `extensions`, and `ui`.
+
+Extensions do not duplicate or shadow the base workflow identity. They can
+bind run setup and can override any workflow template field atomically for the
+project. Use `workflowExtension.validate` before saving, then
+`workflowExtension.upsert` to persist reviewed project setup. Use
+`workflowExtension.get` or the Workflow Templates UI to inspect the extension;
+use `workflowTemplate.describe` to inspect the effective workflow after enabled
+project overrides are applied. Template detail responses include
+`project_extension`, and template summaries include `project_extension_id` /
+`project_extension_enabled` so agents can see when a project extension exists.
+
+Use a project template or `workflowTemplate.fork` only when the workflow
+identity changes or a genuinely new reusable method should be published. Use an
+extension when the same workflow key needs project-specific route refs, channel
+context, default inputs, guardrails, agent/skill guidance, contracts, approval
+gates, or steps.
+
+When an agent needs to adjust agents or skills for one project, it should
+override the workflow's existing `agent_requirements` or `skill_requirements`
+inside `template_overrides_json`. These are atomic top-level replacements, so
+provide the full desired list rather than a partial fragment. Do not invent a
+new context-sharing field for agent guidance; use `selected_context_json` for
+project context and the existing workflow requirement fields for agent/skill
+contracts.
+
 New workflow authoring is available through the contract interface:
 `workflowTemplate.validate`, `workflowTemplate.save`, `workflowTemplate.fork`,
 and `runPlan.create`. Use `workflowTemplate.validate({ "key":
@@ -116,6 +211,15 @@ and `runPlan.create`. Use `workflowTemplate.validate({ "key":
 key. Use `template_json` or `template_yaml` when validating a draft before
 saving it. The UI can inspect and use templates, but it is not yet a full
 visual workflow-builder.
+
+For customer feedback workflows, configure the canonical Slack route and target
+as project extension defaults. The base support workflow remains generic; the
+project extension supplies refs such as `communication_route_ref`,
+`canonical_slack_target_ref`, and `project_workflow_context` so the agent can
+create the correct run plan without rediscovering channel setup every time.
+If the project needs different agents, step ordering, or support instructions,
+put those changes in `template_overrides_json` and let
+`workflowExtension.validate` prove the effective workflow is still well-formed.
 
 ## Examples
 

@@ -179,6 +179,7 @@ _OPERATION_CATEGORY_PREFIXES: tuple[tuple[str, str], ...] = (
     ("provider.", "catalog"),
     ("meta.", "catalog"),
     ("operation.", "operations"),
+    ("workflowExtension.", "workflow"),
     ("workflowTemplate.", "workflow"),
     ("runPlan.", "workflow"),
     ("run.", "workflow"),

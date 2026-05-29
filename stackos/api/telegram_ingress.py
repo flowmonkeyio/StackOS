@@ -712,11 +712,75 @@ def _message_attachments(message: Mapping[str, Any]) -> list[dict[str, Any]]:
     attachments: list[dict[str, Any]] = []
     photo = message.get("photo")
     if isinstance(photo, list) and photo:
-        attachments.append({"type": "photo", "count": len(photo)})
+        variants = [
+            {
+                key: value
+                for key, value in {
+                    "file_id": item.get("file_id"),
+                    "file_unique_id": item.get("file_unique_id"),
+                    "width": item.get("width"),
+                    "height": item.get("height"),
+                    "file_size": item.get("file_size"),
+                }.items()
+                if value is not None
+            }
+            for item in photo
+            if isinstance(item, Mapping)
+        ]
+        largest = _largest_photo_variant(variants)
+        attachments.append(
+            {
+                key: value
+                for key, value in {
+                    "type": "photo",
+                    "media_ref": largest.get("file_id"),
+                    "file_id": largest.get("file_id"),
+                    "file_unique_id": largest.get("file_unique_id"),
+                    "width": largest.get("width"),
+                    "height": largest.get("height"),
+                    "file_size": largest.get("file_size"),
+                    "variant_count": len(variants),
+                    "variants": variants,
+                }.items()
+                if value not in (None, [], {})
+            }
+        )
     for key in ("document", "video", "audio", "voice"):
-        if isinstance(message.get(key), dict):
-            attachments.append({"type": key})
+        media = message.get(key)
+        if isinstance(media, Mapping):
+            attachments.append(_media_attachment(key, media))
     return attachments
+
+
+def _largest_photo_variant(variants: list[dict[str, Any]]) -> dict[str, Any]:
+    if not variants:
+        return {}
+    return max(
+        variants,
+        key=lambda item: (
+            int(item.get("file_size") or 0),
+            int(item.get("width") or 0) * int(item.get("height") or 0),
+        ),
+    )
+
+
+def _media_attachment(kind: str, media: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in {
+            "type": kind,
+            "media_ref": media.get("file_id"),
+            "file_id": media.get("file_id"),
+            "file_unique_id": media.get("file_unique_id"),
+            "file_name": media.get("file_name"),
+            "mime_type": media.get("mime_type"),
+            "duration": media.get("duration"),
+            "width": media.get("width"),
+            "height": media.get("height"),
+            "file_size": media.get("file_size"),
+        }.items()
+        if value is not None
+    }
 
 
 def _chat_title(chat: Mapping[str, Any]) -> str:

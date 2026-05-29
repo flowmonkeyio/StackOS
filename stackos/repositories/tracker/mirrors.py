@@ -251,6 +251,60 @@ class TrackerMirrorMixin:
             commit=False,
         )
 
+    def mirror_run_plan_aborted(
+        self,
+        *,
+        plan: RunPlan,
+        reason: str | None = None,
+        actor: str | None = None,
+    ) -> None:
+        if plan.id is None:
+            return
+        tracker = self.ensure_tracker(project_id=plan.project_id)
+        task = self._task_by_key(tracker.id, f"workflow-{plan.id}", missing_ok=True)
+        if task is None:
+            return
+        now = _utcnow()
+        before = self._task_snapshot(task)
+        task.status = TrackerItemStatus.DEFERRED
+        task.lane_key = "done"
+        task.completed_at = now
+        task.updated_at = now
+        current_evidence = dict(task.completion_evidence_json or {})
+        task.completion_evidence_json = {
+            **current_evidence,
+            "summary": "Run plan aborted before completion.",
+            "run_plan_id": plan.id,
+            **({"reason": reason} if reason else {}),
+        }
+        self._s.add(task)
+
+        for ticket in self._ticket_rows_for_run_plan(tracker.id, plan.id):
+            if ticket.status in TERMINAL_TICKET_STATUSES:
+                continue
+            ticket.status = TrackerItemStatus.DEFERRED
+            ticket.lane_key = "done"
+            ticket.blocker_reason = None
+            ticket.completed_at = now
+            ticket.updated_at = now
+            ticket.outcome = "Run plan aborted before this step completed."
+            if reason:
+                ticket.outcome = f"{ticket.outcome} Reason: {reason}"
+            self._s.add(ticket)
+
+        self._record_revision(
+            tracker,
+            actor=actor,
+            change_kind="workflow-abort",
+            entity_kind="task",
+            entity_id=task.id,
+            entity_key=task.key,
+            summary=f"Run plan {plan.id} aborted.",
+            before_json=before,
+            after_json=self._task_snapshot(task),
+            commit=False,
+        )
+
     def mirror_run_plan_step_claimed(self, *, plan: RunPlan, step: RunPlanStep) -> None:
         if plan.id is None:
             return

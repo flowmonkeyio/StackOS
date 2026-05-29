@@ -22,6 +22,13 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
         "agentPreset.resolveForWorkflow",
         {"workflow_key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
     )
+    support_resolved = mcp_client.call_tool_structured(
+        "agentPreset.resolveForWorkflow",
+        {
+            "workflow_key": "engineering.customer-support-investigation",
+            "plugin_slug": "engineering",
+        },
+    )
 
     assert "stackos.workflow.project-memory-review" in {item["key"] for item in listing["presets"]}
     assert described["preset"]["summary"]["key"] == "stackos.sdlc.planning"
@@ -43,9 +50,36 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     required_agent_keys = {
         agent["preset"]["summary"]["key"] for agent in engineering_resolved["required_agents"]
     }
-    assert required_agent_keys >= {
+    assert required_agent_keys == {
+        "stackos.sdlc.requirements-flow-definer",
         "stackos.sdlc.planning",
+        "stackos.sdlc.architecture",
+        "stackos.sdlc.test-designer",
         "stackos.sdlc.delivery",
         "stackos.sdlc.delivery-reviewer",
     }
+    recommended_agent_keys = {
+        agent["preset"]["summary"]["key"] for agent in engineering_resolved["recommended_agents"]
+    }
+    assert recommended_agent_keys == {
+        "stackos.sdlc.codebase-explorer",
+        "stackos.sdlc.release-ops",
+    }
     assert engineering_resolved["skill_requirements"][0]["skill_ref"] == "stackos:stackos"
+    assert support_resolved["workflow"]["key"] == "engineering.customer-support-investigation"
+    support_required_agent_keys = {
+        agent["preset"]["summary"]["key"] for agent in support_resolved["required_agents"]
+    }
+    assert support_required_agent_keys == {
+        "communications.workflow.customer-support-thread",
+        "stackos.sdlc.support-investigation-analyst",
+        "stackos.sdlc.planning",
+        "stackos.sdlc.delivery-reviewer",
+    }
+    support_recommended_agent_keys = {
+        agent["preset"]["summary"]["key"] for agent in support_resolved["recommended_agents"]
+    }
+    assert support_recommended_agent_keys == {
+        "stackos.sdlc.codebase-explorer",
+    }
+    assert support_resolved["skill_requirements"][0]["skill_ref"] == "stackos:stackos"

@@ -57,6 +57,21 @@ Lifecycle mirroring is mechanical:
 StackOS only mirrors state. It does not invent tickets beyond the concrete
 run-plan steps and it does not decide how to repair failures.
 
+For `engineering.customer-support-investigation`, the tracker boundary is
+intentionally later than investigation. The support workflow may mirror its own
+run-plan steps, but delivery tasks/tickets are created only after the operator
+replies with task-creation instructions in the canonical Slack thread. Those
+delivery tasks must link back to the Slack thread and include the investigation
+summary, validated root cause or bounded uncertainty, fix direction, affected
+surfaces, acceptance criteria, and verification expectations. They must also
+preserve source refs, canonical Slack thread/message refs, clarification refs,
+support conclusion refs, instruction message refs, task handoff refs, source
+media refs, forwarded media message refs or an explicit media waiver, and
+tracked-delivery refs in task context/metadata or ticket `references_json` so
+`tracker.brief` gives the delivery agent enough chat context to continue
+without re-investigating. Implementation then proceeds through
+`engineering.tracked-delivery`.
+
 `tracker.brief` and `tracker.execute` include `workflow_handoff` for mirrored
 workflow tickets. That packet carries `run_plan_id`, `run_plan_step_id`,
 `run_id` when available, the template/step refs, and the intended operation
@@ -218,6 +233,31 @@ workflowTemplate.describe
 -> runPlan.recordStep
 -> tracker.verify
 ```
+
+For engineering SDLC workflow work, the mirrored tickets should preserve the
+requirements-to-release order instead of collapsing everything into one
+implementation ticket:
+
+```text
+scope-work
+-> define-requirements
+-> discover-impact
+-> plan-tickets
+-> design-approach
+-> review-design
+-> design-tests
+-> deliver-tickets
+-> verify-delivery
+-> review-delivery
+-> audit-tracker
+-> release-closeout
+```
+
+The tracker is the durable execution map. It is not the proof that work is
+correct. Completion evidence should point to the code, commands, manual checks,
+docs, run-plan steps, artifacts, or reviewed decisions that make a ticket true.
+If the evidence is missing, the ticket should remain open or explicitly
+deferred.
 
 For direct/manual work:
 

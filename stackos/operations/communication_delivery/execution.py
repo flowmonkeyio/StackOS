@@ -64,6 +64,15 @@ async def _execute_delivery(
         surface_ref=surface_ref or _first_str(output, "channel_ref", "chat_ref", "surface_ref"),
         thread_ref=_first_str(output, "thread_ref"),
         message_ref=_first_str(output, "message_ref"),
+        message_refs=_string_list(output.get("message_refs")),
+        file_ref=_first_str(output, "file_ref"),
+        file_refs=_string_list(output.get("file_refs")),
+        attachment_refs=_string_list(output.get("attachment_refs")),
+        local_artifact_deleted=(
+            output.get("local_artifact_deleted")
+            if isinstance(output.get("local_artifact_deleted"), bool)
+            else None
+        ),
         dry_run=dry_run,
         effects=(
             [
@@ -77,3 +86,9 @@ async def _execute_delivery(
         resolved=resolved,
     )
     return WriteEnvelope(data=out, run_id=env.run_id, project_id=env.project_id)
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, str) and item.strip()]

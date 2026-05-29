@@ -456,6 +456,30 @@ def run_plans_approve(
     _echo_json(_operation_call("runPlan.update", arguments))
 
 
+@run_plans_app.command(name="abort")
+def run_plans_abort(
+    run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
+    project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
+    reason: Annotated[str | None, typer.Option("--reason", help="Abort reason.")] = None,
+    actor: Annotated[str | None, typer.Option("--actor", help="Operator/agent label.")] = None,
+    idempotency_key: Annotated[
+        str | None,
+        typer.Option("--idempotency-key", help="24h dedupe token for abort."),
+    ] = None,
+) -> None:
+    """Abort a draft or started run plan and retire its tracker mirror."""
+    arguments = _merge_common_arguments(
+        {
+            "run_plan_id": run_plan_id,
+            "reason": reason,
+            "actor": actor,
+        },
+        project_id=project_id,
+        idempotency_key=idempotency_key,
+    )
+    _echo_json(_operation_call("runPlan.abort", arguments))
+
+
 @run_plans_app.command(name="claim-step")
 def run_plans_claim_step(
     run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],

@@ -43,13 +43,21 @@ class RunPlanValidateInput(MCPInput):
     repo_root: str | None = None
     plugin_slug: str | None = None
     source: str | None = None
+    inputs_json: dict[str, Any] | None = None
+    selected_context_json: dict[str, Any] | None = None
+    metadata_json: dict[str, Any] | None = None
+    enforce_required_inputs: bool = False
 
 
 class RunPlanCreateInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
-            "example": {"project_id": 1, "template_key": "core.project-memory-review"}
+            "example": {
+                "project_id": 1,
+                "template_key": "core.project-memory-review",
+                "inputs_json": {"goal": "Review recent project memory"},
+            }
         },
     )
 
@@ -117,6 +125,24 @@ class RunPlanUpdateInput(MCPInput):
     decision_json: dict[str, Any] | None = None
 
 
+class RunPlanAbortInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "run_plan_id": 1,
+                "reason": "Superseded by a newer support workflow run.",
+                "actor": "codex",
+            }
+        },
+    )
+
+    run_plan_id: int
+    project_id: int | None = None
+    reason: str | None = None
+    actor: str | None = None
+
+
 class RunPlanClaimStepInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
@@ -162,6 +188,10 @@ async def run_plan_validate(
         repo_root=inp.repo_root,
         plugin_slug=inp.plugin_slug,
         source=inp.source,
+        inputs_json=inp.inputs_json,
+        selected_context_json=inp.selected_context_json,
+        metadata_json=inp.metadata_json,
+        enforce_required_inputs=inp.enforce_required_inputs,
     )
 
 
@@ -241,6 +271,20 @@ async def run_plan_update(
     return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
 
 
+async def run_plan_abort(
+    inp: RunPlanAbortInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[RunPlanOut]:
+    env = RunPlanRepository(ctx.session).abort(
+        run_plan_id=inp.run_plan_id,
+        project_id=inp.project_id,
+        reason=inp.reason,
+        actor=inp.actor,
+    )
+    return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
+
+
 async def run_plan_claim_step(
     inp: RunPlanClaimStepInput,
     ctx: MCPContext,
@@ -307,6 +351,8 @@ def operation_specs() -> list[OperationSpec]:
                 "Pass run_plan_json for an explicit plan or template_key for a "
                 "template-derived plan.",
                 "Pass project_id when the validation depends on project templates.",
+                "Set enforce_required_inputs=true and pass inputs_json when validating a "
+                "concrete template-derived create request.",
             ),
             returns=(
                 "valid=true with the normalized plan when validation passes.",
@@ -315,7 +361,12 @@ def operation_specs() -> list[OperationSpec]:
             examples=(
                 OperationExample(
                     title="Validate a template-derived plan",
-                    arguments={"project_id": 1, "template_key": "core.project-memory-review"},
+                    arguments={
+                        "project_id": 1,
+                        "template_key": "core.project-memory-review",
+                        "inputs_json": {"goal": "Review recent project memory"},
+                        "enforce_required_inputs": True,
+                    },
                 ),
             ),
             mutating=False,
@@ -349,7 +400,11 @@ def operation_specs() -> list[OperationSpec]:
             examples=(
                 OperationExample(
                     title="Create a plan from a project template",
-                    arguments={"project_id": 1, "template_key": "core.project-memory-review"},
+                    arguments={
+                        "project_id": 1,
+                        "template_key": "core.project-memory-review",
+                        "inputs_json": {"goal": "Review recent project memory"},
+                    },
                 ),
                 OperationExample(
                     title="Create a one-step explicit plan",
@@ -484,6 +539,45 @@ def operation_specs() -> list[OperationSpec]:
                 ),
             ),
             grant_policy="admin-only",
+        ),
+        OperationSpec(
+            name="runPlan.abort",
+            summary="Abort a draft or started run plan and retire its tracker mirror.",
+            input_model=RunPlanAbortInput,
+            output_model=WriteEnvelope[RunPlanOut],
+            handler=run_plan_abort,
+            surfaces=_surfaces("runPlan.abort", "run-plans abort"),
+            purpose=(
+                "Use this when a run plan is obsolete, superseded, or intentionally stopped. "
+                "The operation closes the run-plan lifecycle, skips unfinished steps, "
+                "cancels pending approvals, aborts the linked run audit row, and mirrors "
+                "the workflow task/tickets as deferred."
+            ),
+            when_to_use=(
+                "A started workflow should no longer continue.",
+                "A draft run plan was created by mistake and should not be executed.",
+                "An old rehearsal or abandoned run must not appear as live blocked work.",
+            ),
+            prerequisites=(
+                "Pass run_plan_id.",
+                "The run plan must be draft or started.",
+                "Do not use this to hide a completed or failed audit result.",
+            ),
+            returns=(
+                "A WriteEnvelope containing the aborted run plan.",
+                "Skipped pending/running steps and cancelled pending approvals.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Abort a superseded run plan",
+                    arguments={
+                        "run_plan_id": 42,
+                        "reason": "Superseded by run plan 43.",
+                        "actor": "codex",
+                    },
+                ),
+            ),
+            grant_policy="direct-run-audit-write",
         ),
         OperationSpec(
             name="runPlan.claimStep",

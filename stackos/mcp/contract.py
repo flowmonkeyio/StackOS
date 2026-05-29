@@ -140,6 +140,7 @@ READ_ONLY_TOOL_NAMES: frozenset[str] = frozenset(
         "action.validate",
         "runPlan.validate",
         "tracker.execute",
+        "workflowExtension.validate",
         "workflowTemplate.validate",
     }
 )

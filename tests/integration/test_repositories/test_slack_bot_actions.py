@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from urllib.parse import parse_qs
 
 import pytest
 from pytest_httpx import HTTPXMock
@@ -92,12 +93,14 @@ def test_slack_builtin_actions_are_registered(session: Session) -> None:
     for action_ref, operation in {
         "communications.slack-bot.identity.get": "identity.get",
         "communications.slack-bot.message.send": "message.send",
+        "communications.slack-bot.file.upload": "file.upload",
         "communications.slack-bot.reaction.add": "reaction.add",
         "communications.slack-bot.message.delete": "message.delete",
         "communications.slack-bot.conversation.open": "conversation.open",
         "communications.slack-bot.conversation.info": "conversation.info",
         "communications.slack-bot.conversation.list": "conversation.list",
         "communications.slack-bot.conversation.members": "conversation.members",
+        "communications.slack-bot.conversation.history": "conversation.history",
     }.items():
         described = repo.describe(action_ref=action_ref)
 
@@ -542,3 +545,199 @@ def test_slack_provider_error_redacts_token_text(
 
     assert _TOKEN not in exc.value.data["error"]
     assert "Bearer [redacted]" in exc.value.data["error"]
+
+
+def test_slack_file_upload_keeps_comment_and_files_in_one_provider_call(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+    tmp_path,
+) -> None:
+    credential_ref = _slack_credential_ref(session, project_id)
+    _slack_communication_profile(session, project_id)
+    asset = tmp_path / "communication-media" / "issue.png"
+    asset.parent.mkdir(parents=True)
+    asset.write_bytes(b"image-bytes")
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/files.getUploadURLExternal",
+        json={"ok": True, "upload_url": "https://files.slack.test/upload/F123", "file_id": "F123"},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://files.slack.test/upload/F123",
+        text="OK",
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/files.completeUploadExternal",
+        json={
+            "ok": True,
+            "files": [
+                {
+                    "id": "F123",
+                    "name": "issue.png",
+                    "title": "Issue screenshot",
+                    "mimetype": "image/png",
+                    "size": 11,
+                    "shares": {
+                        "private": {
+                            "C123": [{"ts": "1770000000.000200"}],
+                        }
+                    },
+                }
+            ],
+        },
+    )
+
+    out = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="communications.slack-bot.file.upload",
+            input_json={
+                "profile_ref": "communication-profile:support-agent",
+                "channel_ref": "slack-channel:C123",
+                "thread_ref": "slack-thread:C123:1770000000.000100",
+                "initial_comment": "Customer attached this screenshot.",
+                "files": [
+                    {
+                        "artifact_ref": "/generated-assets/communication-media/issue.png",
+                        "filename": "issue.png",
+                        "title": "Issue screenshot",
+                        "mime_type": "image/png",
+                    }
+                ],
+                "delete_after_upload": True,
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    requests = httpx_mock.get_requests()
+    assert [request.url.path for request in requests] == [
+        "/api/files.getUploadURLExternal",
+        "/upload/F123",
+        "/api/files.completeUploadExternal",
+    ]
+    assert not any(request.url.path == "/api/chat.postMessage" for request in requests)
+    upload_url_body = parse_qs(requests[0].content.decode("utf-8"))
+    assert upload_url_body == {"filename": ["issue.png"], "length": ["11"]}
+    complete_body = json.loads(requests[2].content.decode("utf-8"))
+    assert complete_body["channel_id"] == "C123"
+    assert complete_body["initial_comment"] == "Customer attached this screenshot."
+    assert complete_body["thread_ts"] == "1770000000.000100"
+    assert complete_body["files"] == [{"id": "F123", "title": "Issue screenshot"}]
+    assert requests[1].content == b"image-bytes"
+    assert asset.exists() is False
+    assert out.output_json["message_ref"] == "slack-message:C123:1770000000.000200"
+    assert out.output_json["thread_ref"] == "slack-thread:C123:1770000000.000100"
+    assert out.output_json["file_refs"] == ["slack-file:F123"]
+    assert out.output_json["local_artifact_deleted"] is True
+
+    messages = ResourceRepository(session).query_records(
+        project_id=project_id,
+        plugin_slug="communications",
+        resource_key="communication-message",
+    )
+    uploads = [
+        item for item in messages.items if item.data_json.get("content_type") == "file_upload"
+    ]
+    assert len(uploads) == 1
+    assert uploads[0].data_json["text_preview"] == "Customer attached this screenshot."
+    assert uploads[0].data_json["attachments"][0]["file_ref"] == "slack-file:F123"
+
+
+def test_slack_file_upload_missing_scope_reports_repair_context(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+    tmp_path,
+) -> None:
+    credential_ref = _slack_credential_ref(session, project_id)
+    _slack_communication_profile(session, project_id)
+    asset = tmp_path / "communication-media" / "issue.png"
+    asset.parent.mkdir(parents=True)
+    asset.write_bytes(b"image-bytes")
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/files.getUploadURLExternal",
+        json={
+            "ok": False,
+            "error": "missing_scope",
+            "needed": "files:write",
+            "provided": "chat:write,reactions:write",
+        },
+    )
+
+    with pytest.raises(ConflictError, match="action connector failed") as exc:
+        asyncio.run(
+            ActionRepository(session, asset_dir=tmp_path).execute(
+                project_id=project_id,
+                action_ref="communications.slack-bot.file.upload",
+                input_json={
+                    "profile_ref": "communication-profile:support-agent",
+                    "channel_ref": "slack-channel:C123",
+                    "initial_comment": "Customer attached this screenshot.",
+                    "file": {
+                        "artifact_ref": "/generated-assets/communication-media/issue.png",
+                        "filename": "issue.png",
+                        "title": "Issue screenshot",
+                        "mime_type": "image/png",
+                    },
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "missing_scope" in exc.value.data["error"]
+    assert "needed=files:write" in exc.value.data["error"]
+    assert "provided=chat:write,reactions:write" in exc.value.data["error"]
+    assert asset.exists() is True
+    assert [request.url.path for request in httpx_mock.get_requests()] == [
+        "/api/files.getUploadURLExternal"
+    ]
+
+
+def test_slack_conversation_history_returns_message_and_file_refs(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _slack_credential_ref(session, project_id)
+    _slack_communication_profile(session, project_id)
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{_BASE}/conversations.history?channel=D123&limit=5",
+        json={
+            "ok": True,
+            "messages": [
+                {
+                    "type": "message",
+                    "subtype": "file_share",
+                    "ts": "1770000000.000300",
+                    "thread_ts": "1770000000.000300",
+                    "bot_id": "B123",
+                    "text": "Customer feedback forwarded from Telegram",
+                    "files": [{"id": "F123"}],
+                }
+            ],
+            "has_more": False,
+        },
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="communications.slack-bot.conversation.history",
+            input_json={
+                "profile_ref": "communication-profile:support-agent",
+                "surface_ref": "slack-channel:D123",
+                "limit": 5,
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json["message_refs"] == ["slack-message:D123:1770000000.000300"]
+    assert out.output_json["messages"][0]["thread_ref"] == ("slack-thread:D123:1770000000.000300")
+    assert out.output_json["messages"][0]["file_refs"] == ["slack-file:F123"]

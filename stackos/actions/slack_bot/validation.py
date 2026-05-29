@@ -23,6 +23,7 @@ from .constants import (
 )
 
 _MAX_REACTION_NAME_CHARS = 128
+_MAX_UPLOAD_FILES = 10
 
 
 def validate_slack_request(request: ActionConnectorRequest) -> list[ActionValidationIssue]:
@@ -45,6 +46,16 @@ def validate_slack_request(request: ActionConnectorRequest) -> list[ActionValida
             _blocks(payload.get("blocks"), issues)
             if not _has_text(payload.get("text")) and not isinstance(payload.get("blocks"), list):
                 issues.append(issue("$", "text or blocks is required", "required"))
+        case "file.upload":
+            _required_any(payload, ("channel_ref", "surface_ref"), issues)
+            _optional_text(payload, "profile_ref", issues)
+            _optional_text(payload, "channel_ref", issues)
+            _optional_text(payload, "surface_ref", issues)
+            _optional_text(payload, "thread_ref", issues)
+            _optional_text(payload, "initial_comment", issues, max_chars=_MAX_TEXT_CHARS)
+            _optional_int(payload, "source_agent_request_id", issues, minimum=1)
+            _optional_bool(payload, "delete_after_upload", issues)
+            _file_or_files(payload, issues)
         case "reaction.add":
             _required_text(payload, "message_ref", issues)
             _required_text(payload, "name", issues, max_chars=_MAX_REACTION_NAME_CHARS)
@@ -94,6 +105,22 @@ def validate_slack_request(request: ActionConnectorRequest) -> list[ActionValida
                 issues,
                 minimum=1,
                 maximum=_MAX_CONVERSATION_LIMIT,
+            )
+        case "conversation.history":
+            _required_any(payload, ("channel_ref", "surface_ref"), issues)
+            _optional_text(payload, "profile_ref", issues)
+            _optional_text(payload, "channel_ref", issues)
+            _optional_text(payload, "surface_ref", issues)
+            _optional_text(payload, "cursor", issues)
+            _optional_text(payload, "latest", issues)
+            _optional_text(payload, "oldest", issues)
+            _optional_bool(payload, "inclusive", issues)
+            _optional_int(
+                payload,
+                "limit",
+                issues,
+                minimum=1,
+                maximum=200,
             )
         case _:
             issues.extend(unknown_operation(request))
@@ -296,3 +323,40 @@ def _button_element(value: Any, issues: list[ActionValidationIssue], path: str) 
 
 def _has_text(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def _file_or_files(payload: Mapping[str, Any], issues: list[ActionValidationIssue]) -> None:
+    has_file = isinstance(payload.get("file"), Mapping)
+    has_files = isinstance(payload.get("files"), list)
+    if has_file == has_files:
+        issues.append(issue("$", "exactly one of file or files is required", "one_of"))
+        return
+    if has_file:
+        _upload_file(payload.get("file"), issues, "$.file")
+    else:
+        files = payload.get("files")
+        if not isinstance(files, list) or not files:
+            issues.append(issue("$.files", "files must be a non-empty array", "required"))
+            return
+        if len(files) > _MAX_UPLOAD_FILES:
+            issues.append(
+                issue("$.files", f"files must contain at most {_MAX_UPLOAD_FILES} items", "length")
+            )
+        for index, item in enumerate(files):
+            _upload_file(item, issues, f"$.files[{index}]")
+
+
+def _upload_file(value: Any, issues: list[ActionValidationIssue], path: str) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(issue(path, "file must be an object", "type_error"))
+        return
+    artifact_ref = value.get("artifact_ref")
+    if not isinstance(artifact_ref, str) or not artifact_ref.strip():
+        issues.append(issue(f"{path}.artifact_ref", "artifact_ref is required", "required"))
+    file_type = value.get("type")
+    if file_type is not None and file_type not in {"image", "document", "file"}:
+        issues.append(issue(f"{path}.type", "unsupported file type", "enum"))
+    for key in ("filename", "title", "mime_type", "caption"):
+        raw = value.get(key)
+        if raw is not None and not isinstance(raw, str):
+            issues.append(issue(f"{path}.{key}", f"{key} must be a string", "type_error"))

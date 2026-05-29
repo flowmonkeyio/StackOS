@@ -143,6 +143,11 @@ class CommunicationSendOut(BaseModel):
     surface_ref: str | None = None
     thread_ref: str | None = None
     message_ref: str | None = None
+    message_refs: list[str] = Field(default_factory=list)
+    file_ref: str | None = None
+    file_refs: list[str] = Field(default_factory=list)
+    attachment_refs: list[str] = Field(default_factory=list)
+    local_artifact_deleted: bool | None = None
     dry_run: bool = False
     effects: list[str] = Field(default_factory=list)
     resolved: dict[str, Any] = Field(default_factory=dict)

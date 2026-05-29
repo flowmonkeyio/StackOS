@@ -58,14 +58,128 @@ def test_create_run_plan_from_template(session: Session, project_id: int) -> Non
         .create(
             project_id=project_id,
             template_key="core.project-memory-review",
+            inputs_json={"goal": "Review recent project memory."},
         )
         .data
     )
 
     assert plan.template_key == "core.project-memory-review"
+    assert plan.key == "core.project-memory-review.run"
     assert plan.template_snapshot_json["key"] == "core.project-memory-review"
     assert plan.steps
     assert plan.status == "draft"
+
+
+def test_create_run_plan_requires_template_required_inputs(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+
+    with pytest.raises(ValidationError, match="goal"):
+        repo.create(project_id=project_id, template_key="core.project-memory-review")
+
+    structural = repo.validate_plan(
+        project_id=project_id,
+        template_key="core.project-memory-review",
+    )
+    concrete = repo.validate_plan(
+        project_id=project_id,
+        template_key="core.project-memory-review",
+        enforce_required_inputs=True,
+    )
+    with_inputs = repo.validate_plan(
+        project_id=project_id,
+        template_key="core.project-memory-review",
+        inputs_json={"goal": "Review project memory."},
+        enforce_required_inputs=True,
+    )
+
+    assert structural.valid is True
+    assert concrete.valid is False
+    assert "goal" in concrete.errors[0].message
+    assert with_inputs.valid is True
+
+
+def test_create_run_plan_applies_project_workflow_extension(
+    session: Session,
+    project_id: int,
+) -> None:
+    base = WorkflowTemplateLoader(session).describe_template(
+        project_id=project_id,
+        key="engineering.customer-support-investigation",
+        plugin_slug="engineering",
+        include_extension=False,
+    )
+    steps = [step.model_dump(mode="json") for step in base.spec.steps]
+    canonical_step_override = next(
+        step for step in steps if step["id"] == "establish-canonical-thread"
+    )
+    canonical_step_override["title"] = "Establish Project Canonical Thread"
+    WorkflowTemplateLoader(session).upsert_extension(
+        project_id=project_id,
+        workflow_key="engineering.customer-support-investigation",
+        plugin_slug="engineering",
+        required_input_keys_json=["feedback_summary", "communication_route_ref"],
+        input_defaults_json={
+            "communication_route_ref": "communication-route:support-feedback",
+            "canonical_slack_target_ref": "communication-target:support-triage",
+        },
+        selected_context_json={
+            "communication": {
+                "route_ref": "communication-route:support-feedback",
+                "target_ref": "communication-target:support-triage",
+            }
+        },
+        step_overrides_json={
+            "establish-canonical-thread": {
+                "extra_instructions": [
+                    "Use the project extension route and target refs before copying "
+                    "non-Slack feedback."
+                ]
+            }
+        },
+        template_overrides_json={
+            "description": "Project-specific support investigation run.",
+            "steps": steps,
+        },
+    )
+
+    repo = RunPlanRepository(session)
+    with pytest.raises(ValidationError, match="feedback_summary"):
+        repo.create(
+            project_id=project_id,
+            template_key="engineering.customer-support-investigation",
+            plugin_slug="engineering",
+        )
+
+    plan = repo.create(
+        project_id=project_id,
+        template_key="engineering.customer-support-investigation",
+        plugin_slug="engineering",
+        inputs_json={"feedback_summary": "Telegram report includes a screenshot."},
+        selected_context_json={"operator": {"instruction_source": "same-thread"}},
+    ).data
+    canonical_step = next(
+        step for step in plan.steps if step.step_id == "establish-canonical-thread"
+    )
+
+    assert plan.inputs_json["feedback_summary"] == "Telegram report includes a screenshot."
+    assert plan.inputs_json["communication_route_ref"] == "communication-route:support-feedback"
+    assert plan.goal == "Project-specific support investigation run."
+    assert plan.selected_context_json == {
+        "communication": {
+            "route_ref": "communication-route:support-feedback",
+            "target_ref": "communication-target:support-triage",
+        },
+        "operator": {"instruction_source": "same-thread"},
+    }
+    assert plan.metadata_json["workflow_extension"]["workflow_key"] == (
+        "engineering.customer-support-investigation"
+    )
+    assert "template_overrides_json" in plan.metadata_json["workflow_extension"]
+    assert canonical_step.title == "Establish Project Canonical Thread"
+    assert "project extension route" in " ".join(canonical_step.instructions_json)
 
 
 def test_started_run_plan_keeps_template_snapshot_after_template_changes(
@@ -107,6 +221,7 @@ def test_start_links_selected_context_snapshot(session: Session, project_id: int
             project_id=project_id,
             template_key="core.project-memory-review",
             context_snapshot_id=snapshot.id,
+            inputs_json={"goal": "Review recent project memory."},
         )
         .data
     )

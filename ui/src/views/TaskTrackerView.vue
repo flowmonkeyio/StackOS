@@ -574,7 +574,7 @@ function isOpenTicket(ticket: TrackerTicket): boolean {
 }
 
 function isGraphBlockedTicket(ticket: TrackerTicket): boolean {
-  return ticket.blocked_by.length > 0 || (isOpenTicket(ticket) && Boolean(ticket.blocker_reason))
+  return isOpenTicket(ticket) && (ticket.blocked_by.length > 0 || Boolean(ticket.blocker_reason))
 }
 
 function graphTicketMatchesFilters(ticket: TrackerTicket): boolean {

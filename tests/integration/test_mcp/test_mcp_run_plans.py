@@ -406,6 +406,44 @@ def test_run_plan_start_does_not_replay_run_token(
     assert "run_token" not in str(second)
 
 
+def test_run_plan_abort_retires_started_plan_and_tracker_mirror(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _plan_json()},
+    )
+    run_plan_id = created["data"]["id"]
+    mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+
+    aborted = mcp_client.call_tool_structured(
+        "runPlan.abort",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "reason": "superseded by a newer support workflow run",
+            "actor": "codex",
+        },
+    )
+    fetched = mcp_client.call_tool_structured("runPlan.get", {"run_plan_id": run_plan_id})
+    tracker = mcp_client.call_tool_structured(
+        "tracker.get",
+        {"project_id": project_id, "task_key": f"workflow-{run_plan_id}", "include_graph": False},
+    )
+
+    assert aborted["data"]["status"] == "aborted"
+    assert fetched["steps"][0]["status"] == "skipped"
+    assert fetched["approval_requests"] == []
+    assert tracker["tasks"][0]["status"] == "deferred"
+    assert tracker["tickets"][0]["status"] == "deferred"
+    assert tracker["tickets"][0]["blocker_reason"] is None
+
+
 def test_run_plan_create_from_template_and_list(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -413,7 +451,11 @@ def test_run_plan_create_from_template_and_list(
     project_id = seeded_project["data"]["id"]
     created = mcp_client.call_tool_structured(
         "runPlan.create",
-        {"project_id": project_id, "template_key": "core.project-memory-review"},
+        {
+            "project_id": project_id,
+            "template_key": "core.project-memory-review",
+            "inputs_json": {"goal": "Review recent project memory."},
+        },
     )
     page = mcp_client.call_tool_structured("runPlan.list", {"project_id": project_id})
     fetched = mcp_client.call_tool_structured(
@@ -424,6 +466,41 @@ def test_run_plan_create_from_template_and_list(
     assert created["data"]["template_key"] == "core.project-memory-review"
     assert any(item["id"] == created["data"]["id"] for item in page["items"])
     assert fetched["template_snapshot_json"]["key"] == "core.project-memory-review"
+
+
+def test_run_plan_validate_can_enforce_template_required_inputs(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    structural = mcp_client.call_tool_structured(
+        "runPlan.validate",
+        {"project_id": project_id, "template_key": "core.project-memory-review"},
+    )
+    missing = mcp_client.call_tool_structured(
+        "runPlan.validate",
+        {
+            "project_id": project_id,
+            "template_key": "core.project-memory-review",
+            "enforce_required_inputs": True,
+        },
+    )
+    with_inputs = mcp_client.call_tool_structured(
+        "runPlan.validate",
+        {
+            "project_id": project_id,
+            "template_key": "core.project-memory-review",
+            "inputs_json": {"goal": "Review recent project memory."},
+            "enforce_required_inputs": True,
+        },
+    )
+
+    assert structural["valid"] is True
+    assert missing["valid"] is False
+    assert "goal" in missing["errors"][0]["message"]
+    assert with_inputs["valid"] is True
+    assert with_inputs["plan"]["key"] == "core.project-memory-review.run"
 
 
 def test_run_plan_validate_rejects_secrets(mcp_client: MCPClient) -> None:

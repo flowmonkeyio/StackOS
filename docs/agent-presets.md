@@ -40,12 +40,86 @@ StackOS as daemon-managed agents. They are generic contracts that a main agent
 may adapt into whatever the host/project supports: `.codex` agents, markdown
 frontmatter files, plugin-specific agent files, or no local files at all.
 
-SDLC setup uses the same workflow path as other domains. Start with
-`workflowTemplate.describe({ "key": "engineering.tracked-delivery",
-"plugin_slug": "engineering" })`, resolve its agents with
+Engineering setup uses the same workflow path as other domains. Start with the
+workflow that matches the work, resolve its agents with
 `agentPreset.resolveForWorkflow`, then create/start a run plan when executing
-the work. The workflow references `stackos.sdlc.*` presets as required and
-recommended roles, but the workflow owns the SDLC flow.
+the work. Use `engineering.customer-support-investigation` for customer
+feedback or reported issues that need investigation before tasks exist. Use
+`engineering.tracked-delivery` once work is scoped for implementation,
+verification, review, and release. The workflows reference generic presets as
+required and recommended roles, but the workflow owns the flow.
+
+The tracked-delivery workflow uses this baseline:
+
+```text
+scope
+-> requirements and flow definition
+-> codebase impact discovery
+-> tracker ticket planning
+-> architecture/design
+-> design review
+-> test and verification design
+-> delivery
+-> verification
+-> delivery review
+-> tracker truth audit
+-> release closeout
+```
+
+The customer-support investigation workflow uses this baseline:
+
+```text
+incoming feedback
+-> route and media preflight
+-> canonical Slack thread
+-> eyes reaction
+-> full-thread read
+-> same-thread clarification when needed
+-> support investigation conclusion in the same thread
+-> wait for same-thread human instruction
+-> delivery task creation when instructed
+-> task handoff message in the same thread
+-> task-created reaction
+-> engineering.tracked-delivery handoff
+```
+
+This baseline is intentionally project-neutral. When adapted into another
+repository, keep the engineering mechanics and replace the stack, docs, test
+commands, host-agent format, and release/signoff rules with that project's own
+sources. Do not carry product or domain facts from the project where the
+baseline was derived.
+
+For non-Slack feedback, communications agents must not infer route approval
+from a resolvable Slack target. `communicationTarget.resolve` answers where a
+named target would send; `communicationRoute.*` or a current operator
+instruction answers whether this source is allowed to go there. The same
+preflight owns media fidelity: every inbound image, document, video, audio,
+voice note, screenshot, URL, artifact, or provider file ref must either be
+forwarded in the same canonical Slack handoff message when supported, or become
+an explicit blocker/waiver before the workflow continues.
+
+The core engineering preset subset is deliberately small:
+
+| Preset | Role |
+| --- | --- |
+| `communications.workflow.customer-support-thread` | Normalizes customer feedback into one route-approved Slack support thread, preserves source media, posts thread-bound updates, and manages Slack reactions for support milestones. |
+| `stackos.sdlc.requirements-flow-definer` | Defines actors, flows, acceptance criteria, non-goals, and evidence expectations. |
+| `stackos.sdlc.codebase-explorer` | Maps real execution paths, ownership, downstream fallout, tests, and docs before changes. |
+| `stackos.sdlc.planning` | Converts requirements and impact evidence into tracker tickets with dependencies and definition of done. |
+| `stackos.sdlc.support-investigation-analyst` | Investigates the full canonical thread and project evidence, asks same-thread clarifications, posts the support conclusion with root-cause evidence when available, then waits for same-thread task instructions. |
+| `stackos.sdlc.architecture` | Chooses and challenges the project-native design, canonical owner, contracts, rollout, and validation plan. |
+| `stackos.sdlc.test-designer` | Maps acceptance criteria to proof surfaces and red-first gates when needed. |
+| `stackos.sdlc.delivery` | Implements scoped tickets, debugs root causes, verifies the diff, and records tracker/evidence updates truthfully. |
+| `stackos.sdlc.delivery-reviewer` | Reviews design and delivery across behavior, contracts, tests, tracker truth, docs, security, and release risk. |
+| `stackos.sdlc.release-ops` | Closes release readiness, limitations, rollback/watch notes, and communications. |
+
+Use this subset as the only engineering agent set for a project. Workflows pick
+the roles they need. For example, customer-support investigation uses the
+communications thread coordinator, support investigation analyst, codebase
+explorer, planning, and delivery reviewer; tracked delivery uses requirements,
+discovery, planning, architecture, test design, delivery, delivery review, and
+release. If a project already has local agents, adapt or replace them so each
+role maps cleanly to this subset without overlapping responsibilities.
 
 The main agent should detect or read the host convention before writing local
 agents. For Codex-style projects, inspect `.codex/config.toml` and existing
@@ -77,9 +151,16 @@ and still follow the tracker/run-plan model.
 All presets are expected to work through the existing StackOS tracker:
 
 - planning agents create scoped tasks/tickets
+- support investigation agents create tasks only after explicit same-thread human
+  instruction in the canonical Slack thread
+- support investigation tasks/tickets preserve source, thread, conclusion,
+  instruction, handoff, and delivery refs in tracker context or references
 - dependencies are encoded so ready work and blockers are visible
 - delivery agents claim/update tickets as work starts and completes
+- verifier and reviewer agents compare completion claims with actual evidence
 - reviewers verify evidence before closeout
+- tracker truth reviewers check that durable state matches code, docs, tests,
+  run-plan steps, and verification outcomes
 - release agents compare signoff claims with tracker state
 
 Planning agents should produce deliverable tickets with logical sequencing,

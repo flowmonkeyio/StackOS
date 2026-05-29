@@ -73,16 +73,42 @@ run token.
 - Connect to a specific project: if the operator wants a known existing
   project, call `toolbox.call` for `workspace.connect` or
   `workspace.bootstrap` with that project identifier explicitly.
-- Set up SDLC/local agents: use the normal workflow path with
-  `engineering.tracked-delivery`. Describe the workflow, resolve agents with
-  `agentPreset.resolveForWorkflow`, then create/start a run plan when
-  executing. Adapt the referenced `stackos.sdlc.*` presets to the
-  host/project's local agent format only when local agents are requested. For
-  Codex repos, inspect `.codex/config.toml` and existing
-  `.codex/agents/*.toml` before proposing file creates or updates.
-  Treat each preset's `recommended_tools` as StackOS operation refs. If those
-  refs are not mounted as direct host tools, use `toolbox.describe` and
-  `toolbox.call`.
+- Set up engineering/local agents: choose the workflow first. Use
+  `engineering.customer-support-investigation` for customer feedback or
+  reported issues that need investigation before tasks exist. It preflights
+  cross-surface route approval and source media forwarding, establishes one
+  canonical Slack thread, adds the investigation reaction, reads the full
+  thread, asks same-thread clarifications when needed, posts the support
+  investigation conclusion in that thread, waits for same-thread human
+  instruction, creates tasks only when instructed, posts the task handoff in the
+  thread, adds a task-created reaction, then hands off to
+  `engineering.tracked-delivery`. Use `engineering.tracked-delivery` for
+  scoped implementation, verification, review, and release. Describe the
+  selected workflow, resolve agents with `agentPreset.resolveForWorkflow`, then
+  create/start a run plan when executing. Treat the referenced engineering and
+  communications presets as one curated engineering set for the project. Adapt
+  that subset to the host/project's local agent format only when local agents
+  are requested. For Codex repos, inspect `.codex/config.toml` and existing
+  `.codex/agents/*.toml` before proposing file creates or updates. Treat each
+  preset's `recommended_tools` as StackOS operation refs. If those refs are not
+  mounted as direct host tools, use `toolbox.describe` and `toolbox.call`.
+  For non-Slack feedback, do not treat `communicationTarget.resolve` as route
+  approval; use a matching route or current operator instruction. Forward every
+  route-approved media item in the same canonical Slack handoff message when
+  supported, or stop before partial handoff with an explicit media
+  blocker/waiver. Before creating a run, inspect
+  `workflowExtension.get`/`workflowTemplate.describe` for project defaults such
+  as `communication_route_ref`, `canonical_slack_target_ref`, and
+  `project_workflow_context`. If a project needs durable route refs or channel
+  guidance, validate and save a project extension with
+  `workflowExtension.validate` and `workflowExtension.upsert`. Put workflow
+  field changes, including agent/skill requirements, contracts, approval gates,
+  and steps, in `template_overrides_json`; StackOS applies that atomic patch to
+  the base workflow and validates the effective template. Top-level workflow
+  fields are replaced atomically, so pass the full desired
+  `agent_requirements`, `skill_requirements`, or `steps` list when changing
+  them. Do not invent a new context-sharing mechanism or duplicate the workflow
+  unless a new reusable workflow identity is needed.
 - Discover operations: if you do not know the exact operation name, call
   `toolbox.call` for `operation.list` first, then `operation.describe` for the
   few operations you intend to use. Keep `toolbox.describe` scoped to exact
@@ -103,9 +129,12 @@ run token.
   delivering scoped work outside a concrete workflow run. Create dependencies,
   blockers, definition of done, and completion evidence there.
 - Execute workflow work: use a workflow template when work should follow a
-  reusable contract. `runPlan.create` turns the template into concrete state;
-  `runPlan.start` and step grants control which tools/actions are available.
-  Mirror or link tracker tickets when human-visible sequencing/evidence matters.
+  reusable contract. Check the attached workflow extension first when the
+  project has route refs, default inputs, selected context, guardrails, or
+  workflow-field overrides. `runPlan.create` applies enabled extension defaults
+  and the effective template, then turns it into concrete state; `runPlan.start`
+  and step grants control which tools/actions are available. Mirror or link tracker tickets when
+  human-visible sequencing/evidence matters.
 - Execute a step: claim the run-plan step, follow the referenced guidance, call
   `toolbox.describe` for needed granted tools, invoke them with `toolbox.call`,
   then `runPlan.recordStep`.

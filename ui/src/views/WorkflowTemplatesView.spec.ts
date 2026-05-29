@@ -11,6 +11,20 @@ import {
 import WorkflowTemplatesView from './WorkflowTemplatesView.vue'
 
 const ORIG_FETCH = globalThis.fetch
+const EXPECTED_WORKFLOW_STEPS = [
+  { id: 'scope-work', title: 'Scope Work' },
+  { id: 'define-requirements', title: 'Define Requirements And Flows' },
+  { id: 'discover-impact', title: 'Discover Impact' },
+  { id: 'plan-tickets', title: 'Plan Tracker Tickets' },
+  { id: 'design-approach', title: 'Design Approach' },
+  { id: 'review-design', title: 'Review Design' },
+  { id: 'design-tests', title: 'Design Tests And Verification' },
+  { id: 'deliver-tickets', title: 'Deliver Tickets' },
+  { id: 'verify-delivery', title: 'Verify Delivery' },
+  { id: 'review-delivery', title: 'Review Delivery' },
+  { id: 'audit-tracker', title: 'Audit Tracker Truth' },
+  { id: 'release-closeout', title: 'Release Closeout' },
+]
 
 describe('WorkflowTemplatesView', () => {
   beforeEach(() => {
@@ -60,7 +74,7 @@ describe('WorkflowTemplatesView', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders the Engineering tracked-delivery workflow with all SDLC agents and skill guidance', async () => {
+  it('renders the Engineering tracked-delivery workflow with the curated SDLC agent subset and skill guidance', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/projects/:id/workflow-templates', component: WorkflowTemplatesView }],
@@ -73,15 +87,25 @@ describe('WorkflowTemplatesView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Engineering Tracked Delivery'))
 
     expect(wrapper.text()).toContain('engineering.tracked-delivery')
-    expect(wrapper.text()).toContain('6 agents')
+    expect(wrapper.text()).toContain('Project Extension')
+    expect(wrapper.text()).toContain('communication_route_ref')
+    expect(wrapper.text()).toContain('support-triage')
+    expect(wrapper.text()).toContain('8 agents')
     expect(wrapper.text()).toContain('1 skills')
+    expect(wrapper.text()).toContain('stackos.sdlc.requirements-flow-definer')
+    expect(wrapper.text()).toContain('stackos.sdlc.codebase-explorer')
     expect(wrapper.text()).toContain('stackos.sdlc.planning')
     expect(wrapper.text()).toContain('stackos.sdlc.architecture')
-    expect(wrapper.text()).toContain('stackos.sdlc.adversarial-design-reviewer')
+    expect(wrapper.text()).toContain('stackos.sdlc.test-designer')
     expect(wrapper.text()).toContain('stackos.sdlc.delivery')
     expect(wrapper.text()).toContain('stackos.sdlc.delivery-reviewer')
     expect(wrapper.text()).toContain('stackos.sdlc.release-ops')
     expect(wrapper.text()).toContain('stackos:stackos')
+    expect(wrapper.text()).toContain('12 steps')
+    for (const step of EXPECTED_WORKFLOW_STEPS) {
+      expect(wrapper.text()).toContain(step.id)
+      expect(wrapper.text()).toContain(step.title)
+    }
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/api/v1/projects/1/workflow-templates?plugin_slug=engineering',
       expect.anything(),
@@ -94,9 +118,9 @@ function engineeringWorkflow(): SchemaLoadedWorkflowTemplate {
     summary: {
       key: 'engineering.tracked-delivery',
       name: 'Engineering Tracked Delivery',
-      version: '0.1.0',
+      version: '0.2.0',
       description:
-        'Reusable SDLC workflow for planning, delivering, reviewing, and releasing engineering changes through StackOS tracker state.',
+        'Reusable SDLC workflow for requirements, discovery, design, test planning, delivery, verification, review, and release through StackOS tracker state.',
       domain: 'engineering',
       source: 'plugin',
       precedence: 10,
@@ -106,14 +130,42 @@ function engineeringWorkflow(): SchemaLoadedWorkflowTemplate {
       template_id: null,
       version_id: null,
       shadowed_by: null,
+      project_extension_id: 9,
+      project_extension_enabled: true,
+    },
+    project_extension: {
+      id: 9,
+      project_id: 1,
+      workflow_key: 'engineering.tracked-delivery',
+      enabled: true,
+      input_defaults_json: {
+        communication_route_ref: 'communication-route:support-feedback',
+        canonical_slack_target_ref: 'communication-target:support-triage',
+      },
+      selected_context_json: {
+        communication: {
+          target_ref: 'communication-target:support-triage',
+        },
+      },
+      required_input_keys_json: ['communication_route_ref'],
+      guardrails_json: { copy_customer_private_data: false },
+      step_overrides_json: {
+        'scope-work': {
+          extra_instructions: ['Use the configured project context.'],
+        },
+      },
+      metadata_json: { owner: 'support' },
+      created_by: 'unit-test',
+      created_at: '2026-05-27T00:00:00Z',
+      updated_at: '2026-05-27T00:00:00Z',
     },
     spec: {
       schema_version: 'stackos.workflow-template.v1',
       key: 'engineering.tracked-delivery',
       name: 'Engineering Tracked Delivery',
-      version: '0.1.0',
+      version: '0.2.0',
       description:
-        'Reusable SDLC workflow for planning, delivering, reviewing, and releasing engineering changes through StackOS tracker state.',
+        'Reusable SDLC workflow for requirements, discovery, design, test planning, delivery, verification, review, and release through StackOS tracker state.',
       domain: 'engineering',
       inputs: [{ key: 'goal', name: 'Goal', type: 'string', required: true, description: '' }],
       outputs: [
@@ -127,13 +179,15 @@ function engineeringWorkflow(): SchemaLoadedWorkflowTemplate {
       ],
       context_requirements: [],
       agent_requirements: [
-        agent('planning', 'required', 'stackos.sdlc.planning'),
-        agent('architecture', 'recommended', 'stackos.sdlc.architecture'),
         agent(
-          'adversarial-design-reviewer',
-          'recommended',
-          'stackos.sdlc.adversarial-design-reviewer',
+          'requirements-flow-definer',
+          'required',
+          'stackos.sdlc.requirements-flow-definer',
         ),
+        agent('codebase-explorer', 'recommended', 'stackos.sdlc.codebase-explorer'),
+        agent('planning', 'required', 'stackos.sdlc.planning'),
+        agent('architecture', 'required', 'stackos.sdlc.architecture'),
+        agent('test-designer', 'required', 'stackos.sdlc.test-designer'),
         agent('delivery', 'required', 'stackos.sdlc.delivery'),
         agent('delivery-reviewer', 'required', 'stackos.sdlc.delivery-reviewer'),
         agent('release-ops', 'recommended', 'stackos.sdlc.release-ops'),
@@ -147,13 +201,12 @@ function engineeringWorkflow(): SchemaLoadedWorkflowTemplate {
           setup_notes: ['Adapt generic SDLC presets to the project before creating local agents.'],
         },
       ],
-      steps: [
-        { id: 'scope-work', title: 'Scope Work', purpose: 'Restate the goal.' },
-        { id: 'plan-tickets', title: 'Plan Tracker Tickets', purpose: 'Create tickets.' },
-        { id: 'deliver-tickets', title: 'Deliver Tickets', purpose: 'Deliver tickets.' },
-      ],
+      steps: EXPECTED_WORKFLOW_STEPS.map((step) => ({
+        ...step,
+        purpose: `${step.title} purpose.`,
+      })),
     },
-  }
+  } as unknown as SchemaLoadedWorkflowTemplate
 }
 
 function agent(

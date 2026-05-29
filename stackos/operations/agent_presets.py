@@ -144,10 +144,15 @@ def _setup_guidance() -> list[str]:
     return [
         "Agent presets are generic MCP/tool-consumer contracts, not daemon-run agents.",
         (
-            "SDLC setup follows the normal workflow path under "
-            "engineering.tracked-delivery: describe the workflow, resolve its "
-            "agent presets, create/start a run plan when executing, and mirror "
-            "or update tracker tasks/tickets."
+            "Engineering setup follows the normal workflow path: use "
+            "engineering.customer-support-investigation for customer feedback "
+            "or reported issues before tasks exist, then "
+            "engineering.tracked-delivery for scoped implementation. Describe "
+            "the workflow, resolve its agent presets, create/start a run plan "
+            "when executing, preserve chat/thread/message refs in tracker "
+            "handoffs, preflight non-Slack route approval and all source media "
+            "forwarding in the canonical Slack handoff before proceeding, and mirror or update "
+            "tracker tasks/tickets."
         ),
         (
             "Do not use a generic preset verbatim; adapt it to project rules, "

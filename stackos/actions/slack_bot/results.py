@@ -200,6 +200,64 @@ def _conversation_members_result(
     )
 
 
+def _conversation_history_result(
+    request: ActionConnectorRequest,
+    status: int,
+    body: Any,
+    headers: httpx.Headers,
+) -> ActionConnectorResult:
+    data = body if isinstance(body, Mapping) else {}
+    channel_ref = request.input_json.get("channel_ref") or request.input_json.get("surface_ref")
+    channel = str(channel_ref or "").removeprefix("slack-channel:")
+    raw_messages = data.get("messages")
+    provider_messages = raw_messages if isinstance(raw_messages, list) else []
+    messages = [
+        _safe_history_message(item, channel=channel)
+        for item in provider_messages
+        if isinstance(item, Mapping)
+    ]
+    return ActionConnectorResult(
+        output_json={
+            "provider": "slack-bot",
+            "operation": request.operation,
+            "status": "ok",
+            "channel_ref": _surface_ref(channel) if channel else None,
+            "messages": messages,
+            "message_refs": [
+                item["message_ref"]
+                for item in messages
+                if isinstance(item.get("message_ref"), str) and item["message_ref"]
+            ],
+            "count": len(messages),
+            "has_more": bool(data.get("has_more")),
+            "next_cursor": _next_cursor(body),
+        },
+        metadata_json=_metadata("conversations.history", request.operation, status, body, headers),
+    )
+
+
+def _safe_history_message(item: Mapping[str, Any], *, channel: str) -> dict[str, Any]:
+    ts = str(item.get("ts") or "")
+    thread_ts = str(item.get("thread_ts") or ts or "")
+    raw_files = item.get("files")
+    files = raw_files if isinstance(raw_files, list) else []
+    file_refs = [
+        f"slack-file:{file_item['id']}"
+        for file_item in files
+        if isinstance(file_item, Mapping) and file_item.get("id")
+    ]
+    return {
+        "message_ref": _message_ref(channel, ts) if channel and ts else None,
+        "thread_ref": _thread_ref(channel, thread_ts) if channel and thread_ts else None,
+        "provider_message_ts": ts or None,
+        "user_ref": f"slack-user:{item['user']}" if item.get("user") else None,
+        "bot_id": item.get("bot_id"),
+        "subtype": item.get("subtype"),
+        "text_preview": str(item.get("text") or "")[:500],
+        "file_refs": file_refs,
+    }
+
+
 def _metadata(
     slack_method: str,
     operation: str,

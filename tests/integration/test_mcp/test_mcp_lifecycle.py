@@ -13,7 +13,8 @@ from .conftest import MCPClient
 # Per-namespace expected counts — derived from the clean StackOS core catalog.
 # Update intentionally when adding generic StackOS MCP tools.
 EXPECTED_NAMESPACE_COUNTS = {
-    "action": 4,
+    "action": 5,
+    "agentPreset": 3,
     "agentRequest": 9,
     "artifact": 3,
     "auth": 4,
@@ -37,17 +38,20 @@ EXPECTED_NAMESPACE_COUNTS = {
     "localAgentChat": 1,
     "meta": 1,
     "plugin": 3,
-    "project": 7,
+    "operation": 2,
+    "project": 5,
     "provider": 2,
     "resource": 3,
     "run": 12,
-    "runPlan": 8,
+    "readiness": 1,
+    "runPlan": 9,
     "schedule": 4,
     "sitemap": 1,
     "toolProfile": 1,
     "tracker": 19,
+    "workflowExtension": 4,
     "workflowTemplate": 5,
-    "workspace": 5,
+    "workspace": 6,
 }
 
 # Total = sum of values; locked here to flag accidental drops.

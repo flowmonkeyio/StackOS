@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 142
+    assert len(names) == 147
     assert {
         "action.execute",
         "auth.status",
@@ -22,6 +22,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "run.start",
         "workspace.updateProfile",
         "readiness.check",
+        "workflowExtension.upsert",
     } <= names
 
     described = registry.get("action.execute").describe_out()
@@ -186,6 +187,14 @@ def test_operation_registry_documents_core_operations() -> None:
     assert readiness.surfaces["cli"].command == "ops call readiness.check"
     assert readiness.grant_policy == "direct-read"
     assert any("global auth.status gaps" in item for item in readiness.prerequisites)
+
+    workflow_extension = registry.get("workflowExtension.upsert").describe_out()
+    assert workflow_extension.category == "workflow"
+    assert workflow_extension.surfaces["mcp"].enabled is True
+    assert workflow_extension.surfaces["rest"].enabled is True
+    assert workflow_extension.surfaces["cli"].command == "ops call workflowExtension.upsert"
+    assert workflow_extension.grant_policy == "direct-setup-write"
+    assert any("base workflow should stay generic" in item for item in [workflow_extension.purpose])
 
     run_plan = registry.get("runPlan.claimStep").describe_out()
     assert run_plan.surfaces["mcp"].enabled is True

@@ -13,8 +13,13 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     listing = AgentPresetLoader().list_presets()
     keys = {item.key for item in listing.presets}
 
-    assert len(keys) == 23
+    assert len(keys) == 27
+    assert "stackos.sdlc.requirements-flow-definer" in keys
+    assert "stackos.sdlc.codebase-explorer" in keys
     assert "stackos.sdlc.planning" in keys
+    assert "stackos.sdlc.support-investigation-analyst" in keys
+    assert "stackos.sdlc.test-designer" in keys
+    assert "communications.workflow.customer-support-thread" in keys
     assert "stackos.workflow.project-memory-review" in keys
     assert "seo.workflow.keyword-research" in keys
     assert "media-buying.workflow.campaign-launch" in keys
@@ -25,6 +30,9 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     by_key = {item.key: item for item in listing.presets}
     assert by_key["stackos.workflow.project-memory-review"].plugin_slug == "core"
     assert by_key["stackos.sdlc.planning"].plugin_slug == "engineering"
+    assert by_key["stackos.sdlc.support-investigation-analyst"].plugin_slug == "engineering"
+    assert by_key["communications.workflow.customer-support-thread"].plugin_slug == "communications"
+    assert by_key["stackos.sdlc.requirements-flow-definer"].plugin_slug == "engineering"
 
 
 def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
@@ -34,6 +42,25 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "tracker" in loaded.preset.project_adaptation.required_agent_action.lower()
     assert "dependencies" in " ".join(loaded.preset.prompt_contract.must_do).lower()
+
+
+def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:
+    loaded = AgentPresetLoader().describe_preset(
+        key="communications.workflow.customer-support-thread"
+    )
+    contract_text = " ".join(
+        [
+            *loaded.preset.prompt_contract.responsibilities,
+            *loaded.preset.prompt_contract.must_do,
+            *loaded.preset.prompt_contract.must_not_do,
+            *loaded.preset.prompt_contract.self_check,
+        ]
+    )
+
+    assert "communicationTarget.resolve" in contract_text
+    assert "route approval" in contract_text
+    assert "every inbound media item" in contract_text
+    assert "partial forwarding" in contract_text
 
 
 def test_agent_preset_required_refs_do_not_assume_stackos_docs_in_customer_repo() -> None:
@@ -59,12 +86,14 @@ def test_agent_preset_setup_guidance_names_host_and_toolbox_boundaries() -> None
     guidance = " ".join(described.setup_guidance).lower()
     action = described.project_adaptation.required_agent_action.lower()
 
+    assert "engineering.customer-support-investigation" in guidance
     assert "engineering.tracked-delivery" in guidance
     assert "normal workflow path" in guidance
     assert "host/project-specific" in guidance
     assert ".codex/config.toml" in guidance
     assert ".codex/agents/*.toml" in guidance
     assert "workspace.updateprofile" in guidance
+    assert "source media forwarding" in guidance
     assert "resource.query" in guidance
     assert "resource.upsert" in guidance
     assert "artifact.create" in guidance

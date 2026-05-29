@@ -3,6 +3,8 @@
 Official docs verified:
 - auth.test: https://docs.slack.dev/reference/methods/auth.test/
 - chat.postMessage: https://docs.slack.dev/reference/methods/chat.postMessage/
+- files.getUploadURLExternal: https://docs.slack.dev/reference/methods/files.getUploadURLExternal/
+- files.completeUploadExternal: https://docs.slack.dev/reference/methods/files.completeUploadExternal/
 - conversations.open: https://docs.slack.dev/reference/methods/conversations.open/
 - conversations.info: https://docs.slack.dev/reference/methods/conversations.info/
 - conversations.list: https://docs.slack.dev/reference/methods/conversations.list/
@@ -20,8 +22,10 @@ from stackos.actions.connectors import (
 )
 from stackos.repositories.base import ValidationError
 
+from .files import _upload_files
 from .http import _slack_api
 from .payloads import (
+    _conversation_history_params,
     _conversation_info_params,
     _conversation_list_params,
     _conversation_members_params,
@@ -32,6 +36,7 @@ from .payloads import (
 )
 from .profile import _communication_profile_key
 from .results import (
+    _conversation_history_result,
     _conversation_info_result,
     _conversation_list_result,
     _conversation_members_result,
@@ -83,6 +88,12 @@ class SlackBotActionConnector:
                 )
                 _store_outbound_message(request, body, body_json)
                 return _message_result(request, status, body, headers, body_json)
+            case "file.upload":
+                _communication_profile_key(request)
+                # Slack external file upload:
+                # https://docs.slack.dev/reference/methods/files.getUploadURLExternal/
+                # https://docs.slack.dev/reference/methods/files.completeUploadExternal/
+                return await _upload_files(request)
             case "reaction.add":
                 _communication_profile_key(request)
                 body_json = _reaction_add_payload(request)
@@ -157,5 +168,16 @@ class SlackBotActionConnector:
                 )
                 _store_memberships_from_body(request, body)
                 return _conversation_members_result(request, status, body, headers)
+            case "conversation.history":
+                _communication_profile_key(request)
+                # Slack conversations.history:
+                # https://docs.slack.dev/reference/methods/conversations.history/
+                status, body, headers = await _slack_api(
+                    request,
+                    "GET",
+                    "conversations.history",
+                    params=_conversation_history_params(request),
+                )
+                return _conversation_history_result(request, status, body, headers)
             case _:
                 raise ValidationError(f"unsupported Slack operation {request.operation!r}")

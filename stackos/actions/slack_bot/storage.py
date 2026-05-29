@@ -182,6 +182,72 @@ def _store_reaction_add(
     )
 
 
+def _store_file_upload(
+    request: ActionConnectorRequest,
+    provider_body: Any,
+    sent_payload: Mapping[str, Any],
+) -> None:
+    if request.session is None:
+        return
+    channel = str(sent_payload.get("channel_id") or sent_payload.get("channel") or "")
+    if not channel:
+        return
+    profile_key = _communication_profile_key(request)
+    auth_profile_key = _credential_profile_key(request)
+    team_id = _team_id(request, provider_body)
+    thread_ts = str(sent_payload.get("thread_ts") or "") or _first_file_share_ts(
+        provider_body,
+        channel=channel,
+    )
+    message_ts = _first_file_share_ts(provider_body, channel=channel)
+    files = _uploaded_file_refs(provider_body, sent_payload)
+    digest = _file_upload_digest(channel=channel, file_refs=[item["file_ref"] for item in files])
+    resources = ResourceRepository(request.session)
+    _upsert_channel(
+        resources,
+        request.project_id,
+        profile_key=profile_key,
+        auth_profile_key=auth_profile_key,
+        team_id=team_id,
+        channel_obj={"id": channel, "name": channel},
+        source="slack-bot-action",
+    )
+    message_ref = _message_ref(channel, message_ts) if message_ts else None
+    resources.upsert_record(
+        project_id=request.project_id,
+        plugin_slug="communications",
+        resource_key="communication-message",
+        external_id=(
+            f"slack-message:{profile_key}:{channel}:{message_ts}"
+            if message_ts
+            else f"slack-file-upload:{profile_key}:{digest}"
+        ),
+        title="Slack outbound file upload",
+        data_json={
+            "provider_key": "slack-bot",
+            "profile_key": profile_key,
+            "auth_profile_key": auth_profile_key,
+            "team_id": team_id,
+            "direction": "outbound",
+            "surface_ref": _surface_ref(channel),
+            "channel_ref": _surface_ref(channel),
+            "thread_ref": _thread_ref(channel, thread_ts) if thread_ts else None,
+            "message_ref": message_ref,
+            "provider_message_ts": message_ts or None,
+            "content_type": "file_upload",
+            "text_preview": str(sent_payload.get("initial_comment") or "")[
+                :_RECOMMENDED_TEXT_CHARS
+            ],
+            "attachments": files,
+            "transport_status": "accepted",
+            "attention_status": "sent",
+            "source_agent_request_id": request.input_json.get("source_agent_request_id"),
+            "action_ref": request.action_ref,
+        },
+        provenance_json={"source": "slack-bot-action"},
+    )
+
+
 def _mark_message_deleted(
     request: ActionConnectorRequest,
     sent_payload: Mapping[str, Any],
@@ -218,6 +284,69 @@ def _mark_message_deleted(
 
 def _reaction_digest(*, message_ref: str, reaction_name: str) -> str:
     return hashlib.sha256(f"{message_ref}\0{reaction_name}".encode()).hexdigest()[:24]
+
+
+def _file_upload_digest(*, channel: str, file_refs: list[str]) -> str:
+    return hashlib.sha256(f"{channel}\0{','.join(file_refs)}".encode()).hexdigest()[:24]
+
+
+def _uploaded_file_refs(
+    provider_body: Any, sent_payload: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    sent_files = sent_payload.get("files")
+    sent_items = sent_files if isinstance(sent_files, list) else []
+    sent_by_id = {
+        str(item.get("id")): item
+        for item in sent_items
+        if isinstance(item, Mapping) and item.get("id")
+    }
+    raw_files = provider_body.get("files") if isinstance(provider_body, Mapping) else None
+    provider_files = raw_files if isinstance(raw_files, list) else []
+    refs: list[dict[str, Any]] = []
+    for item in provider_files or list(sent_by_id.values()):
+        if not isinstance(item, Mapping):
+            continue
+        file_id = str(item.get("id") or "")
+        if not file_id:
+            continue
+        sent = sent_by_id.get(file_id, {})
+        refs.append(
+            {
+                "type": "file",
+                "file_ref": f"slack-file:{file_id}",
+                "file_id": file_id,
+                "filename": item.get("name") or sent.get("filename"),
+                "title": item.get("title") or sent.get("title"),
+                "mime_type": item.get("mimetype") or sent.get("mime_type"),
+                "size_bytes": item.get("size") or sent.get("size_bytes"),
+            }
+        )
+    return refs
+
+
+def _first_file_share_ts(provider_body: Any, *, channel: str) -> str | None:
+    if not isinstance(provider_body, Mapping):
+        return None
+    raw_files = provider_body.get("files")
+    if not isinstance(raw_files, list):
+        return None
+    for item in raw_files:
+        if not isinstance(item, Mapping):
+            continue
+        shares = item.get("shares")
+        if not isinstance(shares, Mapping):
+            continue
+        for visibility in ("public", "private"):
+            by_channel = shares.get(visibility)
+            if not isinstance(by_channel, Mapping):
+                continue
+            entries = by_channel.get(channel)
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if isinstance(entry, Mapping) and entry.get("ts"):
+                    return str(entry["ts"])
+    return None
 
 
 def _button_metadata(

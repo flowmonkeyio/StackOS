@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
@@ -11,7 +12,7 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
@@ -20,11 +21,13 @@ from stackos.db.models import (
     Project,
     ProjectWorkflowTemplate,
     WorkflowTemplate,
+    WorkflowTemplateExtension,
     WorkflowTemplateVersion,
 )
 from stackos.plugins.manifest import plugin_sort_key
-from stackos.repositories.base import ConflictError, Envelope, NotFoundError
+from stackos.repositories.base import ConflictError, Envelope, NotFoundError, ValidationError
 from stackos.repositories.plugins import PluginRepository
+from stackos.workflows.run_plan_schema import find_run_plan_secret_paths
 from stackos.workflows.template_schema import (
     TemplateBaseSpec,
     WorkflowTemplateIssue,
@@ -39,6 +42,12 @@ PLUGIN_TEMPLATE_PRECEDENCE = 10
 PROJECT_TEMPLATE_PRECEDENCE = 20
 REPO_TEMPLATE_PRECEDENCE = 30
 MAX_TEMPLATE_FILE_BYTES = 256_000
+_WORKFLOW_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
+_TEMPLATE_OVERRIDE_ALIASES = {
+    "metadata": "metadata_json",
+    "extensions": "extensions_json",
+    "ui": "ui_json",
+}
 
 
 def _utcnow() -> datetime:
@@ -106,11 +115,48 @@ class WorkflowTemplateSummaryOut(BaseModel):
     template_id: int | None = None
     version_id: int | None = None
     shadowed_by: str | None = None
+    project_extension_id: int | None = None
+    project_extension_enabled: bool = False
+
+
+class WorkflowTemplateExtensionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    workflow_key: str
+    enabled: bool
+    input_defaults_json: dict[str, Any] = Field(default_factory=dict)
+    selected_context_json: dict[str, Any] = Field(default_factory=dict)
+    required_input_keys_json: list[str] = Field(default_factory=list)
+    guardrails_json: dict[str, Any] = Field(default_factory=dict)
+    step_overrides_json: dict[str, Any] = Field(default_factory=dict)
+    template_overrides_json: dict[str, Any] = Field(default_factory=dict)
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkflowTemplateExtensionListOut(BaseModel):
+    extensions: list[WorkflowTemplateExtensionOut]
+
+
+class WorkflowTemplateExtensionGetOut(BaseModel):
+    extension: WorkflowTemplateExtensionOut | None = None
+
+
+class WorkflowTemplateExtensionValidationOut(BaseModel):
+    valid: bool
+    extension: WorkflowTemplateExtensionOut | None = None
+    errors: list[WorkflowTemplateIssue] = Field(default_factory=list)
+    warnings: list[WorkflowTemplateIssue] = Field(default_factory=list)
 
 
 class LoadedWorkflowTemplate(BaseModel):
     summary: WorkflowTemplateSummaryOut
     spec: WorkflowTemplateSpec
+    project_extension: WorkflowTemplateExtensionOut | None = None
 
 
 class WorkflowTemplateListOut(BaseModel):
@@ -146,8 +192,11 @@ class WorkflowTemplateLoader:
             plugin_slug=plugin_slug,
         )
         resolved = self._resolve_candidates(candidates, include_shadowed=include_shadowed)
+        templates = [item.model_copy(deep=True) for item in resolved]
+        if project_id is not None:
+            self._attach_extension_summaries(templates, project_id=project_id)
         return WorkflowTemplateListOut(
-            templates=[item.summary for item in resolved],
+            templates=[item.summary for item in templates],
             include_shadowed=include_shadowed,
         )
 
@@ -159,6 +208,7 @@ class WorkflowTemplateLoader:
         repo_root: str | None = None,
         plugin_slug: str | None = None,
         source: str | None = None,
+        include_extension: bool = True,
     ) -> LoadedWorkflowTemplate:
         if project_id is not None:
             self._require_project(project_id)
@@ -179,7 +229,10 @@ class WorkflowTemplateLoader:
                 data={"key": key, "project_id": project_id, "plugin_slug": plugin_slug},
             )
         matches.sort(key=lambda item: item.summary.precedence, reverse=True)
-        return matches[0]
+        loaded = matches[0].model_copy(deep=True)
+        if project_id is not None and include_extension:
+            self._attach_extension(loaded, project_id=project_id)
+        return loaded
 
     def validate_template(
         self,
@@ -222,12 +275,373 @@ class WorkflowTemplateLoader:
                 repo_root=repo_root,
                 plugin_slug=plugin_slug,
                 source=source,
+                include_extension=True,
             )
             return validate_workflow_template_obj(loaded.spec.model_dump(mode="json"))
         if template_json is not None:
             return validate_workflow_template_obj(template_json)
         assert template_yaml is not None
         return validate_workflow_template_yaml(template_yaml)
+
+    def get_extension(
+        self,
+        *,
+        project_id: int,
+        workflow_key: str,
+        include_disabled: bool = True,
+    ) -> WorkflowTemplateExtensionOut | None:
+        self._require_project(project_id)
+        stmt = select(WorkflowTemplateExtension).where(
+            WorkflowTemplateExtension.project_id == project_id,
+            WorkflowTemplateExtension.workflow_key == workflow_key,
+        )
+        if not include_disabled:
+            stmt = stmt.where(col(WorkflowTemplateExtension.enabled).is_(True))
+        row = self._s.exec(stmt).first()
+        if row is None:
+            return None
+        return self._extension_out(row)
+
+    def list_extensions(self, *, project_id: int) -> WorkflowTemplateExtensionListOut:
+        self._require_project(project_id)
+        rows = self._s.exec(
+            select(WorkflowTemplateExtension)
+            .where(WorkflowTemplateExtension.project_id == project_id)
+            .order_by(WorkflowTemplateExtension.workflow_key)
+        ).all()
+        return WorkflowTemplateExtensionListOut(
+            extensions=[self._extension_out(row) for row in rows],
+        )
+
+    def validate_extension(
+        self,
+        *,
+        project_id: int,
+        workflow_key: str,
+        input_defaults_json: dict[str, Any] | None = None,
+        selected_context_json: dict[str, Any] | None = None,
+        required_input_keys_json: list[str] | None = None,
+        guardrails_json: dict[str, Any] | None = None,
+        step_overrides_json: dict[str, Any] | None = None,
+        template_overrides_json: dict[str, Any] | None = None,
+        metadata_json: dict[str, Any] | None = None,
+        repo_root: str | None = None,
+        plugin_slug: str | None = None,
+        source: str | None = None,
+    ) -> WorkflowTemplateExtensionValidationOut:
+        self._require_project(project_id)
+        errors: list[WorkflowTemplateIssue] = []
+        warnings: list[WorkflowTemplateIssue] = []
+        if not _WORKFLOW_KEY_RE.match(workflow_key):
+            errors.append(
+                WorkflowTemplateIssue(
+                    path="workflow_key",
+                    code="invalid_workflow_key",
+                    message="workflow_key must be a lowercase snake/kebab/dotted identifier",
+                )
+            )
+
+        loaded: LoadedWorkflowTemplate | None = None
+        if not errors:
+            try:
+                loaded = self.describe_template(
+                    key=workflow_key,
+                    project_id=project_id,
+                    repo_root=repo_root,
+                    plugin_slug=plugin_slug,
+                    source=source,
+                    include_extension=False,
+                )
+            except Exception as exc:
+                errors.append(
+                    WorkflowTemplateIssue(
+                        path="workflow_key",
+                        code="unknown_workflow_template",
+                        message=str(exc),
+                    )
+                )
+
+        payloads = {
+            "input_defaults_json": input_defaults_json or {},
+            "selected_context_json": selected_context_json or {},
+            "required_input_keys_json": required_input_keys_json or [],
+            "guardrails_json": guardrails_json or {},
+            "step_overrides_json": step_overrides_json or {},
+            "template_overrides_json": template_overrides_json or {},
+            "metadata_json": metadata_json or {},
+        }
+        for label, value in payloads.items():
+            paths = find_run_plan_secret_paths(value)
+            if paths:
+                errors.append(
+                    WorkflowTemplateIssue(
+                        path=label,
+                        code="secret_reference",
+                        message=(
+                            "workflow extensions must not contain secrets; use safe refs. "
+                            f"Suspicious paths: {', '.join(paths[:8])}"
+                        ),
+                    )
+                )
+
+        input_defaults = payloads["input_defaults_json"]
+        selected_context = payloads["selected_context_json"]
+        guardrails = payloads["guardrails_json"]
+        step_overrides = payloads["step_overrides_json"]
+        template_overrides = payloads["template_overrides_json"]
+        if not isinstance(input_defaults, dict):
+            errors.append(
+                WorkflowTemplateIssue(
+                    path="input_defaults_json",
+                    code="invalid_extension_field",
+                    message="input_defaults_json must be an object",
+                )
+            )
+        if not isinstance(selected_context, dict):
+            errors.append(
+                WorkflowTemplateIssue(
+                    path="selected_context_json",
+                    code="invalid_extension_field",
+                    message="selected_context_json must be an object",
+                )
+            )
+        if not isinstance(guardrails, dict):
+            errors.append(
+                WorkflowTemplateIssue(
+                    path="guardrails_json",
+                    code="invalid_extension_field",
+                    message="guardrails_json must be an object",
+                )
+            )
+        if not isinstance(step_overrides, dict):
+            errors.append(
+                WorkflowTemplateIssue(
+                    path="step_overrides_json",
+                    code="invalid_extension_field",
+                    message="step_overrides_json must be an object keyed by step id",
+                )
+            )
+        if not isinstance(template_overrides, dict):
+            errors.append(
+                WorkflowTemplateIssue(
+                    path="template_overrides_json",
+                    code="invalid_extension_field",
+                    message="template_overrides_json must be an object keyed by workflow field",
+                )
+            )
+
+        effective_spec = loaded.spec if loaded is not None else None
+        if loaded is not None and isinstance(template_overrides, dict) and template_overrides:
+            override_validation = self._validate_template_overrides(
+                loaded.spec,
+                workflow_key=workflow_key,
+                template_overrides_json=template_overrides,
+            )
+            if not override_validation.valid:
+                errors.extend(override_validation.errors)
+            else:
+                effective_spec = override_validation.template
+
+        template_input_keys = (
+            {item.key for item in effective_spec.inputs} if effective_spec else set()
+        )
+        step_ids = {step.id for step in effective_spec.steps} if effective_spec else set()
+        required_keys = payloads["required_input_keys_json"]
+        if not isinstance(required_keys, list):
+            errors.append(
+                WorkflowTemplateIssue(
+                    path="required_input_keys_json",
+                    code="invalid_extension_field",
+                    message="required_input_keys_json must be a list of input keys",
+                )
+            )
+        else:
+            seen: set[str] = set()
+            for index, raw_key in enumerate(required_keys):
+                path = f"required_input_keys_json[{index}]"
+                if not isinstance(raw_key, str) or not _WORKFLOW_KEY_RE.match(raw_key):
+                    errors.append(
+                        WorkflowTemplateIssue(
+                            path=path,
+                            code="invalid_input_key",
+                            message="required input keys must be lowercase identifiers",
+                        )
+                    )
+                    continue
+                if raw_key in seen:
+                    errors.append(
+                        WorkflowTemplateIssue(
+                            path=path,
+                            code="duplicate_required_input",
+                            message=f"required input key {raw_key!r} is duplicated",
+                        )
+                    )
+                seen.add(raw_key)
+                if (
+                    loaded is not None
+                    and raw_key not in template_input_keys
+                    and raw_key not in input_defaults
+                ):
+                    warnings.append(
+                        WorkflowTemplateIssue(
+                            path=path,
+                            code="extension_only_required_input",
+                            message=(
+                                f"{raw_key!r} is not declared by the effective template. "
+                                "It will still be enforced as a project extension input."
+                            ),
+                        )
+                    )
+
+        if isinstance(step_overrides, dict):
+            allowed_keys = {
+                "extra_instructions",
+                "instructions_append",
+                "instructions_prepend",
+                "success_criteria",
+                "success_criteria_append",
+                "metadata",
+                "metadata_json",
+            }
+            for step_id, override in step_overrides.items():
+                if loaded is not None and step_id not in step_ids:
+                    errors.append(
+                        WorkflowTemplateIssue(
+                            path=f"step_overrides_json.{step_id}",
+                            code="unknown_step",
+                            message=f"step override references unknown step {step_id!r}",
+                        )
+                    )
+                    continue
+                if not isinstance(override, dict):
+                    errors.append(
+                        WorkflowTemplateIssue(
+                            path=f"step_overrides_json.{step_id}",
+                            code="invalid_step_override",
+                            message="step override must be an object",
+                        )
+                    )
+                    continue
+                for key, value in override.items():
+                    if key not in allowed_keys:
+                        warnings.append(
+                            WorkflowTemplateIssue(
+                                path=f"step_overrides_json.{step_id}.{key}",
+                                code="unknown_step_override_key",
+                                message=(
+                                    f"{key!r} is stored as metadata but is not applied by "
+                                    "runPlan.create"
+                                ),
+                            )
+                        )
+                        continue
+                    if key in {
+                        "extra_instructions",
+                        "instructions_append",
+                        "instructions_prepend",
+                        "success_criteria",
+                        "success_criteria_append",
+                    } and (
+                        not isinstance(value, list)
+                        or any(not isinstance(item, str) for item in value)
+                    ):
+                        errors.append(
+                            WorkflowTemplateIssue(
+                                path=f"step_overrides_json.{step_id}.{key}",
+                                code="invalid_step_override",
+                                message=f"{key} must be a list of strings",
+                            )
+                        )
+                    if key in {"metadata", "metadata_json"} and not isinstance(value, dict):
+                        errors.append(
+                            WorkflowTemplateIssue(
+                                path=f"step_overrides_json.{step_id}.{key}",
+                                code="invalid_step_override",
+                                message=f"{key} must be an object",
+                            )
+                        )
+
+        return WorkflowTemplateExtensionValidationOut(
+            valid=not errors,
+            errors=errors,
+            warnings=warnings,
+        )
+
+    def upsert_extension(
+        self,
+        *,
+        project_id: int,
+        workflow_key: str,
+        enabled: bool = True,
+        input_defaults_json: dict[str, Any] | None = None,
+        selected_context_json: dict[str, Any] | None = None,
+        required_input_keys_json: list[str] | None = None,
+        guardrails_json: dict[str, Any] | None = None,
+        step_overrides_json: dict[str, Any] | None = None,
+        template_overrides_json: dict[str, Any] | None = None,
+        metadata_json: dict[str, Any] | None = None,
+        repo_root: str | None = None,
+        plugin_slug: str | None = None,
+        source: str | None = None,
+        created_by: str | None = None,
+    ) -> Envelope[WorkflowTemplateExtensionOut]:
+        validation = self.validate_extension(
+            project_id=project_id,
+            workflow_key=workflow_key,
+            input_defaults_json=input_defaults_json,
+            selected_context_json=selected_context_json,
+            required_input_keys_json=required_input_keys_json,
+            guardrails_json=guardrails_json,
+            step_overrides_json=step_overrides_json,
+            template_overrides_json=template_overrides_json,
+            metadata_json=metadata_json,
+            repo_root=repo_root,
+            plugin_slug=plugin_slug,
+            source=source,
+        )
+        if not validation.valid:
+            raise ValidationError(
+                "workflow extension is invalid",
+                data={"errors": [item.model_dump(mode="json") for item in validation.errors]},
+            )
+
+        now = _utcnow()
+        row = self._s.exec(
+            select(WorkflowTemplateExtension).where(
+                WorkflowTemplateExtension.project_id == project_id,
+                WorkflowTemplateExtension.workflow_key == workflow_key,
+            )
+        ).first()
+        if row is None:
+            row = WorkflowTemplateExtension(
+                project_id=project_id,
+                workflow_key=workflow_key,
+                enabled=enabled,
+                input_defaults_json=input_defaults_json or {},
+                selected_context_json=selected_context_json or {},
+                required_input_keys_json=required_input_keys_json or [],
+                guardrails_json=guardrails_json or {},
+                step_overrides_json=step_overrides_json or {},
+                template_overrides_json=template_overrides_json or {},
+                metadata_json=metadata_json or {},
+                created_by=created_by,
+            )
+        else:
+            row.enabled = enabled
+            row.input_defaults_json = input_defaults_json or {}
+            row.selected_context_json = selected_context_json or {}
+            row.required_input_keys_json = required_input_keys_json or []
+            row.guardrails_json = guardrails_json or {}
+            row.step_overrides_json = step_overrides_json or {}
+            row.template_overrides_json = template_overrides_json or {}
+            row.metadata_json = metadata_json or {}
+            if created_by is not None:
+                row.created_by = created_by
+            row.updated_at = now
+        self._s.add(row)
+        self._s.commit()
+        self._s.refresh(row)
+        return Envelope(data=self._extension_out(row), project_id=project_id)
 
     def save_project_template(
         self,
@@ -416,6 +830,161 @@ class WorkflowTemplateLoader:
             return left.template.summary.precedence > right.template.summary.precedence
         return left.order > right.order
 
+    def _attach_extension_summaries(
+        self,
+        templates: list[LoadedWorkflowTemplate],
+        *,
+        project_id: int,
+    ) -> None:
+        rows = self._s.exec(
+            select(WorkflowTemplateExtension).where(
+                WorkflowTemplateExtension.project_id == project_id,
+            )
+        ).all()
+        by_key = {row.workflow_key: row for row in rows}
+        for template in templates:
+            row = by_key.get(template.summary.key)
+            if row is None:
+                continue
+            extension = self._extension_out(row)
+            template.project_extension = extension
+            self._apply_extension_to_loaded(template, extension)
+
+    def _attach_extension(
+        self,
+        loaded: LoadedWorkflowTemplate,
+        *,
+        project_id: int,
+    ) -> None:
+        row = self._s.exec(
+            select(WorkflowTemplateExtension).where(
+                WorkflowTemplateExtension.project_id == project_id,
+                WorkflowTemplateExtension.workflow_key == loaded.summary.key,
+            )
+        ).first()
+        if row is None:
+            return
+        extension = self._extension_out(row)
+        loaded.project_extension = extension
+        self._apply_extension_to_loaded(loaded, extension)
+
+    def _apply_extension_to_loaded(
+        self,
+        loaded: LoadedWorkflowTemplate,
+        extension: WorkflowTemplateExtensionOut,
+    ) -> None:
+        loaded.summary.project_extension_id = extension.id
+        loaded.summary.project_extension_enabled = bool(extension.enabled)
+        if not extension.enabled:
+            return
+        if extension.template_overrides_json:
+            loaded.spec = self._apply_template_overrides(
+                loaded.spec,
+                workflow_key=extension.workflow_key,
+                template_overrides_json=extension.template_overrides_json,
+            )
+            loaded.summary.key = loaded.spec.key
+            loaded.summary.name = loaded.spec.name
+            loaded.summary.version = loaded.spec.version
+            loaded.summary.description = loaded.spec.description
+            loaded.summary.domain = loaded.spec.domain
+
+    def _validate_template_overrides(
+        self,
+        spec: WorkflowTemplateSpec,
+        *,
+        workflow_key: str,
+        template_overrides_json: dict[str, Any],
+    ) -> WorkflowTemplateValidationOut:
+        data = self._template_override_data(spec, template_overrides_json)
+        validation = validate_workflow_template_obj(data)
+        if not validation.valid or validation.template is None:
+
+            def _issue_path(issue: WorkflowTemplateIssue) -> str:
+                return (
+                    "template_overrides_json"
+                    if issue.path == "$"
+                    else f"template_overrides_json.{issue.path}"
+                )
+
+            return WorkflowTemplateValidationOut(
+                valid=False,
+                errors=[
+                    WorkflowTemplateIssue(
+                        path=_issue_path(issue),
+                        code=issue.code,
+                        message=issue.message,
+                    )
+                    for issue in validation.errors
+                ],
+                warnings=validation.warnings,
+            )
+        if validation.template.key != workflow_key:
+            return WorkflowTemplateValidationOut(
+                valid=False,
+                errors=[
+                    WorkflowTemplateIssue(
+                        path="template_overrides_json.key",
+                        code="workflow_key_mismatch",
+                        message=(
+                            "template_overrides_json.key must match workflow_key; "
+                            "use workflowTemplate.fork for a new workflow identity"
+                        ),
+                    )
+                ],
+            )
+        return validation
+
+    def _apply_template_overrides(
+        self,
+        spec: WorkflowTemplateSpec,
+        *,
+        workflow_key: str,
+        template_overrides_json: dict[str, Any],
+    ) -> WorkflowTemplateSpec:
+        validation = self._validate_template_overrides(
+            spec,
+            workflow_key=workflow_key,
+            template_overrides_json=template_overrides_json,
+        )
+        if not validation.valid or validation.template is None:
+            messages = "; ".join(item.message for item in validation.errors) or "invalid override"
+            raise ValueError(messages)
+        return validation.template
+
+    @staticmethod
+    def _template_override_data(
+        spec: WorkflowTemplateSpec,
+        template_overrides_json: dict[str, Any],
+    ) -> dict[str, Any]:
+        data = spec.model_dump(mode="json")
+        for key, value in template_overrides_json.items():
+            target_key = _TEMPLATE_OVERRIDE_ALIASES.get(key, key)
+            if target_key != key and target_key in data:
+                data.pop(key, None)
+            data[target_key] = value
+        return data
+
+    def _extension_out(self, row: WorkflowTemplateExtension) -> WorkflowTemplateExtensionOut:
+        if row.id is None:
+            raise RuntimeError("expected persisted workflow extension")
+        return WorkflowTemplateExtensionOut(
+            id=row.id,
+            project_id=row.project_id,
+            workflow_key=row.workflow_key,
+            enabled=row.enabled,
+            input_defaults_json=row.input_defaults_json or {},
+            selected_context_json=row.selected_context_json or {},
+            required_input_keys_json=row.required_input_keys_json or [],
+            guardrails_json=row.guardrails_json or {},
+            step_overrides_json=row.step_overrides_json or {},
+            template_overrides_json=row.template_overrides_json or {},
+            metadata_json=row.metadata_json or {},
+            created_by=row.created_by,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
     def _load_plugin_templates(self, *, plugin_slug: str | None) -> list[LoadedWorkflowTemplate]:
         self._sync_builtin_plugins()
         loaded: list[LoadedWorkflowTemplate] = []
@@ -584,6 +1153,10 @@ __all__ = [
     "PROJECT_TEMPLATE_PRECEDENCE",
     "REPO_TEMPLATE_PRECEDENCE",
     "LoadedWorkflowTemplate",
+    "WorkflowTemplateExtensionGetOut",
+    "WorkflowTemplateExtensionListOut",
+    "WorkflowTemplateExtensionOut",
+    "WorkflowTemplateExtensionValidationOut",
     "WorkflowTemplateListOut",
     "WorkflowTemplateLoader",
     "WorkflowTemplateSummaryOut",

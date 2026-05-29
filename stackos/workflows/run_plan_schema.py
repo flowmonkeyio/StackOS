@@ -478,6 +478,25 @@ def _executable_readiness_warnings(plan: RunPlanSpec) -> list[RunPlanIssue]:
     return warnings
 
 
+def _deep_merge(base: Any, override: Any) -> Any:
+    if isinstance(base, dict) and isinstance(override, dict):
+        merged = dict(base)
+        for key, value in override.items():
+            merged[key] = _deep_merge(merged[key], value) if key in merged else value
+        return merged
+    return override
+
+
+def _is_missing_required_input(value: Any) -> bool:
+    return value is None or value == "" or value == [] or value == {}
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    return []
+
+
 def run_plan_from_template(
     loaded: LoadedWorkflowTemplate,
     *,
@@ -487,9 +506,52 @@ def run_plan_from_template(
     context_snapshot_id: int | None = None,
     selected_context_json: dict[str, Any] | None = None,
     metadata_json: dict[str, Any] | None = None,
+    enforce_required_inputs: bool = True,
 ) -> RunPlanSpec:
     """Create a concrete editable baseline from an inert workflow template."""
     spec = loaded.spec
+    extension = loaded.project_extension if loaded.project_extension is not None else None
+    active_extension = extension if extension is not None and extension.enabled else None
+    effective_inputs = {
+        item.key: item.default_json for item in spec.inputs if item.default_json is not None
+    }
+    if active_extension is not None:
+        effective_inputs.update(active_extension.input_defaults_json)
+    effective_inputs.update(inputs_json or {})
+    if enforce_required_inputs:
+        required_input_keys = [item.key for item in spec.inputs if item.required]
+        if active_extension is not None:
+            required_input_keys.extend(active_extension.required_input_keys_json)
+        seen_required: set[str] = set()
+        missing_inputs: list[str] = []
+        for input_key in required_input_keys:
+            if input_key in seen_required:
+                continue
+            seen_required.add(input_key)
+            if _is_missing_required_input(effective_inputs.get(input_key)):
+                missing_inputs.append(input_key)
+        if missing_inputs:
+            raise ValueError("workflow required inputs are missing: " + ", ".join(missing_inputs))
+
+    effective_selected_context = (
+        _deep_merge(active_extension.selected_context_json, selected_context_json or {})
+        if active_extension is not None
+        else selected_context_json
+    )
+    extension_metadata: dict[str, Any] = {}
+    if active_extension is not None:
+        extension_metadata = {
+            "workflow_extension": {
+                "id": active_extension.id,
+                "project_id": active_extension.project_id,
+                "workflow_key": active_extension.workflow_key,
+                "metadata_json": active_extension.metadata_json,
+                "guardrails_json": active_extension.guardrails_json,
+                "required_input_keys_json": active_extension.required_input_keys_json,
+                "template_overrides_json": active_extension.template_overrides_json,
+            }
+        }
+    effective_metadata = _deep_merge(extension_metadata, metadata_json or {})
     approvals = [
         RunPlanApprovalSpec(
             key=gate.key,
@@ -501,26 +563,54 @@ def run_plan_from_template(
         )
         for gate in spec.approval_gates
     ]
-    steps = [
-        RunPlanStepSpec(
-            id=step.id,
-            title=step.title,
-            purpose=step.purpose,
-            position=index,
-            depends_on=step.depends_on,
-            input_refs=step.input_refs,
-            context_refs=step.context_refs,
-            action_refs=step.action_refs,
-            resource_refs=step.resource_refs,
-            policy_refs=step.policy_refs,
-            approval_refs=step.approval_refs,
-            output_refs=step.output_refs,
-            instructions=step.instructions,
-            success_criteria=step.success_criteria,
-            metadata_json=step.extensions_json,
+    steps: list[RunPlanStepSpec] = []
+    step_overrides = active_extension.step_overrides_json if active_extension is not None else {}
+    for index, step in enumerate(spec.steps):
+        override = step_overrides.get(step.id) if isinstance(step_overrides, dict) else None
+        override = override if isinstance(override, dict) else {}
+        prepend_instructions = _string_list(override.get("instructions_prepend"))
+        append_instructions = [
+            *_string_list(override.get("extra_instructions")),
+            *_string_list(override.get("instructions_append")),
+        ]
+        append_success = [
+            *_string_list(override.get("success_criteria")),
+            *_string_list(override.get("success_criteria_append")),
+        ]
+        step_metadata = step.extensions_json
+        if active_extension is not None and override:
+            step_metadata = _deep_merge(
+                step_metadata or {},
+                {
+                    "workflow_extension": {
+                        "extension_id": active_extension.id,
+                        "override": override,
+                    }
+                },
+            )
+            if isinstance(override.get("metadata"), dict):
+                step_metadata = _deep_merge(step_metadata, override["metadata"])
+            if isinstance(override.get("metadata_json"), dict):
+                step_metadata = _deep_merge(step_metadata, override["metadata_json"])
+        steps.append(
+            RunPlanStepSpec(
+                id=step.id,
+                title=step.title,
+                purpose=step.purpose,
+                position=index,
+                depends_on=step.depends_on,
+                input_refs=step.input_refs,
+                context_refs=step.context_refs,
+                action_refs=step.action_refs,
+                resource_refs=step.resource_refs,
+                policy_refs=step.policy_refs,
+                approval_refs=step.approval_refs,
+                output_refs=step.output_refs,
+                instructions=[*prepend_instructions, *step.instructions, *append_instructions],
+                success_criteria=[*step.success_criteria, *append_success],
+                metadata_json=step_metadata,
+            )
         )
-        for index, step in enumerate(spec.steps)
-    ]
     grants = {
         "template_plugin_slug": loaded.summary.plugin_slug,
         "capability_requirements": [
@@ -544,8 +634,8 @@ def run_plan_from_template(
         template_version=spec.version,
         template_source=loaded.summary.source,
         context_snapshot_id=context_snapshot_id,
-        inputs_json=inputs_json or {},
-        selected_context_json=selected_context_json,
+        inputs_json=effective_inputs,
+        selected_context_json=effective_selected_context,
         context_filters_json={
             "requirements": [
                 item.model_dump(mode="json", exclude_none=True)
@@ -564,7 +654,7 @@ def run_plan_from_template(
         },
         steps=steps,
         approvals=approvals,
-        metadata_json=metadata_json,
+        metadata_json=effective_metadata or None,
     )
 
 
