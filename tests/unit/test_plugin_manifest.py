@@ -30,6 +30,7 @@ def test_builtin_plugin_manifests_validate() -> None:
 
     assert slugs == [
         "engineering",
+        "support",
         "communications",
         "gtm",
         "media-buying",
@@ -58,6 +59,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "engineering-decision",
         "engineering-evidence",
     }
+    assert resources_by_plugin["support"] >= {"support-investigation"}
     engineering = next(
         manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "engineering"
     )

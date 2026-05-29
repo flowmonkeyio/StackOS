@@ -1,0 +1,257 @@
+schema_version: stackos.workflow-template.v1
+key: communications.customer-feedback-intake
+name: Customer Feedback Intake
+version: 0.1.0
+description: Normalize customer feedback from Slack, Telegram, email, local chat, or another communication surface into one route-approved canonical Slack thread with media preserved and investigation-ready refs captured.
+domain: communications
+owner:
+  team: StackOS
+when_to_use:
+  - Customer feedback or a support symptom arrives outside the canonical Slack support thread.
+  - A project needs a single Slack thread before support investigation starts.
+  - Source media, reporter context, route context, and safe message refs must be preserved for later agents.
+when_not_to_use:
+  - A canonical Slack thread already exists and support investigation can start from that thread ref.
+  - The issue is already scoped as an engineering delivery task.
+  - The user asked for one direct provider action with no durable support context.
+agent_requirements:
+  - role: communications-customer-feedback-intake
+    requirement: required
+    agent_preset_ref: communications.workflow.customer-feedback-intake
+    purpose: Resolve route-approved Slack destination, bridge source feedback and media into one canonical thread, add the intake reaction, and return refs for support investigation.
+    applies_to_steps:
+      - capture-feedback
+      - establish-canonical-thread
+      - add-intake-reaction
+      - prepare-investigation-handoff
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, communication operations, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - This workflow is intake only; do not investigate cause, create tracker tasks, or start engineering delivery here.
+      - Use configured communication routes and named targets from project setup or workflow extension context.
+      - If feedback did not originate in Slack, create exactly one canonical Slack message and continue all future support work in that thread.
+      - Forward every route-approved source media item in the same canonical handoff message when the provider path supports it.
+      - If media cannot be carried with the handoff, stop with a visible blocker instead of silently sending a text-only summary.
+      - Preserve source, canonical thread, canonical message, media, route, and target refs for support.issue-investigation.
+inputs:
+  - key: feedback_summary
+    name: Feedback Summary
+    type: string
+    required: true
+    description: Reporter-visible feedback or symptom that triggered support intake.
+  - key: source_surface_ref
+    name: Source Surface Ref
+    type: string
+    required: false
+    description: Safe source surface ref, such as a Slack channel, Telegram chat, email inbox, or local chat surface.
+  - key: source_message_ref
+    name: Source Message Ref
+    type: string
+    required: false
+    description: Safe source message ref when the feedback came from a stored communication message.
+  - key: source_media_refs
+    name: Source Media Refs
+    type: array
+    required: false
+    description: Optional safe list of media or attachment refs from the source message.
+  - key: communication_route_ref
+    name: Communication Route Ref
+    type: string
+    required: false
+    description: Project setup route ref approving cross-surface feedback handoff into the canonical Slack thread.
+  - key: canonical_slack_target_ref
+    name: Canonical Slack Target Ref
+    type: string
+    required: false
+    description: Project setup target ref for the canonical Slack support destination.
+  - key: project_workflow_context
+    name: Project Workflow Context
+    type: object
+    required: false
+    description: Project setup context with channel purpose, audience, safe share boundaries, escalation rules, and operator preferences.
+  - key: severity_hint
+    name: Severity Hint
+    type: string
+    required: false
+    description: Optional initial severity or customer-impact hint from the reporter or operator.
+context_requirements:
+  - id: inbound_request
+    source: agent_requests
+    purpose: Read source refs, reporter context, body preview, trigger metadata, and route hints for the feedback.
+    fields:
+      - title
+      - body_preview
+      - source_message_ref
+      - metadata_json
+      - attachments
+      - created_at
+    max_items: 5
+    return_mode: compact
+  - id: communication_route_context
+    source: resources
+    purpose: Read stored communication route, target, surface, and recent source message context before handoff.
+    filters:
+      plugin_slug: communications
+      resource_keys:
+        - communication-message
+        - communication-route
+        - communication-target
+        - communication-surface
+    fields:
+      - title
+      - data_json
+      - updated_at
+    max_items: 20
+    return_mode: compact
+capability_requirements:
+  - key: customer-feedback-intake
+    required: true
+    description: Receive and normalize customer feedback into one canonical support thread.
+  - key: messaging
+    required: true
+    preferred_providers:
+      - slack-bot
+      - telegram-bot
+auth_requirements:
+  - key: slack_bot
+    provider: slack-bot
+    auth_type: bot
+    optional: false
+    description: Project-scoped Slack bot auth for canonical message, media upload, and reaction.
+  - key: telegram_bot
+    provider: telegram-bot
+    auth_type: bot
+    optional: true
+    description: Required only when Telegram source media must be downloaded before cross-surface handoff.
+action_contracts:
+  - key: send_canonical_handoff
+    action: slack-bot.message.send
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+  - key: upload_canonical_media
+    action: slack-bot.file.upload
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+  - key: download_source_media
+    action: telegram-bot.file.download
+    capability: messaging
+    provider: telegram-bot
+    risk_level: read
+    auth_ref: telegram_bot
+  - key: add_intake_reaction
+    action: slack-bot.reaction.add
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+policies:
+  - key: canonical_slack_thread
+    kind: communications
+    description: Each feedback item must resolve to one Slack thread. If the source is not Slack, create one canonical Slack message only after route approval; after that, no new top-level Slack messages are allowed for the same issue.
+  - key: route_privacy_boundary
+    kind: safety
+    description: Do not copy private or customer-sensitive context across surfaces unless the configured route and project setup allow it.
+  - key: media_handoff_fidelity
+    kind: communications
+    description: Every source media item must be inventoried and forwarded when route policy allows it, using the same canonical Slack handoff message when supported.
+  - key: no_investigation_in_intake
+    kind: boundary
+    description: Intake agents preserve context and route feedback; they do not diagnose cause, create tracker tasks, or decide engineering scope.
+steps:
+  - id: capture-feedback
+    title: Capture Feedback
+    purpose: Read the inbound request and source refs, including media inventory and route hints.
+    input_refs:
+      - feedback_summary
+      - source_surface_ref
+      - source_message_ref
+      - source_media_refs
+      - severity_hint
+    context_refs:
+      - inbound_request
+      - communication_route_context
+    policy_refs:
+      - route_privacy_boundary
+      - no_investigation_in_intake
+    output_refs:
+      - intake_summary
+  - id: establish-canonical-thread
+    title: Establish Canonical Thread
+    purpose: Reuse a Slack-origin thread or create one route-approved Slack handoff that preserves source context and media.
+    input_refs:
+      - communication_route_ref
+      - canonical_slack_target_ref
+      - project_workflow_context
+    action_refs:
+      - send_canonical_handoff
+      - upload_canonical_media
+      - download_source_media
+    policy_refs:
+      - canonical_slack_thread
+      - route_privacy_boundary
+      - media_handoff_fidelity
+      - no_investigation_in_intake
+    depends_on:
+      - capture-feedback
+    output_refs:
+      - canonical_thread
+      - forwarded_media
+  - id: add-intake-reaction
+    title: Add Intake Reaction
+    purpose: Mark the canonical Slack message with a reaction that indicates support intake has started.
+    action_refs:
+      - add_intake_reaction
+    depends_on:
+      - establish-canonical-thread
+    output_refs:
+      - intake_reaction
+  - id: prepare-investigation-handoff
+    title: Prepare Investigation Handoff
+    purpose: Return the refs and concise support context needed to start support.issue-investigation without re-discovering the source message.
+    policy_refs:
+      - canonical_slack_thread
+      - media_handoff_fidelity
+      - no_investigation_in_intake
+    depends_on:
+      - add-intake-reaction
+    output_refs:
+      - support_investigation_request
+outputs:
+  - key: intake_summary
+    name: Intake Summary
+    type: object
+    description: Reporter symptom, source refs, media inventory, route/target refs, and initial severity.
+  - key: canonical_thread
+    name: Canonical Thread
+    type: object
+    required: true
+    description: Canonical Slack thread and message refs for all later support work.
+  - key: forwarded_media
+    name: Forwarded Media
+    type: object
+    description: Media forwarding result, explicit blocker, or approved waiver.
+  - key: intake_reaction
+    name: Intake Reaction
+    type: object
+    description: Evidence that the intake reaction was added to the canonical Slack message.
+  - key: support_investigation_request
+    name: Support Investigation Request
+    type: object
+    required: true
+    description: Compact handoff refs for support.issue-investigation.
+failure_handling:
+  - If route, target, auth, or media support is unresolved, stop before cross-surface handoff and report the missing setup.
+  - If Slack delivery succeeds but reaction fails, preserve the canonical thread refs and report the reaction blocker.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan
+  workflow_family: customer_feedback
+  next_workflow: support.issue-investigation
+  agent_subset:
+    - communications-customer-feedback-intake

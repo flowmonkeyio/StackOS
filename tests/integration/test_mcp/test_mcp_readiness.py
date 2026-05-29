@@ -78,17 +78,16 @@ def test_readiness_check_reports_customer_support_workflow_slack_setup(
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "workflow_key": "engineering.customer-support-investigation"},
+        {"project_id": project_id, "workflow_key": "communications.customer-feedback-intake"},
     )
 
     assert readiness["scope"] == "workflow"
     assert readiness["ready"] is True
     assert readiness["execution_ready"] is False
-    assert readiness["workflow"]["workflow_key"] == ("engineering.customer-support-investigation")
+    assert readiness["workflow"]["workflow_key"] == "communications.customer-feedback-intake"
     assert (
-        "communications-customer-support-thread" in (readiness["workflow"]["required_agent_roles"])
+        "communications-customer-feedback-intake" in readiness["workflow"]["required_agent_roles"]
     )
-    assert "support-investigation-analyst" in readiness["workflow"]["required_agent_roles"]
     providers = {item["provider_key"] for item in readiness["missing"]}
     assert providers == {"slack-bot", "telegram-bot"}
     required_providers = {

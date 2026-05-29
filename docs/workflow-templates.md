@@ -61,15 +61,16 @@ requirements -> discovery -> planning -> design -> design review -> test design
 -> delivery -> verification -> delivery review -> tracker audit -> release
 ```
 
-Reported customer issues use a separate customer-support investigation workflow
-before delivery:
+Reported customer issues use a separated feedback/support chain before
+delivery:
 
 ```text
-feedback -> route and media preflight -> canonical Slack thread -> eyes reaction
--> full-thread read -> same-thread clarification when needed
--> support investigation conclusion -> wait for same-thread instruction
+feedback -> route and media preflight -> canonical Slack thread -> intake reaction
+-> support.issue-investigation -> full-thread read
+-> same-thread clarification when needed -> support conclusion
+-> support.delivery-task-handoff after same-thread instruction
 -> delivery task creation -> same-thread task handoff
--> task-created reaction -> tracked-delivery handoff
+-> task-created reaction -> engineering.tracked-delivery
 ```
 
 The baseline separates method from specialization. Requirements and test design
@@ -80,24 +81,23 @@ compact or skip optional specialist roles for small work, but it should not
 erase acceptance criteria, dependencies, evidence, or closeout truth from the
 run plan.
 
-The customer-support baseline is deliberately investigation-first. Slack is
-the canonical thread for support investigation, even when feedback originates
-in Telegram or another surface, but a configured Slack target is not itself
-route approval. Non-Slack feedback needs a matching route or current operator
-instruction naming the Slack target before content is copied. Agents must also
-inventory every source media item and forward all route-approved media in the
-same canonical Slack handoff message when supported; if the provider path
-cannot carry every item, the workflow stops before partial handoff or asks for
-explicit text-only approval. Agents must read the full
-thread before analysis, before posting the support investigation conclusion,
-and before creating tasks. If evidence is missing, they ask clarification
-questions in the same thread and reread before deciding.
-The investigation may recommend a fix direction, but tracker tasks are created
-only after explicit human instruction in that same thread. Created tasks and
-tickets must preserve source, canonical Slack thread/message, clarification,
-support conclusion, instruction, task handoff, source media, forwarded media,
-and tracked-delivery refs in tracker context or `references_json`. Once tasks
-exist, implementation proceeds through `engineering.tracked-delivery`.
+The customer feedback baseline is deliberately split. Slack is the canonical
+thread for support work, even when feedback originates in Telegram or another
+surface, but a configured Slack target is not itself route approval. Non-Slack
+feedback needs a matching route or current operator instruction naming the
+Slack target before content is copied. Intake agents must inventory every
+source media item and forward all route-approved media in the same canonical
+Slack handoff message when supported; if the provider path cannot carry every
+item, intake stops before partial handoff or asks for explicit text-only
+approval. Investigation agents read the full thread before analysis and before
+posting the support conclusion. If evidence is missing, they ask clarification
+questions in the same thread and reread before deciding. Handoff agents create
+tracker tasks only after explicit human instruction in that same thread.
+Created tasks and tickets must preserve source, canonical Slack
+thread/message, clarification, support conclusion, instruction, task handoff,
+source media, forwarded media, and tracked-delivery refs in tracker context or
+`references_json`. Once tasks exist, implementation proceeds through
+`engineering.tracked-delivery`.
 
 ## Context Requirements
 
@@ -185,7 +185,8 @@ bind run setup and can override any workflow template field atomically for the
 project. Use `workflowExtension.validate` before saving, then
 `workflowExtension.upsert` to persist reviewed project setup. Use
 `workflowExtension.get` or the Workflow Templates UI to inspect the extension;
-use `workflowTemplate.describe` to inspect the effective workflow after enabled
+use `workflowExtension.delete` to remove stale or test setup entirely. Use
+`workflowTemplate.describe` to inspect the effective workflow after enabled
 project overrides are applied. Template detail responses include
 `project_extension`, and template summaries include `project_extension_id` /
 `project_extension_enabled` so agents can see when a project extension exists.
@@ -213,12 +214,13 @@ saving it. The UI can inspect and use templates, but it is not yet a full
 visual workflow-builder.
 
 For customer feedback workflows, configure the canonical Slack route and target
-as project extension defaults. The base support workflow remains generic; the
-project extension supplies refs such as `communication_route_ref`,
-`canonical_slack_target_ref`, and `project_workflow_context` so the agent can
-create the correct run plan without rediscovering channel setup every time.
-If the project needs different agents, step ordering, or support instructions,
-put those changes in `template_overrides_json` and let
+as project extension defaults on `communications.customer-feedback-intake`.
+The base support workflows remain generic; the project extension supplies refs
+such as `communication_route_ref`, `canonical_slack_target_ref`, and
+`project_workflow_context` so the agent can create the correct intake run plan
+without rediscovering channel setup every time. If the project needs different
+agents, step ordering, or support instructions for any workflow in the chain,
+put those changes in that workflow's `template_overrides_json` and let
 `workflowExtension.validate` prove the effective workflow is still well-formed.
 
 ## Examples

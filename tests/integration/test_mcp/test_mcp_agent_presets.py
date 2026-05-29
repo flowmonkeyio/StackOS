@@ -22,11 +22,25 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
         "agentPreset.resolveForWorkflow",
         {"workflow_key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
     )
+    intake_resolved = mcp_client.call_tool_structured(
+        "agentPreset.resolveForWorkflow",
+        {
+            "workflow_key": "communications.customer-feedback-intake",
+            "plugin_slug": "communications",
+        },
+    )
     support_resolved = mcp_client.call_tool_structured(
         "agentPreset.resolveForWorkflow",
         {
-            "workflow_key": "engineering.customer-support-investigation",
-            "plugin_slug": "engineering",
+            "workflow_key": "support.issue-investigation",
+            "plugin_slug": "support",
+        },
+    )
+    handoff_resolved = mcp_client.call_tool_structured(
+        "agentPreset.resolveForWorkflow",
+        {
+            "workflow_key": "support.delivery-task-handoff",
+            "plugin_slug": "support",
         },
     )
 
@@ -66,15 +80,21 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
         "stackos.sdlc.release-ops",
     }
     assert engineering_resolved["skill_requirements"][0]["skill_ref"] == "stackos:stackos"
-    assert support_resolved["workflow"]["key"] == "engineering.customer-support-investigation"
+    assert intake_resolved["workflow"]["key"] == "communications.customer-feedback-intake"
+    intake_required_agent_keys = {
+        agent["preset"]["summary"]["key"] for agent in intake_resolved["required_agents"]
+    }
+    assert intake_required_agent_keys == {
+        "communications.workflow.customer-feedback-intake",
+    }
+    assert intake_resolved["skill_requirements"][0]["skill_ref"] == "stackos:stackos"
+
+    assert support_resolved["workflow"]["key"] == "support.issue-investigation"
     support_required_agent_keys = {
         agent["preset"]["summary"]["key"] for agent in support_resolved["required_agents"]
     }
     assert support_required_agent_keys == {
-        "communications.workflow.customer-support-thread",
-        "stackos.sdlc.support-investigation-analyst",
-        "stackos.sdlc.planning",
-        "stackos.sdlc.delivery-reviewer",
+        "support.workflow.issue-investigator",
     }
     support_recommended_agent_keys = {
         agent["preset"]["summary"]["key"] for agent in support_resolved["recommended_agents"]
@@ -83,3 +103,17 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
         "stackos.sdlc.codebase-explorer",
     }
     assert support_resolved["skill_requirements"][0]["skill_ref"] == "stackos:stackos"
+
+    assert handoff_resolved["workflow"]["key"] == "support.delivery-task-handoff"
+    handoff_required_agent_keys = {
+        agent["preset"]["summary"]["key"] for agent in handoff_resolved["required_agents"]
+    }
+    assert handoff_required_agent_keys == {
+        "support.workflow.delivery-handoff",
+    }
+    handoff_recommended_agent_keys = {
+        agent["preset"]["summary"]["key"] for agent in handoff_resolved["recommended_agents"]
+    }
+    assert handoff_recommended_agent_keys == {
+        "stackos.sdlc.planning",
+    }

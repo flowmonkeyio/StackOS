@@ -1,0 +1,278 @@
+schema_version: stackos.workflow-template.v1
+key: support.issue-investigation
+name: Issue Investigation
+version: 0.1.0
+description: Investigate a customer-reported issue from the canonical support thread, ask bounded clarifications when needed, and post an evidence-backed support conclusion without creating delivery tasks.
+domain: support
+owner:
+  team: StackOS
+when_to_use:
+  - A canonical Slack support thread exists and the issue needs diagnosis before delivery work is created.
+  - The agent must read the whole support thread, include media/context, and produce a root-cause or bounded-uncertainty conclusion.
+  - The operator needs a clear support conclusion before deciding whether to create delivery work.
+when_not_to_use:
+  - Feedback has not yet been normalized into a canonical Slack thread; use communications.customer-feedback-intake first.
+  - The operator already provided a same-thread instruction to create delivery work from a completed support conclusion; use support.delivery-task-handoff.
+  - Engineering implementation or release work should start; use engineering.tracked-delivery.
+agent_requirements:
+  - role: support-issue-investigator
+    requirement: required
+    agent_preset_ref: support.workflow.issue-investigator
+    purpose: Read the full canonical thread and project evidence, investigate root cause or bounded uncertainty, ask clarifications, and post a thread-bound conclusion.
+    applies_to_steps:
+      - read-canonical-thread
+      - clarify-missing-context
+      - investigate-issue
+      - post-support-conclusion
+  - role: codebase-explorer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.codebase-explorer
+    purpose: Trace real affected code paths, contracts, data, tests, docs, and downstream fallout during investigation.
+    applies_to_steps:
+      - investigate-issue
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, communications, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - Start only after there is a canonical support thread ref.
+      - The complete canonical thread is the source of truth; do not investigate from only the first customer message.
+      - Ask clarification questions only in the canonical thread and re-read the thread after answers.
+      - Post the support conclusion in the canonical thread.
+      - This workflow ends after the conclusion. If the operator replies with task instructions, start support.delivery-task-handoff.
+      - Preserve source, canonical thread, media, clarification, conclusion, evidence, and recommended delivery refs.
+inputs:
+  - key: canonical_thread_ref
+    name: Canonical Thread Ref
+    type: string
+    required: true
+    description: Safe ref for the canonical Slack support thread.
+  - key: canonical_message_ref
+    name: Canonical Message Ref
+    type: string
+    required: false
+    description: Safe ref for the canonical Slack message that started the thread.
+  - key: source_message_ref
+    name: Source Message Ref
+    type: string
+    required: false
+    description: Safe source message ref when the feedback originated outside the canonical thread.
+  - key: source_media_refs
+    name: Source Media Refs
+    type: array
+    required: false
+    description: Safe refs for source or forwarded media that may contain evidence.
+  - key: feedback_summary
+    name: Feedback Summary
+    type: string
+    required: true
+    description: Reporter-visible symptom or issue summary from intake.
+  - key: severity_hint
+    name: Severity Hint
+    type: string
+    required: false
+    description: Optional initial severity or customer-impact hint.
+  - key: project_workflow_context
+    name: Project Workflow Context
+    type: object
+    required: false
+    description: Project setup context with channel purpose, data boundaries, diagnostics policy, and operator preferences.
+context_requirements:
+  - id: canonical_thread_history
+    source: resources
+    purpose: Read stored communication history for the canonical Slack thread and original source thread.
+    filters:
+      plugin_slug: communications
+      resource_keys:
+        - communication-message
+        - communication-interaction
+        - communication-event
+    fields:
+      - title
+      - data_json
+      - updated_at
+    max_items: 50
+    return_mode: compact
+  - id: recent_support_context
+    source: resources
+    purpose: Reuse relevant prior support investigations and avoid repeating known diagnostics.
+    filters:
+      plugin_slug: support
+      resource_keys:
+        - support-investigation
+    fields:
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 10
+    return_mode: compact
+  - id: engineering_context
+    source: resources
+    purpose: Read reusable engineering evidence and decisions that may constrain investigation or delivery recommendation.
+    filters:
+      plugin_slug: engineering
+      resource_keys:
+        - engineering-decision
+        - engineering-evidence
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 20
+    return_mode: compact
+  - id: recent_runs
+    source: runs
+    purpose: Check recent failed deliveries, investigations, or signoffs before repeating work.
+    fields:
+      - kind
+      - status
+      - last_step
+      - metadata_json
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: support-investigation
+    required: true
+    description: Investigate support feedback, validate the cause when possible, and explain the next delivery handoff before implementation starts.
+  - key: messaging
+    required: true
+    preferred_providers:
+      - slack-bot
+auth_requirements:
+  - key: slack_bot
+    provider: slack-bot
+    auth_type: bot
+    optional: false
+    description: Project-scoped Slack bot auth for clarification and conclusion replies.
+action_contracts:
+  - key: post_thread_reply
+    action: slack-bot.message.send
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+resource_contracts:
+  - key: support_evidence
+    resource: support-investigation
+    purpose: Store reusable support investigation evidence, conclusion, and chat refs when the run creates durable proof.
+policies:
+  - key: full_thread_source_of_truth
+    kind: investigation
+    description: The complete canonical Slack thread is the investigation source of truth. The agent must read stored thread history, fetch live provider history only when explicitly granted, name any missing-history limitation, and re-read after clarification replies.
+  - key: evidence_over_assertion
+    kind: investigation
+    description: Conclusions must distinguish facts, inferences, hypotheses, eliminated options, verified cause, and residual uncertainty.
+  - key: no_implementation_in_support_investigation
+    kind: boundary
+    description: The support investigation workflow may read and reason, but it must not implement production fixes.
+  - key: no_task_creation_in_investigation
+    kind: tracker
+    description: This workflow posts the investigation conclusion only. Same-thread operator instructions start support.delivery-task-handoff.
+  - key: chat_reference_continuity
+    kind: tracker
+    description: Run-plan metadata, investigation resources, and later task handoffs must preserve safe source refs plus canonical thread/message, media, clarification, conclusion, and instruction refs when available.
+steps:
+  - id: read-canonical-thread
+    title: Read Canonical Thread
+    purpose: Read the full stored thread and source context before forming hypotheses.
+    input_refs:
+      - canonical_thread_ref
+      - canonical_message_ref
+      - source_message_ref
+      - source_media_refs
+      - feedback_summary
+      - severity_hint
+      - project_workflow_context
+    context_refs:
+      - canonical_thread_history
+      - recent_support_context
+    policy_refs:
+      - full_thread_source_of_truth
+      - chat_reference_continuity
+    output_refs:
+      - thread_context_summary
+  - id: clarify-missing-context
+    title: Clarify Missing Context
+    purpose: Ask a same-thread clarification only when missing evidence blocks a safe conclusion; otherwise record why clarification was skipped.
+    action_refs:
+      - post_thread_reply
+    policy_refs:
+      - full_thread_source_of_truth
+      - evidence_over_assertion
+      - no_task_creation_in_investigation
+    depends_on:
+      - read-canonical-thread
+    output_refs:
+      - clarification_result
+  - id: investigate-issue
+    title: Investigate Issue
+    purpose: Trace the symptom through project evidence, validate or bound root cause, and identify affected surfaces and delivery direction.
+    context_refs:
+      - canonical_thread_history
+      - engineering_context
+      - recent_runs
+    resource_refs:
+      - support_evidence
+    policy_refs:
+      - full_thread_source_of_truth
+      - evidence_over_assertion
+      - no_implementation_in_support_investigation
+      - chat_reference_continuity
+    depends_on:
+      - clarify-missing-context
+    output_refs:
+      - investigation_conclusion
+  - id: post-support-conclusion
+    title: Post Support Conclusion
+    purpose: Post the evidence-backed conclusion in the canonical thread and tell the operator that task creation is a separate instructed handoff.
+    action_refs:
+      - post_thread_reply
+    policy_refs:
+      - full_thread_source_of_truth
+      - evidence_over_assertion
+      - no_task_creation_in_investigation
+      - chat_reference_continuity
+    depends_on:
+      - investigate-issue
+    output_refs:
+      - support_conclusion_reply
+      - delivery_handoff_recommendation
+outputs:
+  - key: thread_context_summary
+    name: Thread Context Summary
+    type: object
+    description: Full-thread facts, reporter context, media refs, and source refs used for investigation.
+  - key: clarification_result
+    name: Clarification Result
+    type: object
+    description: Clarification question/reply refs, or explicit reason no clarification was needed.
+  - key: investigation_conclusion
+    name: Investigation Conclusion
+    type: object
+    required: true
+    description: Facts, inferences, eliminated hypotheses, verified cause or bounded uncertainty, affected surfaces, residual risk, and recommended next step.
+  - key: support_conclusion_reply
+    name: Support Conclusion Reply
+    type: object
+    required: true
+    description: Evidence that the conclusion was posted in the canonical support thread.
+  - key: delivery_handoff_recommendation
+    name: Delivery Handoff Recommendation
+    type: object
+    description: Suggested engineering.tracked-delivery task direction if the operator instructs task creation later.
+failure_handling:
+  - If the full thread cannot be read, name the limitation in the thread and do not post a confident cause.
+  - If clarification is required, ask in the canonical thread and pause the investigation until the answer is available.
+  - If evidence is insufficient, post bounded uncertainty and the next diagnostic step instead of guessing.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan
+  workflow_family: customer_feedback
+  previous_workflow: communications.customer-feedback-intake
+  next_workflow: support.delivery-task-handoff
+  agent_subset:
+    - support-issue-investigator
+    - codebase-explorer

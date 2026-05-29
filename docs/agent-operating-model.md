@@ -51,24 +51,24 @@ references, verification commands, and release expectations. Use
 `agentPreset.resolveForWorkflow` to see the required/recommended agent roles and
 host-side skill requirements for a workflow template.
 
-Engineering roles run through the normal workflow-template path. Customer
-feedback or reported issues start with `engineering.customer-support-investigation`:
-the agent preflights cross-surface route approval and media forwarding,
-establishes one canonical Slack thread, adds the investigation reaction, reads
-the full thread, asks same-thread clarifications when needed, posts the support
-investigation conclusion in the thread, waits for same-thread human
-instruction, creates delivery tasks only when instructed, posts the task
-handoff in the thread, adds a task-created reaction, and then hands off. A
-resolvable Slack target is not route approval, and source media must be
-forwarded in the same canonical Slack handoff message when the provider path
-supports it, or explicitly blocked/waived before the workflow proceeds. Scoped
-implementation runs through
-`engineering.tracked-delivery`. The workflows reference one curated engineering
-preset family: customer-support threading, requirements, codebase
-exploration, planning, support investigation, architecture, test design,
-delivery, delivery review, and release. `agentPreset.resolveForWorkflow` turns
-each workflow into the required and recommended role contracts; use that subset
-as the only engineering agent set for the project.
+Support and engineering roles run through the normal workflow-template path.
+Customer feedback starts with `communications.customer-feedback-intake`: the
+agent preflights cross-surface route approval and media forwarding, establishes
+one canonical Slack thread, adds the intake reaction, and returns durable refs.
+Investigation then runs through `support.issue-investigation`: the agent reads
+the full thread, asks same-thread clarifications when needed, and posts the
+support conclusion in that thread. Task creation is a separate instructed
+handoff through `support.delivery-task-handoff`; it requires a same-thread
+operator instruction, creates delivery-ready tracker work, posts the task
+handoff in the thread, adds a task-created reaction, and then points to
+`engineering.tracked-delivery`. Scoped implementation runs through
+`engineering.tracked-delivery`. A resolvable Slack target is not route
+approval, and source media must be forwarded in the same canonical Slack
+handoff message when the provider path supports it, or explicitly
+blocked/waived before the workflow proceeds. `agentPreset.resolveForWorkflow`
+turns each workflow into the required and recommended role contracts; use those
+communications, support, and engineering roles as one curated project-adapted
+agent set without overlapping responsibilities.
 
 Local agent installation is outside the StackOS daemon boundary. StackOS
 describes generic presets and workflow role requirements, but the host/project

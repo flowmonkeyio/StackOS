@@ -412,6 +412,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "decision.query" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "workflowExtension.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "workflowExtension.get" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "workflowExtension.delete" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "workflowExtension.validate" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "workflowExtension.upsert" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "workflowTemplate.list" in _AGENT_SETUP_TOOLBOX_NAMES

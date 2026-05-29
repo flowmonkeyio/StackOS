@@ -72,13 +72,18 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         plugin_slug="gtm",
     )
     engineering_listing = repo.list_templates(plugin_slug="engineering")
-    support_described = repo.describe_template(
-        key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
-    )
     engineering_described = repo.describe_template(
         key="engineering.tracked-delivery",
         plugin_slug="engineering",
+    )
+    support_listing = repo.list_templates(plugin_slug="support")
+    support_investigation_described = repo.describe_template(
+        key="support.issue-investigation",
+        plugin_slug="support",
+    )
+    support_handoff_described = repo.describe_template(
+        key="support.delivery-task-handoff",
+        plugin_slug="support",
     )
     media_listing = repo.list_templates(plugin_slug="media-buying")
     media_described = repo.describe_template(
@@ -100,80 +105,96 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
     assert described.spec.steps[0].id == "clarify-goal"
     assert [item.key for item in engineering_listing.templates] == [
-        "engineering.customer-support-investigation",
         "engineering.tracked-delivery",
     ]
-    assert support_described.summary.plugin_slug == "engineering"
-    assert support_described.spec.agent_requirements[0].agent_preset_ref == (
-        "communications.workflow.customer-support-thread"
+    intake_described = repo.describe_template(
+        key="communications.customer-feedback-intake",
+        plugin_slug="communications",
     )
-    support_agent_refs = {
-        item.agent_preset_ref for item in support_described.spec.agent_requirements
-    }
-    assert support_agent_refs == {
-        "communications.workflow.customer-support-thread",
-        "stackos.sdlc.support-investigation-analyst",
-        "stackos.sdlc.codebase-explorer",
-        "stackos.sdlc.planning",
-        "stackos.sdlc.delivery-reviewer",
-    }
-    support_step_ids = [step.id for step in support_described.spec.steps]
-    assert support_step_ids == [
-        "intake-feedback",
+    assert intake_described.summary.plugin_slug == "communications"
+    assert intake_described.spec.agent_requirements[0].agent_preset_ref == (
+        "communications.workflow.customer-feedback-intake"
+    )
+    assert [step.id for step in intake_described.spec.steps] == [
+        "capture-feedback",
         "establish-canonical-thread",
-        "add-investigation-reaction",
-        "read-full-thread",
-        "ask-thread-clarifications",
-        "investigate-support-issue",
-        "post-support-conclusion-in-thread",
-        "wait-for-thread-instructions",
-        "create-delivery-task",
-        "post-task-handoff-in-thread",
-        "add-task-created-reaction",
-        "conclude-and-handoff",
+        "add-intake-reaction",
+        "prepare-investigation-handoff",
     ]
-    assert support_described.spec.metadata_json["workflow_family"] == (
-        "customer_support_investigation"
+    assert intake_described.spec.metadata_json["next_workflow"] == ("support.issue-investigation")
+    intake_steps = {step.id: step for step in intake_described.spec.steps}
+    assert "source_media_refs" in intake_steps["capture-feedback"].input_refs
+    assert intake_steps["establish-canonical-thread"].action_refs == [
+        "send_canonical_handoff",
+        "upload_canonical_media",
+        "download_source_media",
+    ]
+    assert "media_handoff_fidelity" in intake_steps["establish-canonical-thread"].policy_refs
+
+    assert [item.key for item in support_listing.templates] == [
+        "support.delivery-task-handoff",
+        "support.issue-investigation",
+    ]
+    assert support_investigation_described.summary.plugin_slug == "support"
+    support_investigation_agent_refs = {
+        item.agent_preset_ref for item in support_investigation_described.spec.agent_requirements
+    }
+    assert support_investigation_agent_refs == {
+        "support.workflow.issue-investigator",
+        "stackos.sdlc.codebase-explorer",
+    }
+    assert [step.id for step in support_investigation_described.spec.steps] == [
+        "read-canonical-thread",
+        "clarify-missing-context",
+        "investigate-issue",
+        "post-support-conclusion",
+    ]
+    assert support_investigation_described.spec.metadata_json["previous_workflow"] == (
+        "communications.customer-feedback-intake"
     )
-    assert support_described.spec.metadata_json["handoff_workflow"] == (
+    assert support_investigation_described.spec.metadata_json["next_workflow"] == (
+        "support.delivery-task-handoff"
+    )
+    investigation_policies = {
+        policy.key for policy in support_investigation_described.spec.policies
+    }
+    assert "full_thread_source_of_truth" in investigation_policies
+    assert "no_task_creation_in_investigation" in investigation_policies
+    investigation_steps = {step.id: step for step in support_investigation_described.spec.steps}
+    assert investigation_steps["clarify-missing-context"].action_refs == ["post_thread_reply"]
+    assert investigation_steps["investigate-issue"].depends_on == ["clarify-missing-context"]
+
+    support_handoff_agent_refs = {
+        item.agent_preset_ref for item in support_handoff_described.spec.agent_requirements
+    }
+    assert support_handoff_agent_refs == {
+        "support.workflow.delivery-handoff",
+        "stackos.sdlc.planning",
+    }
+    assert [step.id for step in support_handoff_described.spec.steps] == [
+        "confirm-thread-instruction",
+        "create-delivery-task",
+        "post-task-handoff",
+        "add-task-created-reaction",
+    ]
+    assert support_handoff_described.spec.metadata_json["previous_workflow"] == (
+        "support.issue-investigation"
+    )
+    assert support_handoff_described.spec.metadata_json["next_workflow"] == (
         "engineering.tracked-delivery"
     )
-    assert support_described.spec.metadata_json["canonical_surface"] == "slack_thread"
-    assert support_described.spec.metadata_json["investigation_reaction"] == "eyes"
-    assert support_described.spec.metadata_json["agent_subset"] == [
-        "communications-customer-support-thread",
-        "support-investigation-analyst",
-        "codebase-explorer",
+    assert support_handoff_described.spec.metadata_json["agent_subset"] == [
+        "support-delivery-handoff",
         "planning",
-        "delivery-reviewer",
     ]
-    policies = {policy.key for policy in support_described.spec.policies}
-    assert "chat_reference_continuity" in policies
-    assert "media_handoff_fidelity" in policies
-    support_steps = {step.id: step for step in support_described.spec.steps}
-    assert all(not step.approval_refs for step in support_steps.values())
-    assert "source_media_refs" in support_steps["intake-feedback"].input_refs
-    intake_instructions = " ".join(support_steps["intake-feedback"].instructions)
-    assert "communicationTarget.resolve" in intake_instructions
-    assert "media" in intake_instructions
-    canonical_instructions = " ".join(support_steps["establish-canonical-thread"].instructions)
-    assert "target resolution alone is not enough" in canonical_instructions
-    assert "Preflight media forwarding" in canonical_instructions
-    assert "same canonical Slack handoff" in canonical_instructions
-    assert "must not send a separate `chat.postMessage` first" in canonical_instructions
-    assert support_steps["establish-canonical-thread"].action_refs == [
-        "post_canonical_message",
-        "upload_canonical_media",
-        "download_telegram_media",
+    handoff_steps = {step.id: step for step in support_handoff_described.spec.steps}
+    assert "chat_reference_continuity" in handoff_steps["create-delivery-task"].policy_refs
+    assert handoff_steps["post-task-handoff"].depends_on == ["create-delivery-task"]
+    assert handoff_steps["add-task-created-reaction"].depends_on == ["post-task-handoff"]
+    assert support_investigation_described.spec.metadata_json["agent_subset"] == [
+        "support-issue-investigator",
+        "codebase-explorer",
     ]
-    assert support_steps["ask-thread-clarifications"].depends_on == ["read-full-thread"]
-    assert support_steps["ask-thread-clarifications"].action_refs == ["post_thread_reply"]
-    assert "chat_reference_continuity" in (support_steps["create-delivery-task"].policy_refs)
-    assert "media_handoff_fidelity" in (support_steps["create-delivery-task"].policy_refs)
-    assert "source media refs" in " ".join(support_steps["create-delivery-task"].instructions)
-    assert "references_json" in " ".join(support_steps["create-delivery-task"].instructions)
-    assert support_steps["post-task-handoff-in-thread"].depends_on == ["create-delivery-task"]
-    assert support_steps["add-task-created-reaction"].depends_on == ["post-task-handoff-in-thread"]
     assert engineering_described.summary.plugin_slug == "engineering"
     assert engineering_described.spec.agent_requirements[0].agent_preset_ref == (
         "stackos.sdlc.requirements-flow-definer"
@@ -259,6 +280,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert all("payload" not in step.model_dump_json() for step in media_described.spec.steps)
     assert [item.key for item in communications_listing.templates] == [
         "communications.callback-follow-up",
+        "communications.customer-feedback-intake",
         "communications.inbox-review",
         "communications.outbound-notification",
         "communications.rich-telegram-reply",
@@ -322,8 +344,8 @@ def test_project_workflow_extension_layers_over_base_template(
     repo = WorkflowTemplateLoader(session)
     base = repo.describe_template(
         project_id=project_id,
-        key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
+        key="communications.customer-feedback-intake",
+        plugin_slug="communications",
         include_extension=False,
     )
     steps = [step.model_dump(mode="json") for step in base.spec.steps]
@@ -335,8 +357,8 @@ def test_project_workflow_extension_layers_over_base_template(
 
     saved = repo.upsert_extension(
         project_id=project_id,
-        workflow_key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
         required_input_keys_json=["feedback_summary", "communication_route_ref"],
         input_defaults_json={
             "communication_route_ref": "communication-route:support-feedback",
@@ -360,7 +382,7 @@ def test_project_workflow_extension_layers_over_base_template(
             }
         },
         template_overrides_json={
-            "description": "Project-specific customer support investigation flow.",
+            "description": "Project-specific customer feedback intake flow.",
             "steps": steps,
             "when_to_use": ["Customer feedback needs project-specific triage."],
         },
@@ -369,30 +391,41 @@ def test_project_workflow_extension_layers_over_base_template(
     ).data
     described = repo.describe_template(
         project_id=project_id,
-        key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
+        key="communications.customer-feedback-intake",
+        plugin_slug="communications",
     )
-    listed = repo.list_templates(project_id=project_id, plugin_slug="engineering")
+    listed = repo.list_templates(project_id=project_id, plugin_slug="communications")
 
-    assert saved.workflow_key == "engineering.customer-support-investigation"
+    assert saved.workflow_key == "communications.customer-feedback-intake"
     assert saved.enabled is True
     assert described.project_extension is not None
     assert described.project_extension.id == saved.id
-    assert described.spec.key == "engineering.customer-support-investigation"
-    assert described.spec.description == "Project-specific customer support investigation flow."
+    assert described.spec.key == "communications.customer-feedback-intake"
+    assert described.spec.description == "Project-specific customer feedback intake flow."
     assert described.spec.when_to_use == ["Customer feedback needs project-specific triage."]
     described_canonical_step = next(
         step for step in described.spec.steps if step.id == "establish-canonical-thread"
     )
     assert described_canonical_step.title == "Establish Project Canonical Thread"
     support_summary = next(
-        item
-        for item in listed.templates
-        if item.key == "engineering.customer-support-investigation"
+        item for item in listed.templates if item.key == "communications.customer-feedback-intake"
     )
-    assert support_summary.description == "Project-specific customer support investigation flow."
+    assert support_summary.description == "Project-specific customer feedback intake flow."
     assert support_summary.project_extension_id == saved.id
     assert support_summary.project_extension_enabled is True
+
+    deleted = repo.delete_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+    ).data
+    assert deleted.deleted.id == saved.id
+    assert (
+        repo.get_extension(
+            project_id=project_id,
+            workflow_key="communications.customer-feedback-intake",
+        )
+        is None
+    )
 
 
 def test_project_workflow_extension_validation_rejects_identity_change(
@@ -401,9 +434,9 @@ def test_project_workflow_extension_validation_rejects_identity_change(
 ) -> None:
     result = WorkflowTemplateLoader(session).validate_extension(
         project_id=project_id,
-        workflow_key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
-        template_overrides_json={"key": "engineering.other-support-flow"},
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        template_overrides_json={"key": "communications.other-feedback-flow"},
     )
 
     assert result.valid is False
@@ -418,17 +451,17 @@ def test_project_workflow_extension_overrides_aliases_and_agent_requirements(
 
     saved = repo.upsert_extension(
         project_id=project_id,
-        workflow_key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
+        workflow_key="support.issue-investigation",
+        plugin_slug="support",
         template_overrides_json={
             "metadata": {"project_override": True},
             "agent_requirements": [
                 {
-                    "role": "support-investigation",
+                    "role": "support-issue-investigator",
                     "requirement": "required",
-                    "agent_preset_ref": "stackos.sdlc.support-investigation-analyst",
+                    "agent_preset_ref": "support.workflow.issue-investigator",
                     "purpose": "Investigate customer feedback with project-specific context.",
-                    "applies_to_steps": ["investigate-support-issue"],
+                    "applies_to_steps": ["investigate-issue"],
                     "handoff_notes": ["Use the workflow extension's project channel context."],
                 }
             ],
@@ -447,15 +480,17 @@ def test_project_workflow_extension_overrides_aliases_and_agent_requirements(
     ).data
     described = repo.describe_template(
         project_id=project_id,
-        key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
+        key="support.issue-investigation",
+        plugin_slug="support",
     )
 
     assert saved.template_overrides_json["metadata"]["project_override"] is True
     assert described.spec.metadata_json == {"project_override": True}
-    assert [item.role for item in described.spec.agent_requirements] == ["support-investigation"]
+    assert [item.role for item in described.spec.agent_requirements] == [
+        "support-issue-investigator"
+    ]
     assert described.spec.agent_requirements[0].agent_preset_ref == (
-        "stackos.sdlc.support-investigation-analyst"
+        "support.workflow.issue-investigator"
     )
     assert described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
 
@@ -466,8 +501,8 @@ def test_project_workflow_extension_validation_rejects_unknown_steps(
 ) -> None:
     result = WorkflowTemplateLoader(session).validate_extension(
         project_id=project_id,
-        workflow_key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
+        workflow_key="support.issue-investigation",
+        plugin_slug="support",
         step_overrides_json={"missing-step": {"extra_instructions": ["Nope."]}},
     )
 

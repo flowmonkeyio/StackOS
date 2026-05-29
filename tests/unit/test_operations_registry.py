@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 148
+    assert len(names) == 149
     assert {
         "action.execute",
         "auth.status",
@@ -23,6 +23,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "workspace.updateProfile",
         "readiness.check",
         "workflowExtension.upsert",
+        "workflowExtension.delete",
         "tracker.rejectTask",
     } <= names
 

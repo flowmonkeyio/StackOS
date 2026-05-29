@@ -11,6 +11,7 @@ from stackos.workflows.run_plan_schema import (
 )
 from stackos.workflows.template_loader import (
     LoadedWorkflowTemplate,
+    WorkflowTemplateExtensionDeleteOut,
     WorkflowTemplateExtensionGetOut,
     WorkflowTemplateExtensionListOut,
     WorkflowTemplateExtensionOut,
@@ -36,6 +37,7 @@ __all__ = [
     "RunPlanValidationOut",
     "WorkflowAgentRequirementSpec",
     "WorkflowSkillRequirementSpec",
+    "WorkflowTemplateExtensionDeleteOut",
     "WorkflowTemplateExtensionGetOut",
     "WorkflowTemplateExtensionListOut",
     "WorkflowTemplateExtensionOut",

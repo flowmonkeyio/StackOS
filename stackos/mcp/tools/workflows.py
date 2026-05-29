@@ -15,6 +15,7 @@ from stackos.operations.registry import OperationRegistry, build_operation_regis
 from stackos.repositories.base import ValidationError
 from stackos.workflows import (
     LoadedWorkflowTemplate,
+    WorkflowTemplateExtensionDeleteOut,
     WorkflowTemplateExtensionGetOut,
     WorkflowTemplateExtensionListOut,
     WorkflowTemplateExtensionOut,
@@ -116,7 +117,7 @@ class WorkflowExtensionGetInput(MCPInput):
         json_schema_extra={
             "example": {
                 "project_id": 1,
-                "workflow_key": "engineering.customer-support-investigation",
+                "workflow_key": "communications.customer-feedback-intake",
             }
         },
     )
@@ -126,13 +127,28 @@ class WorkflowExtensionGetInput(MCPInput):
     include_disabled: bool = True
 
 
+class WorkflowExtensionDeleteInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "workflow_key": "communications.customer-feedback-intake",
+            }
+        },
+    )
+
+    project_id: int
+    workflow_key: str
+
+
 class WorkflowExtensionValidateInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
             "example": {
                 "project_id": 1,
-                "workflow_key": "engineering.customer-support-investigation",
+                "workflow_key": "communications.customer-feedback-intake",
                 "input_defaults_json": {
                     "communication_route_ref": "communication-route:support-feedback"
                 },
@@ -237,6 +253,22 @@ async def _extension_get(
             workflow_key=inp.workflow_key,
             include_disabled=inp.include_disabled,
         )
+    )
+
+
+async def _extension_delete(
+    inp: WorkflowExtensionDeleteInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[WorkflowTemplateExtensionDeleteOut]:
+    env = WorkflowTemplateLoader(ctx.session).delete_extension(
+        project_id=inp.project_id,
+        workflow_key=inp.workflow_key,
+    )
+    return WriteEnvelope[WorkflowTemplateExtensionDeleteOut](
+        data=env.data,
+        run_id=ctx.run_id,
+        project_id=env.project_id,
     )
 
 
@@ -370,6 +402,7 @@ def register(registry: ToolRegistry) -> None:
         (
             "workflowExtension.list",
             "workflowExtension.get",
+            "workflowExtension.delete",
             "workflowExtension.validate",
             "workflowExtension.upsert",
             "workflowTemplate.list",

@@ -30,6 +30,7 @@ from stackos.mcp.server import (
         "run.heartbeat",
         "run.abort",
         "project.delete",
+        "workflowExtension.delete",
         "workspace.bootstrap",
         "workspace.connect",
         "plugin.enable",

@@ -146,6 +146,10 @@ class WorkflowTemplateExtensionGetOut(BaseModel):
     extension: WorkflowTemplateExtensionOut | None = None
 
 
+class WorkflowTemplateExtensionDeleteOut(BaseModel):
+    deleted: WorkflowTemplateExtensionOut
+
+
 class WorkflowTemplateExtensionValidationOut(BaseModel):
     valid: bool
     extension: WorkflowTemplateExtensionOut | None = None
@@ -311,6 +315,32 @@ class WorkflowTemplateLoader:
         ).all()
         return WorkflowTemplateExtensionListOut(
             extensions=[self._extension_out(row) for row in rows],
+        )
+
+    def delete_extension(
+        self,
+        *,
+        project_id: int,
+        workflow_key: str,
+    ) -> Envelope[WorkflowTemplateExtensionDeleteOut]:
+        self._require_project(project_id)
+        row = self._s.exec(
+            select(WorkflowTemplateExtension).where(
+                WorkflowTemplateExtension.project_id == project_id,
+                WorkflowTemplateExtension.workflow_key == workflow_key,
+            )
+        ).first()
+        if row is None:
+            raise NotFoundError(
+                f"workflow extension {workflow_key!r} not found",
+                data={"project_id": project_id, "workflow_key": workflow_key},
+            )
+        deleted = self._extension_out(row)
+        self._s.delete(row)
+        self._s.commit()
+        return Envelope(
+            data=WorkflowTemplateExtensionDeleteOut(deleted=deleted),
+            project_id=project_id,
         )
 
     def validate_extension(

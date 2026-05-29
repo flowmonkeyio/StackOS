@@ -73,20 +73,17 @@ run token.
 - Connect to a specific project: if the operator wants a known existing
   project, call `toolbox.call` for `workspace.connect` or
   `workspace.bootstrap` with that project identifier explicitly.
-- Set up engineering/local agents: choose the workflow first. Use
-  `engineering.customer-support-investigation` for customer feedback or
-  reported issues that need investigation before tasks exist. It preflights
-  cross-surface route approval and source media forwarding, establishes one
-  canonical Slack thread, adds the investigation reaction, reads the full
-  thread, asks same-thread clarifications when needed, posts the support
-  investigation conclusion in that thread, waits for same-thread human
-  instruction, creates tasks only when instructed, posts the task handoff in the
-  thread, adds a task-created reaction, then hands off to
-  `engineering.tracked-delivery`. Use `engineering.tracked-delivery` for
+- Set up support/engineering/local agents: choose the workflow first. Use
+  `communications.customer-feedback-intake` to normalize inbound feedback into
+  one route-approved canonical Slack thread with media and refs preserved. Use
+  `support.issue-investigation` to read the full thread, ask bounded
+  clarifications, and post the evidence-backed support conclusion. Use
+  `support.delivery-task-handoff` only after a same-thread operator instruction
+  asks for task creation, then hand off to `engineering.tracked-delivery` for
   scoped implementation, verification, review, and release. Describe the
   selected workflow, resolve agents with `agentPreset.resolveForWorkflow`, then
-  create/start a run plan when executing. Treat the referenced engineering and
-  communications presets as one curated engineering set for the project. Adapt
+  create/start a run plan when executing. Treat the referenced communications,
+  support, and engineering presets as one curated project-adapted set. Adapt
   that subset to the host/project's local agent format only when local agents
   are requested. For Codex repos, inspect `.codex/config.toml` and existing
   `.codex/agents/*.toml` before proposing file creates or updates. Treat each

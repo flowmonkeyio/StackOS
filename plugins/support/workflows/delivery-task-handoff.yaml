@@ -1,0 +1,234 @@
+schema_version: stackos.workflow-template.v1
+key: support.delivery-task-handoff
+name: Delivery Task Handoff
+version: 0.1.0
+description: Convert a completed support investigation and same-thread operator instruction into delivery-ready tracker work, acknowledge the task in the canonical thread, and hand off to engineering.tracked-delivery.
+domain: support
+owner:
+  team: StackOS
+when_to_use:
+  - A support.issue-investigation conclusion is posted and the operator replies in the same canonical thread asking for delivery work.
+  - The task must preserve source, thread, media, conclusion, instruction, and handoff refs.
+  - Engineering delivery should start from tracker state rather than chat-only context.
+when_not_to_use:
+  - The support conclusion has not been posted yet; use support.issue-investigation.
+  - The instruction came from a side channel and has not been confirmed in the canonical thread.
+  - The task already exists and should be picked up by engineering.tracked-delivery.
+agent_requirements:
+  - role: support-delivery-handoff
+    requirement: required
+    agent_preset_ref: support.workflow.delivery-handoff
+    purpose: Confirm same-thread instruction, create delivery-ready tracker work with root cause or bounded uncertainty, post handoff reply, and add a task-created reaction.
+    applies_to_steps:
+      - confirm-thread-instruction
+      - create-delivery-task
+      - post-task-handoff
+      - add-task-created-reaction
+  - role: planning
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.planning
+    purpose: Review ticket scope, dependencies, acceptance criteria, and verification expectations before engineering delivery starts.
+    applies_to_steps:
+      - create-delivery-task
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, communications, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - Start only after a same-thread operator instruction asks for task creation.
+      - Re-read the canonical thread before creating tracker work.
+      - Store source, canonical thread, conclusion, instruction, handoff, task, and media refs in tracker state.
+      - Add a semantically matching task-created reaction only after tracker task creation succeeds.
+      - Hand off implementation, verification, review, and release to engineering.tracked-delivery.
+inputs:
+  - key: canonical_thread_ref
+    name: Canonical Thread Ref
+    type: string
+    required: true
+    description: Safe ref for the canonical Slack support thread.
+  - key: support_conclusion_ref
+    name: Support Conclusion Ref
+    type: string
+    required: true
+    description: Safe ref for the posted support investigation conclusion.
+  - key: operator_instruction_ref
+    name: Operator Instruction Ref
+    type: string
+    required: true
+    description: Same-thread operator message ref instructing task creation.
+  - key: source_message_ref
+    name: Source Message Ref
+    type: string
+    required: false
+    description: Safe source message ref from intake.
+  - key: source_media_refs
+    name: Source Media Refs
+    type: array
+    required: false
+    description: Safe refs for source or forwarded media that must remain attached to the handoff.
+  - key: investigation_conclusion
+    name: Investigation Conclusion
+    type: object
+    required: true
+    description: Root cause or bounded uncertainty, affected surfaces, evidence, fix direction, acceptance criteria, and verification expectations.
+  - key: release_intent
+    name: Release Intent
+    type: string
+    required: false
+    description: Optional target release, branch, commit, or rollout expectation for engineering delivery.
+context_requirements:
+  - id: canonical_thread_history
+    source: resources
+    purpose: Re-read stored communication history before creating tasks from the operator instruction.
+    filters:
+      plugin_slug: communications
+      resource_keys:
+        - communication-message
+        - communication-interaction
+        - communication-event
+    fields:
+      - title
+      - data_json
+      - updated_at
+    max_items: 50
+    return_mode: compact
+  - id: current_tracker
+    source: resources
+    purpose: Avoid duplicate tasks and reuse related tracker context when available.
+    filters:
+      plugin_slug: engineering
+      resource_keys:
+        - engineering-decision
+        - engineering-evidence
+    fields:
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 20
+    return_mode: compact
+capability_requirements:
+  - key: support-handoff
+    required: true
+    description: Convert investigation conclusions and operator instructions into tracker-backed delivery work.
+  - key: messaging
+    required: true
+    preferred_providers:
+      - slack-bot
+auth_requirements:
+  - key: slack_bot
+    provider: slack-bot
+    auth_type: bot
+    optional: false
+    description: Project-scoped Slack bot auth for handoff reply and reaction.
+action_contracts:
+  - key: post_thread_reply
+    action: slack-bot.message.send
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+  - key: add_task_created_reaction
+    action: slack-bot.reaction.add
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+policies:
+  - key: same_thread_instruction_required
+    kind: tracker
+    description: Task creation requires an operator instruction in the same canonical support thread as the investigation conclusion.
+  - key: chat_reference_continuity
+    kind: tracker
+    description: Tracker task, tickets, and handoff messages must preserve safe source refs plus canonical thread/message, media, conclusion, instruction, handoff, and delivery refs when available.
+  - key: delivery_ready_scope
+    kind: tracker
+    description: Handoff tasks must include root cause or bounded uncertainty, fix direction, affected surfaces, acceptance criteria, verification expectations, and residual risk.
+  - key: no_implementation_in_support_handoff
+    kind: boundary
+    description: The support handoff workflow creates delivery state and communication acknowledgements only; implementation belongs in engineering.tracked-delivery.
+steps:
+  - id: confirm-thread-instruction
+    title: Confirm Thread Instruction
+    purpose: Re-read the canonical thread and confirm the task instruction belongs to the same thread as the support conclusion.
+    input_refs:
+      - canonical_thread_ref
+      - support_conclusion_ref
+      - operator_instruction_ref
+      - source_message_ref
+      - source_media_refs
+      - investigation_conclusion
+      - release_intent
+    context_refs:
+      - canonical_thread_history
+      - current_tracker
+    policy_refs:
+      - same_thread_instruction_required
+      - chat_reference_continuity
+    output_refs:
+      - task_handoff_plan
+  - id: create-delivery-task
+    title: Create Delivery Task
+    purpose: Create delivery-ready tracker work with cause, scope, acceptance criteria, verification expectations, and preserved chat refs.
+    policy_refs:
+      - same_thread_instruction_required
+      - chat_reference_continuity
+      - delivery_ready_scope
+      - no_implementation_in_support_handoff
+    depends_on:
+      - confirm-thread-instruction
+    output_refs:
+      - delivery_task
+  - id: post-task-handoff
+    title: Post Task Handoff
+    purpose: Reply in the canonical thread with the task link/key, scoped delivery summary, and engineering.tracked-delivery handoff.
+    action_refs:
+      - post_thread_reply
+    policy_refs:
+      - chat_reference_continuity
+      - no_implementation_in_support_handoff
+    depends_on:
+      - create-delivery-task
+    output_refs:
+      - task_handoff_reply
+  - id: add-task-created-reaction
+    title: Add Task-Created Reaction
+    purpose: Add a semantically matching reaction to the canonical message only after task creation succeeds.
+    action_refs:
+      - add_task_created_reaction
+    depends_on:
+      - post-task-handoff
+    output_refs:
+      - task_created_reaction
+outputs:
+  - key: task_handoff_plan
+    name: Task Handoff Plan
+    type: object
+    description: Same-thread instruction check, duplicate-task check, and planned delivery scope.
+  - key: delivery_task
+    name: Delivery Task
+    type: object
+    required: true
+    description: Created tracker task and tickets ready for engineering.tracked-delivery.
+  - key: task_handoff_reply
+    name: Task Handoff Reply
+    type: object
+    required: true
+    description: Evidence that the canonical thread was updated with task and delivery handoff refs.
+  - key: task_created_reaction
+    name: Task-Created Reaction
+    type: object
+    description: Evidence that task-created reaction was added after tracker creation succeeded.
+failure_handling:
+  - If the instruction is not in the canonical thread, ask the operator to confirm in-thread before task creation.
+  - If a matching task already exists, reply with the existing task ref instead of creating a duplicate.
+  - If reaction fails after task creation, preserve task and handoff refs and report the reaction blocker.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan
+  workflow_family: customer_feedback
+  previous_workflow: support.issue-investigation
+  next_workflow: engineering.tracked-delivery
+  agent_subset:
+    - support-delivery-handoff
+    - planning

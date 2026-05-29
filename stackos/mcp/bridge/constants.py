@@ -197,6 +197,7 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "tracker.why",
         "workflowExtension.get",
         "workflowExtension.list",
+        "workflowExtension.delete",
         "workflowExtension.upsert",
         "workflowExtension.validate",
         "workflowTemplate.describe",

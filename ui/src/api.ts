@@ -1065,7 +1065,11 @@ export interface paths {
          */
         put: operations["upsert_workflow_template_extension_api_v1_projects__project_id__workflow_templates__template_key__extension_put"];
         post?: never;
-        delete?: never;
+        /**
+         * Delete Workflow Template Extension
+         * @description Delete project workflow configuration for one template.
+         */
+        delete: operations["delete_workflow_template_extension_api_v1_projects__project_id__workflow_templates__template_key__extension_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4029,6 +4033,10 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** WorkflowTemplateExtensionDeleteOut */
+        WorkflowTemplateExtensionDeleteOut: {
+            deleted: components["schemas"]["WorkflowTemplateExtensionOut"];
+        };
         /** WorkflowTemplateExtensionListOut */
         WorkflowTemplateExtensionListOut: {
             /** Extensions */
@@ -4229,6 +4237,14 @@ export interface components {
             version: string;
             /** Version Id */
             version_id?: number | null;
+        };
+        /** WriteEnvelope[WorkflowTemplateExtensionDeleteOut] */
+        WriteEnvelope_WorkflowTemplateExtensionDeleteOut_: {
+            data: components["schemas"]["WorkflowTemplateExtensionDeleteOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
         };
         /** WriteEnvelope[WorkflowTemplateExtensionOut] */
         WriteEnvelope_WorkflowTemplateExtensionOut_: {
@@ -4558,6 +4574,7 @@ export type SchemaWorkflowAgentRequirementSpec = components['schemas']['Workflow
 export type SchemaWorkflowSkillRequirementSpec = components['schemas']['WorkflowSkillRequirementSpec'];
 export type SchemaWorkflowStepTemplateSpec = components['schemas']['WorkflowStepTemplateSpec'];
 export type SchemaWorkflowTemplateExtensionBody = components['schemas']['WorkflowTemplateExtensionBody'];
+export type SchemaWorkflowTemplateExtensionDeleteOut = components['schemas']['WorkflowTemplateExtensionDeleteOut'];
 export type SchemaWorkflowTemplateExtensionListOut = components['schemas']['WorkflowTemplateExtensionListOut'];
 export type SchemaWorkflowTemplateExtensionOut = components['schemas']['WorkflowTemplateExtensionOut'];
 export type SchemaWorkflowTemplateExtensionValidationOut = components['schemas']['WorkflowTemplateExtensionValidationOut'];
@@ -4565,6 +4582,7 @@ export type SchemaWorkflowTemplateIssue = components['schemas']['WorkflowTemplat
 export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTemplateListOut'];
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
+export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionOut_'];
 export type SchemaWriteResponseArtifactOut = components['schemas']['WriteResponse_ArtifactOut_'];
 export type SchemaWriteResponseAuthCredentialSetOut = components['schemas']['WriteResponse_AuthCredentialSetOut_'];
@@ -6833,6 +6851,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WriteEnvelope_WorkflowTemplateExtensionOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_workflow_template_extension_api_v1_projects__project_id__workflow_templates__template_key__extension_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                template_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteEnvelope_WorkflowTemplateExtensionDeleteOut_"];
                 };
             };
             /** @description Validation Error */

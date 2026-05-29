@@ -274,6 +274,7 @@ The current core operation registry includes:
 - `runPlan.recordStep`
 - `workflowExtension.list`
 - `workflowExtension.get`
+- `workflowExtension.delete`
 - `workflowExtension.validate`
 - `workflowExtension.upsert`
 - `workflowTemplate.list`

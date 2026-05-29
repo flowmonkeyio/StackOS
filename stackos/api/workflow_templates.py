@@ -12,6 +12,7 @@ from stackos.api.deps import get_session
 from stackos.mcp.contract import WriteEnvelope
 from stackos.workflows.template_loader import (
     LoadedWorkflowTemplate,
+    WorkflowTemplateExtensionDeleteOut,
     WorkflowTemplateExtensionListOut,
     WorkflowTemplateExtensionOut,
     WorkflowTemplateExtensionValidationOut,
@@ -153,6 +154,26 @@ async def upsert_workflow_template_extension(
         created_by=body.created_by,
     )
     return WriteEnvelope[WorkflowTemplateExtensionOut](
+        data=env.data,
+        project_id=env.project_id,
+    )
+
+
+@router.delete(
+    "/workflow-templates/{template_key}/extension",
+    response_model=WriteEnvelope[WorkflowTemplateExtensionDeleteOut],
+)
+async def delete_workflow_template_extension(
+    project_id: int,
+    template_key: str,
+    session: Session = Depends(get_session),
+) -> WriteEnvelope[WorkflowTemplateExtensionDeleteOut]:
+    """Delete project workflow configuration for one template."""
+    env = WorkflowTemplateLoader(session).delete_extension(
+        project_id=project_id,
+        workflow_key=template_key,
+    )
+    return WriteEnvelope[WorkflowTemplateExtensionDeleteOut](
         data=env.data,
         project_id=env.project_id,
     )

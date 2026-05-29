@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.tools.workflows import (
+    WorkflowExtensionDeleteInput,
     WorkflowExtensionGetInput,
     WorkflowExtensionListInput,
     WorkflowExtensionUpsertInput,
@@ -13,6 +14,7 @@ from stackos.mcp.tools.workflows import (
     WorkflowTemplateListInput,
     WorkflowTemplateSaveInput,
     WorkflowTemplateValidateInput,
+    _extension_delete,
     _extension_get,
     _extension_list,
     _extension_upsert,
@@ -27,6 +29,7 @@ from stackos.operations._helpers import operation_spec
 from stackos.operations.spec import OperationExample
 from stackos.workflows import (
     LoadedWorkflowTemplate,
+    WorkflowTemplateExtensionDeleteOut,
     WorkflowTemplateExtensionGetOut,
     WorkflowTemplateExtensionListOut,
     WorkflowTemplateExtensionOut,
@@ -76,15 +79,43 @@ def operation_specs():
             ),
             examples=(
                 OperationExample(
-                    title="Get support investigation extension",
+                    title="Get support intake extension",
                     arguments={
                         "project_id": 1,
-                        "workflow_key": "engineering.customer-support-investigation",
+                        "workflow_key": "communications.customer-feedback-intake",
                     },
                 ),
             ),
             mutating=False,
             grant_policy="direct-read",
+        ),
+        operation_spec(
+            name="workflowExtension.delete",
+            summary="Delete one project workflow extension.",
+            input_model=WorkflowExtensionDeleteInput,
+            output_model=WriteEnvelope[WorkflowTemplateExtensionDeleteOut],
+            handler=_extension_delete,
+            purpose=(
+                "Use this to remove project-scoped workflow setup entirely when it was a "
+                "test, mistake, or no longer applies. This is different from disabling an "
+                "extension because no leftover extension row remains."
+            ),
+            when_to_use=(
+                "A setup audit found a stale or test workflow extension.",
+                "A project should return to the reusable base workflow with no project overlay.",
+            ),
+            returns=("The deleted extension record for audit/confirmation.",),
+            examples=(
+                OperationExample(
+                    title="Delete support intake extension",
+                    arguments={
+                        "project_id": 1,
+                        "workflow_key": "communications.customer-feedback-intake",
+                    },
+                ),
+            ),
+            mutating=True,
+            grant_policy="direct-setup-write",
         ),
         operation_spec(
             name="workflowExtension.validate",
@@ -101,10 +132,10 @@ def operation_specs():
             returns=("Validation status plus model-readable errors and warnings.",),
             examples=(
                 OperationExample(
-                    title="Validate route-bound support setup",
+                    title="Validate route-bound support intake setup",
                     arguments={
                         "project_id": 1,
-                        "workflow_key": "engineering.customer-support-investigation",
+                        "workflow_key": "communications.customer-feedback-intake",
                         "required_input_keys_json": ["communication_route_ref"],
                         "input_defaults_json": {
                             "communication_route_ref": "communication-route:support-feedback"
@@ -135,10 +166,10 @@ def operation_specs():
             ),
             examples=(
                 OperationExample(
-                    title="Configure support investigation route",
+                    title="Configure support intake route",
                     arguments={
                         "project_id": 1,
-                        "workflow_key": "engineering.customer-support-investigation",
+                        "workflow_key": "communications.customer-feedback-intake",
                         "enabled": True,
                         "required_input_keys_json": ["communication_route_ref"],
                         "input_defaults_json": {

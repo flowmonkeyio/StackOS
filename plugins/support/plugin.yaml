@@ -1,0 +1,88 @@
+slug: support
+name: Support
+version: 0.1.0
+description: First-party StackOS domain package for customer issue investigation and delivery handoff workflows.
+display_order: 15
+source: builtin
+capabilities:
+  - key: support-investigation
+    name: Support Investigation
+    description: Investigate customer-reported symptoms from canonical communication threads and produce evidence-backed conclusions.
+    kind: domain
+  - key: support-handoff
+    name: Support Handoff
+    description: Convert investigation conclusions and operator instructions into delivery-ready tracker work with durable chat refs.
+    kind: domain
+resources:
+  - key: support-investigation
+    name: Support Investigation
+    description: Durable support investigation conclusion with evidence, uncertainty, and chat refs.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - summary
+        - status
+      properties:
+        title:
+          type: string
+          description: Short operator-readable investigation title.
+        summary:
+          type: string
+          description: What was investigated and what is currently known.
+        status:
+          type: string
+          enum:
+            - investigating
+            - concluded
+            - needs-clarification
+            - handed-off
+            - blocked
+        root_cause:
+          type: string
+          description: Validated cause when known, or a bounded uncertainty statement.
+        evidence_refs:
+          type: array
+          items:
+            type: string
+        chat_refs:
+          type: array
+          items:
+            type: string
+        task_key:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ui_schema:
+      table_columns:
+        - title
+        - status
+        - created_at
+      summary_fields:
+        - summary
+        - root_cause
+      detail_sections:
+        - title: Investigation
+          fields:
+            - title
+            - status
+            - summary
+            - root_cause
+        - title: Traceability
+          fields:
+            - evidence_refs
+            - chat_refs
+            - task_key
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: support-investigation
+      agent_guidance: Store only investigation conclusions and handoff context that future support or delivery agents can reuse.
+ui:
+  nav:
+    section: Support
+    items:
+      - key: support.resources
+        label: Data
+        route: /resources?plugin=support

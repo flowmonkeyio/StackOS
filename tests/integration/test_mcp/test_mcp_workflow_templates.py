@@ -64,9 +64,11 @@ outputs:
     }
     assert sources == {"plugin", "repo"}
     assert "gtm.account-research" in {item["key"] for item in listing["templates"]}
-    assert "engineering.customer-support-investigation" in {
+    assert "communications.customer-feedback-intake" in {
         item["key"] for item in listing["templates"]
     }
+    assert "support.issue-investigation" in {item["key"] for item in listing["templates"]}
+    assert "support.delivery-task-handoff" in {item["key"] for item in listing["templates"]}
     assert "engineering.tracked-delivery" in {item["key"] for item in listing["templates"]}
     assert "media-buying.campaign-launch" in {item["key"] for item in listing["templates"]}
     assert described["summary"]["source"] == "repo"
@@ -99,68 +101,78 @@ outputs:
         {"plugin_slug": "engineering"},
     )
     assert [item["key"] for item in engineering_listing["templates"]] == [
-        "engineering.customer-support-investigation",
         "engineering.tracked-delivery",
+    ]
+    intake_described = mcp_client.call_tool_structured(
+        "workflowTemplate.describe",
+        {
+            "key": "communications.customer-feedback-intake",
+            "plugin_slug": "communications",
+        },
+    )
+    assert intake_described["spec"]["agent_requirements"][0]["agent_preset_ref"] == (
+        "communications.workflow.customer-feedback-intake"
+    )
+    assert [item["id"] for item in intake_described["spec"]["steps"]] == [
+        "capture-feedback",
+        "establish-canonical-thread",
+        "add-intake-reaction",
+        "prepare-investigation-handoff",
+    ]
+    assert intake_described["spec"]["metadata_json"]["next_workflow"] == (
+        "support.issue-investigation"
+    )
+
+    support_listing = mcp_client.call_tool_structured(
+        "workflowTemplate.list",
+        {"plugin_slug": "support"},
+    )
+    assert [item["key"] for item in support_listing["templates"]] == [
+        "support.delivery-task-handoff",
+        "support.issue-investigation",
     ]
     support_described = mcp_client.call_tool_structured(
         "workflowTemplate.describe",
-        {
-            "key": "engineering.customer-support-investigation",
-            "plugin_slug": "engineering",
-        },
-    )
-    assert support_described["spec"]["agent_requirements"][0]["agent_preset_ref"] == (
-        "communications.workflow.customer-support-thread"
+        {"key": "support.issue-investigation", "plugin_slug": "support"},
     )
     support_agent_refs = {
         item["agent_preset_ref"] for item in support_described["spec"]["agent_requirements"]
     }
     assert support_agent_refs == {
-        "communications.workflow.customer-support-thread",
-        "stackos.sdlc.support-investigation-analyst",
+        "support.workflow.issue-investigator",
         "stackos.sdlc.codebase-explorer",
-        "stackos.sdlc.planning",
-        "stackos.sdlc.delivery-reviewer",
     }
-    assert support_described["spec"]["metadata_json"]["workflow_family"] == (
-        "customer_support_investigation"
+    assert support_described["spec"]["metadata_json"]["previous_workflow"] == (
+        "communications.customer-feedback-intake"
     )
-    assert support_described["spec"]["metadata_json"]["handoff_workflow"] == (
-        "engineering.tracked-delivery"
+    assert support_described["spec"]["metadata_json"]["next_workflow"] == (
+        "support.delivery-task-handoff"
     )
-    assert support_described["spec"]["metadata_json"]["canonical_surface"] == "slack_thread"
-    assert "chat_reference_continuity" in {
+    assert "full_thread_source_of_truth" in {
         item["key"] for item in support_described["spec"]["policies"]
     }
-    assert "media_handoff_fidelity" in {
+    assert "no_task_creation_in_investigation" in {
         item["key"] for item in support_described["spec"]["policies"]
     }
     assert [item["id"] for item in support_described["spec"]["steps"]] == [
-        "intake-feedback",
-        "establish-canonical-thread",
-        "add-investigation-reaction",
-        "read-full-thread",
-        "ask-thread-clarifications",
-        "investigate-support-issue",
-        "post-support-conclusion-in-thread",
-        "wait-for-thread-instructions",
-        "create-delivery-task",
-        "post-task-handoff-in-thread",
-        "add-task-created-reaction",
-        "conclude-and-handoff",
+        "read-canonical-thread",
+        "clarify-missing-context",
+        "investigate-issue",
+        "post-support-conclusion",
     ]
-    assert all(not item["approval_refs"] for item in support_described["spec"]["steps"])
-    support_steps = {item["id"]: item for item in support_described["spec"]["steps"]}
-    assert "source_media_refs" in support_steps["intake-feedback"]["input_refs"]
-    assert "communicationTarget.resolve" in " ".join(
-        support_steps["intake-feedback"]["instructions"]
+    handoff_described = mcp_client.call_tool_structured(
+        "workflowTemplate.describe",
+        {"key": "support.delivery-task-handoff", "plugin_slug": "support"},
     )
-    assert "target resolution alone is not enough" in " ".join(
-        support_steps["establish-canonical-thread"]["instructions"]
+    assert handoff_described["spec"]["metadata_json"]["next_workflow"] == (
+        "engineering.tracked-delivery"
     )
-    assert "Preflight media forwarding" in " ".join(
-        support_steps["establish-canonical-thread"]["instructions"]
-    )
+    assert [item["id"] for item in handoff_described["spec"]["steps"]] == [
+        "confirm-thread-instruction",
+        "create-delivery-task",
+        "post-task-handoff",
+        "add-task-created-reaction",
+    ]
     engineering_described = mcp_client.call_tool_structured(
         "workflowTemplate.describe",
         {"key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
@@ -229,15 +241,15 @@ def test_workflow_extension_tools_configure_project_overlay(
         "workflowExtension.get",
         {
             "project_id": project_id,
-            "workflow_key": "engineering.customer-support-investigation",
+            "workflow_key": "communications.customer-feedback-intake",
         },
     )
     validation = mcp_client.call_tool_structured(
         "workflowExtension.validate",
         {
             "project_id": project_id,
-            "workflow_key": "engineering.customer-support-investigation",
-            "plugin_slug": "engineering",
+            "workflow_key": "communications.customer-feedback-intake",
+            "plugin_slug": "communications",
             "required_input_keys_json": ["feedback_summary", "communication_route_ref"],
             "input_defaults_json": {
                 "communication_route_ref": "communication-route:support-feedback",
@@ -248,17 +260,15 @@ def test_workflow_extension_tools_configure_project_overlay(
                     "extra_instructions": ["Use the configured support route."]
                 }
             },
-            "template_overrides_json": {
-                "description": "Project-specific support investigation flow."
-            },
+            "template_overrides_json": {"description": "Project-specific support intake flow."},
         },
     )
     upserted = mcp_client.call_tool_structured(
         "workflowExtension.upsert",
         {
             "project_id": project_id,
-            "workflow_key": "engineering.customer-support-investigation",
-            "plugin_slug": "engineering",
+            "workflow_key": "communications.customer-feedback-intake",
+            "plugin_slug": "communications",
             "required_input_keys_json": ["feedback_summary", "communication_route_ref"],
             "input_defaults_json": {
                 "communication_route_ref": "communication-route:support-feedback",
@@ -275,9 +285,7 @@ def test_workflow_extension_tools_configure_project_overlay(
                     "extra_instructions": ["Use the configured support route."]
                 }
             },
-            "template_overrides_json": {
-                "description": "Project-specific support investigation flow."
-            },
+            "template_overrides_json": {"description": "Project-specific support intake flow."},
         },
     )
     listed = mcp_client.call_tool_structured(
@@ -288,21 +296,38 @@ def test_workflow_extension_tools_configure_project_overlay(
         "workflowTemplate.describe",
         {
             "project_id": project_id,
-            "key": "engineering.customer-support-investigation",
-            "plugin_slug": "engineering",
+            "key": "communications.customer-feedback-intake",
+            "plugin_slug": "communications",
         },
     )
 
     assert missing["extension"] is None
     assert validation["valid"] is True
-    assert upserted["data"]["workflow_key"] == "engineering.customer-support-investigation"
+    assert upserted["data"]["workflow_key"] == "communications.customer-feedback-intake"
     assert upserted["data"]["template_overrides_json"]["description"] == (
-        "Project-specific support investigation flow."
+        "Project-specific support intake flow."
     )
     assert listed["extensions"][0]["id"] == upserted["data"]["id"]
     assert described["project_extension"]["id"] == upserted["data"]["id"]
-    assert described["spec"]["description"] == "Project-specific support investigation flow."
+    assert described["spec"]["description"] == "Project-specific support intake flow."
     assert described["summary"]["project_extension_enabled"] is True
+
+    deleted = mcp_client.call_tool_structured(
+        "workflowExtension.delete",
+        {
+            "project_id": project_id,
+            "workflow_key": "communications.customer-feedback-intake",
+        },
+    )
+    after_delete = mcp_client.call_tool_structured(
+        "workflowExtension.get",
+        {
+            "project_id": project_id,
+            "workflow_key": "communications.customer-feedback-intake",
+        },
+    )
+    assert deleted["data"]["deleted"]["id"] == upserted["data"]["id"]
+    assert after_delete["extension"] is None
 
 
 def test_workflow_template_writes_are_registered_but_not_system_granted(

@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlmodel import select
+from sqlmodel import col, select
 
 from stackos.artifacts import redact_secrets
 from stackos.db.models import (
@@ -983,7 +983,7 @@ class TrackerMutationMixin:
             self._s.exec(
                 select(TrackerTicket)
                 .where(TrackerTicket.task_id == task_id)
-                .order_by(TrackerTicket.order_index)
+                .order_by(col(TrackerTicket.order_index))
             )
         )
 

@@ -13,13 +13,14 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     listing = AgentPresetLoader().list_presets()
     keys = {item.key for item in listing.presets}
 
-    assert len(keys) == 27
+    assert len(keys) == 28
     assert "stackos.sdlc.requirements-flow-definer" in keys
     assert "stackos.sdlc.codebase-explorer" in keys
     assert "stackos.sdlc.planning" in keys
-    assert "stackos.sdlc.support-investigation-analyst" in keys
+    assert "support.workflow.issue-investigator" in keys
+    assert "support.workflow.delivery-handoff" in keys
     assert "stackos.sdlc.test-designer" in keys
-    assert "communications.workflow.customer-support-thread" in keys
+    assert "communications.workflow.customer-feedback-intake" in keys
     assert "stackos.workflow.project-memory-review" in keys
     assert "seo.workflow.keyword-research" in keys
     assert "media-buying.workflow.campaign-launch" in keys
@@ -30,8 +31,11 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     by_key = {item.key: item for item in listing.presets}
     assert by_key["stackos.workflow.project-memory-review"].plugin_slug == "core"
     assert by_key["stackos.sdlc.planning"].plugin_slug == "engineering"
-    assert by_key["stackos.sdlc.support-investigation-analyst"].plugin_slug == "engineering"
-    assert by_key["communications.workflow.customer-support-thread"].plugin_slug == "communications"
+    assert by_key["support.workflow.issue-investigator"].plugin_slug == "support"
+    assert by_key["support.workflow.delivery-handoff"].plugin_slug == "support"
+    assert by_key["communications.workflow.customer-feedback-intake"].plugin_slug == (
+        "communications"
+    )
     assert by_key["stackos.sdlc.requirements-flow-definer"].plugin_slug == "engineering"
 
 
@@ -46,7 +50,7 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:
     loaded = AgentPresetLoader().describe_preset(
-        key="communications.workflow.customer-support-thread"
+        key="communications.workflow.customer-feedback-intake"
     )
     contract_text = " ".join(
         [
@@ -86,7 +90,9 @@ def test_agent_preset_setup_guidance_names_host_and_toolbox_boundaries() -> None
     guidance = " ".join(described.setup_guidance).lower()
     action = described.project_adaptation.required_agent_action.lower()
 
-    assert "engineering.customer-support-investigation" in guidance
+    assert "communications.customer-feedback-intake" in guidance
+    assert "support.issue-investigation" in guidance
+    assert "support.delivery-task-handoff" in guidance
     assert "engineering.tracked-delivery" in guidance
     assert "normal workflow path" in guidance
     assert "host/project-specific" in guidance

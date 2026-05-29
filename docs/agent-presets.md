@@ -43,8 +43,10 @@ frontmatter files, plugin-specific agent files, or no local files at all.
 Engineering setup uses the same workflow path as other domains. Start with the
 workflow that matches the work, resolve its agents with
 `agentPreset.resolveForWorkflow`, then create/start a run plan when executing
-the work. Use `engineering.customer-support-investigation` for customer
-feedback or reported issues that need investigation before tasks exist. Use
+the work. Use `communications.customer-feedback-intake` when customer feedback
+needs a canonical Slack thread, `support.issue-investigation` when the thread
+needs an evidence-backed conclusion, `support.delivery-task-handoff` when a
+same-thread operator instruction asks for task creation, and
 `engineering.tracked-delivery` once work is scoped for implementation,
 verification, review, and release. The workflows reference generic presets as
 required and recommended roles, but the workflow owns the flow.
@@ -66,18 +68,18 @@ scope
 -> release closeout
 ```
 
-The customer-support investigation workflow uses this baseline:
+The customer feedback/support workflow chain uses this baseline:
 
 ```text
 incoming feedback
 -> route and media preflight
 -> canonical Slack thread
--> eyes reaction
+-> intake reaction
 -> full-thread read
 -> same-thread clarification when needed
 -> support investigation conclusion in the same thread
--> wait for same-thread human instruction
--> delivery task creation when instructed
+-> separate same-thread instruction for task creation
+-> delivery task creation
 -> task handoff message in the same thread
 -> task-created reaction
 -> engineering.tracked-delivery handoff
@@ -98,25 +100,27 @@ voice note, screenshot, URL, artifact, or provider file ref must either be
 forwarded in the same canonical Slack handoff message when supported, or become
 an explicit blocker/waiver before the workflow continues.
 
-The core engineering preset subset is deliberately small:
+The core support and engineering preset subset is deliberately small:
 
 | Preset | Role |
 | --- | --- |
-| `communications.workflow.customer-support-thread` | Normalizes customer feedback into one route-approved Slack support thread, preserves source media, posts thread-bound updates, and manages Slack reactions for support milestones. |
+| `communications.workflow.customer-feedback-intake` | Normalizes customer feedback into one route-approved Slack support thread, preserves source media, and returns support investigation refs. |
+| `support.workflow.issue-investigator` | Investigates the full canonical thread and project evidence, asks same-thread clarifications, and posts a support conclusion with root-cause evidence or bounded uncertainty. |
+| `support.workflow.delivery-handoff` | Converts a same-thread operator instruction and support conclusion into delivery-ready tracker work with durable chat refs. |
 | `stackos.sdlc.requirements-flow-definer` | Defines actors, flows, acceptance criteria, non-goals, and evidence expectations. |
 | `stackos.sdlc.codebase-explorer` | Maps real execution paths, ownership, downstream fallout, tests, and docs before changes. |
 | `stackos.sdlc.planning` | Converts requirements and impact evidence into tracker tickets with dependencies and definition of done. |
-| `stackos.sdlc.support-investigation-analyst` | Investigates the full canonical thread and project evidence, asks same-thread clarifications, posts the support conclusion with root-cause evidence when available, then waits for same-thread task instructions. |
 | `stackos.sdlc.architecture` | Chooses and challenges the project-native design, canonical owner, contracts, rollout, and validation plan. |
 | `stackos.sdlc.test-designer` | Maps acceptance criteria to proof surfaces and red-first gates when needed. |
 | `stackos.sdlc.delivery` | Implements scoped tickets, debugs root causes, verifies the diff, and records tracker/evidence updates truthfully. |
 | `stackos.sdlc.delivery-reviewer` | Reviews design and delivery across behavior, contracts, tests, tracker truth, docs, security, and release risk. |
 | `stackos.sdlc.release-ops` | Closes release readiness, limitations, rollback/watch notes, and communications. |
 
-Use this subset as the only engineering agent set for a project. Workflows pick
-the roles they need. For example, customer-support investigation uses the
-communications thread coordinator, support investigation analyst, codebase
-explorer, planning, and delivery reviewer; tracked delivery uses requirements,
+Use this subset as the only support/engineering agent set for a project.
+Workflows pick the roles they need. For example, customer feedback intake uses
+the communications intake role; support investigation uses the support
+investigator and may use codebase exploration; delivery task handoff uses the
+support handoff role and may use planning; tracked delivery uses requirements,
 discovery, planning, architecture, test design, delivery, delivery review, and
 release. If a project already has local agents, adapt or replace them so each
 role maps cleanly to this subset without overlapping responsibilities.

@@ -57,20 +57,22 @@ Lifecycle mirroring is mechanical:
 StackOS only mirrors state. It does not invent tickets beyond the concrete
 run-plan steps and it does not decide how to repair failures.
 
-For `engineering.customer-support-investigation`, the tracker boundary is
-intentionally later than investigation. The support workflow may mirror its own
-run-plan steps, but delivery tasks/tickets are created only after the operator
-replies with task-creation instructions in the canonical Slack thread. Those
-delivery tasks must link back to the Slack thread and include the investigation
-summary, validated root cause or bounded uncertainty, fix direction, affected
-surfaces, acceptance criteria, and verification expectations. They must also
-preserve source refs, canonical Slack thread/message refs, clarification refs,
-support conclusion refs, instruction message refs, task handoff refs, source
-media refs, forwarded media message refs or an explicit media waiver, and
-tracked-delivery refs in task context/metadata or ticket `references_json` so
-`tracker.brief` gives the delivery agent enough chat context to continue
-without re-investigating. Implementation then proceeds through
-`engineering.tracked-delivery`.
+For customer feedback, tracker-backed delivery starts after support
+investigation, not during intake. `communications.customer-feedback-intake`
+creates a canonical thread and refs only. `support.issue-investigation` mirrors
+its own investigation run-plan steps and posts the support conclusion, but does
+not create delivery tasks. `support.delivery-task-handoff` creates delivery
+tasks/tickets only after the operator replies with task-creation instructions
+in the canonical Slack thread. Those delivery tasks must link back to the Slack
+thread and include the investigation summary, validated root cause or bounded
+uncertainty, fix direction, affected surfaces, acceptance criteria, and
+verification expectations. They must also preserve source refs, canonical
+Slack thread/message refs, clarification refs, support conclusion refs,
+instruction message refs, task handoff refs, source media refs, forwarded
+media message refs or an explicit media waiver, and tracked-delivery refs in
+task context/metadata or ticket `references_json` so `tracker.brief` gives the
+delivery agent enough chat context to continue without re-investigating.
+Implementation then proceeds through `engineering.tracked-delivery`.
 
 `tracker.brief` and `tracker.execute` include `workflow_handoff` for mirrored
 workflow tickets. That packet carries `run_plan_id`, `run_plan_step_id`,

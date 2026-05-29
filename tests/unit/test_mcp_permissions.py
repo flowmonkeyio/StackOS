@@ -76,6 +76,7 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("decision.query", SYSTEM_SKILL)
     check_grant("workflowExtension.list", SYSTEM_SKILL)
     check_grant("workflowExtension.get", SYSTEM_SKILL)
+    check_grant("workflowExtension.delete", SYSTEM_SKILL)
     check_grant("workflowExtension.validate", SYSTEM_SKILL)
     check_grant("workflowExtension.upsert", SYSTEM_SKILL)
     check_grant("workflowTemplate.list", SYSTEM_SKILL)

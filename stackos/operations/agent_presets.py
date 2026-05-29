@@ -144,9 +144,11 @@ def _setup_guidance() -> list[str]:
     return [
         "Agent presets are generic MCP/tool-consumer contracts, not daemon-run agents.",
         (
-            "Engineering setup follows the normal workflow path: use "
-            "engineering.customer-support-investigation for customer feedback "
-            "or reported issues before tasks exist, then "
+            "Support setup follows the normal workflow path: use "
+            "communications.customer-feedback-intake to create one canonical "
+            "Slack thread from inbound feedback, support.issue-investigation "
+            "to post the evidence-backed conclusion, support.delivery-task-handoff "
+            "when the operator asks for task creation in the same thread, then "
             "engineering.tracked-delivery for scoped implementation. Describe "
             "the workflow, resolve its agent presets, create/start a run plan "
             "when executing, preserve chat/thread/message refs in tracker "

@@ -191,6 +191,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "sitemap.fetch",
         "workflowExtension.get",
         "workflowExtension.list",
+        "workflowExtension.delete",
         "workflowExtension.upsert",
         "workflowExtension.validate",
         "workflowTemplate.describe",

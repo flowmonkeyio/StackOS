@@ -107,8 +107,8 @@ def test_create_run_plan_applies_project_workflow_extension(
 ) -> None:
     base = WorkflowTemplateLoader(session).describe_template(
         project_id=project_id,
-        key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
+        key="communications.customer-feedback-intake",
+        plugin_slug="communications",
         include_extension=False,
     )
     steps = [step.model_dump(mode="json") for step in base.spec.steps]
@@ -118,8 +118,8 @@ def test_create_run_plan_applies_project_workflow_extension(
     canonical_step_override["title"] = "Establish Project Canonical Thread"
     WorkflowTemplateLoader(session).upsert_extension(
         project_id=project_id,
-        workflow_key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
         required_input_keys_json=["feedback_summary", "communication_route_ref"],
         input_defaults_json={
             "communication_route_ref": "communication-route:support-feedback",
@@ -140,7 +140,7 @@ def test_create_run_plan_applies_project_workflow_extension(
             }
         },
         template_overrides_json={
-            "description": "Project-specific support investigation run.",
+            "description": "Project-specific support intake run.",
             "steps": steps,
         },
     )
@@ -149,14 +149,14 @@ def test_create_run_plan_applies_project_workflow_extension(
     with pytest.raises(ValidationError, match="feedback_summary"):
         repo.create(
             project_id=project_id,
-            template_key="engineering.customer-support-investigation",
-            plugin_slug="engineering",
+            template_key="communications.customer-feedback-intake",
+            plugin_slug="communications",
         )
 
     plan = repo.create(
         project_id=project_id,
-        template_key="engineering.customer-support-investigation",
-        plugin_slug="engineering",
+        template_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
         inputs_json={"feedback_summary": "Telegram report includes a screenshot."},
         selected_context_json={"operator": {"instruction_source": "same-thread"}},
     ).data
@@ -166,7 +166,7 @@ def test_create_run_plan_applies_project_workflow_extension(
 
     assert plan.inputs_json["feedback_summary"] == "Telegram report includes a screenshot."
     assert plan.inputs_json["communication_route_ref"] == "communication-route:support-feedback"
-    assert plan.goal == "Project-specific support investigation run."
+    assert plan.goal == "Project-specific support intake run."
     assert plan.selected_context_json == {
         "communication": {
             "route_ref": "communication-route:support-feedback",
@@ -175,7 +175,7 @@ def test_create_run_plan_applies_project_workflow_extension(
         "operator": {"instruction_source": "same-thread"},
     }
     assert plan.metadata_json["workflow_extension"]["workflow_key"] == (
-        "engineering.customer-support-investigation"
+        "communications.customer-feedback-intake"
     )
     assert "template_overrides_json" in plan.metadata_json["workflow_extension"]
     assert canonical_step.title == "Establish Project Canonical Thread"
