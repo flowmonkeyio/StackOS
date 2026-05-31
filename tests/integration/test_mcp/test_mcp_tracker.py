@@ -369,9 +369,10 @@ def test_tracker_verify_flags_workflow_terminal_child_handoffs(
     )
     missing_checks = {check["key"]: check for check in missing_handoff["checks"]}
     assert missing_checks["workflow-next-step-terminal-children"]["passed"] is False
-    assert "workflow-handoff-signoff" in missing_checks["workflow-next-step-terminal-children"][
-        "detail"
-    ]
+    assert (
+        "workflow-handoff-signoff"
+        in missing_checks["workflow-next-step-terminal-children"]["detail"]
+    )
 
     snapshot = mcp_client.call_tool_structured(
         "tracker.get",

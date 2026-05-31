@@ -170,11 +170,12 @@ def resolve_response_mode(
     policy = spec.effective_response_policy
     explicit = isinstance(arguments, dict) and "response_mode" in arguments
     raw_value = arguments.get("response_mode") if explicit and isinstance(arguments, dict) else None
+    mode: ResponseMode
     if raw_value is None:
         mode = policy.default_mode
     elif isinstance(raw_value, str):
-        mode = _MODE_ALIASES.get(raw_value)
-        if mode is None:
+        alias = _MODE_ALIASES.get(raw_value)
+        if alias is None:
             raise ValidationError(
                 "response_mode is not supported",
                 data={
@@ -183,6 +184,7 @@ def resolve_response_mode(
                     "allowed_modes": sorted(_MODE_ALIASES),
                 },
             )
+        mode = alias
     else:
         raise ValidationError(
             "response_mode must be a string",
@@ -297,9 +299,10 @@ def _compact_page(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
 
 def _compact_operation_list(payload: dict[str, Any]) -> dict[str, Any]:
     items = payload.get("items")
+    item_list = items if isinstance(items, list) else []
     compact_items = [
         _compact_operation_summary(item)
-        for item in items
+        for item in item_list
         if isinstance(item, dict) and isinstance(item.get("name"), str)
     ]
     out: dict[str, Any] = {

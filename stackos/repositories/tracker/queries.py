@@ -428,9 +428,7 @@ class TrackerQueryMixin:
                     }
                 )
                 open_children = [
-                    child.key
-                    for child in children
-                    if child.status not in TERMINAL_TICKET_STATUSES
+                    child.key for child in children if child.status not in TERMINAL_TICKET_STATUSES
                 ]
                 checks.append(
                     {
@@ -541,9 +539,7 @@ class TrackerQueryMixin:
         self,
         children: list[TrackerTicket],
     ) -> list[TrackerTicket]:
-        delivery_children = [
-            child for child in children if not self._is_workflow_gate_child(child)
-        ]
+        delivery_children = [child for child in children if not self._is_workflow_gate_child(child)]
         delivery_ids = {child.id for child in delivery_children if child.id is not None}
         depended_on_by_delivery: set[int] = set()
         for child in delivery_children:
@@ -595,7 +591,7 @@ class TrackerQueryMixin:
         *,
         source_ticket: TrackerTicket,
         target_ticket: TrackerTicket,
-        scope_ids: set[int | None],
+        scope_ids: set[int],
     ) -> bool:
         if source_ticket.id is None or target_ticket.id is None:
             return False

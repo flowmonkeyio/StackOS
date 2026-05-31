@@ -35,16 +35,21 @@ domains. The core product is the runtime underneath them.
 | Layer | Business Role |
 | --- | --- |
 | Project | The workspace for a company, site, product, or client. |
+| Workspace binding | The daemon-owned mapping from the current repository root to one StackOS project for MCP sessions. |
 | Plugin | A domain package such as SEO, media buying, GTM, publishing, or utilities. |
 | Connection | A safe provider credential profile, such as an API key, OAuth account, SMTP setup, CMS account, or internal webhook credential. |
 | Workflow template | Reusable setup for repeated work, including inputs, context needs, gates, expected outputs, and default steps. |
+| Agent preset | A generic MCP/tool-consumer role contract that must be adapted to the project before use. |
 | Run plan | One concrete execution instance with scoped permissions, steps, outputs, and audit history. |
+| Tracker task/ticket | Durable project work state with dependencies, lifecycle, provenance, and verification context. |
 | Action call | A validated provider/tool call executed by the daemon and recorded for review. |
 
 ## Current Domains
 
 First-party plugin coverage currently includes:
 
+- **Engineering**: tracked delivery workflows, SDLC agent role presets,
+  engineering decisions/evidence, and release closeout flow.
 - **SEO**: keyword research, SERP analysis, PAA extraction, competitor/backlink
   research, SEO resources, and reusable SEO templates.
 - **Media buying**: paid media providers, campaign and creative resources,
@@ -71,6 +76,11 @@ When a run plan grants a tool call, the daemon resolves credentials inside the
 provider process, executes the explicit request, redacts sensitive output, and
 records the action call.
 
+Before asking for credentials, agents should check only the selected workflow
+or action with `readiness.check`. This keeps setup guidance scoped to the
+providers and budgets that matter for the next piece of work instead of making
+an empty project look broken because every possible provider is disconnected.
+
 ## Operator Console
 
 The StackOS console is generic by design. It focuses on:
@@ -84,6 +94,31 @@ The StackOS console is generic by design. It focuses on:
 
 Domain plugins can contribute navigation and resource definitions, but the UI
 should render configuration and run state generically.
+
+## Agent Operating Loop
+
+The normal MCP path is intentionally compact:
+
+1. Start with `workspace.startSession`. It creates or reuses the local
+   workspace binding and returns the workspace-bound project, setup state, and
+   UI links.
+2. Use `toolbox.describe` and `toolbox.call` for project operations such as
+   `workflowTemplate.list`, `agentPreset.list`, `readiness.check`,
+   `tracker.status`, `runPlan.create`, and `action.run`.
+3. Choose a workflow template when the work should follow a reusable contract,
+   then create and start a run plan. Step-scoped grants control write access to
+   actions, resources, artifacts, decisions, and evidence.
+4. Use tracker tasks and tickets for durable planning and delivery state. Agents
+   create dependencies, update status atomically, and record completion evidence
+   instead of leaving work only in chat.
+5. Resolve agent presets for the selected workflow, then adapt those generic
+   role contracts to the project stack, local rules, docs, skills, and signoff
+   expectations before using them as host-side agents.
+
+First-run and ongoing sessions use the same entrypoint. On first run,
+`workspace.startSession` bootstraps the binding. In ongoing work, it simply
+resolves the existing project and agents call only the scoped tools needed for
+the current task.
 
 ## Agent And Automation Access
 
@@ -100,7 +135,9 @@ Scripts can use the CLI or REST operation endpoint for the same execution path.
 Provider/vendor calls go through plugin actions: `action.run` for one explicit
 direct call, or `action.execute` from a granted run-plan step. Provider-neutral
 messages use `communication.send` and `communication.reply`. Direct MCP tools
-are reserved for generic StackOS primitives.
+are reserved for generic StackOS primitives, while most project work flows
+through the scoped toolbox to avoid cluttering agent context with every
+provider, plugin, and workflow operation at once.
 
 Communication reads are stored-state reads unless a provider-specific history
 action exists. `communicationContext.query` returns messages and interactions

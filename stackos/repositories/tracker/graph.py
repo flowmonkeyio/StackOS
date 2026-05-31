@@ -229,8 +229,7 @@ class TrackerGraphMixin:
         warnings: list[str] = []
         tickets_by_key = {ticket.key: ticket for ticket in tickets}
         dependency_edges = {
-            (dependency.depends_on_ticket_key, dependency.ticket_key)
-            for dependency in dependencies
+            (dependency.depends_on_ticket_key, dependency.ticket_key) for dependency in dependencies
         }
         children_by_parent: dict[str, list[TrackerTicketOut]] = {}
         for ticket in tickets:
@@ -319,9 +318,7 @@ class TrackerGraphMixin:
                     dependency_edges,
                 )
                 missing = [
-                    child.key
-                    for child in terminal_children
-                    if child.key not in direct_dependencies
+                    child.key for child in terminal_children if child.key not in direct_dependencies
                 ]
                 if missing:
                     sample = ", ".join(missing[:3])
