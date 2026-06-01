@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from stackos.action_availability import ActionAvailabilityOut, build_action_availability
+from stackos.action_availability import (
+    ActionAvailabilityOut,
+    ActionExposureOut,
+    build_action_availability,
+    build_action_exposure,
+)
 from stackos.actions.ahrefs import AhrefsActionConnector
 from stackos.actions.apollo import ApolloActionConnector
 from stackos.actions.clay import ClayActionConnector
@@ -92,6 +97,7 @@ __all__ = [
     "ActionConnectorResult",
     "ActionDescribeOut",
     "ActionExecutionOut",
+    "ActionExposureOut",
     "ActionRepository",
     "ActionValidationIssue",
     "ActionValidationOut",
@@ -124,5 +130,6 @@ __all__ = [
     "TelegramBotActionConnector",
     "WordPressActionConnector",
     "build_action_availability",
+    "build_action_exposure",
     "parse_action_manifest",
 ]

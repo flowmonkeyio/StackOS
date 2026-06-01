@@ -96,6 +96,7 @@ expectation visible.
 agent intent
 -> operation.list when the available operation names are not already clear
 -> operation.describe / action.list / action.describe when the contract is not already clear
+-> integration.list when project integration inventory or hidden-action counts are needed
 -> readiness.check when a selected workflow/action may need provider setup
 -> agentPreset.resolveForWorkflow when setting up workflow-specific roles
 -> workflow template or agent-authored run plan
@@ -124,6 +125,17 @@ blocked because unrelated providers are disconnected. Workflow readiness can be
 `ready=true` while `execution_ready=false`: the agent may still create or plan
 the run, but should connect the listed providers before executing affected
 action steps.
+
+Use `action.list` as the normal "what can I use now?" discovery path. It hides
+external-provider actions whose required integration is not connected, and it
+also hides deferred, project-local, missing-connector, or otherwise
+non-executable external-provider actions. Executable local/no-credential
+actions remain visible. Use `integration.list` for project setup or planning
+when the agent needs compact provider readiness, hidden-action counts, and safe
+connection links. Use `readiness.check` for the selected workflow/action when
+the agent already knows the work scope. Broad `auth.status` is still available
+for diagnostics, but it should not be the default first-run answer for one
+concrete workflow/action.
 
 ## Direct Action Path
 

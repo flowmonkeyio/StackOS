@@ -12,7 +12,6 @@ import {
   UiSectionHeader,
 } from '@/components/ui'
 import type {
-  SchemaActionOut,
   SchemaAuthProviderOut,
   SchemaAuthStatusOut,
   SchemaHealthResponse,
@@ -68,6 +67,19 @@ interface OperationListSummary {
   items: unknown[]
 }
 
+interface ActionListSummary {
+  count: number
+  hidden_count?: number
+}
+
+interface IntegrationListSummary {
+  count: number
+  connected_count: number
+  exposed_action_count: number
+  executable_action_count: number
+  hidden_action_count: number
+}
+
 const route = useRoute()
 const router = useRouter()
 
@@ -80,6 +92,9 @@ const authProviders = ref<SchemaAuthProviderOut[]>([])
 const authStatus = ref<SchemaAuthStatusOut | null>(null)
 const templates = ref(0)
 const actions = ref(0)
+const hiddenIntegrationActions = ref(0)
+const integrations = ref(0)
+const connectedIntegrations = ref(0)
 const operationContracts = ref(0)
 const runPlans = ref(0)
 const agentPresets = ref<AgentPresetSummary[]>([])
@@ -219,6 +234,21 @@ const checklist = computed<ChecklistItem[]>(() => {
       to: 'connections',
     },
     {
+      key: 'integrations',
+      label: 'Integrations',
+      detail:
+        hiddenIntegrationActions.value > 0
+          ? `${connectedIntegrations.value} connected, ${hiddenIntegrationActions.value} actions hidden`
+          : `${connectedIntegrations.value} connected of ${integrations.value}`,
+      status:
+        integrations.value === 0
+          ? 'attention'
+          : hiddenIntegrationActions.value > 0
+            ? 'todo'
+            : 'done',
+      to: 'connections',
+    },
+    {
       key: 'templates',
       label: 'Workflow templates',
       detail: `${templates.value} available`,
@@ -257,8 +287,11 @@ const checklist = computed<ChecklistItem[]>(() => {
     },
     {
       key: 'actions',
-      label: 'Executable actions',
-      detail: `${actions.value} available`,
+      label: 'Available actions',
+      detail:
+        hiddenIntegrationActions.value > 0
+          ? `${actions.value} visible, ${hiddenIntegrationActions.value} hidden until setup`
+          : `${actions.value} visible`,
       status: actions.value > 0 ? 'done' : 'attention',
       to: 'plugins',
     },
@@ -318,11 +351,12 @@ async function load(): Promise<void> {
       providerRows,
       statusRow,
       templateRows,
-      actionRows,
       operationRows,
       agentPresetRows,
       bindingRows,
       runPage,
+      actionList,
+      integrationRows,
     ] =
       await Promise.all([
         fetchOr<SchemaHealthResponse | null>('/api/v1/health', null),
@@ -338,7 +372,6 @@ async function load(): Promise<void> {
           templates: [],
           include_shadowed: false,
         }),
-        fetchOr<SchemaActionOut[]>(`/api/v1/actions?project_id=${id}`, []),
         fetchOr<OperationListSummary>('/api/v1/operations?surface=mcp', {
           items: [],
         }),
@@ -351,6 +384,8 @@ async function load(): Promise<void> {
           next_cursor: null,
           total_estimate: 0,
         }),
+        callOperation<ActionListSummary>('action.list', { project_id: id }),
+        callOperation<IntegrationListSummary>('integration.list', { project_id: id }),
       ])
     const detailRows = await loadTemplateDetails(id, templateRows.templates)
     health.value = healthRow
@@ -358,7 +393,10 @@ async function load(): Promise<void> {
     authProviders.value = providerRows
     authStatus.value = statusRow
     templates.value = templateRows.templates.length
-    actions.value = actionRows.length
+    actions.value = actionList.count
+    hiddenIntegrationActions.value = integrationRows.hidden_action_count
+    integrations.value = integrationRows.count
+    connectedIntegrations.value = integrationRows.connected_count
     operationContracts.value = operationRows.items.length
     agentPresets.value = agentPresetRows.presets
     workspaceBindings.value = bindingRows.items

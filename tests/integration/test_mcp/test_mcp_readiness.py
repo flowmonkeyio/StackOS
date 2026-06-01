@@ -27,6 +27,26 @@ def test_readiness_check_reports_ready_no_auth_action(
     ]
 
 
+def test_readiness_check_accepts_advertised_raw_response_mode(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.sitemap.fetch",
+            "response_mode": "raw",
+        },
+    )
+
+    assert readiness["scope"] == "action"
+    assert readiness["ready"] is True
+    assert readiness["actions"][0]["action_ref"] == "utils.sitemap.fetch"
+
+
 def test_readiness_check_reports_scoped_action_missing_setup(
     mcp_client: MCPClient,
     seeded_project: dict,

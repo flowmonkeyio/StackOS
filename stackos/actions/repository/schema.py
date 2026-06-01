@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from stackos.action_availability import ActionAvailabilityOut
+from stackos.action_availability import ActionAvailabilityOut, ActionExposureOut
 from stackos.actions.connectors import ActionValidationIssue
 from stackos.actions.manifest import ExecutableActionManifest
 from stackos.db.models import ActionCallStatus
@@ -79,6 +79,7 @@ class ActionDescribeOut(BaseModel):
     execution_available: bool
     agent_execute_available: bool = False
     availability: ActionAvailabilityOut
+    exposure: ActionExposureOut
 
 
 class ActionValidationOut(BaseModel):

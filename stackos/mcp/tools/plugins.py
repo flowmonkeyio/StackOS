@@ -222,6 +222,7 @@ def register(registry: ToolRegistry) -> None:
             "plugin.disable",
             "catalog.list",
             "catalog.describe",
+            "integration.list",
             "capability.list",
             "capability.describe",
             "provider.list",

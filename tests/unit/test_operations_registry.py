@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 149
+    assert len(names) == 150
     assert {
         "action.execute",
         "auth.status",
@@ -21,6 +21,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "budget.set",
         "run.start",
         "workspace.updateProfile",
+        "integration.list",
         "readiness.check",
         "workflowExtension.upsert",
         "workflowExtension.delete",
@@ -65,7 +66,17 @@ def test_operation_registry_documents_core_operations() -> None:
     assert action_list.surfaces["rest"].enabled is True
     assert action_list.surfaces["cli"].command == "actions list"
     assert action_list.grant_policy == "direct-read"
-    assert any("discover executable action refs" in item for item in [action_list.purpose])
+    assert any("currently usable action refs" in item for item in [action_list.purpose])
+
+    integration_list = registry.get("integration.list").describe_out()
+    assert integration_list.category == "setup"
+    assert integration_list.surfaces["mcp"].enabled is True
+    assert integration_list.surfaces["rest"].enabled is True
+    assert integration_list.surfaces["cli"].command == "ops call integration.list"
+    assert integration_list.grant_policy == "direct-read"
+    assert any(
+        "compact project integration inventory" in item for item in [integration_list.purpose]
+    )
 
     agent_request = registry.get("agentRequest.claim").describe_out()
     assert agent_request.surfaces["mcp"].enabled is True

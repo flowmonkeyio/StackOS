@@ -19,7 +19,7 @@ from stackos.workflows import WorkflowTemplateLoader
 from stackos.workflows.template_schema import ActionContractSpec, AuthRequirementSpec
 
 ReadinessScope = Literal["action", "workflow"]
-ReadinessResponseMode = Literal["compact", "standard", "verbose"]
+ReadinessResponseMode = Literal["compact", "raw", "standard", "verbose"]
 
 
 class ReadinessCheckInput(MCPInput):
@@ -43,7 +43,7 @@ class ReadinessCheckInput(MCPInput):
     response_mode: ReadinessResponseMode = Field(
         default="compact",
         description=(
-            "compact is the normal agent shape; standard/verbose include more contract detail."
+            "compact is the normal agent shape; raw/standard/verbose include more contract detail."
         ),
     )
 

@@ -66,10 +66,123 @@ def test_action_describe_reports_project_availability(
     )
 
     assert described["availability"]["status"] == "ready"
+    assert described["exposure"]["state"] == "external_connected"
+    assert described["exposure"]["visible_by_default"] is True
     assert described["execution_available"] is True
     assert described["availability"]["credential_state"] == "available"
     assert described["availability"]["budget_state"] == "available"
-    assert any(item["action_ref"] == "utils.image.generate" for item in listed["items"])
+    image_items = [item for item in listed["items"] if item["action_ref"] == "utils.image.generate"]
+    assert image_items
+    assert image_items[0]["exposure"]["visible_by_default"] is True
+
+
+def test_action_list_hides_disconnected_external_integrations_by_default(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    hidden = mcp_client.call_tool_structured(
+        "action.list",
+        {"project_id": project_id, "plugin_slug": "utils", "query": "image"},
+    )
+    full = mcp_client.call_tool_structured(
+        "action.list",
+        {
+            "project_id": project_id,
+            "plugin_slug": "utils",
+            "query": "image",
+            "include_unavailable_integrations": True,
+        },
+    )
+    local = mcp_client.call_tool_structured(
+        "action.list",
+        {"project_id": project_id, "plugin_slug": "utils", "query": "sitemap"},
+    )
+    deferred = mcp_client.call_tool_structured(
+        "action.list",
+        {"project_id": project_id, "plugin_slug": "utils", "query": "extract"},
+    )
+    deferred_full = mcp_client.call_tool_structured(
+        "action.list",
+        {
+            "project_id": project_id,
+            "plugin_slug": "utils",
+            "query": "extract",
+            "include_unavailable_integrations": True,
+        },
+    )
+
+    assert not any(item["action_ref"] == "utils.image.generate" for item in hidden["items"])
+    assert hidden["hidden_count"] >= 1
+    image_items = [item for item in full["items"] if item["action_ref"] == "utils.image.generate"]
+    assert image_items
+    assert image_items[0]["exposure"]["state"] == "external_not_connected"
+    assert image_items[0]["exposure"]["visible_by_default"] is False
+    assert image_items[0]["exposure"]["hidden_reason"] == "integration_not_connected"
+    assert any(item["action_ref"] == "utils.sitemap.fetch" for item in local["items"])
+    assert not any(item["action_ref"] == "utils.web.extract" for item in deferred["items"])
+    extract_items = [
+        item for item in deferred_full["items"] if item["action_ref"] == "utils.web.extract"
+    ]
+    assert extract_items
+    assert extract_items[0]["exposure"]["visible_by_default"] is False
+    assert extract_items[0]["exposure"]["hidden_reason"] == "action_deferred"
+
+
+def test_integration_list_summarizes_hidden_external_actions(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    listed = mcp_client.call_tool_structured(
+        "integration.list",
+        {
+            "project_id": project_id,
+            "provider_key": "openai-images",
+            "include_actions": True,
+        },
+    )
+
+    assert listed["count"] == 1
+    row = listed["items"][0]
+    assert row["provider_key"] == "openai-images"
+    assert row["state"] == "not_connected"
+    assert row["connected"] is False
+    assert row["hidden_action_count"] >= 1
+    assert row["next_action"]["tool"] == "auth.status"
+    assert row["next_action"]["ui_url"].endswith(
+        f"/projects/{project_id}/connections?provider_key=openai-images"
+    )
+    assert any(action["action_ref"] == "utils.image.generate" for action in row["actions"])
+
+
+def test_action_run_unavailable_external_action_reports_exposure_repair_context(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    err = mcp_client.call_tool_error(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.image.generate",
+            "input_json": {"prompt": "A tiny product mockup"},
+            "confirm_direct": True,
+            "intent_summary": "Verify unavailable integration repair context.",
+        },
+    )
+
+    assert err["code"] == -32602
+    assert err["data"]["status"] == "missing_credential"
+    exposure = err["data"]["exposure"]
+    assert exposure["state"] == "external_not_connected"
+    assert exposure["hidden_reason"] == "integration_not_connected"
+    assert exposure["next_action"]["ui_url"].endswith(
+        f"/projects/{project_id}/connections?provider_key=openai-images"
+    )
 
 
 def test_action_validate_rejects_raw_secret_payloads(mcp_client: MCPClient) -> None:

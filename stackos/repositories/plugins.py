@@ -10,7 +10,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
 
-from stackos.action_availability import ActionAvailabilityOut
+from stackos.action_availability import ActionAvailabilityOut, ActionExposureOut
 from stackos.db.models import (
     Action,
     ActionVersion,
@@ -124,6 +124,7 @@ class ActionOut(BaseModel):
     budget_kind: str | None = None
     enforce_budget: bool = False
     availability: ActionAvailabilityOut
+    exposure: ActionExposureOut
 
 
 class PluginCatalogOut(BaseModel):
@@ -685,7 +686,7 @@ class PluginRepository:
         availability_context: Any | None = None,
         connector_keys: set[str] | None = None,
     ) -> ActionOut:
-        from stackos.action_availability import build_action_availability
+        from stackos.action_availability import build_action_availability, build_action_exposure
         from stackos.actions.manifest import parse_action_manifest
 
         assert row.id is not None and row.plugin_id is not None
@@ -697,6 +698,14 @@ class PluginRepository:
             project_id=project_id,
             provider_config_json=provider.config_json if provider is not None else None,
             context=availability_context,
+        )
+        exposure = build_action_exposure(
+            availability,
+            project_id=project_id,
+            plugin_slug=plugin.slug,
+            provider_key=provider.key if provider is not None else None,
+            requires_credential=manifest.requires_credential,
+            allows_credential=manifest.allows_credential,
         )
         return ActionOut(
             id=row.id,
@@ -720,6 +729,7 @@ class PluginRepository:
             budget_kind=manifest.budget_kind,
             enforce_budget=manifest.enforce_budget,
             availability=availability,
+            exposure=exposure,
         )
 
 

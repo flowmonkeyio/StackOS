@@ -115,6 +115,8 @@ or through `GET /api/v1/operations/action.execute`,
 Direct/read discovery operations:
 
 - `action.list`
+- `integration.list` when the agent needs compact integration/provider
+  inventory and hidden-action counts without broad `auth.status` noise
 - `action.describe`
 - `action.validate`
 - `readiness.check` when the agent already knows the selected workflow/action
@@ -124,8 +126,18 @@ Direct/read discovery operations:
 
 Use `action.list` before `action.describe` when the agent knows the plugin,
 provider, capability, executable state, or search term but does not yet know
-the exact `action_ref`. It returns compact project-aware availability state
-without requiring a broad plugin manifest scan.
+the exact `action_ref`. By default it returns actions visible in the current
+project state: executable local/no-credential actions plus external provider
+actions whose required integration is connected and runnable. Disconnected,
+deferred, project-local, missing-connector, and otherwise non-executable
+external-provider actions are hidden from normal discovery. Setup and admin
+flows can pass `include_unavailable_integrations=true` to inspect the full
+action inventory deliberately.
+
+Use `integration.list` when the agent needs to answer "which integrations are
+available or missing for this project?" without treating every disconnected
+provider as a blocker. It returns provider rows, connected counts, visible
+action counts, hidden action counts, and safe next setup hints.
 
 Use `readiness.check` before `auth.status` for selected work. It reuses action
 availability and workflow template action contracts to report only the

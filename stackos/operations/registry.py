@@ -129,6 +129,7 @@ def build_operation_registry() -> OperationRegistry:
         communications,
         cost,
         discovery,
+        integrations,
         project_bootstrap,
         project_setup,
         readiness,
@@ -159,6 +160,8 @@ def build_operation_registry() -> OperationRegistry:
     for spec in communications.operation_specs():
         registry.register(spec)
     for spec in tool_profiles.operation_specs():
+        registry.register(spec)
+    for spec in integrations.operation_specs():
         registry.register(spec)
     for spec in actions.operation_specs():
         registry.register(spec)

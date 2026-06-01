@@ -77,7 +77,6 @@ def test_removed_integration_secret_mcp_tools_are_not_registered(
     mcp_client: MCPClient,
 ) -> None:
     for tool_name, arguments in [
-        ("integration.list", {"project_id": 1}),
         ("integration.set", {"project_id": 1, "kind": "firecrawl", "secret_payload": "x"}),
         ("integration.remove", {"credential_id": 1}),
     ]:

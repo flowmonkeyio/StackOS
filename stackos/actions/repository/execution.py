@@ -7,7 +7,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from stackos.action_availability import build_action_availability
+from stackos.action_availability import build_action_availability, build_action_exposure
 from stackos.actions.connectors import ActionConnectorRequest
 from stackos.actions.manifest import ExecutableActionManifest
 from stackos.artifacts import redact_secret_text
@@ -49,25 +49,6 @@ class ActionExecutionMixin:
             input_json or {},
             credential_ref=credential_ref,
         )
-        validation = self.validate(
-            project_id=project_id,
-            action_ref=manifest.action_ref,
-            input_json=payload,
-            credential_ref=resolved_ref,
-        )
-        if not validation.valid:
-            raise ValidationError(
-                "action payload is invalid",
-                data={
-                    "action_ref": manifest.action_ref,
-                    "issues": [issue.model_dump(mode="json") for issue in validation.issues],
-                },
-            )
-        if manifest.connector_key is None:
-            raise ValidationError(
-                "action has no connector configured for execution",
-                data={"action_ref": manifest.action_ref},
-            )
         availability = build_action_availability(
             self._s,
             manifest=manifest,
@@ -79,6 +60,36 @@ class ActionExecutionMixin:
                 plugin_slug=manifest.plugin_slug,
             ),
         )
+        exposure = build_action_exposure(
+            availability,
+            project_id=project_id,
+            plugin_slug=manifest.plugin_slug,
+            provider_key=manifest.provider_key,
+            requires_credential=manifest.requires_credential,
+            allows_credential=manifest.allows_credential,
+        )
+        validation = self.validate(
+            project_id=project_id,
+            action_ref=manifest.action_ref,
+            input_json=payload,
+            credential_ref=resolved_ref,
+        )
+        if not validation.valid:
+            raise ValidationError(
+                "action payload is invalid",
+                data={
+                    "action_ref": manifest.action_ref,
+                    "status": availability.status,
+                    "reasons": availability.reasons,
+                    "exposure": exposure.model_dump(mode="json"),
+                    "issues": [issue.model_dump(mode="json") for issue in validation.issues],
+                },
+            )
+        if manifest.connector_key is None:
+            raise ValidationError(
+                "action has no connector configured for execution",
+                data={"action_ref": manifest.action_ref},
+            )
         if availability.status in {"plugin_disabled", "provider_disabled"}:
             raise ValidationError(
                 "action is disabled for this project",
@@ -86,6 +97,7 @@ class ActionExecutionMixin:
                     "action_ref": manifest.action_ref,
                     "status": availability.status,
                     "reasons": availability.reasons,
+                    "exposure": exposure.model_dump(mode="json"),
                 },
             )
         if not dry_run and not availability.executable:
@@ -95,6 +107,7 @@ class ActionExecutionMixin:
                     "action_ref": manifest.action_ref,
                     "status": availability.status,
                     "reasons": availability.reasons,
+                    "exposure": exposure.model_dump(mode="json"),
                 },
             )
 

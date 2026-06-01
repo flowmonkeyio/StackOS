@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlmodel import col, select
 
-from stackos.action_availability import build_action_availability
+from stackos.action_availability import build_action_availability, build_action_exposure
 from stackos.actions.manifest import ExecutableActionManifest, parse_action_manifest
 from stackos.db.models import Action, Plugin, Project, ProjectPlugin, Provider
 from stackos.repositories.base import NotFoundError, ValidationError
@@ -47,6 +47,14 @@ class ActionCatalogMixin:
                 plugin_slug=manifest.plugin_slug,
             ),
         )
+        exposure = build_action_exposure(
+            availability,
+            project_id=project_id,
+            plugin_slug=manifest.plugin_slug,
+            provider_key=manifest.provider_key,
+            requires_credential=manifest.requires_credential,
+            allows_credential=manifest.allows_credential,
+        )
         registered = availability.connector_registered
         return ActionDescribeOut(
             manifest=manifest,
@@ -54,6 +62,7 @@ class ActionCatalogMixin:
             execution_available=availability.executable,
             agent_execute_available=availability.executable,
             availability=availability,
+            exposure=exposure,
         )
 
     def _manifest(

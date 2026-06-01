@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from stackos.action_availability import ActionAvailabilityOut
+from stackos.action_availability import ActionAvailabilityOut, ActionExposureOut
 from stackos.actions import (
     ActionDescribeOut,
     ActionExecutionOut,
@@ -46,6 +46,14 @@ class ActionListInput(MCPInput):
     capability_key: str | None = None
     query: str | None = None
     executable: bool | None = None
+    include_unavailable_integrations: bool = Field(
+        default=False,
+        description=(
+            "When false, normal agent discovery hides disconnected, deferred, project-local, "
+            "missing-connector, and otherwise non-executable external-provider actions. "
+            "Set true for setup, readiness debugging, or catalog inventory."
+        ),
+    )
 
 
 class ActionListItemOut(BaseModel):
@@ -69,6 +77,7 @@ class ActionListItemOut(BaseModel):
     availability_reasons: list[str] = Field(default_factory=list)
     credential_state: str
     budget_state: str
+    exposure: ActionExposureOut
 
 
 class ActionListOut(BaseModel):
@@ -76,6 +85,7 @@ class ActionListOut(BaseModel):
 
     items: list[ActionListItemOut]
     count: int
+    hidden_count: int = 0
     filters: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -204,7 +214,7 @@ async def action_list(
         plugin_slug=inp.plugin_slug,
         project_id=project_id,
     )
-    filtered = [
+    matched = [
         row
         for row in rows
         if _matches_action_filters(
@@ -215,9 +225,15 @@ async def action_list(
             executable=inp.executable,
         )
     ]
+    filtered = [
+        row
+        for row in matched
+        if inp.include_unavailable_integrations or row.exposure.visible_by_default
+    ]
     return ActionListOut(
         items=[_action_list_item(row, row.availability) for row in filtered],
         count=len(filtered),
+        hidden_count=len(matched) - len(filtered),
         filters={
             key: value
             for key, value in {
@@ -227,6 +243,7 @@ async def action_list(
                 "capability_key": inp.capability_key,
                 "query": inp.query,
                 "executable": inp.executable,
+                "include_unavailable_integrations": inp.include_unavailable_integrations,
             }.items()
             if value is not None
         },
@@ -286,6 +303,7 @@ def _action_list_item(row: ActionOut, availability: ActionAvailabilityOut) -> Ac
         availability_reasons=list(availability.reasons),
         credential_state=availability.credential_state,
         budget_state=availability.budget_state,
+        exposure=row.exposure,
     )
 
 
@@ -294,11 +312,12 @@ async def action_describe(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> ActionDescribeOut:
+    project_id = inp.project_id if inp.project_id is not None else ctx.project_id
     return ActionRepository(ctx.session).describe(
         action_ref=inp.action_ref,
         plugin_slug=inp.plugin_slug,
         action_key=inp.action_key,
-        project_id=inp.project_id,
+        project_id=project_id,
     )
 
 
@@ -307,8 +326,9 @@ async def action_validate(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> ActionValidationOut:
+    project_id = inp.project_id if inp.project_id is not None else ctx.project_id
     return ActionRepository(ctx.session).validate(
-        project_id=inp.project_id,
+        project_id=project_id,
         action_ref=inp.action_ref,
         plugin_slug=inp.plugin_slug,
         action_key=inp.action_key,
@@ -682,8 +702,8 @@ def operation_specs() -> list[OperationSpec]:
                 cli=OperationSurface(enabled=True, command="actions list"),
             ),
             purpose=(
-                "Use this when an agent needs to discover executable action refs without "
-                "walking plugin manifests or broad catalog payloads."
+                "Use this when an agent needs to discover currently usable action refs without "
+                "walking plugin manifests, broad catalog payloads, or disconnected provider noise."
             ),
             when_to_use=(
                 (
@@ -691,6 +711,11 @@ def operation_specs() -> list[OperationSpec]:
                     "and needs candidate actions."
                 ),
                 "A caller needs project-aware executable/blocked state for many actions at once.",
+                (
+                    "A setup/admin caller needs hidden disconnected or non-executable "
+                    "external-provider actions and can pass "
+                    "include_unavailable_integrations=true deliberately."
+                ),
             ),
             prerequisites=(
                 (
@@ -710,6 +735,11 @@ def operation_specs() -> list[OperationSpec]:
                 (
                     "Availability state includes executable, credential_state, budget_state, "
                     "and model-readable reasons."
+                ),
+                (
+                    "Exposure state says whether the action is visible in normal discovery "
+                    "or hidden until a provider integration is connected or the action "
+                    "becomes executable."
                 ),
             ),
             examples=(

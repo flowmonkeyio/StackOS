@@ -48,11 +48,18 @@ run token.
    `http://localhost:5180/projects/{project_id}/connections`. After the user
    connects them in the UI, call `toolbox.call` for `auth.status` and
    `auth.test` before continuing.
-7. When a step requires a provider call, use `action.describe`,
+7. Use `action.list` for normal "what can I use now?" discovery. It returns
+   executable/current actions and hides disconnected, deferred, project-local,
+   missing-connector, and otherwise non-executable external-provider actions.
+   Use `integration.list` when setup or planning needs compact provider
+   readiness and hidden-action counts; use
+   `include_unavailable_integrations=true` only for deliberate setup/catalog
+   inspection.
+8. When a step requires a provider call, use `action.describe`,
    `action.validate`, and the step-granted `action.execute` path. The daemon
    resolves credentials inside the action process and returns only sanitized
    output.
-8. When the user asks for one explicit action and no workflow state is needed,
+9. When the user asks for one explicit action and no workflow state is needed,
    use `toolbox.call` for `action.run` with `confirm_direct=true`,
    `intent_summary`, and an `idempotency_key` for non-read actions. Provider
    side-effect operations return raw redacted provider output by default; do not
@@ -122,6 +129,11 @@ run token.
   `/projects/{project_id}/connections` only for the listed providers, wait for
   the operator to connect them in the UI, then run `toolbox.call` for
   `auth.status` and `auth.test`.
+- Inspect integrations: call `toolbox.call` for `integration.list` when the
+  agent needs a project-level provider inventory, connected counts, hidden
+  external action counts, and safe setup links. Do not use broad `auth.status`
+  as the first answer for one selected workflow/action unless diagnostics need
+  all provider rows.
 - Plan direct work: use tracker tasks/tickets when the agent is planning or
   delivering scoped work outside a concrete workflow run and the operator did
   not invoke a workflow. Create dependencies, blockers, definition of done, and

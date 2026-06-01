@@ -96,9 +96,6 @@ describe('SetupStatusTab', () => {
           },
         })
       }
-      if (url === '/api/v1/actions?project_id=1') {
-        return json([{ plugin_slug: 'seo', key: 'keyword.discover' }])
-      }
       if (url === '/api/v1/operations?surface=mcp') {
         return json({
           items: [
@@ -107,6 +104,27 @@ describe('SetupStatusTab', () => {
             operation('resource.query'),
           ],
           groups: [],
+        })
+      }
+      if (url === '/api/v1/operations/action.list/call') {
+        return json({
+          items: [],
+          count: 5,
+          hidden_count: 2,
+          filters: { project_id: 1 },
+        })
+      }
+      if (url === '/api/v1/operations/integration.list/call') {
+        return json({
+          project_id: 1,
+          items: [],
+          count: 3,
+          connected_count: 1,
+          ready_count: 1,
+          exposed_action_count: 5,
+          executable_action_count: 4,
+          hidden_action_count: 2,
+          filters: { project_id: 1 },
         })
       }
       if (url === '/api/v1/operations/agentPreset.list/call') {
@@ -172,7 +190,10 @@ describe('SetupStatusTab', () => {
     expect(wrapper.text()).toContain('stackos:stackos')
     expect(wrapper.text()).toContain('Operation contracts')
     expect(wrapper.text()).toContain('3 registered')
-    expect(wrapper.text()).toContain('Executable actions')
+    expect(wrapper.text()).toContain('Integrations')
+    expect(wrapper.text()).toContain('1 connected, 2 actions hidden')
+    expect(wrapper.text()).toContain('Available actions')
+    expect(wrapper.text()).toContain('5 visible, 2 hidden until setup')
     expect(wrapper.text()).not.toContain('cred_firecrawl')
     expect(wrapper.find('button[aria-label="Open Enabled plugins"]').exists()).toBe(true)
     expect(wrapper.find('button[aria-label="Open Workflow templates"]').exists()).toBe(true)
@@ -183,6 +204,8 @@ describe('SetupStatusTab', () => {
     expect(requestedUrls).toContain('/api/v1/health')
     expect(requestedUrls).toContain('/api/v1/projects/1/auth/status')
     expect(requestedUrls).toContain('/api/v1/operations?surface=mcp')
+    expect(requestedUrls).toContain('/api/v1/operations/action.list/call')
+    expect(requestedUrls).toContain('/api/v1/operations/integration.list/call')
     expect(requestedUrls).toContain('/api/v1/operations/workspace.listBindings/call')
   })
 })

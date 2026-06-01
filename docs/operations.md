@@ -66,6 +66,10 @@ toolbox.call({
   "tool_name": "agentPreset.resolveForWorkflow",
   "arguments": { "workflow_key": "core.project-memory-review" }
 })
+toolbox.call({
+  "tool_name": "integration.list",
+  "arguments": { "project_id": 1 }
+})
 ```
 
 The discovery operations are OperationSpecs too. `operation.list` includes
@@ -73,6 +77,13 @@ The discovery operations are OperationSpecs too. `operation.list` includes
 both discovery tools with the same schemas, examples, and guidance it returns
 for domain operations. Use `category`, `query`, and `mode: "grouped"` when an
 agent only needs a compact operation route instead of the full inventory.
+
+For action discovery, `action.list` answers "what can I use now?" and hides
+disconnected, deferred, project-local, missing-connector, and otherwise
+non-executable external-provider actions by default. Pass
+`include_unavailable_integrations=true` only for setup or deliberate catalog
+inspection. Use `integration.list` for compact provider readiness and hidden
+action counts, and `readiness.check` for one selected workflow/action.
 
 Each description includes:
 

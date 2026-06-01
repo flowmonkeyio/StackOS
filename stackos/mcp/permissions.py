@@ -78,6 +78,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "action.list",
         "action.run",
         "action.validate",
+        "integration.list",
         "agentPreset.describe",
         "agentPreset.list",
         "agentPreset.resolveForWorkflow",

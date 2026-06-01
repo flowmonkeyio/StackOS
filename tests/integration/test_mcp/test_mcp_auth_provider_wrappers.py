@@ -181,8 +181,10 @@ def test_removed_integration_mcp_tools_are_not_registered(
     seeded_project: dict,
 ) -> None:
     project_id = seeded_project["data"]["id"]
+    listed = mcp_client.call_tool_structured("integration.list", {"project_id": project_id})
+    assert listed["project_id"] == project_id
+
     for tool_name, arguments in [
-        ("integration.list", {"project_id": project_id}),
         (
             "integration.set",
             {"project_id": project_id, "kind": "firecrawl", "secret_payload": "x"},

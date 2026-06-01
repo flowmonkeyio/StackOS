@@ -34,6 +34,7 @@ _AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
         "tracker.verify",
         "action.describe",
         "action.list",
+        "integration.list",
         "catalog.describe",
     }
 )
@@ -60,6 +61,7 @@ _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES: frozenset[str] = frozenset(
         "action.describe",
         "action.list",
         "action.validate",
+        "integration.list",
         "agentPreset.list",
         "agentPreset.describe",
         "agentPreset.resolveForWorkflow",
@@ -84,6 +86,7 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "action.list",
         "action.run",
         "action.validate",
+        "integration.list",
         "agentPreset.describe",
         "agentPreset.list",
         "agentPreset.resolveForWorkflow",
