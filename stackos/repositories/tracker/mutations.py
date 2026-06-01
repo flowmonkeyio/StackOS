@@ -1154,6 +1154,8 @@ class TrackerMutationMixin:
         tickets = list(self._s.exec(select(TrackerTicket).where(TrackerTicket.task_id == task.id)))
         if not tickets:
             return
+        if self._sync_workflow_task_status(task, now=now):
+            return
         old = task.status
         if (
             task.metadata_json
@@ -1187,6 +1189,36 @@ class TrackerMutationMixin:
         if task.status != old:
             task.updated_at = now
             self._s.add(task)
+
+    def _sync_workflow_task_status(self, task: TrackerTask, *, now: datetime) -> bool:
+        run_plan_id = self._workflow_task_run_plan_id(task)
+        if run_plan_id is None:
+            return False
+        plan = self._s.get(RunPlan, run_plan_id)
+        if plan is None:
+            return False
+
+        old = task.status
+        if plan.status == RunPlanStatus.DRAFT:
+            task.status = TrackerItemStatus.NOT_STARTED
+            task.completed_at = None
+        elif plan.status == RunPlanStatus.STARTED:
+            task.status = TrackerItemStatus.IN_PROGRESS
+            task.started_at = task.started_at or now
+            task.completed_at = None
+        elif plan.status == RunPlanStatus.COMPLETED:
+            task.status = TrackerItemStatus.COMPLETE
+            task.completed_at = task.completed_at if old == task.status else now
+            task.lane_key = "done"
+        else:
+            task.status = TrackerItemStatus.DEFERRED
+            task.completed_at = task.completed_at if old == task.status else now
+            task.lane_key = "done"
+
+        if task.status != old:
+            task.updated_at = now
+            self._s.add(task)
+        return True
 
     def _next_task_position(self, tracker_id: int | None) -> int:
         rows = self._task_rows(tracker_id)

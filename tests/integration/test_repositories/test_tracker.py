@@ -997,6 +997,66 @@ def test_workflow_task_status_cannot_bypass_run_plan_lifecycle(
     assert "runPlan.recordStep" in exc_info.value.data["next_operations"]
 
 
+def test_workflow_ticket_metadata_update_preserves_terminal_run_plan_task_status(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-terminal-evidence.run",
+            "title": "Tracker Workflow Terminal Evidence",
+            "steps": [
+                {"id": "prepare", "title": "Prepare"},
+                {"id": "verify", "title": "Verify"},
+            ],
+        },
+        created_by="codex",
+    ).data
+    started = run_plans.start(plan.id, project_id=project_id).data
+    run_plans.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        project_id=project_id,
+    )
+    run_plans.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "first step done"},
+        project_id=project_id,
+    )
+    run_plans.abort(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        reason="terminal evidence guard",
+        actor="codex",
+    )
+
+    repo = TrackerRepository(session)
+    before = repo.get(project_id=project_id, task_key=f"workflow-{plan.id}", include_graph=False)
+    assert before.tasks[0].status == TrackerItemStatus.DEFERRED
+
+    updated = repo.update_ticket(
+        project_id=project_id,
+        ticket_key=f"workflow-{plan.id}-verify",
+        patch_json={
+            "outcome": "Evidence recorded after abort.",
+            "completion_evidence_json": {"manual_test_plan": "visible"},
+        },
+        actor="codex",
+    ).data
+
+    assert updated.task is not None
+    assert updated.task.status == TrackerItemStatus.DEFERRED
+    assert updated.ticket is not None
+    assert updated.ticket.status == TrackerItemStatus.DEFERRED
+
+
 def test_workflow_ticket_list_update_dry_run_validates_run_plan_lifecycle(
     session: Session,
     project_id: int,
