@@ -4,7 +4,7 @@ import pytest
 from sqlmodel import Session, select
 
 from stackos.db.models import RunPlanStep, RunPlanStepStatus, TaskTracker, TrackerItemStatus
-from stackos.repositories.base import ValidationError
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 
@@ -974,6 +974,47 @@ def test_workflow_step_ticket_status_cannot_bypass_run_plan_lifecycle(
     assert "runPlan.recordStep" in failed_exc.value.data["next_operations"]
 
 
+def test_workflow_step_mirror_owned_fields_cannot_bypass_run_plan_lifecycle(
+    session: Session,
+    project_id: int,
+) -> None:
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "tracker.workflow-mirror-field-guard.run",
+                "title": "Tracker Workflow Mirror Field Guard",
+                "steps": [{"id": "prepare", "title": "Prepare"}],
+            },
+            created_by="codex",
+        )
+        .data
+    )
+    started = RunPlanRepository(session).start(plan.id, project_id=project_id).data
+    RunPlanRepository(session).claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        claimed_by="codex",
+        project_id=project_id,
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        TrackerRepository(session).update_ticket(
+            project_id=project_id,
+            ticket_key=f"workflow-{plan.id}-prepare",
+            patch_json={"assignee": "other-agent", "lane_key": "review"},
+            actor="codex",
+        )
+
+    assert exc_info.value.data["run_plan_id"] == plan.id
+    assert exc_info.value.data["step_id"] == "prepare"
+    assert exc_info.value.data["fields"] == ["assignee", "lane_key"]
+    assert "runPlan.claimStep" in exc_info.value.data["next_operations"]
+
+
 def test_workflow_child_ticket_creation_cannot_bypass_run_plan_lifecycle(
     session: Session,
     project_id: int,
@@ -1164,6 +1205,88 @@ def test_workflow_child_ticket_creation_rejects_terminal_run_plan(
     assert exc_info.value.data["run_plan_id"] == plan.id
     assert exc_info.value.data["run_plan_status"] == "aborted"
     assert "runPlan.checkConsistency" in exc_info.value.data["next_operations"]
+
+
+def test_workflow_task_reject_requires_run_plan_lifecycle(
+    session: Session,
+    project_id: int,
+) -> None:
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "tracker.workflow-reject-guard.run",
+                "title": "Tracker Workflow Reject Guard",
+                "steps": [{"id": "prepare", "title": "Prepare"}],
+            },
+            created_by="codex",
+        )
+        .data
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        TrackerRepository(session).reject_task(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            reason="Do not split workflow lifecycle.",
+            actor="codex",
+        )
+
+    assert exc_info.value.data["run_plan_id"] == plan.id
+    assert "runPlan.abort" in exc_info.value.data["next_operations"]
+
+
+def test_completed_workflow_task_reject_cannot_override_plan_lifecycle(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-terminal-reject-guard.run",
+            "title": "Tracker Workflow Terminal Reject Guard",
+            "steps": [{"id": "prepare", "title": "Prepare"}],
+        },
+        created_by="codex",
+    ).data
+    started = run_plans.start(plan.id, project_id=project_id).data
+    run_plans.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        project_id=project_id,
+    )
+    run_plans.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "done"},
+        project_id=project_id,
+    )
+
+    with pytest.raises(ConflictError) as exc_info:
+        TrackerRepository(session).reject_task(
+            project_id=project_id,
+            run_plan_id=plan.id,
+            reason="Cannot reject completed canonical workflow.",
+            actor="codex",
+            allow_workflow_reject=True,
+        )
+
+    assert exc_info.value.data["run_plan_id"] == plan.id
+    assert exc_info.value.data["run_plan_status"] == "completed"
+    snapshot = TrackerRepository(session).get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+    assert snapshot.tasks[0].status == TrackerItemStatus.COMPLETE
+    assert {ticket.status for ticket in snapshot.tickets} == {TrackerItemStatus.COMPLETE}
 
 
 def test_workflow_task_status_cannot_bypass_run_plan_lifecycle(

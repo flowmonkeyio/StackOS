@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from stackos.artifacts import redact_secret_text
@@ -21,7 +20,7 @@ from stackos.operations.tracker.schemas import (
     TrackerUpdateTaskInput,
     TrackerUpdateTicketInput,
 )
-from stackos.repositories.base import ValidationError
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import (
     TrackerMutationOut,
@@ -34,6 +33,16 @@ def _safe_rejection_reason(reason: str) -> str:
     if not clean:
         raise ValidationError("reason is required to reject a task")
     return clean
+
+
+def _workflow_run_plan_id_from_task_key(task_key: str | None) -> int | None:
+    if task_key is None or not task_key.startswith("workflow-"):
+        return None
+    raw = task_key.removeprefix("workflow-")
+    try:
+        return int(raw)
+    except ValueError:
+        return None
 
 
 def _workflow_step_context(
@@ -257,34 +266,50 @@ async def tracker_reject_task(
             data={"task_key": inp.task_key, "run_plan_id": inp.run_plan_id},
         )
     reason = _safe_rejection_reason(inp.reason)
-    if inp.run_plan_id is not None:
-        plan = ctx.session.get(RunPlan, inp.run_plan_id)
+    workflow_run_plan_id = inp.run_plan_id or _workflow_run_plan_id_from_task_key(inp.task_key)
+    if workflow_run_plan_id is not None:
+        plan = ctx.session.get(RunPlan, workflow_run_plan_id)
         if plan is not None and plan.project_id == inp.project_id:
             if plan.status in {RunPlanStatus.DRAFT, RunPlanStatus.STARTED}:
                 RunPlanRepository(ctx.session).abort(
                     project_id=inp.project_id,
-                    run_plan_id=inp.run_plan_id,
+                    run_plan_id=workflow_run_plan_id,
                     reason=reason,
                     actor=inp.actor,
                     commit=False,
                 )
+            elif plan.status in {RunPlanStatus.COMPLETED, RunPlanStatus.FAILED}:
+                raise ConflictError(
+                    "completed or failed workflow run plans cannot be rejected through "
+                    "tracker state",
+                    data={
+                        "task_key": inp.task_key or f"workflow-{workflow_run_plan_id}",
+                        "run_plan_id": workflow_run_plan_id,
+                        "run_plan_status": plan.status.value,
+                        "next_operations": ["runPlan.get", "runPlan.checkConsistency"],
+                    },
+                )
             else:
-                now = datetime.now(tz=UTC).replace(tzinfo=None)
-                plan.metadata_json = {
-                    **(plan.metadata_json or {}),
-                    "rejected": True,
-                    "rejection_reason": reason,
-                    "rejected_at": now.isoformat(),
-                    **({"rejected_by": inp.actor} if inp.actor else {}),
-                }
-                plan.updated_at = now
-                ctx.session.add(plan)
+                # Already-aborted workflow plans can receive a rejection note in tracker
+                # without changing canonical run-plan state.
+                pass
+        else:
+            raise ValidationError(
+                "workflow task run plan not found in project",
+                data={
+                    "task_key": inp.task_key or f"workflow-{workflow_run_plan_id}",
+                    "run_plan_id": workflow_run_plan_id,
+                    "project_id": inp.project_id,
+                    "next_operations": ["runPlan.get", "runPlan.checkConsistency"],
+                },
+            )
     env = TrackerRepository(ctx.session).reject_task(
         project_id=inp.project_id,
         task_key=inp.task_key,
-        run_plan_id=inp.run_plan_id,
+        run_plan_id=workflow_run_plan_id,
         reason=reason,
         actor=inp.actor,
+        allow_workflow_reject=workflow_run_plan_id is not None,
     )
     return WriteEnvelope[TrackerMutationOut](
         data=env.data,

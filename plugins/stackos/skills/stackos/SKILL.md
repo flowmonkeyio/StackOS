@@ -138,6 +138,23 @@ run token.
   delivering scoped work outside a concrete workflow run and the operator did
   not invoke a workflow. Create dependencies, blockers, definition of done, and
   completion evidence there.
+- Tracker lifecycle rules: use `tracker.updateTask(status=...)` only for
+  independent tasks. If an independent task has tickets, prefer updating the
+  tickets and let StackOS aggregate the parent task. Terminal tracker statuses
+  are `complete`, `deferred`, `aborted`, `failed`, and `skipped`; any terminal
+  status moves the item to the done lane. Use `deferred` only for postponed
+  resumable work, `aborted` for stopped/rejected/cancelled work, `failed` for
+  attempted unsuccessful work, and `skipped` for intentionally not executed
+  work. `tracker.rejectTask` is an operator rejection override: it marks the
+  task and all child tickets `aborted`. For workflow-backed tasks, do not patch
+  task or mirror-ticket lifecycle directly. `runPlan.create` creates the
+  workflow task and step tickets; `runPlan.start` marks the task
+  `in-progress`; `runPlan.claimStep` marks the step ticket `in-progress`;
+  `runPlan.recordStep` marks the step ticket `complete`, `failed`, or
+  `skipped`; `runPlan.abort` marks the workflow task and unfinished linked
+  tickets `aborted`. Completed or failed workflow run plans cannot be rejected
+  through tracker state. `tracker.linkRunPlan` is provenance only; it does not
+  transfer lifecycle ownership from tracker to run plan.
 - Execute workflow work: use a workflow template when work should follow a
   reusable contract or when the operator explicitly asks to use a workflow,
   engineering workflow, StackOS workflow, or "the workflow". Create or resolve

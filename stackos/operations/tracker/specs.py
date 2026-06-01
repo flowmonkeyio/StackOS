@@ -337,7 +337,9 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this when the operator rejects or aborts a task/run. "
                 "The task becomes aborted with explicit rejection evidence; every child "
                 "ticket closes as aborted with rejection outcome and metadata so there is "
-                "one clear terminal state."
+                "one clear terminal state. Workflow-backed rejection applies only before "
+                "the run plan completes or fails; completed/failed run plans remain "
+                "canonical and should get follow-up tracker work instead."
             ),
             examples=(
                 OperationExample(

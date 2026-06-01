@@ -327,7 +327,12 @@ filters for review, and use `tracker.updateTicket` with `updates_json` for
 atomic per-ticket patches. Do not add separate list-specific tracker endpoints.
 Use `tracker.rejectTask` for operator-level rejection/parking: it accepts a
 task key or run-plan id, marks the parent task aborted/rejected, and cascades
-all child tickets to aborted with rejection evidence.
+all child tickets to aborted with rejection evidence. For workflow-backed
+tasks, it only applies to draft/started run plans and routes through
+`runPlan.abort` first. Completed or failed workflow run plans remain canonical;
+create follow-up tracker work instead of overriding their terminal lifecycle.
+`tracker.linkRunPlan` is a provenance link only and does not transfer lifecycle
+ownership from tracker to the run plan.
 
 Agent preset setup reuses the same operation infrastructure. Use
 `agentPreset.list` to discover generic role presets, `agentPreset.describe` to

@@ -98,6 +98,18 @@ _TICKET_PATCH_FIELDS = frozenset(
         "references_json",
     }
 )
+_WORKFLOW_MIRROR_OWNED_TICKET_FIELDS = frozenset(
+    {
+        "title",
+        "goal",
+        "assignee",
+        "lane_key",
+        "blocker_reason",
+        "kind",
+        "parent_ticket_key",
+        "source_json",
+    }
+)
 
 
 class TrackerMutationMixin:
@@ -370,6 +382,7 @@ class TrackerMutationMixin:
         run_plan_id: int | None = None,
         reason: str,
         actor: str | None = None,
+        allow_workflow_reject: bool = False,
         commit: bool = True,
     ) -> Envelope[TrackerMutationOut]:
         tracker = self.ensure_tracker(project_id=project_id)
@@ -392,6 +405,46 @@ class TrackerMutationMixin:
         if not reason:
             raise ValidationError("reason is required to reject a task")
         task = self._task_by_key(tracker.id, resolved_task_key)
+        workflow_run_plan_id = self._workflow_task_run_plan_id(task)
+        if workflow_run_plan_id is not None:
+            plan = self._s.get(RunPlan, workflow_run_plan_id)
+            if plan is not None and plan.status in {
+                RunPlanStatus.COMPLETED,
+                RunPlanStatus.FAILED,
+            }:
+                raise ConflictError(
+                    "completed or failed workflow run plans cannot be rejected through "
+                    "tracker state",
+                    data={
+                        "task_key": task.key,
+                        "run_plan_id": workflow_run_plan_id,
+                        "run_plan_status": plan.status.value,
+                        "next_operations": ["runPlan.get", "runPlan.checkConsistency"],
+                    },
+                )
+            if not allow_workflow_reject:
+                raise ValidationError(
+                    "workflow task rejection is controlled by runPlan.*",
+                    data={
+                        "task_key": task.key,
+                        "run_plan_id": workflow_run_plan_id,
+                        "next_operations": [
+                            "runPlan.get",
+                            "runPlan.abort",
+                            "tracker.rejectTask",
+                        ],
+                    },
+                )
+            if plan is not None and plan.status in {RunPlanStatus.DRAFT, RunPlanStatus.STARTED}:
+                raise ValidationError(
+                    "workflow run plan must be aborted before its tracker mirror is rejected",
+                    data={
+                        "task_key": task.key,
+                        "run_plan_id": workflow_run_plan_id,
+                        "run_plan_status": plan.status.value,
+                        "next_operations": ["runPlan.abort", "tracker.rejectTask"],
+                    },
+                )
         before = self._task_snapshot(task)
         now = _utcnow()
         rejection = {
@@ -853,6 +906,7 @@ class TrackerMutationMixin:
         patch_json: dict[str, Any],
     ) -> None:
         self._validate_ticket_patch_fields(patch_json)
+        self._validate_workflow_mirror_ticket_patch_fields(ticket, patch_json)
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
@@ -974,6 +1028,37 @@ class TrackerMutationMixin:
         new_status = _status_value(str(patch_json["status"]))
         if ticket.status != new_status:
             self._validate_workflow_ticket_status_change(ticket, new_status)
+
+    def _validate_workflow_mirror_ticket_patch_fields(
+        self,
+        ticket: TrackerTicket,
+        patch_json: dict[str, Any],
+    ) -> None:
+        blocked = sorted(set(patch_json) & _WORKFLOW_MIRROR_OWNED_TICKET_FIELDS)
+        if not blocked:
+            return
+        binding = self._workflow_ticket_binding(
+            ticket_key=ticket.key,
+            run_plan_id=ticket.run_plan_id,
+            run_plan_step_id=ticket.run_plan_step_id,
+            action="patch run-plan-owned fields",
+        )
+        if binding is None:
+            return
+        plan, step = binding
+        if not is_workflow_step_mirror_ticket(ticket, step):
+            return
+        raise ValidationError(
+            "workflow step mirror ticket fields are controlled by runPlan.*",
+            data={
+                "ticket_key": ticket.key,
+                "run_plan_id": plan.id,
+                "step_id": step.step_id,
+                "run_plan_step_id": step.id,
+                "fields": blocked,
+                "next_operations": ["runPlan.get", "runPlan.claimStep", "runPlan.recordStep"],
+            },
+        )
 
     def _validate_workflow_ticket_initial_status(
         self,

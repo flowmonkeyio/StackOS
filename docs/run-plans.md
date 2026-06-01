@@ -56,6 +56,11 @@ Mirrored workflow step tickets are controlled by `runPlan.claimStep` and
 delivery details, but status progress is only allowed while the canonical
 run-plan step and linked audit run are running. Evidence, metadata, dependencies,
 and references can still be edited without advancing workflow lifecycle.
+Completed or failed run plans cannot be converted to rejected tracker tasks.
+Use follow-up tracker work for rejected outcomes after terminal execution.
+`tracker.rejectTask` may retire a draft/started workflow only by aborting the
+run plan first, then mirroring the tracker task and unfinished tickets to
+`aborted`.
 
 ## Grants
 

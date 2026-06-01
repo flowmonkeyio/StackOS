@@ -75,6 +75,12 @@ Lifecycle mirroring is mechanical:
 
 StackOS only mirrors state. It does not invent tickets beyond the concrete
 run-plan steps and it does not decide how to repair failures.
+Completed or failed workflow run plans cannot be rejected through tracker
+state; create follow-up work or inspect `runPlan.get`/`runPlan.checkConsistency`
+instead. `tracker.rejectTask` is a rejection override for independent tasks or
+draft/started workflow plans that should first abort through `runPlan.abort`.
+`tracker.linkRunPlan` adds provenance only. It does not make a manual task's
+lifecycle follow the linked run plan.
 
 When an agent needs to create delivery tickets under a workflow step, it should
 call `tracker.createTicket` with `run_plan_id` and `step_id`. StackOS resolves
@@ -138,6 +144,9 @@ evidence, but `in-progress`/`complete` status advances require the attached
 run-plan step and linked audit run to be running. Non-status edits such as
 evidence, metadata, references, blockers, and dependency repair remain valid
 tracker operations.
+For mirrored step tickets, run-plan-owned fields such as assignment, lane,
+title, source, parentage, kind, and blocker state are also controlled by
+`runPlan.*`; use child tickets for agent-owned delivery details.
 
 If the daemon reaps a stale workflow audit run, the reaper reconciles the linked
 run plan, unfinished steps, approvals, and tracker mirror together. If a caller

@@ -646,3 +646,59 @@ def test_tracker_mcp_reject_task_cascades_tickets(
         "rejected",
     ]
     assert {ticket["status"] for ticket in snapshot["tickets"]} == {"aborted"}
+
+
+def test_tracker_mcp_reject_completed_workflow_does_not_override_run_plan(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _workflow_step_plan_json()},
+    )
+    run_plan_id = int(plan["data"]["id"])
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "deliver", "run_token": run_token},
+    )
+    mcp_client.call_tool_structured(
+        "runPlan.recordStep",
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": "deliver",
+            "status": "success",
+            "result_json": {"summary": "delivered"},
+            "run_token": run_token,
+        },
+    )
+
+    rejected = mcp_client.call_tool_error(
+        "tracker.rejectTask",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "reason": "Operator rejected after completion.",
+            "actor": "mcp-test",
+        },
+    )
+
+    assert rejected["message"] == "ConflictError"
+    assert rejected["data"]["run_plan_id"] == run_plan_id
+    assert rejected["data"]["run_plan_status"] == "completed"
+    snapshot = mcp_client.call_tool_structured(
+        "tracker.get",
+        {
+            "project_id": project_id,
+            "task_key": f"workflow-{run_plan_id}",
+            "include_graph": False,
+            "response_mode": "raw",
+        },
+    )
+    assert snapshot["tasks"][0]["status"] == "complete"
+    assert {ticket["status"] for ticket in snapshot["tickets"]} == {"complete"}
