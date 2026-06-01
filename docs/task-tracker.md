@@ -37,6 +37,16 @@ Statuses are intentionally small and generic:
 - `in-progress`
 - `complete`
 - `deferred`
+- `aborted`
+- `failed`
+- `skipped`
+
+The same status vocabulary applies to tasks and tickets. `deferred` means
+postponed and still potentially relevant later. `aborted` means intentionally
+stopped, cancelled, or rejected. `failed` means attempted and unsuccessful.
+`skipped` means intentionally not executed. Supersession is a relationship or
+disposition in metadata/links, not a lifecycle status; do not use `deferred` as
+a generic replacement for "moved elsewhere."
 
 ## Workflow Mirroring
 
@@ -59,8 +69,9 @@ Lifecycle mirroring is mechanical:
 | `runPlan.start` | marks workflow task `in-progress` and links the run id |
 | `runPlan.claimStep` | marks the matching ticket `in-progress`, assigns the claimer, and stores run id |
 | `runPlan.recordStep(success)` | marks the ticket `complete` and stores the step outcome |
-| `runPlan.recordStep(skipped)` | marks the ticket `deferred` |
-| `runPlan.recordStep(failed)` | keeps the ticket open with `blocker_reason` |
+| `runPlan.recordStep(skipped)` | marks the ticket `skipped` |
+| `runPlan.recordStep(failed)` | marks the ticket `failed` with `blocker_reason` |
+| `runPlan.abort` / stale abort reconciliation | marks the workflow task and unfinished linked tickets `aborted` |
 
 StackOS only mirrors state. It does not invent tickets beyond the concrete
 run-plan steps and it does not decide how to repair failures.
@@ -133,8 +144,8 @@ run plan, unfinished steps, approvals, and tracker mirror together. If a caller
 finds split state from old data or manual repair, use `runPlan.checkConsistency`
 or inspect `runPlan.get.consistency_issues` before continuing.
 
-Lifecycle timestamps follow the visible state. Moving a task or ticket into
-`complete` or `deferred` sets `completed_at`; reopening it to `in-progress` or
+Lifecycle timestamps follow the visible state. Moving a task or ticket into a
+terminal status sets `completed_at`; reopening it to `in-progress` or
 `not-started` clears `completed_at` so audits do not treat active work as
 historically complete.
 
@@ -201,10 +212,10 @@ parallel tracker endpoints for list behavior.
    kept dependency keys, plus advisory warnings for suspicious bulk removals.
    Dry-run preview does not write tickets, dependencies, history, timestamps, or
    tracker revisions.
-6. When an operator rejects, parks, or supersedes a task or workflow run, call
+6. When an operator rejects or aborts a task or workflow run, call
    `tracker.rejectTask` with either `task_key` or `run_plan_id` plus a reason.
-   It is a task-level operation: the task is marked deferred/rejected and every
-   child ticket is closed deferred with rejection outcome and metadata.
+   It is a task-level operation: the task is marked aborted/rejected and every
+   child ticket is closed aborted with rejection outcome and metadata.
 
 ```json
 {
@@ -309,8 +320,8 @@ scope-work
 The tracker is the durable execution map. It is not the proof that work is
 correct. Completion evidence should point to the code, commands, manual checks,
 docs, run-plan steps, artifacts, or reviewed decisions that make a ticket true.
-If the evidence is missing, the ticket should remain open or explicitly
-deferred.
+If the evidence is missing, the ticket should remain open or move to the
+specific terminal status that matches reality.
 
 For direct/manual work:
 
@@ -340,8 +351,8 @@ tracker rows with timestamps, metadata, definitions, and source payloads. Use
 
 `tracker.status` and `tracker.blockers` report active blockers for executable
 work: non-terminal tickets with an explicit blocker reason or incomplete
-dependencies. Historical blocker notes on `complete` or `deferred` tickets are
-kept for context, but they do not make the project look actively blocked.
+dependencies. Historical blocker notes on terminal tickets are kept for context,
+but they do not make the project look actively blocked.
 
 Use `tracker.get` only when the caller needs a project tracker snapshot, a
 filtered task/ticket set, or the UI graph projection. It returns a compact
@@ -373,8 +384,8 @@ The Tasks UI is a generic project work map. It renders:
 - dependency edges between tickets, kept visually quiet at large scale
 - graph-local status and block filters. Status filters select tickets by
   lifecycle status. Block filters use unresolved dependency state, with open
-  `blocker_reason` treated as blocked; terminal deferred/complete notes are not
-  counted as active blockers. The blocked view keeps the immediate blocking
+  `blocker_reason` treated as blocked; terminal notes are not counted as active
+  blockers. The blocked view keeps the immediate blocking
   ticket visible so the dependency edge still explains why work is blocked. The
   graph header reports the visible ticket and edge counts when filters are
   active, not the full task totals.

@@ -119,6 +119,15 @@ def test_run_plan_create_start_and_step_with_run_token(
             "run_token": run_token,
         },
     )
+    tracker = mcp_client.call_tool_structured(
+        "tracker.get",
+        {
+            "project_id": project_id,
+            "task_key": f"workflow-{run_plan_id}",
+            "include_graph": False,
+            "response_mode": "raw",
+        },
+    )
 
     assert validation["valid"] is True
     assert started["data"]["run_id"] > 0
@@ -126,6 +135,57 @@ def test_run_plan_create_start_and_step_with_run_token(
     assert update_denied["code"] == -32007
     assert claimed["data"]["status"] == "running"
     assert completed["data"]["status"] == "completed"
+    assert tracker["tasks"][0]["status"] == "complete"
+    assert tracker["tickets"][0]["status"] == "complete"
+    assert tracker["tickets"][0]["lane_key"] == "done"
+
+
+def test_run_plan_failed_step_marks_tracker_mirror_failed(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _plan_json()},
+    )
+    run_plan_id = created["data"]["id"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "review", "run_token": run_token},
+    )
+
+    failed = mcp_client.call_tool_structured(
+        "runPlan.recordStep",
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": "review",
+            "status": "failed",
+            "error": "contract check failed",
+            "run_token": run_token,
+        },
+    )
+    tracker = mcp_client.call_tool_structured(
+        "tracker.get",
+        {
+            "project_id": project_id,
+            "task_key": f"workflow-{run_plan_id}",
+            "include_graph": False,
+            "response_mode": "raw",
+        },
+    )
+
+    assert failed["data"]["status"] == "failed"
+    assert tracker["tasks"][0]["status"] == "failed"
+    assert tracker["tasks"][0]["lane_key"] == "done"
+    assert tracker["tickets"][0]["status"] == "failed"
+    assert tracker["tickets"][0]["lane_key"] == "done"
+    assert tracker["tickets"][0]["blocker_reason"] == "contract check failed"
 
 
 def test_run_plan_grant_allows_only_active_claimed_step_tool(
@@ -448,9 +508,76 @@ def test_run_plan_abort_retires_started_plan_and_tracker_mirror(
     assert aborted["data"]["status"] == "aborted"
     assert fetched["steps"][0]["status"] == "skipped"
     assert fetched["approval_requests"] == []
-    assert tracker["tasks"][0]["status"] == "deferred"
-    assert tracker["tickets"][0]["status"] == "deferred"
+    assert tracker["tasks"][0]["status"] == "aborted"
+    assert tracker["tickets"][0]["status"] == "aborted"
     assert tracker["tickets"][0]["blocker_reason"] is None
+
+
+def test_run_plan_abort_does_not_abort_independent_tracker_task(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _plan_json()},
+    )
+    run_plan_id = created["data"]["id"]
+    mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+    mcp_client.call_tool_structured(
+        "tracker.createTask",
+        {
+            "project_id": project_id,
+            "key": "plain-independent-work",
+            "title": "Plain independent work",
+            "goal": "A tracker-only task with no run-plan ownership.",
+        },
+    )
+    mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {
+            "project_id": project_id,
+            "task_key": "plain-independent-work",
+            "key": "plain-ticket",
+            "title": "Plain ticket",
+        },
+    )
+
+    mcp_client.call_tool_structured(
+        "runPlan.abort",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "reason": "operator stopped the workflow",
+            "actor": "codex",
+        },
+    )
+    plain = mcp_client.call_tool_structured(
+        "tracker.get",
+        {
+            "project_id": project_id,
+            "task_key": "plain-independent-work",
+            "include_graph": False,
+            "response_mode": "raw",
+        },
+    )
+    workflow = mcp_client.call_tool_structured(
+        "tracker.get",
+        {
+            "project_id": project_id,
+            "task_key": f"workflow-{run_plan_id}",
+            "include_graph": False,
+            "response_mode": "raw",
+        },
+    )
+
+    assert plain["tasks"][0]["status"] == "not-started"
+    assert {ticket["status"] for ticket in plain["tickets"]} == {"not-started"}
+    assert workflow["tasks"][0]["status"] == "aborted"
+    assert {ticket["status"] for ticket in workflow["tickets"]} == {"aborted"}
 
 
 def test_tracker_reject_task_aborts_started_run_plan_and_cascades_mirror(
@@ -493,9 +620,9 @@ def test_tracker_reject_task_aborts_started_run_plan_and_cascades_mirror(
     )
 
     assert fetched["status"] == "aborted"
-    assert rejected["data"]["task"]["status"] == "deferred"
+    assert rejected["data"]["task"]["status"] == "aborted"
     assert rejected["data"]["task"]["completion_evidence_json"]["decision"] == "rejected"
-    assert {ticket["status"] for ticket in tracker["tickets"]} == {"deferred"}
+    assert {ticket["status"] for ticket in tracker["tickets"]} == {"aborted"}
     assert [result["action"] for result in rejected["data"]["results"]] == ["rejected"]
 
 
@@ -534,8 +661,8 @@ def test_tracker_reject_task_aborts_draft_run_plan_and_cascades_mirror(
     )
 
     assert fetched["status"] == "aborted"
-    assert rejected["data"]["task"]["status"] == "deferred"
-    assert {ticket["status"] for ticket in tracker["tickets"]} == {"deferred"}
+    assert rejected["data"]["task"]["status"] == "aborted"
+    assert {ticket["status"] for ticket in tracker["tickets"]} == {"aborted"}
 
 
 def test_tracker_reject_task_validates_before_aborting_run_plan(

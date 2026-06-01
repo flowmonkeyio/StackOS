@@ -124,9 +124,9 @@ describe('StackOS nav contributions', () => {
 
     expect(sections[0].label).toBe('Work')
     expect(sections[1].label).toBe('Workflows')
-    expect(sections[5].label).toBe('Engineering')
-    expect(sections[6].label).toBe('Communications')
-    expect(sections[5].items.map((item) => item.to)).toEqual([
+    expect(sections[2].label).toBe('Engineering')
+    expect(sections[3].label).toBe('Communications')
+    expect(sections[2].items.map((item) => item.to)).toEqual([
       '/projects/7/resources?plugin_slug=engineering',
       '/projects/7/workflow-templates?plugin_slug=engineering',
     ])

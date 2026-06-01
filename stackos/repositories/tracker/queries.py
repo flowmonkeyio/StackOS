@@ -51,7 +51,9 @@ from stackos.repositories.tracker.schema import (
     TrackerWorkflowHandoffOut,
 )
 from stackos.repositories.tracker.utils import (
-    TERMINAL_TICKET_STATUSES,
+    TERMINAL_TRACKER_STATUSES,
+    _is_closed_tracker_scope,
+    _is_terminal_tracker_status,
     _required_id,
 )
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
@@ -227,7 +229,7 @@ class TrackerQueryMixin:
             blocked = [
                 ticket
                 for ticket in tickets
-                if ticket.status not in TERMINAL_TICKET_STATUSES
+                if ticket.status not in TERMINAL_TRACKER_STATUSES
                 and ticket.key not in {item.key for item in ready}
                 and self._ticket_blocks_active_work(tracker.id, ticket)
             ][: max(1, min(limit, 50))]
@@ -344,56 +346,9 @@ class TrackerQueryMixin:
             and parent.run_plan_step_id == ticket.run_plan_step_id
         ):
             siblings = self._workflow_child_rows(parent)
-            directly_bridged = [
-                child.key for child in siblings if self._ticket_depends_on(child, parent)
-            ]
-            checks.append(
-                {
-                    "key": "workflow-step-child-bridge",
-                    "passed": bool(directly_bridged),
-                    "detail": (
-                        "Workflow-backed child tickets need an execution dependency bridge: "
-                        f"the first executable child under {parent.key} must depend on "
-                        f"{parent.key}. Passing run_plan_id and step_id is attachment only."
-                    ),
-                }
-            )
-            scope_ids = {item.id for item in siblings if item.id is not None}
-            if parent.id is not None:
-                scope_ids.add(parent.id)
-            checks.append(
-                {
-                    "key": "workflow-child-reachable-from-step",
-                    "passed": self._dependency_path_exists(
-                        source_ticket=parent,
-                        target_ticket=ticket,
-                        scope_ids=scope_ids,
-                    ),
-                    "detail": (
-                        f"Attached workflow child {ticket.key} must be reachable from "
-                        f"workflow step ticket {parent.key} through dependency edges; "
-                        "otherwise it can become ready outside the workflow spine."
-                    ),
-                }
-            )
-            bypassing_gate_children = self._workflow_bypassing_gate_child_keys(siblings)
-            if self._is_workflow_gate_child(ticket) or ticket.key in bypassing_gate_children:
-                checks.append(
-                    {
-                        "key": "workflow-child-gate-contained",
-                        "passed": ticket.key not in bypassing_gate_children,
-                        "detail": (
-                            f"Workflow child {ticket.key} looks like verification, docs, "
-                            "signoff, or release work. It must be downstream of a sibling "
-                            f"delivery child under {parent.key}, not ready beside it."
-                        ),
-                    }
-                )
-        if ticket.parent_ticket_id is None:
-            children = self._workflow_child_rows(ticket)
-            if children:
+            if not _is_closed_tracker_scope(parent.status, [child.status for child in siblings]):
                 directly_bridged = [
-                    child.key for child in children if self._ticket_depends_on(child, ticket)
+                    child.key for child in siblings if self._ticket_depends_on(child, parent)
                 ]
                 checks.append(
                     {
@@ -401,79 +356,133 @@ class TrackerQueryMixin:
                         "passed": bool(directly_bridged),
                         "detail": (
                             "Workflow-backed child tickets need an execution dependency bridge: "
-                            f"the first executable child under {ticket.key} must depend on "
-                            f"{ticket.key}. Passing run_plan_id and step_id is attachment only."
+                            f"the first executable child under {parent.key} must depend on "
+                            f"{parent.key}. Passing run_plan_id and step_id is attachment only."
                         ),
                     }
                 )
-                scope_ids = {item.id for item in children if item.id is not None}
-                if ticket.id is not None:
-                    scope_ids.add(ticket.id)
-                unreachable_children = [
-                    child.key
-                    for child in children
-                    if not self._dependency_path_exists(
-                        source_ticket=ticket,
-                        target_ticket=child,
-                        scope_ids=scope_ids,
+                scope_ids = {item.id for item in siblings if item.id is not None}
+                if parent.id is not None:
+                    scope_ids.add(parent.id)
+                checks.append(
+                    {
+                        "key": "workflow-child-reachable-from-step",
+                        "passed": self._dependency_path_exists(
+                            source_ticket=parent,
+                            target_ticket=ticket,
+                            scope_ids=scope_ids,
+                        ),
+                        "detail": (
+                            f"Attached workflow child {ticket.key} must be reachable from "
+                            f"workflow step ticket {parent.key} through dependency edges; "
+                            "otherwise it can become ready outside the workflow spine."
+                        ),
+                    }
+                )
+                bypassing_gate_children = self._workflow_bypassing_gate_child_keys(siblings)
+                if self._is_workflow_gate_child(ticket) or ticket.key in bypassing_gate_children:
+                    checks.append(
+                        {
+                            "key": "workflow-child-gate-contained",
+                            "passed": ticket.key not in bypassing_gate_children,
+                            "detail": (
+                                f"Workflow child {ticket.key} looks like verification, docs, "
+                                "signoff, or release work. It must be downstream of a sibling "
+                                f"delivery child under {parent.key}, not ready beside it."
+                            ),
+                        }
                     )
-                ]
-                checks.append(
-                    {
-                        "key": "workflow-step-children-reachable",
-                        "passed": not unreachable_children,
-                        "detail": (
-                            f"Workflow step ticket {ticket.key} has child ticket(s) outside "
-                            f"the dependency spine: {', '.join(unreachable_children)}."
-                        ),
-                    }
-                )
+        if ticket.parent_ticket_id is None:
+            children = self._workflow_child_rows(ticket)
+            if children:
                 open_children = [
-                    child.key for child in children if child.status not in TERMINAL_TICKET_STATUSES
+                    child.key for child in children if not _is_terminal_tracker_status(child.status)
                 ]
-                checks.append(
-                    {
-                        "key": "workflow-step-open-children",
-                        "passed": not open_children,
-                        "detail": (
-                            f"Workflow step ticket {ticket.key} is not ready for closeout "
-                            "while attached child tickets remain open: "
-                            f"{', '.join(open_children)}."
-                        ),
-                    }
-                )
-                bypassing_gate_children = self._workflow_bypassing_gate_child_keys(children)
-                checks.append(
-                    {
-                        "key": "workflow-step-gate-children-contained",
-                        "passed": not bypassing_gate_children,
-                        "detail": (
-                            f"Workflow step ticket {ticket.key} has verification/docs/signoff/"
-                            "release child ticket(s) that can bypass delivery work: "
-                            f"{', '.join(bypassing_gate_children)}."
-                        ),
-                    }
-                )
+                if not _is_closed_tracker_scope(
+                    ticket.status,
+                    [child.status for child in children],
+                ):
+                    directly_bridged = [
+                        child.key for child in children if self._ticket_depends_on(child, ticket)
+                    ]
+                    checks.append(
+                        {
+                            "key": "workflow-step-child-bridge",
+                            "passed": bool(directly_bridged),
+                            "detail": (
+                                "Workflow-backed child tickets need an execution dependency "
+                                "bridge: "
+                                f"the first executable child under {ticket.key} must depend on "
+                                f"{ticket.key}. Passing run_plan_id and step_id is attachment only."
+                            ),
+                        }
+                    )
+                    scope_ids = {item.id for item in children if item.id is not None}
+                    if ticket.id is not None:
+                        scope_ids.add(ticket.id)
+                    unreachable_children = [
+                        child.key
+                        for child in children
+                        if not self._dependency_path_exists(
+                            source_ticket=ticket,
+                            target_ticket=child,
+                            scope_ids=scope_ids,
+                        )
+                    ]
+                    checks.append(
+                        {
+                            "key": "workflow-step-children-reachable",
+                            "passed": not unreachable_children,
+                            "detail": (
+                                f"Workflow step ticket {ticket.key} has child ticket(s) outside "
+                                f"the dependency spine: {', '.join(unreachable_children)}."
+                            ),
+                        }
+                    )
+                    checks.append(
+                        {
+                            "key": "workflow-step-open-children",
+                            "passed": not open_children,
+                            "detail": (
+                                f"Workflow step ticket {ticket.key} is not ready for closeout "
+                                "while attached child tickets remain open: "
+                                f"{', '.join(open_children)}."
+                            ),
+                        }
+                    )
+                    bypassing_gate_children = self._workflow_bypassing_gate_child_keys(children)
+                    checks.append(
+                        {
+                            "key": "workflow-step-gate-children-contained",
+                            "passed": not bypassing_gate_children,
+                            "detail": (
+                                f"Workflow step ticket {ticket.key} has verification/docs/signoff/"
+                                "release child ticket(s) that can bypass delivery work: "
+                                f"{', '.join(bypassing_gate_children)}."
+                            ),
+                        }
+                    )
             dependency_ids = {
                 dep.depends_on_ticket_id for dep in self._dependency_rows_for_ticket(ticket.id)
             }
-            for prior_step in self._workflow_step_dependencies(ticket):
-                terminal_children = self._terminal_workflow_child_rows(prior_step)
-                if not terminal_children:
-                    continue
-                missing = [
-                    child.key for child in terminal_children if child.id not in dependency_ids
-                ]
-                checks.append(
-                    {
-                        "key": "workflow-next-step-terminal-children",
-                        "passed": not missing,
-                        "detail": (
-                            f"Workflow step ticket {ticket.key} must depend on terminal child "
-                            f"ticket(s) from prior step {prior_step.key}: {', '.join(missing)}."
-                        ),
-                    }
-                )
+            if not _is_terminal_tracker_status(ticket.status):
+                for prior_step in self._workflow_step_dependencies(ticket):
+                    terminal_children = self._terminal_workflow_child_rows(prior_step)
+                    if not terminal_children:
+                        continue
+                    missing = [
+                        child.key for child in terminal_children if child.id not in dependency_ids
+                    ]
+                    checks.append(
+                        {
+                            "key": "workflow-next-step-terminal-children",
+                            "passed": not missing,
+                            "detail": (
+                                f"Workflow step ticket {ticket.key} must depend on terminal child "
+                                f"ticket(s) from prior step {prior_step.key}: {', '.join(missing)}."
+                            ),
+                        }
+                    )
         return checks
 
     def _workflow_child_rows(self, step_ticket: TrackerTicket) -> list[TrackerTicket]:
@@ -960,13 +969,13 @@ class TrackerQueryMixin:
         return [
             ticket
             for ticket in rows
-            if ticket.status not in TERMINAL_TICKET_STATUSES
+            if ticket.status not in TERMINAL_TRACKER_STATUSES
             and not ticket.blocker_reason
             and not self._blocked_by_incomplete(tracker_id, ticket)
         ]
 
     def _ticket_blocks_active_work(self, tracker_id: int | None, ticket: TrackerTicket) -> bool:
-        return ticket.status not in TERMINAL_TICKET_STATUSES and bool(
+        return ticket.status not in TERMINAL_TRACKER_STATUSES and bool(
             ticket.blocker_reason or self._blocked_by_incomplete(tracker_id, ticket)
         )
 

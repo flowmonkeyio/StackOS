@@ -17,6 +17,10 @@ from stackos.repositories.tracker.schema import (
     TrackerTaskOut,
     TrackerTicketOut,
 )
+from stackos.repositories.tracker.utils import (
+    _is_closed_tracker_scope,
+    _is_terminal_tracker_status,
+)
 
 
 class TrackerGraphMixin:
@@ -156,13 +160,9 @@ class TrackerGraphMixin:
             }
 
         task_title_by_key = {task.key: task.title for task in tasks}
-        terminal_statuses = {
-            TrackerItemStatus.COMPLETE.value,
-            TrackerItemStatus.DEFERRED.value,
-        }
         for task_key, task_tickets in tickets_by_task.items():
             active_tickets = [
-                ticket for ticket in task_tickets if ticket.status.value not in terminal_statuses
+                ticket for ticket in task_tickets if not _is_terminal_tracker_status(ticket.status)
             ]
             if len(active_tickets) < 5:
                 continue
@@ -195,7 +195,7 @@ class TrackerGraphMixin:
             for ticket_key in {ticket.key for ticket in tickets}
         }
         for ticket in tickets:
-            if ticket.status.value in terminal_statuses:
+            if _is_terminal_tracker_status(ticket.status):
                 continue
             text = " ".join(
                 [
@@ -206,7 +206,7 @@ class TrackerGraphMixin:
                 ]
             ).lower()
             looks_like_pre_gate = ("gate" in text or "review" in text) and (
-                "before" in text or "pre-" in text or "pre " in text or ticket.lane_key == "review"
+                "before" in text or "pre-" in text or "pre " in text
             )
             dependency_count = len(dependencies_by_ticket.get(ticket.key, []))
             if looks_like_pre_gate and dependency_count >= 2:
@@ -235,26 +235,12 @@ class TrackerGraphMixin:
         for ticket in tickets:
             if ticket.parent_ticket_key:
                 children_by_parent.setdefault(ticket.parent_ticket_key, []).append(ticket)
-        terminal_statuses = {
-            TrackerItemStatus.COMPLETE.value,
-            TrackerItemStatus.DEFERRED.value,
-        }
         for parent_key, children in children_by_parent.items():
             parent = tickets_by_key.get(parent_key)
             if parent is None or parent.run_plan_id is None:
                 continue
-            directly_bridged = [
-                child.key for child in children if (parent.key, child.key) in dependency_edges
-            ]
-            if not directly_bridged:
-                warnings.append(
-                    "Workflow step "
-                    f"{parent.key} has attached child tickets but no dependency bridge from "
-                    "the step ticket. Attachment is containment only; add dependency edges "
-                    "before execution."
-                )
             open_children = [
-                child.key for child in children if child.status.value not in terminal_statuses
+                child.key for child in children if not _is_terminal_tracker_status(child.status)
             ]
             if open_children:
                 sample = ", ".join(open_children[:3])
@@ -268,6 +254,18 @@ class TrackerGraphMixin:
                     "Workflow step "
                     f"{parent.key} {state} attached child tickets remain open "
                     f"({sample}{suffix})."
+                )
+            if _is_closed_tracker_scope(parent.status, [child.status for child in children]):
+                continue
+            directly_bridged = [
+                child.key for child in children if (parent.key, child.key) in dependency_edges
+            ]
+            if not directly_bridged:
+                warnings.append(
+                    "Workflow step "
+                    f"{parent.key} has attached child tickets but no dependency bridge from "
+                    "the step ticket. Attachment is containment only; add dependency edges "
+                    "before execution."
                 )
             for child in children:
                 if not self._graph_dependency_path_exists(parent.key, child.key, dependency_edges):
@@ -297,6 +295,8 @@ class TrackerGraphMixin:
             and ticket.parent_ticket_key is None
         ]
         for step_ticket in step_tickets:
+            if _is_terminal_tracker_status(step_ticket.status):
+                continue
             prior_steps = [
                 tickets_by_key[dependency_key]
                 for dependency_key, ticket_key in dependency_edges

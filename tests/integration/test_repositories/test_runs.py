@@ -83,15 +83,15 @@ def test_reap_stale_orphans(session: Session, project_id: int) -> None:
     assert repo.get(fresh.id).status == RunStatus.RUNNING
 
 
-def test_reap_stale_run_reconciles_linked_run_plan(session: Session, project_id: int) -> None:
+def test_reap_stale_preserves_started_run_plan(session: Session, project_id: int) -> None:
     plan = (
         RunPlanRepository(session)
         .create(
             project_id=project_id,
             run_plan_json={
                 "schema_version": "stackos.run-plan.v1",
-                "key": "stale.workflow.run",
-                "title": "Stale Workflow",
+                "key": "stale.live.workflow.run",
+                "title": "Stale Live Workflow",
                 "steps": [
                     {"id": "prepare", "title": "Prepare"},
                     {"id": "deliver", "title": "Deliver"},
@@ -113,20 +113,24 @@ def test_reap_stale_run_reconciles_linked_run_plan(session: Session, project_id:
 
     reaped = RunRepository(session).reap_stale(stale_after_seconds=300)
 
-    assert reaped == 1
+    assert reaped == 0
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    assert run.status == RunStatus.RUNNING
+    assert run.error is None
+    assert run.heartbeat_at is not None
+    assert run.heartbeat_at > _now() - timedelta(minutes=1)
     plan_row = session.get(RunPlan, plan.id)
     assert plan_row is not None
-    assert plan_row.status == "aborted"
-    assert plan_row.metadata_json is not None
-    assert plan_row.metadata_json["abort_reason"] == "daemon-restart-orphan"
+    assert plan_row.status == "started"
     steps = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).all()
-    assert {step.status for step in steps} == {RunPlanStepStatus.SKIPPED}
+    assert {step.status for step in steps} == {RunPlanStepStatus.PENDING}
     tracker_snapshot = TrackerRepository(session).get(project_id=project_id, run_plan_id=plan.id)
-    assert tracker_snapshot.tasks[0].status == "deferred"
-    assert {ticket.status for ticket in tracker_snapshot.tickets} == {"deferred"}
+    assert tracker_snapshot.tasks[0].status == "in-progress"
+    assert {ticket.status for ticket in tracker_snapshot.tickets} == {"not-started"}
 
 
-def test_reap_stale_run_plan_respects_recent_plan_activity(
+def test_reap_stale_preserves_started_run_plan_with_recent_activity(
     session: Session,
     project_id: int,
 ) -> None:
@@ -156,7 +160,10 @@ def test_reap_stale_run_plan_respects_recent_plan_activity(
     reaped = RunRepository(session).reap_stale(stale_after_seconds=300)
 
     assert reaped == 0
-    assert RunRepository(session).get(started.run_id).status == RunStatus.RUNNING
+    run_out = RunRepository(session).get(started.run_id)
+    assert run_out.status == RunStatus.RUNNING
+    assert run_out.heartbeat_at is not None
+    assert run_out.heartbeat_at > _now() - timedelta(minutes=1)
 
 
 def test_reap_stale_parent_reconciles_child_run_plan(

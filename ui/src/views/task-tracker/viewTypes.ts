@@ -3,7 +3,7 @@ import type { TrackerStatus, TrackerTask, TrackerTicket } from '@/lib/task-track
 export type ViewMode = 'graph' | 'tickets'
 export type StatusFilter = 'all' | TrackerStatus
 export type GraphBlockFilter = 'blocked' | 'open'
-export type SelectMetaTone = 'neutral' | 'info' | 'success' | 'warning'
+export type SelectMetaTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent'
 
 export interface TaskProgressRow {
   id: number
@@ -12,7 +12,10 @@ export interface TaskProgressRow {
   tickets: TrackerTicket[]
   completedCount: number
   deferredCount: number
-  doneCount: number
+  abortedCount: number
+  failedCount: number
+  skippedCount: number
+  terminalCount: number
   totalCount: number
   inProgressCount: number
   blockedCount: number

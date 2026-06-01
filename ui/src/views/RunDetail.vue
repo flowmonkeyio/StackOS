@@ -18,6 +18,7 @@ import {
 import { useRunsStore, type Run } from '@/stores/runs'
 import { useToastsStore } from '@/stores/toasts'
 import { apiFetch, formatApiError } from '@/lib/client'
+import { resolveStatus } from '@/design/status'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import type {
   SchemaActionCallAuditOut,
@@ -124,7 +125,7 @@ const summary = computed<KvItem[]>(() => {
   return [
     { key: 'id', label: 'Run id', value: `#${run.value.id}` },
     { key: 'kind', label: 'Kind', value: run.value.kind },
-    { key: 'status', label: 'Status', value: run.value.status },
+    { key: 'status', label: 'Status', value: resolveStatus('run', run.value.status).label },
     { key: 'started', label: 'Started', value: new Date(run.value.started_at).toLocaleString() },
     {
       key: 'ended',

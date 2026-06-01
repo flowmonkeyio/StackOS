@@ -39,7 +39,7 @@ from stackos.repositories.tracker.schema import (
     TrackerMutationOut,
 )
 from stackos.repositories.tracker.utils import (
-    TERMINAL_TICKET_STATUSES,
+    TERMINAL_TRACKER_STATUSES,
     _clean_text,
     _jsonable,
     _required_id,
@@ -162,8 +162,10 @@ class TrackerMutationMixin:
             created_at=now,
             updated_at=now,
             started_at=now if status == TrackerItemStatus.IN_PROGRESS else None,
-            completed_at=now if status == TrackerItemStatus.COMPLETE else None,
+            completed_at=now if status in TERMINAL_TRACKER_STATUSES else None,
         )
+        if status in TERMINAL_TRACKER_STATUSES:
+            row.lane_key = "done"
         self._s.add(row)
         self._s.flush()
         assert row.id is not None
@@ -399,7 +401,7 @@ class TrackerMutationMixin:
             **({"rejected_by": actor} if actor else {}),
             **({"run_plan_id": run_plan_id} if run_plan_id is not None else {}),
         }
-        task.status = TrackerItemStatus.DEFERRED
+        task.status = TrackerItemStatus.ABORTED
         task.lane_key = "done"
         task.completed_at = now
         task.updated_at = now
@@ -421,7 +423,7 @@ class TrackerMutationMixin:
         for ticket in self._ticket_rows_for_task(task.id):
             previous_ticket_statuses[ticket.key] = ticket.status.value
             # Task rejection is an operator terminal override; every child closes
-            # as deferred so the parent cannot look partially deliverable later.
+            # as aborted so the parent cannot look partially deliverable later.
             ticket.metadata_json = {
                 **(ticket.metadata_json or {}),
                 "parent_task_rejected": True,
@@ -429,7 +431,7 @@ class TrackerMutationMixin:
                 "rejected_at": now.isoformat(),
                 **({"rejected_by": actor} if actor else {}),
             }
-            ticket.status = TrackerItemStatus.DEFERRED
+            ticket.status = TrackerItemStatus.ABORTED
             ticket.lane_key = "done"
             ticket.blocker_reason = None
             ticket.completed_at = now
@@ -453,7 +455,7 @@ class TrackerMutationMixin:
                 "run_plan_id": run_plan_id,
                 "reason": reason,
                 "closed_ticket_count": sum(
-                    1 for ticket in changed_tickets if ticket.status == TrackerItemStatus.DEFERRED
+                    1 for ticket in changed_tickets if ticket.status == TrackerItemStatus.ABORTED
                 ),
             },
             metadata_json={
@@ -768,8 +770,10 @@ class TrackerMutationMixin:
             created_at=now,
             updated_at=now,
             started_at=now if status == TrackerItemStatus.IN_PROGRESS else None,
-            completed_at=now if status == TrackerItemStatus.COMPLETE else None,
+            completed_at=now if status in TERMINAL_TRACKER_STATUSES else None,
         )
+        if status in TERMINAL_TRACKER_STATUSES:
+            row.lane_key = "done"
         self._s.add(row)
         self._s.flush()
         return row
@@ -791,8 +795,9 @@ class TrackerMutationMixin:
                 if new_status == TrackerItemStatus.IN_PROGRESS:
                     task.started_at = task.started_at or now
                     task.completed_at = None
-                elif new_status in TERMINAL_TICKET_STATUSES:
+                elif new_status in TERMINAL_TRACKER_STATUSES:
                     task.completed_at = now
+                    task.lane_key = "done"
                 else:
                     task.completed_at = None
         for field in (
@@ -818,6 +823,8 @@ class TrackerMutationMixin:
         ):
             if field in patch_json:
                 setattr(task, field, redact_secrets(_jsonable(patch_json[field])))
+        if task.status in TERMINAL_TRACKER_STATUSES:
+            task.lane_key = "done"
         task.updated_at = now
         self._s.add(task)
 
@@ -864,8 +871,9 @@ class TrackerMutationMixin:
                     ticket.claimed_at = (
                         ticket.claimed_at or now if ticket.assignee else ticket.claimed_at
                     )
-                elif new_status in TERMINAL_TICKET_STATUSES:
+                elif new_status in TERMINAL_TRACKER_STATUSES:
                     ticket.completed_at = now
+                    ticket.lane_key = "done"
                     if new_status == TrackerItemStatus.COMPLETE:
                         ticket.blocker_reason = None
                 else:
@@ -951,6 +959,8 @@ class TrackerMutationMixin:
                 if not isinstance(reference, dict):
                     raise ValidationError("references_json entries must be objects")
                 self._add_reference(tracker, ticket, reference)
+        if ticket.status in TERMINAL_TRACKER_STATUSES:
+            ticket.lane_key = "done"
         ticket.updated_at = now
         self._s.add(ticket)
 
@@ -1090,32 +1100,47 @@ class TrackerMutationMixin:
                     "run_plan_id": plan_id,
                     "step_id": step.step_id,
                     "run_plan_step_id": step.id,
+                    "requested_status": requested_status.value,
                     "next_operations": ["runPlan.claimStep", "runPlan.recordStep"],
                 },
             )
-        if requested_status not in {TrackerItemStatus.IN_PROGRESS, TrackerItemStatus.COMPLETE}:
+        requires_active_step = (
+            requested_status == TrackerItemStatus.IN_PROGRESS
+            or requested_status in TERMINAL_TRACKER_STATUSES
+        )
+        if not requires_active_step:
             return
         run = self._s.get(Run, plan.run_id) if plan.run_id is not None else None
         if (
-            plan.status != RunPlanStatus.STARTED
-            or step.status != RunPlanStepStatus.RUNNING
-            or run is None
-            or run.status != RunStatus.RUNNING
+            plan.status == RunPlanStatus.STARTED
+            and step.status == RunPlanStepStatus.RUNNING
+            and run is not None
+            and run.status == RunStatus.RUNNING
         ):
-            raise ValidationError(
-                f"workflow-backed tracker ticket status cannot {action} as active or complete "
-                "outside its active run-plan step",
-                data={
-                    "ticket_key": ticket_key,
-                    "run_plan_id": plan_id,
-                    "run_id": plan.run_id,
-                    "run_status": run.status.value if run is not None else None,
-                    "step_id": step.step_id,
-                    "step_status": step.status.value,
-                    "requested_status": requested_status.value,
-                    "next_operations": ["runPlan.get", "runPlan.claimStep", "runPlan.recordStep"],
-                },
+            return
+        if requested_status in TERMINAL_TRACKER_STATUSES:
+            message = (
+                "workflow-backed tracker ticket terminal status requires the owning "
+                "run-plan step to be running"
             )
+        else:
+            message = (
+                "workflow-backed tracker ticket cannot be marked in-progress before "
+                "its run-plan step is running"
+            )
+        raise ValidationError(
+            message,
+            data={
+                "ticket_key": ticket_key,
+                "run_plan_id": plan_id,
+                "run_id": plan.run_id,
+                "run_status": run.status.value if run is not None else None,
+                "step_id": step.step_id,
+                "step_status": step.status.value,
+                "requested_status": requested_status.value,
+                "next_operations": ["runPlan.get", "runPlan.claimStep", "runPlan.recordStep"],
+            },
+        )
 
     @staticmethod
     def _workflow_task_run_plan_id(task: TrackerTask) -> int | None:
@@ -1160,24 +1185,46 @@ class TrackerMutationMixin:
         if (
             task.metadata_json
             and task.metadata_json.get("rejected") is True
-            and all(ticket.status in TERMINAL_TICKET_STATUSES for ticket in tickets)
+            and all(ticket.status in TERMINAL_TRACKER_STATUSES for ticket in tickets)
         ):
-            task.status = TrackerItemStatus.DEFERRED
+            task.status = TrackerItemStatus.ABORTED
             task.completed_at = task.completed_at if old == task.status else now
             task.lane_key = "done"
         elif all(ticket.status == TrackerItemStatus.COMPLETE for ticket in tickets):
             task.status = TrackerItemStatus.COMPLETE
             task.completed_at = task.completed_at if old == task.status else now
             task.lane_key = "done"
+        elif all(ticket.status == TrackerItemStatus.ABORTED for ticket in tickets):
+            task.status = TrackerItemStatus.ABORTED
+            task.completed_at = task.completed_at if old == task.status else now
+            task.lane_key = "done"
+        elif all(ticket.status == TrackerItemStatus.FAILED for ticket in tickets):
+            task.status = TrackerItemStatus.FAILED
+            task.completed_at = task.completed_at if old == task.status else now
+            task.lane_key = "done"
+        elif all(ticket.status == TrackerItemStatus.SKIPPED for ticket in tickets):
+            task.status = TrackerItemStatus.SKIPPED
+            task.completed_at = task.completed_at if old == task.status else now
+            task.lane_key = "done"
         elif all(ticket.status == TrackerItemStatus.DEFERRED for ticket in tickets):
             task.status = TrackerItemStatus.DEFERRED
             task.completed_at = task.completed_at if old == task.status else now
-        elif all(ticket.status in TERMINAL_TICKET_STATUSES for ticket in tickets):
-            task.status = TrackerItemStatus.COMPLETE
+            task.lane_key = "done"
+        elif all(ticket.status in TERMINAL_TRACKER_STATUSES for ticket in tickets):
+            if any(ticket.status == TrackerItemStatus.ABORTED for ticket in tickets):
+                task.status = TrackerItemStatus.ABORTED
+            elif any(ticket.status == TrackerItemStatus.FAILED for ticket in tickets):
+                task.status = TrackerItemStatus.FAILED
+            elif any(ticket.status == TrackerItemStatus.DEFERRED for ticket in tickets):
+                task.status = TrackerItemStatus.DEFERRED
+            elif any(ticket.status == TrackerItemStatus.SKIPPED for ticket in tickets):
+                task.status = TrackerItemStatus.SKIPPED
+            else:
+                task.status = TrackerItemStatus.COMPLETE
             task.completed_at = task.completed_at if old == task.status else now
             task.lane_key = "done"
         elif any(
-            ticket.status in (TrackerItemStatus.IN_PROGRESS, *TERMINAL_TICKET_STATUSES)
+            ticket.status in (TrackerItemStatus.IN_PROGRESS, *TERMINAL_TRACKER_STATUSES)
             for ticket in tickets
         ):
             task.status = TrackerItemStatus.IN_PROGRESS
@@ -1210,10 +1257,17 @@ class TrackerMutationMixin:
             task.status = TrackerItemStatus.COMPLETE
             task.completed_at = task.completed_at if old == task.status else now
             task.lane_key = "done"
-        else:
-            task.status = TrackerItemStatus.DEFERRED
+        elif plan.status == RunPlanStatus.FAILED:
+            task.status = TrackerItemStatus.FAILED
             task.completed_at = task.completed_at if old == task.status else now
             task.lane_key = "done"
+        elif plan.status == RunPlanStatus.ABORTED:
+            task.status = TrackerItemStatus.ABORTED
+            task.completed_at = task.completed_at if old == task.status else now
+            task.lane_key = "done"
+        else:
+            task.status = TrackerItemStatus.NOT_STARTED
+            task.completed_at = None
 
         if task.status != old:
             task.updated_at = now

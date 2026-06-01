@@ -223,7 +223,7 @@ def test_cli_tracker_reject_task_alias_calls_operation(monkeypatch) -> None:  # 
         **_kwargs: object,
     ) -> dict[str, Any]:
         calls.append((method, path, body))
-        return {"data": {"task": {"status": "deferred"}}}
+        return {"data": {"task": {"status": "aborted"}}}
 
     monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
@@ -260,7 +260,7 @@ def test_cli_tracker_reject_task_alias_calls_operation(monkeypatch) -> None:  # 
             },
         )
     ]
-    assert json.loads(result.stdout)["data"]["task"]["status"] == "deferred"
+    assert json.loads(result.stdout)["data"]["task"]["status"] == "aborted"
 
 
 def test_cli_actions_describe_alias_calls_operation(monkeypatch) -> None:  # type: ignore[no-untyped-def]

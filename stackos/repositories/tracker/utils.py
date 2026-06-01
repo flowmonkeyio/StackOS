@@ -22,9 +22,12 @@ DEFAULT_PRIORITIES: tuple[tuple[str, str, int], ...] = (
     ("p2", "P2", 20),
     ("p3", "P3", 30),
 )
-TERMINAL_TICKET_STATUSES = {
+TERMINAL_TRACKER_STATUSES = {
     TrackerItemStatus.COMPLETE,
     TrackerItemStatus.DEFERRED,
+    TrackerItemStatus.ABORTED,
+    TrackerItemStatus.FAILED,
+    TrackerItemStatus.SKIPPED,
 }
 DEPENDENCY_PATCH_FIELDS = {
     "dependency_keys",
@@ -68,6 +71,19 @@ def _status_value(value: TrackerItemStatus | str) -> TrackerItemStatus:
     return TrackerItemStatus(value)
 
 
+def _is_terminal_tracker_status(value: TrackerItemStatus | str) -> bool:
+    return _status_value(value) in TERMINAL_TRACKER_STATUSES
+
+
+def _is_closed_tracker_scope(
+    parent_status: TrackerItemStatus | str,
+    child_statuses: list[TrackerItemStatus | str],
+) -> bool:
+    return _is_terminal_tracker_status(parent_status) and all(
+        _is_terminal_tracker_status(status) for status in child_statuses
+    )
+
+
 def _required_id(value: int | None, entity: str) -> int:
     if value is None:
         raise RuntimeError(f"{entity} id is required after the row has been flushed")
@@ -79,8 +95,10 @@ __all__ = [
     "DEFAULT_PRIORITIES",
     "DEFAULT_TRACKER_KEY",
     "DEPENDENCY_PATCH_FIELDS",
-    "TERMINAL_TICKET_STATUSES",
+    "TERMINAL_TRACKER_STATUSES",
     "_clean_text",
+    "_is_closed_tracker_scope",
+    "_is_terminal_tracker_status",
     "_jsonable",
     "_required_id",
     "_slug",

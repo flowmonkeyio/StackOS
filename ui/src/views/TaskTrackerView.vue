@@ -7,8 +7,10 @@ import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { UiBadge, UiButton, UiCallout, UiEmptyState, UiPageShell } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import { callOperation } from '@/lib/operations'
+import { resolveStatus, trackerStatus } from '@/design/status'
 import { graphFocusFor, graphItemFromNodeId } from '@/lib/task-tracker/graphFocus'
 import { buildTrackerFlowModel, type TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
+import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import { formatDateTime } from '@/lib/stackos/json'
 import type {
   TrackerSelectedItem,
@@ -59,23 +61,16 @@ let graphRequestSeq = 0
 
 const statusOptions: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'All' },
-  { key: 'not-started', label: 'Not started' },
-  { key: 'in-progress', label: 'In progress' },
-  { key: 'complete', label: 'Complete' },
-  { key: 'deferred', label: 'Deferred' },
+  ...(Object.entries(trackerStatus) as Array<[TrackerStatus, { label: string }]>).map(
+    ([key, definition]) => ({
+      key,
+      label: definition.label,
+    }),
+  ),
 ]
 
 function trackerStatusTone(status: TrackerStatus): SelectMetaTone {
-  switch (status) {
-    case 'complete':
-      return 'success'
-    case 'in-progress':
-      return 'info'
-    case 'deferred':
-      return 'warning'
-    default:
-      return 'neutral'
-  }
+  return resolveStatus('tracker', status).tone
 }
 
 const viewOptions: Array<{ key: ViewMode; label: string; icon: string }> = [
@@ -136,13 +131,17 @@ const taskRows = computed<TaskProgressRow[]>(() =>
       const taskTickets = ticketsByTask.value.get(task.key) ?? []
       const completedCount = taskTickets.filter((ticket) => ticket.status === 'complete').length
       const deferredCount = taskTickets.filter((ticket) => ticket.status === 'deferred').length
-      const doneCount = completedCount + deferredCount
+      const abortedCount = taskTickets.filter((ticket) => ticket.status === 'aborted').length
+      const failedCount = taskTickets.filter((ticket) => ticket.status === 'failed').length
+      const skippedCount = taskTickets.filter((ticket) => ticket.status === 'skipped').length
+      const terminalCount =
+        completedCount + deferredCount + abortedCount + failedCount + skippedCount
       const inProgressCount = taskTickets.filter((ticket) => ticket.status === 'in-progress').length
       const blockedCount = taskTickets.filter(
         (ticket) => isOpenTicket(ticket) && (ticket.blocker_reason || ticket.blocked_by.length > 0),
       ).length
       const totalCount = taskTickets.length
-      const percent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
+      const percent = totalCount > 0 ? Math.round((terminalCount / totalCount) * 100) : 0
       return {
         id: task.id,
         key: task.key,
@@ -150,7 +149,10 @@ const taskRows = computed<TaskProgressRow[]>(() =>
         tickets: taskTickets,
         completedCount,
         deferredCount,
-        doneCount,
+        abortedCount,
+        failedCount,
+        skippedCount,
+        terminalCount,
         totalCount,
         inProgressCount,
         blockedCount,
@@ -170,8 +172,8 @@ const taskSelectOptions = computed(() =>
   taskRows.value.map((row) => ({
     value: row.key,
     label: row.task.title,
-    rightLabel: row.task.status.replace(/-/g, ' '),
-    rightMeta: `${row.doneCount}/${row.totalCount} tickets`,
+    rightLabel: resolveStatus('tracker', row.task.status).label,
+    rightMeta: `${row.terminalCount}/${row.totalCount} terminal`,
     rightTone: trackerStatusTone(row.task.status),
   })),
 )
@@ -192,7 +194,7 @@ const graphStatusRows = computed(() =>
     .filter((option): option is { key: TrackerStatus; label: string } => option.key !== 'all')
     .map((option) => ({
       key: option.key,
-      label: option.label.toLowerCase(),
+      label: option.label,
       count: graphStatusCounts.value[option.key],
     })),
 )
@@ -203,10 +205,10 @@ const graphBlockedCount = computed(
 
 const graphBlockRows = computed<Array<{ key: GraphBlockFilter; label: string; count: number }>>(
   () => [
-    { key: 'blocked', label: 'blocked', count: graphBlockedCount.value },
+    { key: 'blocked', label: 'Blocked', count: graphBlockedCount.value },
     {
       key: 'open',
-      label: 'open',
+      label: 'Open',
       count: Math.max(0, graphTickets.value.length - graphBlockedCount.value),
     },
   ],
@@ -412,7 +414,7 @@ const flow = computed(() =>
     : { nodes: [], edges: [] as Edge[], warnings: [] },
 )
 
-const graphFitOnInit = computed(() => flow.value.nodes.length <= 40)
+const graphFitOnInit = computed(() => flow.value.nodes.length <= 14)
 
 const ticketColumns: DataTableColumn<TrackerTicket>[] = [
   { key: 'key', label: 'Ticket' },
@@ -562,16 +564,22 @@ function taskCurrentDetail(
 ): string {
   const completedCount = taskTickets.filter((ticket) => ticket.status === 'complete').length
   const deferredCount = taskTickets.filter((ticket) => ticket.status === 'deferred').length
+  const abortedCount = taskTickets.filter((ticket) => ticket.status === 'aborted').length
+  const failedCount = taskTickets.filter((ticket) => ticket.status === 'failed').length
+  const skippedCount = taskTickets.filter((ticket) => ticket.status === 'skipped').length
   if (blockedCount > 0) return `${blockedCount} blocked`
   if (inProgressCount > 0) return `${inProgressCount} in progress`
+  if (failedCount > 0) return `${completedCount} complete, ${failedCount} failed`
+  if (abortedCount > 0) return `${completedCount} complete, ${abortedCount} aborted`
   if (deferredCount > 0) return `${completedCount} complete, ${deferredCount} deferred`
+  if (skippedCount > 0) return `${completedCount} complete, ${skippedCount} skipped`
   if (task.status === 'complete') return 'complete'
   if (!taskTickets.length) return task.status
   return `${taskTickets.length} tickets`
 }
 
 function isOpenTicket(ticket: TrackerTicket): boolean {
-  return ticket.status !== 'complete' && ticket.status !== 'deferred'
+  return !isTerminalTrackerStatus(ticket.status)
 }
 
 function isGraphBlockedTicket(ticket: TrackerTicket): boolean {
@@ -750,7 +758,15 @@ function countStatuses(statuses: TrackerStatus[]): Record<TrackerStatus, number>
       acc[status] += 1
       return acc
     },
-    { 'not-started': 0, 'in-progress': 0, complete: 0, deferred: 0 },
+    {
+      'not-started': 0,
+      'in-progress': 0,
+      complete: 0,
+      deferred: 0,
+      aborted: 0,
+      failed: 0,
+      skipped: 0,
+    },
   )
 }
 
@@ -810,7 +826,7 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
       :tasks-count="tasks.length"
       :filtered-ticket-count="filteredTicketCount"
       :tickets-count="tickets.length"
-      :active-done-count="activeTaskRow?.doneCount ?? null"
+      :active-terminal-count="activeTaskRow?.terminalCount ?? null"
       :active-total-count="activeTaskRow?.totalCount ?? null"
       :blocked-count="blockedCount"
       :workflow-count="workflowCount"

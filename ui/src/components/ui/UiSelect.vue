@@ -366,7 +366,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
-  text-transform: lowercase;
   white-space: nowrap;
 }
 

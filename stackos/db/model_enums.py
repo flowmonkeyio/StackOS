@@ -109,6 +109,9 @@ class TrackerItemStatus(enum.StrEnum):
     IN_PROGRESS = "in-progress"
     COMPLETE = "complete"
     DEFERRED = "deferred"
+    ABORTED = "aborted"
+    FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 class TrackerTicketKind(enum.StrEnum):
@@ -263,12 +266,18 @@ TRACKER_ITEM_STATUS_TRANSITIONS: dict[TrackerItemStatus, frozenset[TrackerItemSt
             TrackerItemStatus.IN_PROGRESS,
             TrackerItemStatus.COMPLETE,
             TrackerItemStatus.DEFERRED,
+            TrackerItemStatus.ABORTED,
+            TrackerItemStatus.FAILED,
+            TrackerItemStatus.SKIPPED,
         }
     ),
     TrackerItemStatus.IN_PROGRESS: frozenset(
         {
             TrackerItemStatus.COMPLETE,
             TrackerItemStatus.DEFERRED,
+            TrackerItemStatus.ABORTED,
+            TrackerItemStatus.FAILED,
+            TrackerItemStatus.SKIPPED,
             TrackerItemStatus.NOT_STARTED,
         }
     ),
@@ -277,9 +286,35 @@ TRACKER_ITEM_STATUS_TRANSITIONS: dict[TrackerItemStatus, frozenset[TrackerItemSt
             TrackerItemStatus.NOT_STARTED,
             TrackerItemStatus.IN_PROGRESS,
             TrackerItemStatus.COMPLETE,
+            TrackerItemStatus.ABORTED,
+            TrackerItemStatus.FAILED,
+            TrackerItemStatus.SKIPPED,
         }
     ),
-    TrackerItemStatus.COMPLETE: frozenset({TrackerItemStatus.IN_PROGRESS}),
+    TrackerItemStatus.ABORTED: frozenset(
+        {
+            TrackerItemStatus.NOT_STARTED,
+            TrackerItemStatus.IN_PROGRESS,
+        }
+    ),
+    TrackerItemStatus.FAILED: frozenset(
+        {
+            TrackerItemStatus.IN_PROGRESS,
+            TrackerItemStatus.ABORTED,
+            TrackerItemStatus.DEFERRED,
+        }
+    ),
+    TrackerItemStatus.SKIPPED: frozenset(
+        {
+            TrackerItemStatus.NOT_STARTED,
+            TrackerItemStatus.IN_PROGRESS,
+        }
+    ),
+    TrackerItemStatus.COMPLETE: frozenset(
+        {
+            TrackerItemStatus.IN_PROGRESS,
+        }
+    ),
 }
 
 

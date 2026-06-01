@@ -3,12 +3,13 @@ import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
+import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 
 const props = defineProps<{
   data: TrackerVueNodeData
 }>()
 
-const isOpen = computed(() => props.data.status !== 'complete' && props.data.status !== 'deferred')
+const isOpen = computed(() => !isTerminalTrackerStatus(props.data.status))
 const isBlocked = computed(() => isOpen.value && (props.data.blockedBy?.length ?? 0) > 0)
 const statusClass = computed(() => `ticket-graph-node__status--${props.data.status}`)
 </script>
@@ -122,6 +123,15 @@ const statusClass = computed(() => `ticket-graph-node__status--${props.data.stat
 
 .ticket-graph-node__status--deferred {
   background: var(--color-warning-default);
+}
+
+.ticket-graph-node__status--aborted,
+.ticket-graph-node__status--failed {
+  background: var(--color-danger-default);
+}
+
+.ticket-graph-node__status--skipped {
+  background: var(--color-neutral-default);
 }
 
 .ticket-graph-node__subtitle {

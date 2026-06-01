@@ -222,7 +222,7 @@ def test_tracker_operations_rest_reject_task_cascades_tickets(
     )
     assert rejected.status_code == 200, rejected.text
     body = rejected.json()
-    assert body["data"]["task"]["status"] == "deferred"
+    assert body["data"]["task"]["status"] == "aborted"
     assert body["data"]["task"]["completion_evidence_json"]["decision"] == "rejected"
     assert [result["action"] for result in body["data"]["results"]] == [
         "rejected",

@@ -637,7 +637,7 @@ def test_tracker_mcp_reject_task_cascades_tickets(
         },
     )
 
-    assert rejected["data"]["task"]["status"] == "deferred"
+    assert rejected["data"]["task"]["status"] == "aborted"
     assert rejected["data"]["task"]["completion_evidence_json"]["decision"] == "rejected"
     assert "[redacted]" in rejected["data"]["task"]["completion_evidence_json"]["reason"]
     assert "sk-secret" not in str(rejected)
@@ -645,4 +645,4 @@ def test_tracker_mcp_reject_task_cascades_tickets(
         "rejected",
         "rejected",
     ]
-    assert {ticket["status"] for ticket in snapshot["tickets"]} == {"deferred"}
+    assert {ticket["status"] for ticket in snapshot["tickets"]} == {"aborted"}

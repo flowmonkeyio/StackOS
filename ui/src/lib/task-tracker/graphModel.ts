@@ -9,6 +9,7 @@ import type {
   TrackerTask,
   TrackerTicket,
 } from './types'
+import { trackerStatusSortOrder } from './status'
 
 export interface TrackerVueNodeData {
   label: string
@@ -592,11 +593,7 @@ function fallbackDependencyPosition(
 }
 
 function statusSort(status: string): number {
-  if (status === 'in-progress') return 0
-  if (status === 'not-started') return 1
-  if (status === 'complete') return 2
-  if (status === 'deferred') return 3
-  return 4
+  return trackerStatusSortOrder(status)
 }
 
 function vueNodeData(graphNode: TrackerGraphNode, snapshot: TrackerSnapshot): TrackerVueNodeData {

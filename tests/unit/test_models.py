@@ -19,6 +19,7 @@ from stackos.db.models import (
     RunPlanStepStatus,
     RunStatus,
     RunStepStatus,
+    TrackerItemStatus,
 )
 
 
@@ -56,6 +57,18 @@ def test_run_plan_step_status_values() -> None:
         "failed",
         "skipped",
         "blocked",
+    }
+
+
+def test_tracker_item_status_values_match_tasks_and_tickets() -> None:
+    assert _values(TrackerItemStatus) == {
+        "not-started",
+        "in-progress",
+        "complete",
+        "deferred",
+        "aborted",
+        "failed",
+        "skipped",
     }
 
 

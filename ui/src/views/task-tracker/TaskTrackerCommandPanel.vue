@@ -36,7 +36,7 @@ defineProps<{
   tasksCount: number
   filteredTicketCount: number
   ticketsCount: number
-  activeDoneCount: number | null
+  activeTerminalCount: number | null
   activeTotalCount: number | null
   blockedCount: number
   workflowCount: number
@@ -142,8 +142,8 @@ defineEmits<{
     <div class="tracker-command-panel__meta">
       <span>{{ taskRowsCount }}/{{ tasksCount }} tasks</span>
       <span>{{ filteredTicketCount }}/{{ ticketsCount }} tickets</span>
-      <span v-if="activeDoneCount !== null && activeTotalCount !== null">
-        {{ activeDoneCount }}/{{ activeTotalCount }} done
+      <span v-if="activeTerminalCount !== null && activeTotalCount !== null">
+        {{ activeTerminalCount }}/{{ activeTotalCount }} terminal
       </span>
       <span>{{ blockedCount }} blocked</span>
       <span>{{ workflowCount }} workflows</span>

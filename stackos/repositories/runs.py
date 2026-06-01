@@ -357,10 +357,12 @@ class RunRepository:
         """Crash-recovery sweep per audit B-13 / PLAN.md L1366-L1375.
 
         Finds rows with ``status='running' AND heartbeat_at < now() - delta``
-        and transitions them to ``aborted`` with
-        ``error='daemon-restart-orphan'``. Returns the number of rows reaped.
-        Cascade abort is applied to each reaped run so live-orphan child
-        chains are cleaned in the same sweep.
+        and transitions process-bound stale rows to ``aborted`` with
+        ``error='daemon-restart-orphan'``. Live run plans are durable workflow
+        state, not daemon jobs; if the stale row is linked to a started run
+        plan, the audit heartbeat is refreshed and the plan remains resumable.
+        Returns the number of rows reaped. Cascade abort is applied to each
+        reaped run so live-orphan child chains are cleaned in the same sweep.
         """
         from stackos.repositories.run_plan_lifecycle import (
             STALE_RUN_ERROR,
@@ -378,7 +380,7 @@ class RunRepository:
         ).all()
         reaped = 0
         for row in rows:
-            if reconciler.has_recent_run_plan_activity(row, cutoff):
+            if reconciler.should_preserve_live_run_plan(row):
                 row.heartbeat_at = _utcnow()
                 self._s.add(row)
                 continue

@@ -513,6 +513,22 @@ defineEmits<{
     justify-content: start;
   }
 
+  .tracker-graph-controls {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-block: 7px;
+  }
+
+  .tracker-graph-filter-group {
+    flex: none;
+    flex-wrap: nowrap;
+  }
+
+  .tracker-graph-controls__tail {
+    flex: none;
+    margin-left: 0;
+  }
+
   .tracker-graph-selection {
     top: 10px;
     right: 10px;

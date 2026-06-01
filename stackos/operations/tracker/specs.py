@@ -334,9 +334,9 @@ def operation_specs() -> list[OperationSpec]:
             input_model=TrackerRejectTaskInput,
             handler=tracker_reject_task,
             purpose=(
-                "Use this when the operator rejects, parks, or supersedes a task/run. "
-                "The task becomes deferred with explicit rejection evidence; every child "
-                "ticket closes as deferred with rejection outcome and metadata so there is "
+                "Use this when the operator rejects or aborts a task/run. "
+                "The task becomes aborted with explicit rejection evidence; every child "
+                "ticket closes as aborted with rejection outcome and metadata so there is "
                 "one clear terminal state."
             ),
             examples=(

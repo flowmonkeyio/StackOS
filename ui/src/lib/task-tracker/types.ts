@@ -1,4 +1,11 @@
-export type TrackerStatus = 'not-started' | 'in-progress' | 'complete' | 'deferred'
+export type TrackerStatus =
+  | 'not-started'
+  | 'in-progress'
+  | 'complete'
+  | 'deferred'
+  | 'aborted'
+  | 'failed'
+  | 'skipped'
 export type TrackerNodeKind = 'task' | 'ticket' | 'group'
 export type TrackerEdgeKind = 'contains' | 'dependency' | 'link'
 

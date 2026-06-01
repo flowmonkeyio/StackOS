@@ -2,9 +2,11 @@
 
 Per audit BLOCKER-13 / PLAN.md L1366-L1391: every 5 minutes (and once
 at daemon startup) we sweep ``runs`` for rows whose ``status='running'``
-and ``heartbeat_at`` is older than 5 minutes. Reaped rows flip to
-``aborted`` with ``error='daemon-restart-orphan'`` and any live child
-runs cascade-abort.
+and ``heartbeat_at`` is older than 5 minutes. Process-bound stale rows
+flip to ``aborted`` with ``error='daemon-restart-orphan'`` and any live
+child runs cascade-abort. Live started run plans are durable workflow
+state, so the sweep preserves them and refreshes the linked audit
+heartbeat instead of aborting normal long-running agent work.
 
 The ``RunRepository.reap_stale`` method is the canonical implementation
 (M1.B); this module is the *job wrapper* that APScheduler invokes.

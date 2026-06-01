@@ -127,6 +127,7 @@ class RunPlanLifecycleReconciler:
         plan.updated_at = now
         self._s.add(plan)
         self.finish_linked_run(plan, status=run_status, error=error)
+        TrackerRepository(self._s).mirror_run_plan_status(plan=plan)
         self._s.flush()
         return True
 
@@ -286,16 +287,9 @@ class RunPlanLifecycleReconciler:
                     frontier.append(child.id)
         return count
 
-    def has_recent_run_plan_activity(self, run: Run, cutoff: datetime) -> bool:
+    def should_preserve_live_run_plan(self, run: Run) -> bool:
         plan = self._plan_for_run(run)
-        if plan is None or plan.id is None or plan.status != RunPlanStatus.STARTED:
-            return False
-        if plan.updated_at >= cutoff:
-            return True
-        return any(
-            step.status == RunPlanStepStatus.RUNNING and step.updated_at >= cutoff
-            for step in self._step_rows(plan.id)
-        )
+        return plan is not None and plan.id is not None and plan.status == RunPlanStatus.STARTED
 
     def check_plan(self, plan: RunPlan) -> RunPlanConsistencyOut:
         issues = self.consistency_issues(plan)

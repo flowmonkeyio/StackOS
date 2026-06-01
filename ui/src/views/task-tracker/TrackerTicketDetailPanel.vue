@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { UiCallout, UiEmptyState, UiSidePanel } from '@/components/ui'
 import { formatDateTime } from '@/lib/stackos/json'
+import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import type { TrackerTicket } from '@/lib/task-tracker/types'
 
 import { formatJsonBlock, hasJsonObject } from './detailUtils'
@@ -68,8 +69,7 @@ defineEmits<{
       </div>
       <UiCallout
         v-if="
-          ticket.status !== 'complete' &&
-          ticket.status !== 'deferred' &&
+          !isTerminalTrackerStatus(ticket.status) &&
           (ticket.blocker_reason || ticket.blocked_by.length)
         "
         tone="warning"

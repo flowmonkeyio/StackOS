@@ -21,7 +21,7 @@ from stackos.repositories.base import (
 )
 from stackos.repositories.tracker.schema import TrackerMutationOut
 from stackos.repositories.tracker.utils import (
-    TERMINAL_TICKET_STATUSES,
+    TERMINAL_TRACKER_STATUSES,
     _clean_text,
     _slug,
     _utcnow,
@@ -109,7 +109,9 @@ class TrackerMirrorMixin:
                     "template_key": plan.template_key,
                     "template_version": plan.template_version,
                 },
-                definition_of_done_json=["All run-plan step tickets reach complete or deferred."],
+                definition_of_done_json=[
+                    "All run-plan step tickets reach a terminal tracker status."
+                ],
                 constraints_json=[],
                 expected_outcomes_json=[],
                 context_json=plan.selected_context_json,
@@ -151,7 +153,7 @@ class TrackerMirrorMixin:
                     key=ticket_key,
                     title=step.title,
                     goal=step.purpose,
-                    status=self._ticket_status_from_step(step.status),
+                    status=self._ticket_status_from_step(step),
                     priority_key="p1",
                     lane_key="planning",
                     source_kind=TrackerSourceKind.WORKFLOW,
@@ -267,7 +269,7 @@ class TrackerMirrorMixin:
             return
         now = _utcnow()
         before = self._task_snapshot(task)
-        task.status = TrackerItemStatus.DEFERRED
+        task.status = TrackerItemStatus.ABORTED
         task.lane_key = "done"
         task.completed_at = now
         task.updated_at = now
@@ -281,9 +283,9 @@ class TrackerMirrorMixin:
         self._s.add(task)
 
         for ticket in self._ticket_rows_for_run_plan(tracker.id, plan.id):
-            if ticket.status in TERMINAL_TICKET_STATUSES:
+            if ticket.status in TERMINAL_TRACKER_STATUSES:
                 continue
-            ticket.status = TrackerItemStatus.DEFERRED
+            ticket.status = TrackerItemStatus.ABORTED
             ticket.lane_key = "done"
             ticket.blocker_reason = None
             ticket.completed_at = now
@@ -303,6 +305,32 @@ class TrackerMirrorMixin:
             summary=f"Run plan {plan.id} aborted.",
             before_json=before,
             after_json=self._task_snapshot(task),
+            commit=False,
+        )
+
+    def mirror_run_plan_status(self, *, plan: RunPlan) -> None:
+        if plan.id is None:
+            return
+        tracker = self.ensure_tracker(project_id=plan.project_id)
+        task = self._task_by_key(tracker.id, f"workflow-{plan.id}", missing_ok=True)
+        if task is None:
+            return
+        now = _utcnow()
+        before = self._task_snapshot(task)
+        self._sync_task_status(task, now=now)
+        after = self._task_snapshot(task)
+        if before.get("status") == after.get("status"):
+            return
+        self._record_revision(
+            tracker,
+            actor="system",
+            change_kind="workflow-status",
+            entity_kind="task",
+            entity_id=task.id,
+            entity_key=task.key,
+            summary=f"Run plan {plan.id} tracker task synced to {task.status.value}.",
+            before_json=before,
+            after_json=after,
             commit=False,
         )
 
@@ -348,11 +376,11 @@ class TrackerMirrorMixin:
             return
         now = _utcnow()
         before = self._ticket_snapshot(ticket)
-        ticket.status = self._ticket_status_from_step(step.status)
+        ticket.status = self._ticket_status_from_step(step)
         ticket.outcome = self._step_outcome(step)
         ticket.blocker_reason = step.error if step.status == RunPlanStepStatus.FAILED else None
-        ticket.completed_at = now if ticket.status in TERMINAL_TICKET_STATUSES else None
-        ticket.lane_key = "done" if ticket.status == TrackerItemStatus.COMPLETE else ticket.lane_key
+        ticket.completed_at = now if ticket.status in TERMINAL_TRACKER_STATUSES else None
+        ticket.lane_key = "done" if ticket.status in TERMINAL_TRACKER_STATUSES else ticket.lane_key
         ticket.run_id = plan.run_id
         ticket.updated_at = now
         self._s.add(ticket)
@@ -402,16 +430,26 @@ class TrackerMirrorMixin:
             commit=False,
         )
 
-    def _ticket_status_from_step(self, status: RunPlanStepStatus) -> TrackerItemStatus:
+    def _ticket_status_from_step(self, step: RunPlanStep) -> TrackerItemStatus:
+        status = step.status
         if status == RunPlanStepStatus.RUNNING:
             return TrackerItemStatus.IN_PROGRESS
         if status == RunPlanStepStatus.SUCCESS:
             return TrackerItemStatus.COMPLETE
         if status == RunPlanStepStatus.SKIPPED:
-            return TrackerItemStatus.DEFERRED
+            if self._step_was_skipped_by_abort(step):
+                return TrackerItemStatus.ABORTED
+            return TrackerItemStatus.SKIPPED
         if status == RunPlanStepStatus.FAILED:
-            return TrackerItemStatus.IN_PROGRESS
+            return TrackerItemStatus.FAILED
         return TrackerItemStatus.NOT_STARTED
+
+    def _step_was_skipped_by_abort(self, step: RunPlanStep) -> bool:
+        if isinstance(step.result_json, dict):
+            summary = str(step.result_json.get("summary") or "").lower()
+            reason = str(step.result_json.get("reason") or "").lower()
+            return "run plan aborted" in summary or "aborted" in reason
+        return False
 
     def _step_outcome(self, step: RunPlanStep) -> str | None:
         if step.error:

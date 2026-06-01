@@ -118,12 +118,15 @@ export function projectNavSections(
   projectId: number,
   plugins: SchemaPluginOut[],
 ): StackOsNavSection[] {
+  const [workSection, workflowSection, ...supportSections] = coreNavSections(projectId)
   const pluginSections = pluginContributionSections(projectId, plugins)
   return [
-    ...coreNavSections(projectId),
+    workSection,
+    workflowSection,
     ...pluginSections,
+    ...supportSections,
     setupNavSection(projectId),
-  ].filter((section) => section.items.length > 0)
+  ].filter((section): section is StackOsNavSection => Boolean(section?.items.length))
 }
 
 export function pluginContributionSections(

@@ -615,7 +615,7 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this when a run plan is obsolete, superseded, or intentionally stopped. "
                 "The operation closes the run-plan lifecycle, skips unfinished steps, "
                 "cancels pending approvals, aborts the linked run audit row, and mirrors "
-                "the workflow task/tickets as deferred."
+                "the workflow task/tickets as aborted."
             ),
             when_to_use=(
                 "A started workflow should no longer continue.",

@@ -119,6 +119,43 @@ def test_manual_task_ticket_lifecycle_and_graph(session: Session, project_id: in
     assert any(edge.type == "dependency" for edge in snapshot.graph.edges)
 
 
+def test_terminal_status_patches_force_done_lane(session: Session, project_id: int) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="terminal-lane-invariant",
+        title="Terminal lane invariant",
+        created_by="codex",
+    )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="terminal-lane-invariant",
+        key="terminal-lane-ticket",
+        title="Terminal lane ticket",
+        created_by="codex",
+    )
+
+    task_update = repo.update_task(
+        project_id=project_id,
+        task_key="terminal-lane-invariant",
+        patch_json={"status": "aborted", "lane_key": "implementation"},
+        actor="codex",
+    ).data
+    ticket_update = repo.update_ticket(
+        project_id=project_id,
+        ticket_key="terminal-lane-ticket",
+        patch_json={"status": "complete", "lane_key": "implementation"},
+        actor="codex",
+    ).data
+
+    assert task_update.task is not None
+    assert task_update.task.status == TrackerItemStatus.ABORTED
+    assert task_update.task.lane_key == "done"
+    assert ticket_update.ticket is not None
+    assert ticket_update.ticket.status == TrackerItemStatus.COMPLETE
+    assert ticket_update.ticket.lane_key == "done"
+
+
 def test_tracker_reject_task_cascades_all_child_tickets(
     session: Session,
     project_id: int,
@@ -156,7 +193,7 @@ def test_tracker_reject_task_cascades_all_child_tickets(
     snapshot = repo.get(project_id=project_id, task_key="reject-cascade", include_graph=False)
 
     assert rejected.task is not None
-    assert rejected.task.status == TrackerItemStatus.DEFERRED
+    assert rejected.task.status == TrackerItemStatus.ABORTED
     assert rejected.task.completion_evidence_json["decision"] == "rejected"
     assert rejected.task.completion_evidence_json["reason"] == (
         "Operator api_key=[redacted] parked this task."
@@ -167,7 +204,7 @@ def test_tracker_reject_task_cascades_all_child_tickets(
         "rejected",
         "rejected",
     ]
-    assert {ticket.status for ticket in snapshot.tickets} == {TrackerItemStatus.DEFERRED}
+    assert {ticket.status for ticket in snapshot.tickets} == {TrackerItemStatus.ABORTED}
     assert {ticket.lane_key for ticket in snapshot.tickets} == {"done"}
     assert {ticket.blocker_reason for ticket in snapshot.tickets} == {None}
     assert all(
@@ -230,6 +267,41 @@ def test_tracker_graph_includes_conservative_advisory_warnings(
             "direction if this gate should unblock implementation work."
         ),
     ]
+
+
+def test_tracker_graph_allows_post_delivery_review_dependencies(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="graph-release-review-flow",
+        title="Graph release review flow",
+        created_by="codex",
+    )
+    for key in ("delivery-complete", "verification-complete"):
+        repo.create_ticket(
+            project_id=project_id,
+            task_key="graph-release-review-flow",
+            key=key,
+            title=key,
+            created_by="codex",
+        )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="graph-release-review-flow",
+        key="release-review",
+        title="Review delivery after verification",
+        lane_key="review",
+        dependency_keys=["delivery-complete", "verification-complete"],
+        created_by="codex",
+    )
+
+    snapshot = repo.get(project_id=project_id, task_key="graph-release-review-flow")
+
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == []
 
 
 def test_tracker_status_ignores_terminal_blocker_notes(
@@ -888,6 +960,18 @@ def test_workflow_step_ticket_status_cannot_bypass_run_plan_lifecycle(
     assert exc_info.value.data["run_plan_id"] == plan.id
     assert exc_info.value.data["step_id"] == "prepare"
     assert "runPlan.claimStep" in exc_info.value.data["next_operations"]
+    assert exc_info.value.data["requested_status"] == "complete"
+
+    with pytest.raises(ValidationError) as failed_exc:
+        TrackerRepository(session).update_ticket(
+            project_id=project_id,
+            ticket_key=f"workflow-{plan.id}-prepare",
+            patch_json={"status": "failed", "outcome": "Failed outside runPlan.recordStep."},
+            actor="codex",
+        )
+
+    assert failed_exc.value.data["requested_status"] == "failed"
+    assert "runPlan.recordStep" in failed_exc.value.data["next_operations"]
 
 
 def test_workflow_child_ticket_creation_cannot_bypass_run_plan_lifecycle(
@@ -927,6 +1011,123 @@ def test_workflow_child_ticket_creation_cannot_bypass_run_plan_lifecycle(
     assert exc_info.value.data["run_plan_id"] == plan.id
     assert exc_info.value.data["step_id"] == "prepare"
     assert exc_info.value.data["requested_status"] == "in-progress"
+
+
+def test_workflow_child_ticket_can_complete_inside_running_step(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-child-active-complete.run",
+            "title": "Tracker Workflow Child Active Complete",
+            "steps": [{"id": "prepare", "title": "Prepare"}],
+        },
+        created_by="codex",
+    ).data
+    started = run_plans.start(plan.id, project_id=project_id)
+    run_plans.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        claimed_by="codex",
+    )
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).first()
+    assert step is not None
+
+    tracker = TrackerRepository(session)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        key="workflow-child-active-delivery",
+        title="Workflow child active delivery",
+        status=TrackerItemStatus.IN_PROGRESS,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        created_by="codex",
+    )
+    completed = tracker.update_ticket(
+        project_id=project_id,
+        ticket_key="workflow-child-active-delivery",
+        patch_json={"status": "complete", "outcome": "Done inside active run-plan step."},
+        actor="codex",
+    ).data
+    snapshot = tracker.get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+
+    assert completed.ticket is not None
+    assert completed.ticket.status == TrackerItemStatus.COMPLETE
+    assert completed.ticket.lane_key == "done"
+    assert snapshot.tasks[0].status == TrackerItemStatus.IN_PROGRESS
+
+
+def test_completed_workflow_suppresses_historical_topology_warnings(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-historical-topology.run",
+            "title": "Tracker Workflow Historical Topology",
+            "steps": [{"id": "prepare", "title": "Prepare"}],
+        },
+        created_by="codex",
+    ).data
+    started = run_plans.start(plan.id, project_id=project_id).data
+    run_plans.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        claimed_by="codex",
+    )
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).first()
+    assert step is not None
+
+    tracker = TrackerRepository(session)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        key="workflow-child-historical-delivery",
+        title="Workflow child historical delivery",
+        status=TrackerItemStatus.IN_PROGRESS,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        created_by="codex",
+    )
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key="workflow-child-historical-delivery",
+        patch_json={"status": "complete", "outcome": "Completed during the active step."},
+        actor="codex",
+    )
+    run_plans.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Step completed."},
+    )
+
+    snapshot = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}")
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == []
+
+    step_verify = tracker.verify(
+        project_id=project_id,
+        ticket_key=f"workflow-{plan.id}-prepare",
+    )
+    check_keys = {check["key"] for check in step_verify.checks}
+    assert "workflow-step-child-bridge" not in check_keys
+    assert "workflow-step-children-reachable" not in check_keys
 
 
 def test_workflow_child_ticket_creation_rejects_terminal_run_plan(
@@ -1039,7 +1240,7 @@ def test_workflow_ticket_metadata_update_preserves_terminal_run_plan_task_status
 
     repo = TrackerRepository(session)
     before = repo.get(project_id=project_id, task_key=f"workflow-{plan.id}", include_graph=False)
-    assert before.tasks[0].status == TrackerItemStatus.DEFERRED
+    assert before.tasks[0].status == TrackerItemStatus.ABORTED
 
     updated = repo.update_ticket(
         project_id=project_id,
@@ -1052,9 +1253,9 @@ def test_workflow_ticket_metadata_update_preserves_terminal_run_plan_task_status
     ).data
 
     assert updated.task is not None
-    assert updated.task.status == TrackerItemStatus.DEFERRED
+    assert updated.task.status == TrackerItemStatus.ABORTED
     assert updated.ticket is not None
-    assert updated.ticket.status == TrackerItemStatus.DEFERRED
+    assert updated.ticket.status == TrackerItemStatus.ABORTED
 
 
 def test_workflow_ticket_list_update_dry_run_validates_run_plan_lifecycle(
@@ -1106,4 +1307,6 @@ def test_workflow_ticket_list_update_dry_run_validates_run_plan_lifecycle(
     assert preview.dry_run is True
     assert preview.valid is False
     assert preview.results[0].action == "error"
-    assert "active run-plan step" in (preview.results[0].error or "")
+    assert "terminal status requires the owning run-plan step to be running" in (
+        preview.results[0].error or ""
+    )

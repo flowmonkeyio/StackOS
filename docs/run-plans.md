@@ -34,18 +34,21 @@ to run-plan execution: inspect `runPlan.get`, start the plan if no run exists,
 claim the matching step, inspect granted tools, then record the step result.
 The tracker packet does not grant execution by itself.
 
-Run-plan execution has one canonical lifecycle. If the linked audit run is
-reaped after a daemon restart, StackOS reconciles the linked run plan, unfinished
+Run-plan execution has one canonical lifecycle. A started run plan is durable
+workflow state, not a five-minute daemon job. The stale-run reaper preserves
+live started run plans and refreshes the linked audit heartbeat so normal
+long-running agent work, browser checks, or local tests do not get aborted just
+because no run-plan operation was called for a few minutes. If a linked audit
+run is already terminal, StackOS reconciles the linked run plan, unfinished
 steps, pending approvals, and tracker mirror together. A stale audit run must
 not leave `run_plans.status='started'` while the run is `aborted`.
 `runPlan.get` includes `consistency_issues` when the read side sees a mismatch,
 and `runPlan.checkConsistency` returns the same diagnostics as a compact
 agent-facing check.
 
-`runPlan.claimStep` and `runPlan.recordStep` refresh the linked audit run
-heartbeat. During long-running implementation between those calls, agents
-should call `run.heartbeat` with the active run id so the daemon does not treat
-the workflow controller as orphaned.
+`runPlan.claimStep` and `runPlan.recordStep` still refresh the linked audit run
+heartbeat, but agents do not need to keep calling `run.heartbeat` during normal
+workflow-backed delivery.
 
 Agents must not use tracker ticket status as a second workflow execution path.
 Mirrored workflow step tickets are controlled by `runPlan.claimStep` and
