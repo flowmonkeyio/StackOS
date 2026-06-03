@@ -56,6 +56,7 @@ from stackos.actions.slack_bot import SlackBotActionConnector
 from stackos.actions.smtp import SmtpActionConnector
 from stackos.actions.taboola import TaboolaActionConnector
 from stackos.actions.telegram_bot import TelegramBotActionConnector
+from stackos.actions.trackbooth import TrackboothActionConnector
 from stackos.actions.wordpress import WordPressActionConnector
 
 DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
@@ -82,6 +83,7 @@ DEFAULT_ACTION_CONNECTORS.register(MetaAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GoogleAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TaboolaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TelegramBotActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(TrackboothActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SlackBotActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SmtpActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ImapActionConnector())
@@ -131,6 +133,7 @@ __all__ = [
     "SmtpActionConnector",
     "TaboolaActionConnector",
     "TelegramBotActionConnector",
+    "TrackboothActionConnector",
     "WordPressActionConnector",
     "build_action_availability",
     "build_action_exposure",

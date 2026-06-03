@@ -296,6 +296,8 @@ class PluginRepository:
         project_id: int | None = None,
     ) -> list[ActionOut]:
         self.sync_builtin_plugins()
+        if plugin_slug in {None, "trackbooth"}:
+            self._retire_removed_trackbooth_actions()
         if project_id is not None:
             self._require_project(project_id)
         stmt = (
@@ -307,6 +309,17 @@ class PluginRepository:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
         rows = list(self._s.exec(stmt.order_by(col(Action.key).asc())).all())
         rows = self._filter_project_enabled(rows, project_id=project_id)
+        from stackos.actions.trackbooth import trackbooth_generated_action_visible_for_project
+
+        rows = [
+            row
+            for row in rows
+            if trackbooth_generated_action_visible_for_project(
+                plugin_slug=row[1].slug,
+                config_json=row[0].config_json,
+                project_id=project_id,
+            )
+        ]
         rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
         availability_context = self._action_availability_context(project_id)
         connector_keys = self._connector_keys()
@@ -321,6 +334,19 @@ class PluginRepository:
             )
             for action, plugin, provider in rows
         ]
+
+    def _retire_removed_trackbooth_actions(self) -> None:
+        plugin = self._s.exec(select(Plugin).where(Plugin.slug == "trackbooth")).first()
+        if plugin is None or plugin.id is None:
+            return
+        from stackos.actions.trackbooth import retire_removed_trackbooth_actions
+
+        retire_removed_trackbooth_actions(
+            session=self._s,
+            plugin_id=plugin.id,
+            now=_utcnow(),
+        )
+        self._s.flush()
 
     def get_action(
         self,
@@ -555,6 +581,14 @@ class PluginRepository:
                     manifest_json=action_manifest.model_dump(mode="json", by_alias=True),
                 )
                 self._s.add(version)
+        if manifest.slug == "trackbooth":
+            from stackos.actions.trackbooth import retire_removed_trackbooth_actions
+
+            retire_removed_trackbooth_actions(
+                session=self._s,
+                plugin_id=_required_id(row.id),
+                now=now,
+            )
         return row
 
     def _require_project(self, project_id: int) -> None:

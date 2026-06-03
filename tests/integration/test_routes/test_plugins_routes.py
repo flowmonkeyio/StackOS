@@ -14,6 +14,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "communications",
         "gtm",
         "media-buying",
+        "trackbooth",
         "publishing",
         "seo",
         "core",
@@ -138,6 +139,33 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     assert media_action.status_code == 200
     assert media_action.json()["connector_key"] == "meta-ads"
     assert media_action.json()["availability"]["status"] == "unknown"
+
+    trackbooth_catalog = api.get("/api/v1/catalog/trackbooth")
+    assert trackbooth_catalog.status_code == 200
+    assert trackbooth_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == (
+        "Trackbooth"
+    )
+    assert {p["key"] for p in trackbooth_catalog.json()["providers"]} == {"trackbooth"}
+    trackbooth_action_keys = {a["key"] for a in trackbooth_catalog.json()["actions"]}
+    assert len(trackbooth_action_keys) == 3
+    assert trackbooth_action_keys >= {
+        "catalog.sync",
+        "catalog.search",
+        "operation.describe",
+    }
+    assert {r["key"] for r in trackbooth_catalog.json()["resources"]} >= {
+        "agent-api-operation",
+        "agent-api-schema",
+    }
+
+    trackbooth_action = api.get(
+        "/api/v1/actions/catalog.search",
+        params={"plugin_slug": "trackbooth"},
+    )
+    assert trackbooth_action.status_code == 200
+    assert trackbooth_action.json()["connector_key"] == "trackbooth"
+    assert trackbooth_action.json()["availability"]["status"] == "unknown"
+    assert "api_url" not in trackbooth_action.json()["input_schema_json"]["properties"]
 
     publishing_catalog = api.get("/api/v1/catalog/publishing")
     assert publishing_catalog.status_code == 200

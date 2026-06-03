@@ -5,8 +5,19 @@
   { value, label, disabled?, group?, rightLabel?, rightMeta? } objects.
 -->
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, useId } from 'vue'
+import {
+  computed,
+  inject,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  useAttrs,
+  useId,
+} from 'vue'
 import type { ComputedRef } from 'vue'
+
+import UiInput from './UiInput.vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -35,6 +46,9 @@ export interface UiSelectProps {
   block?: boolean
   id?: string
   ariaDescribedby?: string
+  searchable?: boolean
+  searchPlaceholder?: string
+  emptyLabel?: string
 }
 
 interface NormalizedOption {
@@ -54,6 +68,9 @@ const props = withDefaults(defineProps<UiSelectProps>(), {
   block: true,
   id: undefined,
   ariaDescribedby: undefined,
+  searchable: false,
+  searchPlaceholder: 'Search',
+  emptyLabel: 'No options found',
 })
 
 const emit = defineEmits<{
@@ -73,9 +90,11 @@ const rootRef = ref<HTMLDivElement | null>(null)
 const buttonRef = ref<HTMLButtonElement | null>(null)
 const open = ref(false)
 const activeIndex = ref(0)
+const searchQuery = ref('')
 
 const controlId = computed(() => props.id ?? field?.id.value ?? `select-${autoId}`)
 const listboxId = computed(() => `${controlId.value}-listbox`)
+const searchInputId = computed(() => `${controlId.value}-search`)
 const controlDescribedBy = computed(() => props.ariaDescribedby ?? field?.describedBy.value)
 const controlInvalid = computed(() => props.invalid || field?.invalid.value)
 const controlRequired = computed(() => props.required || field?.required.value)
@@ -86,9 +105,15 @@ const normalized = computed<NormalizedOption[]>(() =>
   ),
 )
 
+const filteredNormalized = computed<NormalizedOption[]>(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return normalized.value
+  return normalized.value.filter((option) => optionSearchText(option).includes(query))
+})
+
 const grouped = computed(() => {
   const groups = new Map<string | null, NormalizedOption[]>()
-  for (const option of normalized.value) {
+  for (const option of filteredNormalized.value) {
     const key = option.group ?? null
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(option)
@@ -131,35 +156,57 @@ function rightToneClass(option: NormalizedOption): string {
   return RIGHT_TONE_CLASSES[option.rightTone ?? 'neutral']
 }
 
+function optionSearchText(option: NormalizedOption): string {
+  return [option.label, option.value, option.group, option.rightLabel, option.rightMeta]
+    .filter((part) => part !== undefined && part !== null)
+    .join(' ')
+    .toLowerCase()
+}
+
+function visibleIndexFor(option: NormalizedOption): number {
+  return normalized.value.findIndex((candidate) => candidate.value === option.value)
+}
+
+function visibleActiveOptions(): NormalizedOption[] {
+  return filteredNormalized.value.filter((option) => !option.disabled)
+}
+
 function firstEnabledIndex(): number {
-  return Math.max(
-    0,
-    normalized.value.findIndex((option) => !option.disabled),
-  )
+  const firstVisible = visibleActiveOptions()[0]
+  return firstVisible ? visibleIndexFor(firstVisible) : 0
 }
 
 function setActiveFromSelection(): void {
   const selected = selectedIndex.value
-  activeIndex.value =
-    selected >= 0 && !normalized.value[selected]?.disabled ? selected : firstEnabledIndex()
+  const selectedVisible =
+    selected >= 0 &&
+    !normalized.value[selected]?.disabled &&
+    filteredNormalized.value.some((option) => option.value === normalized.value[selected]?.value)
+  activeIndex.value = selectedVisible ? selected : firstEnabledIndex()
+}
+
+function focusSearchInput(): void {
+  const input = rootRef.value?.querySelector<HTMLInputElement>('input[aria-label="Search options"]')
+  input?.focus()
 }
 
 function setOpen(next: boolean): void {
   if (props.disabled) return
   open.value = next
-  if (next) setActiveFromSelection()
+  if (next) {
+    searchQuery.value = ''
+    setActiveFromSelection()
+    if (props.searchable) void nextTick(focusSearchInput)
+  }
 }
 
 function moveActive(direction: 1 | -1): void {
-  const options = normalized.value
+  const options = visibleActiveOptions()
   if (options.length === 0) return
-  for (let step = 1; step <= options.length; step++) {
-    const candidate = (activeIndex.value + direction * step + options.length) % options.length
-    if (!options[candidate]?.disabled) {
-      activeIndex.value = candidate
-      return
-    }
-  }
+  const currentVisibleIndex = options.findIndex((option) => visibleIndexFor(option) === activeIndex.value)
+  const current = currentVisibleIndex >= 0 ? currentVisibleIndex : 0
+  const next = (current + direction + options.length) % options.length
+  activeIndex.value = visibleIndexFor(options[next])
 }
 
 function selectOption(option: NormalizedOption): void {
@@ -168,6 +215,18 @@ function selectOption(option: NormalizedOption): void {
   emit('change', option.value)
   open.value = false
   void nextTick(() => buttonRef.value?.focus())
+}
+
+function setSearchQuery(value: string | number | null): void {
+  searchQuery.value = String(value ?? '')
+  if (open.value) setActiveFromSelection()
+}
+
+function selectActiveOption(): void {
+  const option =
+    filteredNormalized.value.find((candidate) => visibleIndexFor(candidate) === activeIndex.value) ??
+    filteredNormalized.value.find((candidate) => !candidate.disabled)
+  if (option) selectOption(option)
 }
 
 function onButtonKeydown(event: KeyboardEvent): void {
@@ -182,12 +241,25 @@ function onButtonKeydown(event: KeyboardEvent): void {
   } else if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
     event.preventDefault()
     if (!open.value) setOpen(true)
-    else {
-      const option = normalized.value[activeIndex.value]
-      if (option) selectOption(option)
-    }
+    else selectActiveOption()
   } else if (event.key === 'Escape') {
     open.value = false
+  }
+}
+
+function onSearchKeydown(event: KeyboardEvent): void {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    moveActive(1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveActive(-1)
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    selectActiveOption()
+  } else if (event.key === 'Escape') {
+    open.value = false
+    void nextTick(() => buttonRef.value?.focus())
   }
 }
 
@@ -273,83 +345,106 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 
     <div
       v-if="open"
-      :id="listboxId"
-      role="listbox"
-      :aria-labelledby="controlId"
       class="absolute left-0 right-0 top-[calc(100%+4px)] z-popover max-h-72 overflow-y-auto rounded-md border border-default bg-bg-surface p-1 shadow-lg"
     >
-      <template
-        v-for="[group, groupOptions] in grouped"
-        :key="group ?? '_none'"
+      <div
+        v-if="searchable"
+        class="sticky top-0 z-10 bg-bg-surface p-1"
       >
-        <div
-          v-if="group"
-          class="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle"
+        <UiInput
+          :id="searchInputId"
+          :model-value="searchQuery"
+          type="search"
+          size="sm"
+          :placeholder="searchPlaceholder"
+          aria-label="Search options"
+          clearable
+          @update:model-value="setSearchQuery"
+          @keydown="onSearchKeydown"
+        />
+      </div>
+      <div
+        :id="listboxId"
+        role="listbox"
+        :aria-labelledby="controlId"
+      >
+        <template
+          v-for="[group, groupOptions] in grouped"
+          :key="group ?? '_none'"
         >
-          {{ group }}
-        </div>
-        <button
-          v-for="option in groupOptions"
-          :id="`${controlId}-${option.value}`"
-          :key="option.value"
-          type="button"
-          role="option"
-          :aria-selected="String(option.value) === String(modelValue ?? '')"
-          :disabled="option.disabled"
-          :class="[
-            'flex min-h-8 w-full items-center justify-between gap-2 rounded-sm px-2.5 py-1.5 text-left text-sm transition-colors',
-            String(option.value) === String(modelValue ?? '')
-              ? 'bg-accent text-fg-on-accent'
-              : normalized[activeIndex]?.value === option.value
-                ? 'bg-bg-surface-alt text-fg-strong'
-                : 'text-fg-default hover:bg-bg-surface-alt',
-            option.disabled && 'cursor-not-allowed opacity-50',
-          ]"
-          @mouseenter="
-            activeIndex = normalized.findIndex((candidate) => candidate.value === option.value)
-          "
-          @click="selectOption(option)"
-        >
-          <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
-          <span class="ml-auto flex shrink-0 items-center gap-1.5">
-            <span
-              v-if="option.rightLabel"
-              :class="['ui-select__right-chip', rightToneClass(option)]"
-            >
-              {{ option.rightLabel }}
-            </span>
-            <span
-              v-if="option.rightMeta"
-              :class="[
-                'ui-select__right-meta',
-                String(option.value) === String(modelValue ?? '')
-                  ? 'text-fg-on-accent'
-                  : 'text-fg-muted',
-              ]"
-            >
-              {{ option.rightMeta }}
-            </span>
-            <span
-              v-if="String(option.value) === String(modelValue ?? '')"
-              aria-hidden="true"
-              class="shrink-0"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+          <div
+            v-if="group"
+            class="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle"
+          >
+            {{ group }}
+          </div>
+          <button
+            v-for="option in groupOptions"
+            :id="`${controlId}-${option.value}`"
+            :key="option.value"
+            type="button"
+            role="option"
+            :aria-selected="String(option.value) === String(modelValue ?? '')"
+            :disabled="option.disabled"
+            :class="[
+              'flex min-h-8 w-full items-center justify-between gap-2 rounded-sm px-2.5 py-1.5 text-left text-sm transition-colors',
+              String(option.value) === String(modelValue ?? '')
+                ? 'bg-accent text-fg-on-accent'
+                : normalized[activeIndex]?.value === option.value
+                  ? 'bg-bg-surface-alt text-fg-strong'
+                  : 'text-fg-default hover:bg-bg-surface-alt',
+              option.disabled && 'cursor-not-allowed opacity-50',
+            ]"
+            @mouseenter="activeIndex = visibleIndexFor(option)"
+            @click="selectOption(option)"
+          >
+            <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+            <span class="ml-auto flex shrink-0 items-center gap-1.5">
+              <span
+                v-if="option.rightLabel"
+                :class="['ui-select__right-chip', rightToneClass(option)]"
               >
-                <path d="m5 12 5 5 9-12" />
-              </svg>
+                {{ option.rightLabel }}
+              </span>
+              <span
+                v-if="option.rightMeta"
+                :class="[
+                  'ui-select__right-meta',
+                  String(option.value) === String(modelValue ?? '')
+                    ? 'text-fg-on-accent'
+                    : 'text-fg-muted',
+                ]"
+              >
+                {{ option.rightMeta }}
+              </span>
+              <span
+                v-if="String(option.value) === String(modelValue ?? '')"
+                aria-hidden="true"
+                class="shrink-0"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m5 12 5 5 9-12" />
+                </svg>
+              </span>
             </span>
-          </span>
-        </button>
-      </template>
+          </button>
+        </template>
+        <p
+          v-if="filteredNormalized.length === 0"
+          class="px-2.5 py-3 text-sm text-fg-muted"
+        >
+          {{ emptyLabel }}
+        </p>
+      </div>
     </div>
   </div>
 </template>

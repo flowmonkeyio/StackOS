@@ -744,6 +744,140 @@ describe('ConnectionsView', () => {
     expect(wrapper.text()).not.toContain('Loading connections...')
   })
 
+  it('shows Trackbooth under Affiliation in the searchable service selector', async () => {
+    const trackboothMethods = [
+      {
+        key: 'api-key',
+        label: 'Trackbooth API key',
+        auth_type: 'api-key',
+        description: '',
+        interactive: false,
+        payload_format: 'json',
+        payload_field: null,
+        fields: [
+          {
+            key: 'api_key',
+            label: 'API Key',
+            type: 'secret',
+            secret: true,
+            required: true,
+            placeholder: '',
+          },
+          {
+            key: 'api_base_url',
+            label: 'API URL',
+            type: 'text',
+            secret: false,
+            required: false,
+            placeholder: 'https://apis.trackbooth.com',
+            description: 'Defaults to production.',
+          },
+        ],
+        config: null,
+      },
+    ]
+
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      const now = '2026-05-22T00:00:00Z'
+      if (url === '/api/v1/plugins?project_id=1') {
+        return json([
+          {
+            id: 1,
+            slug: 'media-buying',
+            name: 'Media Buying',
+            version: '0.1.0',
+            description: '',
+            source: 'builtin',
+            manifest_json: {},
+            enabled_for_project: true,
+            created_at: now,
+            updated_at: now,
+          },
+          {
+            id: 2,
+            slug: 'trackbooth',
+            name: 'Trackbooth',
+            version: '0.1.0',
+            description: '',
+            source: 'builtin',
+            manifest_json: {},
+            enabled_for_project: true,
+            created_at: now,
+            updated_at: now,
+          },
+        ])
+      }
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
+      if (url === '/api/v1/auth/providers') {
+        return json([
+          {
+            id: 1,
+            plugin_id: 1,
+            plugin_slug: 'media-buying',
+            key: 'meta-ads',
+            name: 'Meta Ads',
+            description: '',
+            auth_type: 'oauth',
+            auth_methods: apiKeyMethod(),
+            scopes: [],
+            config_json: {},
+          },
+          {
+            id: 2,
+            plugin_id: 2,
+            plugin_slug: 'trackbooth',
+            key: 'trackbooth',
+            name: 'Trackbooth',
+            description: 'Trackbooth Agent API provider.',
+            auth_type: 'api-key',
+            auth_methods: trackboothMethods,
+            scopes: [],
+            config_json: { connection_category: 'Affiliation' },
+          },
+        ])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({
+          project_id: 1,
+          provider_key: null,
+          providers: [],
+          connections: [],
+        })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
+    await vi.waitFor(() => expect(wrapper.text()).not.toContain('Loading connections...'))
+    await clickButton(wrapper, 'Add connection')
+    await vi.waitFor(() => expect(wrapper.find('[role="combobox"]').exists()).toBe(true))
+
+    await wrapper.get('[role="combobox"]').trigger('click')
+    await wrapper.get<HTMLInputElement>('input[aria-label="Search options"]').setValue('track')
+
+    expect(wrapper.findAll('[role="option"]').map((option) => option.text())).toEqual([
+      'Trackbooth',
+    ])
+    expect(wrapper.text()).toContain('Affiliation')
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Trackbooth Agent API provider.'))
+    expect(wrapper.text()).toContain('API Key')
+    expect(wrapper.find('input[placeholder="https://apis.trackbooth.com"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('renders generic communication profiles, targets, and ingress route state', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)

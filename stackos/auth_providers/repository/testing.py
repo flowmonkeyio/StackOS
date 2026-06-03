@@ -196,7 +196,9 @@ class CredentialTestingMixin:
                 value = config.get(key)
                 if isinstance(value, str) and value.strip():
                     extra[key] = value.strip()
-        elif row.kind in {"telegram-bot", "slack-bot"} and config.get("api_base_url"):
+        elif row.kind in {"telegram-bot", "slack-bot", "trackbooth"} and config.get(
+            "api_base_url"
+        ):
             extra["api_base_url"] = str(config["api_base_url"])
         elif row.kind in {"smtp", "imap"}:
             for key in ("host", "port", "tls_mode", "username", "timeout_s"):

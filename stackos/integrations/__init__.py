@@ -30,6 +30,7 @@ from stackos.integrations.serper import SerperIntegration
 from stackos.integrations.slack_bot import SlackBotIntegration
 from stackos.integrations.smtp import SmtpIntegration
 from stackos.integrations.telegram_bot import TelegramBotIntegration
+from stackos.integrations.trackbooth import TrackboothIntegration
 from stackos.integrations.wordpress import WordPressIntegration
 
 if TYPE_CHECKING:
@@ -49,6 +50,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "wordpress": WordPressIntegration,
     "ghost": GhostIntegration,
     "telegram-bot": TelegramBotIntegration,
+    "trackbooth": TrackboothIntegration,
     "slack-bot": SlackBotIntegration,
     "smtp": SmtpIntegration,
     "imap": ImapIntegration,
@@ -84,6 +86,7 @@ __all__ = [
     "SlackBotIntegration",
     "SmtpIntegration",
     "TelegramBotIntegration",
+    "TrackboothIntegration",
     "WordPressIntegration",
     "integration_class_for",
 ]

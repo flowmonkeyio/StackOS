@@ -29,8 +29,8 @@ import {
   connectionTitle,
   credentialTestMessage,
   parseCsv,
-  pluginLabel,
   preferredTelegramConnection,
+  providerGroupLabel,
   serviceName,
   telegramConnectionForProfile,
   telegramFacet,
@@ -154,7 +154,7 @@ const providerOptions = computed(() =>
   visibleAuthProviders.value.map((provider) => ({
     value: provider.key,
     label: provider.name,
-    group: pluginLabel(provider.plugin_slug),
+    group: providerGroupLabel(provider),
   })),
 )
 

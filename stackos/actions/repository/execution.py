@@ -44,6 +44,7 @@ class ActionExecutionMixin:
             action_ref=action_ref,
             plugin_slug=plugin_slug,
             action_key=action_key,
+            project_id=project_id,
         )
         payload, resolved_ref = self._normalize_payload_and_ref(
             input_json or {},

@@ -80,6 +80,9 @@ defineEmits<{
             :options="providerOptions"
             :aria-describedby="describedBy"
             :invalid="invalid"
+            searchable
+            search-placeholder="Search services"
+            empty-label="No services found"
             @update:model-value="$emit('select-provider', $event)"
           />
         </template>

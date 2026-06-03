@@ -10,6 +10,7 @@ from sqlmodel import col, select
 
 from stackos.action_availability import build_action_availability, build_action_exposure
 from stackos.actions.manifest import ExecutableActionManifest, parse_action_manifest
+from stackos.actions.trackbooth import trackbooth_generated_action_visible_for_project
 from stackos.db.models import Action, Plugin, Project, ProjectPlugin, Provider
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.plugins import PluginRepository
@@ -32,6 +33,7 @@ class ActionCatalogMixin:
             action_ref=action_ref,
             plugin_slug=plugin_slug,
             action_key=action_key,
+            project_id=project_id,
         )
         if project_id is not None:
             self._require_project(project_id)
@@ -71,11 +73,13 @@ class ActionCatalogMixin:
         action_ref: str | None,
         plugin_slug: str | None,
         action_key: str | None,
+        project_id: int | None = None,
     ) -> ExecutableActionManifest:
         manifest, _provider_config_json = self._manifest_with_provider_config(
             action_ref=action_ref,
             plugin_slug=plugin_slug,
             action_key=action_key,
+            project_id=project_id,
         )
         return manifest
 
@@ -85,6 +89,7 @@ class ActionCatalogMixin:
         action_ref: str | None,
         plugin_slug: str | None,
         action_key: str | None,
+        project_id: int | None,
     ) -> tuple[ExecutableActionManifest, dict[str, Any] | None]:
         PluginRepository(self._s).sync_builtin_plugins()
         resolved_plugin, resolved_action = self._resolve_action_key(
@@ -105,6 +110,15 @@ class ActionCatalogMixin:
                 data={"plugin_slug": resolved_plugin, "action_key": resolved_action},
             )
         action, plugin, provider = row
+        if not trackbooth_generated_action_visible_for_project(
+            plugin_slug=plugin.slug,
+            config_json=action.config_json,
+            project_id=project_id,
+        ):
+            raise NotFoundError(
+                f"action {resolved_plugin}.{resolved_action!r} not found",
+                data={"plugin_slug": resolved_plugin, "action_key": resolved_action},
+            )
         return (
             parse_action_manifest(action=action, plugin=plugin, provider=provider),
             provider.config_json if provider is not None else None,

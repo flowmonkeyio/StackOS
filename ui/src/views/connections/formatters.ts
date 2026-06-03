@@ -36,6 +36,10 @@ const PLUGIN_LABELS: Record<string, string> = {
   seo: 'SEO',
 }
 
+const PROVIDER_CATEGORY_LABELS: Record<string, string> = {
+  trackbooth: 'Affiliation',
+}
+
 export function pluginLabel(slug: string | null | undefined): string {
   if (!slug) return 'StackOS'
   if (PLUGIN_LABELS[slug]) return PLUGIN_LABELS[slug]
@@ -44,6 +48,14 @@ export function pluginLabel(slug: string | null | undefined): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+export function providerGroupLabel(provider: SchemaAuthProviderOut): string {
+  const configuredCategory = provider.config_json?.connection_category
+  if (typeof configuredCategory === 'string' && configuredCategory.trim()) {
+    return configuredCategory.trim()
+  }
+  return PROVIDER_CATEGORY_LABELS[provider.key] ?? pluginLabel(provider.plugin_slug)
 }
 
 export function providerSetupNote(provider: SchemaAuthProviderOut): string | null {

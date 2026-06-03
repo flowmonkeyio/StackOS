@@ -34,6 +34,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "communications",
         "gtm",
         "media-buying",
+        "trackbooth",
         "publishing",
         "seo",
         "core",
@@ -76,6 +77,10 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert engineering_resources["engineering-evidence"].config is not None
     assert resources_by_plugin["gtm"] >= {"account", "lead", "pipeline-snapshot"}
     assert resources_by_plugin["media-buying"] >= {"campaign", "creative"}
+    assert resources_by_plugin["trackbooth"] >= {
+        "agent-api-operation",
+        "agent-api-schema",
+    }
     assert resources_by_plugin["publishing"] >= {"published-post", "publish-target"}
     assert resources_by_plugin["seo"] >= {"keyword-opportunity", "content-piece"}
     assert resources_by_plugin["utils"] >= {"generated-image", "web-document"}
@@ -121,6 +126,44 @@ def test_builtin_plugin_manifests_validate() -> None:
     }
     assert utils_actions["reddit.search-subreddit"].config["connector"] == "reddit"
     assert all(action.provider != "openrouter" for action in utils.actions)
+    trackbooth = next(
+        manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "trackbooth"
+    )
+    assert trackbooth.name == "Trackbooth"
+    assert trackbooth.display_order == 45
+    trackbooth_providers = {provider.key: provider for provider in trackbooth.providers}
+    assert set(trackbooth_providers) == {"trackbooth"}
+    assert _auth_field_keys(trackbooth_providers["trackbooth"], "api-key") == [
+        "api_key",
+        "api_base_url",
+    ]
+    assert trackbooth_providers["trackbooth"].config["default_api_base_url"] == (
+        "https://apis.trackbooth.com"
+    )
+    assert trackbooth_providers["trackbooth"].config["connection_category"] == "Affiliation"
+    assert trackbooth.config["inventory_refresh"] == {
+        "mode": "manual",
+        "action_ref": "trackbooth.catalog.sync",
+    }
+    trackbooth_actions = {action.key: action for action in trackbooth.actions}
+    assert set(trackbooth_actions) == {
+        "catalog.sync",
+        "catalog.search",
+        "operation.describe",
+    }
+    assert trackbooth_actions["catalog.sync"].config == {
+        "schema_version": "stackos.action.v1",
+        "connector": "trackbooth",
+        "operation": "catalog.sync",
+        "requires_credential": True,
+    }
+    assert trackbooth_actions["catalog.search"].config == {
+        "schema_version": "stackos.action.v1",
+        "connector": "trackbooth",
+        "operation": "catalog.search",
+        "requires_credential": True,
+    }
+    assert "api_url" not in trackbooth_actions["catalog.sync"].input_schema["properties"]
 
 
 def test_communications_plugin_yaml_facade_validates() -> None:

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import weakref
 
-from sqlmodel import Session
+import pytest
+from sqlmodel import Session, select
 
 from stackos import action_availability
+from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
+from stackos.db.models import Action, Provider
 from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
+from stackos.repositories.base import NotFoundError
 from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import (
     IntegrationBudgetRepository,
@@ -27,6 +32,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
         "communications",
         "gtm",
         "media-buying",
+        "trackbooth",
         "publishing",
         "seo",
         "core",
@@ -42,6 +48,12 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     media = repo.get_plugin("media-buying")
     assert media.name == "Media Buying"
     assert media.manifest_json["ui"]["nav"]["section"] == "Media Buying"
+    trackbooth = repo.get_plugin("trackbooth")
+    assert trackbooth.name == "Trackbooth"
+    assert trackbooth.manifest_json["ui"]["nav"]["section"] == "Trackbooth"
+    assert trackbooth.manifest_json["config"]["default_api_base_url"] == (
+        "https://apis.trackbooth.com"
+    )
     publishing = repo.get_plugin("publishing")
     assert publishing.name == "Publishing"
     assert publishing.manifest_json["ui"]["nav"]["section"] == "Publishing"
@@ -224,6 +236,29 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "media-experiment",
     }
 
+    trackbooth = repo.catalog(plugin_slug="trackbooth").plugins[0]
+    assert {cap.key for cap in trackbooth.capabilities} >= {"agent-api"}
+    assert {provider.key for provider in trackbooth.providers} == {"trackbooth"}
+    trackbooth_action_keys = {action.key for action in trackbooth.actions}
+    assert len(trackbooth_action_keys) == 3
+    assert trackbooth_action_keys >= {
+        "catalog.sync",
+        "catalog.search",
+        "operation.describe",
+    }
+    trackbooth_actions = {action.key: action for action in trackbooth.actions}
+    assert trackbooth_actions["catalog.sync"].connector_key == "trackbooth"
+    assert trackbooth_actions["catalog.sync"].operation == "catalog.sync"
+    assert trackbooth_actions["catalog.sync"].requires_credential is True
+    assert trackbooth_actions["catalog.search"].connector_key == "trackbooth"
+    assert trackbooth_actions["catalog.search"].operation == "catalog.search"
+    assert trackbooth_actions["catalog.search"].requires_credential is True
+    assert trackbooth_actions["catalog.search"].availability.status == "unknown"
+    assert {resource.key for resource in trackbooth.resources} >= {
+        "agent-api-operation",
+        "agent-api-schema",
+    }
+
     publishing = repo.catalog(plugin_slug="publishing").plugins[0]
     assert {cap.key for cap in publishing.capabilities} >= {"cms-publishing"}
     assert {provider.key for provider in publishing.providers} >= {"wordpress", "ghost"}
@@ -238,6 +273,60 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "published-post",
         "publish-target",
     }
+
+
+def test_trackbooth_plugin_sync_hides_removed_generic_rest_actions(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = PluginRepository(session)
+    trackbooth = repo.get_plugin("trackbooth")
+    provider = session.exec(
+        select(Provider).where(Provider.plugin_id == trackbooth.id, Provider.key == "trackbooth")
+    ).first()
+    assert provider is not None
+    for action_key in ("rest.read", "rest.write"):
+        session.add(
+            Action(
+                plugin_id=trackbooth.id,
+                provider_id=provider.id,
+                key=action_key,
+                name=f"Legacy {action_key}",
+                description="Legacy Trackbooth generic REST action",
+                capability_key="agent-api",
+                risk_level="write" if action_key == "rest.write" else "read",
+                input_schema_json={"type": "object", "additionalProperties": True},
+                output_schema_json={"type": "object", "additionalProperties": True},
+                config_json={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "trackbooth",
+                    "operation": action_key,
+                    "requires_credential": True,
+                },
+            )
+        )
+    session.commit()
+
+    repo.sync_builtin_plugins()
+    action_keys = {
+        action.key for action in repo.list_actions(plugin_slug="trackbooth", project_id=project_id)
+    }
+
+    assert action_keys == {"catalog.sync", "catalog.search", "operation.describe"}
+    legacy = session.exec(select(Action).where(Action.key == "rest.read")).first()
+    assert legacy is not None
+    assert legacy.config_json["trackbooth_removed_action"] is True
+    assert legacy.config_json["execution_mode"] == "deferred.removed"
+    actions = ActionRepository(session)
+    for action_ref in ("trackbooth.rest.read", "trackbooth.rest.write"):
+        with pytest.raises(NotFoundError):
+            actions.describe(project_id=project_id, action_ref=action_ref)
+        with pytest.raises(NotFoundError):
+            actions.validate(project_id=project_id, action_ref=action_ref, input_json={})
+        with pytest.raises(NotFoundError):
+            asyncio.run(
+                actions.execute(project_id=project_id, action_ref=action_ref, input_json={})
+            )
 
 
 def test_project_catalog_reports_action_availability(session: Session, project_id: int) -> None:
@@ -308,6 +397,7 @@ def test_catalog_syncs_builtin_manifests_once_per_repository_instance(
         "engineering",
         "gtm",
         "media-buying",
+        "trackbooth",
         "publishing",
         "seo",
         "utils",

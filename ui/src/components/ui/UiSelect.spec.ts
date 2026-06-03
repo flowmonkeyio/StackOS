@@ -92,6 +92,42 @@ describe('UiSelect', () => {
     wrapper.unmount()
   })
 
+  it('filters searchable option lists by label, value, and group', async () => {
+    const wrapper = mount(UiSelect, {
+      props: {
+        modelValue: 'meta-ads',
+        searchable: true,
+        searchPlaceholder: 'Search services',
+        emptyLabel: 'No services found',
+        options: [
+          { value: 'meta-ads', label: 'Meta Ads', group: 'Media Buying' },
+          { value: 'trackbooth', label: 'Trackbooth', group: 'Affiliation' },
+        ],
+      },
+      attachTo: document.body,
+    })
+    const button = wrapper.get('[role="combobox"]')
+
+    await button.trigger('click')
+    const searchInput = wrapper.get<HTMLInputElement>('input[aria-label="Search options"]')
+    expect(searchInput.attributes('placeholder')).toBe('Search services')
+
+    await searchInput.setValue('affiliation')
+    expect(wrapper.findAll('[role="option"]').map((option) => option.text())).toEqual([
+      'Trackbooth',
+    ])
+    expect(wrapper.text()).toContain('Affiliation')
+
+    await searchInput.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['trackbooth'])
+
+    await button.trigger('click')
+    await wrapper.get<HTMLInputElement>('input[aria-label="Search options"]').setValue('missing')
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('No services found')
+    wrapper.unmount()
+  })
+
   it('uses the surrounding UiFormField id for label association', () => {
     const wrapper = mount({
       components: { UiFormField, UiSelect },

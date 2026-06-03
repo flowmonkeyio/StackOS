@@ -30,6 +30,7 @@ from stackos.repositories.base import ConflictError, NotFoundError, ValidationEr
 from stackos.repositories.projects import (
     IntegrationBudgetRepository,
     IntegrationCredentialRepository,
+    ProjectRepository,
 )
 from stackos.repositories.run_plans import RunPlanRepository
 
@@ -265,6 +266,181 @@ def _provider_credential_ref(session: Session, project_id: int, provider_key: st
     return status.connections[0].credential_ref
 
 
+def _trackbooth_credential_ref(
+    session: Session,
+    project_id: int,
+    *,
+    api_base_url: str = "https://trackbooth.local.test",
+    profile_key: str = "default",
+) -> str:
+    from stackos.auth_providers import AuthRepository
+    from stackos.repositories.plugins import PluginRepository
+
+    PluginRepository(session).get_plugin("trackbooth")
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="trackbooth",
+        profile_key=profile_key,
+        secret_payload=b'{"api_key":"tb-test-key"}',
+        config_json={"label": "Trackbooth test", "api_base_url": api_base_url},
+    )
+    status = AuthRepository(session).status(project_id=project_id, provider_key="trackbooth")
+    for connection in status.connections:
+        if connection.profile_key == profile_key:
+            return connection.credential_ref
+    raise AssertionError(f"missing Trackbooth credential profile {profile_key!r}")
+
+
+def _trackbooth_links_create_detail() -> dict:
+    return {
+        "operation_id": "LinksController.create",
+        "name": "links_create",
+        "method": "POST",
+        "path": "/api/links",
+        "context": {
+            "title": "Create link",
+            "category": "links",
+            "tags": ["links", "create"],
+        },
+        "body_schema": {
+            "component_name": "CreateLinkBody",
+            "details": {
+                "type": "object",
+                "fields": [
+                    {"name": "campaign_id", "type": "string", "required": True},
+                    {"name": "name", "type": "string", "required": True},
+                    {
+                        "name": "routing_mode",
+                        "type": "'direct' | 'rules'",
+                        "required": True,
+                    },
+                    {"name": "offer_id", "type": "string", "required": False},
+                    {
+                        "name": "redirect_type",
+                        "type": "'301' | '302' | 'meta' | 'javascript'",
+                        "required": False,
+                    },
+                ],
+            },
+        },
+        "response_schema": {
+            "component_name": "ApiOkResponse<LinkDetailItem>",
+            "details": {
+                "type": "object",
+                "fields": [{"name": "data", "type": "LinkDetailItem", "required": True}],
+            },
+        },
+    }
+
+
+def _trackbooth_offers_findbyid_detail() -> dict:
+    return {
+        "operation_id": "OffersController.findById",
+        "name": "offers_findbyid",
+        "method": "GET",
+        "path": "/api/offers/:id",
+        "context": {
+            "title": "Get offer",
+            "category": "offers",
+            "tags": ["offers"],
+        },
+        "query_schema": {
+            "component_name": "FindOfferQuery",
+            "details": {
+                "type": "object",
+                "fields": [
+                    {"name": "include", "type": "string[]", "required": False},
+                    {"name": "active", "type": "boolean", "required": False},
+                ],
+            },
+        },
+        "response_schema": {
+            "component_name": "ApiOkResponse<OfferDetailItem>",
+            "details": {
+                "type": "object",
+                "fields": [{"name": "data", "type": "OfferDetailItem", "required": True}],
+            },
+        },
+    }
+
+
+def _trackbooth_api_key_reveal_detail() -> dict:
+    return {
+        "operation_id": "AccountApiKeyController.revealApiKey",
+        "name": "accountapikey_revealapikey",
+        "method": "GET",
+        "path": "/api/accounts/:id/api-key",
+        "context": {
+            "title": "Reveal account API key",
+            "category": "accounts",
+            "tags": ["accounts"],
+        },
+    }
+
+
+def _trackbooth_api_key_generate_detail() -> dict:
+    return {
+        "operation_id": "AccountApiKeyController.generateApiKey",
+        "name": "accountapikey_generateapikey",
+        "method": "POST",
+        "path": "/api/accounts/:id/api-key/generate",
+        "context": {
+            "title": "Generate account API key",
+            "category": "accounts",
+            "tags": ["accounts"],
+        },
+    }
+
+
+def _add_trackbooth_sync_responses(
+    httpx_mock: HTTPXMock,
+    *details: dict,
+    base_url: str = "https://trackbooth.local.test",
+) -> None:
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{base_url}/api/agent-api/catalog",
+        json={"data": details},
+    )
+    for detail in details:
+        httpx_mock.add_response(
+            method="GET",
+            url=f"{base_url}/api/agent-api/catalog/{detail['operation_id']}",
+            json={"data": detail},
+        )
+
+
+def _sync_trackbooth_catalog(
+    session: Session,
+    project_id: int,
+    credential_ref: str,
+    *,
+    operation_ids: list[str] | None = None,
+    acting_as_account: str | None = None,
+) -> dict:
+    input_json: dict = {}
+    if operation_ids:
+        input_json["operation_ids"] = operation_ids
+    if acting_as_account:
+        input_json["acting_as_account"] = acting_as_account
+    return asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="trackbooth.catalog.sync",
+            input_json=input_json,
+            credential_ref=credential_ref,
+        )
+    ).data.output_json
+
+
+def _trackbooth_generated_action_ref(sync_output: dict, operation_id: str) -> str:
+    operation_ids = sync_output["operation_ids"]
+    index = operation_ids.index(operation_id)
+    action_ref = sync_output["action_refs"][index]
+    assert action_ref.startswith("trackbooth.api.ctx_")
+    return action_ref
+
+
 def test_action_execute_resolves_secret_internally_and_redacts_audit(
     session: Session,
     project_id: int,
@@ -387,6 +563,9 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
         "utils.web.read": ("jina", False, "ready"),
         "utils.sitemap.fetch": ("sitemap", False, "ready"),
         "utils.reddit.search-subreddit": ("reddit", True, "unknown"),
+        "trackbooth.catalog.sync": ("trackbooth", True, "unknown"),
+        "trackbooth.catalog.search": ("trackbooth", True, "unknown"),
+        "trackbooth.operation.describe": ("trackbooth", True, "unknown"),
         "seo.keyword.research": ("dataforseo", True, "unknown"),
         "seo.serp.analyze": ("dataforseo", True, "unknown"),
         "seo.paa.extract": ("dataforseo", True, "unknown"),
@@ -434,6 +613,657 @@ def test_openai_image_action_rejects_legacy_quality_for_gpt_profiles(
     assert any(
         issue.path == "$.quality" and issue.code == "enum_mismatch" for issue in validation.issues
     )
+
+
+def test_trackbooth_catalog_search_filters_live_catalog_and_uses_api_key_header(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    httpx_mock.add_response(
+        method="GET",
+        url="https://trackbooth.local.test/api/agent-api/catalog",
+        json={
+            "data": [
+                {
+                    "operation_id": "LinksController.findAll",
+                    "method": "GET",
+                    "path": "/api/links",
+                    "context": {
+                        "title": "List links",
+                        "category": "links",
+                        "tags": ["links"],
+                    },
+                },
+                {
+                    "operation_id": "AdvertiserController.create",
+                    "method": "POST",
+                    "path": "/api/advertisers",
+                    "context": {
+                        "title": "Create advertiser",
+                        "category": "advertisers",
+                        "tags": ["advertisers"],
+                    },
+                },
+            ]
+        },
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="trackbooth.catalog.search",
+            input_json={"query": "links", "limit": 10},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json["tool_count"] == 2
+    assert out.output_json["count"] == 1
+    assert out.output_json["data"][0]["operation_id"] == "LinksController.findAll"
+    request = httpx_mock.get_requests()[0]
+    assert request.headers["X-API-Key"] == "tb-test-key"
+    assert "X-Acting-As-Account" not in request.headers
+    assert "tb-test-key" not in json.dumps(out.model_dump(mode="json"))
+
+
+def test_trackbooth_operation_describe_expands_request_and_response_schema(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    httpx_mock.add_response(
+        method="GET",
+        url="https://trackbooth.local.test/api/agent-api/catalog/LinksController.create",
+        json={"data": _trackbooth_links_create_detail()},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="trackbooth.operation.describe",
+            input_json={"operation_id": "LinksController.create"},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    detail = out.output_json["data"]
+    assert detail["method"] == "POST"
+    assert detail["request_body"]["properties"]["routing_mode"]["enum"] == ["direct", "rules"]
+    assert detail["request_body"]["properties"]["redirect_type"]["enum"] == [
+        "301",
+        "302",
+        "meta",
+        "javascript",
+    ]
+    assert detail["response"]["properties"]["data"]["x_trackbooth_type"] == "LinkDetailItem"
+
+
+def test_trackbooth_read_operation_substitutes_path_and_serializes_query(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_offers_findbyid_detail())
+    sync_output = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    action_ref = _trackbooth_generated_action_ref(sync_output, "OffersController.findById")
+    httpx_mock.add_response(method="GET", json={"data": {"id": "offer-123"}})
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref=action_ref,
+            input_json={
+                "path_params": {"id": "offer-123"},
+                "query": {"include": ["payouts", "localizations"], "active": True},
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json["status_code"] == 200
+    actual = httpx_mock.get_requests()[2]
+    assert actual.method == "GET"
+    assert actual.url.path == "/api/offers/offer-123"
+    assert parse_qs(actual.url.query.decode()) == {
+        "include": ["payouts", "localizations"],
+        "active": ["true"],
+    }
+
+
+def test_trackbooth_write_operation_sends_body_and_explicit_acting_as_header(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
+    sync_output = _sync_trackbooth_catalog(
+        session,
+        project_id,
+        credential_ref,
+        acting_as_account="acct-managed",
+    )
+    action_ref = _trackbooth_generated_action_ref(sync_output, "LinksController.create")
+    httpx_mock.add_response(method="POST", json={"data": {"id": "link-1"}})
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref=action_ref,
+            input_json={
+                "acting_as_account": "acct-managed",
+                "body": {
+                    "campaign_id": "campaign-1",
+                    "name": "Rules link",
+                    "routing_mode": "direct",
+                    "offer_id": "offer-1",
+                },
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json["data"] == {"data": {"id": "link-1"}}
+    actual = httpx_mock.get_requests()[2]
+    assert actual.method == "POST"
+    assert actual.url.path == "/api/links"
+    assert actual.headers["X-API-Key"] == "tb-test-key"
+    assert actual.headers["X-Acting-As-Account"] == "acct-managed"
+    assert json.loads(actual.content) == {
+        "campaign_id": "campaign-1",
+        "name": "Rules link",
+        "routing_mode": "direct",
+        "offer_id": "offer-1",
+    }
+
+
+def test_trackbooth_catalog_sync_creates_runtime_generated_actions(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(
+        httpx_mock,
+        _trackbooth_links_create_detail(),
+        _trackbooth_offers_findbyid_detail(),
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="trackbooth.catalog.sync",
+            input_json={},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json["synced"] == 2
+    assert out.output_json["created"] == 2
+    assert out.output_json["blocked_operation_ids"] == []
+    assert out.output_json["inventory_scope_key"].startswith("ctx_")
+    links_action_ref = _trackbooth_generated_action_ref(out.output_json, "LinksController.create")
+    offers_action_ref = _trackbooth_generated_action_ref(
+        out.output_json,
+        "OffersController.findById",
+    )
+    assert {ref.rsplit(".", 1)[-1] for ref in out.output_json["action_refs"]} == {
+        "links_create",
+        "offers_findbyid",
+    }
+
+    repo = ActionRepository(session)
+    described = repo.describe(
+        project_id=project_id,
+        action_ref=links_action_ref,
+    )
+
+    assert described.manifest.operation == "operation.execute"
+    assert described.manifest.config_json["inventory_source"] == "trackbooth.catalog.sync"
+    assert described.manifest.config_json["inventory_state"] == "active"
+    assert described.manifest.config_json["inventory_project_id"] == project_id
+    assert described.manifest.config_json["inventory_credential_ref"] == credential_ref
+    assert described.manifest.config_json["inventory_api_base_url"] == (
+        "https://trackbooth.local.test"
+    )
+    repo.describe(project_id=project_id, action_ref=offers_action_ref)
+    assert described.manifest.input_schema_json["properties"]["body"]["properties"][
+        "routing_mode"
+    ]["enum"] == ["direct", "rules"]
+    assert described.manifest.output_schema_json["properties"]["data"]["properties"]["data"][
+        "x_trackbooth_type"
+    ] == "LinkDetailItem"
+
+
+def test_trackbooth_full_catalog_sync_prunes_missing_runtime_actions(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(
+        httpx_mock,
+        _trackbooth_links_create_detail(),
+        _trackbooth_offers_findbyid_detail(),
+    )
+    initial = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    links_ref = _trackbooth_generated_action_ref(initial, "LinksController.create")
+    offers_ref = _trackbooth_generated_action_ref(initial, "OffersController.findById")
+    offers_key = offers_ref.removeprefix("trackbooth.")
+
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="trackbooth.catalog.sync",
+            input_json={},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json["synced"] == 1
+    assert out.output_json["updated"] == 1
+    assert out.output_json["pruned"] == 1
+
+    repo = ActionRepository(session)
+    repo.describe(project_id=project_id, action_ref=links_ref)
+    with pytest.raises(NotFoundError):
+        repo.describe(project_id=project_id, action_ref=offers_ref)
+    retired = session.exec(select(Action).where(Action.key == offers_key)).first()
+    assert retired is not None
+    assert retired.config_json["inventory_state"] == "retired"
+    assert retired.config_json["execution_mode"] == "deferred.retired"
+
+
+def test_trackbooth_filtered_catalog_sync_does_not_prune_unrelated_runtime_actions(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(
+        httpx_mock,
+        _trackbooth_links_create_detail(),
+        _trackbooth_offers_findbyid_detail(),
+    )
+    initial = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    links_ref = _trackbooth_generated_action_ref(initial, "LinksController.create")
+    offers_ref = _trackbooth_generated_action_ref(initial, "OffersController.findById")
+
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="trackbooth.catalog.sync",
+            input_json={"operation_ids": ["LinksController.create"]},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json["synced"] == 1
+    assert out.output_json["updated"] == 1
+    assert out.output_json["pruned"] == 0
+
+    repo = ActionRepository(session)
+    repo.describe(project_id=project_id, action_ref=links_ref)
+    repo.describe(project_id=project_id, action_ref=offers_ref)
+
+
+def test_trackbooth_generated_inventory_is_project_scoped(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    from stackos.repositories.plugins import PluginRepository
+
+    other_project_id = ProjectRepository(session).create(
+        slug="trackbooth-other",
+        name="Trackbooth Other",
+        domain="other.example",
+        locale="en-US",
+    ).data.id
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _trackbooth_credential_ref(session, other_project_id)
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
+    sync_output = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    action_ref = _trackbooth_generated_action_ref(sync_output, "LinksController.create")
+
+    repo = ActionRepository(session)
+    repo.describe(project_id=project_id, action_ref=action_ref)
+    with pytest.raises(NotFoundError):
+        repo.describe(project_id=other_project_id, action_ref=action_ref)
+
+    other_actions = PluginRepository(session).list_actions(
+        plugin_slug="trackbooth",
+        project_id=other_project_id,
+    )
+    assert action_ref not in {action.action_ref for action in other_actions}
+
+
+def test_trackbooth_generated_inventory_is_bound_to_credential_and_api_url(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    local_ref = _trackbooth_credential_ref(
+        session,
+        project_id,
+        api_base_url="https://trackbooth.local.test",
+        profile_key="local",
+    )
+    prod_ref = _trackbooth_credential_ref(
+        session,
+        project_id,
+        api_base_url="https://apis.trackbooth.com",
+        profile_key="prod",
+    )
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
+    sync_output = _sync_trackbooth_catalog(session, project_id, local_ref)
+    action_ref = _trackbooth_generated_action_ref(sync_output, "LinksController.create")
+
+    httpx_mock.add_response(method="POST", json={"data": {"id": "link-local"}})
+    local_out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref=action_ref,
+            input_json={
+                "body": {
+                    "campaign_id": "campaign-1",
+                    "name": "Local scoped link",
+                    "routing_mode": "direct",
+                },
+            },
+            credential_ref=local_ref,
+        )
+    ).data
+    assert local_out.output_json["data"] == {"data": {"id": "link-local"}}
+
+    with pytest.raises(ConflictError) as excinfo:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref=action_ref,
+                input_json={
+                    "body": {
+                        "campaign_id": "campaign-1",
+                        "name": "Wrong credential",
+                        "routing_mode": "direct",
+                    },
+                },
+                credential_ref=prod_ref,
+            )
+        )
+    assert "credential used for catalog sync" in excinfo.value.data["error"]
+
+
+def test_trackbooth_generated_read_action_calls_endpoint_without_catalog_preflight(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_offers_findbyid_detail())
+    sync_output = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    action_ref = _trackbooth_generated_action_ref(sync_output, "OffersController.findById")
+    httpx_mock.add_response(
+        method="GET",
+        url="https://trackbooth.local.test/api/offers/offer-123",
+        json={"data": {"id": "offer-123"}},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref=action_ref,
+            input_json={"path_params": {"id": "offer-123"}},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json["operation_id"] == "OffersController.findById"
+    assert out.output_json["data"] == {"data": {"id": "offer-123"}}
+    requests = httpx_mock.get_requests()
+    assert requests[-1].url.path == "/api/offers/offer-123"
+    assert [
+        request.url.path
+        for request in requests
+        if request.url.path == "/api/agent-api/catalog/OffersController.findById"
+    ] == ["/api/agent-api/catalog/OffersController.findById"]
+
+
+def test_trackbooth_generated_write_action_sends_body_without_catalog_preflight(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
+    sync_output = _sync_trackbooth_catalog(
+        session,
+        project_id,
+        credential_ref,
+        acting_as_account="acct-managed",
+    )
+    action_ref = _trackbooth_generated_action_ref(sync_output, "LinksController.create")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://trackbooth.local.test/api/links",
+        json={"data": {"id": "link-1"}},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref=action_ref,
+            input_json={
+                "acting_as_account": "acct-managed",
+                "body": {
+                    "campaign_id": "campaign-1",
+                    "name": "Generated action link",
+                    "routing_mode": "direct",
+                    "offer_id": "offer-1",
+                },
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json["operation_id"] == "LinksController.create"
+    requests = httpx_mock.get_requests()
+    actual = requests[-1]
+    assert actual.method == "POST"
+    assert actual.url.path == "/api/links"
+    assert actual.headers["X-Acting-As-Account"] == "acct-managed"
+    assert json.loads(actual.content)["routing_mode"] == "direct"
+
+
+def test_trackbooth_generated_action_reuses_synced_acting_account_and_rejects_override(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
+    sync_output = _sync_trackbooth_catalog(
+        session,
+        project_id,
+        credential_ref,
+        acting_as_account="acct-managed",
+    )
+    action_ref = _trackbooth_generated_action_ref(sync_output, "LinksController.create")
+    httpx_mock.add_response(method="POST", json={"data": {"id": "link-acting"}})
+
+    asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref=action_ref,
+            input_json={
+                "body": {
+                    "campaign_id": "campaign-1",
+                    "name": "Synced acting account",
+                    "routing_mode": "direct",
+                },
+            },
+            credential_ref=credential_ref,
+        )
+    )
+    assert httpx_mock.get_requests()[-1].headers["X-Acting-As-Account"] == "acct-managed"
+
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref=action_ref,
+        input_json={
+            "acting_as_account": "acct-other",
+            "body": {
+                "campaign_id": "campaign-1",
+                "name": "Wrong acting account",
+                "routing_mode": "direct",
+            },
+        },
+        credential_ref=credential_ref,
+    )
+    assert any(issue.code == "scope_mismatch" for issue in validation.issues)
+
+
+def test_trackbooth_validation_rejects_invalid_enum_and_missing_required_body_field(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    repo = ActionRepository(session)
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
+    sync_output = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    action_ref = _trackbooth_generated_action_ref(sync_output, "LinksController.create")
+
+    invalid_enum = repo.validate(
+        project_id=project_id,
+        action_ref=action_ref,
+        input_json={
+            "body": {
+                "campaign_id": "campaign-1",
+                "name": "Bad link",
+                "routing_mode": "sideways",
+            },
+        },
+        credential_ref=credential_ref,
+    )
+    assert any(
+        issue.path == "$.body.routing_mode" and issue.code == "enum_mismatch"
+        for issue in invalid_enum.issues
+    )
+
+    missing_body = repo.validate(
+        project_id=project_id,
+        action_ref=action_ref,
+        input_json={},
+        credential_ref=credential_ref,
+    )
+    assert {
+        issue.path
+        for issue in missing_body.issues
+        if issue.code == "required" and issue.path.startswith("$.body.")
+    } >= {"$.body.campaign_id", "$.body.name"}
+
+    generated_invalid_enum = repo.validate(
+        project_id=project_id,
+        action_ref=action_ref,
+        input_json={
+            "body": {
+                "campaign_id": "campaign-1",
+                "name": "Bad generated link",
+                "routing_mode": "sideways",
+            },
+        },
+        credential_ref=credential_ref,
+    )
+    assert any(
+        issue.path == "$.body.routing_mode" and issue.code == "enum_mismatch"
+        for issue in generated_invalid_enum.issues
+    )
+
+
+def test_trackbooth_rejects_unsafe_base_url_without_outbound_request(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(
+        session,
+        project_id,
+        api_base_url="http://10.0.0.1",
+    )
+
+    with pytest.raises(ConflictError) as excinfo:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="trackbooth.catalog.search",
+                input_json={},
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "private" in excinfo.value.data["error"]
+    assert httpx_mock.get_requests() == []
+
+
+def test_trackbooth_blocks_api_key_reveal_and_generate_operations(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+
+    _add_trackbooth_sync_responses(
+        httpx_mock,
+        _trackbooth_api_key_reveal_detail(),
+        _trackbooth_api_key_generate_detail(),
+    )
+    sync_output = _sync_trackbooth_catalog(session, project_id, credential_ref)
+
+    assert sync_output["synced"] == 0
+    assert sync_output["blocked_operation_ids"] == [
+        "AccountApiKeyController.revealApiKey",
+        "AccountApiKeyController.generateApiKey",
+    ]
+    assert session.exec(
+        select(Action).where(Action.key.like("%accountapikey_revealapikey%"))
+    ).first() is None
+    assert session.exec(
+        select(Action).where(Action.key.like("%accountapikey_generateapikey%"))
+    ).first() is None
+
+
+def test_trackbooth_permission_error_is_preserved_for_agent_repair(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    httpx_mock.add_response(
+        method="GET",
+        url="https://trackbooth.local.test/api/agent-api/catalog/LinksController.create",
+        status_code=403,
+        text='{"message":"agent_api.access is required"}',
+    )
+
+    with pytest.raises(ConflictError) as excinfo:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="trackbooth.operation.describe",
+                input_json={"operation_id": "LinksController.create"},
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "403" in excinfo.value.data["error"]
+    assert "agent_api.access" in excinfo.value.data["error"]
 
 
 def test_action_describe_reports_project_readiness_and_provider_disabled(

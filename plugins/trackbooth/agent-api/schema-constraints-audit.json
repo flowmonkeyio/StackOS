@@ -1,0 +1,2409 @@
+{
+  "version": 1,
+  "generated_at": "1970-01-01T00:00:00.000Z",
+  "endpoint_count": 326,
+  "constrained_schema_count": 50,
+  "constraint_count": 154,
+  "opaque_constraint_count": 8,
+  "schemas": [
+    {
+      "operation_id": "AccountPostbacksController.create",
+      "method": "POST",
+      "path": "/api/account-postbacks",
+      "schema_source": "body",
+      "schema_name": "createAccountPostbackSchema",
+      "schema_file": "apps/admin-api/src/features/account-postbacks/account-postbacks.dto.ts",
+      "modifiers": [
+        "strict",
+        "superRefine"
+      ],
+      "constraint_count": 9,
+      "opaque_constraint_count": 4,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "URL is required for custom postback type",
+          "path": [
+            "url"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "d.network_type === 'custom' && !d.url"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "event_types is required for custom postback type",
+          "path": [
+            "event_types"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "d.network_type === 'custom' && !d.event_types"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "event_mappings is not supported for custom postback type",
+          "path": [
+            "event_mappings"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "d.network_type === 'custom' && d.event_mappings"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": false,
+          "conditions": [
+            "d.network_type === 'meta_capi'",
+            "!result.success"
+          ],
+          "reason": "Issue message is not a static string"
+        },
+        {
+          "source": "superRefine",
+          "extractable": false,
+          "conditions": [
+            "d.network_type === 'google_ads'",
+            "!result.success"
+          ],
+          "reason": "Issue message is not a static string"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "event_mappings is required for meta_capi postback type",
+          "path": [
+            "event_mappings"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "d.network_type === 'meta_capi' && !d.event_mappings"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": false,
+          "conditions": [
+            "d.network_type === 'meta_capi' && d.event_mappings"
+          ],
+          "reason": "Issue message is not a static string"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "event_mappings is required for google_ads postback type",
+          "path": [
+            "event_mappings"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "d.network_type === 'google_ads' && !d.event_mappings"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": false,
+          "conditions": [
+            "d.network_type === 'google_ads' && d.event_mappings"
+          ],
+          "reason": "Issue message is not a static string"
+        }
+      ]
+    },
+    {
+      "operation_id": "AccountPostbacksController.update",
+      "method": "PATCH",
+      "path": "/api/account-postbacks/:id",
+      "schema_source": "body",
+      "schema_name": "updateAccountPostbackSchema",
+      "schema_file": "apps/admin-api/src/features/account-postbacks/account-postbacks.dto.ts",
+      "modifiers": [
+        "strict",
+        "superRefine"
+      ],
+      "constraint_count": 8,
+      "opaque_constraint_count": 4,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": false,
+          "conditions": [
+            "d.network_type === 'meta_capi' && d.network_config",
+            "!result.success"
+          ],
+          "reason": "Issue message is not a static string"
+        },
+        {
+          "source": "superRefine",
+          "extractable": false,
+          "conditions": [
+            "d.network_type === 'google_ads' && d.network_config",
+            "!result.success"
+          ],
+          "reason": "Issue message is not a static string"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "event_mappings is not supported for custom postback type",
+          "path": [
+            "event_mappings"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "d.network_type === 'custom' && d.event_mappings"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "event_mappings is required for meta_capi postback type",
+          "path": [
+            "event_mappings"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "d.network_type === 'meta_capi' && !d.event_mappings"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": false,
+          "conditions": [
+            "d.network_type === 'meta_capi' && d.event_mappings"
+          ],
+          "reason": "Issue message is not a static string"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "event_mappings is required for google_ads postback type",
+          "path": [
+            "event_mappings"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "d.network_type === 'google_ads' && !d.event_mappings"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": false,
+          "conditions": [
+            "d.network_type === 'google_ads' && d.event_mappings"
+          ],
+          "reason": "Issue message is not a static string"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "event_types is required for custom postback type",
+          "path": [
+            "event_types"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "d.network_type === 'custom' && !d.event_types"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "AccountingController.listEarnings",
+      "method": "GET",
+      "path": "/api/accounting/earnings",
+      "schema_source": "query",
+      "schema_name": "listEarningsSchema",
+      "schema_file": "apps/admin-api/src/features/accounting/accounting.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "AccountingController.getOwnerObligations",
+      "method": "GET",
+      "path": "/api/accounting/owner-obligations",
+      "schema_source": "query",
+      "schema_name": "getOwnerObligationsSchema",
+      "schema_file": "apps/admin-api/src/features/accounting/accounting.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine",
+        "transform"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "AccountingController.listStatements",
+      "method": "GET",
+      "path": "/api/accounting/statements",
+      "schema_source": "query",
+      "schema_name": "listStatementsSchema",
+      "schema_file": "apps/admin-api/src/features/accounting/accounting.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "AccountCommunicationController.createIntegration",
+      "method": "POST",
+      "path": "/api/accounts/:accountId/communication/integrations",
+      "schema_source": "body",
+      "schema_name": "communicationIntegrationSchema",
+      "schema_file": "apps/admin-api/src/features/communications/communication-admin.dto.ts",
+      "modifiers": [
+        "strict",
+        "superRefine"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "email_recipients is required for email integrations",
+          "path": [
+            "email_recipients"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.channel_type === 'email'",
+            "!value.email_recipients || value.email_recipients.length === 0"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "telegram_chat_id must be null for email integrations",
+          "path": [
+            "telegram_chat_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.channel_type === 'email'",
+            "value.telegram_chat_id !== undefined &&\n        value.telegram_chat_id !== null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "telegram_message_thread_id must be null for email integrations",
+          "path": [
+            "telegram_message_thread_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.channel_type === 'email'",
+            "value.telegram_message_thread_id !== undefined &&\n        value.telegram_message_thread_id !== null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "telegram_chat_id is required for Telegram integrations",
+          "path": [
+            "telegram_chat_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.channel_type === 'telegram'",
+            "!value.telegram_chat_id"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "email_recipients must be null for Telegram integrations",
+          "path": [
+            "email_recipients"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.channel_type === 'telegram'",
+            "value.email_recipients !== undefined &&\n        value.email_recipients !== null"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "AccountDomainsController.upsertBundle",
+      "method": "PUT",
+      "path": "/api/accounts/:accountId/domains",
+      "schema_source": "body",
+      "schema_name": "upsertAccountDomainBundleSchema",
+      "schema_file": "apps/admin-api/src/features/accounts/account-domains.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "A valid base domain is required",
+          "path": [
+            "base_domain"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.dns_mode === 'manual'",
+            "!normalizedBaseDomain"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "A valid base domain is required",
+          "path": [
+            "base_domain"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.dns_mode === 'manual'",
+            "!baseDomainPattern.test(normalizedBaseDomain)"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Cloudflare token is required",
+          "path": [
+            "cloudflare_token"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.cloudflare_token"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "A Cloudflare zone must be selected",
+          "path": [
+            "cloudflare_zone_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.cloudflare_zone_id"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "A valid base domain is required",
+          "path": [
+            "base_domain"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "normalizedBaseDomain && !baseDomainPattern.test(normalizedBaseDomain)"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "AccountDomainsController.createRedirectDomain",
+      "method": "POST",
+      "path": "/api/accounts/:accountId/domains/redirect",
+      "schema_source": "body",
+      "schema_name": "createAccountCustomDomainSchema",
+      "schema_file": "apps/admin-api/src/features/accounts/account-domains.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Redirect domain must be a lowercase subdomain such as go.example.com",
+          "path": [
+            "hostname"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.dns_mode === 'manual'",
+            "!redirectHostnamePattern.test(normalizedHostname)"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Cloudflare token is required",
+          "path": [
+            "cloudflare_token"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.cloudflare_token"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "A Cloudflare zone must be selected",
+          "path": [
+            "cloudflare_zone_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.cloudflare_zone_id"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Subdomain is required",
+          "path": [
+            "cloudflare_subdomain"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "mode === 'subdomain'",
+            "!value.cloudflare_subdomain || !domainLabelRegex.test(value.cloudflare_subdomain)"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Choose root domain or subdomain for Cloudflare setup",
+          "path": [
+            "cloudflare_hostname_mode"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!redirectHostnamePattern.test(normalizedHostname)"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "AccountDomainsController.updateRedirectDomain",
+      "method": "PATCH",
+      "path": "/api/accounts/:accountId/domains/redirect/:domainId",
+      "schema_source": "body",
+      "schema_name": "updateAccountCustomDomainPolicySchema",
+      "schema_file": "apps/admin-api/src/features/accounts/account-domains.dto.ts",
+      "modifiers": [
+        "refine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "At least one domain policy change is required",
+          "path": [
+            "selection_enabled"
+          ],
+          "predicate": "(value) =>\n      value.selection_enabled !== undefined ||\n      value.set_as_account_default !== undefined"
+        }
+      ]
+    },
+    {
+      "operation_id": "PartnerApplicationsController.updateSettings",
+      "method": "PUT",
+      "path": "/api/accounts/:accountId/partner-portal-settings",
+      "schema_source": "body",
+      "schema_name": "updateAccountPartnerPortalSettingsSchema",
+      "schema_file": "apps/admin-api/src/features/partner-applications/partner-applications.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "default_partnership_subtype must be included in allowed_partnership_subtypes",
+          "path": [
+            "default_partnership_subtype"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.allowed_partnership_subtypes.includes(value.default_partnership_subtype)"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "AdminUserController.list",
+      "method": "GET",
+      "path": "/api/admin-users",
+      "schema_source": "query",
+      "schema_name": "listAdminUsersQuerySchema",
+      "schema_file": "apps/admin-api/src/features/admin-users/admin-user.dto.ts",
+      "modifiers": [
+        "superRefine",
+        "strict"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "user_kind and internal_only cannot be combined",
+          "path": [
+            "user_kind"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.user_kind && value.internal_only"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "AdvertiserController.createCap",
+      "method": "POST",
+      "path": "/api/advertisers/:id/caps",
+      "schema_source": "body",
+      "schema_name": "createEntityCapSchema",
+      "schema_file": "apps/admin-api/src/features/caps/caps.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "At least one cap limit is required",
+          "path": [
+            "daily_cap"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!hasAtLeastOneLimit(value)"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "AdvertiserController.updateCapOverflowSettings",
+      "method": "PATCH",
+      "path": "/api/advertisers/:id/caps/overflow",
+      "schema_source": "body",
+      "schema_name": "updateEntityCapOverflowSettingsSchema",
+      "schema_file": "apps/admin-api/src/features/caps/caps.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 3,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Blocked overflow cannot specify a fallback target",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.behavior === 'block'",
+            "value.offer_id != null || value.link_id != null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Offer overflow requires offer_id and no link_id",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.behavior === 'offer'",
+            "!value.offer_id || value.link_id != null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Link overflow requires link_id and no offer_id",
+          "path": [
+            "link_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.link_id || value.offer_id != null"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "CampaignsController.findAll",
+      "method": "GET",
+      "path": "/api/campaigns",
+      "schema_source": "query",
+      "schema_name": "listCampaignsQuerySchema",
+      "schema_file": "apps/admin-api/src/features/campaigns/campaigns.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "campaign_ownership=account cannot be combined with partnership_id",
+          "path": [
+            "campaign_ownership"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "query.campaign_ownership === 'account' && query.partnership_id"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "CampaignsController.createCap",
+      "method": "POST",
+      "path": "/api/campaigns/:id/caps",
+      "schema_source": "body",
+      "schema_name": "createEntityCapSchema",
+      "schema_file": "apps/admin-api/src/features/caps/caps.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "At least one cap limit is required",
+          "path": [
+            "daily_cap"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!hasAtLeastOneLimit(value)"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "CampaignsController.updateCapOverflowSettings",
+      "method": "PATCH",
+      "path": "/api/campaigns/:id/caps/overflow",
+      "schema_source": "body",
+      "schema_name": "updateEntityCapOverflowSettingsSchema",
+      "schema_file": "apps/admin-api/src/features/caps/caps.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 3,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Blocked overflow cannot specify a fallback target",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.behavior === 'block'",
+            "value.offer_id != null || value.link_id != null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Offer overflow requires offer_id and no link_id",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.behavior === 'offer'",
+            "!value.offer_id || value.link_id != null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Link overflow requires link_id and no offer_id",
+          "path": [
+            "link_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.link_id || value.offer_id != null"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "DashboardController.getDashboard",
+      "method": "GET",
+      "path": "/api/dashboard",
+      "schema_source": "query",
+      "schema_name": "dashboardQuerySchema",
+      "schema_file": "apps/admin-api/src/features/dashboard/dashboard.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "DealController.list",
+      "method": "GET",
+      "path": "/api/deals",
+      "schema_source": "query",
+      "schema_name": "listDealsQuerySchema",
+      "schema_file": "apps/admin-api/src/features/deals/deal.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine"
+      ],
+      "constraint_count": 2,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is no longer a supported deal selector",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "'child_account_id' in data"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Use recipient_partnership_id for partnership deal selectors",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "'partner_id' in data"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "DealController.create",
+      "method": "POST",
+      "path": "/api/deals",
+      "schema_source": "body",
+      "schema_name": "createDealSchema",
+      "schema_file": "apps/admin-api/src/features/deals/deal.dto.ts",
+      "modifiers": [
+        "strict",
+        "refine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "Start date must be before expiration date",
+          "predicate": "(data) => {\n    // Validate date range\n    if (data.starts_at && data.expires_at) {\n      return new Date(data.starts_at) < new Date(data.expires_at);\n    }\n    return true;\n  }"
+        }
+      ]
+    },
+    {
+      "operation_id": "DealController.update",
+      "method": "PATCH",
+      "path": "/api/deals/:id",
+      "schema_source": "body",
+      "schema_name": "updateDealSchema",
+      "schema_file": "apps/admin-api/src/features/deals/deal.dto.ts",
+      "modifiers": [
+        "refine",
+        "strict"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "Start date must be before expiration date",
+          "predicate": "(data) => {\n    // Validate date range if both provided\n    if (data.starts_at && data.expires_at) {\n      return new Date(data.starts_at) < new Date(data.expires_at);\n    }\n    return true;\n  }"
+        }
+      ]
+    },
+    {
+      "operation_id": "DealController.createCap",
+      "method": "POST",
+      "path": "/api/deals/:id/caps",
+      "schema_source": "body",
+      "schema_name": "createEntityCapSchema",
+      "schema_file": "apps/admin-api/src/features/caps/caps.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "At least one cap limit is required",
+          "path": [
+            "daily_cap"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!hasAtLeastOneLimit(value)"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "DealController.updateCapOverflowSettings",
+      "method": "PATCH",
+      "path": "/api/deals/:id/caps/overflow",
+      "schema_source": "body",
+      "schema_name": "updateEntityCapOverflowSettingsSchema",
+      "schema_file": "apps/admin-api/src/features/caps/caps.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 3,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Blocked overflow cannot specify a fallback target",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.behavior === 'block'",
+            "value.offer_id != null || value.link_id != null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Offer overflow requires offer_id and no link_id",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.behavior === 'offer'",
+            "!value.offer_id || value.link_id != null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Link overflow requires link_id and no offer_id",
+          "path": [
+            "link_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.link_id || value.offer_id != null"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "DealController.batchCreate",
+      "method": "POST",
+      "path": "/api/deals/batch",
+      "schema_source": "body",
+      "schema_name": "batchCreateDealsSchema",
+      "schema_file": "apps/admin-api/src/features/deals/deal.dto.ts",
+      "modifiers": [
+        "strict",
+        "refine",
+        "refine",
+        "refine"
+      ],
+      "constraint_count": 3,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "Only partnership deal recipients are supported",
+          "predicate": "(data) => {\n    return data.deal_recipient_kind === 'partnership';\n  }"
+        },
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "Exactly one of offer_ids or select_all_filters must be provided",
+          "predicate": "(data) => {\n    const hasOfferIds = data.offer_ids !== undefined && data.offer_ids.length > 0;\n    const hasFilters = data.select_all_filters !== undefined;\n    return (hasOfferIds && !hasFilters) || (!hasOfferIds && hasFilters);\n  }"
+        },
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "Percentage inputs are required when payout_strategy=percentage_of_parent",
+          "predicate": "(data) => {\n    const strategy = data.payout_strategy ?? 'percentage_of_parent';\n    if (strategy !== 'percentage_of_parent') return true;\n    return (\n      data.payout_percentage !== undefined &&\n      data.revshare_fixed !== undefined &&\n      data.hybrid_payout_percentage !== undefined &&\n      data.hybrid_revshare_fixed !== undefined\n    );\n  }"
+        }
+      ]
+    },
+    {
+      "operation_id": "DealController.computeOverrides",
+      "method": "POST",
+      "path": "/api/deals/compute-overrides",
+      "schema_source": "body",
+      "schema_name": "computeDealOverridesSchema",
+      "schema_file": "apps/admin-api/src/features/deals/deal.dto.ts",
+      "modifiers": [
+        "strict",
+        "refine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "Percentage inputs are required when payout_strategy=percentage_of_parent",
+          "predicate": "(data) => {\n    const strategy = data.payout_strategy ?? 'percentage_of_parent';\n    if (strategy !== 'percentage_of_parent') return true;\n    return (\n      data.payout_percentage !== undefined &&\n      data.revshare_fixed !== undefined &&\n      data.hybrid_payout_percentage !== undefined &&\n      data.hybrid_revshare_fixed !== undefined\n    );\n  }"
+        }
+      ]
+    },
+    {
+      "operation_id": "DealController.validateDeal",
+      "method": "POST",
+      "path": "/api/deals/validate",
+      "schema_source": "body",
+      "schema_name": "validateDealSchema",
+      "schema_file": "apps/admin-api/src/features/deals/deal.dto.ts",
+      "modifiers": [
+        "strict",
+        "refine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "Start date must be before expiration date",
+          "predicate": "(data) => {\n    // Validate date range\n    if (data.starts_at && data.expires_at) {\n      return new Date(data.starts_at) < new Date(data.expires_at);\n    }\n    return true;\n  }"
+        }
+      ]
+    },
+    {
+      "operation_id": "DebugController.getLiveTimeline",
+      "method": "GET",
+      "path": "/api/debug/traffic/live",
+      "schema_source": "query",
+      "schema_name": "debugTrafficLiveQuerySchema",
+      "schema_file": "apps/admin-api/src/features/debug/debug.dto.ts",
+      "modifiers": [
+        "refine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "session_id, click_id, or debug_run_id is required",
+          "predicate": "(value) => value.session_id || value.click_id || value.debug_run_id"
+        }
+      ]
+    },
+    {
+      "operation_id": "DomainPoolController.createRedirectPoolDomain",
+      "method": "POST",
+      "path": "/api/domain-pool/redirect",
+      "schema_source": "body",
+      "schema_name": "createDomainPoolDomainSchema",
+      "schema_file": "apps/admin-api/src/features/accounts/domain-pool.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "A valid pool root hostname is required, for example rdr.example.net",
+          "path": [
+            "root_hostname"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.dns_mode === 'manual'",
+            "!rootDomainPattern.test(normalizedRoot)"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Cloudflare token is required",
+          "path": [
+            "cloudflare_token"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.cloudflare_token"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "A Cloudflare zone must be selected",
+          "path": [
+            "cloudflare_zone_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.cloudflare_zone_id"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Subdomain is required",
+          "path": [
+            "cloudflare_subdomain"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "mode === 'subdomain'",
+            "!value.cloudflare_subdomain || !domainLabelRegex.test(value.cloudflare_subdomain)"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Choose root domain or subdomain for Cloudflare setup",
+          "path": [
+            "cloudflare_hostname_mode"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!rootDomainPattern.test(normalizedRoot)"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "EdgeSyncController.repairRuntimeTargets",
+      "method": "POST",
+      "path": "/api/edge-sync/runtime-targets/repair",
+      "schema_source": "body",
+      "schema_name": "edgeSyncRuntimeRepairInputSchema",
+      "schema_file": "apps/admin-api/src/features/edge-sync/edge-sync.dto.ts",
+      "modifiers": [
+        "refine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "At least one scope_key or link_id is required",
+          "predicate": "(value) => value.scope_keys.length > 0 || value.link_ids.length > 0"
+        }
+      ]
+    },
+    {
+      "operation_id": "EmailCapturesController.findAll",
+      "method": "GET",
+      "path": "/api/email-captures",
+      "schema_source": "query",
+      "schema_name": "emailCapturesQuerySchema",
+      "schema_file": "apps/admin-api/src/common/schemas/pagination.schema.ts",
+      "modifiers": [
+        "strict",
+        "refine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "Email captures limit max 100",
+          "predicate": "(data) => !data.limit || data.limit <= 100"
+        }
+      ]
+    },
+    {
+      "operation_id": "LinksController.create",
+      "method": "POST",
+      "path": "/api/links",
+      "schema_source": "body",
+      "schema_name": "createLinkSchema",
+      "schema_file": "apps/admin-api/src/features/links/links.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 4,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Direct links require offer_id",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "data.routing_mode === 'direct'",
+            "!data.offer_id"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Direct links should not specify fallback_offer_id",
+          "path": [
+            "fallback_offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "data.routing_mode === 'direct'",
+            "data.fallback_offer_id"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Rules-based links should not specify offer_id",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "data.offer_id"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Rules-based links should not specify deal_id",
+          "path": [
+            "deal_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "data.deal_id"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "LinksController.update",
+      "method": "PATCH",
+      "path": "/api/links/:id",
+      "schema_source": "body",
+      "schema_name": "updateLinkSchema",
+      "schema_file": "apps/admin-api/src/features/links/links.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 4,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Links cannot be moved between campaigns. Duplicate the link instead.",
+          "path": [
+            "campaign_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "Object.prototype.hasOwnProperty.call(data, 'campaign_id')"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Direct links should not specify fallback_offer_id",
+          "path": [
+            "fallback_offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "data.routing_mode === 'direct' && data.fallback_offer_id"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Rules-based links should not specify offer_id",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "data.routing_mode && data.routing_mode !== 'direct'",
+            "data.offer_id"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Rules-based links should not specify deal_id",
+          "path": [
+            "deal_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "data.routing_mode && data.routing_mode !== 'direct'",
+            "data.deal_id"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "OfferPayoutsController.create",
+      "method": "POST",
+      "path": "/api/offer-payouts",
+      "schema_source": "body",
+      "schema_name": "createOfferPayoutSchema",
+      "schema_file": "apps/admin-api/src/features/offer-payouts/offer-payout.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 2,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Payout amount is required for the selected payout model",
+          "path": [
+            "payout_amount"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "(data.payout_model === 'Payout' || data.payout_model === 'Hybrid') && data.payout_amount == null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Revenue share is required for the selected payout model",
+          "path": [
+            "revshare_percent"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "(data.payout_model === 'RevenueShare' || data.payout_model === 'Hybrid') && data.revshare_percent == null"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "OfferCapsController.createCap",
+      "method": "POST",
+      "path": "/api/offers/:id/caps",
+      "schema_source": "body",
+      "schema_name": "createEntityCapSchema",
+      "schema_file": "apps/admin-api/src/features/caps/caps.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "At least one cap limit is required",
+          "path": [
+            "daily_cap"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!hasAtLeastOneLimit(value)"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "OfferCapsController.updateCapOverflowSettings",
+      "method": "PATCH",
+      "path": "/api/offers/:id/caps/overflow",
+      "schema_source": "body",
+      "schema_name": "updateEntityCapOverflowSettingsSchema",
+      "schema_file": "apps/admin-api/src/features/caps/caps.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 3,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Blocked overflow cannot specify a fallback target",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.behavior === 'block'",
+            "value.offer_id != null || value.link_id != null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Offer overflow requires offer_id and no link_id",
+          "path": [
+            "offer_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.behavior === 'offer'",
+            "!value.offer_id || value.link_id != null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Link overflow requires link_id and no offer_id",
+          "path": [
+            "link_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.link_id || value.offer_id != null"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "PartnersController.create",
+      "method": "POST",
+      "path": "/api/partners",
+      "schema_source": "body",
+      "schema_name": "createPartnerSchema",
+      "schema_file": "apps/admin-api/src/features/partners/partners.dto.ts",
+      "modifiers": [
+        "strict",
+        "superRefine"
+      ],
+      "constraint_count": 2,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Default redirect domain must be one of the assigned redirect domains",
+          "path": [
+            "default_redirect_domain_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.redirect_domain_ids.includes(value.default_redirect_domain_id)"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Redirect domains must be unique",
+          "path": [
+            "redirect_domain_ids"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "new Set(value.redirect_domain_ids).size !== value.redirect_domain_ids.length"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "PartnersController.updateRedirectDomains",
+      "method": "PATCH",
+      "path": "/api/partners/:id/redirect-domains",
+      "schema_source": "body",
+      "schema_name": "updatePartnerRedirectDomainsSchema",
+      "schema_file": "apps/admin-api/src/features/partners/partners.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 2,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Default redirect domain must be one of the assigned redirect domains",
+          "path": [
+            "default_domain_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!value.assigned_domain_ids.includes(value.default_domain_id)"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Redirect domains must be unique",
+          "path": [
+            "assigned_domain_ids"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "new Set(value.assigned_domain_ids).size !==\n      value.assigned_domain_ids.length"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "PartnerCommunicationController.createIntegration",
+      "method": "POST",
+      "path": "/api/partners/:partnershipId/communication/integrations",
+      "schema_source": "body",
+      "schema_name": "communicationIntegrationSchema",
+      "schema_file": "apps/admin-api/src/features/communications/communication-admin.dto.ts",
+      "modifiers": [
+        "strict",
+        "superRefine"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "email_recipients is required for email integrations",
+          "path": [
+            "email_recipients"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.channel_type === 'email'",
+            "!value.email_recipients || value.email_recipients.length === 0"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "telegram_chat_id must be null for email integrations",
+          "path": [
+            "telegram_chat_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.channel_type === 'email'",
+            "value.telegram_chat_id !== undefined &&\n        value.telegram_chat_id !== null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "telegram_message_thread_id must be null for email integrations",
+          "path": [
+            "telegram_message_thread_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.channel_type === 'email'",
+            "value.telegram_message_thread_id !== undefined &&\n        value.telegram_message_thread_id !== null"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "telegram_chat_id is required for Telegram integrations",
+          "path": [
+            "telegram_chat_id"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.channel_type === 'telegram'",
+            "!value.telegram_chat_id"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "email_recipients must be null for Telegram integrations",
+          "path": [
+            "email_recipients"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.channel_type === 'telegram'",
+            "value.email_recipients !== undefined &&\n        value.email_recipients !== null"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "PermissionProfileController.create",
+      "method": "POST",
+      "path": "/api/permission-profiles",
+      "schema_source": "body",
+      "schema_name": "createPermissionProfileSchema",
+      "schema_file": "apps/admin-api/src/features/permissions/permission.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "accounts.create is reserved for super_admin and cannot be granted by permission profiles or overrides",
+          "path": [
+            "action_permissions"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "PermissionProfileController.update",
+      "method": "PATCH",
+      "path": "/api/permission-profiles/:id",
+      "schema_source": "body",
+      "schema_name": "updatePermissionProfileSchema",
+      "schema_file": "apps/admin-api/src/features/permissions/permission.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "accounts.create is reserved for super_admin and cannot be granted by permission profiles or overrides",
+          "path": [
+            "action_permissions"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "PermissionAssignmentController.assignPermissions",
+      "method": "PATCH",
+      "path": "/api/permissions/users/:userId",
+      "schema_source": "body",
+      "schema_name": "assignPermissionsSchema",
+      "schema_file": "apps/admin-api/src/features/permissions/permission.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "accounts.create is reserved for super_admin and cannot be granted by permission profiles or overrides",
+          "path": [
+            "action_overrides"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "ReportingController.getExport",
+      "method": "POST",
+      "path": "/api/reporting/export",
+      "schema_source": "body",
+      "schema_name": "reportingExportSchema",
+      "schema_file": "apps/admin-api/src/features/reporting/reporting.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 6,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Record type filters are only supported by the Leads report",
+          "path": [
+            "record_types"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.record_types && value.report_type !== 'lead'"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Click aggregate exports require the Click report",
+          "path": [
+            "mode"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.mode === 'click_aggregate'",
+            "value.report_type !== 'click'"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Unsupported click aggregate sort key",
+          "path": [
+            "sort",
+            "key"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.mode === 'click_aggregate'",
+            "value.sort\n      && !REPORTING_CLICK_AGGREGATE_SORT_KEYS.some((key) => key === value.sort?.key)"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Unsupported leaf session sort key",
+          "path": [
+            "sort",
+            "key"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.mode === 'leaf_sessions'",
+            "!REPORTING_LEAF_SORT_KEYS.some((key) => key === value.sort?.key)"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Unsupported aggregate sort key",
+          "path": [
+            "sort",
+            "key"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "REPORTING_AGGREGATE_REPORT_TYPES.some((report) => report === value.report_type)",
+            "!REPORTING_AGGREGATE_SORT_KEYS.some((key) => key === value.sort?.key)"
+          ]
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Unsupported record sort key",
+          "path": [
+            "sort",
+            "key"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "!REPORTING_RECORD_SORT_KEYS.some((key) => key === value.sort?.key)"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "ReportingController.getKpis",
+      "method": "GET",
+      "path": "/api/reporting/kpis",
+      "schema_source": "query",
+      "schema_name": "reportingKpisQuerySchema",
+      "schema_file": "apps/admin-api/src/features/reporting/reporting.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine",
+        "transform"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "ReportingController.getKpisComparison",
+      "method": "GET",
+      "path": "/api/reporting/kpis-comparison",
+      "schema_source": "query",
+      "schema_name": "reportingComparisonQuerySchema",
+      "schema_file": "apps/admin-api/src/features/reporting/reporting.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine",
+        "transform"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "ReportingController.getKpisExtended",
+      "method": "GET",
+      "path": "/api/reporting/kpis-extended",
+      "schema_source": "query",
+      "schema_name": "reportingKpisQuerySchema",
+      "schema_file": "apps/admin-api/src/features/reporting/reporting.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine",
+        "transform"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "ReportingController.getRecords",
+      "method": "POST",
+      "path": "/api/reporting/records",
+      "schema_source": "body",
+      "schema_name": "reportingRecordSchema",
+      "schema_file": "apps/admin-api/src/features/reporting/reporting.dto.ts",
+      "modifiers": [
+        "superRefine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "Record type filters are only supported by the Leads report",
+          "path": [
+            "record_types"
+          ],
+          "code": "z.ZodIssueCode.custom",
+          "conditions": [
+            "value.record_types && value.report_type !== 'lead'"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "ReportingController.getTimeSeries",
+      "method": "GET",
+      "path": "/api/reporting/time-series",
+      "schema_source": "query",
+      "schema_name": "reportingTimeSeriesQuerySchema",
+      "schema_file": "apps/admin-api/src/features/reporting/reporting.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine",
+        "transform"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "ReportingController.getTopCampaigns",
+      "method": "GET",
+      "path": "/api/reporting/top-campaigns",
+      "schema_source": "query",
+      "schema_name": "reportingKpisQuerySchema",
+      "schema_file": "apps/admin-api/src/features/reporting/reporting.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine",
+        "transform"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "ReportingController.getTopLinks",
+      "method": "GET",
+      "path": "/api/reporting/top-links",
+      "schema_source": "query",
+      "schema_name": "reportingKpisQuerySchema",
+      "schema_file": "apps/admin-api/src/features/reporting/reporting.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine",
+        "transform"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "ReportingController.getUniqueClicks",
+      "method": "GET",
+      "path": "/api/reporting/unique-clicks",
+      "schema_source": "query",
+      "schema_name": "reportingKpisQuerySchema",
+      "schema_file": "apps/admin-api/src/features/reporting/reporting.dto.ts",
+      "modifiers": [
+        "passthrough",
+        "superRefine",
+        "transform"
+      ],
+      "constraint_count": 5,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_id is not supported; use partnership_id",
+          "path": [
+            "partner_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "partner_scope_kind is not supported; use partnership_access",
+          "path": [
+            "partner_scope_kind"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_partner_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_partner_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "scoped_source_ids is not supported; use partnership_access",
+          "path": [
+            "scoped_source_ids"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        },
+        {
+          "source": "superRefine",
+          "extractable": true,
+          "message": "child_account_id is not supported; use account_id or partnership_id",
+          "path": [
+            "child_account_id"
+          ],
+          "code": "z.ZodIssueCode.custom"
+        }
+      ]
+    },
+    {
+      "operation_id": "TrackingController.findAll",
+      "method": "GET",
+      "path": "/api/tracking",
+      "schema_source": "query",
+      "schema_name": "trackingQuerySchema",
+      "schema_file": "apps/admin-api/src/common/schemas/pagination.schema.ts",
+      "modifiers": [
+        "strict",
+        "refine"
+      ],
+      "constraint_count": 1,
+      "opaque_constraint_count": 0,
+      "constraints": [
+        {
+          "source": "refine",
+          "extractable": true,
+          "message": "Tracking limit max 100",
+          "predicate": "(data) => !data.limit || data.limit <= 100"
+        }
+      ]
+    }
+  ]
+}

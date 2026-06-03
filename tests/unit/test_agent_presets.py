@@ -13,7 +13,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     listing = AgentPresetLoader().list_presets()
     keys = {item.key for item in listing.presets}
 
-    assert len(keys) == 28
+    assert len(keys) == 30
     assert "stackos.sdlc.requirements-flow-definer" in keys
     assert "stackos.sdlc.codebase-explorer" in keys
     assert "stackos.sdlc.planning" in keys
@@ -26,6 +26,9 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert "media-buying.workflow.campaign-launch" in keys
     assert "gtm.workflow.account-research" in keys
     assert "communications.workflow.rich-telegram-reply" in keys
+    assert "trackbooth.agent-api-operator" in keys
+    assert "stackos.workflow.workflow-author" in keys
+    assert "trackbooth.workflow-author" not in keys
     assert all(item.generic_preset for item in listing.presets)
     assert all(item.adaptation_required for item in listing.presets)
     by_key = {item.key: item for item in listing.presets}
@@ -37,6 +40,8 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
         "communications"
     )
     assert by_key["stackos.sdlc.requirements-flow-definer"].plugin_slug == "engineering"
+    assert by_key["trackbooth.agent-api-operator"].plugin_slug == "trackbooth"
+    assert by_key["stackos.workflow.workflow-author"].plugin_slug == "core"
 
 
 def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
@@ -78,6 +83,84 @@ def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> N
     assert "route approval" in contract_text
     assert "every inbound media item" in contract_text
     assert "partial forwarding" in contract_text
+
+
+def test_trackbooth_agent_preset_names_runtime_sync_and_stackos_boundaries() -> None:
+    loaded = AgentPresetLoader().describe_preset(key="trackbooth.agent-api-operator")
+    contract = loaded.preset.prompt_contract
+    contract_text = " ".join(
+        [
+            contract.mission,
+            *contract.responsibilities,
+            *contract.must_do,
+            *contract.must_not_do,
+            *contract.handoff_inputs,
+            *contract.handoff_outputs,
+            *contract.success_criteria,
+            *contract.self_check,
+        ]
+    )
+    refs = [item.ref for item in loaded.preset.project_adaptation.required_context_refs]
+    conditional_refs = [
+        item.ref for item in loaded.preset.project_adaptation.conditional_context_refs
+    ]
+
+    assert loaded.summary.plugin_slug == "trackbooth"
+    assert loaded.preset.project_adaptation.required is True
+    assert loaded.preset.project_adaptation.do_not_use_verbatim is True
+    assert "plugins/trackbooth/plugin.yaml" in refs
+    assert "plugins/trackbooth/agent-api/README.md" in refs
+    assert "docs/integration-contracts/trackbooth.md" in conditional_refs
+    assert "trackbooth.catalog.sync" in contract_text
+    assert "trackbooth.api.*" in contract_text
+    assert "api_base_url" in contract_text
+    assert "X-Acting-As-Account" in contract_text
+    assert "StackOS actions as the only agent-facing Trackbooth interface" in contract_text
+    assert "Do not make direct HTTP requests to Trackbooth" in contract_text
+    assert "construct Trackbooth URLs" in contract_text
+
+
+def test_generic_workflow_author_preset_teaches_workflow_generation_boundary() -> None:
+    loaded = AgentPresetLoader().describe_preset(key="stackos.workflow.workflow-author")
+    contract = loaded.preset.prompt_contract
+    contract_text = " ".join(
+        [
+            contract.mission,
+            *contract.responsibilities,
+            *contract.must_do,
+            *contract.must_not_do,
+            *contract.handoff_inputs,
+            *contract.handoff_outputs,
+            *contract.success_criteria,
+            *contract.self_check,
+        ]
+    )
+    refs = [item.ref for item in loaded.preset.project_adaptation.required_context_refs]
+    conditional_refs = [
+        item.ref for item in loaded.preset.project_adaptation.conditional_context_refs
+    ]
+
+    assert loaded.summary.plugin_slug == "core"
+    assert loaded.preset.project_adaptation.required is True
+    assert "AGENTS.md" in refs
+    assert "stackos:stackos" in refs
+    assert "project-local docs and skills" in refs
+    assert "docs/workflow-templates.md" in conditional_refs
+    assert "provider or plugin integration contract" in conditional_refs
+    assert "current action inventory" in conditional_refs
+    assert "workflowTemplate.validate" in loaded.preset.recommended_tools
+    assert "workflowExtension.upsert" in loaded.preset.recommended_tools
+    assert "runPlan.create" in loaded.preset.recommended_tools
+    assert "workflowTemplate.save" not in loaded.preset.recommended_tools
+    assert "workflow authoring brief" in loaded.preset.project_adaptation.required_agent_action
+    assert "run plan, a workflow extension, or a reusable project workflow template" in contract_text
+    assert "workflowTemplate.save" in contract_text
+    assert "local-admin authority" in contract_text
+    assert "Do not embed raw API keys" in contract_text
+    lower_contract_text = contract_text.lower()
+    assert "trackbooth" not in lower_contract_text
+    assert "x-acting-as-account" not in lower_contract_text
+    assert "do not make direct http requests" not in lower_contract_text
 
 
 def test_agent_preset_required_refs_do_not_assume_stackos_docs_in_customer_repo() -> None:

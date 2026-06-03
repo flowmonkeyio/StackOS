@@ -1,8 +1,8 @@
 # Current Executable Connector Contract Audit
 
-Audit date: 2026-06-01
+Audit date: 2026-06-02
 
-Scope: executable connector contracts for OpenAI Images, Firecrawl, Jina Reader, Reddit, DataForSEO, Serper.dev, Ahrefs, WordPress, Ghost, sitemap, and generic HTTP, plus connection-only setup providers that intentionally do not expose actions yet. This file is an integration-point audit only. It does not change manifests, tests, or runtime behavior.
+Scope: executable connector contracts for OpenAI Images, Firecrawl, Jina Reader, Reddit, DataForSEO, Serper.dev, Ahrefs, WordPress, Ghost, sitemap, Trackbooth, and generic HTTP, plus connection-only setup providers that intentionally do not expose actions yet. This file is an integration-point audit only. It does not change manifests, tests, or runtime behavior.
 
 ## StackOS Contract Boundary
 
@@ -25,6 +25,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | WordPress | [REST API authentication](https://developer.wordpress.org/rest-api/using-the-rest-api/authentication/), [Posts endpoint](https://developer.wordpress.org/rest-api/reference/posts/), [Application Passwords](https://developer.wordpress.org/rest-api/reference/application-passwords/) | Authentication and Application Passwords pages | [Pagination](https://developer.wordpress.org/rest-api/using-the-rest-api/pagination/), [global parameters](https://developer.wordpress.org/rest-api/using-the-rest-api/global-parameters/) |
 | Ghost | [Admin API overview](https://docs.ghost.org/admin-api/), [Admin posts overview](https://docs.ghost.org/admin-api/posts/overview), [creating a post](https://docs.ghost.org/admin-api/posts/creating-a-post), [uploading an image](https://docs.ghost.org/admin-api/images/uploading-an-image) | Admin API token authentication/JWT section | Admin API overview covers JSON shape, pagination, parameters, filtering, and errors |
 | Sitemap | [sitemaps.org protocol](https://www.sitemaps.org/protocol.html), [sitemaps.org FAQ](https://www.sitemaps.org/faq.html), [Google robots.txt sitemap field](https://developers.google.com/search/reference/robots_txt) | none | Protocol/FAQ define URL/index limits and optional fields |
+| Trackbooth | Live Agent API catalog fetched by `trackbooth.catalog.sync`; local generated bundle in `plugins/trackbooth/agent-api/` is a reference/test fixture | `X-API-Key` with optional `X-Acting-As-Account`; default API URL `https://apis.trackbooth.com`; credential config may point to localhost or remote HTTPS | Live `GET /api/agent-api/catalog`, live operation detail, generated OpenAPI/catalog fixtures, and schema constraints audit |
 | Generic HTTP | [RFC 9110 HTTP semantics](https://www.rfc-editor.org/rfc/rfc9110), [RFC 7617 Basic auth](https://www.rfc-editor.org/rfc/rfc7617), [RFC 6750 bearer usage](https://www.rfc-editor.org/rfc/rfc6750), [RFC 9457 problem details](https://www.rfc-editor.org/rfc/rfc9457) | RFC 7617 and RFC 6750 | RFC 9110 and RFC 9457 |
 
 ## Current Executable Surface
@@ -42,6 +43,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | `wordpress` | `publishing.wordpress.post.create` | `stackos/actions/wordpress.py`, `stackos/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
 | `ghost` | `publishing.ghost.post.create` | `stackos/actions/ghost.py`, `stackos/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
 | `http` | plugin-defined custom actions only | `stackos/actions/http.py:170` | documented in `docs/plugins.md:77`; no first-party manifest row | Static plugin config supplies URL/method/auth mode; daemon injects credential if allowed. |
+| `trackbooth` | Fixed `trackbooth.catalog.sync`, `trackbooth.catalog.search`, `trackbooth.operation.describe`; sync upserts scoped generated `trackbooth.api.ctx_<scope>.*` StackOS actions from the live catalog | `stackos/actions/trackbooth.py`, `stackos/integrations/trackbooth.py` | `plugins/trackbooth/plugin.yaml`, `plugins/trackbooth/agent-api/*` | API key payload; safe `api_base_url` config defaults to production and may point to localhost for local testing. |
 
 ## Connection-Only Setup Providers
 

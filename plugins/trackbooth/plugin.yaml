@@ -1,0 +1,203 @@
+slug: trackbooth
+name: Trackbooth
+version: 0.1.0
+description: Trackbooth Agent API StackOS action bridge for permission-filtered catalog discovery and explicit operation execution.
+display_order: 45
+source: builtin
+ui:
+  nav:
+    section: Trackbooth
+capabilities:
+  - key: agent-api
+    name: Agent API
+    description: Discover and call Trackbooth operations through StackOS actions generated from the live account-scoped Agent API catalog.
+    kind: integration
+providers:
+  - key: trackbooth
+    name: Trackbooth
+    description: Trackbooth Agent API provider. API keys stay daemon-held; Trackbooth server requests are performed only by the StackOS connector.
+    auth_type: api-key
+    auth_methods:
+      - key: api-key
+        label: Trackbooth API key
+        auth_type: api-key
+        payload_format: json
+        fields:
+          - key: api_key
+            label: API Key
+            type: secret
+            secret: true
+            required: true
+          - key: api_base_url
+            label: API URL
+            type: text
+            secret: false
+            required: false
+            placeholder: https://apis.trackbooth.com
+            description: Defaults to production. Use http://localhost:<port> or http://127.0.0.1:<port> only for local testing.
+    config:
+      default_api_base_url: https://apis.trackbooth.com
+      auth_header: X-API-Key
+      optional_on_behalf_header: X-Acting-As-Account
+      connection_category: Affiliation
+      setup_note: Store the account API key here. Custom API URLs are provider connection config, not per-operation action input.
+resources:
+  - key: agent-api-operation
+    name: Agent API Operation
+    description: Cached operation metadata generated from the live Trackbooth catalog sync.
+    schema:
+      type: object
+      additionalProperties: true
+      required:
+        - operation_id
+        - method
+        - path
+      properties:
+        operation_id:
+          type: string
+        method:
+          type: string
+        path:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        feature_requirements:
+          type: array
+          items:
+            type: string
+  - key: agent-api-schema
+    name: Agent API Schema
+    description: Expanded request and response schema details for one selected Trackbooth operation.
+    schema:
+      type: object
+      additionalProperties: true
+      required:
+        - operation_id
+      properties:
+        operation_id:
+          type: string
+        path_params:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        query_params:
+          type: object
+          additionalProperties: true
+        request_body:
+          type: object
+          additionalProperties: true
+        response:
+          type: object
+          additionalProperties: true
+actions:
+  - key: catalog.sync
+    name: Sync Trackbooth Catalog
+    description: Fetch the live permission-filtered Trackbooth Agent API catalog and upsert generated trackbooth.api.* actions for this runtime.
+    provider: trackbooth
+    capability: agent-api
+    risk_level: write
+    input_schema: &catalog_sync_input
+      type: object
+      additionalProperties: false
+      properties:
+        operation_ids:
+          type: array
+          items:
+            type: string
+          description: Optional operation ids to sync. Omit to sync the full live catalog returned for the credential context.
+        acting_as_account:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: Optional cap for local testing or focused sync runs.
+    output_schema: &object_output
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: trackbooth
+      operation: catalog.sync
+      requires_credential: true
+  - key: catalog.search
+    name: Search Trackbooth Catalog
+    description: Search the live permission-filtered Trackbooth Agent API catalog by text, category, tags, method, path, or operation id.
+    provider: trackbooth
+    capability: agent-api
+    risk_level: read
+    input_schema: &catalog_search_input
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+        category:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        method:
+          type: string
+          enum:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+        path:
+          type: string
+        operation_id:
+          type: string
+        acting_as_account:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+    output_schema: *object_output
+    config:
+      schema_version: stackos.action.v1
+      connector: trackbooth
+      operation: catalog.search
+      requires_credential: true
+  - key: operation.describe
+    name: Describe Trackbooth Operation
+    description: Fetch one live Trackbooth catalog operation and expand request and response schemas from the live catalog detail.
+    provider: trackbooth
+    capability: agent-api
+    risk_level: read
+    input_schema: &operation_describe_input
+      type: object
+      additionalProperties: false
+      required:
+        - operation_id
+      properties:
+        operation_id:
+          type: string
+        acting_as_account:
+          type: string
+    output_schema: *object_output
+    config:
+      schema_version: stackos.action.v1
+      connector: trackbooth
+      operation: operation.describe
+      requires_credential: true
+config:
+  agent_api_asset_dir: agent-api
+  default_api_base_url: https://apis.trackbooth.com
+  inventory_refresh:
+    mode: manual
+    action_ref: trackbooth.catalog.sync

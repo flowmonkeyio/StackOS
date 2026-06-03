@@ -270,6 +270,50 @@ def test_openrouter_auth_test_passes_safe_attribution_config(
     assert "or-secret" not in rendered
 
 
+def test_trackbooth_auth_test_passes_safe_custom_api_url_config(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="trackbooth",
+        auth_method_key="api-key",
+        profile_key="local",
+        fields={
+            "api_key": "tb-secret",
+            "api_base_url": "http://localhost:3030",
+        },
+    ).data
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "trackbooth",
+        )
+    ).one()
+    assert row.id is not None
+    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id).decode())
+    assert payload == {"api_key": "tb-secret"}
+    assert row.config_json["api_base_url"] == "http://localhost:3030"
+
+    httpx_mock.add_response(
+        method="GET",
+        url="http://localhost:3030/api/agent-api/catalog",
+        json={"data": [{"operation_id": "LinksController.findAll"}]},
+    )
+
+    tested = asyncio.run(repo.test(project_id=project_id, credential_ref=stored.credential_ref))
+    request = httpx_mock.get_requests()[0]
+    rendered = json.dumps(tested.data.model_dump(mode="json"))
+
+    assert tested.data.ok is True
+    assert tested.data.metadata["endpoint_count"] == 1
+    assert tested.data.metadata["api_base_url"] == "http://localhost:3030"
+    assert request.headers["X-API-Key"] == "tb-secret"
+    assert "tb-secret" not in rendered
+
+
 def test_telegram_status_excludes_global_credentials(
     session: Session,
     project_id: int,

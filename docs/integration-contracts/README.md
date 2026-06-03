@@ -23,6 +23,7 @@ StackOS provider work has three states:
 | [GTM Prospecting And Outbound](gtm-prospecting-outbound.md) | Apollo, Clay, Clearbit/Clearbit by HubSpot, Outreach, Salesloft, Google Workspace, Microsoft 365 | First executable connector pass delivered except explicit deferred actions. |
 | [Media Buying](media-buying.md) | Meta Marketing API, Google Ads API, Outbrain, Taboola, custom media tool contracts | Meta, Google Ads, and Taboola first pass executable; Outbrain and custom media tool actions deferred until provider docs or project-local HTTP connector config exist. |
 | [Communications](communications.md) | Telegram Bot API, Slack Web API, SMTP, IMAP, and generic agent request inbox | Telegram Bot API, Slack Web API actions/signed ingress, SMTP send, IMAP mailbox/message lifecycle, and generic `agent_requests` REST/CLI/MCP operations are executable through the clean action/operation path. |
+| [Trackbooth](trackbooth.md) | Trackbooth Agent API StackOS action inventory, schema resolver, and connector execution bridge | Manual `trackbooth.catalog.sync` refreshes live inventory into generated `trackbooth.api.*` actions; catalog/describe/read/write helpers remain for diagnostics. |
 
 ## Current Integration Status
 
@@ -35,6 +36,7 @@ StackOS provider work has three states:
 | `media-buying` | Meta Ads, Google Ads, and Taboola first actions are executable. Outbrain and custom media tools remain deferred or project-local until provider/project contracts are supplied. |
 | `gtm` | First CRM, enrichment, outbound, and workspace actions are executable where provider contracts are documented. Clearbit/inbound/custom project-local actions remain explicit deferred modes. |
 | `communications` | First-party plugin for Telegram bot, Slack bot, SMTP send, IMAP mailbox/message lifecycle, and generic agent request triggers. Telegram Bot API, Slack Web API actions/signed ingress, SMTP, IMAP, and core agent request queue operations are executable through shared manifests/connectors/operations; broader chat/mail providers, Slack Socket Mode/history/files/admin actions, and OAuth/XOAUTH2 mail auth remain deferred. |
+| `trackbooth` | Trackbooth Agent API bridge installs fixed catalog sync/search/describe/read/write StackOS actions; manual sync upserts generated direct actions from the live server, with daemon-held API-key auth and safe custom API URL config. |
 
 Provider-specific direct MCP tools are not part of the current architecture.
 Provider calls should enter through plugin action manifests, daemon connectors,
