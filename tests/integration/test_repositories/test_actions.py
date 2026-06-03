@@ -41,6 +41,7 @@ class _FakeConnector:
     def __init__(self) -> None:
         self.calls = 0
         self.saw_secret: bytes | None = None
+        self.saw_provider_context: dict | None = None
 
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
         if "name" not in request.input_json:
@@ -60,6 +61,7 @@ class _FakeConnector:
         self.calls += 1
         assert request.credential is not None
         self.saw_secret = request.credential.secret_payload
+        self.saw_provider_context = request.provider_context_json
         return ActionConnectorResult(
             output_json={
                 "echo": request.input_json,
@@ -421,13 +423,14 @@ def _sync_trackbooth_catalog(
     input_json: dict = {}
     if operation_ids:
         input_json["operation_ids"] = operation_ids
-    if acting_as_account:
-        input_json["acting_as_account"] = acting_as_account
     return asyncio.run(
         ActionRepository(session).execute(
             project_id=project_id,
             action_ref="trackbooth.catalog.sync",
             input_json=input_json,
+            provider_context_json={"acting_as_account": acting_as_account}
+            if acting_as_account
+            else None,
             credential_ref=credential_ref,
         )
     ).data.output_json
@@ -487,6 +490,67 @@ def test_action_execute_resolves_secret_internally_and_redacts_audit(
     assert usage.operation == "action.test-actions.echo.run"
     assert "daemon-only-secret" not in json.dumps(call.request_json)
     assert "daemon-only-secret" not in json.dumps(call.response_json)
+
+
+def test_provider_context_is_manifest_typed_passed_to_connector_and_audited(
+    session: Session,
+    project_id: int,
+) -> None:
+    _seed_action(session)
+    credential_ref = _credential_ref(session, project_id)
+    fake = _FakeConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(fake)
+    repo = ActionRepository(session, connectors=registry)
+
+    rejected = repo.validate(
+        project_id=project_id,
+        action_ref="test-actions.echo.run",
+        input_json={"name": "Ada"},
+        provider_context_json={"workspace_id": "ws_1"},
+        credential_ref=credential_ref,
+    )
+    assert any(issue.code == "provider_context_not_allowed" for issue in rejected.issues)
+
+    action = session.exec(select(Action).where(Action.key == "echo.run")).one()
+    action.config_json = {
+        **action.config_json,
+        "provider_context_schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"workspace_id": {"type": "string"}},
+        },
+    }
+    session.add(action)
+    session.commit()
+
+    invalid = repo.validate(
+        project_id=project_id,
+        action_ref="test-actions.echo.run",
+        input_json={"name": "Ada"},
+        provider_context_json={"workspace_id": "ws_1", "extra": "no"},
+        credential_ref=credential_ref,
+    )
+    assert any(
+        issue.path == "$.provider_context_json.extra"
+        and issue.code == "additional_property"
+        for issue in invalid.issues
+    )
+
+    out = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="test-actions.echo.run",
+            input_json={"name": "Ada"},
+            provider_context_json={"workspace_id": "ws_1"},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert fake.saw_provider_context == {"workspace_id": "ws_1"}
+    assert out.action_call.provider_context_json == {"workspace_id": "ws_1"}
+    call = session.exec(select(ActionCall).where(ActionCall.id == out.action_call.id)).one()
+    assert call.provider_context_json == {"workspace_id": "ws_1"}
 
 
 def test_action_execute_rejects_failed_credential_profile(
@@ -755,7 +819,6 @@ def test_trackbooth_write_operation_sends_body_and_explicit_acting_as_header(
             project_id=project_id,
             action_ref=action_ref,
             input_json={
-                "acting_as_account": "acct-managed",
                 "body": {
                     "campaign_id": "campaign-1",
                     "name": "Rules link",
@@ -763,6 +826,7 @@ def test_trackbooth_write_operation_sends_body_and_explicit_acting_as_header(
                     "offer_id": "offer-1",
                 },
             },
+            provider_context_json={"acting_as_account": "acct-managed"},
             credential_ref=credential_ref,
         )
     ).data
@@ -830,6 +894,10 @@ def test_trackbooth_catalog_sync_creates_runtime_generated_actions(
     assert described.manifest.config_json["inventory_api_base_url"] == (
         "https://trackbooth.local.test"
     )
+    assert "acting_as_account" not in described.manifest.input_schema_json["properties"]
+    assert described.manifest.provider_context_schema_json["properties"][
+        "acting_as_account"
+    ]["type"] == "string"
     repo.describe(project_id=project_id, action_ref=offers_action_ref)
     assert described.manifest.input_schema_json["properties"]["body"]["properties"][
         "routing_mode"
@@ -1060,7 +1128,6 @@ def test_trackbooth_generated_write_action_sends_body_without_catalog_preflight(
             project_id=project_id,
             action_ref=action_ref,
             input_json={
-                "acting_as_account": "acct-managed",
                 "body": {
                     "campaign_id": "campaign-1",
                     "name": "Generated action link",
@@ -1068,6 +1135,7 @@ def test_trackbooth_generated_write_action_sends_body_without_catalog_preflight(
                     "offer_id": "offer-1",
                 },
             },
+            provider_context_json={"acting_as_account": "acct-managed"},
             credential_ref=credential_ref,
         )
     ).data
@@ -1081,7 +1149,7 @@ def test_trackbooth_generated_write_action_sends_body_without_catalog_preflight(
     assert json.loads(actual.content)["routing_mode"] == "direct"
 
 
-def test_trackbooth_generated_action_reuses_synced_acting_account_and_rejects_override(
+def test_trackbooth_generated_action_uses_provider_context_for_acting_account(
     session: Session,
     project_id: int,
     httpx_mock: HTTPXMock,
@@ -1108,10 +1176,14 @@ def test_trackbooth_generated_action_reuses_synced_acting_account_and_rejects_ov
                     "routing_mode": "direct",
                 },
             },
+            provider_context_json={"acting_as_account": "acct-managed"},
             credential_ref=credential_ref,
         )
     )
     assert httpx_mock.get_requests()[-1].headers["X-Acting-As-Account"] == "acct-managed"
+    call = session.exec(select(ActionCall).where(ActionCall.action_key == action_ref.split(".", 1)[1])).first()
+    assert call is not None
+    assert call.provider_context_json == {"acting_as_account": "acct-managed"}
 
     validation = ActionRepository(session).validate(
         project_id=project_id,
@@ -1126,7 +1198,7 @@ def test_trackbooth_generated_action_reuses_synced_acting_account_and_rejects_ov
         },
         credential_ref=credential_ref,
     )
-    assert any(issue.code == "scope_mismatch" for issue in validation.issues)
+    assert any(issue.code == "additional_property" for issue in validation.issues)
 
 
 def test_trackbooth_validation_rejects_invalid_enum_and_missing_required_body_field(

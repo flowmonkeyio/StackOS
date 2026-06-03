@@ -161,6 +161,13 @@ def actions_validate(
         str | None,
         typer.Option("--input", "-i", help="JSON action input payload, or '-' for stdin."),
     ] = None,
+    provider_context_path: Annotated[
+        str | None,
+        typer.Option(
+            "--provider-context",
+            help="JSON provider execution context payload, or '-' for stdin.",
+        ),
+    ] = None,
     project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
     plugin_slug: Annotated[
         str | None,
@@ -183,6 +190,9 @@ def actions_validate(
             "action_key": action_key,
             "credential_ref": credential_ref,
             "input_json": _load_operation_arguments(input_path) if input_path else None,
+            "provider_context_json": _load_operation_arguments(provider_context_path)
+            if provider_context_path
+            else None,
         },
         project_id=project_id,
     )
@@ -198,6 +208,13 @@ def actions_execute(
     input_path: Annotated[
         str | None,
         typer.Option("--input", "-i", help="JSON action input payload, or '-' for stdin."),
+    ] = None,
+    provider_context_path: Annotated[
+        str | None,
+        typer.Option(
+            "--provider-context",
+            help="JSON provider execution context payload, or '-' for stdin.",
+        ),
     ] = None,
     project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
     run_token: Annotated[
@@ -234,6 +251,9 @@ def actions_execute(
             "action_key": action_key,
             "credential_ref": credential_ref,
             "input_json": _load_operation_arguments(input_path) if input_path else None,
+            "provider_context_json": _load_operation_arguments(provider_context_path)
+            if provider_context_path
+            else None,
             "dry_run": dry_run,
         },
         project_id=project_id,
@@ -252,6 +272,13 @@ def actions_run(
     input_path: Annotated[
         str | None,
         typer.Option("--input", "-i", help="JSON action input payload, or '-' for stdin."),
+    ] = None,
+    provider_context_path: Annotated[
+        str | None,
+        typer.Option(
+            "--provider-context",
+            help="JSON provider execution context payload, or '-' for stdin.",
+        ),
     ] = None,
     project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
     plugin_slug: Annotated[
@@ -305,6 +332,9 @@ def actions_run(
             "action_key": action_key,
             "credential_ref": credential_ref,
             "input_json": _load_operation_arguments(input_path) if input_path else None,
+            "provider_context_json": _load_operation_arguments(provider_context_path)
+            if provider_context_path
+            else None,
             "dry_run": dry_run,
             "confirm_direct": confirm_direct,
             "intent_summary": intent_summary,

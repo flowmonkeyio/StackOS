@@ -38,6 +38,7 @@ class ActionConnectorRequest:
     operation: str
     input_json: dict[str, Any]
     config_json: Mapping[str, Any]
+    provider_context_json: dict[str, Any] = field(default_factory=dict)
     credential: ResolvedCredential | None = field(default=None, repr=False)
     asset_dir: Path | None = None
     session: Any | None = field(default=None, repr=False)

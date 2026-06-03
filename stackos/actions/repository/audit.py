@@ -12,7 +12,7 @@ from stackos.actions.manifest import ExecutableActionManifest
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import ResolvedCredential
 from stackos.db.models import ActionCall, ActionCallStatus
-from stackos.repositories.base import ConflictError, Page, cursor_paginate
+from stackos.repositories.base import ConflictError, Page, cursor_paginate_desc
 
 from .schema import ActionCallAuditOut, ActionCallOut, ActionExecutionOut
 from .utils import _redact_for_audit, utcnow
@@ -49,7 +49,7 @@ class ActionAuditMixin:
         if status is not None:
             filters.append(ActionCall.status == status)
         stmt = select(ActionCall).where(*filters)
-        return cursor_paginate(
+        return cursor_paginate_desc(
             self._s,
             stmt,
             id_col=ActionCall.id,
@@ -70,6 +70,7 @@ class ActionAuditMixin:
         run_plan_step_id: int | None,
         idempotency_key: str | None,
         request_json: dict[str, Any],
+        provider_context_json: dict[str, Any] | None,
         response_json: dict[str, Any] | None,
         metadata_json: dict[str, Any] | None,
         status: ActionCallStatus,
@@ -96,6 +97,9 @@ class ActionAuditMixin:
             idempotency_key=idempotency_key,
             credential_ref=credential_ref,
             request_json=_redact_for_audit(request_json),
+            provider_context_json=_redact_for_audit(provider_context_json)
+            if provider_context_json is not None
+            else None,
             response_json=_redact_for_audit(response_json) if response_json is not None else None,
             metadata_json=_redact_for_audit(metadata_json) if metadata_json is not None else None,
             cost_cents=cost_cents,
@@ -129,6 +133,7 @@ class ActionAuditMixin:
             idempotency_key=row.idempotency_key,
             credential_ref=row.credential_ref,
             request_json=_redact_for_audit(row.request_json),
+            provider_context_json=_redact_for_audit(row.provider_context_json),
             response_json=_redact_for_audit(row.response_json),
             metadata_json=_redact_for_audit(row.metadata_json),
             cost_cents=row.cost_cents,
@@ -155,6 +160,7 @@ class ActionAuditMixin:
             dry_run=row.dry_run,
             credential_ref=row.credential_ref,
             request_json=_redact_for_audit(row.request_json),
+            provider_context_json=_redact_for_audit(row.provider_context_json),
             response_json=_redact_for_audit(row.response_json),
             metadata_json=_redact_for_audit(row.metadata_json),
             cost_cents=row.cost_cents,
@@ -171,6 +177,7 @@ class ActionAuditMixin:
         manifest: ExecutableActionManifest,
         idempotency_key: str,
         request_json: dict[str, Any],
+        provider_context_json: dict[str, Any] | None,
         credential_ref: str | None,
         dry_run: bool,
     ) -> ActionExecutionOut | None:
@@ -189,6 +196,7 @@ class ActionAuditMixin:
             return None
         if (
             row.request_json != _redact_for_audit(request_json)
+            or row.provider_context_json != _redact_for_audit(provider_context_json)
             or row.credential_ref != credential_ref
             or row.dry_run != dry_run
         ):

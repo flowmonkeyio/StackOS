@@ -176,6 +176,10 @@ All presets are expected to work through the existing StackOS tracker:
   attachment/provenance only; agents update child ticket status and evidence
   with `tracker.updateTicket` while reserving `runPlan.claimStep` and
   `runPlan.recordStep` for generated workflow step mirror tickets
+- workflow-backed ticket creation must pass `run_plan_id` and `step_id`
+  together or omit both; if an agent only has one, it should fetch
+  `tracker.brief`, `tracker.get`, or `runPlan.get` to recover the workflow
+  handoff before calling `tracker.createTicket`
 - planning agents must dependency-bridge child tickets into the mirrored
   workflow step chain
 - delivery agents claim/update tickets as work starts and completes

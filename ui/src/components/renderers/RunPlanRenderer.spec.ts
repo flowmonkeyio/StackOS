@@ -95,6 +95,7 @@ describe('RunPlanRenderer', () => {
         dry_run: false,
         credential_ref: 'cred_123',
         request_json: { prompt: 'x', api_key: 'secret' },
+        provider_context_json: null,
         response_json: { uri: '/generated-assets/x.webp' },
         metadata_json: null,
         cost_cents: 1,

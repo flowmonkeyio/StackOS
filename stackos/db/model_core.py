@@ -273,6 +273,7 @@ class ActionCall(SQLModel, table=True):
     idempotency_key: str | None = Field(default=None, max_length=160)
     credential_ref: str | None = Field(default=None, max_length=120)
     request_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    provider_context_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     response_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     cost_cents: int = Field(default=0)

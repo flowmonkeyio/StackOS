@@ -33,6 +33,7 @@ class ActionCallOut(BaseModel):
     idempotency_key: str | None
     credential_ref: str | None
     request_json: dict[str, Any] | None
+    provider_context_json: dict[str, Any] | None
     response_json: dict[str, Any] | None
     metadata_json: dict[str, Any] | None
     cost_cents: int
@@ -64,6 +65,7 @@ class ActionCallAuditOut(BaseModel):
     dry_run: bool
     credential_ref: str | None
     request_json: dict[str, Any] | None
+    provider_context_json: dict[str, Any] | None
     response_json: dict[str, Any] | None
     metadata_json: dict[str, Any] | None
     cost_cents: int

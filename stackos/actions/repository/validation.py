@@ -29,6 +29,7 @@ class ActionValidationMixin:
         plugin_slug: str | None = None,
         action_key: str | None = None,
         input_json: dict[str, Any] | None = None,
+        provider_context_json: dict[str, Any] | None = None,
         credential_ref: str | None = None,
     ) -> ActionValidationOut:
         manifest = self._manifest(
@@ -41,7 +42,14 @@ class ActionValidationMixin:
             input_json or {},
             credential_ref=credential_ref,
         )
+        provider_context = self._normalize_provider_context(provider_context_json)
         issues = self._validate_payload(manifest=manifest, payload=payload)
+        issues.extend(
+            self._validate_provider_context(
+                manifest=manifest,
+                provider_context_json=provider_context,
+            )
+        )
         if not (manifest.execution_mode is not None and manifest.connector_key is None):
             issues.extend(
                 self._credential_ref_issues(
@@ -60,6 +68,7 @@ class ActionValidationMixin:
                     project_id=project_id or 0,
                     manifest=manifest,
                     input_json=payload,
+                    provider_context_json=provider_context,
                     credential=None,
                     dry_run=True,
                 )
@@ -99,6 +108,22 @@ class ActionValidationMixin:
             credential_ref=resolved_ref,
         )
 
+    def _normalize_provider_context(
+        self,
+        provider_context_json: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if provider_context_json is None:
+            return {}
+        if not isinstance(provider_context_json, dict):
+            raise ValidationError("provider_context_json must be an object")
+        secret_paths = find_run_plan_secret_paths(provider_context_json)
+        if secret_paths:
+            raise ValidationError(
+                "provider_context_json must not contain secrets; use opaque credential_ref values",
+                data={"paths": secret_paths[:8]},
+            )
+        return dict(provider_context_json)
+
     def _normalize_payload_and_ref(
         self,
         input_json: dict[str, Any],
@@ -127,6 +152,25 @@ class ActionValidationMixin:
         if not manifest.input_schema_json:
             return []
         return _schema_issues(manifest.input_schema_json, payload)
+
+    def _validate_provider_context(
+        self,
+        *,
+        manifest: ExecutableActionManifest,
+        provider_context_json: dict[str, Any],
+    ) -> list[ActionValidationIssue]:
+        if not provider_context_json:
+            return []
+        schema = manifest.provider_context_schema_json
+        if not schema:
+            return [
+                ActionValidationIssue(
+                    path="$.provider_context_json",
+                    message="provider context is not allowed for this action",
+                    code="provider_context_not_allowed",
+                )
+            ]
+        return _schema_issues(schema, provider_context_json, path="$.provider_context_json")
 
     def _credential_ref_issues(
         self,

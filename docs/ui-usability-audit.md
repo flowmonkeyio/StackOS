@@ -80,6 +80,10 @@ communications setup.
   panel.
 - JSON-heavy detail panes should be bounded with internal scroll, especially
   when used beside a table.
+- Drawer and detail summaries should use `UiFactGroups` when values fall into
+  natural sections such as execution target, run context, outcome, and timeline.
+  Keep `UiDescriptionList` for one simple key/value group and `KvList` for very
+  dense inline metadata.
 
 ### Project Data
 
@@ -134,6 +138,8 @@ communications setup.
 - Use `break-all` or bounded scroll for refs, URLs, and opaque IDs.
 - Keep `Connections` as the only broad setup surface for credentials unless a
   future generic setup route is introduced.
+- Use `UiFactGroups` for sectioned drawer summaries before JSON/code blocks, so
+  operators can scan the business context without reading raw payloads first.
 
 ## Implemented In This Pass
 
@@ -149,6 +155,8 @@ communications setup.
   scroll inside the table region instead of making the whole page several
   screens tall.
 - Repeated metric strips were migrated to `UiMetricCard` where touched.
+- `Action Calls` uses `UiFactGroups` in the call drawer to group execution
+  target, run context, outcome, and timeline before request/response JSON.
 
 ## Next Refinements
 
@@ -156,6 +164,10 @@ communications setup.
   addressable.
 - Extract a reusable master/detail layout after one more pass confirms the
   pattern is stable across views.
+- Migrate `TrackerTicketDetailPanel` and `TrackerTaskDetailDialog` custom fact
+  grids to `UiFactGroups`.
+- Audit `TelegramProfileSidePanel`, `AgentRequestsView`, and selected resource
+  renderer summaries for `UiFactGroups` where their metadata is sectioned.
 - Query-back selected rows and active tabs for operations, resources,
   templates, and project data.
 - Split `ConnectionsView.vue` into service, communication setup, Telegram

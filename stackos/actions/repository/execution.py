@@ -31,6 +31,7 @@ class ActionExecutionMixin:
         plugin_slug: str | None = None,
         action_key: str | None = None,
         input_json: dict[str, Any] | None = None,
+        provider_context_json: dict[str, Any] | None = None,
         credential_ref: str | None = None,
         run_id: int | None = None,
         run_plan_id: int | None = None,
@@ -50,6 +51,8 @@ class ActionExecutionMixin:
             input_json or {},
             credential_ref=credential_ref,
         )
+        provider_context = self._normalize_provider_context(provider_context_json)
+        provider_context_for_audit = provider_context or None
         availability = build_action_availability(
             self._s,
             manifest=manifest,
@@ -73,6 +76,7 @@ class ActionExecutionMixin:
             project_id=project_id,
             action_ref=manifest.action_ref,
             input_json=payload,
+            provider_context_json=provider_context,
             credential_ref=resolved_ref,
         )
         if not validation.valid:
@@ -124,6 +128,7 @@ class ActionExecutionMixin:
                 manifest=manifest,
                 idempotency_key=idempotency_key,
                 request_json=payload,
+                provider_context_json=provider_context_for_audit,
                 credential_ref=resolved_ref,
                 dry_run=dry_run,
             )
@@ -134,6 +139,7 @@ class ActionExecutionMixin:
             project_id=project_id,
             manifest=manifest,
             input_json=payload,
+            provider_context_json=provider_context,
             credential=None,
             dry_run=True,
         )
@@ -149,6 +155,7 @@ class ActionExecutionMixin:
                 run_plan_step_id=run_plan_step_id,
                 idempotency_key=idempotency_key,
                 request_json=payload,
+                provider_context_json=provider_context_for_audit,
                 response_json={
                     "dry_run": True,
                     "valid": True,
@@ -188,6 +195,7 @@ class ActionExecutionMixin:
             project_id=project_id,
             manifest=manifest,
             input_json=payload,
+            provider_context_json=provider_context,
             credential=credential,
             dry_run=False,
         )
@@ -207,6 +215,7 @@ class ActionExecutionMixin:
                 run_plan_step_id=run_plan_step_id,
                 idempotency_key=idempotency_key,
                 request_json=payload,
+                provider_context_json=provider_context_for_audit,
                 response_json=None,
                 metadata_json=metadata_json,
                 status=ActionCallStatus.FAILED,
@@ -238,6 +247,7 @@ class ActionExecutionMixin:
             run_plan_step_id=run_plan_step_id,
             idempotency_key=idempotency_key,
             request_json=payload,
+            provider_context_json=provider_context_for_audit,
             response_json=output_json,
             metadata_json={
                 **(_redact_for_audit(metadata_json) if metadata_json else {}),
@@ -289,6 +299,7 @@ class ActionExecutionMixin:
         project_id: int,
         manifest: ExecutableActionManifest,
         input_json: dict[str, Any],
+        provider_context_json: dict[str, Any],
         credential: ResolvedCredential | None,
         dry_run: bool,
     ) -> ActionConnectorRequest:
@@ -301,6 +312,7 @@ class ActionExecutionMixin:
             operation=manifest.operation,
             input_json=input_json,
             config_json=manifest.config_json,
+            provider_context_json=provider_context_json,
             credential=credential,
             asset_dir=self._asset_dir,
             session=self._s,

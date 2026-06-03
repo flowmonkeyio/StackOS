@@ -64,6 +64,10 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     assert "workflow-backed run plan before tracker.createtask" in contract_text.lower()
     assert "direct tracker tasks only" in contract_text.lower()
     assert "canonical workflow-backed task/run plan" in contract_text.lower()
+    assert "pass run_plan_id and step_id together" in (
+        loaded.preset.project_adaptation.required_agent_action.lower()
+    )
+    assert "never retry tracker.createticket with only one" in contract_text.lower()
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:

@@ -116,8 +116,6 @@ actions:
           items:
             type: string
           description: Optional operation ids to sync. Omit to sync the full live catalog returned for the credential context.
-        acting_as_account:
-          type: string
         limit:
           type: integer
           minimum: 1
@@ -131,6 +129,13 @@ actions:
       connector: trackbooth
       operation: catalog.sync
       requires_credential: true
+      provider_context_schema: &trackbooth_provider_context
+        type: object
+        additionalProperties: false
+        properties:
+          acting_as_account:
+            type: string
+            description: Optional managed Trackbooth account id. StackOS sends it as X-Acting-As-Account.
   - key: catalog.search
     name: Search Trackbooth Catalog
     description: Search the live permission-filtered Trackbooth Agent API catalog by text, category, tags, method, path, or operation id.
@@ -161,8 +166,6 @@ actions:
           type: string
         operation_id:
           type: string
-        acting_as_account:
-          type: string
         limit:
           type: integer
           minimum: 1
@@ -173,6 +176,7 @@ actions:
       connector: trackbooth
       operation: catalog.search
       requires_credential: true
+      provider_context_schema: *trackbooth_provider_context
   - key: operation.describe
     name: Describe Trackbooth Operation
     description: Fetch one live Trackbooth catalog operation and expand request and response schemas from the live catalog detail.
@@ -187,14 +191,13 @@ actions:
       properties:
         operation_id:
           type: string
-        acting_as_account:
-          type: string
     output_schema: *object_output
     config:
       schema_version: stackos.action.v1
       connector: trackbooth
       operation: operation.describe
       requires_credential: true
+      provider_context_schema: *trackbooth_provider_context
 config:
   agent_api_asset_dir: agent-api
   default_api_base_url: https://apis.trackbooth.com

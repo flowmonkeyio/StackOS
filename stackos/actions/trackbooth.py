@@ -52,6 +52,19 @@ _BLOCKED_OPERATION_IDS = {
     "AccountApiKeyController.revealApiKey",
     "AccountApiKeyController.generateApiKey",
 }
+_TRACKBOOTH_PROVIDER_CONTEXT_SCHEMA: JsonObject = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "acting_as_account": {
+            "type": "string",
+            "description": (
+                "Optional managed Trackbooth account id. StackOS sends it as "
+                "X-Acting-As-Account."
+            ),
+        }
+    },
+}
 _PATH_PARAM_RE = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _ENUM_VALUE_RE = re.compile(r"'([^']*)'")
 _ACTION_SLUG_RE = re.compile(r"[^a-z0-9_]+")
@@ -202,7 +215,6 @@ class TrackboothActionConnector:
         if request.operation == "operation.describe":
             issues: list[ActionValidationIssue] = []
             required_str(payload, "operation_id", issues)
-            optional_str(payload, "acting_as_account", issues)
             return issues
         if request.operation in {"rest.read", "rest.write"}:
             return self._validate_rest(request)
@@ -233,7 +245,6 @@ class TrackboothActionConnector:
         self._enforce_runtime_inventory_scope(
             request=request,
             base_url=base_url,
-            acting_as_account=acting_as_account,
         )
 
         if request.operation == "catalog.sync":
@@ -297,7 +308,6 @@ class TrackboothActionConnector:
 
     def _validate_catalog_sync(self, payload: JsonObject) -> list[ActionValidationIssue]:
         issues: list[ActionValidationIssue] = []
-        optional_str(payload, "acting_as_account", issues)
         operation_ids = payload.get("operation_ids")
         if operation_ids is not None:
             if not isinstance(operation_ids, list):
@@ -323,7 +333,7 @@ class TrackboothActionConnector:
 
     def _validate_catalog_search(self, payload: JsonObject) -> list[ActionValidationIssue]:
         issues: list[ActionValidationIssue] = []
-        for key in ("query", "category", "path", "operation_id", "acting_as_account"):
+        for key in ("query", "category", "path", "operation_id"):
             optional_str(payload, key, issues)
         list_field(payload, "tags", issues)
         value = payload.get("limit")
@@ -343,7 +353,6 @@ class TrackboothActionConnector:
         issues: list[ActionValidationIssue] = []
         if operation_id_override is None:
             required_str(payload, "operation_id", issues)
-        optional_str(payload, "acting_as_account", issues)
         for key in ("path_params", "query", "body"):
             value = payload.get(key)
             if value is not None and not isinstance(value, dict):
@@ -566,7 +575,6 @@ class TrackboothActionConnector:
             request=request,
             details=details,
             base_url=base_url,
-            acting_as_account=_optional_clean_str(request.input_json.get("acting_as_account")),
             prune_missing=not requested_ids and limit is None,
         )
         return ActionConnectorResult(
@@ -603,7 +611,6 @@ class TrackboothActionConnector:
         *,
         request: ActionConnectorRequest,
         base_url: str,
-        acting_as_account: str | None,
     ) -> None:
         if self._configured_operation_id(request) is None:
             return
@@ -634,23 +641,11 @@ class TrackboothActionConnector:
                 "Trackbooth generated action was synced for a different API URL; "
                 "rerun trackbooth.catalog.sync for the current credential"
             )
-        expected_acting_as = config.get("inventory_acting_as_account")
-        if expected_acting_as is None:
-            if acting_as_account is not None:
-                raise ValidationError(
-                    "Trackbooth generated action was synced without an acting account; "
-                    "rerun trackbooth.catalog.sync with that acting_as_account"
-                )
-        elif isinstance(expected_acting_as, str) and expected_acting_as != acting_as_account:
-            raise ValidationError(
-                "Trackbooth generated action was synced for a different acting account"
-            )
         if request.credential is not None:
             actual_scope_key = _runtime_inventory_scope_key(
                 _runtime_inventory_scope(
                     request=request,
                     base_url=base_url,
-                    acting_as_account=acting_as_account,
                 )
             )
             expected_scope_key = config.get("inventory_scope_key")
@@ -962,7 +957,6 @@ def _runtime_inventory_scope(
     *,
     request: ActionConnectorRequest,
     base_url: str,
-    acting_as_account: str | None,
 ) -> JsonObject:
     if request.credential is None:
         raise ValidationError("Trackbooth catalog sync requires a credential")
@@ -970,7 +964,6 @@ def _runtime_inventory_scope(
         "project_id": request.project_id,
         "credential_ref": request.credential.credential_ref,
         "api_base_url": base_url,
-        "acting_as_account": acting_as_account,
     }
 
 
@@ -980,7 +973,6 @@ def _runtime_inventory_scope_key(scope: Mapping[str, Any]) -> str:
             "project_id": scope.get("project_id"),
             "credential_ref": scope.get("credential_ref"),
             "api_base_url": scope.get("api_base_url"),
-            "acting_as_account": scope.get("acting_as_account"),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -1031,7 +1023,6 @@ def _upsert_runtime_actions(
     request: ActionConnectorRequest,
     details: Sequence[Mapping[str, Any]],
     base_url: str,
-    acting_as_account: str | None,
     prune_missing: bool,
 ) -> JsonObject:
     plugin = session.exec(
@@ -1052,7 +1043,6 @@ def _upsert_runtime_actions(
     scope = _runtime_inventory_scope(
         request=request,
         base_url=base_url,
-        acting_as_account=acting_as_account,
     )
     scope_key = _runtime_inventory_scope_key(scope)
     created = 0
@@ -1219,8 +1209,8 @@ def _runtime_action_manifest(
             "inventory_project_id": inventory_scope["project_id"],
             "inventory_credential_ref": inventory_scope["credential_ref"],
             "inventory_api_base_url": base_url,
-            "inventory_acting_as_account": inventory_scope["acting_as_account"],
             "inventory_synced_at": synced_at.isoformat(),
+            "provider_context_schema": _TRACKBOOTH_PROVIDER_CONTEXT_SCHEMA,
         },
     }
 
@@ -1245,12 +1235,7 @@ def _runtime_action_description(*, detail: Mapping[str, Any], method: str, path:
 
 
 def _runtime_input_schema(detail: Mapping[str, Any]) -> JsonObject:
-    properties: JsonObject = {
-        "acting_as_account": {
-            "type": "string",
-            "description": "Optional managed Trackbooth account id for X-Acting-As-Account.",
-        }
-    }
+    properties: JsonObject = {}
     required: list[str] = []
     path_params = detail.get("path_params")
     if isinstance(path_params, list) and path_params:
@@ -1670,17 +1655,7 @@ def _extract_operation_detail(body: Any) -> JsonObject:
 
 
 def _effective_acting_as_account(request: ActionConnectorRequest) -> str | None:
-    supplied = _optional_clean_str(request.input_json.get("acting_as_account"))
-    configured = request.config_json.get("inventory_acting_as_account")
-    if isinstance(configured, str) and configured:
-        if supplied is not None and supplied != configured:
-            raise ValidationError(
-                "Trackbooth generated action was synced for a different acting account"
-            )
-        return configured
-    if configured is None:
-        return supplied
-    return supplied
+    return _optional_clean_str(request.provider_context_json.get("acting_as_account"))
 
 
 def _runtime_inventory_input_issues(
@@ -1708,28 +1683,6 @@ def _runtime_inventory_input_issues(
             issue(
                 "$.project_id",
                 "generated Trackbooth action belongs to a different StackOS project",
-                "scope_mismatch",
-            )
-        )
-    supplied = _optional_clean_str(request.input_json.get("acting_as_account"))
-    expected_acting_as = config.get("inventory_acting_as_account")
-    if expected_acting_as is None and supplied is not None:
-        issues.append(
-            issue(
-                "$.acting_as_account",
-                "generated action was synced without an acting account",
-                "scope_mismatch",
-            )
-        )
-    elif (
-        isinstance(expected_acting_as, str)
-        and supplied is not None
-        and supplied != expected_acting_as
-    ):
-        issues.append(
-            issue(
-                "$.acting_as_account",
-                "generated action was synced for a different acting account",
                 "scope_mismatch",
             )
         )

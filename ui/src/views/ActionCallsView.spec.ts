@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import ActionCallsView from './ActionCallsView.vue'
@@ -51,7 +52,16 @@ describe('ActionCallsView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('utils:image.generate'))
 
     expect(requestedUrls.some((url) => url.includes('plugin_slug=utils'))).toBe(true)
+    expect(wrapper.text()).not.toContain('Action Call #1')
+
+    await clickRow(wrapper, 'utils:image.generate')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Action Call #1'))
+    expect(wrapper.text()).toContain('Execution Target')
+    expect(wrapper.text()).toContain('Run Context')
+    expect(wrapper.text()).toContain('Outcome')
+    expect(wrapper.text()).toContain('Timeline')
     expect(wrapper.text()).toContain('[redacted]')
+    expect(wrapper.text()).toContain('acct-managed')
     expect(wrapper.text()).not.toContain('sk-secret')
     expect(wrapper.text()).not.toContain('token-secret')
 
@@ -59,6 +69,8 @@ describe('ActionCallsView', () => {
     await vi.waitFor(() =>
       expect(requestedUrls.some((url) => url.includes('status=failed'))).toBe(true),
     )
+    await vi.waitFor(() => expect(wrapper.text()).toContain('#2'))
+    await emitRowClick(wrapper, actionCall({ id: 2, status: 'failed', error: 'provider rejected request' }))
     await vi.waitFor(() => expect(wrapper.text()).toContain('provider rejected request'))
   })
 })
@@ -131,6 +143,7 @@ function actionCall({
     dry_run: false,
     credential_ref: 'cred_safe',
     request_json: { prompt: 'test', api_key: 'sk-secret' },
+    provider_context_json: { acting_as_account: 'acct-managed', token: 'token-secret' },
     response_json: status === 'success' ? { asset_url: '/asset.webp', token: 'token-secret' } : null,
     metadata_json: { credential_ref: 'cred_safe' },
     cost_cents: 2,
@@ -151,6 +164,24 @@ async function clickButton(wrapper: ReturnType<typeof mount>, label: string): Pr
     .find((candidate) => candidate.text().trim() === label)
   expect(button, `${label} button`).toBeDefined()
   await button?.trigger('click')
+}
+
+async function clickRow(wrapper: ReturnType<typeof mount>, text: string): Promise<void> {
+  const row = wrapper
+    .findAll('[role="button"], tbody tr, article')
+    .find((candidate) => candidate.text().includes(text))
+  expect(row, `${text} row`).toBeDefined()
+  await row?.trigger('click')
+}
+
+async function emitRowClick(
+  wrapper: ReturnType<typeof mount>,
+  row: ReturnType<typeof actionCall>,
+): Promise<void> {
+  const table = wrapper.findComponent({ name: 'DataTable' })
+  expect(table.exists()).toBe(true)
+  table.vm.$emit('row-click', row)
+  await nextTick()
 }
 
 function json(body: unknown): Response {

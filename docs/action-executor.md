@@ -70,9 +70,10 @@ connector.
 
 The read API exposes the same public audit shape at
 `GET /api/v1/projects/{project_id}/action-calls`. It can be filtered by run,
-run plan, run-plan step, plugin, action key, and status. The StackOS UI exposes
-this as the project-level **Action Calls** ledger, while run detail continues to
-show the calls scoped to a specific run/step.
+run plan, run-plan step, plugin, action key, and status. Results are returned
+newest first; cursor pagination continues toward older calls. The StackOS UI
+exposes this as the project-level **Action Calls** ledger, while run detail
+continues to show the calls scoped to a specific run/step.
 
 The table is part of the clean StackOS core. Domain plugins store their durable
 objects in resources/artifacts; removed workflow-specific storage is not part
@@ -163,6 +164,12 @@ require `confirm_direct=true` and `intent_summary`; callers may pass
 provider output so agents retain external refs and retry context. It is not a
 substitute for workflow
 memory, approval gates, artifacts, learnings, experiments, or decisions.
+
+Action inputs are split into endpoint payload and provider execution context.
+`input_json` is the action-specific body/query/path contract. Optional
+`provider_context_json` is validated against the selected action's
+`provider_context_schema_json` and mapped by the connector to provider scope or
+auth context. It is never copied into endpoint payload fields.
 
 `action.execute` is not direct execution surface. It is callable only through a
 started run plan, exactly one active claimed step, an explicit

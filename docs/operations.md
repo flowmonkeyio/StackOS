@@ -377,10 +377,14 @@ listed action dependencies need setup before affected steps execute.
    absent, StackOS derives a safe key before connector execution.
 4. Credentials are resolved inside the daemon; callers pass only
    `credential_ref`.
-5. Direct action responses are raw redacted provider output by default so agents
+5. Provider execution context, when supported by the selected action, is passed
+   through `provider_context_json` and validated against the action's
+   `provider_context_schema_json`. This context is connector-owned and is not
+   endpoint body/query/path payload.
+6. Direct action responses are raw redacted provider output by default so agents
    keep external refs, partial-delivery state, idempotency state, and retry
    context.
-6. The execution writes the same `action_calls` audit row as workflow
+7. The execution writes the same `action_calls` audit row as workflow
    execution, but without run-plan linkage.
 
 Agent-facing MCP setup/discovery tools default to compact bridge-shaped

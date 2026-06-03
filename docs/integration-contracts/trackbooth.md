@@ -17,8 +17,9 @@ credentials.
 - Plain HTTP is allowed only for `localhost`, `127.0.0.1`, or `[::1]` local
   testing targets.
 - The daemon sends `X-API-Key` as the primary auth header.
-- `X-Acting-As-Account` is optional and sent only when the action input
-  explicitly includes `acting_as_account`.
+- `X-Acting-As-Account` is optional and sent only when the action call supplies
+  `provider_context_json.acting_as_account`. It is provider execution context,
+  not endpoint body/query/path payload.
 - The bridge does not bypass Trackbooth permissions, feature gates, or account
   management rules.
 
@@ -38,11 +39,12 @@ sync. They are created or refreshed only when an agent explicitly executes
 the credential's configured `api_base_url`, so the inventory can come from
 production, a remote staging URL, or a local Trackbooth server.
 
-Generated action identity is scoped to the StackOS project, credential ref, API
-URL, and explicit acting-account context used for the sync. A local sync cannot
-overwrite production inventory, a different project cannot discover another
-project's generated actions, and generated execution rejects a mismatched
-credential/API URL/acting-account context.
+Generated action identity is scoped to the StackOS project, credential ref, and
+API URL used for the sync. A local sync cannot overwrite production inventory,
+and a different project cannot discover another project's generated actions.
+Acting-account is runtime business context and does not create a separate
+generated action namespace; Trackbooth remains the authority for whether the
+credential may act on behalf of the requested account.
 
 Normal agent flow:
 
@@ -54,11 +56,15 @@ Normal agent flow:
    `trackbooth.api.ctx_<scope>.advertiser_create`,
    `trackbooth.api.ctx_<scope>.links_create`, or
    `trackbooth.api.ctx_<scope>.offers_findbyid`, according to the live catalog
-   returned for that credential and optional acting-account context.
+   returned for that credential context.
 4. The action input schema already contains the selected operation's structured
    `path_params`, `query`, and `body` fields where applicable.
-5. StackOS sends exactly that operation to Trackbooth with daemon-held auth.
-6. Trackbooth remains the permission, feature flag, account-scope, and
+5. The action provider-context schema exposes optional Trackbooth execution
+   context. For on-behalf calls, pass
+   `provider_context_json: {"acting_as_account": "acct_..."}`.
+6. StackOS sends exactly that operation to Trackbooth with daemon-held auth and
+   maps `provider_context_json.acting_as_account` to `X-Acting-As-Account`.
+7. Trackbooth remains the permission, feature flag, account-scope, and
    on-behalf authority. If the connected account cannot call the endpoint, the
    server error is preserved for repair.
 

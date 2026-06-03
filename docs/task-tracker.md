@@ -103,10 +103,13 @@ When an agent needs to create delivery tickets under a workflow step, it should
 call `tracker.createTicket` with `run_plan_id` and `step_id`. StackOS resolves
 the mirrored `workflow-{run_plan_id}` task and step ticket, records the
 workflow refs on the new ticket, and avoids asking the agent to infer generated
-tracker keys. Passing `run_plan_id` and `step_id` attaches the ticket under the
-mirrored workflow step but does not add dependency edges. Agents must still add
-`dependency_keys` or `dependencies_json` so workflow-backed tickets are
-dependency-bridged into the workflow spine.
+tracker keys. Pass both `run_plan_id` and `step_id` together or omit both. If
+only one value is known, fetch `tracker.brief`, `tracker.get`, or `runPlan.get`
+first to recover the workflow handoff instead of retrying a partial
+`tracker.createTicket` call. Passing `run_plan_id` and `step_id` attaches the
+ticket under the mirrored workflow step but does not add dependency edges.
+Agents must still add `dependency_keys` or `dependencies_json` so
+workflow-backed tickets are dependency-bridged into the workflow spine.
 
 For workflow-backed delivery, graph readiness should be visible:
 

@@ -224,6 +224,40 @@ def cursor_paginate(
     return Page(items=items, next_cursor=next_cursor, total_estimate=total_estimate)
 
 
+def cursor_paginate_desc(
+    session: Session,
+    statement: Select[Any],
+    *,
+    id_col: Any,
+    limit: int | None,
+    after_id: int | None,
+    converter: Any,
+) -> Page[Any]:
+    """Apply ``id_col < after_id ORDER BY id_col DESC LIMIT n`` paging."""
+    n = _normalise_limit(limit)
+
+    count_stmt = statement.with_only_columns(id_col).order_by(None).subquery()
+    from sqlalchemy import func  # local import keeps top tidy
+    from sqlalchemy import select as sa_select
+
+    count_row = session.exec(sa_select(func.count()).select_from(count_stmt)).one()  # type: ignore[call-overload]
+    total_estimate = int(count_row[0])
+
+    paged_stmt = statement.order_by(id_col.desc()).limit(n + 1)
+    if after_id is not None:
+        paged_stmt = paged_stmt.where(id_col < after_id)
+
+    rows = list(session.exec(paged_stmt))  # type: ignore[call-overload]
+    items_rows = rows[:n]
+    has_more = len(rows) > n
+    items = [converter(r) for r in items_rows]
+    next_cursor: int | None = None
+    if has_more and items_rows:
+        last = items_rows[-1]
+        next_cursor = int(getattr(last, id_col.key))
+    return Page(items=items, next_cursor=next_cursor, total_estimate=total_estimate)
+
+
 def validate_transition(
     current: Enum,
     next_status: Enum,

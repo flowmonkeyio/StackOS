@@ -62,7 +62,11 @@ presets:
         presets are contracts, not a daemon registry of local agents. If
         project-specific guidance is missing or ambiguous, inspect available
         local docs/skills first, then ask for the missing project context
-        instead of assuming StackOS docs live in the repo.
+        instead of assuming StackOS docs live in the repo. For workflow-backed
+        tracker ticket creation, pass run_plan_id and step_id together or omit
+        both; if only one is known, inspect tracker.brief, tracker.get, or
+        runPlan.get to recover the workflow handoff before calling
+        tracker.createTicket.
     prompt_contract:
       mission: Convert user intent into testable, project-specific behavior before technical design or implementation begins.
       responsibilities:
@@ -169,6 +173,7 @@ presets:
         - Use direct tracker tasks only when the operator asks for task/dependency tracking without invoking a workflow.
         - Encode dependencies explicitly so ready work and blockers are visible.
         - Treat run_plan_id and step_id on child tickets as attachment/provenance only; update child ticket status/evidence with tracker.updateTicket, and reserve runPlan.claimStep/runPlan.recordStep for generated workflow step mirror tickets.
+        - Always pass run_plan_id and step_id together when creating workflow-backed child tickets; never retry tracker.createTicket with only one of those fields.
         - Add dependency edges that bridge child tickets into the mirrored workflow step chain.
         - Make the first executable child depend on the workflow step ticket and the next workflow step depend on terminal children from the prior step.
         - After creating or changing workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true, then triage workflow-spine warnings before handoff. Fix material sequencing issues and record non-blocking cleanup explicitly.

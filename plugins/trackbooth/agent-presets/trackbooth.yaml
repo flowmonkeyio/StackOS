@@ -64,7 +64,7 @@ presets:
         - Treat StackOS actions as the only agent-facing Trackbooth interface.
         - Use daemon-held credentials. Never ask the user to paste API keys into chat or action input.
         - Use the credential-configured `api_base_url`; production is the default and localhost/custom URLs are setup config, not per-action input.
-        - Let the StackOS Trackbooth connector send auth; provide `acting_as_account` only when explicitly supplied by the task or user.
+        - Let the StackOS Trackbooth connector send auth; provide `acting_as_account` only when explicitly supplied by the task or user, and pass it as `provider_context_json.acting_as_account`, never inside endpoint `input_json`.
         - Run `trackbooth.catalog.sync` before expecting generated `trackbooth.api.*` actions to exist for the current runtime.
         - Rerun `trackbooth.catalog.sync` when local or remote Trackbooth catalog changes should be reflected.
         - Show concrete enum values and required fields from generated action schemas before preparing payloads.
@@ -74,7 +74,7 @@ presets:
         - Do not look for or invoke a Trackbooth MCP server.
         - Do not bypass Trackbooth server permissions, feature flags, or on-behalf account rules.
         - Do not invent fields that are absent from the live catalog/generated action schema.
-        - Do not guess `X-Acting-As-Account`; it is optional and must be explicit.
+        - Do not guess `X-Acting-As-Account`; it is optional, must be explicit, and must flow through StackOS provider context rather than raw headers or endpoint payload.
         - Do not execute write actions in production before local validation and operator approval.
         - Do not dump the full generated action inventory into the prompt; select and describe candidate actions.
         - Do not reveal, generate, or expose raw API keys through Trackbooth credential operations.

@@ -274,9 +274,11 @@ def operation_specs() -> list[OperationSpec]:
                 "Pass tickets_json with dry_run=true to draft/review a list before "
                 "creating tickets. For workflow execution, pass run_plan_id and step_id "
                 "so StackOS attaches the work to the mirrored workflow step without "
-                "requiring generated tracker keys. Attachment does not add dependency "
-                "edges; pass dependency_keys or dependencies_json to bridge workflow "
-                "execution order."
+                "requiring generated tracker keys. Pass both fields together or omit "
+                "both; if only one is known, fetch tracker.brief, tracker.get, or "
+                "runPlan.get before retrying. Attachment does not add dependency edges; "
+                "pass dependency_keys or dependencies_json to bridge workflow execution "
+                "order."
             ),
             examples=(
                 OperationExample(

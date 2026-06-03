@@ -119,6 +119,14 @@ class ActionValidateInput(MCPInput):
     plugin_slug: str | None = None
     action_key: str | None = None
     input_json: dict[str, Any] | None = None
+    provider_context_json: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional provider execution context. StackOS validates and maps this to "
+            "connector-specific scope/auth context; it is not sent as endpoint body, query, "
+            "or path payload."
+        ),
+    )
     credential_ref: str | None = None
 
 
@@ -140,6 +148,10 @@ class ActionExecuteInput(MCPInput):
     plugin_slug: str | None = None
     action_key: str | None = None
     input_json: dict[str, Any] | None = None
+    provider_context_json: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional provider execution context, separate from endpoint input_json.",
+    )
     credential_ref: str | None = None
     idempotency_key: str | None = None
     dry_run: bool = False
@@ -171,6 +183,10 @@ class ActionRunInput(MCPInput):
     plugin_slug: str | None = None
     action_key: str | None = None
     input_json: dict[str, Any] | None = None
+    provider_context_json: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional provider execution context, separate from endpoint input_json.",
+    )
     credential_ref: str | None = None
     idempotency_key: str | None = None
     intent_id: str | None = None
@@ -333,6 +349,7 @@ async def action_validate(
         plugin_slug=inp.plugin_slug,
         action_key=inp.action_key,
         input_json=inp.input_json,
+        provider_context_json=inp.provider_context_json,
         credential_ref=inp.credential_ref,
     )
 
@@ -354,6 +371,7 @@ async def action_execute(
         step_id=step.step_id,
         action_ref=action_ref,
         input_json=inp.input_json,
+        provider_context_json=inp.provider_context_json,
         credential_ref=inp.credential_ref,
         dry_run=inp.dry_run,
     )
@@ -365,6 +383,7 @@ async def action_execute(
         plugin_slug=inp.plugin_slug,
         action_key=inp.action_key,
         input_json=inp.input_json,
+        provider_context_json=inp.provider_context_json,
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
         run_plan_id=plan.id,
@@ -417,6 +436,7 @@ async def action_run(
             project_id=project_id,
             action_ref=described.manifest.action_ref,
             input_json=inp.input_json,
+            provider_context_json=inp.provider_context_json,
             credential_ref=inp.credential_ref,
             intent_id=inp.intent_id,
             intent_summary=inp.intent_summary,
@@ -437,6 +457,7 @@ async def action_run(
         project_id=project_id,
         action_ref=described.manifest.action_ref,
         input_json=inp.input_json,
+        provider_context_json=inp.provider_context_json,
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
         idempotency_key=idempotency_key,
@@ -478,6 +499,7 @@ def _derive_direct_idempotency_key(
     project_id: int,
     action_ref: str,
     input_json: dict[str, Any] | None,
+    provider_context_json: dict[str, Any] | None,
     credential_ref: str | None,
     intent_id: str | None,
     intent_summary: str | None,
@@ -489,6 +511,7 @@ def _derive_direct_idempotency_key(
         "action_ref": action_ref,
         "credential_ref": credential_ref,
         "input_json": input_json or {},
+        "provider_context_json": provider_context_json or {},
         "intent_id": (intent_id or "").strip() or None,
         "intent_summary": (intent_summary or "").strip(),
         "request_id": None if intent_id else request_id,
@@ -505,6 +528,7 @@ def _derive_workflow_idempotency_key(
     step_id: str,
     action_ref: str | None,
     input_json: dict[str, Any] | None,
+    provider_context_json: dict[str, Any] | None,
     credential_ref: str | None,
     dry_run: bool,
 ) -> str:
@@ -518,6 +542,7 @@ def _derive_workflow_idempotency_key(
         "action_ref": action_ref,
         "credential_ref": credential_ref,
         "input_json": input_json or {},
+        "provider_context_json": provider_context_json or {},
         "dry_run": dry_run,
     }
     return f"workflow:{_stable_digest(source)}"

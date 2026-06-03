@@ -1383,6 +1383,10 @@ export interface components {
             project_id: number;
             /** Provider Key */
             provider_key: string | null;
+            /** Provider Context Json */
+            provider_context_json: {
+                [key: string]: unknown;
+            } | null;
             /** Request Json */
             request_json: {
                 [key: string]: unknown;

@@ -76,6 +76,7 @@ class ExecutableActionManifest(BaseModel):
     capability_key: str | None = None
     risk_level: str
     input_schema_json: dict[str, Any] = Field(default_factory=dict)
+    provider_context_schema_json: dict[str, Any] = Field(default_factory=dict)
     output_schema_json: dict[str, Any] = Field(default_factory=dict)
     config_json: dict[str, Any] = Field(default_factory=dict)
     connector_key: str | None = None
@@ -142,6 +143,9 @@ def parse_action_manifest(
     enforce_budget = config.get("enforce_budget", False)
     if not isinstance(enforce_budget, bool):
         raise ValidationError("action manifest enforce_budget must be a boolean")
+    provider_context_schema = config.get("provider_context_schema") or {}
+    if not isinstance(provider_context_schema, dict):
+        raise ValidationError("action manifest provider_context_schema must be an object")
     resolved_budget_kind = (
         budget_kind if budget_kind is not None else (provider.key if provider else None)
     )
@@ -158,6 +162,7 @@ def parse_action_manifest(
         capability_key=action.capability_key,
         risk_level=action.risk_level,
         input_schema_json=action.input_schema_json,
+        provider_context_schema_json=provider_context_schema,
         output_schema_json=action.output_schema_json,
         config_json=config,
         connector_key=connector_key,

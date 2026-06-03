@@ -18,7 +18,6 @@ import {
   UiCallout,
   UiFormField,
   UiInput,
-  UiJsonBlock,
   UiMetricCard,
   UiPageShell,
   UiPanel,
@@ -28,8 +27,10 @@ import {
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import { apiFetch, formatApiError } from '@/lib/client'
-import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
+import { formatDateTime } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
+
+import ActionCallDetailDrawer from './action-calls/ActionCallDetailDrawer.vue'
 
 type StatusFilter = 'all' | `${ActionCallStatus}`
 
@@ -40,6 +41,7 @@ const { actions, enabledPlugins } = storeToRefs(catalogStore)
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const rows = ref<SchemaActionCallAuditOut[]>([])
 const selectedCall = ref<SchemaActionCallAuditOut | null>(null)
+const detailPanelOpen = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const nextCursor = ref<number | null>(null)
@@ -94,12 +96,11 @@ const loadedDryRun = computed(
 )
 
 const columns: DataTableColumn<SchemaActionCallAuditOut>[] = [
-  { key: 'id', label: 'ID', widthClass: 'w-20', format: (value) => `#${value}` },
-  { key: 'plugin_slug', label: 'Plugin', widthClass: 'w-28' },
-  { key: 'action_key', label: 'Action' },
+  { key: 'id', label: 'Call', widthClass: 'w-80' },
   { key: 'status', label: 'Status', widthClass: 'w-24' },
-  { key: 'provider_key', label: 'Provider', format: (value) => String(value ?? '-') },
-  { key: 'credential_ref', label: 'Credential', format: (value) => String(value ?? '-') },
+  { key: 'provider_key', label: 'Provider', widthClass: 'w-40' },
+  { key: 'credential_ref', label: 'Credential', widthClass: 'w-44' },
+  { key: 'run_id', label: 'Run', widthClass: 'w-32' },
   {
     key: 'created_at',
     label: 'Created',
@@ -152,9 +153,13 @@ async function fetchCalls({ append = false }: { append?: boolean } = {}): Promis
     const response = await apiFetch<SchemaPageResponseActionCallAuditOut>(
       `/api/v1/projects/${projectId.value}/action-calls?${buildQuery(append ? nextCursor.value : null)}`,
     )
-    rows.value = append ? [...rows.value, ...response.items] : response.items
+    const nextRows = append ? [...rows.value, ...response.items] : response.items
+    rows.value = nextRows
     nextCursor.value = response.next_cursor ?? null
-    if (!append) selectedCall.value = response.items[0] ?? null
+    if (!append && selectedCall.value && !nextRows.some((row) => row.id === selectedCall.value?.id)) {
+      selectedCall.value = null
+      detailPanelOpen.value = false
+    }
   } catch (err) {
     error.value = formatApiError(err, 'failed to load action calls')
   } finally {
@@ -207,6 +212,18 @@ function callTitle(call: SchemaActionCallAuditOut): string {
   return `${call.plugin_slug}:${call.action_key}`
 }
 
+function runLabel(call: SchemaActionCallAuditOut): string {
+  if (call.run_plan_step_id) return `step #${call.run_plan_step_id}`
+  if (call.run_plan_id) return `plan #${call.run_plan_id}`
+  if (call.run_id) return `run #${call.run_id}`
+  return '-'
+}
+
+function openCall(call: SchemaActionCallAuditOut): void {
+  selectedCall.value = call
+  detailPanelOpen.value = true
+}
+
 onMounted(load)
 watch(projectId, load)
 </script>
@@ -218,7 +235,18 @@ watch(projectId, load)
       title="Action Calls"
       description="Audited external tool calls with redacted inputs, outputs, credential refs, and execution metadata."
       :breadcrumbs="[{ label: 'Action Calls' }]"
-    />
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
+          icon-left="rotate-ccw"
+          :disabled="loading"
+          @click="fetchCalls()"
+        >
+          Refresh
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
     <UiCallout
       v-if="error"
@@ -279,123 +307,65 @@ watch(projectId, load)
       </div>
     </UiPanel>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)] xl:items-start">
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Audit Ledger"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge>{{ rows.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <DataTable
-          :items="rows"
-          :columns="columns"
-          :loading="loading"
-          :next-cursor="nextCursor"
-          :selected-id="selectedCall?.id"
-          max-height="calc(100vh - 24rem)"
-          aria-label="Action call audit rows"
-          empty-message="No action calls match these filters."
-          interactive
-          @row-click="(row) => (selectedCall = row)"
-          @load-more="fetchCalls({ append: true })"
-        >
-          <template #cell:plugin_slug="{ value }">
-            <UiBadge tone="accent">{{ value }}</UiBadge>
-          </template>
-          <template #cell:action_key="{ row }">
-            <span class="font-mono text-xs">{{ callTitle(row) }}</span>
-          </template>
-          <template #cell:status="{ value }">
-            <StatusBadge
-              :status="String(value)"
-              kind="job"
-              :small="true"
-            />
-          </template>
-          <template #cell:credential_ref="{ value }">
-            <span class="font-mono text-xs">{{ value ?? '-' }}</span>
-          </template>
-        </DataTable>
-      </UiPanel>
-
-      <UiPanel
-        v-if="selectedCall"
-        class="p-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto"
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Audit Ledger"
+        description="Newest calls are listed first. Select a row to inspect redacted details."
+        as="h3"
       >
-        <UiSectionHeader
-          :title="`Action Call #${selectedCall.id}`"
-          :description="callTitle(selectedCall)"
-          as="h3"
-        >
-          <template #actions>
-            <StatusBadge
-              :status="selectedCall.status"
-              kind="job"
-              :small="true"
-            />
-          </template>
-        </UiSectionHeader>
-        <dl class="mb-3 grid gap-3 text-sm sm:grid-cols-2">
-          <div>
-            <dt class="text-xs text-fg-muted">Provider</dt>
-            <dd>{{ selectedCall.provider_key ?? '-' }}</dd>
+        <template #actions>
+          <UiBadge>{{ rows.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="rows"
+        :columns="columns"
+        :loading="loading"
+        :next-cursor="nextCursor"
+        :selected-id="detailPanelOpen ? selectedCall?.id : null"
+        max-height="calc(100vh - 24rem)"
+        aria-label="Action call audit rows"
+        empty-message="No action calls match these filters."
+        interactive
+        @row-click="openCall"
+        @load-more="fetchCalls({ append: true })"
+      >
+        <template #cell:id="{ row }">
+          <div class="min-w-0">
+            <div class="flex min-w-0 items-center gap-2">
+              <span class="font-mono text-xs text-fg-muted">#{{ row.id }}</span>
+              <UiBadge tone="accent">{{ row.plugin_slug }}</UiBadge>
+            </div>
+            <div class="mt-1 truncate font-mono text-xs text-fg-default">
+              {{ callTitle(row) }}
+            </div>
           </div>
-          <div>
-            <dt class="text-xs text-fg-muted">Connector</dt>
-            <dd>{{ selectedCall.connector_key ?? '-' }}</dd>
-          </div>
-          <div>
-            <dt class="text-xs text-fg-muted">Operation</dt>
-            <dd class="truncate">{{ selectedCall.operation }}</dd>
-          </div>
-          <div>
-            <dt class="text-xs text-fg-muted">Run</dt>
-            <dd>{{ selectedCall.run_id ? `#${selectedCall.run_id}` : '-' }}</dd>
-          </div>
-          <div>
-            <dt class="text-xs text-fg-muted">Cost</dt>
-            <dd>{{ selectedCall.cost_cents }} cents</dd>
-          </div>
-          <div>
-            <dt class="text-xs text-fg-muted">Created</dt>
-            <dd>{{ formatDateTime(selectedCall.created_at) }}</dd>
-          </div>
-        </dl>
-        <UiCallout
-          v-if="selectedCall.error"
-          tone="danger"
-          density="compact"
-          class="mb-3"
-        >
-          {{ selectedCall.error }}
-        </UiCallout>
-        <div class="grid gap-3">
-          <UiJsonBlock
-            :data="sanitizeForDisplay(selectedCall.request_json ?? {})"
-            density="compact"
-            max-height="12rem"
-            wrap
-            aria-label="Action call request"
+        </template>
+        <template #cell:status="{ value }">
+          <StatusBadge
+            :status="String(value)"
+            kind="job"
+            :small="true"
           />
-          <UiJsonBlock
-            :data="sanitizeForDisplay(selectedCall.response_json ?? {})"
-            density="compact"
-            max-height="12rem"
-            wrap
-            aria-label="Action call response"
-          />
-          <UiJsonBlock
-            :data="sanitizeForDisplay(selectedCall.metadata_json ?? {})"
-            density="compact"
-            max-height="12rem"
-            wrap
-            aria-label="Action call metadata"
-          />
-        </div>
-      </UiPanel>
-    </div>
+        </template>
+        <template #cell:provider_key="{ row }">
+          <div class="min-w-0 text-sm">
+            <div class="truncate">{{ row.provider_key ?? '-' }}</div>
+            <div class="truncate text-xs text-fg-muted">{{ row.connector_key ?? '-' }}</div>
+          </div>
+        </template>
+        <template #cell:credential_ref="{ value }">
+          <span class="block max-w-[16rem] truncate font-mono text-xs">{{ value ?? '-' }}</span>
+        </template>
+        <template #cell:run_id="{ row }">
+          <span class="text-xs text-fg-muted">{{ runLabel(row) }}</span>
+        </template>
+      </DataTable>
+    </UiPanel>
+
+    <ActionCallDetailDrawer
+      v-model="detailPanelOpen"
+      :call="selectedCall"
+    />
   </UiPageShell>
 </template>

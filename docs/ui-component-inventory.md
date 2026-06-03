@@ -45,6 +45,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiBulkActionBar` | generic primitive only; not used in observer-mode product views |
 | `UiMetricCard` | label + value + delta |
 | `UiDescriptionList` | label/value rows |
+| `UiFactGroups` | grouped drawer/detail metadata blocks with headings, badges, mono IDs, and wide rows |
 
 ## Shipped — domain (`ui/src/components/domain/`)
 
@@ -97,6 +98,8 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 |---|---|
 | `<button class="bg-blue-600 text-white px-3 py-1.5 rounded">…` | `UiButton variant="primary"` |
 | Ad-hoc badge spans with status colors | `UiBadge` + `getStatusTone()` from `status.ts` |
+| Sectioned drawer/detail facts built from repeated custom grids | `UiFactGroups` |
+| Simple ungrouped metadata rows | `UiDescriptionList` or `KvList`, depending on density |
 | `<input class="border rounded px-2 py-1">` with separate label/error divs | `UiFormField` + `UiInput` |
 | Custom modal with backdrop + dialog box | `UiDialog` |
 | Custom dropdown built from `<select>` styled to look rich | `UiDropdownMenu` |
