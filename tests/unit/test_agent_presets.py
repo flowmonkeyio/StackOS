@@ -47,6 +47,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
 def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     loaded = AgentPresetLoader().describe_preset(key="stackos.sdlc.planning")
     contract = loaded.preset.prompt_contract
+    shared_action = loaded.preset.project_adaptation.required_agent_action.lower()
     contract_text = " ".join(
         [
             *contract.responsibilities,
@@ -59,19 +60,31 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
 
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
-    assert "tracker" in loaded.preset.project_adaptation.required_agent_action.lower()
+    assert "tracker" in shared_action
     assert "tracker.reopen" in loaded.preset.recommended_tools
-    assert "tracker.reopen" in (
-        loaded.preset.project_adaptation.required_agent_action.lower()
-    )
+    assert "tracker.reopen" in shared_action
+    assert "tracker.createticket" not in shared_action
     assert "dependencies" in " ".join(contract.must_do).lower()
     assert "workflow-backed run plan before tracker.createtask" in contract_text.lower()
     assert "direct tracker tasks only" in contract_text.lower()
     assert "canonical workflow-backed task/run plan" in contract_text.lower()
-    assert "pass run_plan_id and step_id together" in (
-        loaded.preset.project_adaptation.required_agent_action.lower()
-    )
+    assert "pass run_plan_id and step_id together" in contract_text.lower()
     assert "never retry tracker.createticket with only one" in contract_text.lower()
+
+    reviewer = AgentPresetLoader().describe_preset(
+        key="stackos.sdlc.delivery-reviewer"
+    )
+    reviewer_text = " ".join(
+        [
+            *reviewer.preset.prompt_contract.responsibilities,
+            *reviewer.preset.prompt_contract.must_do,
+            *reviewer.preset.prompt_contract.handoff_outputs,
+            *reviewer.preset.prompt_contract.success_criteria,
+            *reviewer.preset.prompt_contract.self_check,
+        ]
+    ).lower()
+    assert "tracker.get with run_plan_id and include_graph=true" in reviewer_text
+    assert "delivery/test/docs branches that bypass the workflow spine" in reviewer_text
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:

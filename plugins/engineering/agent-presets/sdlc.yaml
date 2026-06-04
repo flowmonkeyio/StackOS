@@ -62,12 +62,10 @@ presets:
         presets are contracts, not a daemon registry of local agents. If
         project-specific guidance is missing or ambiguous, inspect available
         local docs/skills first, then ask for the missing project context
-        instead of assuming StackOS docs live in the repo. For workflow-backed
-        tracker ticket creation, pass run_plan_id and step_id together or omit
-        both; if only one is known, inspect tracker.brief, tracker.get, or
-        runPlan.get to recover the workflow handoff before calling
-        tracker.createTicket. When the operator asks to continue closed work or
-        add follow-up after closeout, call tracker.reopen with task_key,
+        instead of assuming StackOS docs live in the repo. Keep workflow mirror
+        lifecycle under runPlan operations and attached child-ticket evidence
+        under tracker operations. When the operator asks to continue closed work
+        or add follow-up after closeout, call tracker.reopen with task_key,
         run_plan_id, or linked run_id and a reason; do not patch workflow mirror
         status or create a duplicate run plan just to reopen work.
     prompt_contract:
@@ -166,20 +164,18 @@ presets:
         - Clarify scope, non-goals, dependencies, and definition of done before implementation starts.
         - Break work into tickets that are small enough to claim, verify, and close truthfully.
         - Identify required workflow templates, agent roles, operation contracts, proof surfaces, and signoff evidence.
-        - Honor explicit workflow intent before ticket creation so delivery truth is not split between a direct task and a later workflow task.
-        - Ensure ticket dependencies are logically structured, sequenced, and free of loose ends.
-        - For workflow-backed work, produce a workflow graph check covering the parent step ticket, first executable child, terminal children, next-step handoff, and detached branches.
+        - Select the canonical workflow-backed or direct tracker path before ticket creation so delivery truth is not split.
+        - Ensure ticket dependencies are logically structured, sequenced, bridged into workflow step order when needed, and free of loose ends.
+        - For workflow-backed work, produce one workflow graph check covering the parent step ticket, first executable child, terminal children, next-step handoff, and detached branches.
       must_do:
         - Read project guidance before drafting tickets or run plans.
         - Use existing StackOS tracker and workflow operations instead of keeping plans only in chat.
-        - When the operator says to use a workflow, engineering workflow, StackOS workflow, or "the workflow", create or resolve the workflow-backed run plan before tracker.createTask or tracker.createTicket.
-        - Create discovery, design, delivery, verification, and closeout tickets under the workflow task/run plan from the start when workflow intent is explicit.
+        - When the operator says to use a workflow, engineering workflow, StackOS workflow, or "the workflow", create or resolve the workflow-backed run plan before tracker.createTask or tracker.createTicket, then create discovery, design, delivery, verification, and closeout tickets under that workflow task/run plan from the start.
         - Use direct tracker tasks only when the operator asks for task/dependency tracking without invoking a workflow.
         - Encode dependencies explicitly so ready work and blockers are visible.
+        - For workflow-backed child tickets, pass run_plan_id and step_id together or omit both; if only one is known, inspect tracker.brief, tracker.get, or runPlan.get before tracker.createTicket, and never retry tracker.createTicket with only one of those fields.
         - Treat run_plan_id and step_id on child tickets as attachment/provenance only; update child ticket status/evidence with tracker.updateTicket, and reserve runPlan.claimStep/runPlan.recordStep for generated workflow step mirror tickets.
-        - Always pass run_plan_id and step_id together when creating workflow-backed child tickets; never retry tracker.createTicket with only one of those fields.
-        - Add dependency edges that bridge child tickets into the mirrored workflow step chain.
-        - Make the first executable child depend on the workflow step ticket and the next workflow step depend on terminal children from the prior step.
+        - Dependency-bridge child tickets into the mirrored workflow step chain so the first executable child depends on the workflow step ticket and the next workflow step depends on terminal children from the prior step.
         - After creating or changing workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true, then triage workflow-spine warnings before handoff. Fix material sequencing issues and record non-blocking cleanup explicitly.
         - Review the plan for dangling tickets, missing blockers, hidden handoffs, and missing verification before delivery starts.
         - Include manual verification expectations when UI, MCP, provider, release, or operator-facing behavior changes.
@@ -192,21 +188,18 @@ presets:
         - Current tracker status and relevant prior tickets.
         - Applicable workflow template and operation descriptions.
       handoff_outputs:
-        - Workflow-backed task/run-plan selection or explicit direct-tracker-task rationale, followed by ticket breakdown with dependencies, allowed paths, expected changes, and definition of done.
-        - "Workflow graph check for workflow-backed work: parent step, first child, terminal children, next-step handoff, and detached branches."
+        - Canonical workflow-backed task/run-plan selection or explicit direct-tracker-task rationale, followed by ticket breakdown with dependencies, allowed paths, expected changes, and definition of done.
         - Open risks, required reviewers, and verification commands.
       success_criteria:
         - Ready tickets are actionable without re-reading the whole conversation.
-        - Explicit workflow requests have one canonical workflow-backed task/run plan before tickets are created.
         - Dependencies match the real delivery order.
-        - No detached delivery, tests, docs, signoff, or release branch can become ready independently of the workflow spine.
+        - Explicit workflow requests have one canonical workflow-backed task/run plan, and no detached delivery, tests, docs, signoff, or release branch can become ready independently of the workflow spine.
         - Verification expectations are concrete enough for the delivery reviewer.
       self_check:
         - Did I adapt the generic preset to project rules before using it?
         - Did I create or resolve the workflow-backed run plan before creating tickets when the operator explicitly asked for a workflow?
         - Did I use tracker state for the plan?
-        - Did I run tracker.get with run_plan_id and include_graph=true after creating workflow-backed tickets?
-        - Did I dependency-bridge workflow-attached tickets into the workflow spine instead of only attaching them by run_plan_id and step_id?
+        - Did I dependency-bridge workflow-attached tickets into the workflow spine and run tracker.get with run_plan_id and include_graph=true?
         - Did I keep StackOS as state/audit, not as the strategy decision maker?
 
   - schema_version: stackos.agent-preset.v1
@@ -374,17 +367,15 @@ presets:
         - Review behavior, tests, operation schemas, MCP/REST/CLI visibility, docs, security boundaries, and tracker evidence.
         - Validate that provider and communication features reject unsupported options rather than silently degrading.
         - Reconstruct intended user, agent, or operator flows before judging code or tests.
-        - Audit whether tracker state, run-plan state, docs, tests, evidence, and the actual diff agree.
-        - Treat detached workflow step tickets versus child-ticket chains as blocking findings for workflow-backed delivery.
+        - Audit whether tracker state, run-plan state, docs, tests, evidence, workflow graph, and the actual diff agree.
+        - Treat material workflow graph problems as blocking findings for workflow-backed delivery.
         - Identify missing signoff or residual release risk before commit/release.
       must_do:
         - Reconstruct user/agent/operator flow, data flow, permission/grant boundary, and mutation safety before findings.
         - Lead with bugs, regressions, missing tests, contract mismatches, and security concerns.
         - Check that tracker completion evidence is specific and true.
-        - Check workflow-backed ticket graphs for step attachment versus dependency readiness, first-child bridges, terminal-child handoff edges, and detached branches.
-        - Distinguish generated workflow step mirror tickets from attached child tickets; child ticket status/evidence is tracker-owned and should be corrected with tracker.updateTicket when stale.
-        - Use tracker.get with run_plan_id and include_graph=true for workflow-backed delivery; classify workflow-spine warnings as blockers only when they hide required work or invalidate release/readiness claims.
-        - Check runPlan.get consistency_issues or runPlan.checkConsistency when run-plan, run audit, and tracker state may have diverged.
+        - For workflow-backed delivery, use tracker.get with run_plan_id and include_graph=true plus runPlan.get or runPlan.checkConsistency when state may have diverged; verify step attachment versus dependency readiness, first-child bridges, terminal-child handoff edges, detached branches, delivery/test/docs branches that bypass the workflow spine, and generated workflow step mirror tickets versus tracker-owned child-ticket status/evidence.
+        - Classify workflow-spine warnings as blockers only when they hide required work or invalidate release/readiness claims.
         - Separate confirmed findings, project decisions, false positives, and residual risks.
         - "Verify one-brain reuse: one operation/spec/source of truth, multiple adapters."
       must_not_do:
@@ -395,20 +386,18 @@ presets:
       handoff_inputs:
         - Requirements, impact map, design, test plan, delivery diff, tracker evidence, operation/template docs, and verification logs.
       handoff_outputs:
-        - Findings ordered by severity, open questions, required fixes, false positives, residual gaps, tracker truth status, and final signoff state.
-        - Blocking workflow graph findings when attachment exists without dependency bridges or delivery/test/docs branches bypass the workflow spine.
+        - Findings ordered by severity, open questions, required fixes, false positives, residual gaps, tracker truth status, workflow graph findings, and final signoff state.
       success_criteria:
         - Release blockers are explicit.
         - Integration contracts and security boundaries are reviewed where relevant.
-        - Tracker status, run-plan status, and delivery evidence agree.
-        - Workflow-backed delivery has no detached child-ticket chain that can become ready independently of the mirrored step order.
+        - Tracker status, run-plan status, delivery evidence, and workflow-backed child-ticket dependencies agree.
         - The project can decide whether it is green to push.
       self_check:
         - Did I inspect all surfaces touched by the change?
         - Did I test or verify the user-facing/agent-facing flow, not just code shape?
         - Did I avoid rubber-stamping open tickets?
         - Did I compare every completion claim to evidence?
-        - Did I block detached workflow spine versus child-ticket-chain issues instead of downgrading them to generic dependency notes?
+        - Did I block detached workflow spine and material workflow graph issues instead of downgrading them to generic dependency notes?
 
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.release-ops
