@@ -60,6 +60,10 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "tracker" in loaded.preset.project_adaptation.required_agent_action.lower()
+    assert "tracker.reopen" in loaded.preset.recommended_tools
+    assert "tracker.reopen" in (
+        loaded.preset.project_adaptation.required_agent_action.lower()
+    )
     assert "dependencies" in " ".join(contract.must_do).lower()
     assert "workflow-backed run plan before tracker.createtask" in contract_text.lower()
     assert "direct tracker tasks only" in contract_text.lower()

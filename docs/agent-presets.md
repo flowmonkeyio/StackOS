@@ -180,6 +180,8 @@ All presets are expected to work through the existing StackOS tracker:
   together or omit both; if an agent only has one, it should fetch
   `tracker.brief`, `tracker.get`, or `runPlan.get` to recover the workflow
   handoff before calling `tracker.createTicket`
+- when an operator wants closed work continued or extended, agents call
+  `tracker.reopen` with the task, run-plan, or linked run id plus a reason
 - planning agents must dependency-bridge child tickets into the mirrored
   workflow step chain
 - delivery agents claim/update tickets as work starts and completes

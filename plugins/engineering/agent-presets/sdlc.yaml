@@ -66,7 +66,10 @@ presets:
         tracker ticket creation, pass run_plan_id and step_id together or omit
         both; if only one is known, inspect tracker.brief, tracker.get, or
         runPlan.get to recover the workflow handoff before calling
-        tracker.createTicket.
+        tracker.createTicket. When the operator asks to continue closed work or
+        add follow-up after closeout, call tracker.reopen with task_key,
+        run_plan_id, or linked run_id and a reason; do not patch workflow mirror
+        status or create a duplicate run plan just to reopen work.
     prompt_contract:
       mission: Convert user intent into testable, project-specific behavior before technical design or implementation begins.
       responsibilities:
@@ -154,6 +157,7 @@ presets:
       - tracker.get
       - tracker.createTask
       - tracker.createTicket
+      - tracker.reopen
       - tracker.updateTicket
     project_adaptation: *stackos_project_adaptation
     prompt_contract:
@@ -306,6 +310,7 @@ presets:
       - operation.describe
       - tracker.pick
       - tracker.brief
+      - tracker.reopen
       - tracker.updateTicket
       - tracker.verify
       - runPlan.get
