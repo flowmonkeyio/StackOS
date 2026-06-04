@@ -423,7 +423,11 @@ class AgentBridgeProxy:
                 f"Unknown StackOS tool {target_name!r}.",
                 {"tool": target_name},
             )
-        if target_name not in _bridge_allowed_tool_names(run_id, self.allowed_by_run):
+        if target_name not in _bridge_allowed_tool_names(
+            run_id,
+            self.allowed_by_run,
+            catalog=self.tool_catalog,
+        ):
             return _bridge_call_error(
                 request_id,
                 -32007,

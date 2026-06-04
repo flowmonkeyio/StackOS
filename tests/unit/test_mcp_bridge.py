@@ -16,6 +16,7 @@ from stackos.mcp.bridge import (
     _AGENT_VISIBLE_TOOL_NAMES,
     _AGENT_VISIBLE_TOOL_ORDER,
     AgentBridgeProxy,
+    _bridge_allowed_tool_names,
     _bridge_cache_controller_run_context,
     _bridge_cache_step_context,
     _bridge_compact_profile,
@@ -263,6 +264,54 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     assert statuses["resource.upsert"]["reason_code"] == "active_step_granted"
     assert statuses["action.execute"]["operation"]["name"] == "action.execute"
     assert statuses["missing"]["reason_code"] == "unknown_tool"
+
+
+def test_bridge_toolbox_allows_daemon_registered_direct_operations() -> None:
+    catalog = {
+        "custom.reopen": _tool(
+            "custom.reopen",
+            operation_name="custom.reopen",
+            grant_policy="direct-tracker-write",
+        ),
+        "custom.admin": _tool(
+            "custom.admin",
+            operation_name="custom.admin",
+            grant_policy="local-admin-project-write",
+        ),
+        "custom.step": _tool(
+            "custom.step",
+            operation_name="custom.step",
+            grant_policy="run-plan-step-grant",
+        ),
+    }
+
+    response = _bridge_toolbox_describe(
+        42,
+        catalog=catalog,
+        arguments={
+            "tool_names": [
+                "custom.reopen",
+                "custom.admin",
+                "custom.step",
+            ],
+        },
+        run_id=None,
+        allowed_by_run={},
+    )
+    payload = _structured(response)
+
+    assert [tool["name"] for tool in payload["described_tools"]] == ["custom.reopen"]
+    assert set(payload["denied_tool_names"]) == {"custom.admin", "custom.step"}
+    statuses = {item["name"]: item for item in payload["tool_statuses"]}
+    assert statuses["custom.reopen"]["reason_code"] == "available"
+    assert statuses["custom.reopen"]["operation"]["grant_policy"] == "direct-tracker-write"
+    assert statuses["custom.admin"]["reason_code"] == "local_admin_required"
+    assert statuses["custom.step"]["reason_code"] == "tool_not_available_in_current_bridge_scope"
+    assert "custom.reopen" in _bridge_allowed_tool_names(
+        None,
+        {},
+        catalog=catalog,
+    )
 
 
 def test_bridge_forwards_policy_default_response_mode() -> None:

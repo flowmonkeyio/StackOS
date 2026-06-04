@@ -152,8 +152,11 @@ def _bridge_cache_step_context(
 def _bridge_allowed_tool_names(
     run_id: int | None,
     allowed_by_run: dict[int, set[str]],
+    *,
+    catalog: dict[str, dict[str, Any]] | None = None,
 ) -> set[str]:
     allowed = set(_AGENT_BASE_TOOLBOX_NAMES)
+    allowed.update(_bridge_direct_operation_tool_names(catalog))
     if run_id is not None:
         allowed.update(allowed_by_run.get(run_id, set()))
     return allowed
@@ -203,6 +206,27 @@ def _grant_policy_is_local_admin(grant_policy: str | None) -> bool:
         return False
     normalized = grant_policy.strip().lower()
     return normalized == "admin-only" or normalized.startswith("local-admin")
+
+
+def _grant_policy_is_agent_direct(grant_policy: str | None) -> bool:
+    if grant_policy is None:
+        return False
+    normalized = grant_policy.strip().lower()
+    return normalized.startswith("direct-") and not _grant_policy_is_local_admin(normalized)
+
+
+def _bridge_direct_operation_tool_names(catalog: dict[str, dict[str, Any]] | None) -> set[str]:
+    if not catalog:
+        return set()
+    names: set[str] = set()
+    for name, tool in catalog.items():
+        operation = _tool_operation_context(tool)
+        if operation is None:
+            continue
+        grant_policy = operation.get("grant_policy")
+        if isinstance(grant_policy, str) and _grant_policy_is_agent_direct(grant_policy):
+            names.add(name)
+    return names
 
 
 def _denied_status(
@@ -347,7 +371,7 @@ def _bridge_toolbox_describe(
     allowed_by_run: dict[int, set[str]],
     injected_fields: set[str] | frozenset[str] | None = None,
 ) -> str:
-    allowed = _bridge_allowed_tool_names(run_id, allowed_by_run)
+    allowed = _bridge_allowed_tool_names(run_id, allowed_by_run, catalog=catalog)
     requested_raw = arguments.get("tool_names")
     requested: list[str]
     if isinstance(requested_raw, list):
@@ -369,7 +393,10 @@ def _bridge_toolbox_describe(
     controller_tools = sorted(active_step_tool_set & _AGENT_STEP_GATED_TOOL_NAMES)
     step_granted_tools = sorted(active_step_tool_set - _AGENT_STEP_GATED_TOOL_NAMES)
     active_step_tools = sorted(active_step_tool_set)
-    setup_count = len(_AGENT_SETUP_TOOLBOX_NAMES & set(catalog))
+    setup_count = len(
+        (_AGENT_SETUP_TOOLBOX_NAMES | _bridge_direct_operation_tool_names(catalog))
+        & set(catalog)
+    )
     direct_visible = [
         name
         for name in (
