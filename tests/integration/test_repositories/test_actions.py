@@ -401,15 +401,18 @@ def _add_trackbooth_sync_responses(
 ) -> None:
     httpx_mock.add_response(
         method="GET",
-        url=f"{base_url}/api/agent-api/catalog",
-        json={"data": details},
+        url=f"{base_url}/api/agent-api/catalog/export",
+        json={
+            "status": "ok",
+            "data": {
+                "version": 1,
+                "generated_at": "2026-06-04T00:00:00Z",
+                "catalog_hash": "test-catalog-hash",
+                "endpoint_count": len(details),
+                "endpoints": list(details),
+            },
+        },
     )
-    for detail in details:
-        httpx_mock.add_response(
-            method="GET",
-            url=f"{base_url}/api/agent-api/catalog/{detail['operation_id']}",
-            json={"data": detail},
-        )
 
 
 def _sync_trackbooth_catalog(
@@ -789,7 +792,7 @@ def test_trackbooth_read_operation_substitutes_path_and_serializes_query(
     ).data
 
     assert out.output_json["status_code"] == 200
-    actual = httpx_mock.get_requests()[2]
+    actual = httpx_mock.get_requests()[1]
     assert actual.method == "GET"
     assert actual.url.path == "/api/offers/offer-123"
     assert parse_qs(actual.url.query.decode()) == {
@@ -832,7 +835,7 @@ def test_trackbooth_write_operation_sends_body_and_explicit_acting_as_header(
     ).data
 
     assert out.output_json["data"] == {"data": {"id": "link-1"}}
-    actual = httpx_mock.get_requests()[2]
+    actual = httpx_mock.get_requests()[1]
     assert actual.method == "POST"
     assert actual.url.path == "/api/links"
     assert actual.headers["X-API-Key"] == "tb-test-key"
@@ -945,6 +948,63 @@ def test_trackbooth_full_catalog_sync_prunes_missing_runtime_actions(
     assert retired is not None
     assert retired.config_json["inventory_state"] == "retired"
     assert retired.config_json["execution_mode"] == "deferred.retired"
+
+
+def test_trackbooth_catalog_sync_retires_superseded_runtime_context(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
+    initial = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    links_ref = _trackbooth_generated_action_ref(initial, "LinksController.create")
+    links_key = links_ref.removeprefix("trackbooth.")
+    current_scope = initial["inventory_scope_key"]
+    stale_scope = "ctx_stalelegacy"
+    stale_key = links_key.replace(current_scope, stale_scope)
+
+    current = session.exec(select(Action).where(Action.key == links_key)).one()
+    stale_config = dict(current.config_json)
+    stale_config["inventory_scope_key"] = stale_scope
+    stale_config["inventory_acting_as_account"] = None
+    stale_config["inventory_synced_at"] = "2026-01-01T00:00:00"
+    session.add(
+        Action(
+            plugin_id=current.plugin_id,
+            provider_id=current.provider_id,
+            key=stale_key,
+            name=current.name,
+            description=current.description,
+            capability_key=current.capability_key,
+            risk_level=current.risk_level,
+            input_schema_json=current.input_schema_json,
+            output_schema_json=current.output_schema_json,
+            config_json=stale_config,
+        )
+    )
+    session.commit()
+
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_links_create_detail())
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="trackbooth.catalog.sync",
+            input_json={},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert out.output_json["inventory_scope_key"] == current_scope
+    assert out.output_json["pruned"] == 1
+    stale = session.exec(select(Action).where(Action.key == stale_key)).one()
+    assert stale.config_json["inventory_state"] == "retired"
+    assert stale.config_json["execution_mode"] == "deferred.retired"
+
+    repo = ActionRepository(session)
+    repo.describe(project_id=project_id, action_ref=links_ref)
+    with pytest.raises(NotFoundError):
+        repo.describe(project_id=project_id, action_ref=f"trackbooth.{stale_key}")
 
 
 def test_trackbooth_filtered_catalog_sync_does_not_prune_unrelated_runtime_actions(
@@ -1100,7 +1160,12 @@ def test_trackbooth_generated_read_action_calls_endpoint_without_catalog_preflig
         request.url.path
         for request in requests
         if request.url.path == "/api/agent-api/catalog/OffersController.findById"
-    ] == ["/api/agent-api/catalog/OffersController.findById"]
+    ] == []
+    assert [
+        request.url.path
+        for request in requests
+        if request.url.path == "/api/agent-api/catalog/export"
+    ] == ["/api/agent-api/catalog/export"]
 
 
 def test_trackbooth_generated_write_action_sends_body_without_catalog_preflight(

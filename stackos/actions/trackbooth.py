@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from functools import cached_property
 from importlib import resources
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 from urllib.parse import quote
 
@@ -248,12 +250,17 @@ class TrackboothActionConnector:
         )
 
         if request.operation == "catalog.sync":
-            live_items = await self._live_catalog(base_url=base_url, headers=headers)
+            source_start = perf_counter()
+            live_export = await self._live_catalog_export(base_url=base_url, headers=headers)
             return await self._sync_catalog_actions(
                 request=request,
                 base_url=base_url,
-                headers=headers,
-                live_items=live_items,
+                live_items=live_export["endpoints"],
+                source_fetch_ms=_elapsed_ms(source_start),
+                endpoint_count=live_export.get("endpoint_count"),
+                catalog_hash=live_export.get("catalog_hash"),
+                catalog_version=live_export.get("version"),
+                catalog_generated_at=live_export.get("generated_at"),
             )
 
         if request.operation == "catalog.search":
@@ -533,8 +540,12 @@ class TrackboothActionConnector:
         *,
         request: ActionConnectorRequest,
         base_url: str,
-        headers: Mapping[str, str],
         live_items: Sequence[Mapping[str, Any]],
+        source_fetch_ms: int | None = None,
+        endpoint_count: Any = None,
+        catalog_hash: Any = None,
+        catalog_version: Any = None,
+        catalog_generated_at: Any = None,
     ) -> ActionConnectorResult:
         if request.session is None:
             raise ValidationError("Trackbooth catalog sync requires a database session")
@@ -550,13 +561,7 @@ class TrackboothActionConnector:
             operation_id = str(item.get("operation_id") or "").strip()
             if not operation_id:
                 continue
-            live_detail = await self._live_operation(
-                base_url=base_url,
-                headers=headers,
-                operation_id=operation_id,
-            )
             endpoint: JsonObject = dict(item)
-            endpoint.update({key: value for key, value in live_detail.items() if value is not None})
             detail = _detail_from_endpoint(
                 endpoint,
                 openapi_schemas=self._assets.openapi_schemas,
@@ -590,6 +595,17 @@ class TrackboothActionConnector:
                 "warnings": warnings,
                 "api_base_url": base_url,
                 "inventory_scope_key": sync_result["inventory_scope_key"],
+                "source_endpoint": "/api/agent-api/catalog/export",
+                "source_fetch_ms": source_fetch_ms,
+                "endpoint_count": endpoint_count
+                if isinstance(endpoint_count, int)
+                else len(live_items),
+                "detail_fetch_count": 0,
+                "catalog_hash": catalog_hash if isinstance(catalog_hash, str) else None,
+                "catalog_version": catalog_version if isinstance(catalog_version, int) else None,
+                "catalog_generated_at": catalog_generated_at
+                if isinstance(catalog_generated_at, str)
+                else None,
                 "manual_sync": True,
             },
             metadata_json={
@@ -681,6 +697,21 @@ class TrackboothActionConnector:
         del status_code
         items = _extract_catalog_items(body)
         return [dict(item) for item in items]
+
+    async def _live_catalog_export(
+        self,
+        *,
+        base_url: str,
+        headers: Mapping[str, str],
+    ) -> JsonObject:
+        status_code, body = await self._request_json(
+            method="GET",
+            url=f"{base_url}/api/agent-api/catalog/export",
+            headers=headers,
+            params=[],
+        )
+        del status_code
+        return _extract_catalog_export(body)
 
     async def _live_operation(
         self,
@@ -1017,6 +1048,87 @@ def _retire_runtime_action(row: Action, *, now: datetime) -> None:
     row.updated_at = now
 
 
+def _runtime_action_logical_scope(config: Mapping[str, Any]) -> tuple[int, str, str] | None:
+    if config.get("inventory_source") != _RUNTIME_INVENTORY_SOURCE:
+        return None
+    if config.get("inventory_state") != "active":
+        return None
+    project_id = config.get("inventory_project_id")
+    credential_ref = config.get("inventory_credential_ref")
+    api_base_url = config.get("inventory_api_base_url")
+    if (
+        not isinstance(project_id, int)
+        or not isinstance(credential_ref, str)
+        or not credential_ref
+        or not isinstance(api_base_url, str)
+        or not api_base_url
+    ):
+        return None
+    return project_id, credential_ref, api_base_url
+
+
+def _runtime_row_scope_key(row: Action) -> str | None:
+    config = row.config_json if isinstance(row.config_json, Mapping) else {}
+    scope_key = config.get("inventory_scope_key")
+    return scope_key if isinstance(scope_key, str) and scope_key else None
+
+
+def _runtime_row_sort_key(row: Action) -> tuple[str, str, int]:
+    config = row.config_json if isinstance(row.config_json, Mapping) else {}
+    synced_at = config.get("inventory_synced_at")
+    synced_text = synced_at if isinstance(synced_at, str) else ""
+    updated_text = row.updated_at.isoformat() if row.updated_at is not None else ""
+    return synced_text, updated_text, int(row.id or 0)
+
+
+def retire_superseded_trackbooth_inventory_contexts(
+    *,
+    session: Any,
+    plugin_id: int,
+    now: datetime,
+    keep_logical_scope: tuple[int, str, str] | None = None,
+    keep_scope_key: str | None = None,
+) -> int:
+    """Retire older generated contexts for the same logical Trackbooth inventory."""
+    rows = session.exec(
+        select(Action).where(
+            col(Action.plugin_id) == plugin_id,
+            col(Action.key).like(f"{_RUNTIME_ACTION_KEY_PREFIX}ctx_%.%"),
+        )
+    ).all()
+    grouped: dict[tuple[int, str, str], list[Action]] = defaultdict(list)
+    for row in rows:
+        config = row.config_json if isinstance(row.config_json, Mapping) else {}
+        logical_scope = _runtime_action_logical_scope(config)
+        if logical_scope is None:
+            continue
+        grouped[logical_scope].append(row)
+
+    retired = 0
+    for logical_scope, scoped_rows in grouped.items():
+        scope_keys = {
+            scope_key
+            for row in scoped_rows
+            if (scope_key := _runtime_row_scope_key(row)) is not None
+        }
+        if len(scope_keys) <= 1:
+            continue
+        if keep_logical_scope == logical_scope and keep_scope_key in scope_keys:
+            active_scope_key = keep_scope_key
+        else:
+            latest_row = max(scoped_rows, key=_runtime_row_sort_key)
+            active_scope_key = _runtime_row_scope_key(latest_row)
+        if active_scope_key is None:
+            continue
+        for row in scoped_rows:
+            if _runtime_row_scope_key(row) == active_scope_key:
+                continue
+            _retire_runtime_action(row, now=now)
+            session.add(row)
+            retired += 1
+    return retired
+
+
 def _upsert_runtime_actions(
     *,
     session: Any,
@@ -1142,6 +1254,21 @@ def _upsert_runtime_actions(
             _retire_runtime_action(row, now=now)
             session.add(row)
             pruned += 1
+    pruned += retire_superseded_trackbooth_inventory_contexts(
+        session=session,
+        plugin_id=plugin.id,
+        now=now,
+        keep_logical_scope=_runtime_action_logical_scope(
+            {
+                "inventory_source": _RUNTIME_INVENTORY_SOURCE,
+                "inventory_state": "active",
+                "inventory_project_id": scope["project_id"],
+                "inventory_credential_ref": scope["credential_ref"],
+                "inventory_api_base_url": scope["api_base_url"],
+            }
+        ),
+        keep_scope_key=scope_key,
+    )
     session.commit()
     return {
         "synced": len(action_refs),
@@ -1620,6 +1747,10 @@ def _query_value(value: Any) -> str:
     return str(value)
 
 
+def _elapsed_ms(start: float) -> int:
+    return max(0, int((perf_counter() - start) * 1000))
+
+
 def _extract_catalog_items(body: Any) -> list[JsonObject]:
     if isinstance(body, list):
         raw_items = body
@@ -1639,6 +1770,28 @@ def _extract_catalog_items(body: Any) -> list[JsonObject]:
         if isinstance(item, Mapping) and item.get("operation_id")
     ]
     return items
+
+
+def _extract_catalog_export(body: Any) -> JsonObject:
+    if not isinstance(body, Mapping):
+        raise ValidationError("Trackbooth catalog export response did not include an object")
+    raw_data = body.get("data")
+    data = raw_data if isinstance(raw_data, Mapping) else body
+    raw_endpoints = data.get("endpoints") or data.get("tools") or []
+    if not isinstance(raw_endpoints, list):
+        raise ValidationError("Trackbooth catalog export response did not include endpoints")
+    endpoints = [
+        dict(item)
+        for item in raw_endpoints
+        if isinstance(item, Mapping) and item.get("operation_id")
+    ]
+    return {
+        "version": data.get("version"),
+        "generated_at": data.get("generated_at"),
+        "catalog_hash": data.get("catalog_hash"),
+        "endpoint_count": data.get("endpoint_count"),
+        "endpoints": endpoints,
+    }
 
 
 def _extract_operation_detail(body: Any) -> JsonObject:
@@ -1743,6 +1896,11 @@ def retire_removed_trackbooth_actions(
         row.config_json = config
         row.updated_at = now
         session.add(row)
+    retire_superseded_trackbooth_inventory_contexts(
+        session=session,
+        plugin_id=plugin_id,
+        now=now,
+    )
 
 
 def _optional_clean_str(value: Any) -> str | None:
@@ -1762,5 +1920,6 @@ __all__ = [
     "TrackboothActionConnector",
     "TrackboothAssets",
     "retire_removed_trackbooth_actions",
+    "retire_superseded_trackbooth_inventory_contexts",
     "trackbooth_generated_action_visible_for_project",
 ]

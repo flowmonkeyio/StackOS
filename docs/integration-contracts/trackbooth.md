@@ -29,15 +29,16 @@ The builtin `trackbooth` plugin installs three fixed actions:
 
 | Action | Purpose |
 | --- | --- |
-| `trackbooth.catalog.sync` | Manual live inventory refresh. The StackOS connector uses the configured API URL internally and upserts generated `trackbooth.api.*` actions. |
+| `trackbooth.catalog.sync` | Manual live inventory refresh. The StackOS connector fetches one bulk `/api/agent-api/catalog/export` payload from the configured API URL and upserts generated `trackbooth.api.*` actions. |
 | `trackbooth.catalog.search` | Optional live catalog lookup through StackOS for permission-context discovery and diagnostics. |
 | `trackbooth.operation.describe` | Optional live operation detail with expanded request/response schemas from the live catalog detail. |
 
 Generated StackOS actions are not installed from copied files during plugin
 sync. They are created or refreshed only when an agent explicitly executes
 `trackbooth.catalog.sync` with a connected Trackbooth credential. The sync uses
-the credential's configured `api_base_url`, so the inventory can come from
-production, a remote staging URL, or a local Trackbooth server.
+the credential's configured `api_base_url` and the live bulk export endpoint, so
+the inventory can come from production, a remote staging URL, or a local
+Trackbooth server without crawling per-operation details.
 
 Generated action identity is scoped to the StackOS project, credential ref, and
 API URL used for the sync. A local sync cannot overwrite production inventory,
@@ -87,9 +88,10 @@ tests; the production inventory source is the live server catalog fetched by
   They use the stored runtime metadata from the last manual sync and rely on
   the Trackbooth server to enforce permissions and return authoritative
   failures.
-- Full sync retires missing generated actions only within the same inventory
-  scope. Retired actions are hidden from normal discovery but retained for
-  audit/history rather than deleted.
+- Full sync retires missing generated actions within the same inventory scope
+  and retires superseded generated contexts for the same project, credential,
+  and API URL. Retired actions are hidden from normal discovery but retained
+  for audit/history rather than deleted.
 - Agents can rerun `trackbooth.catalog.sync` during runtime whenever local or
   remote Trackbooth catalog changes should be reflected.
 - The schema resolver reports weak live schema areas instead of inventing

@@ -103,7 +103,7 @@ resources:
 actions:
   - key: catalog.sync
     name: Sync Trackbooth Catalog
-    description: Fetch the live permission-filtered Trackbooth Agent API catalog and upsert generated trackbooth.api.* actions for this runtime.
+    description: Fetch the live permission-filtered Trackbooth Agent API bulk catalog export and upsert generated trackbooth.api.* actions for this runtime.
     provider: trackbooth
     capability: agent-api
     risk_level: write
@@ -115,7 +115,7 @@ actions:
           type: array
           items:
             type: string
-          description: Optional operation ids to sync. Omit to sync the full live catalog returned for the credential context.
+          description: Optional operation ids to sync from the bulk export. Omit to sync the full live catalog returned for the credential context.
         limit:
           type: integer
           minimum: 1
