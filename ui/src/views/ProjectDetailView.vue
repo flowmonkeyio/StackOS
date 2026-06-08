@@ -4,7 +4,7 @@
 // The sidebar owns navigation. This wrapper only gives each project-scoped
 // setup route a focused page title, project meta, and status context.
 
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
@@ -74,7 +74,6 @@ async function ensureLoaded(): Promise<void> {
 }
 
 onMounted(ensureLoaded)
-watch(projectId, ensureLoaded)
 </script>
 
 <template>

@@ -7,7 +7,7 @@
 //
 // Wires to read-only run listing/detail endpoints.
 
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -125,11 +125,6 @@ async function load(): Promise<void> {
 }
 
 onMounted(load)
-watch(projectId, load)
-watch(runId, () => {
-  // The detail view loads its own data via the store; the watch is here so
-  // the breadcrumb/title updates when the URL changes.
-})
 </script>
 
 <template>

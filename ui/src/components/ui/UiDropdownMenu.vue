@@ -3,7 +3,7 @@
   Items can be commands, links, separators, or nested groups.
 -->
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 
 import { hasIcon } from './icons'
 import UiIcon from './UiIcon.vue'
@@ -122,12 +122,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onDocClick)
 })
 
-watch(open, async (v) => {
-  if (v) {
-    await nextTick()
-    panel.value?.focus()
-  }
-})
+function onPanelMounted() {
+  panel.value?.focus()
+}
 
 const placementClass = computed(
   () =>
@@ -155,6 +152,7 @@ const placementClass = computed(
         tabindex="-1"
         role="menu"
         :aria-label="ariaLabel"
+        @vue:mounted="onPanelMounted"
         :class="[
           'ui-dropdown__panel absolute z-dropdown min-w-[180px] py-1 rounded-md border border-default bg-bg-surface shadow-md focus:outline-none',
           placementClass,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
@@ -31,6 +31,7 @@ type DataTab =
   | 'metrics'
 
 const route = useRoute()
+const router = useRouter()
 const projectData = useProjectDataStore()
 const {
   timeline,
@@ -46,7 +47,6 @@ const {
 } = storeToRefs(projectData)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
-const activeTab = ref<DataTab>('timeline')
 
 const tabOptions = [
   { key: 'timeline', label: 'Timeline' },
@@ -57,7 +57,10 @@ const tabOptions = [
   { key: 'snapshots', label: 'Snapshots' },
   { key: 'artifacts', label: 'Artifacts' },
   { key: 'metrics', label: 'Metrics' },
-]
+] satisfies Array<{ key: DataTab; label: string }>
+
+const tabKeys = new Set<DataTab>(tabOptions.map((option) => option.key))
+const activeTab = ref<DataTab>(tabFromQuery(route.query.tab))
 
 const timelineColumns: DataTableColumn<SchemaProjectEventOut>[] = [
   { key: 'event_type', label: 'Event' },
@@ -108,7 +111,9 @@ const metricColumns: DataTableColumn<SchemaMetricSnapshotOut>[] = [
 ]
 
 function setTab(key: string | number): void {
-  activeTab.value = String(key) as DataTab
+  const nextTab = normalizeTab(key)
+  activeTab.value = nextTab
+  syncTabToUrl(nextTab)
 }
 
 async function load(): Promise<void> {
@@ -117,7 +122,29 @@ async function load(): Promise<void> {
 }
 
 onMounted(load)
-watch(projectId, load)
+onBeforeRouteUpdate((to) => {
+  activeTab.value = tabFromQuery(to.query.tab)
+})
+
+function normalizeTab(value: unknown): DataTab {
+  const candidate = String(value ?? '')
+  return tabKeys.has(candidate as DataTab) ? (candidate as DataTab) : 'timeline'
+}
+
+function tabFromQuery(raw: unknown): DataTab {
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return normalizeTab(value)
+}
+
+function syncTabToUrl(tab: DataTab): void {
+  const nextQuery = { ...route.query }
+  if (tab === 'timeline') {
+    delete nextQuery.tab
+  } else {
+    nextQuery.tab = tab
+  }
+  void router.replace({ query: nextQuery })
+}
 </script>
 
 <template>

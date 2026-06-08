@@ -18,6 +18,7 @@ describe('ResourceExplorerView', () => {
 
   afterEach(() => {
     globalThis.fetch = ORIG_FETCH
+    document.body.innerHTML = ''
     vi.restoreAllMocks()
   })
 
@@ -80,21 +81,29 @@ describe('ResourceExplorerView', () => {
     await router.push('/projects/1/resources?plugin_slug=communications')
     await router.isReady()
 
-    const w = mount(ResourceExplorerView, { global: { plugins: [router] } })
+    const w = mount({ template: '<RouterView />' }, { global: { plugins: [router] } })
     await vi.waitFor(() => expect(w.text()).toContain('Learning'))
 
     expect(w.text()).toContain('Communications Data')
-    expect(w.text()).toContain('Schema Details')
-    expect(w.text()).toContain('Schema JSON')
-    expect(w.text()).toContain('UI Schema JSON')
-    expect(w.text()).toContain('Lesson')
-    expect(w.text()).toContain('[redacted]')
-    expect(w.text()).not.toContain('schema-secret')
-    expect(w.text()).not.toContain('record-secret')
-
     const schemaRow = w
       .findAll('tr')
       .find((row) => row.text().includes('Learning') && row.text().includes('Durable observation.'))
+    await schemaRow?.trigger('click')
+    await vi.waitFor(() =>
+      expect(document.body.textContent ?? '').toContain('Schema Details'),
+    )
+    expect(document.body.textContent ?? '').toContain('Schema JSON')
+    expect(document.body.textContent ?? '').toContain('UI Schema JSON')
+    expect(w.text()).toContain('Lesson')
+    const recordRow = w
+      .findAll('tr')
+      .find((row) => row.text().includes('Lesson') && row.text().includes('learning'))
+    await recordRow?.trigger('click')
+    await vi.waitFor(() =>
+      expect(document.body.textContent ?? '').toContain('[redacted]'),
+    )
+    expect(document.body.textContent ?? '').not.toContain('schema-secret')
+    expect(document.body.textContent ?? '').not.toContain('record-secret')
     expect(schemaRow?.attributes('tabindex')).toBe('0')
   })
 })

@@ -1,5 +1,5 @@
 import dagre, { Graph } from '@dagrejs/dagre'
-import { Position, type Edge, type Node } from '@vue-flow/core'
+import { MarkerType, Position, type Edge, type Node } from '@vue-flow/core'
 
 import type {
   TrackerGraphEdge,
@@ -58,6 +58,8 @@ const DEPENDENCY_LAYER_GAP_X = 308
 const DEPENDENCY_ROW_GAP_Y = 116
 const DEPENDENCY_GROUP_GAP_Y = 320
 const LINK_GAP_X = 176
+const EDGE_STROKE_WIDTH = 1.2
+const EDGE_MARKER_SIZE = 7
 
 export function buildTrackerFlowModel(
   snapshot: TrackerSnapshot,
@@ -633,6 +635,12 @@ function vueEdge(edge: TrackerGraphEdge, options: BuildTrackerFlowOptions): Edge
     type: 'default',
     animated: false,
     label: edge.type === 'link' ? (edge.label ?? undefined) : undefined,
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: edgeMarkerColor(edgeTone),
+      width: EDGE_MARKER_SIZE,
+      height: EDGE_MARKER_SIZE,
+    },
     class: edgeClass(edge, options),
     style: edgeStyle(edgeTone),
     interactionWidth: edgeTone === 'muted' ? 8 : 18,
@@ -730,21 +738,35 @@ function edgeFocusTone(edge: TrackerGraphEdge, options: BuildTrackerFlowOptions)
   return 'muted'
 }
 
+function edgeMarkerColor(tone: EdgeFocusTone): string {
+  switch (tone) {
+    case 'active':
+      return 'var(--color-accent-primary)'
+    case 'upstream':
+      return 'var(--color-warning-default)'
+    case 'downstream':
+      return 'var(--color-success-default)'
+    case 'muted':
+      return 'color-mix(in srgb, var(--color-border-strong) 42%, var(--color-bg-surface))'
+    default:
+      return 'var(--color-border-strong)'
+  }
+}
+
 function edgeStyle(tone: EdgeFocusTone): Record<string, string | number> | undefined {
   switch (tone) {
     case 'active':
       return {
         stroke: 'var(--color-accent-primary)',
-        strokeWidth: 4.5,
+        strokeWidth: EDGE_STROKE_WIDTH,
         strokeLinecap: 'round',
         strokeLinejoin: 'round',
         opacity: 1,
-        filter: 'drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent-primary) 35%, transparent))',
       }
     case 'upstream':
       return {
         stroke: 'var(--color-warning-default)',
-        strokeWidth: 4,
+        strokeWidth: EDGE_STROKE_WIDTH,
         strokeLinecap: 'round',
         strokeLinejoin: 'round',
         opacity: 1,
@@ -752,7 +774,7 @@ function edgeStyle(tone: EdgeFocusTone): Record<string, string | number> | undef
     case 'downstream':
       return {
         stroke: 'var(--color-success-default)',
-        strokeWidth: 4,
+        strokeWidth: EDGE_STROKE_WIDTH,
         strokeLinecap: 'round',
         strokeLinejoin: 'round',
         opacity: 1,
@@ -760,7 +782,7 @@ function edgeStyle(tone: EdgeFocusTone): Record<string, string | number> | undef
     case 'highlighted':
       return {
         stroke: 'var(--color-border-strong)',
-        strokeWidth: 3,
+        strokeWidth: EDGE_STROKE_WIDTH,
         strokeLinecap: 'round',
         strokeLinejoin: 'round',
         opacity: 1,
@@ -768,11 +790,17 @@ function edgeStyle(tone: EdgeFocusTone): Record<string, string | number> | undef
     case 'muted':
       return {
         stroke: 'color-mix(in srgb, var(--color-border-strong) 42%, var(--color-bg-surface))',
-        strokeWidth: 1,
+        strokeWidth: EDGE_STROKE_WIDTH,
         opacity: 0.24,
       }
     default:
-      return undefined
+      return {
+        stroke: 'var(--color-border-strong)',
+        strokeWidth: EDGE_STROKE_WIDTH,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        opacity: 0.86,
+      }
   }
 }
 

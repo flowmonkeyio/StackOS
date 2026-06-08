@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteUpdate, useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import TemplateRenderer from '@/components/renderers/TemplateRenderer.vue'
 import { UiBadge, UiCallout, UiPageShell, UiPanel, UiSectionHeader } from '@/components/ui'
@@ -16,6 +17,7 @@ type TemplateRow = SchemaWorkflowTemplateSummaryOut & { id: string }
 const route = useRoute()
 const templatesStore = useWorkflowTemplatesStore()
 const { items, selected, loading, error } = storeToRefs(templatesStore)
+const detailOpen = ref(false)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const pluginSlug = computed(() => String(route.query.plugin_slug ?? ''))
@@ -36,18 +38,25 @@ const columns: DataTableColumn<TemplateRow>[] = [
   { key: 'version', label: 'Version', widthClass: 'w-24' },
 ]
 
-async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
+function parseProjectId(raw: unknown): number {
+  return Number.parseInt(String(Array.isArray(raw) ? raw[0] : raw), 10)
+}
+
+async function loadFor(nextProjectId = projectId.value, nextPluginSlug = pluginSlug.value): Promise<void> {
+  if (!nextProjectId || Number.isNaN(nextProjectId)) return
   templatesStore.reset()
-  await templatesStore.refresh(projectId.value, pluginSlug.value || null)
+  await templatesStore.refresh(nextProjectId, nextPluginSlug || null)
 }
 
 async function selectTemplate(row: TemplateRow): Promise<void> {
   await templatesStore.describe(projectId.value, row.key, row.plugin_slug)
+  detailOpen.value = true
 }
 
-onMounted(load)
-watch([projectId, pluginSlug], load)
+onMounted(() => loadFor())
+onBeforeRouteUpdate((to) => {
+  void loadFor(parseProjectId(to.params.id), String(to.query.plugin_slug ?? ''))
+})
 </script>
 
 <template>
@@ -66,49 +75,45 @@ watch([projectId, pluginSlug], load)
       {{ error }}
     </UiCallout>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(28rem,40rem)] xl:items-start">
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Templates"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge>{{ rows.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <DataTable
-          :items="rows"
-          :columns="columns"
-          :loading="loading"
-          :selected-id="selectedRowId"
-          max-height="calc(100vh - 16rem)"
-          aria-label="Workflow templates"
-          empty-message="No workflow templates."
-          interactive
-          @row-click="selectTemplate"
-        >
-          <template #cell:source="{ value }">
-            <UiBadge tone="accent">{{ value }}</UiBadge>
-          </template>
-        </DataTable>
-      </UiPanel>
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Templates"
+        as="h3"
+      >
+        <template #actions>
+          <UiBadge>{{ rows.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="rows"
+        :columns="columns"
+        :loading="loading"
+        :selected-id="selectedRowId"
+        max-height="calc(100vh - 16rem)"
+        aria-label="Workflow templates"
+        empty-message="No workflow templates."
+        interactive
+        @row-click="selectTemplate"
+      >
+        <template #cell:source="{ value }">
+          <UiBadge tone="accent">{{ value }}</UiBadge>
+        </template>
+      </DataTable>
+    </UiPanel>
 
-      <div class="xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
-        <TemplateRenderer
-          v-if="selected"
-          :template="selected"
-        />
-        <UiPanel
-          v-else
-          class="p-4"
-        >
-          <UiSectionHeader
-            title="Template"
-            as="h3"
-          />
-          <p class="text-sm text-fg-muted">Select a template to inspect setup, guidance, and grants.</p>
-        </UiPanel>
-      </div>
-    </div>
+    <InspectableDetailDrawer
+      v-model="detailOpen"
+      :title="selected?.spec.name ?? 'Template'"
+      :description="selected?.spec.description"
+      size="xl"
+      :has-detail="Boolean(selected)"
+      empty-title="No template selected"
+      empty-description="Select a workflow template row to inspect setup, guidance, and grants."
+    >
+      <TemplateRenderer
+        v-if="selected"
+        :template="selected"
+      />
+    </InspectableDetailDrawer>
   </UiPageShell>
 </template>

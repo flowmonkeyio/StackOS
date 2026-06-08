@@ -141,14 +141,14 @@ function numberValue(value: unknown): number | null {
     size="lg"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <template #header>
+    <template #header="{ titleId, descriptionId }">
       <div
         v-if="call"
         class="min-w-0"
       >
         <div class="flex flex-wrap items-center gap-2">
           <h2
-            id="ui-sidepanel-title"
+            :id="titleId"
             class="t-h1 text-fg-strong"
           >
             Action Call #{{ call.id }}
@@ -159,7 +159,10 @@ function numberValue(value: unknown): number | null {
             :small="true"
           />
         </div>
-        <p class="mt-1 truncate font-mono text-xs text-fg-muted">
+        <p
+          :id="descriptionId"
+          class="mt-1 truncate font-mono text-xs text-fg-muted"
+        >
           {{ callTitle(call) }}
         </p>
       </div>

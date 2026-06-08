@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
 import ResourceViewRenderer from '@/components/renderers/ResourceViewRenderer.vue'
@@ -24,6 +25,7 @@ import { useStackOsCatalogStore } from '@/stores/plugins'
 import { useStackOsResourcesStore } from '@/stores/stackosResources'
 
 const route = useRoute()
+const router = useRouter()
 const catalogStore = useStackOsCatalogStore()
 const resourcesStore = useStackOsResourcesStore()
 const { enabledPlugins } = storeToRefs(catalogStore)
@@ -34,6 +36,8 @@ const pluginSlug = ref(String(route.query.plugin_slug ?? ''))
 const resourceKey = ref(String(route.query.resource_key ?? ''))
 const selectedResource = ref<SchemaResourceOut | null>(null)
 const selectedRecord = ref<SchemaResourceRecordOut | null>(null)
+const detailOpen = ref(false)
+const detailKind = ref<'resource' | 'record'>('resource')
 
 const selectedPlugin = computed(
   () => enabledPlugins.value.find((plugin) => plugin.slug === pluginSlug.value) ?? null,
@@ -56,6 +60,18 @@ const selectedUiSchemaJson = computed(() =>
 const selectedConfigJson = computed(() =>
   selectedResource.value ? sanitizeForDisplay(selectedResource.value.config_json ?? null) : null,
 )
+const detailTitle = computed(() => {
+  if (detailKind.value === 'record' && selectedRecord.value) {
+    return selectedRecord.value.title || selectedRecord.value.external_id || `Record #${selectedRecord.value.id}`
+  }
+  return selectedResource.value?.name ?? 'Resource'
+})
+const detailDescription = computed(() => {
+  if (detailKind.value === 'record' && selectedRecord.value) {
+    return `Selected ${selectedRecord.value.resource_key} #${selectedRecord.value.id}`
+  }
+  return selectedResource.value?.description ?? undefined
+})
 
 const pluginOptions = computed(() => [
   { value: '', label: 'All plugins' },
@@ -81,52 +97,89 @@ const recordColumns: DataTableColumn<SchemaResourceRecordOut>[] = [
   { key: 'updated_at', label: 'Updated', format: (value) => formatDateTime(String(value)) },
 ]
 
-async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
+function parseProjectId(raw: unknown): number {
+  return Number.parseInt(String(Array.isArray(raw) ? raw[0] : raw), 10)
+}
+
+function chooseResource(nextResourceKey = resourceKey.value): SchemaResourceOut | null {
+  if (selectedResource.value && resources.value.some((resource) => resource.id === selectedResource.value?.id)) {
+    return selectedResource.value
+  }
+  return resources.value.find((resource) => resource.key === nextResourceKey) ?? resources.value[0] ?? null
+}
+
+function chooseRecord(): SchemaResourceRecordOut | null {
+  if (selectedRecord.value && records.value.some((record) => record.id === selectedRecord.value?.id)) {
+    return selectedRecord.value
+  }
+  return records.value[0] ?? null
+}
+
+async function loadFor(
+  nextProjectId = projectId.value,
+  nextPluginSlug = pluginSlug.value,
+  nextResourceKey = resourceKey.value,
+): Promise<void> {
+  if (!nextProjectId || Number.isNaN(nextProjectId)) return
+  pluginSlug.value = nextPluginSlug
+  resourceKey.value = nextResourceKey
   await Promise.all([
-    catalogStore.refresh(projectId.value),
-    resourcesStore.refresh(projectId.value, {
-      pluginSlug: pluginSlug.value || null,
-      resourceKey: resourceKey.value || null,
+    catalogStore.refresh(nextProjectId),
+    resourcesStore.refresh(nextProjectId, {
+      pluginSlug: nextPluginSlug || null,
+      resourceKey: nextResourceKey || null,
     }),
   ])
-  selectedResource.value =
-    resources.value.find((resource) => resource.key === resourceKey.value) ?? resources.value[0] ?? null
-  selectedRecord.value = records.value[0] ?? null
+  selectedResource.value = chooseResource(nextResourceKey)
+  selectedRecord.value = chooseRecord()
+  if (detailOpen.value) {
+    if (detailKind.value === 'resource' && !selectedResource.value) detailOpen.value = false
+    if (detailKind.value === 'record' && !selectedRecord.value) detailOpen.value = false
+  }
 }
 
 function onPlugin(value: string | number | null): void {
-  pluginSlug.value = String(value ?? '')
-  resourceKey.value = ''
-  void load()
+  const nextPluginSlug = String(value ?? '')
+  void router.replace({
+    query: {
+      ...route.query,
+      plugin_slug: nextPluginSlug || undefined,
+      resource_key: undefined,
+    },
+  })
 }
 
 function onResource(value: string | number | null): void {
-  resourceKey.value = String(value ?? '')
-  void load()
+  const nextResourceKey = String(value ?? '')
+  void router.replace({
+    query: {
+      ...route.query,
+      plugin_slug: pluginSlug.value || undefined,
+      resource_key: nextResourceKey || undefined,
+    },
+  })
 }
 
-onMounted(load)
-watch(projectId, load)
-watch(records, (items) => {
-  if (!selectedRecord.value || !items.some((record) => record.id === selectedRecord.value?.id)) {
-    selectedRecord.value = items[0] ?? null
-  }
+function openResource(row: SchemaResourceOut): void {
+  selectedResource.value = row
+  detailKind.value = 'resource'
+  detailOpen.value = true
+}
+
+function openRecord(row: SchemaResourceRecordOut): void {
+  selectedRecord.value = row
+  detailKind.value = 'record'
+  detailOpen.value = true
+}
+
+onMounted(() => loadFor())
+onBeforeRouteUpdate((to) => {
+  void loadFor(
+    parseProjectId(to.params.id),
+    String(to.query.plugin_slug ?? ''),
+    String(to.query.resource_key ?? ''),
+  )
 })
-watch(resources, (items) => {
-  if (!selectedResource.value || !items.some((resource) => resource.id === selectedResource.value?.id)) {
-    selectedResource.value =
-      items.find((resource) => resource.key === resourceKey.value) ?? items[0] ?? null
-  }
-})
-watch(
-  () => route.query,
-  () => {
-    pluginSlug.value = String(route.query.plugin_slug ?? '')
-    resourceKey.value = String(route.query.resource_key ?? '')
-    void load()
-  },
-)
 </script>
 
 <template>
@@ -169,172 +222,173 @@ watch(
       </div>
     </UiPanel>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(26rem,38rem)] xl:items-start">
-      <div class="space-y-4">
-        <UiPanel class="p-4">
-          <UiSectionHeader
-            title="Schemas"
-            as="h3"
-          >
-            <template #actions>
-              <UiBadge>{{ resources.length }}</UiBadge>
-            </template>
-          </UiSectionHeader>
-          <DataTable
-            :items="resources"
-            :columns="resourceColumns"
-            :loading="loading"
-            :selected-id="selectedResource?.id"
-            max-height="18rem"
-            aria-label="Resource schemas"
-            empty-message="No resource schemas."
-            interactive
-            @row-click="(row) => (selectedResource = row)"
-          >
-            <template #cell:plugin_slug="{ value }">
-              <UiBadge tone="accent">{{ value }}</UiBadge>
-            </template>
-          </DataTable>
-        </UiPanel>
+    <div class="space-y-4">
+      <UiPanel class="p-4">
+        <UiSectionHeader
+          title="Schemas"
+          as="h3"
+        >
+          <template #actions>
+            <UiBadge>{{ resources.length }}</UiBadge>
+          </template>
+        </UiSectionHeader>
+        <DataTable
+          :items="resources"
+          :columns="resourceColumns"
+          :loading="loading"
+          :selected-id="detailKind === 'resource' ? selectedResource?.id : null"
+          max-height="18rem"
+          aria-label="Resource schemas"
+          empty-message="No resource schemas."
+          interactive
+          @row-click="openResource"
+        >
+          <template #cell:plugin_slug="{ value }">
+            <UiBadge tone="accent">{{ value }}</UiBadge>
+          </template>
+        </DataTable>
+      </UiPanel>
 
-        <UiPanel class="p-4">
-          <UiSectionHeader
-            title="Records"
-            as="h3"
-          >
-            <template #actions>
-              <UiBadge>{{ records.length }}</UiBadge>
-            </template>
-          </UiSectionHeader>
-          <DataTable
-            :items="records"
-            :columns="recordColumns"
-            :loading="loading"
-            :selected-id="selectedRecord?.id"
-            max-height="calc(100vh - 31rem)"
-            aria-label="Resource records"
-            empty-message="No resource records."
-            interactive
-            @row-click="(row) => (selectedRecord = row)"
-          >
-            <template #cell:plugin_slug="{ value }">
-              <UiBadge tone="accent">{{ value }}</UiBadge>
-            </template>
-          </DataTable>
-        </UiPanel>
+      <UiPanel class="p-4">
+        <UiSectionHeader
+          title="Records"
+          as="h3"
+        >
+          <template #actions>
+            <UiBadge>{{ records.length }}</UiBadge>
+          </template>
+        </UiSectionHeader>
+        <DataTable
+          :items="records"
+          :columns="recordColumns"
+          :loading="loading"
+          :selected-id="detailKind === 'record' ? selectedRecord?.id : null"
+          max-height="calc(100vh - 31rem)"
+          aria-label="Resource records"
+          empty-message="No resource records."
+          interactive
+          @row-click="openRecord"
+        >
+          <template #cell:plugin_slug="{ value }">
+            <UiBadge tone="accent">{{ value }}</UiBadge>
+          </template>
+        </DataTable>
+      </UiPanel>
+
+      <section
+        v-if="artifacts.length > 0"
+        class="space-y-3"
+      >
+        <UiSectionHeader title="Artifacts">
+          <template #actions>
+            <UiBadge>{{ artifacts.length }}</UiBadge>
+          </template>
+        </UiSectionHeader>
+        <div class="grid gap-3 xl:grid-cols-2">
+          <ArtifactRenderer
+            v-for="artifact in artifacts"
+            :key="artifact.id"
+            :artifact="artifact"
+          />
+        </div>
+      </section>
     </div>
 
-      <div class="space-y-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
-        <UiPanel
-          v-if="selectedResource"
-          class="p-4"
+    <InspectableDetailDrawer
+      v-model="detailOpen"
+      :title="detailTitle"
+      :description="detailDescription"
+      size="xl"
+      :has-detail="detailKind === 'resource' ? Boolean(selectedResource) : Boolean(selectedRecord)"
+      empty-title="No resource selected"
+      empty-description="Select a schema or record row to inspect its details."
+    >
+      <div
+        v-if="detailKind === 'resource' && selectedResource"
+        class="space-y-4"
+      >
+        <UiSectionHeader
+          title="Schema Details"
+          :description="selectedResource.description"
         >
-          <UiSectionHeader
-            title="Schema Details"
-            :description="selectedResource.description"
-          >
-            <template #actions>
-              <UiBadge tone="accent">{{ selectedResource.plugin_slug }}</UiBadge>
-              <UiBadge>{{ selectedResource.key }}</UiBadge>
-            </template>
-          </UiSectionHeader>
+          <template #actions>
+            <UiBadge tone="accent">{{ selectedResource.plugin_slug }}</UiBadge>
+            <UiBadge>{{ selectedResource.key }}</UiBadge>
+          </template>
+        </UiSectionHeader>
 
-          <dl class="mt-4 grid gap-3 text-sm md:grid-cols-2">
-            <div class="min-w-0">
-              <dt class="text-xs text-fg-muted">Name</dt>
-              <dd class="truncate font-medium text-fg-strong">{{ selectedResource.name }}</dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs text-fg-muted">Key</dt>
-              <dd class="truncate font-mono">{{ selectedResource.key }}</dd>
-            </div>
-          </dl>
+        <dl class="grid gap-3 text-sm md:grid-cols-2">
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Name</dt>
+            <dd class="truncate font-medium text-fg-strong">{{ selectedResource.name }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Key</dt>
+            <dd class="truncate font-mono">{{ selectedResource.key }}</dd>
+          </div>
+        </dl>
 
-          <details class="mt-4 rounded-md border border-subtle bg-bg-surface">
-            <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
-              Schema JSON
-            </summary>
-            <div class="border-t border-subtle p-3">
-              <UiJsonBlock
-                :data="selectedSchemaJson"
-                density="compact"
-                max-height="16rem"
-                wrap
-              />
-            </div>
-          </details>
-
-          <details class="mt-3 rounded-md border border-subtle bg-bg-surface">
-            <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
-              UI Schema JSON
-            </summary>
-            <div class="border-t border-subtle p-3">
-              <UiJsonBlock
-                v-if="selectedUiSchemaJson !== null"
-                :data="selectedUiSchemaJson"
-                density="compact"
-                max-height="14rem"
-                wrap
-              />
-              <p
-                v-else
-                class="text-sm text-fg-muted"
-              >
-                No UI schema configured for this resource.
-              </p>
-            </div>
-          </details>
-
-          <details class="mt-3 rounded-md border border-subtle bg-bg-surface">
-            <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
-              Config JSON
-            </summary>
-            <div class="border-t border-subtle p-3">
-              <UiJsonBlock
-                v-if="selectedConfigJson !== null"
-                :data="selectedConfigJson"
-                density="compact"
-                max-height="14rem"
-                wrap
-              />
-              <p
-                v-else
-                class="text-sm text-fg-muted"
-              >
-                No resource config configured for this resource.
-              </p>
-            </div>
-          </details>
-        </UiPanel>
-
-        <section v-if="selectedRecord" class="space-y-3">
-          <UiSectionHeader
-            title="Record Details"
-            :description="`Selected ${selectedRecord.resource_key} #${selectedRecord.id}`"
-          >
-            <template #actions>
-              <UiBadge tone="accent">{{ selectedRecord.plugin_slug }}</UiBadge>
-              <UiBadge>{{ selectedRecord.resource_key }}</UiBadge>
-            </template>
-          </UiSectionHeader>
-          <ResourceViewRenderer :record="selectedRecord" />
-        </section>
-
-        <section v-if="artifacts.length > 0" class="space-y-3">
-          <UiSectionHeader title="Artifacts">
-            <template #actions>
-              <UiBadge>{{ artifacts.length }}</UiBadge>
-            </template>
-          </UiSectionHeader>
-          <div class="grid gap-3">
-            <ArtifactRenderer
-              v-for="artifact in artifacts"
-              :key="artifact.id"
-              :artifact="artifact"
+        <details class="rounded-md border border-subtle bg-bg-surface">
+          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
+            Schema JSON
+          </summary>
+          <div class="border-t border-subtle p-3">
+            <UiJsonBlock
+              :data="selectedSchemaJson"
+              density="compact"
+              max-height="16rem"
+              wrap
             />
           </div>
-        </section>
+        </details>
+
+        <details class="rounded-md border border-subtle bg-bg-surface">
+          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
+            UI Schema JSON
+          </summary>
+          <div class="border-t border-subtle p-3">
+            <UiJsonBlock
+              v-if="selectedUiSchemaJson !== null"
+              :data="selectedUiSchemaJson"
+              density="compact"
+              max-height="14rem"
+              wrap
+            />
+            <p
+              v-else
+              class="text-sm text-fg-muted"
+            >
+              No UI schema configured for this resource.
+            </p>
+          </div>
+        </details>
+
+        <details class="rounded-md border border-subtle bg-bg-surface">
+          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
+            Config JSON
+          </summary>
+          <div class="border-t border-subtle p-3">
+            <UiJsonBlock
+              v-if="selectedConfigJson !== null"
+              :data="selectedConfigJson"
+              density="compact"
+              max-height="14rem"
+              wrap
+            />
+            <p
+              v-else
+              class="text-sm text-fg-muted"
+            >
+              No resource config configured for this resource.
+            </p>
+          </div>
+        </details>
       </div>
-    </div>
+
+      <ResourceViewRenderer
+        v-else-if="detailKind === 'record' && selectedRecord"
+        :record="selectedRecord"
+      />
+    </InspectableDetailDrawer>
   </UiPageShell>
 </template>

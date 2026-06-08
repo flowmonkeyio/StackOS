@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import {
   UiButton,
   UiFormField,
@@ -17,7 +19,7 @@ import type {
   ViewMode,
 } from './viewTypes'
 
-defineProps<{
+const props = defineProps<{
   activeTaskKey: string
   taskOptions: TrackerTaskSelectOption[]
   viewMode: ViewMode
@@ -52,6 +54,13 @@ defineEmits<{
   (e: 'update:assigneeFilter', value: string): void
   (e: 'clear'): void
 }>()
+
+const statusSelectOptions = computed(() =>
+  props.statusOptions.map((option) => ({
+    value: option.key,
+    label: option.label,
+  })),
+)
 </script>
 
 <template>
@@ -106,21 +115,13 @@ defineEmits<{
         />
       </UiFormField>
 
-      <div class="tracker-command-panel__segment tracker-command-panel__status">
-        <span>Status</span>
-        <div class="tracker-top-filters" role="group" aria-label="Ticket status">
-          <button
-            v-for="item in statusOptions"
-            :key="item.key"
-            type="button"
-            class="tracker-top-filter"
-            :class="{ 'tracker-top-filter--active': statusFilter === item.key }"
-            @click="$emit('update:statusFilter', item.key)"
-          >
-            {{ item.label }}
-          </button>
-        </div>
-      </div>
+      <UiFormField class="tracker-command-panel__status" label="Status">
+        <UiSelect
+          :model-value="statusFilter"
+          :options="statusSelectOptions"
+          @change="$emit('update:statusFilter', String($event ?? 'all') as StatusFilter)"
+        />
+      </UiFormField>
 
       <UiFormField class="tracker-command-panel__workflow" label="Workflow">
         <UiSelect
@@ -201,40 +202,6 @@ defineEmits<{
   display: grid;
   gap: 6px;
   min-width: 0;
-}
-
-.tracker-top-filters {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  overflow-x: auto;
-}
-
-.tracker-top-filter {
-  min-height: 32px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 4px;
-  background: var(--color-bg-surface-alt);
-  color: var(--color-fg-muted);
-  padding: 0 9px;
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.tracker-top-filter:hover {
-  color: var(--color-fg-default);
-  background: var(--color-bg-surface-alt);
-}
-
-.tracker-top-filter--active {
-  border-color: var(--color-accent-primary);
-  background: color-mix(in srgb, var(--color-accent-primary) 9%, var(--color-bg-surface));
-  color: var(--color-fg-default);
-  box-shadow: var(--shadow-xs);
 }
 
 .tracker-command-panel__search,

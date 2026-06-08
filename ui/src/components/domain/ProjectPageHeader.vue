@@ -3,7 +3,7 @@
   Centralizes breadcrumbs, page title, subtitle, project meta, and actions.
 -->
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 
 import StatusBadge from '@/components/StatusBadge.vue'
 import UiBreadcrumbs from '@/components/ui/UiBreadcrumbs.vue'
@@ -51,7 +51,6 @@ async function ensureProject(): Promise<void> {
 }
 
 onMounted(ensureProject)
-watch(() => props.projectId, ensureProject)
 </script>
 
 <template>

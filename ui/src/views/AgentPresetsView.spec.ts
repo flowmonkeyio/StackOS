@@ -102,6 +102,7 @@ describe('AgentPresetsView', () => {
 
   afterEach(() => {
     globalThis.fetch = ORIG_FETCH
+    document.body.innerHTML = ''
     vi.restoreAllMocks()
   })
 
@@ -113,15 +114,22 @@ describe('AgentPresetsView', () => {
     await router.push('/projects/1/agent-presets')
     await router.isReady()
 
-    const wrapper = mount(AgentPresetsView, { global: { plugins: [router] } })
+    const wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router] } })
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('Planning Agent'))
 
     expect(wrapper.text()).toContain('Agent Presets')
     expect(wrapper.text()).toContain('Engineering')
-    expect(wrapper.text()).toContain('project-specific setup required')
-    expect(wrapper.text()).toContain('do not use verbatim')
-    expect(wrapper.text()).toContain('Create dependency-aware tickets.')
+    await wrapper
+      .findAll('tr')
+      .find((row) => row.text().includes('Planning Agent'))
+      ?.trigger('click')
+    await vi.waitFor(() =>
+      expect(document.body.textContent ?? '').toContain('project-specific setup required'),
+    )
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('do not use verbatim')
+    expect(text).toContain('Create dependency-aware tickets.')
     expect(wrapper.text()).not.toContain('SEO Keyword Research Agent')
 
     const tabLabels = wrapper.findAll('[role="tab"]').map((tab) => tab.text())

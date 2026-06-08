@@ -3,7 +3,7 @@
   Differs from UiTooltip: click-to-open, can contain interactive content.
 -->
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
 
 export interface UiPopoverProps {
   modelValue?: boolean;
@@ -27,14 +27,14 @@ const props = withDefaults(defineProps<UiPopoverProps>(), {
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void }>();
 
-const open = ref(!!props.modelValue);
-watch(() => props.modelValue, v => { if (v !== undefined) open.value = !!v; });
+const internalOpen = ref(!!props.modelValue);
+const open = computed(() => (props.modelValue === undefined ? internalOpen.value : !!props.modelValue));
 
 const root = ref<HTMLElement | null>(null);
 const panel = ref<HTMLElement | null>(null);
 
 function setOpen(v: boolean) {
-  open.value = v;
+  if (props.modelValue === undefined) internalOpen.value = v;
   emit('update:modelValue', v);
 }
 function toggle() { setOpen(!open.value); }
@@ -59,9 +59,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKey);
 });
 
-watch(open, async (v) => {
-  if (v) { await nextTick(); panel.value?.focus(); }
-});
+function onPanelMounted() {
+  panel.value?.focus();
+}
 
 const placementClass = computed(() => ({
   'bottom-start': 'top-full left-0 mt-1',
@@ -96,6 +96,7 @@ const placementClass = computed(() => ({
         tabindex="-1"
         role="dialog"
         :aria-label="ariaLabel"
+        @vue:mounted="onPanelMounted"
         :class="[
           'ui-popover__panel absolute z-popover rounded-md border border-default bg-bg-surface shadow-md focus:outline-none',
           placementClass,

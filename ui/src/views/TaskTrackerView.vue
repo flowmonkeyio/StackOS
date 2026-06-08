@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import type { Edge, EdgeMouseEvent, NodeMouseEvent } from '@vue-flow/core'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { UiBadge, UiButton, UiCallout, UiEmptyState, UiPageShell } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
+import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { resolveStatus, trackerStatus } from '@/design/status'
 import { graphFocusFor, graphItemFromNodeId } from '@/lib/task-tracker/graphFocus'
@@ -26,6 +27,14 @@ import TrackerTaskDetailDialog from './task-tracker/TrackerTaskDetailDialog.vue'
 import TrackerTicketDetailPanel from './task-tracker/TrackerTicketDetailPanel.vue'
 import TrackerTicketTable from './task-tracker/TrackerTicketTable.vue'
 import TrackerWarningSummary from './task-tracker/TrackerWarningSummary.vue'
+import type {
+  TaskExecutionContext,
+  TaskExecutionContextArtifact,
+  TaskExecutionContextArtifactPageInfo,
+  TaskExecutionContextArtifactPage,
+  TaskExecutionContextPage,
+  TaskExecutionContextPageInfo,
+} from './task-tracker/executionContextTypes'
 import type {
   GraphBlockFilter,
   SelectMetaTone,
@@ -55,9 +64,16 @@ const selectedEdgeId = ref<string | null>(null)
 const selectedNodeFocusId = ref<string | null>(null)
 const detailPanelOpen = ref(false)
 const taskDetailOpen = ref(false)
+const taskContexts = ref<TaskExecutionContext[]>([])
+const taskContextArtifacts = ref<Record<string, TaskExecutionContextArtifact[]>>({})
+const taskContextPageInfo = ref<TaskExecutionContextPageInfo | null>(null)
+const taskContextArtifactPageInfo = ref<TaskExecutionContextArtifactPageInfo>({})
+const taskContextLoading = ref(false)
+const taskContextError = ref<string | null>(null)
 const graphStatusFilters = ref<TrackerStatus[]>([])
 const graphBlockFilters = ref<GraphBlockFilter[]>([])
 let graphRequestSeq = 0
+let taskContextRequestSeq = 0
 
 const statusOptions: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'All' },
@@ -171,7 +187,7 @@ const taskRows = computed<TaskProgressRow[]>(() =>
 const taskSelectOptions = computed(() =>
   taskRows.value.map((row) => ({
     value: row.key,
-    label: row.task.title,
+    label: `#${row.id} ${row.task.title}`,
     rightLabel: resolveStatus('tracker', row.task.status).label,
     rightMeta: `${row.terminalCount}/${row.totalCount} terminal`,
     rightTone: trackerStatusTone(row.task.status),
@@ -414,7 +430,7 @@ const flow = computed(() =>
     : { nodes: [], edges: [] as Edge[], warnings: [] },
 )
 
-const graphFitOnInit = computed(() => flow.value.nodes.length <= 14)
+const graphFitOnInit = computed(() => flow.value.nodes.length > 0 && flow.value.nodes.length <= 28)
 
 const ticketColumns: DataTableColumn<TrackerTicket>[] = [
   { key: 'key', label: 'Ticket' },
@@ -480,6 +496,78 @@ async function loadFocusedGraph(taskKey: string): Promise<void> {
     if (requestSeq === graphRequestSeq) {
       graphLoading.value = false
     }
+  }
+}
+
+async function loadTaskContexts(task: TrackerTask | null = activeTask.value): Promise<void> {
+  const requestSeq = ++taskContextRequestSeq
+  taskContextError.value = null
+  if (!projectId.value || Number.isNaN(projectId.value) || !task) {
+    taskContexts.value = []
+    taskContextArtifacts.value = {}
+    taskContextPageInfo.value = null
+    taskContextArtifactPageInfo.value = {}
+    return
+  }
+  taskContextLoading.value = true
+  try {
+    const page = await callOperation<TaskExecutionContextPage>('executionContext.list', {
+      project_id: projectId.value,
+      task_key: task.key,
+      limit: 20,
+    })
+    if (requestSeq !== taskContextRequestSeq) return
+    taskContexts.value = page.items
+    taskContextPageInfo.value = pageInfo(page, 20)
+    const artifactEntries = await Promise.all(
+      page.items.map(async (context) => {
+        if (!context.context_ref || (context.artifact_count ?? 0) === 0) {
+          return [
+            context.context_ref,
+            { items: [] as TaskExecutionContextArtifact[], info: pageInfo(null, 5) },
+          ] as const
+        }
+        const artifactPage = await callOperation<TaskExecutionContextArtifactPage>(
+          'executionContext.artifact.list',
+          {
+            project_id: projectId.value,
+            context_ref: context.context_ref,
+            limit: 5,
+          },
+        )
+        return [context.context_ref, { items: artifactPage.items, info: pageInfo(artifactPage, 5) }] as const
+      }),
+    )
+    if (requestSeq !== taskContextRequestSeq) return
+    taskContextArtifacts.value = Object.fromEntries(
+      artifactEntries.map(([contextRef, value]) => [contextRef, value.items]),
+    )
+    taskContextArtifactPageInfo.value = Object.fromEntries(
+      artifactEntries.map(([contextRef, value]) => [contextRef, value.info]),
+    )
+  } catch (err) {
+    if (requestSeq === taskContextRequestSeq) {
+      taskContexts.value = []
+      taskContextArtifacts.value = {}
+      taskContextPageInfo.value = null
+      taskContextArtifactPageInfo.value = {}
+      taskContextError.value = formatApiError(err, 'failed to load task contexts')
+    }
+  } finally {
+    if (requestSeq === taskContextRequestSeq) {
+      taskContextLoading.value = false
+    }
+  }
+}
+
+function pageInfo(
+  page: { next_cursor: number | null; total_estimate: number } | null,
+  limit: number,
+): TaskExecutionContextPageInfo {
+  return {
+    limit,
+    nextCursor: page?.next_cursor ?? null,
+    totalEstimate: page?.total_estimate ?? 0,
   }
 }
 
@@ -622,6 +710,8 @@ function onTaskRow(row: TaskProgressRow): void {
   activeTaskKey.value = row.key
   syncActiveTaskToUrl(row.key)
   selected.value = null
+  void loadFocusedGraph(row.key)
+  if (taskDetailOpen.value) void loadTaskContexts(row.task)
 }
 
 function onTaskSelect(value: string | number | null): void {
@@ -685,6 +775,13 @@ function onTicketRow(row: TrackerTicket): void {
   syncActiveTaskToUrl(row.task_key)
   selected.value = { kind: 'ticket', key: row.key }
   detailPanelOpen.value = true
+  void loadFocusedGraph(row.task_key)
+  if (taskDetailOpen.value) void loadTaskContexts(activeTask.value)
+}
+
+function openTaskDetail(): void {
+  taskDetailOpen.value = true
+  void loadTaskContexts(activeTask.value)
 }
 
 function openSelectedDetail(): void {
@@ -699,14 +796,14 @@ function clearGraphFocus(): void {
   detailPanelOpen.value = false
 }
 
-function ensureActiveTask(): void {
+function ensureActiveTask(): string {
   if (!taskRows.value.length) {
     activeTaskKey.value = ''
     syncActiveTaskToUrl('')
     selected.value = null
     selectedEdgeId.value = null
     selectedNodeFocusId.value = null
-    return
+    return ''
   }
   const current = taskRows.value.find((row) => row.key === activeTaskKey.value)
   const nextRow = current ?? taskRows.value[0]
@@ -719,8 +816,38 @@ function ensureActiveTask(): void {
     selectedEdgeId.value = null
     selectedNodeFocusId.value = null
     selected.value = null
-    return
+    return nextRow.key
   }
+  return nextRow.key
+}
+
+async function reconcileActiveTask(): Promise<void> {
+  const previousTaskKey = activeTaskKey.value
+  const nextTaskKey = ensureActiveTask()
+  if (snapshot.value && nextTaskKey && nextTaskKey !== previousTaskKey) {
+    await loadFocusedGraph(nextTaskKey)
+  }
+  if (taskDetailOpen.value) void loadTaskContexts(activeTask.value)
+}
+
+function setSearch(value: string): void {
+  search.value = value
+  void reconcileActiveTask()
+}
+
+function setStatusFilter(value: StatusFilter): void {
+  statusFilter.value = value
+  void reconcileActiveTask()
+}
+
+function setWorkflowFilter(value: string): void {
+  workflowFilter.value = value
+  void reconcileActiveTask()
+}
+
+function setAssigneeFilter(value: string): void {
+  assigneeFilter.value = value
+  void reconcileActiveTask()
 }
 
 function clearFilters(): void {
@@ -729,12 +856,33 @@ function clearFilters(): void {
   assigneeFilter.value = ''
   search.value = ''
   clearGraphFilters()
+  void reconcileActiveTask()
+}
+
+async function updateActiveTaskStatus(status: TrackerStatus): Promise<void> {
+  const task = activeTask.value
+  if (!task || task.status === status) return
+  error.value = null
+  try {
+    await callOperation('tracker.updateTask', {
+      project_id: projectId.value,
+      task_key: task.key,
+      patch_json: { status },
+      actor: 'ui',
+    })
+    await load()
+  } catch (err) {
+    error.value = formatApiError(err, 'failed to update task status')
+  }
+}
+
+function taskKeyFromQueryValue(raw: unknown): string {
+  if (Array.isArray(raw)) return typeof raw[0] === 'string' ? raw[0] : ''
+  return typeof raw === 'string' ? raw : ''
 }
 
 function routeTaskKey(): string {
-  const raw = route.query.task
-  if (Array.isArray(raw)) return typeof raw[0] === 'string' ? raw[0] : ''
-  return typeof raw === 'string' ? raw : ''
+  return taskKeyFromQueryValue(route.query.task)
 }
 
 function syncActiveTaskToUrl(taskKey: string): void {
@@ -771,20 +919,14 @@ function countStatuses(statuses: TrackerStatus[]): Record<TrackerStatus, number>
 }
 
 onMounted(load)
-watch(projectId, load)
-watch(activeTaskKey, (taskKey) => {
-  if (snapshot.value) void loadFocusedGraph(taskKey)
+onBeforeRouteUpdate((to) => {
+  const nextTaskKey = taskKeyFromQueryValue(to.query.task)
+  if (nextTaskKey === activeTaskKey.value) return
+  activeTaskKey.value = nextTaskKey
+  selectedEdgeId.value = null
+  selectedNodeFocusId.value = null
+  void reconcileActiveTask()
 })
-watch(
-  () => route.query.task,
-  () => {
-    activeTaskKey.value = routeTaskKey()
-    selectedEdgeId.value = null
-    selectedNodeFocusId.value = null
-    ensureActiveTask()
-  },
-)
-watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActiveTask())
 </script>
 
 <template>
@@ -833,10 +975,10 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
       @task-select="onTaskSelect"
       @update:view-mode="viewMode = $event"
       @update:filters-expanded="filtersExpanded = $event"
-      @update:search="search = $event"
-      @update:status-filter="statusFilter = $event"
-      @update:workflow-filter="workflowFilter = $event"
-      @update:assignee-filter="assigneeFilter = $event"
+      @update:search="setSearch"
+      @update:status-filter="setStatusFilter"
+      @update:workflow-filter="setWorkflowFilter"
+      @update:assignee-filter="setAssigneeFilter"
       @clear="clearFilters"
     />
 
@@ -874,7 +1016,7 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
             @toggle-status="toggleGraphStatus"
             @toggle-block="toggleGraphBlock"
             @clear-filters="clearGraphFilters"
-            @open-task-detail="taskDetailOpen = true"
+            @open-task-detail="openTaskDetail"
             @node-click="onNodeClick"
             @edge-click="onEdgeClick"
             @pane-click="onPaneClick"
@@ -902,7 +1044,17 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
       :description="detailPanelDescription"
     />
 
-    <TrackerTaskDetailDialog v-model="taskDetailOpen" :task="activeTask" />
+    <TrackerTaskDetailDialog
+      v-model="taskDetailOpen"
+      :task="activeTask"
+      :contexts="taskContexts"
+      :context-artifacts="taskContextArtifacts"
+      :context-page-info="taskContextPageInfo"
+      :context-artifact-page-info="taskContextArtifactPageInfo"
+      :context-loading="taskContextLoading"
+      :context-error="taskContextError"
+      @status-change="updateActiveTaskStatus"
+    />
   </UiPageShell>
 </template>
 
@@ -933,118 +1085,4 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   min-height: 0;
 }
 
-:deep(.tracker-detail__body) {
-  display: grid;
-  gap: 18px;
-}
-
-:deep(.tracker-detail__body--drawer) {
-  padding: 0;
-}
-
-:deep(.tracker-detail__drawer-kicker) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-:deep(.tracker-detail__eyebrow) {
-  color: var(--color-fg-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-:deep(.tracker-detail__description) {
-  max-width: 82ch;
-  color: var(--color-fg-muted);
-  font-size: 14px;
-  line-height: 1.55;
-}
-
-:deep(.tracker-detail__facts) {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
-}
-
-:deep(.tracker-detail-fact) {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
-  background: var(--color-bg-surface-alt);
-  padding: 10px 12px;
-}
-
-:deep(.tracker-detail-fact span) {
-  color: var(--color-fg-muted);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-:deep(.tracker-detail-fact strong) {
-  overflow: hidden;
-  color: var(--color-fg-default);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-:deep(.tracker-detail-section) {
-  display: grid;
-  gap: 8px;
-  border-top: 1px solid var(--color-border-subtle);
-  padding-top: 16px;
-}
-
-:deep(.tracker-detail-section__title) {
-  color: var(--color-fg-muted);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-:deep(.tracker-detail-list) {
-  display: grid;
-  gap: 6px;
-  color: var(--color-fg-muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-:deep(.tracker-detail-list--mono) {
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-:deep(.tracker-detail__outcome) {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
-  background: var(--color-bg-surface-alt);
-  color: var(--color-fg-muted);
-  font-size: 13px;
-  line-height: 1.5;
-  padding: 12px 14px;
-}
-
-:deep(.tracker-detail-json) {
-  max-height: 260px;
-  overflow: auto;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
-  background: var(--color-bg-sunken);
-  color: var(--color-fg-default);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.55;
-  padding: 12px;
-  white-space: pre-wrap;
-}
 </style>

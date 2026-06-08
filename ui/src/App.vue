@@ -4,9 +4,9 @@
 // Sidebar holds the brand, ProjectSwitcher, primary nav, and theme toggle.
 // At < md the layout collapses to a single column with a top-of-page nav.
 
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { RouterView, useRoute } from 'vue-router'
+import { RouterView, useRoute, useRouter } from 'vue-router'
 
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
@@ -24,6 +24,7 @@ const projects = useProjectsStore()
 const catalog = useStackOsCatalogStore()
 const toasts = useToastsStore()
 const route = useRoute()
+const router = useRouter()
 
 const { activeProject } = storeToRefs(projects)
 const { enabledPlugins } = storeToRefs(catalog)
@@ -31,13 +32,15 @@ const { items: toastItems } = storeToRefs(toasts)
 
 const theme = ref<'light' | 'dark'>('light')
 const drawerOpen = ref(false)
+const lastCatalogProjectId = ref<number | null>(null)
 
-const routeProjectId = computed(() => {
-  const raw = route.params.id
+function parseProjectId(raw: unknown): number | null {
   const value = Array.isArray(raw) ? raw[0] : raw
   const parsed = Number.parseInt(String(value ?? ''), 10)
   return Number.isNaN(parsed) ? null : parsed
-})
+}
+
+const routeProjectId = computed(() => parseProjectId(route.params.id))
 
 const currentProjectId = computed(() => routeProjectId.value ?? activeProject.value?.id ?? null)
 
@@ -71,6 +74,15 @@ onMounted(() => {
     /* ignore */
   }
   applyTheme()
+  refreshPluginsForProject(currentProjectId.value)
+})
+
+const removeCatalogRefreshHook = router.afterEach((to) => {
+  refreshPluginsForProject(parseProjectId(to.params.id) ?? activeProject.value?.id ?? null)
+})
+
+onBeforeUnmount(() => {
+  removeCatalogRefreshHook()
 })
 
 const projectNavSections = computed<StackOsNavSection[]>(() => {
@@ -79,13 +91,15 @@ const projectNavSections = computed<StackOsNavSection[]>(() => {
   return buildProjectNavSections(id, enabledPlugins.value)
 })
 
-watch(
-  () => currentProjectId.value,
-  (projectId) => {
-    if (projectId) void catalog.refreshPlugins(projectId, { silent: true })
-  },
-  { immediate: true },
+const routeViewKey = computed(() =>
+  routeProjectId.value === null ? route.path : `project:${routeProjectId.value}`,
 )
+
+function refreshPluginsForProject(projectId: number | null): void {
+  if (projectId === lastCatalogProjectId.value) return
+  lastCatalogProjectId.value = projectId
+  if (projectId) void catalog.refreshPlugins(projectId, { silent: true })
+}
 
 function closeDrawer(): void {
   drawerOpen.value = false
@@ -250,7 +264,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
         Authenticating with the daemon…
       </div>
 
-      <RouterView />
+      <RouterView :key="routeViewKey" />
     </main>
   </div>
 </template>

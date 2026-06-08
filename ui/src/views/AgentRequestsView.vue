@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
@@ -10,10 +11,9 @@ import {
   UiButton,
   UiCallout,
   UiCheckbox,
-  UiDescriptionItem,
-  UiDescriptionList,
   UiFormField,
   UiJsonBlock,
+  UiMetadataStrip,
   UiMetricCard,
   UiPageShell,
   UiPanel,
@@ -75,6 +75,7 @@ const route = useRoute()
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const rows = ref<AgentRequestOut[]>([])
 const selectedRequest = ref<AgentRequestOut | null>(null)
+const detailOpen = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const nextCursor = ref<number | null>(null)
@@ -163,15 +164,26 @@ async function fetchRequests({ append = false }: { append?: boolean } = {}): Pro
       'agentRequest.list',
       buildArguments(append ? nextCursor.value : null),
     )
-    rows.value = append ? [...rows.value, ...page.items] : page.items
+    const nextRows = append ? [...rows.value, ...page.items] : page.items
+    rows.value = nextRows
     nextCursor.value = page.next_cursor ?? null
     totalEstimate.value = page.total_estimate ?? page.items.length
-    if (!append && autoSelectNewest.value) selectedRequest.value = page.items[0] ?? null
+    reconcileSelectedRequest(nextRows, append)
   } catch (err) {
     error.value = formatApiError(err, 'failed to load agent requests')
   } finally {
     loading.value = false
   }
+}
+
+function reconcileSelectedRequest(nextRows: AgentRequestOut[], append: boolean): void {
+  if (!append && autoSelectNewest.value) {
+    selectedRequest.value = nextRows[0] ?? null
+  } else if (selectedRequest.value) {
+    selectedRequest.value =
+      nextRows.find((request) => request.id === selectedRequest.value?.id) ?? null
+  }
+  if (!selectedRequest.value) detailOpen.value = false
 }
 
 function setMode(value: string | number): void {
@@ -187,6 +199,7 @@ function setAttention(value: string | number | null): void {
 function selectRequest(row: AgentRequestOut): void {
   autoSelectNewest.value = false
   selectedRequest.value = row
+  detailOpen.value = true
 }
 
 function resetFilters(): void {
@@ -206,11 +219,39 @@ function requestStatusKind(_status: AgentRequestStatus): 'job' {
   return 'job'
 }
 
+function agentRequestCoreMetadata(request: AgentRequestOut) {
+  const source = [request.source_provider, request.source_kind].filter(Boolean).join(' / ')
+  return [
+    { label: 'Priority', value: request.priority },
+    { label: 'Source', value: source || '-', mono: Boolean(source) },
+    { label: 'Run plan', value: request.run_plan_id ? `#${request.run_plan_id}` : '-' },
+    { label: 'Updated', value: formatDateTime(request.updated_at) },
+  ]
+}
+
+function agentRequestTraceMetadata(request: AgentRequestOut) {
+  return [
+    request.source_resource_key
+      ? { label: 'Resource', value: request.source_resource_key, mono: true }
+      : null,
+    request.source_resource_record_id
+      ? { label: 'Record', value: `#${request.source_resource_record_id}` }
+      : null,
+    request.source_message_ref
+      ? { label: 'Message', value: request.source_message_ref, mono: true }
+      : null,
+    request.claimed_by ? { label: 'Claimed by', value: request.claimed_by } : null,
+    request.claimed_at ? { label: 'Claimed', value: formatDateTime(request.claimed_at) } : null,
+    request.claim_expires_at
+      ? { label: 'Claim expires', value: formatDateTime(request.claim_expires_at) }
+      : null,
+    request.completed_at ? { label: 'Completed', value: formatDateTime(request.completed_at) } : null,
+    request.ignored_at ? { label: 'Ignored', value: formatDateTime(request.ignored_at) } : null,
+    { label: 'Created', value: formatDateTime(request.created_at) },
+  ].filter((item): item is NonNullable<typeof item> => Boolean(item))
+}
+
 onMounted(fetchRequests)
-watch(projectId, () => {
-  autoSelectNewest.value = true
-  void fetchRequests()
-})
 </script>
 
 <template>
@@ -258,7 +299,7 @@ watch(projectId, () => {
           <UiCheckbox
             v-model="autoSelectNewest"
             label="Select newest on refresh"
-            description="Keeps the detail panel synced to the first row after filter changes."
+            description="Keeps the selected row synced to the first row after filter changes."
           />
         </div>
         <div class="flex items-end justify-start md:justify-end">
@@ -272,83 +313,93 @@ watch(projectId, () => {
       </div>
     </UiPanel>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)] xl:items-start">
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Queue"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge>{{ totalEstimate }} total</UiBadge>
-            <UiBadge>{{ loadedTerminal }} terminal loaded</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <DataTable
-          :items="rows"
-          :columns="columns"
-          :loading="loading"
-          :next-cursor="nextCursor"
-          :selected-id="selectedRequest?.id"
-          max-height="calc(100vh - 24rem)"
-          aria-label="Agent request queue"
-          empty-message="No agent requests match these filters."
-          interactive
-          @row-click="selectRequest"
-          @load-more="fetchRequests({ append: true })"
-        >
-          <template #cell:title="{ row }">
-            <div class="max-w-xl">
-              <p class="truncate font-medium text-fg-strong">{{ row.title }}</p>
-              <p
-                v-if="row.body_preview"
-                class="mt-1 line-clamp-2 text-xs text-fg-muted"
-              >
-                {{ row.body_preview }}
-              </p>
-            </div>
-          </template>
-          <template #cell:status="{ value }">
-            <StatusBadge
-              :status="String(value)"
-              :kind="requestStatusKind(String(value) as AgentRequestStatus)"
-              :small="true"
-            />
-          </template>
-          <template #cell:attention_status="{ value }">
-            <UiBadge :tone="attentionTone(value as AgentRequestAttentionStatus)">
-              {{ value }}
-            </UiBadge>
-          </template>
-          <template #cell:source_provider="{ row }">
-            <span class="flex flex-wrap gap-1">
-              <UiBadge v-if="row.source_provider">{{ row.source_provider }}</UiBadge>
-              <UiBadge
-                v-if="row.source_kind"
-                tone="accent"
-              >
-                {{ row.source_kind }}
-              </UiBadge>
-              <span
-                v-if="!row.source_provider && !row.source_kind"
-                class="text-fg-muted"
-              >
-                -
-              </span>
-            </span>
-          </template>
-        </DataTable>
-      </UiPanel>
-
-      <UiPanel
-        v-if="selectedRequest"
-        class="p-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto"
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Queue"
+        as="h3"
       >
-        <UiSectionHeader
-          :title="`Request #${selectedRequest.id}`"
-          :description="selectedRequest.request_key"
-          as="h3"
+        <template #actions>
+          <UiBadge>{{ totalEstimate }} total</UiBadge>
+          <UiBadge>{{ loadedTerminal }} terminal loaded</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="rows"
+        :columns="columns"
+        :loading="loading"
+        :next-cursor="nextCursor"
+        :selected-id="selectedRequest?.id"
+        max-height="calc(100vh - 24rem)"
+        aria-label="Agent request queue"
+        empty-message="No agent requests match these filters."
+        interactive
+        @row-click="selectRequest"
+        @load-more="fetchRequests({ append: true })"
+      >
+        <template #cell:title="{ row }">
+          <div class="max-w-xl">
+            <p class="truncate font-medium text-fg-strong">{{ row.title }}</p>
+            <p
+              v-if="row.body_preview"
+              class="mt-1 line-clamp-2 text-xs text-fg-muted"
+            >
+              {{ row.body_preview }}
+            </p>
+          </div>
+        </template>
+        <template #cell:status="{ value }">
+          <StatusBadge
+            :status="String(value)"
+            :kind="requestStatusKind(String(value) as AgentRequestStatus)"
+            :small="true"
+          />
+        </template>
+        <template #cell:attention_status="{ value }">
+          <UiBadge :tone="attentionTone(value as AgentRequestAttentionStatus)">
+            {{ value }}
+          </UiBadge>
+        </template>
+        <template #cell:source_provider="{ row }">
+          <span class="flex flex-wrap gap-1">
+            <UiBadge v-if="row.source_provider">{{ row.source_provider }}</UiBadge>
+            <UiBadge
+              v-if="row.source_kind"
+              tone="accent"
+            >
+              {{ row.source_kind }}
+            </UiBadge>
+            <span
+              v-if="!row.source_provider && !row.source_kind"
+              class="text-fg-muted"
+            >
+              -
+            </span>
+          </span>
+        </template>
+      </DataTable>
+    </UiPanel>
+
+    <InspectableDetailDrawer
+      v-model="detailOpen"
+      :title="selectedRequest ? `Request #${selectedRequest.id}` : 'Agent Request'"
+      :description="selectedRequest?.request_key"
+      size="lg"
+      :has-detail="Boolean(selectedRequest)"
+      empty-title="No request selected"
+      empty-description="Select an agent request row to inspect its source, lifecycle, and metadata."
+    >
+      <template #header="{ titleId, descriptionId }">
+        <div
+          v-if="selectedRequest"
+          class="min-w-0"
         >
-          <template #actions>
+          <div class="flex flex-wrap items-center gap-2">
+            <h2
+              :id="titleId"
+              class="t-h1 text-fg-strong"
+            >
+              Request #{{ selectedRequest.id }}
+            </h2>
             <StatusBadge
               :status="selectedRequest.status"
               :kind="requestStatusKind(selectedRequest.status)"
@@ -357,62 +408,54 @@ watch(projectId, () => {
             <UiBadge :tone="attentionTone(selectedRequest.attention_status)">
               {{ selectedRequest.attention_status }}
             </UiBadge>
-          </template>
-        </UiSectionHeader>
-
-        <div class="space-y-3">
-          <div>
-            <p class="text-sm font-semibold text-fg-strong">{{ selectedRequest.title }}</p>
-            <p
-              v-if="selectedRequest.body_preview"
-              class="mt-1 whitespace-pre-wrap text-sm text-fg-muted"
-            >
-              {{ selectedRequest.body_preview }}
-            </p>
           </div>
-          <UiDescriptionList bordered>
-            <UiDescriptionItem
-              label="Source provider"
-              :value="selectedRequest.source_provider ?? '-'"
-            />
-            <UiDescriptionItem
-              label="Source kind"
-              :value="selectedRequest.source_kind ?? '-'"
-            />
-            <UiDescriptionItem
-              label="Source resource"
-              :value="selectedRequest.source_resource_key ?? '-'"
-            />
-            <UiDescriptionItem
-              label="Source record"
-              :value="selectedRequest.source_resource_record_id ? `#${selectedRequest.source_resource_record_id}` : '-'"
-            />
-            <UiDescriptionItem
-              label="Source message"
-              :value="selectedRequest.source_message_ref ?? '-'"
-            />
-            <UiDescriptionItem
-              label="Claimed by"
-              :value="selectedRequest.claimed_by ?? '-'"
-            />
-            <UiDescriptionItem
-              label="Run plan"
-              :value="selectedRequest.run_plan_id ? `#${selectedRequest.run_plan_id}` : '-'"
-            />
-            <UiDescriptionItem
-              label="Updated"
-              :value="formatDateTime(selectedRequest.updated_at)"
-            />
-          </UiDescriptionList>
-          <UiJsonBlock
-            :data="sanitizeForDisplay(selectedRequest.metadata_json ?? {})"
-            density="compact"
-            max-height="22rem"
-            wrap
-            aria-label="Agent request metadata"
-          />
+          <p
+            :id="descriptionId"
+            class="mt-1 truncate font-mono text-xs text-fg-muted"
+          >
+            {{ selectedRequest.request_key }}
+          </p>
         </div>
-      </UiPanel>
-    </div>
+      </template>
+
+      <div
+        v-if="selectedRequest"
+        class="space-y-3"
+      >
+        <div>
+          <p class="text-sm font-semibold text-fg-strong">{{ selectedRequest.title }}</p>
+          <p
+            v-if="selectedRequest.body_preview"
+            class="mt-1 whitespace-pre-wrap text-sm text-fg-muted"
+          >
+            {{ selectedRequest.body_preview }}
+          </p>
+        </div>
+
+        <UiMetadataStrip
+          :items="agentRequestCoreMetadata(selectedRequest)"
+          aria-label="Agent request metadata"
+        />
+
+        <details class="rounded-md border border-subtle bg-bg-surface px-3 py-2">
+          <summary class="cursor-pointer text-xs font-semibold uppercase text-fg-subtle">
+            Trace
+          </summary>
+          <UiMetadataStrip
+            class="mt-2"
+            :items="agentRequestTraceMetadata(selectedRequest)"
+            aria-label="Agent request trace metadata"
+          />
+        </details>
+
+        <UiJsonBlock
+          :data="sanitizeForDisplay(selectedRequest.metadata_json ?? {})"
+          density="compact"
+          max-height="22rem"
+          wrap
+          aria-label="Agent request metadata JSON"
+        />
+      </div>
+    </InspectableDetailDrawer>
   </UiPageShell>
 </template>

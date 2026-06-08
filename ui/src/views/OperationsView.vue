@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import type {
   SchemaOperationDescribeOut,
@@ -8,6 +8,7 @@ import type {
   SchemaOperationSummaryOut,
 } from '@/api'
 import DataTable from '@/components/DataTable.vue'
+import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import {
   UiBadge,
@@ -30,6 +31,7 @@ const router = useRouter()
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const rows = ref<OperationRow[]>([])
 const selected = ref<SchemaOperationDescribeOut | null>(null)
+const detailOpen = ref(false)
 const loading = ref(false)
 const detailLoading = ref(false)
 const error = ref<string | null>(null)
@@ -72,9 +74,11 @@ async function loadList(): Promise<void> {
     const query = surfaceFilter.value === 'all' ? '' : `?surface=${surfaceFilter.value}`
     const payload = await apiFetch<SchemaOperationListOut>(`/api/v1/operations${query}`)
     rows.value = payload.items.map((item) => ({ ...item, id: item.name }))
-    const name = selectedName.value || rows.value[0]?.name || ''
+    const requestedName = selectedName.value
+    const name = requestedName || rows.value[0]?.name || ''
     if (name) await loadDetail(name)
     else selected.value = null
+    if (requestedName) detailOpen.value = true
   } catch (err) {
     error.value = formatApiError(err)
   } finally {
@@ -101,6 +105,7 @@ async function loadDetail(name: string): Promise<void> {
 }
 
 async function selectOperation(row: OperationRow): Promise<void> {
+  detailOpen.value = true
   await router.replace({
     query: {
       ...route.query,
@@ -109,9 +114,17 @@ async function selectOperation(row: OperationRow): Promise<void> {
   })
 }
 
+function setSurface(value: string | number): void {
+  surfaceFilter.value = String(value) as SurfaceFilter
+  void loadList()
+}
+
 onMounted(loadList)
-watch(surfaceFilter, loadList)
-watch(selectedName, (name) => loadDetail(name))
+onBeforeRouteUpdate((to) => {
+  const name = String(to.query.operation ?? '')
+  detailOpen.value = Boolean(name)
+  void loadDetail(name)
+})
 </script>
 
 <template>
@@ -130,65 +143,77 @@ watch(selectedName, (name) => loadDetail(name))
       {{ error }}
     </UiCallout>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(30rem,44rem)] xl:items-start">
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Catalog"
-          as="h3"
-        >
-          <template #actions>
-            <UiSegmentedControl
-              v-model="surfaceFilter"
-              :options="surfaceOptions"
-              label="Surface"
-            />
-            <UiBadge>{{ rows.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Catalog"
+        as="h3"
+      >
+        <template #actions>
+          <UiSegmentedControl
+            :model-value="surfaceFilter"
+            :options="surfaceOptions"
+            label="Surface"
+            @select="setSurface"
+          />
+          <UiBadge>{{ rows.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
 
-        <DataTable
-          :items="rows"
-          :columns="columns"
-          :loading="loading"
-          :selected-id="selected?.name"
-          max-height="calc(100vh - 18rem)"
-          aria-label="StackOS operations"
-          empty-message="No operations."
-          interactive
-          @row-click="selectOperation"
-        >
-          <template #cell:name="{ value }">
-            <span class="font-medium text-fg-strong">{{ value }}</span>
-          </template>
-          <template #cell:surfaces="{ row }">
-            <span class="flex flex-wrap gap-1">
-              <UiBadge
-                v-for="surface in enabledSurfaceNames(row)"
-                :key="surface"
-                tone="accent"
-              >
-                {{ surface }}
-              </UiBadge>
-            </span>
-          </template>
-          <template #cell:grant_policy="{ value }">
-            <UiBadge :tone="policyTone(String(value))">
-              {{ value }}
+      <DataTable
+        :items="rows"
+        :columns="columns"
+        :loading="loading"
+        :selected-id="selected?.name"
+        max-height="calc(100vh - 18rem)"
+        aria-label="StackOS operations"
+        empty-message="No operations."
+        interactive
+        @row-click="selectOperation"
+      >
+        <template #cell:name="{ value }">
+          <span class="font-medium text-fg-strong">{{ value }}</span>
+        </template>
+        <template #cell:surfaces="{ row }">
+          <span class="flex flex-wrap gap-1">
+            <UiBadge
+              v-for="surface in enabledSurfaceNames(row)"
+              :key="surface"
+              tone="accent"
+            >
+              {{ surface }}
             </UiBadge>
-          </template>
-        </DataTable>
-      </UiPanel>
+          </span>
+        </template>
+        <template #cell:grant_policy="{ value }">
+          <UiBadge :tone="policyTone(String(value))">
+            {{ value }}
+          </UiBadge>
+        </template>
+      </DataTable>
+    </UiPanel>
 
-      <UiPanel class="p-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
-        <UiSectionHeader
-          :title="selected?.name ?? 'Operation'"
-          as="h3"
-        >
-          <template
-            v-if="selected"
-            #actions
-          >
-            <UiBadge :tone="selected.read_only ? 'success' : 'warning'">
+    <InspectableDetailDrawer
+      v-model="detailOpen"
+      :title="selected?.name ?? 'Operation'"
+      :description="selected?.summary"
+      size="xl"
+      :has-detail="Boolean(selected) || detailLoading"
+      empty-title="No operation selected"
+      empty-description="Select an operation row to inspect schemas, grants, examples, and surface policy."
+    >
+      <template #header="{ titleId, descriptionId }">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h2
+              :id="titleId"
+              class="t-h1 text-fg-strong"
+            >
+              {{ selected?.name ?? 'Operation' }}
+            </h2>
+            <UiBadge
+              v-if="selected"
+              :tone="selected.read_only ? 'success' : 'warning'"
+            >
               {{ selected.read_only ? 'read' : 'write' }}
             </UiBadge>
             <UiBadge
@@ -198,25 +223,27 @@ watch(selectedName, (name) => loadDetail(name))
             >
               {{ surface }}
             </UiBadge>
-          </template>
-        </UiSectionHeader>
+          </div>
+          <p
+            v-if="selected"
+            :id="descriptionId"
+            class="mt-1 text-sm text-fg-muted"
+          >
+            {{ selected.summary }}
+          </p>
+        </div>
+      </template>
 
-        <div
-          v-if="detailLoading"
-          class="py-8 text-center text-sm text-fg-muted"
-        >
-          Loading…
-        </div>
-        <div
-          v-else-if="!selected"
-          class="py-8 text-sm text-fg-muted"
-        >
-          No operation selected.
-        </div>
-        <div
-          v-else
-          class="space-y-5"
-        >
+      <div
+        v-if="detailLoading"
+        class="py-8 text-center text-sm text-fg-muted"
+      >
+        Loading…
+      </div>
+      <div
+        v-else-if="selected"
+        class="space-y-5"
+      >
         <div class="space-y-2">
           <p class="text-sm text-fg-muted">{{ selected.summary }}</p>
           <p class="text-sm text-fg-default">{{ selected.purpose }}</p>
@@ -297,8 +324,7 @@ watch(selectedName, (name) => loadDetail(name))
             />
           </section>
         </div>
-        </div>
-      </UiPanel>
-    </div>
+      </div>
+    </InspectableDetailDrawer>
   </UiPageShell>
 </template>

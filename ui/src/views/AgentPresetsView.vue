@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import {
   UiBadge,
@@ -104,6 +105,7 @@ const router = useRouter()
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const rows = ref<PresetRow[]>([])
 const selected = ref<AgentPresetDescribeOut | null>(null)
+const detailOpen = ref(false)
 const loading = ref(false)
 const detailLoading = ref(false)
 const error = ref<string | null>(null)
@@ -145,20 +147,30 @@ const columns: DataTableColumn<PresetRow>[] = [
   { key: 'applies_to_workflows', label: 'Workflows', widthClass: 'w-28' },
 ]
 
-async function loadList(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
+function parseProjectId(raw: unknown): number {
+  return Number.parseInt(String(Array.isArray(raw) ? raw[0] : raw), 10)
+}
+
+async function loadListFor(
+  nextProjectId = projectId.value,
+  nextSelectedKey = selectedKey.value,
+): Promise<void> {
+  if (!nextProjectId || Number.isNaN(nextProjectId)) return
   loading.value = true
   error.value = null
   try {
     const payload = await callOperation<AgentPresetListOut>('agentPreset.list', {
-      project_id: projectId.value,
+      project_id: nextProjectId,
     })
     rows.value = payload.presets.map((preset) => ({ ...preset, id: preset.key }))
     const key =
-      selectedKey.value ||
+      nextSelectedKey ||
       rows.value.find((row) => row.domain === 'engineering')?.key ||
       rows.value[0]?.key
-    if (key) await loadDetail(key)
+    if (key) {
+      await loadDetailFor(key, nextProjectId)
+      if (nextSelectedKey) detailOpen.value = true
+    }
     else selected.value = null
   } catch (err) {
     error.value = formatApiError(err, 'failed to load agent presets')
@@ -167,8 +179,8 @@ async function loadList(): Promise<void> {
   }
 }
 
-async function loadDetail(key: string): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value) || !key) {
+async function loadDetailFor(key: string, nextProjectId = projectId.value): Promise<void> {
+  if (!nextProjectId || Number.isNaN(nextProjectId) || !key) {
     selected.value = null
     return
   }
@@ -176,7 +188,7 @@ async function loadDetail(key: string): Promise<void> {
   error.value = null
   try {
     selected.value = await callOperation<AgentPresetDescribeOut>('agentPreset.describe', {
-      project_id: projectId.value,
+      project_id: nextProjectId,
       key,
     })
   } catch (err) {
@@ -187,12 +199,21 @@ async function loadDetail(key: string): Promise<void> {
 }
 
 async function selectPreset(row: PresetRow): Promise<void> {
+  detailOpen.value = true
   await router.replace({
     query: {
       ...route.query,
       preset: row.key,
     },
   })
+}
+
+function setDomain(value: string | number): void {
+  domainFilter.value = String(value)
+  if (filteredRows.value.length === 0) return
+  if (!filteredRows.value.some((row) => row.key === selectedKey.value)) {
+    void selectPreset(filteredRows.value[0])
+  }
 }
 
 function domainLabel(domain?: string | null): string {
@@ -207,15 +228,17 @@ function domainTone(
   return 'info'
 }
 
-onMounted(loadList)
-watch(projectId, loadList)
-watch(selectedKey, (key) => {
-  if (key) void loadDetail(key)
-})
-watch(domainFilter, () => {
-  if (filteredRows.value.length === 0) return
-  if (!filteredRows.value.some((row) => row.key === selectedKey.value)) {
-    void selectPreset(filteredRows.value[0])
+onMounted(() => loadListFor())
+onBeforeRouteUpdate((to) => {
+  const nextProjectId = parseProjectId(to.params.id)
+  const nextSelectedKey = String(to.query.preset ?? '')
+  if (nextProjectId !== projectId.value) {
+    void loadListFor(nextProjectId, nextSelectedKey)
+    return
+  }
+  if (nextSelectedKey) {
+    detailOpen.value = true
+    void loadDetailFor(nextSelectedKey, nextProjectId)
   }
 })
 </script>
@@ -255,85 +278,104 @@ watch(domainFilter, () => {
       </UiPanel>
     </div>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(30rem,42rem)] xl:items-start">
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Preset Catalog"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge>{{ filteredRows.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Preset Catalog"
+        as="h3"
+      >
+        <template #actions>
+          <UiBadge>{{ filteredRows.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
 
-        <div class="mb-3 overflow-x-auto pb-1">
-          <UiSegmentedControl
-            v-model="domainFilter"
-            :options="domainOptions"
-            label="Domain"
-          />
-        </div>
+      <div class="mb-3 overflow-x-auto pb-1">
+        <UiSegmentedControl
+          :model-value="domainFilter"
+          :options="domainOptions"
+          label="Domain"
+          @select="setDomain"
+        />
+      </div>
 
-        <DataTable
-          :items="filteredRows"
-          :columns="columns"
-          :loading="loading"
-          :selected-id="selected?.preset.summary.key"
-          max-height="calc(100vh - 22rem)"
-          aria-label="Agent presets"
-          empty-message="No agent presets."
-          interactive
-          @row-click="selectPreset"
-        >
-          <template #cell:domain="{ value }">
-            <UiBadge :tone="domainTone(String(value))">
-              {{ domainLabel(String(value)) }}
-            </UiBadge>
-          </template>
-          <template #cell:name="{ row }">
-            <span class="font-medium text-fg-strong">{{ row.name }}</span>
-            <span class="mt-1 block font-mono text-xs text-fg-muted">{{ row.role }}</span>
-          </template>
-          <template #cell:applies_to_workflows="{ row }">
-            <UiBadge :tone="row.applies_to_workflows.length ? 'success' : 'neutral'">
-              {{ row.applies_to_workflows.length || 'general' }}
-            </UiBadge>
-          </template>
-        </DataTable>
-      </UiPanel>
+      <DataTable
+        :items="filteredRows"
+        :columns="columns"
+        :loading="loading"
+        :selected-id="selected?.preset.summary.key"
+        max-height="calc(100vh - 22rem)"
+        aria-label="Agent presets"
+        empty-message="No agent presets."
+        interactive
+        @row-click="selectPreset"
+      >
+        <template #cell:domain="{ value }">
+          <UiBadge :tone="domainTone(String(value))">
+            {{ domainLabel(String(value)) }}
+          </UiBadge>
+        </template>
+        <template #cell:name="{ row }">
+          <span class="font-medium text-fg-strong">{{ row.name }}</span>
+          <span class="mt-1 block font-mono text-xs text-fg-muted">{{ row.role }}</span>
+        </template>
+        <template #cell:applies_to_workflows="{ row }">
+          <UiBadge :tone="row.applies_to_workflows.length ? 'success' : 'neutral'">
+            {{ row.applies_to_workflows.length || 'general' }}
+          </UiBadge>
+        </template>
+      </DataTable>
+    </UiPanel>
 
-      <UiPanel class="p-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
-        <UiSectionHeader
-          :title="selected?.preset.summary.name ?? 'Preset'"
-          as="h3"
-        >
-          <template
-            v-if="selected"
-            #actions
-          >
-            <UiBadge :tone="domainTone(selected.preset.summary.domain)">
+    <InspectableDetailDrawer
+      v-model="detailOpen"
+      :title="selected?.preset.summary.name ?? 'Preset'"
+      :description="selected?.preset.summary.description"
+      size="xl"
+      :has-detail="Boolean(selected) || detailLoading"
+      empty-title="No preset selected"
+      empty-description="Select an agent preset row to inspect its role contract and adaptation guidance."
+    >
+      <template #header="{ titleId, descriptionId }">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h2
+              :id="titleId"
+              class="t-h1 text-fg-strong"
+            >
+              {{ selected?.preset.summary.name ?? 'Preset' }}
+            </h2>
+            <UiBadge
+              v-if="selected"
+              :tone="domainTone(selected.preset.summary.domain)"
+            >
               {{ domainLabel(selected.preset.summary.domain) }}
             </UiBadge>
-            <UiBadge tone="warning">adapt</UiBadge>
-          </template>
-        </UiSectionHeader>
+            <UiBadge
+              v-if="selected"
+              tone="warning"
+            >
+              adapt
+            </UiBadge>
+          </div>
+          <p
+            v-if="selected"
+            :id="descriptionId"
+            class="mt-1 text-sm text-fg-muted"
+          >
+            {{ selected.preset.summary.description }}
+          </p>
+        </div>
+      </template>
 
-        <div
-          v-if="detailLoading"
-          class="py-8 text-center text-sm text-fg-muted"
-        >
-          Loading...
-        </div>
-        <div
-          v-else-if="!selected"
-          class="py-8 text-sm text-fg-muted"
-        >
-          No preset selected.
-        </div>
-        <div
-          v-else
-          class="space-y-4"
-        >
+      <div
+        v-if="detailLoading"
+        class="py-8 text-center text-sm text-fg-muted"
+      >
+        Loading...
+      </div>
+      <div
+        v-else-if="selected"
+        class="space-y-4"
+      >
           <p class="text-sm text-fg-muted">
             {{ selected.preset.summary.description }}
           </p>
@@ -431,8 +473,7 @@ watch(domainFilter, () => {
               />
             </div>
           </details>
-        </div>
-      </UiPanel>
-    </div>
+      </div>
+    </InspectableDetailDrawer>
   </UiPageShell>
 </template>

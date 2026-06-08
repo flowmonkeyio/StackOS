@@ -98,7 +98,7 @@ describe('ConnectionsView', () => {
     await router.push('/projects/1/connections')
     await router.isReady()
 
-    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Firecrawl'))
@@ -227,7 +227,7 @@ describe('ConnectionsView', () => {
     await router.push('/projects/1/connections')
     await router.isReady()
 
-    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('WordPress'))
@@ -380,7 +380,7 @@ describe('ConnectionsView', () => {
     await router.push('/projects/1/connections')
     await router.isReady()
 
-    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() =>
@@ -562,7 +562,7 @@ describe('ConnectionsView', () => {
     await router.push('/projects/1/connections')
     await router.isReady()
 
-    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('Support Bot'))
     await clickButton(wrapper, 'Configure')
     await clickButton(wrapper, 'Save Telegram profile')
@@ -698,7 +698,7 @@ describe('ConnectionsView', () => {
     await router.push('/projects/1/connections')
     await router.isReady()
 
-    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Slack Bot'))
@@ -857,7 +857,7 @@ describe('ConnectionsView', () => {
     await router.push('/projects/1/connections')
     await router.isReady()
 
-    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
     await vi.waitFor(() => expect(wrapper.text()).not.toContain('Loading connections...'))
     await clickButton(wrapper, 'Add connection')
@@ -1024,7 +1024,7 @@ describe('ConnectionsView', () => {
     await router.push('/projects/1/connections')
     await router.isReady()
 
-    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('Workspace Slack Bot'))
 
     expect(wrapper.text()).toContain('Communication Setup')
@@ -1065,7 +1065,7 @@ describe('ConnectionsView', () => {
     await router.push('/projects/1/connections')
     await router.isReady()
 
-    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('Firecrawl'))
 
     expect(wrapper.text()).toContain('failed')
@@ -1278,6 +1278,18 @@ async function clickButton(wrapper: ReturnType<typeof mount>, label: string): Pr
   const button = wrapper.findAll('button').find((candidate) => candidate.text().trim() === label)
   expect(button, `${label} button`).toBeDefined()
   await button?.trigger('click')
+}
+
+function mountConnections(router: ReturnType<typeof createRouter>): ReturnType<typeof mount> {
+  return mount(
+    { template: '<RouterView />' },
+    {
+      global: {
+        plugins: [router],
+        stubs: { teleport: true },
+      },
+    },
+  )
 }
 
 function json(body: unknown, status = 200): Response {

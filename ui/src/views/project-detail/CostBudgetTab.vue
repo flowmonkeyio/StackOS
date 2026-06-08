@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // CostBudgetTab — read-only current-month cost and budget visibility.
 
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
@@ -140,7 +140,6 @@ async function load(): Promise<void> {
 }
 
 onMounted(load)
-watch(projectId, load)
 </script>
 
 <template>

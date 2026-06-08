@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteUpdate, useRoute } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import {
@@ -243,7 +243,7 @@ async function load(): Promise<void> {
   await catalogStore.refresh(projectId.value)
   await catalogStore.refreshAuth(projectId.value)
   await loadCommunicationSetup()
-  syncProviderSelectionFromQuery()
+  applyProviderSelectionFromQuery(route.query.provider_key)
 }
 
 async function loadCommunicationSetup(): Promise<void> {
@@ -282,8 +282,24 @@ async function loadCommunicationSetup(): Promise<void> {
   }
 }
 
-function syncProviderSelectionFromQuery(): void {
-  const providerKey = typeof route.query.provider_key === 'string' ? route.query.provider_key : ''
+function ensureSelectableProvider(): void {
+  const providers = visibleAuthProviders.value
+  if (!selectedProviderKey.value && providers[0]) {
+    selectedProviderKey.value = providers[0].key
+    return
+  }
+  if (
+    selectedProviderKey.value &&
+    providers.length > 0 &&
+    !providers.some((provider) => provider.key === selectedProviderKey.value)
+  ) {
+    selectedProviderKey.value = providers[0].key
+  }
+}
+
+function applyProviderSelectionFromQuery(value: unknown): void {
+  ensureSelectableProvider()
+  const providerKey = typeof value === 'string' ? value : ''
   if (!providerKey) return
   const provider = providerByKey.value.get(providerKey)
   if (!provider || !canAddProvider(provider)) return
@@ -650,24 +666,9 @@ async function revokeConnection(connection: ConnectionRow): Promise<void> {
 }
 
 onMounted(load)
-watch(projectId, load)
-watch(authProviders, (providers) => {
-  if (!selectedProviderKey.value && providers[0]) {
-    selectedProviderKey.value = visibleAuthProviders.value[0]?.key ?? providers[0].key
-  }
-  syncProviderSelectionFromQuery()
+onBeforeRouteUpdate((to) => {
+  applyProviderSelectionFromQuery(to.query.provider_key)
 })
-watch(visibleAuthProviders, (providers) => {
-  if (!selectedProviderKey.value && providers[0]) selectedProviderKey.value = providers[0].key
-  if (
-    selectedProviderKey.value &&
-    providers.length > 0 &&
-    !providers.some((provider) => provider.key === selectedProviderKey.value)
-  ) {
-    selectedProviderKey.value = providers[0].key
-  }
-})
-watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
 </script>
 
 <template>

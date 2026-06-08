@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
@@ -20,7 +20,6 @@ async function load(): Promise<void> {
 }
 
 onMounted(load)
-watch(projectId, load)
 </script>
 
 <template>

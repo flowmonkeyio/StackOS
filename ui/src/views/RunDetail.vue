@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // RunDetail — single-run audit view with run plans, children, and linked data.
 
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
@@ -210,7 +210,6 @@ function valueLinksRun(value: unknown, runId: number): boolean {
 }
 
 onMounted(load)
-watch(() => props.runId, load)
 </script>
 
 <template>

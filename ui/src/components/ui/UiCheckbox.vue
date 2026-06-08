@@ -2,7 +2,7 @@
   UiCheckbox — supports indeterminate state.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 export interface UiCheckboxProps {
   modelValue?: boolean | null
@@ -31,15 +31,6 @@ const emit = defineEmits<{
   (e: 'change', value: boolean): void
 }>()
 
-const inputRef = ref<HTMLInputElement | null>(null)
-watch(
-  () => props.indeterminate,
-  (v) => {
-    if (inputRef.value) inputRef.value.indeterminate = !!v
-  },
-  { immediate: false },
-)
-
 function onChange(ev: Event) {
   const v = (ev.target as HTMLInputElement).checked
   emit('update:modelValue', v)
@@ -59,9 +50,9 @@ const boxSize = computed(() => (props.size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4')
     <span class="relative inline-flex items-center justify-center mt-0.5">
       <input
         :id="id"
-        ref="inputRef"
         type="checkbox"
         :checked="!!modelValue"
+        :indeterminate.prop="!!indeterminate"
         :disabled="disabled"
         :required="required"
         :aria-invalid="invalid || undefined"

@@ -6,7 +6,7 @@
 // host listens to `change` to swap content. Vertical accent bar marks
 // the active tab; pending/M5.B tabs can pass `count` for a numeric badge.
 
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import { UiSelect } from '@/components/ui'
 
@@ -44,7 +44,7 @@ const emit = defineEmits<{
 }>()
 
 const tabRefs = ref<HTMLButtonElement[]>([])
-const focusIdx = ref<number>(0)
+const focusIdx = ref<number | null>(null)
 
 const tabGroups = computed<TabGroup[]>(() => {
   const groups: TabGroup[] = []
@@ -61,6 +61,11 @@ const tabGroups = computed<TabGroup[]>(() => {
 })
 
 const hasNamedGroups = computed(() => tabGroups.value.some((group) => group.name !== null))
+
+const activeIndex = computed(() => {
+  const index = props.tabs.findIndex((tab) => tab.key === props.activeKey)
+  return index >= 0 ? index : 0
+})
 
 const activeTabGroup = computed<TabGroup>(() => {
   return (
@@ -80,15 +85,6 @@ const groupOptions = computed(() =>
     value: group.name ?? '',
     label: group.name ?? 'Sections',
   })),
-)
-
-watch(
-  () => props.activeKey,
-  (key) => {
-    const i = props.tabs.findIndex((t) => t.key === key)
-    if (i >= 0) focusIdx.value = i
-  },
-  { immediate: true },
 )
 
 function focusTab(i: number): void {
@@ -116,7 +112,7 @@ function nextEnabled(start: number, dir: 1 | -1): number {
 function firstEnabled(dir: 1 | -1): number {
   const items = visibleTabItems.value
   const ordered = dir === 1 ? items : [...items].reverse()
-  return ordered.find((item) => !item.tab.disabled)?.index ?? focusIdx.value
+  return ordered.find((item) => !item.tab.disabled)?.index ?? focusIdx.value ?? activeIndex.value
 }
 
 function onKeydown(e: KeyboardEvent, idx: number): void {

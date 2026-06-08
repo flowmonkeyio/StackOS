@@ -14,6 +14,7 @@ describe('OperationsView', () => {
 
   afterEach(() => {
     globalThis.fetch = ORIG_FETCH
+    document.body.innerHTML = ''
     vi.restoreAllMocks()
   })
 
@@ -46,9 +47,19 @@ describe('OperationsView', () => {
     await router.push('/projects/1/operations')
     await router.isReady()
 
-    const wrapper = mount(OperationsView, { global: { plugins: [router] } })
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      {
+        global: {
+          plugins: [router],
+          stubs: { teleport: true },
+        },
+      },
+    )
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('action.describe'))
+    await clickRow(wrapper, 'action.describe')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Operation purpose: action.describe'))
     expect(wrapper.text()).toContain('Operation purpose: action.describe')
     expect(wrapper.text()).toContain('direct-read')
 

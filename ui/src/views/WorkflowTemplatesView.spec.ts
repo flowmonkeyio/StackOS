@@ -71,6 +71,7 @@ describe('WorkflowTemplatesView', () => {
 
   afterEach(() => {
     globalThis.fetch = ORIG_FETCH
+    document.body.innerHTML = ''
     vi.restoreAllMocks()
   })
 
@@ -82,29 +83,36 @@ describe('WorkflowTemplatesView', () => {
     await router.push('/projects/1/workflow-templates?plugin_slug=engineering')
     await router.isReady()
 
-    const wrapper = mount(WorkflowTemplatesView, { global: { plugins: [router] } })
+    const wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router] } })
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('Engineering Tracked Delivery'))
 
     expect(wrapper.text()).toContain('engineering.tracked-delivery')
-    expect(wrapper.text()).toContain('Project Setup')
-    expect(wrapper.text()).toContain('communication_route_ref')
-    expect(wrapper.text()).toContain('support-triage')
-    expect(wrapper.text()).toContain('8 agents')
-    expect(wrapper.text()).toContain('1 skills')
-    expect(wrapper.text()).toContain('stackos.sdlc.requirements-flow-definer')
-    expect(wrapper.text()).toContain('stackos.sdlc.codebase-explorer')
-    expect(wrapper.text()).toContain('stackos.sdlc.planning')
-    expect(wrapper.text()).toContain('stackos.sdlc.architecture')
-    expect(wrapper.text()).toContain('stackos.sdlc.test-designer')
-    expect(wrapper.text()).toContain('stackos.sdlc.delivery')
-    expect(wrapper.text()).toContain('stackos.sdlc.delivery-reviewer')
-    expect(wrapper.text()).toContain('stackos.sdlc.release-ops')
-    expect(wrapper.text()).toContain('stackos:stackos')
-    expect(wrapper.text()).toContain('12 steps')
+    await wrapper
+      .findAll('tr')
+      .find((row) => row.text().includes('Engineering Tracked Delivery'))
+      ?.trigger('click')
+    await vi.waitFor(() =>
+      expect(document.body.textContent ?? '').toContain('Project Setup'),
+    )
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('communication_route_ref')
+    expect(text).toContain('support-triage')
+    expect(text).toContain('8 agents')
+    expect(text).toContain('1 skills')
+    expect(text).toContain('stackos.sdlc.requirements-flow-definer')
+    expect(text).toContain('stackos.sdlc.codebase-explorer')
+    expect(text).toContain('stackos.sdlc.planning')
+    expect(text).toContain('stackos.sdlc.architecture')
+    expect(text).toContain('stackos.sdlc.test-designer')
+    expect(text).toContain('stackos.sdlc.delivery')
+    expect(text).toContain('stackos.sdlc.delivery-reviewer')
+    expect(text).toContain('stackos.sdlc.release-ops')
+    expect(text).toContain('stackos:stackos')
+    expect(text).toContain('12 steps')
     for (const step of EXPECTED_WORKFLOW_STEPS) {
-      expect(wrapper.text()).toContain(step.id)
-      expect(wrapper.text()).toContain(step.title)
+      expect(text).toContain(step.id)
+      expect(text).toContain(step.title)
     }
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/api/v1/projects/1/workflow-templates?plugin_slug=engineering',

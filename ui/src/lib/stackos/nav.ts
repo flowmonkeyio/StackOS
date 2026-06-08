@@ -79,6 +79,7 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
       label: 'Knowledge',
       items: [
         { key: 'project-data', label: 'Project Data', to: `${base}/data` },
+        { key: 'resources', label: 'Resources', to: `${base}/resources` },
       ],
     },
     {

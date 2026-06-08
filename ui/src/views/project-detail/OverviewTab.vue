@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
@@ -117,7 +117,6 @@ function go(path: string): void {
 }
 
 onMounted(load)
-watch(projectId, load)
 </script>
 
 <template>

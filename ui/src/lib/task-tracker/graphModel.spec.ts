@@ -229,6 +229,13 @@ describe('buildTrackerFlowModel', () => {
         sourceHandle: 'out',
         targetHandle: 'in',
         type: 'default',
+        markerEnd: expect.objectContaining({
+          height: 7,
+          width: 7,
+        }),
+        style: expect.objectContaining({
+          strokeWidth: 1.2,
+        }),
       }),
     ])
   })
@@ -257,6 +264,8 @@ describe('buildTrackerFlowModel', () => {
     expect(model.edges[0]?.class).toContain('tracker-edge-highlighted')
     expect(model.edges[0]?.class).toContain('tracker-edge-upstream')
     expect(model.edges[0]?.style).toMatchObject({ stroke: 'var(--color-accent-primary)' })
+    expect(model.edges[0]?.style).toMatchObject({ strokeWidth: 1.2 })
+    expect(model.edges[0]?.markerEnd).toMatchObject({ height: 7, width: 7 })
     expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.class).toContain(
       'tracker-node-upstream',
     )
@@ -282,8 +291,9 @@ describe('buildTrackerFlowModel', () => {
     expect(model.edges[0]?.style).toMatchObject({
       opacity: 1,
       stroke: 'var(--color-success-default)',
-      strokeWidth: 4,
+      strokeWidth: 1.2,
     })
+    expect(model.edges[0]?.markerEnd).toMatchObject({ height: 7, width: 7 })
     expect(model.edges[0]?.zIndex).toBeGreaterThan(1)
     expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.class).toContain(
       'tracker-node-selected',

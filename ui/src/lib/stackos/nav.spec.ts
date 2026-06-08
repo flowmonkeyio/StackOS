@@ -21,8 +21,8 @@ describe('StackOS nav contributions', () => {
       'Agent Presets',
       'Agent Requests',
     ])
-    expect(core[2].items.map((item) => item.label)).toEqual(['Project Data'])
-    expect(core[2].items.map((item) => item.to)).not.toContain('/projects/7/resources')
+    expect(core[2].items.map((item) => item.label)).toEqual(['Project Data', 'Resources'])
+    expect(core[2].items.map((item) => item.to)).toContain('/projects/7/resources')
     expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
       '/projects/7/action-calls',
     )

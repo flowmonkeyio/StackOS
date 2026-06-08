@@ -12,11 +12,12 @@
 let dialogIdSeed = 0;
 let dialogStackSeed = 0;
 const openDialogStack: number[] = [];
+let previousBodyOverflow: string | null = null;
 const DIALOG_Z_INDEX_BASE = 1000;
 </script>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch, nextTick } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import UiIconButton from './UiIconButton.vue';
 
 export interface UiDialogProps {
@@ -51,7 +52,6 @@ const previousFocus = ref<HTMLElement | null>(null);
 const stackIndex = ref<number | null>(null);
 
 function close() {
-  removeFromStack();
   emit('update:modelValue', false);
   emit('close');
 }
@@ -62,7 +62,8 @@ function removeFromStack() {
   if (idx >= 0) openDialogStack.splice(idx, 1);
   stackIndex.value = null;
   if (openDialogStack.length === 0) {
-    document.body.style.overflow = '';
+    document.body.style.overflow = previousBodyOverflow ?? '';
+    previousBodyOverflow = null;
   }
 }
 
@@ -97,27 +98,30 @@ function trapFocus(ev: KeyboardEvent) {
   }
 }
 
-watch(
-  () => props.modelValue,
-  async (open) => {
-    if (open) {
-      previousFocus.value = document.activeElement as HTMLElement;
-      stackIndex.value = ++dialogStackSeed;
-      openDialogStack.push(stackIndex.value);
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', onKey);
-      await nextTick();
-      const target = dialogRef.value?.querySelector<HTMLElement>('[data-autofocus]')
-        ?? dialogRef.value?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-      target?.focus();
-    } else {
-      removeFromStack();
-      window.removeEventListener('keydown', onKey);
-      previousFocus.value?.focus?.();
-    }
-  },
-  { immediate: false }
-);
+function onDialogOpening() {
+  previousFocus.value = document.activeElement as HTMLElement;
+  stackIndex.value = ++dialogStackSeed;
+  openDialogStack.push(stackIndex.value);
+  if (openDialogStack.length === 1) {
+    previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+  }
+  window.addEventListener('keydown', onKey);
+}
+
+async function onDialogOpened() {
+  await nextTick();
+  const target = dialogRef.value?.querySelector<HTMLElement>('[data-autofocus]')
+    ?? dialogRef.value?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  target?.focus();
+}
+
+function onDialogClosed() {
+  removeFromStack();
+  window.removeEventListener('keydown', onKey);
+  previousFocus.value?.focus?.();
+  previousFocus.value = null;
+}
 
 onBeforeUnmount(() => {
   removeFromStack();
@@ -157,6 +161,9 @@ const dialogZIndex = computed(() =>
       v-if="modelValue"
       class="ui-dialog__overlay fixed inset-0 z-overlay bg-bg-overlay flex items-center justify-center p-4"
       :style="{ zIndex: overlayZIndex }"
+      @vue:before-mount="onDialogOpening"
+      @vue:mounted="onDialogOpened"
+      @vue:before-unmount="onDialogClosed"
       @click.self="!staticBackdrop && close()"
     >
       <transition
@@ -202,6 +209,7 @@ const dialogZIndex = computed(() =>
             </div>
             <UiIconButton
               v-if="!hideClose"
+              data-autofocus
               aria-label="Close dialog"
               size="sm"
               variant="ghost"

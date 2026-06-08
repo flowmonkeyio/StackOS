@@ -128,7 +128,7 @@ defineEmits<{
         class="tracker-flow"
         :nodes="flow.nodes"
         :edges="flow.edges"
-        :default-viewport="{ x: 32, y: 32, zoom: 0.72 }"
+        :default-viewport="{ x: 32, y: 64, zoom: 0.58 }"
         :fit-view-on-init="graphFitOnInit"
         :min-zoom="0.12"
         :max-zoom="1.5"
@@ -471,22 +471,22 @@ defineEmits<{
 
 :deep(.tracker-edge-dependency .vue-flow__edge-path) {
   stroke: color-mix(in srgb, var(--color-border-strong) 70%, var(--color-bg-surface));
-  stroke-width: 1.4;
+  stroke-width: 1.2;
 }
 
 :deep(.tracker-edge-highlighted .vue-flow__edge-path) {
   stroke: var(--color-border-strong);
-  stroke-width: 2.4;
+  stroke-width: 1.2;
 }
 
 :deep(.tracker-edge-upstream .vue-flow__edge-path) {
   stroke: color-mix(in srgb, var(--color-warning-default) 76%, var(--color-fg-muted));
-  stroke-width: 3;
+  stroke-width: 1.2;
 }
 
 :deep(.tracker-edge-downstream .vue-flow__edge-path) {
   stroke: color-mix(in srgb, var(--color-success-default) 72%, var(--color-fg-muted));
-  stroke-width: 3;
+  stroke-width: 1.2;
 }
 
 :deep(.tracker-edge-muted .vue-flow__edge-path) {
@@ -496,8 +496,7 @@ defineEmits<{
 :deep(.tracker-edge-active .vue-flow__edge-path),
 :deep(.tracker-edge-active.selected .vue-flow__edge-path) {
   stroke: var(--color-accent-primary);
-  stroke-width: 4;
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent-primary) 35%, transparent));
+  stroke-width: 1.2;
 }
 
 @media (max-width: 720px) {

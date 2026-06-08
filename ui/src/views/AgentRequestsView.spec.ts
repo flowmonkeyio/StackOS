@@ -15,6 +15,7 @@ describe('AgentRequestsView', () => {
 
   afterEach(() => {
     globalThis.fetch = ORIG_FETCH
+    document.body.innerHTML = ''
     vi.restoreAllMocks()
   })
 
@@ -48,11 +49,20 @@ describe('AgentRequestsView', () => {
     await router.isReady()
 
     const pinia = createPinia()
-    const wrapper = mount(AgentRequestsView, { global: { plugins: [router, pinia] } })
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      {
+        global: {
+          plugins: [router, pinia],
+          stubs: { teleport: true },
+        },
+      },
+    )
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('Telegram message needs launch review'))
     expect(wrapper.text()).toContain('Agent Requests')
     expect(wrapper.text()).toContain('telegram-bot')
+    await clickRow(wrapper, 'Telegram message needs launch review')
     expect(wrapper.text()).toContain('telegram:update:7')
     const operationCall = calls.find((call) =>
       call.url.includes('/api/v1/operations/agentRequest.list/call'),
@@ -91,7 +101,15 @@ describe('AgentRequestsView', () => {
     await router.isReady()
 
     const pinia = createPinia()
-    const wrapper = mount(AgentRequestsView, { global: { plugins: [router, pinia] } })
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      {
+        global: {
+          plugins: [router, pinia],
+          stubs: { teleport: true },
+        },
+      },
+    )
     await vi.waitFor(() => expect(calls.length).toBe(1))
 
     await clickButton(wrapper, 'Terminal')
@@ -110,6 +128,63 @@ describe('AgentRequestsView', () => {
       }),
     )
     expect(calls.every((call) => call.url === '/api/v1/operations/agentRequest.list/call')).toBe(true)
+  })
+
+  it('closes stale details when filters replace the selected request', async () => {
+    const calls: Array<{ url: string; body: { arguments: Record<string, unknown> } }> = []
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (url.startsWith('/api/v1/projects?')) {
+        return json({ items: [], next_cursor: null })
+      }
+      const body = init?.body ? JSON.parse(String(init.body)) : { arguments: {} }
+      calls.push({ url, body })
+      const firstLoad = calls.length === 1
+      return json({
+        items: [
+          firstLoad
+            ? agentRequest({
+                id: 7,
+                request_key: 'request:original',
+                title: 'Original request',
+              })
+            : agentRequest({
+                id: 9,
+                request_key: 'request:terminal',
+                title: 'Terminal request',
+                status: 'resolved',
+              }),
+        ],
+        next_cursor: null,
+        total_estimate: 1,
+      })
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/agent-requests', component: AgentRequestsView }],
+    })
+    await router.push('/projects/1/agent-requests')
+    await router.isReady()
+
+    const pinia = createPinia()
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      {
+        global: {
+          plugins: [router, pinia],
+          stubs: { teleport: true },
+        },
+      },
+    )
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Original request'))
+    await clickRow(wrapper, 'Original request')
+    expect(wrapper.text()).toContain('request:original')
+
+    await clickButton(wrapper, 'Terminal')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Terminal request'))
+    expect(wrapper.text()).not.toContain('request:original')
   })
 })
 
@@ -145,6 +220,12 @@ async function clickButton(wrapper: ReturnType<typeof mount>, label: string): Pr
   const button = wrapper.findAll('button').find((candidate) => candidate.text().trim() === label)
   expect(button, `${label} button`).toBeDefined()
   await button?.trigger('click')
+}
+
+async function clickRow(wrapper: ReturnType<typeof mount>, label: string): Promise<void> {
+  const row = wrapper.findAll('tr').find((candidate) => candidate.text().includes(label))
+  expect(row, `${label} row`).toBeDefined()
+  await row?.trigger('click')
 }
 
 function json(body: unknown): Response {

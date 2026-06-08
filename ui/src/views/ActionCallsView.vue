@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
@@ -115,6 +115,15 @@ const columns: DataTableColumn<SchemaActionCallAuditOut>[] = [
   },
 ]
 
+function newestFirst(
+  items: SchemaActionCallAuditOut[],
+): SchemaActionCallAuditOut[] {
+  return [...items].sort((left, right) => {
+    const createdDiff = Date.parse(right.created_at) - Date.parse(left.created_at)
+    return createdDiff || right.id - left.id
+  })
+}
+
 function actionRef(action: SchemaActionOut): string {
   return `${action.plugin_slug}:${action.key}`
 }
@@ -153,7 +162,8 @@ async function fetchCalls({ append = false }: { append?: boolean } = {}): Promis
     const response = await apiFetch<SchemaPageResponseActionCallAuditOut>(
       `/api/v1/projects/${projectId.value}/action-calls?${buildQuery(append ? nextCursor.value : null)}`,
     )
-    const nextRows = append ? [...rows.value, ...response.items] : response.items
+    const pageRows = newestFirst(response.items)
+    const nextRows = append ? [...rows.value, ...pageRows] : pageRows
     rows.value = nextRows
     nextCursor.value = response.next_cursor ?? null
     if (!append && selectedCall.value && !nextRows.some((row) => row.id === selectedCall.value?.id)) {
@@ -225,7 +235,6 @@ function openCall(call: SchemaActionCallAuditOut): void {
 }
 
 onMounted(load)
-watch(projectId, load)
 </script>
 
 <template>

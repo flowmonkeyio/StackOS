@@ -15,6 +15,7 @@ describe('ActionCallsView', () => {
 
   afterEach(() => {
     globalThis.fetch = ORIG_FETCH
+    document.body.innerHTML = ''
     vi.restoreAllMocks()
   })
 
@@ -55,20 +56,21 @@ describe('ActionCallsView', () => {
     expect(wrapper.text()).not.toContain('Action Call #1')
 
     await clickRow(wrapper, 'utils:image.generate')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Action Call #1'))
-    expect(wrapper.text()).toContain('Execution Target')
-    expect(wrapper.text()).toContain('Run Context')
-    expect(wrapper.text()).toContain('Execution Context')
-    expect(wrapper.text()).toContain('ctx_provider_analysis')
-    expect(wrapper.text()).toContain('Max parallel')
-    expect(wrapper.text()).toContain('File Output')
-    expect(wrapper.text()).toContain('/tmp/provider-output.json')
-    expect(wrapper.text()).toContain('Outcome')
-    expect(wrapper.text()).toContain('Timeline')
-    expect(wrapper.text()).toContain('[redacted]')
-    expect(wrapper.text()).toContain('acct-managed')
-    expect(wrapper.text()).not.toContain('sk-secret')
-    expect(wrapper.text()).not.toContain('token-secret')
+    await vi.waitFor(() => expect(document.body.textContent ?? '').toContain('Action Call #1'))
+    const detailText = document.body.textContent ?? ''
+    expect(detailText).toContain('Execution Target')
+    expect(detailText).toContain('Run Context')
+    expect(detailText).toContain('Execution Context')
+    expect(detailText).toContain('ctx_provider_analysis')
+    expect(detailText).toContain('Max parallel')
+    expect(detailText).toContain('File Output')
+    expect(detailText).toContain('/tmp/provider-output.json')
+    expect(detailText).toContain('Outcome')
+    expect(detailText).toContain('Timeline')
+    expect(detailText).toContain('[redacted]')
+    expect(detailText).toContain('acct-managed')
+    expect(detailText).not.toContain('sk-secret')
+    expect(detailText).not.toContain('token-secret')
 
     await clickButton(wrapper, 'Failed')
     await vi.waitFor(() =>
@@ -76,7 +78,9 @@ describe('ActionCallsView', () => {
     )
     await vi.waitFor(() => expect(wrapper.text()).toContain('#2'))
     await emitRowClick(wrapper, actionCall({ id: 2, status: 'failed', error: 'provider rejected request' }))
-    await vi.waitFor(() => expect(wrapper.text()).toContain('provider rejected request'))
+    await vi.waitFor(() =>
+      expect(document.body.textContent ?? '').toContain('provider rejected request'),
+    )
   })
 })
 
