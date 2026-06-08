@@ -17,6 +17,7 @@ A template should be generic across domains and include:
 - `context_requirements`
 - `agent_requirements`
 - `skill_requirements`
+- `skill_preset_requirements`
 - `capability_requirements`
 - `auth_requirements`
 - `action_contracts`
@@ -46,8 +47,17 @@ operate the workflow. Built-in workflows recommend `stackos:stackos`, which
 teaches StackOS MCP, operations, workflow templates, run plans, tracker
 tasks/tickets, dependencies, and evidence.
 
-The main agent decides whether it can load the skill. If not, it should read
-the referenced docs and still follow the same tracker/run-plan model.
+`skill_preset_requirements` names reusable main-agent operating contracts that
+should be resolved and adapted like agent presets. They are not installed host
+skills and do not create subagent roles. Use one generic skill preset when
+multiple workflows share the same orchestration loop; add a workflow-specific
+skill preset only when that workflow has distinct sequencing, evidence, safety,
+or closeout mechanics that cannot be expressed by a shared preset plus the
+workflow's agent requirements.
+
+The main agent decides whether it can load installed skills. If not, it should
+read the referenced docs and still follow the same tracker/run-plan model.
+Skill presets are resolved through StackOS operations and adapted before use.
 
 All agents should work through the existing tracker. Planning agents should
 break work into deliverable tickets, encode logical dependencies and sequencing,
@@ -193,8 +203,9 @@ run. It can provide:
   this object replaces the matching key on the base workflow, then StackOS
   validates the resulting effective `WorkflowTemplateSpec` before saving or
   creating a run. Use the same workflow keys agents already see in templates,
-  such as `agent_requirements`, `skill_requirements`, `steps`, `policies`, or
-  YAML aliases like `metadata`, `extensions`, and `ui`.
+  such as `agent_requirements`, `skill_requirements`,
+  `skill_preset_requirements`, `steps`, `policies`, or YAML aliases like
+  `metadata`, `extensions`, and `ui`.
 
 Extensions do not duplicate or shadow the base workflow identity. They can
 bind run setup and can override any workflow template field atomically for the

@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 164
+    assert len(names) == 167
     assert {
         "action.execute",
         "auth.status",
@@ -39,6 +39,9 @@ def test_operation_registry_documents_core_operations() -> None:
         "executionContext.unlink",
         "executionContext.artifact.list",
         "executionContext.artifact.read",
+        "skillPreset.list",
+        "skillPreset.describe",
+        "skillPreset.resolveForWorkflow",
     } <= names
 
     described = registry.get("action.execute").describe_out()
@@ -115,6 +118,16 @@ def test_operation_registry_documents_core_operations() -> None:
     )
     assert agent_preset_resolution.grant_policy == "direct-read"
     assert any("StackOS skill" in item for item in agent_preset_resolution.prerequisites)
+
+    skill_preset_resolution = registry.get("skillPreset.resolveForWorkflow").describe_out()
+    assert skill_preset_resolution.category == "agents"
+    assert skill_preset_resolution.surfaces["mcp"].enabled is True
+    assert skill_preset_resolution.surfaces["rest"].enabled is True
+    assert skill_preset_resolution.surfaces["cli"].command == (
+        "ops call skillPreset.resolveForWorkflow"
+    )
+    assert skill_preset_resolution.grant_policy == "direct-read"
+    assert any("workflow template key" in item for item in skill_preset_resolution.prerequisites)
 
     communication_profile = registry.get("communicationProfile.upsert").describe_out()
     assert communication_profile.surfaces["mcp"].enabled is True

@@ -131,7 +131,6 @@ The core support and engineering preset subset is deliberately small:
 | `stackos.sdlc.test-designer` | Maps acceptance criteria to proof surfaces and red-first gates when needed. |
 | `stackos.sdlc.delivery` | Implements scoped tickets, debugs root causes, verifies the diff, and records tracker/evidence updates truthfully. |
 | `stackos.sdlc.delivery-reviewer` | Reviews design and delivery across behavior, contracts, tests, tracker truth, docs, security, and release risk. |
-| `stackos.sdlc.release-ops` | Closes release readiness, limitations, rollback/watch notes, and communications. |
 
 Use this subset as the only support/engineering agent set for a project.
 Workflows pick the roles they need. For example, customer feedback intake uses
@@ -139,8 +138,9 @@ the communications intake role; support investigation uses the support
 investigator and may use codebase exploration; delivery task handoff uses the
 support handoff role and may use planning; tracked delivery uses requirements,
 discovery, planning, architecture, test design, delivery, delivery review, and
-release. If a project already has local agents, adapt or replace them so each
-role maps cleanly to this subset without overlapping responsibilities.
+release closeout coordinated by the main agent. If a project already has local
+agents, adapt or replace them so each role maps cleanly to this subset without
+overlapping responsibilities.
 
 The main agent should detect or read the host convention before writing local
 agents. For Codex-style projects, inspect `.codex/config.toml` and existing
@@ -156,16 +156,24 @@ mean the project is under-described for future adaptation. They do not block
 project-scoped tools. After reading repo guidance and stack details, record
 durable hints with `workspace.updateProfile` when they will help later agents.
 
-## StackOS Skill
+## StackOS Skill And Skill Presets
 
 Workflow templates declare `skill_requirements`. The built-in workflows
 recommend `stackos:stackos`, the host-side skill that teaches an agent how to
 use StackOS MCP, operations, workflows, run plans, tracker tasks/tickets,
 dependencies, and evidence.
 
+Workflow templates declare `skill_preset_requirements` for reusable main-agent
+operating guidance that should be resolved and adapted like agent presets. A
+skill preset is not an installed host skill, not an agent preset, and not a
+subagent role. For example, `stackos.sdlc.delivery-orchestrator` teaches the
+main agent how to sequence SDLC delivery, while the active project still
+provides the concrete rules, docs, tests, reviewers, and release expectations.
+
 This is explicit setup guidance. The main agent decides whether its host can
-load the skill. If the host cannot, the agent should read the same project docs
-and still follow the tracker/run-plan model.
+load installed skills such as `stackos:stackos`. Skill presets are StackOS
+contracts returned by `skillPreset.*` and workflow resolution operations; the
+agent adapts them before use.
 
 ## Tracker Use
 
@@ -238,8 +246,11 @@ The response includes:
 - workflow summary
 - `agent_requirements`
 - `skill_requirements`
+- `skill_preset_requirements`
 - resolved required/recommended/optional presets
+- resolved required/recommended/optional skill presets
 - unresolved preset refs, if any
+- unresolved skill preset refs, if any
 - setup guidance that reminds the caller to adapt presets and use tracker state
 
 ## Workflow Relationship

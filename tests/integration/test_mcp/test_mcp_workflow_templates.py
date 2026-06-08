@@ -191,11 +191,16 @@ outputs:
         "stackos.sdlc.test-designer",
         "stackos.sdlc.delivery",
         "stackos.sdlc.delivery-reviewer",
-        "stackos.sdlc.release-ops",
     }
-    assert engineering_described["spec"]["skill_requirements"][0]["skill_ref"] == (
-        "stackos:stackos"
-    )
+    engineering_skill_refs = {
+        item["skill_ref"] for item in engineering_described["spec"]["skill_requirements"]
+    }
+    assert engineering_skill_refs == {"stackos:stackos"}
+    engineering_skill_preset_refs = {
+        item["skill_preset_ref"]
+        for item in engineering_described["spec"]["skill_preset_requirements"]
+    }
+    assert engineering_skill_preset_refs == {"stackos.sdlc.delivery-orchestrator"}
     engineering_text = str(engineering_described["spec"])
     assert engineering_described["spec"]["metadata_json"]["workflow_selection_invariant"] == (
         "explicit_workflow_intent_requires_run_plan_before_tracker_tickets"

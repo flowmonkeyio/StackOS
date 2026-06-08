@@ -29,3 +29,9 @@ def test_plugin_skill_preserves_repo_local_files_by_default() -> None:
 
     assert "Do not create `.env`, `.mcp.json`, `AGENTS.md`, `CLAUDE.md`" in text
     assert "workspace.connect" in text
+
+
+def test_plugin_exposes_only_root_stackos_skill() -> None:
+    skill_dirs = sorted(path.name for path in (PLUGIN / "skills").iterdir() if path.is_dir())
+
+    assert skill_dirs == ["stackos"]

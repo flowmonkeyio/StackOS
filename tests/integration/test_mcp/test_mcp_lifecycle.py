@@ -49,6 +49,7 @@ EXPECTED_NAMESPACE_COUNTS = {
     "runPlan": 12,
     "schedule": 4,
     "sitemap": 1,
+    "skillPreset": 3,
     "toolProfile": 1,
     "tracker": 21,
     "workflowExtension": 5,

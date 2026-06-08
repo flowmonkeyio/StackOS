@@ -296,6 +296,9 @@ The current core operation registry includes:
 - `agentPreset.list`
 - `agentPreset.describe`
 - `agentPreset.resolveForWorkflow`
+- `skillPreset.list`
+- `skillPreset.describe`
+- `skillPreset.resolveForWorkflow`
 - `agentRequest.list`
 - `agentRequest.get`
 - `agentRequest.create`
@@ -388,7 +391,9 @@ Agent preset setup reuses the same operation infrastructure. Use
 `agentPreset.list` to discover generic role presets, `agentPreset.describe` to
 read one role and its project-adaptation contract, and
 `agentPreset.resolveForWorkflow` to resolve a workflow template into
-required/recommended agents plus `skill_requirements`.
+required/recommended agents, installed `skill_requirements`, and resolved
+main-agent `skill_preset_requirements`. Use `skillPreset.*` when the agent
+needs skill-preset-only discovery or diagnostics.
 
 Workflow templates are inert presets/contracts. They do not act by themselves.
 The main agent should resolve preset and skill requirements, adapt generic roles
@@ -401,8 +406,9 @@ should stay reusable but a project needs stable input defaults, communication
 route refs, channel/target context, guardrails, extra step guidance, or atomic
 workflow-field overrides. `template_overrides_json` replaces the provided
 top-level workflow keys, then StackOS validates the effective template before
-saving or creating a run. Agents should put project-specific agent or skill
-changes in the existing `agent_requirements` / `skill_requirements` workflow
+saving or creating a run. Agents should put project-specific agent, installed
+skill, or skill preset changes in the existing `agent_requirements` /
+`skill_requirements` / `skill_preset_requirements` workflow
 fields, not in a new context mechanism. `workflowTemplate.describe` returns the
 attached `project_extension`, and `runPlan.create` applies enabled extension
 defaults before per-run inputs. Use `workflowTemplate.fork` only when a new

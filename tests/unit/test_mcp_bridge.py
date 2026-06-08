@@ -519,6 +519,9 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "agentPreset.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "agentPreset.describe" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "agentPreset.resolveForWorkflow" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "skillPreset.list" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "skillPreset.describe" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "skillPreset.resolveForWorkflow" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "agentRequest.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "agentRequest.get" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "agentRequest.claim" in _AGENT_SETUP_TOOLBOX_NAMES

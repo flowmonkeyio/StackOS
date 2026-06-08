@@ -23,6 +23,7 @@ from stackos.workflows.template_loader import (
 from stackos.workflows.template_schema import (
     WorkflowAgentRequirementSpec,
     WorkflowSkillRequirementSpec,
+    WorkflowSkillPresetRequirementSpec,
     WorkflowTemplateSpec,
     WorkflowTemplateValidationOut,
     parse_workflow_template_obj,
@@ -37,6 +38,7 @@ __all__ = [
     "RunPlanValidationOut",
     "WorkflowAgentRequirementSpec",
     "WorkflowSkillRequirementSpec",
+    "WorkflowSkillPresetRequirementSpec",
     "WorkflowTemplateExtensionDeleteOut",
     "WorkflowTemplateExtensionGetOut",
     "WorkflowTemplateExtensionListOut",

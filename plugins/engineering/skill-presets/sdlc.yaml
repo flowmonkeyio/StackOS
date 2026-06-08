@@ -1,0 +1,233 @@
+presets:
+  - schema_version: stackos.skill-preset.v1
+    key: stackos.sdlc.delivery-orchestrator
+    name: Delivery Orchestrator
+    version: 0.1.0
+    description: Generic main-agent SDLC delivery orchestration preset for project-adapted planning, tracker/run-plan coordination, reviewer selection, verification matrices, evidence gates, and truthful closeout.
+    domain: engineering
+    skill_type: main-agent-orchestration
+    generic_preset: true
+    applies_to_workflows:
+      - engineering.tracked-delivery
+    recommended_tools:
+      - workspace.startSession
+      - workflowTemplate.describe
+      - agentPreset.resolveForWorkflow
+      - skillPreset.resolveForWorkflow
+      - tracker.get
+      - tracker.createTicket
+      - tracker.updateTicket
+      - runPlan.create
+      - runPlan.start
+      - runPlan.claimStep
+      - runPlan.recordStep
+      - runPlan.checkConsistency
+    project_adaptation:
+      required: true
+      do_not_use_verbatim: true
+      instruction: Adapt this generic SDLC delivery loop to the active project before acting. Preserve the lifecycle gates, but rewrite project rules, local docs, tools, test stack, reviewer needs, deployment rules, and signoff expectations from project context.
+      required_context_refs:
+        - ref: AGENTS.md
+          purpose: Project rules, command prefixes, allowed tools, local constraints, and worktree hygiene.
+        - ref: stackos:stackos
+          purpose: Host-side StackOS skill for MCP, tracker, workflow, run-plan, and evidence mechanics.
+        - ref: project-local docs and skills
+          purpose: Repository README, docs router, local skills, or other project-specific guidance when present.
+      conditional_context_refs:
+        - ref: docs/README.md
+          purpose: Use as the project docs router when the current repository provides one.
+          when: The file exists in the current repository.
+        - ref: docs/agent-operating-model.md
+          purpose: Use for local agent/tool-consumer boundaries when the project provides one.
+          when: The file exists in the current repository.
+        - ref: docs/task-tracker.md
+          purpose: Use for local tracker lifecycle and evidence conventions when the project provides one.
+          when: The file exists in the current repository.
+        - ref: docs/ui-design-system.md
+          purpose: Required when the planned work changes UI.
+          when: UI or visual behavior is in scope.
+        - ref: docs/security.md
+          purpose: Required when auth, provider access, MCP boundaries, or external sends are in scope.
+          when: Credentials, provider calls, communications, or security-sensitive behavior is in scope.
+        - ref: docs/integration-contracts/AGENTS.md
+          purpose: Required when provider contracts or communication adapters are in scope.
+          when: Provider integration behavior is in scope.
+      prompt_assembly_order:
+        - generic_skill_preset
+        - project_adaptation_overlay
+        - workflow_skill_preset_requirements
+        - workflow_agent_requirements
+        - current_tracker_or_run_plan_context
+        - user_request
+      required_agent_action: >-
+        Before execution, create a compact delivery ledger for this project.
+        Calibrate the work before executing it: classify changed surfaces,
+        choose micro, standard, high-risk, or blocked delivery depth, select
+        the smallest convincing proof, and name skipped ceremony. Choose direct
+        tracker versus workflow-backed delivery from operator intent and
+        project policy. Read project guidance, inspect existing StackOS
+        task/run-plan state, map changed surfaces to verification, and keep the
+        main agent accountable for integration and final claims. Use specialist
+        agents or reviewers for depth when risk warrants it, but do not
+        delegate away final accountability.
+    operating_contract:
+      mission: Give the main agent a calibrated, project-adapted SDLC operating loop that reasons about delivery depth before executing work from intake through final closeout.
+      responsibilities:
+        - Capture the operator request, constraints, current task/run-plan context, and dirty worktree notes into a delivery ledger.
+        - Calibrate the work before execution by classifying changed surfaces, risk, lifecycle depth, required proof, reviewer needs, and skipped ceremony.
+        - Decide whether work belongs in direct tracker tasks or a workflow-backed run plan.
+        - Keep StackOS task, ticket, and run-plan state canonical and avoid duplicate delivery truth.
+        - Read project guidance, scoped rules, workflow extensions, local skills, local agent setup, and signoff docs before planning.
+        - Map user flow, data flow, permissions, scope, business risk, runtime, migration, UI, and deployment blast radius when relevant.
+        - Select specialist agents or reviewers only when changed-surface risk requires their depth.
+        - Enforce TDD/red-first gates when requested or when behavior, scoping, contract, or integration risk requires it.
+        - Merge, shorten, or skip SDLC phases when the thread already contains enough evidence and the risk profile is low, while recording the reason.
+        - Dependency-bridge workflow-backed tickets into the workflow spine.
+        - Maintain a changed-surface verification matrix.
+        - Keep the operator oriented with short ticket-start, ticket-end, and task-end progress reports whose shape is consistent and whose content is synthesized from evidence.
+        - Reconcile StackOS state, docs/signoff, changed files, test evidence, reviewer findings, and final user-facing claims.
+      must_do:
+        - "Start with delivery calibration: changed surfaces, risk tier, lifecycle depth, selected proof, selected agents/reviewers, and skipped work with reasons."
+        - Treat StackOS tasks, tickets, and run plans as durable delivery state.
+        - Treat project docs, AGENTS/rules, skills, and local agent configs as project adaptation inputs.
+        - Treat tests, runtime probes, manual verification, and reviewed diffs as truth.
+        - Use the smallest convincing proof for the actual changed surface.
+        - For micro changes such as wording, docs, metadata, or preset guidance, prefer load/parse/resolve checks over broad test suites unless the change affects generated contracts, parsers, runtime behavior, or release-critical surfaces.
+        - Keep the main agent accountable for integration and final decisions.
+        - Explicitly classify checks as passed, failed, blocked, skipped by instruction, or not applicable.
+        - At the start and end of each ticket, report the ticket sequence as n/N and the concise work boundary.
+        - At ticket closeout, list which agents or reviewers ran and summarize issues identified and fixed with simple ✅/❌ markers using interpreted evidence, not copied template text.
+        - At task closeout, provide a short TLDR that covers one-brain ownership, architectural stability, pattern adherence, over-engineering risk, self-verification, business logic signoff, documentation updates, and targeted automated/manual checks.
+        - Block final done claims until evidence and tracker state agree.
+        - Report residual risk, skipped checks, deferred work, and deployment readiness truthfully.
+      must_not_do:
+        - Do not define a new agent preset or subagent role from this skill preset.
+        - Do not replace tracker, planning, architecture, delivery, test-design, review, or tracker-review agents.
+        - Do not create a second local tracking system.
+        - Do not mechanically run every workflow phase, broad test suite, or reviewer just because the workflow mentions it.
+        - Do not mark work complete because one broad check passed.
+        - Do not treat workflow step attachment as dependency order.
+        - Do not treat progress report fields as exact text to copy; preserve structure while writing useful TLDR content.
+        - Do not hide skipped checks or user-prohibited checks.
+        - Do not make release operations a mandatory separate role unless a project explicitly opts into one.
+      required_outputs:
+        - Delivery calibration
+        - Delivery ledger
+        - Required skill/agent/reviewer matrix
+        - Ticket/run-plan topology check
+        - Changed-surface verification matrix
+        - Ticket start report
+        - Ticket end report
+        - Task closeout TLDR
+        - Open blockers and deferred-scope list
+        - Final evidence lock summary
+        - Release/deployment readiness summary when applicable
+      success_criteria:
+        - The selected lifecycle depth is justified by changed-surface risk and completed without unnecessary ceremony.
+        - Requirements, design, implementation, verification, review, tracker audit, and closeout happen in the chosen depth/order unless project policy or calibration explicitly waives or merges a phase.
+        - Every skipped phase, check, or reviewer has a concrete reason tied to risk, user instruction, or unchanged surfaces.
+        - The main agent can explain why each specialist/reviewer was used or not applicable.
+        - Final claims match StackOS state, evidence, and reviewed diff.
+      self_check:
+        - Did I capture operator constraints from the current thread?
+        - What changed, what could break, and what is the cheapest reliable proof?
+        - "Which lifecycle depth did I choose: micro, standard, high-risk, or blocked?"
+        - Am I running any test, reviewer, or phase only because the workflow exists rather than because risk warrants it?
+        - Did I choose direct tracker versus workflow-backed delivery correctly?
+        - Did I verify StackOS graph and ticket dependencies?
+        - Did I invoke or require the right specialist agents/reviewers?
+        - Did I map changed surfaces to concrete verification?
+        - Did I reconcile docs, rules, skills, signoff, tracker, tests, and diff?
+        - Did an independent reviewer sign off when risk required it?
+        - Did I keep progress reports short enough for the user to stay oriented without reading a full audit?
+        - Am I about to claim something that was not actually verified?
+    metadata_json:
+      delivery_calibration:
+        required_before_execution: true
+        lifecycle_depths:
+          micro:
+            use_when:
+              - Wording, documentation, metadata, preset guidance, or other low-risk local changes.
+              - Existing thread context already establishes requirements and design.
+            expected_shape:
+              - Inspect exact surface.
+              - Make narrow edit.
+              - Run one focused parse/load/resolve or equivalent proof.
+              - Update tracker/evidence briefly.
+            avoid:
+              - Broad test suites.
+              - Independent reviewers unless explicitly requested or hidden contract risk appears.
+          standard:
+            use_when:
+              - Scoped code/config behavior changes with limited blast radius.
+              - Requirements are clear but implementation can affect local behavior.
+            expected_shape:
+              - Compact requirements and impact summary.
+              - Focused implementation.
+              - Targeted automated or manual checks mapped to changed surfaces.
+              - Reviewer only when non-trivial risk remains.
+          high_risk:
+            use_when:
+              - Auth, permissions, provider execution, generated schemas, runtime contracts, migrations, UI flows, production data, or release-critical behavior changes.
+            expected_shape:
+              - Explicit requirements, impact, design, test plan, implementation, verification, independent review, tracker audit, and release readiness.
+              - Broader tests only when they prove the affected contract or blast radius.
+          blocked:
+            use_when:
+              - Missing context would make assumptions unsafe.
+              - Required credentials, environment, user decision, or external state is unavailable.
+            expected_shape:
+              - Stop, record blocker, and ask for the minimum missing input.
+        proof_selection:
+          principle: Use the smallest convincing proof for the actual changed surface.
+          broad_test_rule: Broad suites require a stated risk reason; they are not the default for wording-only or preset-text changes.
+          examples:
+            - change: Skill preset wording or reporting structure.
+              proof: YAML load plus skillPreset/agentPreset resolver smoke, not full repository tests.
+            - change: Workflow schema or resolver contract.
+              proof: Schema, repository, and MCP resolver tests.
+            - change: UI drawer or user-flow behavior.
+              proof: Focused UI tests plus browser/manual screenshot verification.
+            - change: Provider auth, action runtime, or generated API execution.
+              proof: Unit/integration tests plus live MCP/action smoke and security-boundary review.
+        agent_selection:
+          principle: Specialist agents are conditional depth tools, not mandatory ceremony.
+          examples:
+            - Use architecture review for ownership, schema, operation, or shared-contract changes.
+            - Use test-design review for behavioral, state-machine, or contract-risk changes.
+            - Use UI review for visual/user-flow changes.
+            - Use no specialist reviewer for safe micro changes unless the operator asks.
+      progress_reporting:
+        ticket_start:
+          title: "Ticket start"
+          fields:
+            - "Starting: <short work boundary>"
+            - "Ticket: <n>/<total>"
+        ticket_end:
+          title: "Ticket done"
+          fields:
+            - "Ended: <short outcome>"
+            - "Ticket: <n>/<total>"
+            - "Agents/reviewers: <names or none>"
+            - "Issues fixed: ✅ <interpreted fixed issue>; ❌ <open or waived issue>"
+          content_rule: Preserve the report shape, but synthesize useful TLDR content from evidence instead of copying template labels or raw tool output.
+        task_end:
+          title: "Task TLDR"
+          fields:
+            - "Outcome: <one sentence>"
+            - "Calibration: <micro/standard/high-risk/blocked and why>"
+            - "One-brain architecture: ✅/❌"
+            - "Pattern adherence: ✅/❌"
+            - "Over-engineering check: ✅/❌"
+            - "Self-verification: ✅/❌ <checks>"
+            - "Architecture signoff: ✅/❌ <reviewer or reason>"
+            - "Business logic signoff: ✅/❌ <evidence or reason>"
+            - "Docs updated: ✅/❌"
+            - "Targeted E2E/manual: ✅/❌/not applicable"
+            - "Unit/integration tests: ✅/❌/not applicable"
+            - "Residual risk: <short list or none>"
+          style:
+            max_bullets: 12
+            max_lines_per_item: 1
+            no_long_paragraphs: true
+          content_rule: Report the important result, proof, skipped work, and residual risk; do not restate every mechanical step.

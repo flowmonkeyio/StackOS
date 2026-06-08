@@ -43,6 +43,7 @@ ALLOWED_CONTEXT_SOURCES = frozenset(
 )
 
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
+_SKILL_REF_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*(?::[A-Za-z][A-Za-z0-9_.-]*)?$")
 _SECRET_KEY_PARTS = (
     "access_token",
     "api_key",
@@ -251,9 +252,34 @@ class WorkflowSkillRequirementSpec(BaseModel):
     @field_validator("skill_ref")
     @classmethod
     def _skill_ref(cls, value: str) -> str:
-        if not re.match(r"^[A-Za-z][A-Za-z0-9_]*(?::[A-Za-z][A-Za-z0-9_]*)?$", value):
-            raise ValueError("must be a skill name or plugin-qualified skill ref")
+        if not _SKILL_REF_RE.match(value):
+            raise ValueError(
+                "must be a skill name or plugin-qualified skill ref using letters, "
+                "digits, underscores, dots, or hyphens"
+            )
         return value
+
+    @field_validator("applies_to_steps")
+    @classmethod
+    def _step_refs(cls, value: list[str]) -> list[str]:
+        return [_validate_ref(item) for item in value]
+
+
+class WorkflowSkillPresetRequirementSpec(BaseModel):
+    """Reusable main-agent skill preset guidance for operating a workflow template."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill_preset_ref: str = Field(min_length=1, max_length=160)
+    requirement: Literal["required", "recommended", "optional"] = "recommended"
+    purpose: str = ""
+    applies_to_steps: list[str] = Field(default_factory=list)
+    setup_notes: list[str] = Field(default_factory=list)
+
+    @field_validator("skill_preset_ref")
+    @classmethod
+    def _skill_preset_ref(cls, value: str) -> str:
+        return _validate_ref(value)
 
     @field_validator("applies_to_steps")
     @classmethod
@@ -464,6 +490,9 @@ class WorkflowTemplateSpec(BaseModel):
     context_requirements: list[ContextRequirementSpec] = Field(default_factory=list)
     agent_requirements: list[WorkflowAgentRequirementSpec] = Field(default_factory=list)
     skill_requirements: list[WorkflowSkillRequirementSpec] = Field(default_factory=list)
+    skill_preset_requirements: list[WorkflowSkillPresetRequirementSpec] = Field(
+        default_factory=list
+    )
     capability_requirements: list[CapabilityRequirementSpec] = Field(default_factory=list)
     auth_requirements: list[AuthRequirementSpec] = Field(default_factory=list)
     action_contracts: list[ActionContractSpec] = Field(default_factory=list)
@@ -533,6 +562,11 @@ class WorkflowTemplateSpec(BaseModel):
         skill_refs = {item.skill_ref for item in self.skill_requirements}
         if len(skill_refs) != len(self.skill_requirements):
             raise ValueError("duplicate skill requirement refs are not allowed")
+        skill_preset_refs = {
+            item.skill_preset_ref for item in self.skill_preset_requirements
+        }
+        if len(skill_preset_refs) != len(self.skill_preset_requirements):
+            raise ValueError("duplicate skill preset requirement refs are not allowed")
 
         for action in self.action_contracts:
             if action.auth_ref is not None and action.auth_ref not in refs["auth"]:
@@ -566,6 +600,14 @@ class WorkflowTemplateSpec(BaseModel):
                 if step_ref not in refs["steps"]:
                     raise ValueError(
                         f"skill requirement {skill_requirement.skill_ref!r} applies_to_steps "
+                        f"references unknown step {step_ref!r}"
+                    )
+        for skill_preset_requirement in self.skill_preset_requirements:
+            for step_ref in skill_preset_requirement.applies_to_steps:
+                if step_ref not in refs["steps"]:
+                    raise ValueError(
+                        "skill preset requirement "
+                        f"{skill_preset_requirement.skill_preset_ref!r} applies_to_steps "
                         f"references unknown step {step_ref!r}"
                     )
 
@@ -677,6 +719,7 @@ __all__ = [
     "TemplateOwnerSpec",
     "WorkflowAgentRequirementSpec",
     "WorkflowSkillRequirementSpec",
+    "WorkflowSkillPresetRequirementSpec",
     "WorkflowStepTemplateSpec",
     "WorkflowTemplateIssue",
     "WorkflowTemplateSpec",

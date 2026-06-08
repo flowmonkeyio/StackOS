@@ -210,9 +210,15 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "stackos.sdlc.test-designer",
         "stackos.sdlc.delivery",
         "stackos.sdlc.delivery-reviewer",
-        "stackos.sdlc.release-ops",
     }
-    assert engineering_described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
+    engineering_skill_refs = {
+        item.skill_ref for item in engineering_described.spec.skill_requirements
+    }
+    assert engineering_skill_refs == {"stackos:stackos"}
+    engineering_skill_preset_refs = {
+        item.skill_preset_ref for item in engineering_described.spec.skill_preset_requirements
+    }
+    assert engineering_skill_preset_refs == {"stackos.sdlc.delivery-orchestrator"}
     engineering_setup_notes = "\n".join(
         engineering_described.spec.skill_requirements[0].setup_notes
     )
@@ -223,6 +229,14 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "resource.upsert" in engineering_setup_notes
     assert "artifact.create" in engineering_setup_notes
     assert "decision.record" in engineering_setup_notes
+    sdlc_skill_preset = next(
+        item
+        for item in engineering_described.spec.skill_preset_requirements
+        if item.skill_preset_ref == "stackos.sdlc.delivery-orchestrator"
+    )
+    assert sdlc_skill_preset.requirement == "required"
+    assert "global installed skill" in " ".join(sdlc_skill_preset.setup_notes)
+    assert "workflow-specific skill presets" in " ".join(sdlc_skill_preset.setup_notes)
     assert engineering_described.spec.steps[0].id == "scope-work"
     engineering_step_ids = [step.id for step in engineering_described.spec.steps]
     assert engineering_step_ids == [
@@ -268,7 +282,6 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "test-designer",
         "delivery",
         "delivery-reviewer",
-        "release-ops",
     ]
     assert [item.key for item in gtm_listing.templates] == [
         "gtm.account-research",
@@ -495,6 +508,14 @@ def test_project_workflow_extension_overrides_aliases_and_agent_requirements(
                     ],
                 }
             ],
+            "skill_preset_requirements": [
+                {
+                    "skill_preset_ref": "stackos.sdlc.delivery-orchestrator",
+                    "requirement": "required",
+                    "purpose": "Use project-specific SDLC closeout reporting.",
+                    "applies_to_steps": ["investigate-issue"],
+                }
+            ],
         },
         created_by="unit-test",
     ).data
@@ -513,6 +534,12 @@ def test_project_workflow_extension_overrides_aliases_and_agent_requirements(
         "support.workflow.issue-investigator"
     )
     assert described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
+    assert described.spec.skill_preset_requirements[0].skill_preset_ref == (
+        "stackos.sdlc.delivery-orchestrator"
+    )
+    assert described.spec.skill_preset_requirements[0].purpose == (
+        "Use project-specific SDLC closeout reporting."
+    )
 
 
 def test_project_workflow_extension_validation_rejects_unknown_steps(

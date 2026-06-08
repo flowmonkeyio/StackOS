@@ -24,12 +24,14 @@ Installers hydrate the personal Codex plugin location
 directory for the personal marketplace. Restart Codex after install or upgrade,
 then use `/plugins` to inspect or toggle the plugin.
 
-Installers also mirror the same canonical `stackos:stackos` skill into
+Installers also mirror the canonical `stackos:stackos` mechanics skill into
 `~/.codex/skills/stackos/SKILL.md` and
 `~/.claude/skills/stackos/SKILL.md` so Codex and Claude Code both receive
 compatible agent-facing setup guidance. The skill source lives under this
 plugin package; runtime mirrors are managed install artifacts, not
-customer-editable project guidance.
+customer-editable project guidance. Workflow-specific or domain-specific
+main-agent operating guidance belongs in StackOS skill presets that projects
+resolve and adapt, not in additional globally exposed plugin skills.
 
 If the daemon is not listening yet, the bridge auto-starts it on the configured
 loopback host and writes startup output to

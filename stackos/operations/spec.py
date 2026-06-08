@@ -223,6 +223,7 @@ _OPERATION_CATEGORY_PREFIXES: tuple[tuple[str, str], ...] = (
     ("action.", "actions"),
     ("agentPreset.", "agents"),
     ("agentRequest.", "agents"),
+    ("skillPreset.", "agents"),
     ("localAgentChat.", "agents"),
     ("auth.", "auth"),
     ("budget.", "auth"),

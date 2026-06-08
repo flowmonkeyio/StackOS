@@ -64,12 +64,6 @@ agent_requirements:
       - review-design
       - review-delivery
       - audit-tracker
-  - role: release-ops
-    requirement: recommended
-    agent_preset_ref: stackos.sdlc.release-ops
-    purpose: Prepare release readiness, final docs, known limitations, rollout notes, and post-release checks.
-    applies_to_steps:
-      - release-closeout
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended
@@ -82,6 +76,27 @@ skill_requirements:
       - Keep the main agent accountable for integration and final decisions; specialist agents support discovery, design, review, and verification.
       - Use operation.list when operation names are unclear, then operation.describe for the few operations the agent intends to use.
       - Read engineering-decision and engineering-evidence with resource.query; write reusable evidence only inside granted run-plan steps with resource.upsert, artifact.create, or decision.record.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.sdlc.delivery-orchestrator
+    requirement: required
+    purpose: Give the main agent the project-adapted SDLC operating loop for intake, planning, dependency topology, specialist review, verification, reconciliation, and truthful closeout.
+    applies_to_steps:
+      - scope-work
+      - define-requirements
+      - discover-impact
+      - plan-tickets
+      - design-approach
+      - review-design
+      - design-tests
+      - deliver-tickets
+      - verify-delivery
+      - review-delivery
+      - audit-tracker
+      - release-closeout
+    setup_notes:
+      - Resolve and adapt this preset before delivery; do not use it as a global installed skill.
+      - Keep the main agent accountable for integration and final claims.
+      - Create workflow-specific skill presets only when a workflow has distinct orchestration mechanics beyond this SDLC loop.
 inputs:
   - key: goal
     name: Goal
@@ -501,7 +516,6 @@ metadata:
     - test-designer
     - delivery
     - delivery-reviewer
-    - release-ops
   step_ids:
     - scope-work
     - define-requirements

@@ -1,4 +1,4 @@
-"""MCP adapter registration for agent preset operations."""
+"""MCP adapter registration for agent and skill preset operations."""
 
 from __future__ import annotations
 
@@ -14,6 +14,9 @@ def _agent_preset_operations() -> OperationRegistry:
         "agentPreset.list",
         "agentPreset.describe",
         "agentPreset.resolveForWorkflow",
+        "skillPreset.list",
+        "skillPreset.describe",
+        "skillPreset.resolveForWorkflow",
     ):
         operations.register(all_operations.get(name))
     return operations

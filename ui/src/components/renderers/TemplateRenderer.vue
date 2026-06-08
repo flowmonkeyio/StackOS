@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import type {
   SchemaLoadedWorkflowTemplate,
   SchemaWorkflowAgentRequirementSpec,
+  SchemaWorkflowSkillPresetRequirementSpec,
   SchemaWorkflowSkillRequirementSpec,
   SchemaWorkflowTemplateSpec,
   SchemaWorkflowTemplateExtensionOut,
@@ -22,6 +23,7 @@ const projectExtension = computed<SchemaWorkflowTemplateExtensionOut | null>(
 const contextRequirements = computed(() => spec.value.context_requirements ?? [])
 const agentRequirements = computed(() => spec.value.agent_requirements ?? [])
 const skillRequirements = computed(() => spec.value.skill_requirements ?? [])
+const skillPresetRequirements = computed(() => spec.value.skill_preset_requirements ?? [])
 const inputs = computed(() => spec.value.inputs ?? [])
 const outputs = computed(() => spec.value.outputs ?? [])
 const approvals = computed(() => spec.value.approval_gates ?? [])
@@ -48,6 +50,7 @@ function objectKeys(value: Record<string, unknown> | null | undefined): string[]
 function requirementTone(
   requirement:
     | SchemaWorkflowAgentRequirementSpec['requirement']
+    | SchemaWorkflowSkillPresetRequirementSpec['requirement']
     | SchemaWorkflowSkillRequirementSpec['requirement'],
 ): 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent' {
   if (requirement === 'required') return 'warning'
@@ -267,9 +270,10 @@ function requirementTone(
         <template #actions>
           <UiBadge>{{ agentRequirements.length }} agents</UiBadge>
           <UiBadge>{{ skillRequirements.length }} skills</UiBadge>
+          <UiBadge>{{ skillPresetRequirements.length }} skill presets</UiBadge>
         </template>
       </UiSectionHeader>
-      <div class="grid gap-4 lg:grid-cols-2">
+      <div class="grid gap-4 lg:grid-cols-3">
         <section>
           <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
             Agent Requirements
@@ -322,6 +326,66 @@ function requirementTone(
               >
                 <li
                   v-for="note in agent.handoff_notes"
+                  :key="note"
+                >
+                  {{ note }}
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            Skill Presets
+          </h4>
+          <p
+            v-if="skillPresetRequirements.length === 0"
+            class="text-sm text-fg-muted"
+          >
+            -
+          </p>
+          <ul
+            v-else
+            class="space-y-2"
+          >
+            <li
+              v-for="preset in skillPresetRequirements"
+              :key="preset.skill_preset_ref"
+              class="rounded-md border border-subtle bg-bg-surface px-3 py-2 text-sm"
+            >
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-xs font-medium text-fg-default">
+                  {{ preset.skill_preset_ref }}
+                </span>
+                <UiBadge :tone="requirementTone(preset.requirement)">
+                  {{ preset.requirement }}
+                </UiBadge>
+              </div>
+              <p
+                v-if="preset.purpose"
+                class="mt-2 text-xs text-fg-muted"
+              >
+                {{ preset.purpose }}
+              </p>
+              <div
+                v-if="preset.applies_to_steps?.length"
+                class="mt-2 flex flex-wrap gap-1.5"
+              >
+                <UiBadge
+                  v-for="step in preset.applies_to_steps"
+                  :key="step"
+                  tone="accent"
+                >
+                  {{ step }}
+                </UiBadge>
+              </div>
+              <ul
+                v-if="preset.setup_notes?.length"
+                class="mt-2 space-y-1 text-xs text-fg-muted"
+              >
+                <li
+                  v-for="note in preset.setup_notes"
                   :key="note"
                 >
                   {{ note }}

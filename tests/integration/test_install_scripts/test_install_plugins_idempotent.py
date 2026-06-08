@@ -46,6 +46,7 @@ def test_install_plugins_creates_plugin_and_marketplace(
         "args": ["-m", "stackos", "mcp-bridge"],
     }
     assert (plugin_root / "skills" / "stackos" / "SKILL.md").is_file()
+    assert not (plugin_root / "skills" / "stackos-sdlc-delivery-orchestrator").exists()
     assert not (plugin_root / "skills" / "catalog").exists()
     assert any(
         p["name"] == "stackos" and p["source"]["path"] == "./.codex/plugins/stackos"
@@ -83,6 +84,7 @@ def test_install_plugins_refreshes_existing_codex_cache(
     assert (
         stale_skill.read_bytes() == (plugin_root / "skills" / "stackos" / "SKILL.md").read_bytes()
     )
+    assert not (cache / "skills" / "stackos-sdlc-delivery-orchestrator").exists()
     assert not stale_file.exists()
 
     mcp = json.loads((cache / ".mcp.json").read_text(encoding="utf-8"))

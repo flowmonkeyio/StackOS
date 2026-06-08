@@ -22,6 +22,7 @@ _AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
         "auth.status",
         "toolProfile.resolve",
         "agentPreset.resolveForWorkflow",
+        "skillPreset.resolveForWorkflow",
         "ingressEndpoint.routes",
         "ingressEndpoint.status",
         "communicationProfile.list",
@@ -65,6 +66,9 @@ _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES: frozenset[str] = frozenset(
         "agentPreset.list",
         "agentPreset.describe",
         "agentPreset.resolveForWorkflow",
+        "skillPreset.list",
+        "skillPreset.describe",
+        "skillPreset.resolveForWorkflow",
         "meta.enums",
     }
 )
@@ -90,6 +94,9 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "agentPreset.describe",
         "agentPreset.list",
         "agentPreset.resolveForWorkflow",
+        "skillPreset.describe",
+        "skillPreset.list",
+        "skillPreset.resolveForWorkflow",
         "agentRequest.claim",
         "agentRequest.complete",
         "agentRequest.get",

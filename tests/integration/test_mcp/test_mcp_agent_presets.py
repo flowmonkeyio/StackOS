@@ -50,8 +50,33 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
             "response_mode": "raw",
         },
     )
+    skill_listing = mcp_client.call_tool_structured(
+        "skillPreset.list",
+        {"workflow_key": "engineering.tracked-delivery", "response_mode": "raw"},
+    )
+    skill_described = mcp_client.call_tool_structured(
+        "skillPreset.describe",
+        {"key": "stackos.sdlc.delivery-orchestrator", "response_mode": "raw"},
+    )
+    skill_resolved = mcp_client.call_tool_structured(
+        "skillPreset.resolveForWorkflow",
+        {
+            "workflow_key": "engineering.tracked-delivery",
+            "plugin_slug": "engineering",
+            "response_mode": "raw",
+        },
+    )
 
     assert "stackos.workflow.project-memory-review" in {item["key"] for item in listing["presets"]}
+    assert "stackos.sdlc.delivery-orchestrator" in {
+        item["key"] for item in skill_listing["presets"]
+    }
+    assert skill_described["preset"]["summary"]["key"] == "stackos.sdlc.delivery-orchestrator"
+    assert skill_described["preset"]["summary"]["plugin_slug"] == "engineering"
+    assert skill_described["project_adaptation"]["adaptation_required"] is True
+    assert skill_resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
+        "stackos.sdlc.delivery-orchestrator"
+    )
     assert described["preset"]["summary"]["key"] == "stackos.sdlc.planning"
     assert described["preset"]["summary"]["plugin_slug"] == "engineering"
     planning_contract = described["preset"]["preset"]["prompt_contract"]
@@ -108,9 +133,20 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     }
     assert recommended_agent_keys == {
         "stackos.sdlc.codebase-explorer",
-        "stackos.sdlc.release-ops",
     }
-    assert engineering_resolved["skill_requirements"][0]["skill_ref"] == "stackos:stackos"
+    engineering_skill_refs = {
+        item["skill_ref"] for item in engineering_resolved["skill_requirements"]
+    }
+    assert engineering_skill_refs == {"stackos:stackos"}
+    engineering_skill_preset_refs = {
+        item["skill_preset_ref"]
+        for item in engineering_resolved["skill_preset_requirements"]
+    }
+    assert engineering_skill_preset_refs == {"stackos.sdlc.delivery-orchestrator"}
+    assert {
+        item["preset"]["summary"]["key"]
+        for item in engineering_resolved["required_skill_presets"]
+    } == {"stackos.sdlc.delivery-orchestrator"}
     assert intake_resolved["workflow"]["key"] == "communications.customer-feedback-intake"
     intake_required_agent_keys = {
         agent["preset"]["summary"]["key"] for agent in intake_resolved["required_agents"]

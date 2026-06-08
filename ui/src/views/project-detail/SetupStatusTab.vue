@@ -121,6 +121,10 @@ const workflowSkillRequirements = computed(() =>
   templateDetails.value.flatMap((template) => template.spec.skill_requirements ?? []),
 )
 
+const workflowSkillPresetRequirements = computed(() =>
+  templateDetails.value.flatMap((template) => template.spec.skill_preset_requirements ?? []),
+)
+
 const templatesWithAgentRequirements = computed(
   () =>
     templateDetails.value.filter((template) => (template.spec.agent_requirements ?? []).length > 0)
@@ -136,6 +140,13 @@ const templatesWithStackosSkill = computed(
     ).length,
 )
 
+const templatesWithSkillPresets = computed(
+  () =>
+    templateDetails.value.filter(
+      (template) => (template.spec.skill_preset_requirements ?? []).length > 0,
+    ).length,
+)
+
 const adaptationRequiredPresets = computed(
   () => agentPresets.value.filter((preset) => preset.adaptation_required !== false).length,
 )
@@ -148,6 +159,12 @@ const agentDomains = computed(() =>
 
 const skillRefs = computed(() =>
   Array.from(new Set(workflowSkillRequirements.value.map((skill) => skill.skill_ref))).sort(),
+)
+
+const skillPresetRefs = computed(() =>
+  Array.from(
+    new Set(workflowSkillPresetRequirements.value.map((preset) => preset.skill_preset_ref)),
+  ).sort(),
 )
 
 const workspaceBinding = computed(
@@ -276,6 +293,16 @@ const checklist = computed<ChecklistItem[]>(() => {
         templates.value > 0 && templatesWithStackosSkill.value === templates.value
           ? 'done'
           : 'todo',
+      to: 'workflow-templates',
+    },
+    {
+      key: 'workflow-skill-presets',
+      label: 'Workflow skill presets',
+      detail:
+        workflowSkillPresetRequirements.value.length > 0
+          ? `${templatesWithSkillPresets.value} templates, ${workflowSkillPresetRequirements.value.length} presets`
+          : 'No operating presets',
+      status: workflowSkillPresetRequirements.value.length > 0 ? 'done' : 'todo',
       to: 'workflow-templates',
     },
     {
@@ -560,9 +587,10 @@ onMounted(load)
       </UiPanel>
 
       <UiPanel class="p-4">
-        <UiSectionHeader title="Skills" as="h3">
+        <UiSectionHeader title="Skills & Skill Presets" as="h3">
           <template #actions>
             <UiBadge>{{ workflowSkillRequirements.length }}</UiBadge>
+            <UiBadge tone="accent">{{ workflowSkillPresetRequirements.length }} presets</UiBadge>
             <UiBadge tone="info">{{ templatesWithStackosSkill }} templates</UiBadge>
           </template>
         </UiSectionHeader>
@@ -583,6 +611,18 @@ onMounted(load)
             </dd>
           </div>
         </dl>
+        <div
+          v-if="skillPresetRefs.length"
+          class="mt-4 flex flex-wrap gap-2"
+        >
+          <UiBadge
+            v-for="preset in skillPresetRefs"
+            :key="preset"
+            tone="accent"
+          >
+            {{ preset }}
+          </UiBadge>
+        </div>
         <div
           v-if="skillRefs.length"
           class="mt-4 flex flex-wrap gap-2"

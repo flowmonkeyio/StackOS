@@ -4024,6 +4024,29 @@ export interface components {
             role: string;
         };
         /**
+         * WorkflowSkillPresetRequirementSpec
+         * @description Reusable main-agent skill preset guidance for operating a workflow template.
+         */
+        WorkflowSkillPresetRequirementSpec: {
+            /** Applies To Steps */
+            applies_to_steps?: string[];
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            /**
+             * Requirement
+             * @default recommended
+             * @enum {string}
+             */
+            requirement: WorkflowSkillPresetRequirementSpecRequirement;
+            /** Setup Notes */
+            setup_notes?: string[];
+            /** Skill Preset Ref */
+            skill_preset_ref: string;
+        };
+        /**
          * WorkflowSkillRequirementSpec
          * @description Host/agent skill guidance recommended for operating a workflow template.
          */
@@ -4273,6 +4296,8 @@ export interface components {
              * @default stackos.workflow-template.v1
              */
             schema_version: string;
+            /** Skill Preset Requirements */
+            skill_preset_requirements?: components["schemas"]["WorkflowSkillPresetRequirementSpec"][];
             /** Skill Requirements */
             skill_requirements?: components["schemas"]["WorkflowSkillRequirementSpec"][];
             /** Steps */
@@ -4667,6 +4692,7 @@ export type SchemaTemplateOwnerSpec = components['schemas']['TemplateOwnerSpec']
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWorkflowAgentRequirementSpec = components['schemas']['WorkflowAgentRequirementSpec'];
+export type SchemaWorkflowSkillPresetRequirementSpec = components['schemas']['WorkflowSkillPresetRequirementSpec'];
 export type SchemaWorkflowSkillRequirementSpec = components['schemas']['WorkflowSkillRequirementSpec'];
 export type SchemaWorkflowStepTemplateSpec = components['schemas']['WorkflowStepTemplateSpec'];
 export type SchemaWorkflowTemplateExtensionBody = components['schemas']['WorkflowTemplateExtensionBody'];
@@ -7413,6 +7439,11 @@ export enum RunStatus {
     aborted = "aborted"
 }
 export enum WorkflowAgentRequirementSpecRequirement {
+    required = "required",
+    recommended = "recommended",
+    optional = "optional"
+}
+export enum WorkflowSkillPresetRequirementSpecRequirement {
     required = "required",
     recommended = "recommended",
     optional = "optional"

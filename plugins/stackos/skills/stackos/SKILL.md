@@ -93,11 +93,14 @@ run token.
   `support.delivery-task-handoff` only after a same-thread operator instruction
   asks for task creation, then hand off to `engineering.tracked-delivery` for
   scoped implementation, verification, review, and release. Describe the
-  selected workflow, resolve agents with `agentPreset.resolveForWorkflow`, then
+  selected workflow, resolve agents and main-agent skill presets with
+  `agentPreset.resolveForWorkflow` or `skillPreset.resolveForWorkflow`, then
   create/start a run plan when executing. Treat the referenced communications,
-  support, and engineering presets as one curated project-adapted set. Adapt
-  that subset to the host/project's local agent format only when local agents
-  are requested. For Codex repos, inspect `.codex/config.toml` and existing
+  support, engineering, and skill presets as one curated project-adapted set.
+  Adapt agent presets to the host/project's local agent format only when local
+  agents are requested. Adapt skill presets into session/project guidance for
+  the main agent; they are not installed host skills and they do not create
+  subagent roles. For Codex repos, inspect `.codex/config.toml` and existing
   `.codex/agents/*.toml` before proposing file creates or updates. Treat each
   preset's `recommended_tools` as StackOS operation refs. If those refs are not
   mounted as direct host tools, use `toolbox.describe` and `toolbox.call`.
@@ -111,13 +114,14 @@ run token.
   `project_workflow_context`. If a project needs durable route refs or channel
   guidance, validate and save a project extension with
   `workflowExtension.validate` and `workflowExtension.upsert`. Put workflow
-  field changes, including agent/skill requirements, contracts, approval gates,
-  and steps, in `template_overrides_json`; StackOS applies that atomic patch to
-  the base workflow and validates the effective template. Top-level workflow
-  fields are replaced atomically, so pass the full desired
-  `agent_requirements`, `skill_requirements`, or `steps` list when changing
-  them. Do not invent a new context-sharing mechanism or duplicate the workflow
-  unless a new reusable workflow identity is needed.
+  field changes, including agent requirements, installed skill requirements,
+  skill preset requirements, contracts, approval gates, and steps, in
+  `template_overrides_json`; StackOS applies that atomic patch to the base
+  workflow and validates the effective template. Top-level workflow fields are
+  replaced atomically, so pass the full desired `agent_requirements`,
+  `skill_requirements`, `skill_preset_requirements`, or `steps` list when
+  changing them. Do not invent a new context-sharing mechanism or duplicate the
+  workflow unless a new reusable workflow identity is needed.
 - Discover operations: if you do not know the exact operation name, call
   `toolbox.call` for `operation.list` first, then `operation.describe` for the
   few operations you intend to use. Keep `toolbox.describe` scoped to exact

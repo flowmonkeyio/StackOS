@@ -44,7 +44,7 @@ def _wheel_names(wheel: Path) -> list[str]:
 
 def test_wheel_includes_assets_skills(built_wheel: Path) -> None:
     repo_root = Path(__file__).resolve().parents[3]
-    source = repo_root / "plugins" / "stackos" / "skills" / "stackos"
+    source = repo_root / "plugins" / "stackos" / "skills"
     expected = sum(1 for _ in source.rglob("SKILL.md"))
     names = _wheel_names(built_wheel)
     bundled = [
@@ -54,6 +54,7 @@ def test_wheel_includes_assets_skills(built_wheel: Path) -> None:
         f"wheel has {len(bundled)} SKILL.md files; source has {expected}"
     )
     assert "stackos/_assets/skills/stackos/SKILL.md" in names
+    assert "stackos/_assets/skills/stackos-sdlc-delivery-orchestrator/SKILL.md" not in names
 
 
 def test_wheel_includes_stackos_plugin(built_wheel: Path) -> None:
@@ -62,6 +63,7 @@ def test_wheel_includes_stackos_plugin(built_wheel: Path) -> None:
     assert "stackos/_assets/plugins/stackos/.codex-plugin/plugin.json" in names
     assert "stackos/_assets/plugins/stackos/.claude-plugin/plugin.json" in names
     assert "stackos/_assets/plugins/stackos/.mcp.json" in names
+    assert "stackos/_assets/plugins/engineering/skill-presets/sdlc.yaml" in names
 
 
 def test_wheel_assets_path_namespace_is_under_stackos(built_wheel: Path) -> None:

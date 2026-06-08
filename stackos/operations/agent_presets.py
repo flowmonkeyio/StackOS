@@ -11,6 +11,12 @@ from stackos.agents.schema import AgentPresetSpec, AgentProjectAdaptationSpec
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput
 from stackos.mcp.streaming import ProgressEmitter
+from stackos.operations.skill_presets import (
+    ResolvedWorkflowSkillPresetOut,
+    UnresolvedWorkflowSkillPresetOut,
+    resolve_skill_preset_requirements,
+    setup_guidance as skill_preset_setup_guidance,
+)
 from stackos.operations.spec import (
     OperationExample,
     OperationSpec,
@@ -22,6 +28,7 @@ from stackos.workflows.template_loader import WorkflowTemplateLoader, WorkflowTe
 from stackos.workflows.template_schema import (
     WorkflowAgentRequirementSpec,
     WorkflowSkillRequirementSpec,
+    WorkflowSkillPresetRequirementSpec,
 )
 
 AgentRequirementKind = Literal["required", "recommended", "optional"]
@@ -113,10 +120,17 @@ class AgentPresetWorkflowResolutionOut(BaseModel):
     workflow: WorkflowTemplateSummaryOut
     agent_requirements: list[WorkflowAgentRequirementSpec]
     skill_requirements: list[WorkflowSkillRequirementSpec]
+    skill_preset_requirements: list[WorkflowSkillPresetRequirementSpec]
     required_agents: list[ResolvedWorkflowAgentOut]
     recommended_agents: list[ResolvedWorkflowAgentOut]
     optional_agents: list[ResolvedWorkflowAgentOut]
     unresolved_requirements: list[UnresolvedWorkflowAgentOut]
+    required_skill_presets: list[ResolvedWorkflowSkillPresetOut] = Field(default_factory=list)
+    recommended_skill_presets: list[ResolvedWorkflowSkillPresetOut] = Field(default_factory=list)
+    optional_skill_presets: list[ResolvedWorkflowSkillPresetOut] = Field(default_factory=list)
+    unresolved_skill_preset_requirements: list[UnresolvedWorkflowSkillPresetOut] = Field(
+        default_factory=list
+    )
     setup_guidance: list[str]
 
 
@@ -203,6 +217,11 @@ def _setup_guidance() -> list[str]:
         (
             "Use the StackOS skill when the host supports skills; it teaches MCP, "
             "tools, workflows, run plans, tracker tasks/tickets, and evidence conventions."
+        ),
+        (
+            "Workflow skill_preset_requirements are reusable main-agent operating "
+            "contracts. Resolve them with skillPreset.* operations or this workflow "
+            "resolution response, then adapt them to the project before use."
         ),
     ]
 
@@ -296,15 +315,30 @@ async def agent_preset_resolve_for_workflow(
             recommended.append(resolved)
         else:
             optional.append(resolved)
+    (
+        required_skill_presets,
+        recommended_skill_presets,
+        optional_skill_presets,
+        unresolved_skill_preset_requirements,
+    ) = resolve_skill_preset_requirements(
+        list(workflow.spec.skill_preset_requirements),
+        repo_root=inp.repo_root,
+        include_optional=inp.include_optional,
+    )
     return AgentPresetWorkflowResolutionOut(
         workflow=workflow.summary,
         agent_requirements=list(workflow.spec.agent_requirements),
         skill_requirements=list(workflow.spec.skill_requirements),
+        skill_preset_requirements=list(workflow.spec.skill_preset_requirements),
         required_agents=required,
         recommended_agents=recommended,
         optional_agents=optional,
         unresolved_requirements=unresolved,
-        setup_guidance=_setup_guidance(),
+        required_skill_presets=required_skill_presets,
+        recommended_skill_presets=recommended_skill_presets,
+        optional_skill_presets=optional_skill_presets,
+        unresolved_skill_preset_requirements=unresolved_skill_preset_requirements,
+        setup_guidance=[*_setup_guidance(), *skill_preset_setup_guidance()],
     )
 
 
@@ -399,7 +433,7 @@ def operation_specs() -> list[OperationSpec]:
         OperationSpec(
             name="agentPreset.resolveForWorkflow",
             summary=(
-                "Resolve required/recommended agent presets and StackOS skill setup "
+                "Resolve required/recommended agent presets and StackOS skill preset setup "
                 "for one workflow."
             ),
             input_model=AgentPresetResolveForWorkflowInput,
@@ -418,8 +452,8 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Use this when setting up agents for a workflow template. It returns the inert "
-                "workflow's agent requirements, StackOS skill requirements, resolved presets, "
-                "and mandatory project-adaptation guidance."
+                "workflow's agent requirements, installed skill requirements, resolved agent "
+                "presets, resolved skill presets, and mandatory project-adaptation guidance."
             ),
             when_to_use=(
                 "A main agent is deciding which local agents or roles to configure for a workflow.",
@@ -428,6 +462,7 @@ def operation_specs() -> list[OperationSpec]:
                     "concrete run-plan setup."
                 ),
                 "A caller needs to know which skills should be loaded before workflow execution.",
+                "A caller needs main-agent operating skill presets for a workflow.",
             ),
             prerequisites=(
                 "A workflow template key is required.",
@@ -442,8 +477,9 @@ def operation_specs() -> list[OperationSpec]:
             ),
             returns=(
                 (
-                    "Workflow summary, agent requirements, StackOS skill requirements, "
-                    "resolved full presets, unresolved preset refs, and setup guidance."
+                    "Workflow summary, agent requirements, installed skill requirements, "
+                    "skill preset requirements, resolved full presets, unresolved preset refs, "
+                    "and setup guidance."
                 ),
             ),
             examples=(
