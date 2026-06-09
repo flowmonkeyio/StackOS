@@ -14,7 +14,7 @@ import { UiBadge, UiButton, UiCallout, UiCard, UiMetricCard, UiSectionHeader } f
 import type { DataTableColumn } from '@/components/types'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
-import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
+import { formatAbsoluteDateTime, formatRelativeDateTime, newestFirst } from '@/lib/stackos/time'
 import type {
   SchemaAuthStatusOut,
   SchemaIntegrationBudgetOut,
@@ -37,6 +37,7 @@ const plugins = ref<SchemaPluginOut[]>([])
 const templates = ref(0)
 const runPlans = ref(0)
 const resourceRecords = ref<SchemaResourceRecordOut[]>([])
+const resourceTotal = ref(0)
 const runs = ref<SchemaRunOut[]>([])
 const connections = ref(0)
 const schedules = ref<SchemaScheduledJobOut[]>([])
@@ -117,12 +118,14 @@ async function load(): Promise<void> {
         `/api/v1/projects/${id}/workflow-templates`,
         { templates: [], include_shadowed: false },
       ),
+      // The API pages ascending; pull a wide window so "recent" is truthful,
+      // then sort newest-first and trim for display.
       fetchOr<SchemaPageResponseRunOut>(
-        `/api/v1/projects/${id}/runs?limit=8`,
+        `/api/v1/projects/${id}/runs?limit=100`,
         { items: [], next_cursor: null, total_estimate: 0 },
       ),
       fetchOr<SchemaPageResponseResourceRecordOut>(
-        `/api/v1/projects/${id}/resource-records?limit=8`,
+        `/api/v1/projects/${id}/resource-records?limit=100`,
         { items: [], next_cursor: null, total_estimate: 0 },
       ),
       fetchOr<SchemaAuthStatusOut>(
@@ -137,9 +140,13 @@ async function load(): Promise<void> {
     ])
     plugins.value = pluginRows
     templates.value = templateRows.templates.length
-    runs.value = runPage.items
-    runPlans.value = runs.value.filter((run) => run.kind === 'run-plan').length
-    resourceRecords.value = resourcePage.items
+    runs.value = newestFirst(runPage.items, (run) => run.started_at).slice(0, 8)
+    runPlans.value = runPage.items.filter((run) => run.kind === 'run-plan').length
+    resourceRecords.value = newestFirst(
+      resourcePage.items,
+      (record) => record.updated_at ?? record.created_at,
+    ).slice(0, 8)
+    resourceTotal.value = resourcePage.total_estimate ?? resourcePage.items.length
     connections.value = authStatus.connections.filter(
       (connection) => connection.status !== 'revoked',
     ).length
@@ -287,7 +294,7 @@ onMounted(load)
                 class="focus-ring-inset flex items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
               >
                 <span class="text-fg-muted">Resource records</span>
-                <span class="font-medium tabular-nums text-fg-strong">{{ resourceRecords.length }}</span>
+                <span class="font-medium tabular-nums text-fg-strong">{{ resourceTotal }}</span>
               </RouterLink>
             </li>
             <li>

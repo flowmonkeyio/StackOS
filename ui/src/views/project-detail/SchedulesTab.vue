@@ -20,6 +20,16 @@ const { items, loading, error } = storeToRefs(schedulesStore)
 
 const enabledCount = computed(() => items.value.filter((job) => job.enabled).length)
 
+// Schedules have no created_at; the operational order is soonest next run
+// first, with never-scheduled (disabled) jobs at the bottom.
+const itemsByNextRun = computed(() =>
+  [...items.value].sort((a, b) => {
+    const ta = a.next_run_at ? Date.parse(a.next_run_at) : Number.POSITIVE_INFINITY
+    const tb = b.next_run_at ? Date.parse(b.next_run_at) : Number.POSITIVE_INFINITY
+    return ta - tb
+  }),
+)
+
 const columns: DataTableColumn<ScheduledJob>[] = [
   { key: 'kind', label: 'Kind', cellClass: 'font-medium text-fg-strong' },
   { key: 'cron_expr', label: 'Cron', cellClass: 'font-mono text-xs' },
@@ -88,7 +98,7 @@ onMounted(load)
 
     <DataTable
       v-else
-      :items="items"
+      :items="itemsByNextRun"
       :columns="columns"
       :loading="loading"
       aria-label="Scheduled jobs"

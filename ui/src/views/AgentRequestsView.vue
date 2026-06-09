@@ -25,6 +25,7 @@ import type { DataTableColumn } from '@/components/types'
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
+import { newestFirst } from '@/lib/stackos/time'
 
 type AgentRequestStatus =
   | 'new'
@@ -97,6 +98,12 @@ const attentionOptions = [
   { value: 'read', label: 'Read' },
   { value: 'archived', label: 'Archived' },
 ]
+
+// Claimable mode is a ranked work queue — keep the daemon's order there.
+// Every other mode is an audit list and leads with the latest request.
+const displayRows = computed(() =>
+  mode.value === 'claimable' ? rows.value : newestFirst(rows.value, (row) => row.created_at),
+)
 
 const columns: DataTableColumn<AgentRequestOut>[] = [
   { key: 'id', label: 'ID', widthClass: 'w-20', cellClass: 'font-mono text-xs', format: (value) => `#${value}` },
@@ -338,7 +345,7 @@ onMounted(() => {
         </template>
       </UiSectionHeader>
       <DataTable
-        :items="rows"
+        :items="displayRows"
         :columns="columns"
         :loading="loading"
         :next-cursor="nextCursor"

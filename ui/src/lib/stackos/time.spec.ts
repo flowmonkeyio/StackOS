@@ -4,6 +4,7 @@ import {
   formatDurationBetween,
   formatDurationMinutes,
   formatRelativeDateTime,
+  newestFirst,
 } from './time'
 
 const NOW = new Date('2026-06-09T12:00:00Z')
@@ -56,5 +57,26 @@ describe('formatDurationBetween', () => {
     ).toBe('1h 30m')
     expect(formatDurationBetween('2026-06-09T11:00:00Z', null, NOW)).toBe('1h')
     expect(formatDurationBetween(null, null, NOW)).toBe('-')
+  })
+})
+
+describe('newestFirst', () => {
+  it('sorts descending by the picked timestamp without mutating input', () => {
+    const items = [
+      { id: 1, created_at: '2026-06-01T00:00:00Z' },
+      { id: 3, created_at: '2026-06-09T00:00:00Z' },
+      { id: 2, created_at: '2026-06-05T00:00:00Z' },
+    ]
+    const sorted = newestFirst(items, (item) => item.created_at)
+    expect(sorted.map((item) => item.id)).toEqual([3, 2, 1])
+    expect(items.map((item) => item.id)).toEqual([1, 3, 2])
+  })
+
+  it('sinks rows without timestamps to the bottom', () => {
+    const items = [
+      { id: 1, at: null },
+      { id: 2, at: '2026-06-05T00:00:00Z' },
+    ]
+    expect(newestFirst(items, (item) => item.at).map((item) => item.id)).toEqual([2, 1])
   })
 })

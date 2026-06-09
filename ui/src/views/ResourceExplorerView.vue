@@ -22,6 +22,7 @@ import type { DataTableColumn } from '@/components/types'
 import type { SchemaResourceOut, SchemaResourceRecordOut } from '@/api'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
+import { newestFirst } from '@/lib/stackos/time'
 import { useStackOsResourcesStore } from '@/stores/stackosResources'
 
 const route = useRoute()
@@ -30,6 +31,11 @@ const catalogStore = useStackOsCatalogStore()
 const resourcesStore = useStackOsResourcesStore()
 const { enabledPlugins } = storeToRefs(catalogStore)
 const { resources, records, artifacts, loading, error } = storeToRefs(resourcesStore)
+
+// The API returns rows ascending; lead with the latest record activity.
+const recordsNewest = computed(() =>
+  newestFirst(records.value, (record) => record.updated_at ?? record.created_at),
+)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const pluginSlug = ref(String(route.query.plugin_slug ?? ''))
@@ -258,7 +264,7 @@ onBeforeRouteUpdate((to) => {
         </template>
       </UiSectionHeader>
       <DataTable
-        :items="records"
+        :items="recordsNewest"
         :columns="recordColumns"
         :loading="loading"
         :selected-id="detailKind === 'record' ? selectedRecord?.id : null"

@@ -162,8 +162,11 @@ async function fetchCalls({ append = false }: { append?: boolean } = {}): Promis
     const response = await apiFetch<SchemaPageResponseActionCallAuditOut>(
       `/api/v1/projects/${projectId.value}/action-calls?${buildQuery(append ? nextCursor.value : null)}`,
     )
-    const pageRows = newestFirst(response.items)
-    const nextRows = append ? [...rows.value, ...pageRows] : pageRows
+    // Sort the combined window, not per page — appended cursor pages would
+    // otherwise interleave older/newer blocks.
+    const nextRows = newestFirst(
+      append ? [...rows.value, ...response.items] : [...response.items],
+    )
     rows.value = nextRows
     nextCursor.value = response.next_cursor ?? null
     if (!append && selectedCall.value && !nextRows.some((row) => row.id === selectedCall.value?.id)) {

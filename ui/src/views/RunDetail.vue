@@ -21,6 +21,7 @@ import { useToastsStore } from '@/stores/toasts'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { resolveStatus } from '@/design/status'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
+import { newestFirst } from '@/lib/stackos/time'
 import type {
   SchemaActionCallAuditOut,
   SchemaArtifactOut,
@@ -99,15 +100,19 @@ async function load(): Promise<void> {
         `/api/v1/projects/${props.projectId}/artifacts?limit=50`,
       ),
     ])
-    children.value = kids
-    runPlans.value = planRows
-    actionCalls.value = actionCallPage.items
-    contextSnapshots.value = snapshotPage.items
-    observations.value = observationPage.items
-    decisions.value = decisionPage.items
-    learnings.value = learningPage.items
-    experiments.value = experimentPage.items
-    artifacts.value = artifactPage.items
+    // The API returns rows ascending — show the latest first in every section.
+    children.value = newestFirst(kids, (row) => row.started_at)
+    runPlans.value = newestFirst(planRows, (row) => row.created_at)
+    actionCalls.value = newestFirst(actionCallPage.items, (row) => row.created_at)
+    contextSnapshots.value = newestFirst(snapshotPage.items, (row) => row.created_at)
+    observations.value = newestFirst(
+      observationPage.items,
+      (row) => row.observed_at ?? row.created_at,
+    )
+    decisions.value = newestFirst(decisionPage.items, (row) => row.created_at)
+    learnings.value = newestFirst(learningPage.items, (row) => row.created_at)
+    experiments.value = newestFirst(experimentPage.items, (row) => row.created_at)
+    artifacts.value = newestFirst(artifactPage.items, (row) => row.created_at)
   } catch (err) {
     toasts.error('Failed to load run', formatApiError(err))
   } finally {

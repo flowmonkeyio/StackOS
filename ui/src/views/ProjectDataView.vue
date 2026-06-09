@@ -18,6 +18,7 @@ import type {
   SchemaProjectEventOut,
 } from '@/api'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
+import { newestFirst } from '@/lib/stackos/time'
 import { useProjectDataStore } from '@/stores/projectData'
 
 type DataTab =
@@ -47,6 +48,20 @@ const {
 } = storeToRefs(projectData)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+
+// The API returns rows ascending; operator tables lead with the latest.
+const timelineNewest = computed(() => newestFirst(timeline.value, (row) => row.occurred_at))
+const learningsNewest = computed(() => newestFirst(learnings.value, (row) => row.created_at))
+const experimentsNewest = computed(() => newestFirst(experiments.value, (row) => row.created_at))
+const observationsNewest = computed(() =>
+  newestFirst(observations.value, (row) => row.observed_at ?? row.created_at),
+)
+const decisionsNewest = computed(() => newestFirst(decisions.value, (row) => row.created_at))
+const snapshotsNewest = computed(() => newestFirst(snapshots.value, (row) => row.created_at))
+const artifactsNewest = computed(() => newestFirst(artifacts.value, (row) => row.created_at))
+const metricsNewest = computed(() =>
+  newestFirst(metrics.value, (row) => row.captured_at ?? row.created_at),
+)
 
 const tabOptions = [
   { key: 'timeline', label: 'Timeline' },
@@ -187,7 +202,7 @@ function syncTabToUrl(tab: DataTab): void {
     >
       <UiSectionHeader title="Timeline" as="h3" />
       <DataTable
-        :items="timeline"
+        :items="timelineNewest"
         :columns="timelineColumns"
         :loading="loading"
         max-height="calc(100vh - 22rem)"
@@ -202,7 +217,7 @@ function syncTabToUrl(tab: DataTab): void {
     >
       <UiSectionHeader title="Learnings" as="h3" />
       <DataTable
-        :items="learnings"
+        :items="learningsNewest"
         :columns="learningColumns"
         :loading="loading"
         max-height="calc(100vh - 22rem)"
@@ -221,7 +236,7 @@ function syncTabToUrl(tab: DataTab): void {
     >
       <UiSectionHeader title="Experiments" as="h3" />
       <DataTable
-        :items="experiments"
+        :items="experimentsNewest"
         :columns="experimentColumns"
         :loading="loading"
         max-height="calc(100vh - 22rem)"
@@ -240,7 +255,7 @@ function syncTabToUrl(tab: DataTab): void {
     >
       <UiSectionHeader title="Observations" as="h3" />
       <DataTable
-        :items="observations"
+        :items="observationsNewest"
         :columns="observationColumns"
         :loading="loading"
         max-height="calc(100vh - 22rem)"
@@ -255,7 +270,7 @@ function syncTabToUrl(tab: DataTab): void {
     >
       <UiSectionHeader title="Decisions" as="h3" />
       <DataTable
-        :items="decisions"
+        :items="decisionsNewest"
         :columns="decisionColumns"
         :loading="loading"
         max-height="calc(100vh - 22rem)"
@@ -270,7 +285,7 @@ function syncTabToUrl(tab: DataTab): void {
     >
       <UiSectionHeader title="Context snapshots" as="h3" />
       <DataTable
-        :items="snapshots"
+        :items="snapshotsNewest"
         :columns="snapshotColumns"
         :loading="loading"
         max-height="calc(100vh - 22rem)"
@@ -310,7 +325,7 @@ function syncTabToUrl(tab: DataTab): void {
         size="sm"
       />
       <ArtifactRenderer
-        v-for="artifact in artifacts"
+        v-for="artifact in artifactsNewest"
         :key="artifact.id"
         :artifact="artifact"
       />
@@ -322,7 +337,7 @@ function syncTabToUrl(tab: DataTab): void {
     >
       <UiSectionHeader title="Metrics" as="h3" />
       <DataTable
-        :items="metrics"
+        :items="metricsNewest"
         :columns="metricColumns"
         :loading="loading"
         max-height="calc(100vh - 22rem)"

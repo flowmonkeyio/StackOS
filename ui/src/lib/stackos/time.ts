@@ -59,6 +59,22 @@ export function formatDurationMinutes(minutes: number | null | undefined): strin
   return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`
 }
 
+/**
+ * Newest-first ordering for record lists. The daemon returns rows in
+ * ascending id order; operator tables lead with the latest activity.
+ * Rows without a parseable timestamp sink to the bottom.
+ */
+export function newestFirst<T>(
+  items: readonly T[],
+  pick: (item: T) => string | null | undefined,
+): T[] {
+  return [...items].sort((a, b) => {
+    const ta = Date.parse(pick(a) ?? '')
+    const tb = Date.parse(pick(b) ?? '')
+    return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta)
+  })
+}
+
 /** Duration between two ISO timestamps; open-ended when `end` is missing. */
 export function formatDurationBetween(
   start: string | null | undefined,
