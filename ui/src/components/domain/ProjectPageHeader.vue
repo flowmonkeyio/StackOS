@@ -20,6 +20,7 @@ const props = withDefaults(defineProps<{
   title?: string;
   description?: string;
   breadcrumbs?: BreadcrumbItem[];
+  /** Opt-in slug/domain/locale chips. The switcher already shows project context. */
   showProjectMeta?: boolean;
   showProjectStatus?: boolean;
   showBreadcrumbs?: boolean;
@@ -27,7 +28,7 @@ const props = withDefaults(defineProps<{
   title: undefined,
   description: undefined,
   breadcrumbs: () => [],
-  showProjectMeta: true,
+  showProjectMeta: false,
   showProjectStatus: false,
   showBreadcrumbs: false,
 })
@@ -57,7 +58,6 @@ onMounted(ensureProject)
   <UiPageHeader
     :title="titleText"
     :description="description"
-    :eyebrow="project?.name"
     :show-breadcrumbs="showBreadcrumbs"
   >
     <template
@@ -84,9 +84,9 @@ onMounted(ensureProject)
       #meta
     >
       <template v-if="showProjectMeta && project">
-        <span class="font-mono">{{ project.slug }}</span>
-        <span>{{ project.domain }}</span>
-        <span>{{ project.locale }}</span>
+        <span class="inline-flex items-center rounded-full border border-default bg-bg-surface px-2 py-0.5 font-mono text-2xs text-fg-muted">{{ project.slug }}</span>
+        <span class="inline-flex items-center rounded-full border border-default bg-bg-surface px-2 py-0.5 text-2xs text-fg-muted">{{ project.domain }}</span>
+        <span class="inline-flex items-center rounded-full border border-default bg-bg-surface px-2 py-0.5 text-2xs text-fg-muted">{{ project.locale }}</span>
       </template>
       <slot name="meta" />
     </template>

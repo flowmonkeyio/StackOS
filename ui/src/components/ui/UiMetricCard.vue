@@ -5,6 +5,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import UiIcon from './UiIcon.vue';
+
 export interface UiMetricCardProps {
   label: string;
   value: string | number;
@@ -46,31 +48,36 @@ const deltaToneClass = computed(() => ({
   neutral:  'text-fg-muted',
 }[deltaToneResolved.value]));
 
-const deltaIcon = computed(() => ({
-  positive: 'M12 19V5M5 12l7-7 7 7',
-  negative: 'M12 5v14m-7-7 7 7 7-7',
-  neutral:  'M5 12h14',
+const deltaIconName = computed(() => ({
+  positive: 'chevron-up',
+  negative: 'chevron-down',
+  neutral:  'more',
 }[deltaToneResolved.value]));
 </script>
 
 <template>
   <div
     :class="[
-      'ui-metric-card rounded-md border border-default bg-bg-surface',
-      density === 'comfortable' ? 'p-4' : 'p-3',
+      'ui-metric-card rounded-lg border border-default bg-bg-surface shadow-xs',
+      density === 'comfortable' ? 'px-4 py-3.5' : 'p-3',
     ]"
   >
-    <p class="t-overline text-fg-subtle">
+    <p class="truncate text-xs font-medium text-fg-muted">
       {{ label }}
     </p>
-    <div class="mt-1 flex items-baseline gap-2">
+    <div class="mt-1.5 flex items-baseline gap-1.5">
       <p
         v-if="loading"
         class="ui-skeleton block bg-bg-sunken animate-pulse rounded-xs"
         :style="{ width: '5ch', height: density === 'comfortable' ? '32px' : '24px' }"
       />
       <template v-else>
-        <span :class="['font-semibold tabular-nums text-fg-strong', density === 'comfortable' ? 'text-2xl' : 'text-xl']">{{ value }}</span>
+        <span
+          :class="[
+            'font-semibold tabular-nums tracking-tight text-fg-strong',
+            density === 'comfortable' ? 'text-2xl' : 'text-xl',
+          ]"
+        >{{ value }}</span>
         <span
           v-if="unit"
           class="text-sm text-fg-muted"
@@ -85,28 +92,20 @@ const deltaIcon = computed(() => ({
         v-if="delta !== undefined && delta !== null"
         :class="['inline-flex items-center gap-1 text-xs font-medium', deltaToneClass]"
       >
-        <svg
-          width="11"
-          height="11"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
+        <UiIcon
+          :name="deltaIconName"
+          class="h-3 w-3"
           aria-hidden="true"
-        >
-          <path :d="deltaIcon" />
-        </svg>
+        />
         <span>{{ delta }}</span>
         <span
           v-if="deltaLabel"
-          class="text-fg-subtle font-normal"
+          class="font-normal text-fg-subtle"
         >· {{ deltaLabel }}</span>
       </span>
       <div
         v-if="$slots.spark"
-        class="flex-1 max-w-[60%]"
+        class="max-w-[60%] flex-1"
       >
         <slot name="spark" />
       </div>

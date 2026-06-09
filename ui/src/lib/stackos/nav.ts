@@ -6,12 +6,18 @@ export interface StackOsNavItem {
   to: string
   description?: string
   matchPrefix?: boolean
+  /** Icon registry name (components/ui/icons.ts). Optional, presentational. */
+  icon?: string
 }
 
 export interface StackOsNavSection {
   key: string
   label: string
   items: StackOsNavItem[]
+  /** Icon registry name for collapsible group headers. Optional, presentational. */
+  icon?: string
+  /** Plugin-contributed sections render as collapsible groups. */
+  collapsible?: boolean
 }
 
 export type StackOsRouteQuery = Record<string, unknown>
@@ -56,9 +62,9 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
       key: 'project-work',
       label: 'Work',
       items: [
-        { key: 'overview', label: 'Overview', to: `${base}/overview` },
-        { key: 'tasks', label: 'Tasks', to: `${base}/tasks` },
-        { key: 'runs', label: 'Runs', to: `${base}/runs`, matchPrefix: true },
+        { key: 'overview', label: 'Overview', to: `${base}/overview`, icon: 'grid' },
+        { key: 'tasks', label: 'Tasks', to: `${base}/tasks`, icon: 'tasks' },
+        { key: 'runs', label: 'Runs', to: `${base}/runs`, matchPrefix: true, icon: 'runs' },
       ],
     },
     {
@@ -69,34 +75,35 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
           key: 'workflow-templates',
           label: 'Workflow Library',
           to: `${base}/workflow-templates`,
+          icon: 'library',
         },
-        { key: 'agent-presets', label: 'Agent Presets', to: `${base}/agent-presets` },
-        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests` },
+        { key: 'agent-presets', label: 'Agent Presets', to: `${base}/agent-presets`, icon: 'users' },
+        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests`, icon: 'inbox' },
       ],
     },
     {
       key: 'project-data',
       label: 'Knowledge',
       items: [
-        { key: 'project-data', label: 'Project Data', to: `${base}/data` },
-        { key: 'resources', label: 'Resources', to: `${base}/resources` },
+        { key: 'project-data', label: 'Project Data', to: `${base}/data`, icon: 'database' },
+        { key: 'resources', label: 'Resources', to: `${base}/resources`, icon: 'folder' },
       ],
     },
     {
       key: 'integrations',
       label: 'Integrations',
       items: [
-        { key: 'connections', label: 'Connections', to: `${base}/connections` },
-        { key: 'plugins', label: 'Plugins', to: `${base}/plugins` },
-        { key: 'capabilities', label: 'Capabilities', to: `${base}/capabilities` },
+        { key: 'connections', label: 'Connections', to: `${base}/connections`, icon: 'link' },
+        { key: 'plugins', label: 'Plugins', to: `${base}/plugins`, icon: 'puzzle' },
+        { key: 'capabilities', label: 'Capabilities', to: `${base}/capabilities`, icon: 'chip' },
       ],
     },
     {
       key: 'system',
       label: 'System',
       items: [
-        { key: 'operations', label: 'Operations', to: `${base}/operations` },
-        { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls` },
+        { key: 'operations', label: 'Operations', to: `${base}/operations`, icon: 'terminal' },
+        { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls`, icon: 'bolt' },
       ],
     },
   ]
@@ -108,11 +115,28 @@ export function setupNavSection(projectId: number): StackOsNavSection {
     key: 'project-setup',
     label: 'Project Setup',
     items: [
-      { key: 'setup', label: 'Setup Status', to: `${base}/setup` },
-      { key: 'schedules', label: 'Schedules', to: `${base}/schedules` },
-      { key: 'cost-budget', label: 'Cost & Budget', to: `${base}/cost-budget` },
+      { key: 'setup', label: 'Setup Status', to: `${base}/setup`, icon: 'wrench' },
+      { key: 'schedules', label: 'Schedules', to: `${base}/schedules`, icon: 'calendar' },
+      { key: 'cost-budget', label: 'Cost & Budget', to: `${base}/cost-budget`, icon: 'banknotes' },
     ],
   }
+}
+
+/** Decorative icon for a plugin-contributed nav section, by slug. */
+export function pluginSectionIcon(slug: string): string {
+  const icons: Record<string, string> = {
+    engineering: 'code-bracket',
+    communications: 'chat',
+    gtm: 'megaphone',
+    'media-buying': 'chart-bar',
+    publishing: 'newspaper',
+    seo: 'search',
+    support: 'lifebuoy',
+    trackbooth: 'sparkles',
+    core: 'cube',
+    utils: 'wrench',
+  }
+  return icons[slug] ?? 'puzzle'
 }
 
 export function projectNavSections(
@@ -159,6 +183,8 @@ export function pluginContributionSections(
         key: `plugin-${plugin.slug}`,
         label: nav.section ?? plugin.name,
         items,
+        icon: pluginSectionIcon(plugin.slug),
+        collapsible: true,
       })
     }
   }

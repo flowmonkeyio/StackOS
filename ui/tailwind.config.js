@@ -5,9 +5,8 @@
  *   - Keep Tailwind's default scales available (don't `replace`, `extend`).
  *   - Add semantic color aliases (bg-surface, text-fg-default, border-default…)
  *     that resolve via CSS custom properties so dark mode flips for free.
- *   - Add radius / shadow / spacing aliases that match `tokens.ts`.
- *
- * The CSS variables are defined in `src/design/colors_and_type.css`.
+ *   - Add a `sidebar` (sb) namespace for the dark shell chrome.
+ *   - Radius / shadow / spacing aliases match `src/design/colors_and_type.css`.
  */
 
 /** @type {import('tailwindcss').Config} */
@@ -86,13 +85,26 @@ export default {
           fg:      'var(--color-neutral-fg)',
           border:  'var(--color-neutral-border)',
         },
+        // Sidebar shell — dark in both themes.
+        sb: {
+          bg:        'var(--sb-bg)',
+          elevated:  'var(--sb-bg-elevated)',
+          hover:     'var(--sb-bg-hover)',
+          active:    'var(--sb-bg-active)',
+          fg:        'var(--sb-fg)',
+          strong:    'var(--sb-fg-strong)',
+          muted:     'var(--sb-fg-muted)',
+          border:    'var(--sb-border)',
+          accent:    'var(--sb-accent)',
+          ring:      'var(--sb-ring)',
+        },
       },
       borderRadius: {
-        xs:  '2px',
-        sm:  '4px',
-        md:  '6px',
-        lg:  '8px',
-        xl:  '12px',
+        xs:  '4px',
+        sm:  '6px',
+        md:  '8px',
+        lg:  '10px',
+        xl:  '14px',
       },
       boxShadow: {
         xs:    'var(--shadow-xs)',
@@ -104,19 +116,23 @@ export default {
         focus: '0 0 0 2px var(--color-bg-app), 0 0 0 4px var(--color-border-focus)',
       },
       fontFamily: {
-        sans: ['"Inter var"', 'Inter', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
-        mono: ['"JetBrains Mono"', '"Fira Code"', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
+        sans: ['"Inter Variable"', 'Inter', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
+        mono: ['"JetBrains Mono Variable"', '"JetBrains Mono"', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
       },
       fontSize: {
         // Operational scale — body sits at 13px.
-        '2xs': ['11px', { lineHeight: '14px' }],
-        'xs':  ['12px', { lineHeight: '16px' }],
-        'sm':  ['13px', { lineHeight: '18px' }],
-        'base':['14px', { lineHeight: '20px' }],
+        '2xs': ['11px', { lineHeight: '16px' }],
+        'xs':  ['12px', { lineHeight: '18px' }],
+        'sm':  ['13px', { lineHeight: '20px' }],
+        'base':['14px', { lineHeight: '22px' }],
         'lg':  ['16px', { lineHeight: '24px' }],
-        'xl':  ['20px', { lineHeight: '28px' }],
+        'xl':  ['19px', { lineHeight: '28px' }],
         '2xl': ['24px', { lineHeight: '32px' }],
-        '3xl': ['32px', { lineHeight: '40px' }],
+        '3xl': ['30px', { lineHeight: '38px' }],
+      },
+      letterSpacing: {
+        tight: '-0.011em',
+        wide:  '0.05em',
       },
       spacing: {
         // 4px grid is already Tailwind default (1=4px, 2=8px…).
@@ -124,16 +140,16 @@ export default {
         'gutter':    '24px',
         'gutter-sm': '16px',
         'row-sm':    '32px',
-        'row-md':    '40px',
-        'row-lg':    '48px',
-        'header':    '52px',
-        'sidebar':   '240px',
+        'row-md':    '36px',
+        'row-lg':    '44px',
+        'header':    '56px',
+        'sidebar':   '248px',
         'panel':     '360px',
       },
       maxWidth: {
         'content':        '1280px',
         'content-narrow': '720px',
-        'content-wide':   '1536px',
+        'content-wide':   '1480px',
       },
       zIndex: {
         sticky:   '100',
@@ -146,8 +162,8 @@ export default {
       },
       transitionDuration: {
         fast: '120ms',
-        base: '180ms',
-        slow: '260ms',
+        base: '160ms',
+        slow: '240ms',
       },
       transitionTimingFunction: {
         standard: 'cubic-bezier(0.2, 0, 0, 1)',
@@ -187,6 +203,15 @@ export default {
           '&:focus-visible': {
             outline: '2px solid var(--color-border-focus)',
             outlineOffset: '-2px',
+          },
+        },
+        // Sidebar variant — lighter ring against the dark shell.
+        '.focus-ring-sb': {
+          outline: '2px solid transparent',
+          outlineOffset: '2px',
+          '&:focus-visible': {
+            outline: '2px solid var(--sb-ring)',
+            outlineOffset: '2px',
           },
         },
       });

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-// App shell — sidebar + main content + toast region.
+// App shell — dark sidebar + main content + toast region.
 //
-// Sidebar holds the brand, ProjectSwitcher, primary nav, and theme toggle.
-// At < md the layout collapses to a single column with a top-of-page nav.
+// The sidebar is the identity anchor: dark in both themes (`sb-*` tokens),
+// holding the brand, ProjectSwitcher, primary nav, and theme toggle.
+// At < md it becomes a slide-over drawer under a scrim.
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -10,6 +11,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import {
   projectNavSections as buildProjectNavSections,
   type StackOsNavSection,
@@ -109,83 +111,130 @@ function dismissToast(id: number): void {
   toasts.dismiss(id)
 }
 
+const TOAST_TONE = {
+  error: {
+    icon: 'x-circle',
+    iconClass: 'text-danger',
+    barClass: 'bg-danger',
+  },
+  success: {
+    icon: 'check-circle',
+    iconClass: 'text-success',
+    barClass: 'bg-success',
+  },
+  info: {
+    icon: 'info',
+    iconClass: 'text-info',
+    barClass: 'bg-info',
+  },
+} as const
+
+function toastTone(kind: string) {
+  return TOAST_TONE[kind as keyof typeof TOAST_TONE] ?? TOAST_TONE.info
+}
+
 const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 </script>
 
 <template>
   <div class="flex min-h-screen flex-col bg-bg-app text-fg-default md:flex-row">
-    <div class="sticky top-0 z-sticky flex items-center justify-between border-b border-default bg-bg-surface px-3 py-2 md:hidden">
-      <div class="flex min-w-0 items-center gap-2">
+    <a
+      href="#cs-main"
+      class="sr-only z-toast rounded-sm bg-accent px-3 py-2 text-sm font-medium text-fg-on-accent focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+    >
+      Skip to content
+    </a>
+
+    <!-- Mobile top bar -->
+    <div class="sticky top-0 z-sticky flex h-14 items-center justify-between gap-3 border-b border-sb-border bg-sb-bg px-3 md:hidden">
+      <div class="flex min-w-0 items-center gap-2.5">
         <span
-          class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-bg-inverse font-mono text-xs font-bold text-fg-inverse"
+          class="brand-gradient inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
           aria-hidden="true"
-        >OS</span>
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M2 5.2 8 2l6 3.2-6 3.2L2 5.2Z" fill="white" fill-opacity="0.95" />
+            <path d="M2 8.4 8 11.6l6-3.2" stroke="white" stroke-opacity="0.7" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M2 11.2 8 14.4l6-3.2" stroke="white" stroke-opacity="0.45" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </span>
         <div class="min-w-0">
-          <div class="truncate text-sm font-semibold leading-tight text-fg-strong">
+          <div class="truncate text-sm font-semibold leading-tight text-sb-strong">
             StackOS
           </div>
-          <div class="truncate text-xs text-fg-muted">
+          <div class="truncate text-2xs leading-tight text-sb-muted">
             {{ currentProject?.name ?? 'Projects' }}
           </div>
         </div>
       </div>
       <button
         type="button"
-        class="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-default bg-bg-surface text-fg-default shadow-xs hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        class="focus-ring-sb inline-flex h-9 w-9 items-center justify-center rounded-sm text-sb-fg transition-colors duration-fast hover:bg-sb-hover"
         :aria-expanded="drawerOpen"
         aria-controls="cs-sidebar"
         aria-label="Toggle navigation"
         @click="drawerOpen = !drawerOpen"
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
+        <UiIcon
+          :name="drawerOpen ? 'close' : 'menu'"
+          class="h-5 w-5"
           aria-hidden="true"
-        >
-          <path d="M4 7h16" />
-          <path d="M4 12h16" />
-          <path d="M4 17h16" />
-        </svg>
+        />
       </button>
     </div>
 
+    <!-- Mobile drawer scrim -->
+    <button
+      v-if="drawerOpen"
+      type="button"
+      class="fixed inset-0 z-overlay bg-bg-overlay md:hidden"
+      aria-label="Close navigation"
+      tabindex="-1"
+      @click="closeDrawer"
+    />
+
+    <!-- Sidebar -->
     <aside
       id="cs-sidebar"
-      class="border-b border-default bg-bg-surface md:sticky md:top-0 md:h-screen md:w-64 md:flex-shrink-0 md:border-b-0 md:border-r"
-      :class="drawerOpen ? 'block' : 'hidden md:block'"
+      :class="[
+        'bg-sb-bg md:sticky md:top-0 md:z-auto md:h-screen md:w-sidebar md:flex-shrink-0 md:translate-x-0 md:shadow-none',
+        'fixed inset-y-0 left-0 z-modal w-[280px] max-w-[85vw] transition-transform duration-base ease-standard md:static',
+        drawerOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full',
+      ]"
       aria-label="Primary navigation"
     >
       <div class="flex h-full flex-col">
-        <div class="hidden border-b border-subtle px-4 py-4 md:block">
-          <div class="flex items-center gap-3">
+        <div class="hidden px-4 pb-2 pt-4 md:block">
+          <div class="flex items-center gap-2.5">
             <span
-              class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-bg-inverse font-mono text-sm font-bold text-fg-inverse"
+              class="brand-gradient inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
               aria-hidden="true"
-            >OS</span>
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M2 5.2 8 2l6 3.2-6 3.2L2 5.2Z" fill="white" fill-opacity="0.95" />
+                <path d="M2 8.4 8 11.6l6-3.2" stroke="white" stroke-opacity="0.7" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M2 11.2 8 14.4l6-3.2" stroke="white" stroke-opacity="0.45" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
             <div class="min-w-0">
-              <div class="truncate text-sm font-semibold leading-tight text-fg-strong">
+              <div class="truncate text-sm font-semibold leading-tight text-sb-strong">
                 StackOS
               </div>
-              <div class="text-xs text-fg-muted">
+              <div class="text-2xs leading-tight text-sb-muted">
                 Local runtime
               </div>
             </div>
           </div>
         </div>
 
-        <div class="border-b border-subtle px-3 py-3">
+        <div class="px-3 py-3 pt-4 md:pt-3">
           <ProjectSwitcher />
         </div>
 
-        <nav class="min-h-0 flex-1 overflow-y-auto px-3 py-3 [scrollbar-width:thin]">
+        <nav class="scrollbar-dark min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
           <p
             v-if="projectNavSections.length === 0"
-            class="rounded-md border border-dashed border-subtle px-3 py-3 text-sm text-fg-muted"
+            class="rounded-md border border-dashed border-sb-border px-3 py-3 text-sm text-sb-muted"
           >
             Pick a project to see its operating navigation.
           </p>
@@ -196,16 +245,18 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
           />
         </nav>
 
-        <div class="border-t border-subtle px-4 py-3">
+        <div class="flex items-center justify-between gap-2 border-t border-sb-border px-4 py-3">
+          <span class="text-2xs text-sb-muted">{{ theme === 'dark' ? 'Dark' : 'Light' }} theme</span>
           <button
             type="button"
-            class="inline-flex w-full items-center justify-between rounded-md border border-default bg-bg-surface px-3 py-2 text-xs text-fg-default hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            class="focus-ring-sb inline-flex h-7 w-7 items-center justify-center rounded-sm text-sb-fg transition-colors duration-fast hover:bg-sb-hover hover:text-sb-strong"
             :aria-pressed="theme === 'dark'"
+            :aria-label="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
             @click="toggleTheme"
           >
-            <span>{{ theme === 'dark' ? 'Dark' : 'Light' }} theme</span>
-            <span
-              class="h-2 w-2 rounded-full bg-current opacity-50"
+            <UiIcon
+              :name="theme === 'dark' ? 'sun' : 'moon'"
+              class="h-4 w-4"
               aria-hidden="true"
             />
           </button>
@@ -213,44 +264,53 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
       </div>
     </aside>
 
-    <main class="relative min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
+    <main
+      id="cs-main"
+      class="relative min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8 lg:py-6"
+    >
       <ul
         v-if="toastItems.length > 0"
-        class="pointer-events-none fixed inset-x-4 top-3 z-50 mx-auto flex max-w-md flex-col gap-2 sm:left-auto sm:right-4 sm:mx-0"
+        class="pointer-events-none fixed inset-x-4 top-3 z-toast mx-auto flex max-w-sm flex-col gap-2 sm:left-auto sm:right-4 sm:mx-0"
         aria-live="polite"
       >
         <li
           v-for="t in toastItems"
           :key="t.id"
           role="status"
-          class="pointer-events-auto rounded-md border p-3 text-sm shadow-sm"
-          :class="
-            t.kind === 'error'
-              ? 'border-danger-border bg-danger-subtle text-danger-fg'
-              : t.kind === 'success'
-                ? 'border-success-border bg-success-subtle text-success-fg'
-                : 'border-neutral-border bg-neutral-subtle text-neutral-fg'
-          "
+          class="toast-enter pointer-events-auto relative overflow-hidden rounded-lg border border-default bg-bg-surface p-3 pl-4 text-sm shadow-lg"
         >
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <div class="font-medium">
+          <span
+            :class="['absolute inset-y-0 left-0 w-1', toastTone(t.kind).barClass]"
+            aria-hidden="true"
+          />
+          <div class="flex items-start gap-2.5">
+            <UiIcon
+              :name="toastTone(t.kind).icon"
+              :class="['mt-0.5 h-4 w-4 shrink-0', toastTone(t.kind).iconClass]"
+              aria-hidden="true"
+            />
+            <div class="min-w-0 flex-1">
+              <div class="font-medium text-fg-strong">
                 {{ t.title }}
               </div>
               <div
                 v-if="t.detail"
-                class="mt-1 text-xs opacity-90"
+                class="mt-0.5 text-xs text-fg-muted"
               >
                 {{ t.detail }}
               </div>
             </div>
             <button
               type="button"
-              class="rounded-xs p-1 text-xs opacity-70 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
+              class="focus-ring -m-1 rounded-sm p-1 text-fg-subtle transition-colors duration-fast hover:text-fg-default"
               :aria-label="`Dismiss ${t.title}`"
               @click="dismissToast(t.id)"
             >
-              ×
+              <UiIcon
+                name="close"
+                class="h-3.5 w-3.5"
+                aria-hidden="true"
+              />
             </button>
           </div>
         </li>
@@ -258,9 +318,14 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 
       <div
         v-if="!auth.ready && !isAuthErrorRoute"
-        class="rounded-md border border-warning-border bg-warning-subtle p-3 text-sm text-warning-fg"
+        class="mb-4 flex items-center gap-2.5 rounded-lg border border-warning-border bg-warning-subtle p-3 text-sm text-warning-fg"
         role="alert"
       >
+        <UiIcon
+          name="loader"
+          class="h-4 w-4 shrink-0 animate-spin"
+          aria-hidden="true"
+        />
         Authenticating with the daemon…
       </div>
 
@@ -268,3 +333,20 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
     </main>
   </div>
 </template>
+
+<style scoped>
+.toast-enter {
+  animation: toast-slide-in var(--duration-base) var(--easing-enter);
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+</style>

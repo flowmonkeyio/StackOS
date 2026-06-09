@@ -14,6 +14,8 @@
 
 import { computed, ref } from 'vue'
 
+import UiIcon from '@/components/ui/UiIcon.vue'
+
 import type { DataTableColumn, DataTableSortDir } from './types'
 
 interface Props {
@@ -158,7 +160,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
 <template>
   <div class="cs-datatable-wrapper relative">
     <div
-      class="hidden overflow-x-auto rounded-md border border-default md:block"
+      class="hidden overflow-x-auto rounded-lg border border-default bg-bg-surface md:block"
       tabindex="0"
       :style="maxHeight ? { maxHeight, overflowY: 'auto' } : undefined"
     >
@@ -173,7 +175,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
             <th
               v-if="selection"
               scope="col"
-              class="w-10 px-3 py-2 text-left font-medium"
+              class="w-10 px-3 py-2 text-left"
             >
               <span class="sr-only">Select</span>
             </th>
@@ -181,25 +183,35 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
               v-for="col in columns"
               :key="col.key"
               scope="col"
-              class="whitespace-nowrap px-3 py-2 text-left font-medium text-fg-default"
+              class="whitespace-nowrap px-3 py-2 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted"
               :class="[col.widthClass]"
               :aria-sort="ariaSortFor(col)"
             >
               <button
                 v-if="col.sortable"
                 type="button"
-                class="inline-flex items-center gap-1 hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                class="focus-ring group inline-flex items-center gap-1 rounded-xs uppercase tracking-wide transition-colors duration-fast hover:text-fg-strong"
                 @click="onSortClick(col)"
               >
                 {{ col.label }}
-                <span
+                <UiIcon
+                  v-if="sortKey === col.key && sortDir === 'asc'"
+                  name="chevron-up"
+                  class="h-3 w-3"
                   aria-hidden="true"
-                  class="text-xs"
-                >
-                  <template v-if="sortKey === col.key && sortDir === 'asc'">▲</template>
-                  <template v-else-if="sortKey === col.key && sortDir === 'desc'">▼</template>
-                  <template v-else>↕</template>
-                </span>
+                />
+                <UiIcon
+                  v-else-if="sortKey === col.key && sortDir === 'desc'"
+                  name="chevron-down"
+                  class="h-3 w-3"
+                  aria-hidden="true"
+                />
+                <UiIcon
+                  v-else
+                  name="chevron-up-down"
+                  class="h-3 w-3 opacity-0 transition-opacity duration-fast group-hover:opacity-60"
+                  aria-hidden="true"
+                />
               </button>
               <span v-else>{{ col.label }}</span>
             </th>
@@ -213,9 +225,9 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
             v-for="(row, idx) in displayItems"
             :key="String(keyOf(row))"
             :tabindex="interactive || selection ? 0 : undefined"
-            class="hover:bg-bg-surface-alt"
+            class="transition-colors duration-fast hover:bg-bg-surface-alt"
             :class="{
-              'bg-accent-subtle': isSelected(row) || isActive(row),
+              'bg-accent-subtle hover:bg-accent-subtle': isSelected(row) || isActive(row),
               'cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus': interactive || selection,
             }"
             :aria-selected="isSelected(row)"
@@ -239,7 +251,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
             <td
               v-for="col in columns"
               :key="col.key"
-              class="px-3 py-2 align-top text-fg-default"
+              class="px-3 py-2.5 align-top text-fg-default"
               :class="col.cellClass"
             >
               <slot
@@ -254,7 +266,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
           <tr v-if="!loading && displayItems.length === 0">
             <td
               :colspan="columns.length + (selection ? 1 : 0)"
-              class="px-3 py-8 text-center text-fg-muted"
+              class="px-3 py-10 text-center text-fg-muted"
             >
               {{ emptyMessage }}
             </td>
@@ -262,7 +274,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
           <tr v-if="loading && displayItems.length === 0">
             <td
               :colspan="columns.length + (selection ? 1 : 0)"
-              class="px-3 py-8 text-center text-fg-muted"
+              class="px-3 py-10 text-center text-fg-muted"
             >
               Loading…
             </td>
@@ -280,7 +292,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
         :key="`mobile-${String(keyOf(row))}`"
         :role="interactive ? 'button' : undefined"
         :tabindex="interactive || selection ? 0 : undefined"
-        class="rounded-md border border-default bg-bg-surface p-3 shadow-xs"
+        class="rounded-lg border border-default bg-bg-surface p-3 shadow-xs"
         :class="{ 'bg-accent-subtle': isSelected(row) || isActive(row) }"
         :aria-selected="isSelected(row)"
         :aria-current="isActive(row) ? 'true' : undefined"
@@ -326,13 +338,13 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
       </article>
       <div
         v-if="!loading && displayItems.length === 0"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface p-6 text-center text-sm text-fg-muted"
+        class="rounded-lg border border-dashed border-default bg-bg-surface p-6 text-center text-sm text-fg-muted"
       >
         {{ emptyMessage }}
       </div>
       <div
         v-if="loading && displayItems.length === 0"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface p-6 text-center text-sm text-fg-muted"
+        class="rounded-lg border border-dashed border-default bg-bg-surface p-6 text-center text-sm text-fg-muted"
       >
         Loading…
       </div>
@@ -344,7 +356,7 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
     >
       <button
         type="button"
-        class="h-8 rounded-sm border border-default bg-bg-surface px-3 text-sm font-medium text-fg-default hover:bg-bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
+        class="focus-ring h-8 rounded-sm border border-default bg-bg-surface px-3 text-sm font-medium text-fg-default shadow-xs transition-colors duration-fast hover:bg-bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="loading"
         @click="emit('load-more')"
       >

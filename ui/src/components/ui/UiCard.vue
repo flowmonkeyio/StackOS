@@ -26,7 +26,7 @@ defineProps<{
     :is="section ? 'section' : 'div'"
     :aria-label="ariaLabel"
     :class="[
-      'ui-card rounded-md border bg-bg-surface',
+      'ui-card rounded-lg border bg-bg-surface',
       variant === 'subtle' ? 'border-subtle bg-bg-surface-alt' : 'border-default',
       elevated !== false && 'shadow-xs',
     ]"

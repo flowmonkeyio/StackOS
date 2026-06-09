@@ -3,9 +3,9 @@
 
   Variants:
     - primary    : main CTA, filled accent
-    - secondary  : default action, outlined
+    - secondary  : default action, surface + border
     - ghost      : low-emphasis, no border
-    - danger     : destructive
+    - danger     : destructive, filled
     - link       : inline, underlined
 
   Sizes: sm | md | lg
@@ -60,22 +60,22 @@ const variantClass = computed(
   () =>
     ({
       primary:
-        'bg-accent text-fg-on-accent border border-accent hover:bg-accent-hover active:bg-accent-active disabled:bg-fg-disabled disabled:border-fg-disabled disabled:text-fg-inverse',
+        'bg-accent text-fg-on-accent shadow-xs hover:bg-accent-hover active:bg-accent-active disabled:bg-fg-disabled disabled:text-fg-inverse disabled:shadow-none',
       secondary:
-        'bg-bg-surface text-fg-default border border-default hover:bg-bg-surface-alt hover:border-strong active:bg-bg-sunken disabled:bg-bg-surface disabled:text-fg-disabled',
+        'bg-bg-surface text-fg-default border border-default shadow-xs hover:bg-bg-surface-alt hover:border-strong active:bg-bg-sunken disabled:bg-bg-surface disabled:text-fg-disabled disabled:hover:border-default disabled:shadow-none',
       ghost:
-        'bg-transparent text-fg-default border border-transparent hover:bg-bg-surface-alt active:bg-bg-sunken disabled:text-fg-disabled',
+        'bg-transparent text-fg-muted hover:bg-bg-sunken hover:text-fg-default active:bg-bg-sunken disabled:text-fg-disabled disabled:hover:bg-transparent',
       danger:
-        'bg-danger text-fg-on-accent border border-danger hover:bg-danger/90 active:bg-danger/80 disabled:bg-fg-disabled disabled:border-fg-disabled',
-      link: 'bg-transparent text-fg-link border border-transparent hover:underline underline-offset-2 px-0 py-0 h-auto disabled:text-fg-disabled',
+        'bg-danger text-fg-on-accent shadow-xs hover:bg-danger-fg active:bg-danger-fg disabled:bg-fg-disabled disabled:shadow-none',
+      link: 'bg-transparent text-fg-link hover:underline underline-offset-2 px-0 py-0 h-auto disabled:text-fg-disabled disabled:no-underline',
     })[props.variant],
 )
 
 const sizeClass = computed(
   () =>
     ({
-      sm: props.iconOnly ? 'h-7 w-7 px-0 text-sm' : 'h-7 px-2.5 gap-1.5 text-sm',
-      md: props.iconOnly ? 'h-8 w-8 px-0 text-sm' : 'h-8 px-3 gap-2 text-sm',
+      sm: props.iconOnly ? 'h-7 w-7 px-0 text-xs' : 'h-7 px-2.5 gap-1.5 text-xs',
+      md: props.iconOnly ? 'h-8 w-8 px-0 text-sm' : 'h-8 px-3 gap-1.5 text-sm',
       lg: props.iconOnly ? 'h-10 w-10 px-0 text-base' : 'h-10 px-4 gap-2 text-base',
     })[props.size],
 )
@@ -101,22 +101,7 @@ const sizeClass = computed(
     @click="(ev: MouseEvent) => !isDisabled && $emit('click', ev)"
   >
     <span v-if="loading" class="ui-button__spinner" aria-hidden="true">
-      <svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
-        <circle
-          cx="12"
-          cy="12"
-          r="9"
-          stroke="currentColor"
-          stroke-opacity="0.25"
-          stroke-width="3"
-        />
-        <path
-          d="M21 12a9 9 0 0 0-9-9"
-          stroke="currentColor"
-          stroke-width="3"
-          stroke-linecap="round"
-        />
-      </svg>
+      <UiIcon name="loader" class="ui-button__icon animate-spin" />
     </span>
     <slot v-else name="iconLeft">
       <UiIcon v-if="hasIcon(iconLeft)" :name="iconLeft" class="ui-button__icon" />
@@ -138,9 +123,10 @@ const sizeClass = computed(
   line-height: 1;
 }
 .ui-button__icon {
-  width: 1em;
-  height: 1em;
+  width: 1.07em;
+  height: 1.07em;
   flex: none;
+  stroke-width: 1.8;
 }
 .ui-button__spinner {
   display: inline-flex;

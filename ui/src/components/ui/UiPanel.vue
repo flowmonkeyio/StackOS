@@ -11,7 +11,7 @@ defineProps<{
 <template>
   <div
     :class="[
-      'ui-panel rounded-md border border-subtle bg-bg-surface-alt',
+      'ui-panel rounded-lg border border-subtle bg-bg-surface-alt',
       padded !== false && 'p-3',
     ]"
   >
