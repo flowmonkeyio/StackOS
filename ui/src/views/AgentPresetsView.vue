@@ -111,7 +111,6 @@ const detailLoading = ref(false)
 const error = ref<string | null>(null)
 const domainFilter = ref<DomainFilter>('engineering')
 
-const selectedKey = computed(() => String(route.query.preset ?? ''))
 const filteredRows = computed(() =>
   domainFilter.value === 'all'
     ? rows.value
@@ -151,10 +150,7 @@ function parseProjectId(raw: unknown): number {
   return Number.parseInt(String(Array.isArray(raw) ? raw[0] : raw), 10)
 }
 
-async function loadListFor(
-  nextProjectId = projectId.value,
-  nextSelectedKey = selectedKey.value,
-): Promise<void> {
+async function loadListFor(nextProjectId = projectId.value): Promise<void> {
   if (!nextProjectId || Number.isNaN(nextProjectId)) return
   loading.value = true
   error.value = null
@@ -163,15 +159,8 @@ async function loadListFor(
       project_id: nextProjectId,
     })
     rows.value = payload.presets.map((preset) => ({ ...preset, id: preset.key }))
-    const key =
-      nextSelectedKey ||
-      rows.value.find((row) => row.domain === 'engineering')?.key ||
-      rows.value[0]?.key
-    if (key) {
-      await loadDetailFor(key, nextProjectId)
-      if (nextSelectedKey) detailOpen.value = true
-    }
-    else selected.value = null
+    selected.value = null
+    detailOpen.value = false
   } catch (err) {
     error.value = formatApiError(err, 'failed to load agent presets')
   } finally {
@@ -200,6 +189,7 @@ async function loadDetailFor(key: string, nextProjectId = projectId.value): Prom
 
 async function selectPreset(row: PresetRow): Promise<void> {
   detailOpen.value = true
+  await loadDetailFor(row.key)
   await router.replace({
     query: {
       ...route.query,
@@ -210,9 +200,16 @@ async function selectPreset(row: PresetRow): Promise<void> {
 
 function setDomain(value: string | number): void {
   domainFilter.value = String(value)
-  if (filteredRows.value.length === 0) return
-  if (!filteredRows.value.some((row) => row.key === selectedKey.value)) {
-    void selectPreset(filteredRows.value[0])
+  const currentSelectedKey = selected.value?.preset.summary.key ?? ''
+  if (
+    (currentSelectedKey || detailOpen.value) &&
+    !filteredRows.value.some((row) => row.key === currentSelectedKey)
+  ) {
+    selected.value = null
+    detailOpen.value = false
+    const query = { ...route.query }
+    delete query.preset
+    void router.replace({ query })
   }
 }
 
@@ -231,14 +228,8 @@ function domainTone(
 onMounted(() => loadListFor())
 onBeforeRouteUpdate((to) => {
   const nextProjectId = parseProjectId(to.params.id)
-  const nextSelectedKey = String(to.query.preset ?? '')
   if (nextProjectId !== projectId.value) {
-    void loadListFor(nextProjectId, nextSelectedKey)
-    return
-  }
-  if (nextSelectedKey) {
-    detailOpen.value = true
-    void loadDetailFor(nextSelectedKey, nextProjectId)
+    void loadListFor(nextProjectId)
   }
 })
 </script>
@@ -289,7 +280,7 @@ onBeforeRouteUpdate((to) => {
         :items="filteredRows"
         :columns="columns"
         :loading="loading"
-        :selected-id="selected?.preset.summary.key"
+        :selected-id="detailOpen ? selected?.preset.summary.key : null"
         max-height="calc(100vh - 22rem)"
         aria-label="Agent presets"
         empty-message="No agent presets — presets ship with StackOS core and enabled plugins."

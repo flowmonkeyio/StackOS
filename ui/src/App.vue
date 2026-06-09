@@ -68,6 +68,10 @@ function toggleTheme(): void {
   }
 }
 
+function onDrawerKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && drawerOpen.value) closeDrawer()
+}
+
 onMounted(() => {
   try {
     const stored = localStorage.getItem('cs:theme')
@@ -76,6 +80,7 @@ onMounted(() => {
     /* ignore */
   }
   applyTheme()
+  window.addEventListener('keydown', onDrawerKeydown)
   refreshPluginsForProject(currentProjectId.value)
 })
 
@@ -85,6 +90,7 @@ const removeCatalogRefreshHook = router.afterEach((to) => {
 
 onBeforeUnmount(() => {
   removeCatalogRefreshHook()
+  window.removeEventListener('keydown', onDrawerKeydown)
 })
 
 const projectNavSections = computed<StackOsNavSection[]>(() => {

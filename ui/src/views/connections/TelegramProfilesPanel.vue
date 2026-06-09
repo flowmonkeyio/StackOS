@@ -95,13 +95,12 @@ defineEmits<{
       v-else-if="telegramProfiles.length > 0"
       section
       aria-label="Telegram profile list"
-      :padded="false"
     >
       <ul class="divide-y divide-border-subtle">
         <li
           v-for="profile in telegramProfiles"
           :key="profile.profile_ref"
-          class="px-4 py-3"
+          class="py-3"
         >
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div class="flex min-w-0 items-center gap-3 lg:flex-1">

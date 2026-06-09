@@ -252,10 +252,7 @@ onMounted(load)
         </DataTable>
       </section>
 
-      <UiCard
-        section
-        :padded="false"
-      >
+      <UiCard section>
         <template #header>
           <h3 class="t-h3 text-fg-strong">
             Setup &amp; inventory
@@ -273,7 +270,7 @@ onMounted(load)
             <li>
               <RouterLink
                 :to="`${base}/plugins`"
-                class="focus-ring-inset flex items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
+                class="focus-ring-inset -mx-2.5 flex items-center justify-between gap-3 rounded-sm px-2.5 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
               >
                 <span class="text-fg-muted">Enabled plugins</span>
                 <span class="font-medium tabular-nums text-fg-strong">{{ enabledPlugins.length }}</span>
@@ -282,7 +279,7 @@ onMounted(load)
             <li>
               <RouterLink
                 :to="`${base}/workflow-templates`"
-                class="focus-ring-inset flex items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
+                class="focus-ring-inset -mx-2.5 flex items-center justify-between gap-3 rounded-sm px-2.5 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
               >
                 <span class="text-fg-muted">Workflow templates</span>
                 <span class="font-medium tabular-nums text-fg-strong">{{ templates }}</span>
@@ -291,7 +288,7 @@ onMounted(load)
             <li>
               <RouterLink
                 :to="`${base}/resources`"
-                class="focus-ring-inset flex items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
+                class="focus-ring-inset -mx-2.5 flex items-center justify-between gap-3 rounded-sm px-2.5 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
               >
                 <span class="text-fg-muted">Resource records</span>
                 <span class="font-medium tabular-nums text-fg-strong">{{ resourceTotal }}</span>
@@ -300,7 +297,7 @@ onMounted(load)
             <li>
               <RouterLink
                 :to="`${base}/connections`"
-                class="focus-ring-inset flex items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
+                class="focus-ring-inset -mx-2.5 flex items-center justify-between gap-3 rounded-sm px-2.5 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
               >
                 <span class="text-fg-muted">Connections</span>
                 <span class="font-medium tabular-nums text-fg-strong">{{ connections }}</span>
@@ -309,7 +306,7 @@ onMounted(load)
             <li>
               <RouterLink
                 :to="`${base}/schedules`"
-                class="focus-ring-inset flex items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
+                class="focus-ring-inset -mx-2.5 flex items-center justify-between gap-3 rounded-sm px-2.5 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
               >
                 <span class="text-fg-muted">Active schedules</span>
                 <span class="font-medium tabular-nums text-fg-strong">{{ activeSchedules.length }}</span>
@@ -318,7 +315,7 @@ onMounted(load)
             <li>
               <RouterLink
                 :to="`${base}/cost-budget`"
-                class="focus-ring-inset flex items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
+                class="focus-ring-inset -mx-2.5 flex items-center justify-between gap-3 rounded-sm px-2.5 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
               >
                 <span class="text-fg-muted">Budgets</span>
                 <span class="font-medium tabular-nums text-fg-strong">{{ activeBudgets.length }}</span>
@@ -327,7 +324,7 @@ onMounted(load)
             <li>
               <RouterLink
                 :to="`${base}/action-calls`"
-                class="focus-ring-inset flex items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
+                class="focus-ring-inset -mx-2.5 flex items-center justify-between gap-3 rounded-sm px-2.5 py-2.5 transition-colors duration-fast hover:bg-bg-surface-alt"
               >
                 <span class="text-fg-muted">Run-plan audit rows</span>
                 <span class="font-medium tabular-nums text-fg-strong">{{ runPlans }}</span>

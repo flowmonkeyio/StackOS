@@ -102,7 +102,6 @@ defineEmits<{
       <UiCard
         section
         aria-label="Communication profiles"
-        :padded="false"
       >
         <template #header>
           <h4 class="t-h3 text-fg-strong">
@@ -116,7 +115,6 @@ defineEmits<{
           icon="users"
           title="No profiles configured"
           description="Profiles bind provider identities to policy. Agents and operators register them through StackOS operations."
-          class="px-4"
         />
         <ul
           v-else
@@ -125,7 +123,7 @@ defineEmits<{
           <li
             v-for="profile in profiles"
             :key="profile.profile_ref"
-            class="px-4 py-3"
+            class="py-3"
           >
             <div class="flex min-w-0 flex-wrap items-center gap-2">
               <h5 class="min-w-0 truncate text-sm font-medium text-fg-strong">
@@ -155,7 +153,6 @@ defineEmits<{
       <UiCard
         section
         aria-label="Communication surfaces"
-        :padded="false"
       >
         <template #header>
           <h4 class="t-h3 text-fg-strong">
@@ -169,7 +166,6 @@ defineEmits<{
           icon="megaphone"
           title="No surfaces configured"
           description="Surfaces describe where messages can be read or sent, with audience and data scope."
-          class="px-4"
         />
         <ul
           v-else
@@ -178,7 +174,7 @@ defineEmits<{
           <li
             v-for="surface in surfaces"
             :key="surface.surface_ref"
-            class="px-4 py-3"
+            class="py-3"
           >
             <div class="flex min-w-0 flex-wrap items-center gap-2">
               <h5 class="min-w-0 truncate text-sm font-medium text-fg-strong">
@@ -211,7 +207,6 @@ defineEmits<{
       <UiCard
         section
         aria-label="Named targets"
-        :padded="false"
       >
         <template #header>
           <h4 class="t-h3 text-fg-strong">
@@ -225,7 +220,6 @@ defineEmits<{
           icon="arrow-right"
           title="No named targets configured"
           description="Named targets are pre-approved send destinations agents can use without raw channel access."
-          class="px-4"
         />
         <ul
           v-else
@@ -234,7 +228,7 @@ defineEmits<{
           <li
             v-for="target in targets"
             :key="target.target_ref"
-            class="px-4 py-3"
+            class="py-3"
           >
             <div class="flex min-w-0 flex-wrap items-center gap-2">
               <h5 class="min-w-0 truncate text-sm font-medium text-fg-strong">
@@ -258,7 +252,6 @@ defineEmits<{
       <UiCard
         section
         aria-label="Ingress routes"
-        :padded="false"
       >
         <template #header>
           <h4 class="t-h3 text-fg-strong">
@@ -266,7 +259,7 @@ defineEmits<{
           </h4>
           <UiBadge>{{ ingressStatus?.routes?.length ?? 0 }}</UiBadge>
         </template>
-        <div class="px-4 py-3">
+        <div class="py-1">
           <div class="flex flex-wrap items-center gap-1.5">
             <UiBadge
               :tone="ingressStatus?.ready ? 'success' : 'warning'"
@@ -282,12 +275,12 @@ defineEmits<{
         </div>
         <ul
           v-if="ingressStatus?.routes?.length"
-          class="divide-y divide-border-subtle border-t border-subtle"
+          class="mt-3 divide-y divide-border-subtle border-t border-subtle"
         >
           <li
             v-for="route in ingressStatus.routes"
             :key="`${route.provider_key}:${route.profile_key}`"
-            class="px-4 py-3"
+            class="py-3"
           >
             <div class="flex min-w-0 flex-wrap items-center gap-2">
               <h5 class="min-w-0 truncate text-sm font-medium text-fg-strong">

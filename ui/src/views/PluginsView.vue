@@ -62,9 +62,8 @@ onMounted(load)
         section
         :aria-label="plugin.name"
         class="flex flex-col"
-        :padded="false"
       >
-        <div class="flex flex-1 flex-col p-4">
+        <div class="flex flex-1 flex-col">
           <div class="flex items-start justify-between gap-3">
             <div class="flex min-w-0 items-center gap-3">
               <span
@@ -96,7 +95,7 @@ onMounted(load)
             {{ plugin.description }}
           </p>
         </div>
-        <dl class="flex items-center gap-4 border-t border-subtle px-4 py-2.5 text-xs text-fg-muted">
+        <dl class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-subtle pt-3 text-xs text-fg-muted">
           <div class="flex items-baseline gap-1.5">
             <dd class="font-medium tabular-nums text-fg-default">{{ catalogStore.capabilitiesFor(plugin.slug).length }}</dd>
             <dt>capabilities</dt>

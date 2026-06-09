@@ -6,7 +6,7 @@
   to the edges, with its own padding handling.
 -->
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   /** Show resting elevation (default true). */
   elevated?: boolean;
   /** Apply default body padding (default true). */
@@ -18,7 +18,11 @@ defineProps<{
   /** Render as <section> with aria-labelledby pointing at slot[header]. */
   section?: boolean;
   ariaLabel?: string;
-}>();
+}>(), {
+  elevated: true,
+  padded: true,
+  section: false,
+});
 </script>
 
 <template>
@@ -28,7 +32,7 @@ defineProps<{
     :class="[
       'ui-card rounded-lg border bg-bg-surface',
       variant === 'subtle' ? 'border-subtle bg-bg-surface-alt' : 'border-default',
-      elevated !== false && 'shadow-xs',
+      elevated && 'shadow-xs',
     ]"
   >
     <header
@@ -43,7 +47,7 @@ defineProps<{
     <div
       :class="[
         'ui-card__body',
-        padded !== false && (density === 'comfortable' ? 'p-5' : 'p-4'),
+        padded && (density === 'comfortable' ? 'p-5' : 'p-4'),
       ]"
     >
       <slot />

@@ -120,6 +120,14 @@ describe('AgentPresetsView', () => {
 
     expect(wrapper.text()).toContain('Agent presets')
     expect(wrapper.text()).toContain('Engineering')
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.textContent ?? '').not.toContain('project-specific setup required')
+    expect(
+      vi.mocked(globalThis.fetch).mock.calls.some(
+        ([url]) => String(url) === '/api/v1/operations/agentPreset.describe/call',
+      ),
+    ).toBe(false)
+
     await wrapper
       .findAll('tr')
       .find((row) => row.text().includes('Planning Agent'))
@@ -134,6 +142,34 @@ describe('AgentPresetsView', () => {
 
     const tabLabels = wrapper.findAll('[role="tab"]').map((tab) => tab.text())
     expect(tabLabels.slice(0, 4)).toEqual(['All', 'Engineering', 'Communications', 'SEO'])
+  })
+
+  it('does not auto-open the detail drawer from a preset query on page load', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/agent-presets', component: AgentPresetsView }],
+    })
+    await router.push('/projects/1/agent-presets?preset=communications.workflow.inbox-review')
+    await router.isReady()
+
+    const wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router] } })
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Planning Agent'))
+    expect(
+      vi.mocked(globalThis.fetch).mock.calls.some(
+        ([url]) => String(url) === '/api/v1/operations/agentPreset.describe/call',
+      ),
+    ).toBe(false)
+
+    await wrapper
+      .findAll('tr')
+      .find((row) => row.text().includes('Planning Agent'))
+      ?.trigger('click')
+    await vi.waitFor(() =>
+      expect(document.body.textContent ?? '').toContain('project-specific setup required'),
+    )
+
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
   })
 })
 

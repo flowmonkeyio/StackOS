@@ -98,7 +98,6 @@ function connectionActionKey(credentialRef: string, action: string): string {
         :key="group.providerKey"
         section
         :aria-label="serviceName(group)"
-        :padded="false"
       >
         <template #header>
           <div class="flex min-w-0 items-center gap-3">
@@ -156,7 +155,7 @@ function connectionActionKey(credentialRef: string, action: string): string {
           <li
             v-for="connection in group.connections"
             :key="connection.credential_ref"
-            class="px-4 py-3"
+            class="py-3"
           >
             <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
               <div class="min-w-0 xl:flex-1">
