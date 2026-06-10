@@ -431,9 +431,10 @@ deferred `utils.video.generate` contract.
 
 ### 1. Seedance 2.0 — ByteDance
 
-- Status: public API on BytePlus ModelArk; organization/model activation and
-  terms acceptance are required before production use. #1 on both arenas for
-  text-to-video and #1-2 for image-to-video.
+- Status: deferred/build-gated for StackOS v1. Public API on BytePlus ModelArk;
+  organization/model activation, terms acceptance, active billing, and a stored
+  StackOS credential are required before connector delivery starts. #1 on both
+  arenas for text-to-video and #1-2 for image-to-video.
 - API shape: async task API on the ap-southeast ModelArk data plane:
   `POST /contents/generations/tasks`, `GET /contents/generations/tasks/{id}`,
   list tasks, and delete/cancel task. Connector must submit, poll/retrieve,
@@ -521,12 +522,13 @@ deferred `utils.video.generate` contract.
 
 ### 3. Veo 3.1 — Google
 
-- Status: Google docs mark Veo 3.1 / 3.1 Fast / 3.1 Lite as preview models;
-  Veo 3 and Veo 2 are the stable Gemini API model families. Preview model
-  behavior/pricing can change, so first delivery should explicitly choose
-  whether to expose only stable `veo-3.0-*`/`veo-2.0-*` or include the
-  preview `veo-3.1-*` surface. #4 on LMArena text-to-video; strongest Western
-  entry on image-to-video boards.
+- Status: deferred/build-gated for StackOS v1. Google docs mark Veo 3.1 /
+  3.1 Fast / 3.1 Lite as preview models; Veo 3 and Veo 2 are the stable
+  Gemini API model families. Connector delivery requires operator confirmation
+  of paid-tier billing and a stored StackOS credential, plus an explicit v1
+  scope decision on whether to expose only stable `veo-3.0-*`/`veo-2.0-*` or
+  include the preview `veo-3.1-*` surface. #4 on LMArena text-to-video;
+  strongest Western entry on image-to-video boards.
 - API shape: asynchronous Gemini `predictLongRunning`; connector must submit,
   poll until `done=true`, download output, and persist before the 2-day
   server-side retention window expires.

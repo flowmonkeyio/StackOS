@@ -55,6 +55,11 @@
   validation, priced Seedream 5 Lite / 4.5 / 4.0 budget estimates, and
   successful-output cost reconciliation. BytePlus `auth.test` is non-billable
   format-only because ModelArk does not document a free media credential probe.
+- Documented the video-provider gates for the media generation program:
+  BytePlus Seedance and Google Veo remain deferred/build-gated until operator
+  account, billing, model activation/scope, and stored-credential checks are
+  complete; Kling is explicitly deferred until official rendered docs or
+  operator in-console evidence verify the executable API contract.
 
 ## 1.0.0 - 2026-05-26
 
