@@ -13,17 +13,24 @@ generated-assets refs instead of provider URLs.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
 import re
 from pathlib import Path
+from time import monotonic
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 import httpx
 
 from stackos.integrations._base import BaseIntegration, IntegrationCallResult
+from stackos.integrations._media import (
+    data_url_payload,
+    download_generated_media,
+    write_generated_media,
+)
 from stackos.mcp.errors import IntegrationDownError
 
 
@@ -40,6 +47,7 @@ class BytePlusArkIntegration(BaseIntegration):
         "eu-west-1": "https://ark.eu-west.bytepluses.com/api/v3",
     }
     DEFAULT_SEEDREAM_MODEL = "seedream-5-0-lite-260128"
+    DEFAULT_SEEDANCE_MODEL = "dreamina-seedance-2-0-260128"
     SEEDREAM_MODELS: ClassVar[frozenset[str]] = frozenset(
         {
             "seedream-5-0-lite-260128",
@@ -47,6 +55,22 @@ class BytePlusArkIntegration(BaseIntegration):
             "seedream-4-0-250828",
         }
     )
+    SEEDANCE_MODELS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "dreamina-seedance-2-0-260128",
+            "dreamina-seedance-2-0-fast-260128",
+            "seedance-1-5-pro-251215",
+            "seedance-1-0-pro-250528",
+            "seedance-1-0-pro-fast-251015",
+        }
+    )
+    SEEDANCE_DURATION_RANGES: ClassVar[dict[str, tuple[int, int]]] = {
+        "dreamina-seedance-2-0-260128": (4, 15),
+        "dreamina-seedance-2-0-fast-260128": (4, 15),
+        "seedance-1-5-pro-251215": (4, 12),
+        "seedance-1-0-pro-250528": (2, 12),
+        "seedance-1-0-pro-fast-251015": (2, 12),
+    }
     EU_WEST_MODELS: ClassVar[frozenset[str]] = frozenset({"seedream-5-0-lite-260128"})
     SIZE_KEYWORDS_BY_MODEL: ClassVar[dict[str, frozenset[str]]] = {
         "seedream-5-0-lite-260128": frozenset({"2K", "3K", "4K"}),
@@ -56,6 +80,16 @@ class BytePlusArkIntegration(BaseIntegration):
     SEQUENTIAL_IMAGE_GENERATION_VALUES: ClassVar[frozenset[str]] = frozenset({"disabled", "auto"})
     OUTPUT_FORMATS: ClassVar[frozenset[str]] = frozenset({"jpeg", "png"})
     INPUT_IMAGE_FORMATS: ClassVar[frozenset[str]] = frozenset({"jpg", "jpeg", "png", "webp"})
+    SEEDANCE_INPUT_IMAGE_FORMATS: ClassVar[frozenset[str]] = frozenset(
+        {"jpg", "jpeg", "png", "webp", "bmp"}
+    )
+    SEEDANCE_RATIOS: ClassVar[frozenset[str]] = frozenset(
+        {"16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"}
+    )
+    SEEDANCE_RESOLUTIONS: ClassVar[frozenset[str]] = frozenset({"480p", "720p", "1080p"})
+    SEEDANCE_TERMINAL_STATUSES: ClassVar[frozenset[str]] = frozenset(
+        {"succeeded", "failed", "cancelled", "expired"}
+    )
     MAX_INPUT_IMAGES = 14
     MAX_INPUT_IMAGE_BYTES = 30_000_000
     CUSTOM_SIZE_MIN_PIXELS_BY_MODEL: ClassVar[dict[str, int]] = {
@@ -103,9 +137,10 @@ class BytePlusArkIntegration(BaseIntegration):
         }
 
     def _estimate_cost_usd(self, op: str, **kwargs: Any) -> float:
-        del op
         body = kwargs.get("json")
         if not isinstance(body, dict):
+            return 0.0
+        if op.startswith("video."):
             return 0.0
         return self.estimate_image_cost_usd(model=str(body.get("model") or ""))
 
@@ -272,6 +307,276 @@ class BytePlusArkIntegration(BaseIntegration):
             data=data,
             cost_usd=result.cost_usd,
             duration_ms=result.duration_ms,
+        )
+
+    async def generate_seedance_video(
+        self,
+        *,
+        prompt: str | None,
+        model: str = DEFAULT_SEEDANCE_MODEL,
+        mode: str = "text-to-video",
+        region: str = DEFAULT_REGION,
+        resolution: str = "720p",
+        ratio: str = "16:9",
+        duration: int = 5,
+        input_image_paths: list[Path] | None = None,
+        reference_video_urls: list[str] | None = None,
+        reference_audio_urls: list[str] | None = None,
+        generate_audio: bool | None = None,
+        watermark: bool | None = None,
+        seed: int | None = None,
+        return_last_frame: bool | None = None,
+        safety_identifier: str | None = None,
+        priority: int | None = None,
+        poll_interval_seconds: float = 10.0,
+        poll_timeout_seconds: float = 1800.0,
+    ) -> IntegrationCallResult:
+        content = self._seedance_content(
+            prompt=prompt,
+            mode=mode,
+            image_paths=input_image_paths or [],
+            reference_video_urls=reference_video_urls or [],
+            reference_audio_urls=reference_audio_urls or [],
+        )
+        body: dict[str, Any] = {
+            "model": model,
+            "content": content,
+            "resolution": resolution,
+            "ratio": ratio,
+            "duration": duration,
+        }
+        if generate_audio is not None:
+            body["generate_audio"] = generate_audio
+        if watermark is not None:
+            body["watermark"] = watermark
+        if seed is not None:
+            body["seed"] = seed
+        if return_last_frame is not None:
+            body["return_last_frame"] = return_last_frame
+        if safety_identifier is not None:
+            body["safety_identifier"] = safety_identifier
+        if priority is not None:
+            body["priority"] = priority
+        submitted = await self.call(
+            op="video.generate",
+            method="POST",
+            url=f"{self.base_url_for_region(region)}/contents/generations/tasks",
+            json_body=body,
+            headers=self._auth_headers(),
+            request_log_body={
+                "model": model,
+                "mode": mode,
+                "prompt": prompt,
+                "region": region,
+                "resolution": resolution,
+                "ratio": ratio,
+                "duration": duration,
+                "input_image_count": len(input_image_paths or []),
+                "reference_video_count": len(reference_video_urls or []),
+                "reference_audio_count": len(reference_audio_urls or []),
+                "generate_audio": generate_audio,
+                "watermark": watermark,
+                "seed": seed,
+                "return_last_frame": return_last_frame,
+                "safety_identifier": safety_identifier,
+                "priority": priority,
+            },
+        )
+        task_id = self._seedance_task_id(submitted.data)
+        poll_result = await self._poll_seedance_task(
+            task_id=task_id,
+            region=region,
+            poll_interval_seconds=poll_interval_seconds,
+            poll_timeout_seconds=poll_timeout_seconds,
+        )
+        persisted = await self._persist_seedance_video_response(
+            poll_result.data,
+            task_id=task_id,
+            mode=mode,
+        )
+        return IntegrationCallResult(
+            data=persisted,
+            cost_usd=submitted.cost_usd + poll_result.cost_usd,
+            duration_ms=submitted.duration_ms + poll_result.duration_ms,
+        )
+
+    def _seedance_content(
+        self,
+        *,
+        prompt: str | None,
+        mode: str,
+        image_paths: list[Path],
+        reference_video_urls: list[str],
+        reference_audio_urls: list[str],
+    ) -> list[dict[str, Any]]:
+        content: list[dict[str, Any]] = []
+        if prompt:
+            content.append({"type": "text", "text": prompt})
+        if mode == "text-to-video":
+            return content
+        if mode == "image-to-video":
+            if len(image_paths) != 1:
+                raise IntegrationDownError(
+                    "BytePlus Seedance image-to-video requires exactly one first-frame image",
+                    data={"vendor": self.vendor, "count": len(image_paths)},
+                )
+            content.append(self._seedance_image_content(image_paths[0], role="first_frame"))
+        elif mode == "first-last-frame":
+            if len(image_paths) != 2:
+                raise IntegrationDownError(
+                    "BytePlus Seedance first-last-frame mode requires two images",
+                    data={"vendor": self.vendor, "count": len(image_paths)},
+                )
+            content.append(self._seedance_image_content(image_paths[0], role="first_frame"))
+            content.append(self._seedance_image_content(image_paths[1], role="last_frame"))
+        elif mode == "reference-to-video":
+            for path in image_paths:
+                content.append(self._seedance_image_content(path, role="reference_image"))
+            for url in reference_video_urls:
+                content.append(
+                    {"type": "video_url", "video_url": {"url": url}, "role": "reference_video"}
+                )
+            for url in reference_audio_urls:
+                content.append(
+                    {"type": "audio_url", "audio_url": {"url": url}, "role": "reference_audio"}
+                )
+            if len(content) <= (1 if prompt else 0):
+                raise IntegrationDownError(
+                    "BytePlus Seedance reference-to-video requires at least one media reference",
+                    data={"vendor": self.vendor},
+                )
+        return content
+
+    def _seedance_image_content(self, path: Path, *, role: str) -> dict[str, Any]:
+        self.ensure_seedance_image_preflight(path)
+        data_url, _, _ = data_url_payload(
+            path,
+            allowed_suffixes=self.SEEDANCE_INPUT_IMAGE_FORMATS,
+            max_bytes=self.MAX_INPUT_IMAGE_BYTES,
+            vendor=self.vendor,
+        )
+        return {"type": "image_url", "image_url": {"url": data_url}, "role": role}
+
+    @classmethod
+    def ensure_seedance_image_preflight(cls, path: Path) -> None:
+        data_url_payload(
+            path,
+            allowed_suffixes=cls.SEEDANCE_INPUT_IMAGE_FORMATS,
+            max_bytes=cls.MAX_INPUT_IMAGE_BYTES,
+            vendor=cls.vendor,
+        )
+
+    async def _poll_seedance_task(
+        self,
+        *,
+        task_id: str,
+        region: str,
+        poll_interval_seconds: float,
+        poll_timeout_seconds: float,
+    ) -> IntegrationCallResult:
+        deadline = monotonic() + poll_timeout_seconds
+        poll_result: IntegrationCallResult | None = None
+        while monotonic() <= deadline:
+            poll_result = await self.call(
+                op="video.poll",
+                method="GET",
+                url=f"{self.base_url_for_region(region)}/contents/generations/tasks/{task_id}",
+                headers=self._auth_headers(),
+                request_log_body={"task_id": task_id, "region": region},
+            )
+            if not isinstance(poll_result.data, dict):
+                raise IntegrationDownError(
+                    "BytePlus Seedance poll returned a non-JSON response",
+                    data={"vendor": self.vendor, "task_id": task_id},
+                )
+            status = str(poll_result.data.get("status") or "")
+            if status in self.SEEDANCE_TERMINAL_STATUSES:
+                break
+            await asyncio.sleep(poll_interval_seconds)
+        else:
+            raise IntegrationDownError(
+                "BytePlus Seedance video generation timed out",
+                data={"vendor": self.vendor, "task_id": task_id},
+            )
+        assert poll_result is not None
+        status = str(poll_result.data.get("status") or "")
+        if status != "succeeded":
+            raise IntegrationDownError(
+                f"BytePlus Seedance video generation ended with status {status or 'unknown'}",
+                data={
+                    "vendor": self.vendor,
+                    "task_id": task_id,
+                    "status": status,
+                    "error": poll_result.data.get("error"),
+                },
+            )
+        return poll_result
+
+    async def _persist_seedance_video_response(
+        self,
+        data: dict[str, Any],
+        *,
+        task_id: str,
+        mode: str,
+    ) -> dict[str, Any]:
+        content = data.get("content")
+        if not isinstance(content, dict) or not isinstance(content.get("video_url"), str):
+            raise IntegrationDownError(
+                "BytePlus Seedance task completed without a video_url",
+                data={"vendor": self.vendor, "task_id": task_id},
+            )
+        raw, ext = await download_generated_media(
+            self,
+            str(content["video_url"]),
+            fallback_ext="mp4",
+            empty_message="BytePlus Seedance returned an empty video download",
+        )
+        assert self._asset_dir is not None
+        item = {
+            **{key: value for key, value in content.items() if key != "video_url"},
+            **write_generated_media(
+                raw,
+                asset_dir=self._asset_dir,
+                asset_url_prefix=self._asset_url_prefix,
+                subdir="byteplus-ark",
+                prefix="byteplus-seedance-video",
+                ext=ext,
+            ),
+            "source_model": str(data.get("model") or self.DEFAULT_SEEDANCE_MODEL),
+            "task_id": task_id,
+            "mode": mode,
+        }
+        out: dict[str, Any] = {
+            "task_id": task_id,
+            "status": "succeeded",
+            "model": str(data.get("model") or self.DEFAULT_SEEDANCE_MODEL),
+            "data": [item],
+        }
+        if isinstance(data.get("usage"), dict):
+            out["usage"] = data["usage"]
+        for key in (
+            "seed",
+            "resolution",
+            "ratio",
+            "duration",
+            "frames",
+            "framespersecond",
+            "generate_audio",
+            "service_tier",
+            "execution_expires_after",
+            "priority",
+        ):
+            if key in data:
+                out[key] = data[key]
+        return out
+
+    @staticmethod
+    def _seedance_task_id(data: Any) -> str:
+        if isinstance(data, dict) and isinstance(data.get("id"), str):
+            return data["id"]
+        raise IntegrationDownError(
+            "BytePlus Seedance generation did not return a task id",
+            data={"vendor": BytePlusArkIntegration.vendor},
         )
 
     @classmethod
