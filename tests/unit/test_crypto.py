@@ -282,7 +282,7 @@ def test_rotate_seed_aborts_on_decrypt_failure(tmp_path: Path) -> None:
             "id": 1,
             "project_id": 1,
             "kind": "firecrawl",
-            "encrypted_payload": ct[:-1] + b"\x00",  # tampered tail
+            "encrypted_payload": ct[:-1] + bytes([ct[-1] ^ 0x01]),  # tampered tail
             "nonce": n,
         }
     ]
