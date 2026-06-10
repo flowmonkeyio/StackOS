@@ -48,6 +48,7 @@ from stackos.actions.repository import (
     ActionRepository,
     ActionValidationOut,
 )
+from stackos.actions.reve_images import ReveImagesActionConnector
 from stackos.actions.salesforce import SalesforceActionConnector
 from stackos.actions.salesloft import SalesloftActionConnector
 from stackos.actions.serper import SerperActionConnector
@@ -62,6 +63,7 @@ from stackos.actions.xai_imagine import XAIImagineActionConnector
 
 DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(XAIImagineActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(ReveImagesActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
@@ -127,6 +129,7 @@ __all__ = [
     "OutreachActionConnector",
     "PipedriveActionConnector",
     "RedditActionConnector",
+    "ReveImagesActionConnector",
     "SalesforceActionConnector",
     "SalesloftActionConnector",
     "SerperActionConnector",

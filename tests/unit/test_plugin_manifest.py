@@ -101,6 +101,8 @@ def test_builtin_plugin_manifests_validate() -> None:
     utils_providers = {provider.key: provider for provider in utils.providers}
     assert "openrouter" in utils_providers
     assert "xai-imagine" in utils_providers
+    assert "reve" in utils_providers
+    assert _auth_field_keys(utils_providers["reve"]) == ["api_key"]
     assert _auth_field_keys(utils_providers["openrouter"]) == [
         "api_key",
         "http_referer",
@@ -237,6 +239,37 @@ def test_builtin_plugin_manifests_validate() -> None:
         in xai_video_capabilities["unsupported_provider_features"]
     )
     assert "video editing endpoint" in xai_video_capabilities["unsupported_provider_features"]
+    reve_image_generate = utils_actions["reve.image.generate"]
+    assert reve_image_generate.provider == "reve"
+    assert reve_image_generate.config["connector"] == "reve"
+    assert reve_image_generate.config["operation"] == "image.create"
+    assert reve_image_generate.config["budget_kind"] == "reve"
+    assert reve_image_generate.input_schema["properties"]["prompt"]["maxLength"] == 2560
+    reve_generate_capabilities = reve_image_generate.config["capability_metadata"]
+    assert reve_generate_capabilities["execution"]["mode"] == "sync"
+    assert reve_generate_capabilities["pricing"]["base_credits"] == 18
+    assert "auto" in reve_generate_capabilities["limits"]["aspect_ratios"]
+    assert (
+        "postprocessing upscale/remove_background/fit_image/effect"
+        in reve_generate_capabilities["unsupported_provider_features"]
+    )
+    reve_image_edit = utils_actions["reve.image.edit"]
+    assert reve_image_edit.config["operation"] == "image.edit"
+    assert reve_image_edit.input_schema["properties"]["edit_instruction"]["maxLength"] == 2560
+    reve_edit_capabilities = reve_image_edit.config["capability_metadata"]
+    assert reve_edit_capabilities["limits"]["max_input_images"] == 1
+    assert reve_edit_capabilities["limits"]["max_input_image_bytes"] == 10_485_760
+    assert "max_total_input_image_bytes" not in reve_edit_capabilities["limits"]
+    assert reve_edit_capabilities["pricing"]["base_credits"]["fast"] == 5
+    reve_image_remix = utils_actions["reve.image.remix"]
+    assert reve_image_remix.config["operation"] == "image.remix"
+    reve_remix_capabilities = reve_image_remix.config["capability_metadata"]
+    assert reve_remix_capabilities["limits"]["max_input_images"] == 6
+    assert reve_remix_capabilities["limits"]["max_total_input_pixels"] == 32_000_000
+    assert "max_total_input_image_bytes" not in reve_remix_capabilities["limits"]
+    assert reve_remix_capabilities["models"]["reve-remix-fast@20251030"]["status"] == (
+        "Pinned fast remix version"
+    )
     assert "video-generation" in utils_providers
     assert _auth_field_keys(utils_providers["video-generation"]) == ["api_key"]
     video_generate = utils_actions["video.generate"]

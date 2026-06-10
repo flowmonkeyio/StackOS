@@ -26,6 +26,7 @@ from stackos.integrations.jina_reader import JinaReaderIntegration
 from stackos.integrations.openai_images import OpenAIImagesIntegration
 from stackos.integrations.openrouter import OpenRouterIntegration
 from stackos.integrations.reddit import RedditIntegration
+from stackos.integrations.reve_images import ReveImagesIntegration
 from stackos.integrations.serper import SerperIntegration
 from stackos.integrations.slack_bot import SlackBotIntegration
 from stackos.integrations.smtp import SmtpIntegration
@@ -44,6 +45,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "firecrawl": FirecrawlIntegration,
     "openai-images": OpenAIImagesIntegration,
     "xai-imagine": XAIImagineIntegration,
+    "reve": ReveImagesIntegration,
     "openrouter": OpenRouterIntegration,
     "reddit": RedditIntegration,
     "google-paa": GooglePaaIntegration,
@@ -84,6 +86,7 @@ __all__ = [
     "OpenAIImagesIntegration",
     "OpenRouterIntegration",
     "RedditIntegration",
+    "ReveImagesIntegration",
     "SerperIntegration",
     "SlackBotIntegration",
     "SmtpIntegration",

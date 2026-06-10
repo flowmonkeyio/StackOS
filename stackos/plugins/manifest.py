@@ -614,6 +614,45 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 },
             ),
             ProviderManifest(
+                key="reve",
+                name="Reve",
+                description="Reve image create, edit, and remix provider.",
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="Reve API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Store the Reve API key from api.reve.com. Reve does not "
+                        "document a free credential probe, so StackOS auth.test "
+                        "records credential storage format without making a billable "
+                        "image request."
+                    ),
+                    "docs": [
+                        "https://api.reve.com/console/docs",
+                        "https://api.reve.com/console/docs/create",
+                        "https://api.reve.com/console/docs/edit",
+                        "https://api.reve.com/console/docs/remix",
+                        "https://api.reve.com/console/pricing",
+                    ],
+                },
+            ),
+            ProviderManifest(
                 key="video-generation",
                 name="Video Generation",
                 description=(
@@ -1182,7 +1221,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "additionalProperties": False,
                     "required": ["prompt"],
                     "properties": {
-                        "prompt": {"type": "string", "minLength": 1},
+                        "prompt": {"type": "string", "minLength": 1, "maxLength": 2560},
                         "aspect_ratio": {
                             "type": "string",
                             "enum": [
@@ -1297,7 +1336,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "additionalProperties": False,
                     "required": ["prompt", "input_image_refs"],
                     "properties": {
-                        "prompt": {"type": "string", "minLength": 1},
+                        "prompt": {"type": "string", "minLength": 1, "maxLength": 2560},
                         "input_image_refs": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -1416,7 +1455,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "additionalProperties": False,
                     "required": ["prompt"],
                     "properties": {
-                        "prompt": {"type": "string", "minLength": 1},
+                        "prompt": {"type": "string", "minLength": 1, "maxLength": 2560},
                         "mode": {
                             "type": "string",
                             "enum": ["text-to-video", "image-to-video", "reference-to-video"],
@@ -1522,6 +1561,328 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "https://docs.x.ai/developers/model-capabilities/video/reference-to-video",
                         "https://docs.x.ai/developers/models",
                         "https://docs.x.ai/developers/pricing",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="reve.image.generate",
+                name="Generate Reve Image",
+                description="Create and persist a Reve image from a text prompt.",
+                provider="reve",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1, "maxLength": 2560},
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": ["16:9", "9:16", "3:2", "2:3", "4:3", "3:4", "1:1", "auto"],
+                        },
+                        "version": {
+                            "type": "string",
+                            "enum": ["latest", "reve-create@20250915"],
+                        },
+                        "test_time_scaling": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 15,
+                        },
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "reve",
+                    "operation": "image.create",
+                    "requires_credential": True,
+                    "budget_kind": "reve",
+                    "enforce_budget": True,
+                    "default_version": "latest",
+                    "capability_metadata": {
+                        "modalities": {"input": ["text"], "output": ["image"]},
+                        "modes": ["text-to-image"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/image/create",
+                            "response_format": "application/json base64 PNG",
+                            "persistence": (
+                                "Reve JSON image output is decoded, written to generated "
+                                "assets, and registered as a generic image artifact during "
+                                "repository-backed execution."
+                            ),
+                        },
+                        "limits": {
+                            "prompt_max_chars": 2560,
+                            "aspect_ratios": [
+                                "16:9",
+                                "9:16",
+                                "3:2",
+                                "2:3",
+                                "4:3",
+                                "3:4",
+                                "1:1",
+                                "auto",
+                            ],
+                            "test_time_scaling": [1, 15],
+                        },
+                        "models": {
+                            "latest": {"status": "Reve default create version"},
+                            "reve-create@20250915": {"status": "Pinned create version"},
+                        },
+                        "pricing": {
+                            "base_credits": 18,
+                            "credit_pack": "$10 = 7,500 credits",
+                            "test_time_scaling": "multiplies base credit cost",
+                        },
+                        "safety": {
+                            "content_violation": (
+                                "Responses include content_violation and may return an "
+                                "empty image when content policy rejects output."
+                            )
+                        },
+                        "unsupported_provider_features": [
+                            "postprocessing upscale/remove_background/fit_image/effect",
+                            "binary image Accept response modes",
+                            "create fast is listed as coming soon",
+                        ],
+                        "docs": [
+                            "https://api.reve.com/console/docs",
+                            "https://api.reve.com/console/docs/create",
+                            "https://api.reve.com/console/pricing",
+                        ],
+                    },
+                    "docs": [
+                        "https://api.reve.com/console/docs/create",
+                        "https://api.reve.com/console/pricing",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="reve.image.edit",
+                name="Edit Reve Image",
+                description="Edit one generated-assets image through Reve.",
+                provider="reve",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["edit_instruction", "input_image_ref"],
+                    "properties": {
+                        "edit_instruction": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2560,
+                        },
+                        "input_image_ref": {
+                            "type": "string",
+                            "description": "Generated-assets image ref sent as base64 JSON.",
+                        },
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": ["16:9", "9:16", "3:2", "2:3", "4:3", "3:4", "1:1", "auto"],
+                        },
+                        "version": {
+                            "type": "string",
+                            "enum": [
+                                "latest",
+                                "latest-fast",
+                                "reve-edit@20250915",
+                                "reve-edit-fast@20251030",
+                            ],
+                        },
+                        "test_time_scaling": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 15,
+                        },
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "reve",
+                    "operation": "image.edit",
+                    "requires_credential": True,
+                    "budget_kind": "reve",
+                    "enforce_budget": True,
+                    "default_version": "latest",
+                    "capability_metadata": {
+                        "modalities": {"input": ["text", "image"], "output": ["image"]},
+                        "modes": ["image-to-image", "instructional-edit"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/image/edit",
+                            "response_format": "application/json base64 PNG",
+                            "persistence": (
+                                "Reve JSON image output is decoded and persisted before "
+                                "returning artifact refs to agents."
+                            ),
+                        },
+                        "limits": {
+                            "prompt_max_chars": 2560,
+                            "max_input_images": 1,
+                            "max_input_image_bytes": 10485760,
+                            "input_image_formats": ["webp", "jpeg", "png", "gif", "tiff"],
+                            "input_image_bytes_source": "StackOS preflight safety cap",
+                            "input_image_formats_source": "StackOS preflight-supported formats",
+                            "aspect_ratios": [
+                                "16:9",
+                                "9:16",
+                                "3:2",
+                                "2:3",
+                                "4:3",
+                                "3:4",
+                                "1:1",
+                                "auto",
+                            ],
+                            "test_time_scaling": [1, 15],
+                        },
+                        "models": {
+                            "latest": {"status": "Reve default edit version"},
+                            "latest-fast": {"status": "Fast edit alias"},
+                            "reve-edit@20250915": {"status": "Pinned edit version"},
+                            "reve-edit-fast@20251030": {"status": "Pinned fast edit version"},
+                        },
+                        "pricing": {
+                            "base_credits": {"standard": 30, "fast": 5},
+                            "credit_pack": "$10 = 7,500 credits",
+                            "test_time_scaling": "multiplies base credit cost",
+                        },
+                        "safety": {
+                            "content_violation": "Responses include content_violation metadata."
+                        },
+                        "unsupported_provider_features": [
+                            "postprocessing upscale/remove_background/fit_image/effect",
+                            "binary image Accept response modes",
+                            "mask/inpainting controls",
+                            "multiple edit input images",
+                        ],
+                        "docs": [
+                            "https://api.reve.com/console/docs",
+                            "https://api.reve.com/console/docs/edit",
+                            "https://api.reve.com/console/pricing",
+                        ],
+                    },
+                    "docs": [
+                        "https://api.reve.com/console/docs/edit",
+                        "https://api.reve.com/console/pricing",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="reve.image.remix",
+                name="Remix Reve Image",
+                description="Create a Reve image from a prompt and one to six reference images.",
+                provider="reve",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt", "input_image_refs"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1, "maxLength": 2560},
+                        "input_image_refs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "maxItems": 6,
+                            "description": "Generated-assets refs sent as base64 JSON.",
+                        },
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": ["16:9", "9:16", "3:2", "2:3", "4:3", "3:4", "1:1", "auto"],
+                        },
+                        "version": {
+                            "type": "string",
+                            "enum": [
+                                "latest",
+                                "latest-fast",
+                                "reve-remix@20250915",
+                                "reve-remix-fast@20251030",
+                            ],
+                        },
+                        "test_time_scaling": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 15,
+                        },
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "reve",
+                    "operation": "image.remix",
+                    "requires_credential": True,
+                    "budget_kind": "reve",
+                    "enforce_budget": True,
+                    "default_version": "latest",
+                    "capability_metadata": {
+                        "modalities": {"input": ["text", "image"], "output": ["image"]},
+                        "modes": ["reference-to-image", "multi-image-remix"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/image/remix",
+                            "response_format": "application/json base64 PNG",
+                            "persistence": (
+                                "Reve JSON image output is decoded and persisted before "
+                                "returning artifact refs to agents."
+                            ),
+                        },
+                        "limits": {
+                            "prompt_max_chars": 2560,
+                            "max_input_images": 6,
+                            "max_input_image_bytes": 10485760,
+                            "max_total_input_pixels": 32000000,
+                            "input_image_formats": ["webp", "jpeg", "png", "gif", "tiff"],
+                            "input_image_bytes_source": "StackOS preflight safety cap",
+                            "input_image_formats_source": "StackOS preflight-supported formats",
+                            "max_total_input_pixels_source": "Reve remix documentation",
+                            "aspect_ratios": [
+                                "16:9",
+                                "9:16",
+                                "3:2",
+                                "2:3",
+                                "4:3",
+                                "3:4",
+                                "1:1",
+                                "auto",
+                            ],
+                            "test_time_scaling": [1, 15],
+                        },
+                        "models": {
+                            "latest": {"status": "Reve default remix version"},
+                            "latest-fast": {"status": "Fast remix alias"},
+                            "reve-remix@20250915": {"status": "Pinned remix version"},
+                            "reve-remix-fast@20251030": {"status": "Pinned fast remix version"},
+                        },
+                        "pricing": {
+                            "base_credits": {"standard": 30, "fast": 5},
+                            "credit_pack": "$10 = 7,500 credits",
+                            "test_time_scaling": "multiplies base credit cost",
+                        },
+                        "safety": {
+                            "content_violation": "Responses include content_violation metadata."
+                        },
+                        "unsupported_provider_features": [
+                            "postprocessing upscale/remove_background/fit_image/effect",
+                            "binary image Accept response modes",
+                            "more than six reference images",
+                        ],
+                        "docs": [
+                            "https://api.reve.com/console/docs",
+                            "https://api.reve.com/console/docs/remix",
+                            "https://api.reve.com/console/pricing",
+                        ],
+                    },
+                    "docs": [
+                        "https://api.reve.com/console/docs/remix",
+                        "https://api.reve.com/console/pricing",
                     ],
                 },
             ),

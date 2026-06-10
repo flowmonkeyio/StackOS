@@ -1,8 +1,10 @@
 # Media Generation Provider Shortlist
 
-Status: shortlist plus first executable delivery, researched 2026-06-09 and
+Status: shortlist plus executable deliveries, researched 2026-06-09 and
 updated during connector delivery. `utils.image.generate` / `utils.image.edit`
-(OpenAI) and provider-specific xAI Imagine actions
+(OpenAI), provider-specific Reve image actions
+`utils.reve.image.generate`, `utils.reve.image.edit`, and
+`utils.reve.image.remix`, and provider-specific xAI Imagine actions
 `utils.xai.image.generate`, `utils.xai.image.edit`, and
 `utils.xai.video.generate` are executable. Provider-neutral
 `utils.video.generate` remains deferred (`deferred-video-backend-selection`).
@@ -138,12 +140,14 @@ already registered and integrated.
 
 ### 2. Reve 2.0 — Reve
 
-- Status: public beta API. #2 on LMArena text-to-image (1273), released
-  2026-06-03 — layout-first architecture that plans structured layout before
-  rendering. The exact API schema and pricing facts below were observed on
-  official browser-rendered Reve console docs; build remains gated on
-  independent verifier signoff plus operator account/billing/credential
-  confirmation.
+- Status: executable in StackOS today through provider-specific actions
+  `utils.reve.image.generate`, `utils.reve.image.edit`, and
+  `utils.reve.image.remix`. Public beta API. #2 on LMArena text-to-image
+  (1273), released 2026-06-03 — layout-first architecture that plans
+  structured layout before rendering. The exact API schema and pricing facts
+  below were observed on official browser-rendered Reve console docs and
+  official Reve JS bundles; live account smoke remains operator evidence after
+  a real credential is connected.
 - API shape: synchronous JSON API under `https://api.reve.com/v1/image/*`,
   bearer API key. `Accept` can request `application/json` (base64 PNG image
   plus metadata) or direct `image/png`, `image/jpeg`, or `image/webp` bytes
@@ -153,7 +157,16 @@ already registered and integrated.
   1-6 base64 reference images plus prompt. No mask/inpainting parameter is
   documented; transparency is available through postprocessing
   `remove_background`, not a native transparent generation mode.
-- Size control: `aspect_ratio` enum `16:9, 9:16, 3:2, 2:3, 4:3, 3:4, 1:1`.
+- Reference-image limits: official remix docs cap inputs at 1-6 images, each
+  under 10 MB, with combined pixel count no more than 32 million pixels.
+  StackOS v1 resolves only daemon-local generated-assets refs, applies a 10 MiB
+  per-file safety cap to edit/remix refs, and preflights remix pixel totals
+  before a billable provider request. StackOS v1 accepts WEBP/JPEG/PNG/GIF/TIFF
+  local refs because those formats are dimension-preflighted without a heavy
+  image library; add broader provider formats only with parser/test coverage.
+- Size control: `aspect_ratio` enum `16:9, 9:16, 3:2, 2:3, 4:3, 3:4, 1:1`;
+  rendered official playground controls also expose `auto`, which StackOS v1
+  accepts.
   Create defaults to `3:2`; edit defaults to the reference image's aspect
   ratio; remix lets the model choose by default. Fit-image postprocessing can
   constrain longest side/width/height up to 4096.
@@ -178,8 +191,9 @@ already registered and integrated.
   <https://blog.reve.com/posts/announcing-reve-2.0/>.
   Evidence note: public fetch/curl can return only the Reve console app shell.
   This contract was observed with Playwright-rendered official pages and was
-  independently verified against official docs on 2026-06-10. Build remains
-  gated on operator account, billing, and stored-credential confirmation.
+  independently verified against official docs and official JS bundles on
+  2026-06-10. Reve does not document a free live credential probe; StackOS
+  `auth.test` for `reve` is format-only to avoid hidden billable image calls.
 
 ### 3. Nano Banana 2 — Google (`gemini-3.1-flash-image`)
 

@@ -12,6 +12,18 @@ from stackos.config import Settings
 from .conftest import MCPClient
 
 
+def _png_header(width: int, height: int) -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + (13).to_bytes(4, "big")
+        + b"IHDR"
+        + width.to_bytes(4, "big")
+        + height.to_bytes(4, "big")
+        + b"\x08\x02\x00\x00\x00"
+        + b"\x00\x00\x00\x00"
+    )
+
+
 def test_action_describe_and_validate_are_read_only_discovery_tools(
     mcp_client: MCPClient,
 ) -> None:
@@ -272,6 +284,20 @@ def _create_xai_credential(mcp: MCPClient, project_id: int) -> str:
     return status["connections"][0]["credential_ref"]
 
 
+def _create_reve_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/reve/credentials",
+        json={"auth_method_key": "api_key", "fields": {"api_key": "reve-key"}},
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "reve"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
@@ -423,6 +449,35 @@ def _xai_video_action_plan_json() -> dict:
                 "id": "generate-xai-video",
                 "title": "Generate xAI video",
                 "action_refs": ["utils.xai.video.generate"],
+            }
+        ],
+    }
+
+
+def _reve_image_action_plan_json() -> dict:
+    action_refs = [
+        "utils.reve.image.generate",
+        "utils.reve.image.edit",
+        "utils.reve.image.remix",
+    ]
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "utils.reve-image-action.run",
+        "title": "Reve image action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "generate-reve-image",
+                    "tool": "action.execute",
+                    "action_refs": action_refs,
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "generate-reve-image",
+                "title": "Generate Reve image",
+                "action_refs": action_refs,
             }
         ],
     }
@@ -1062,6 +1117,181 @@ def test_action_execute_xai_video_grant_returns_sanitized_artifact_refs(
         {"project_id": project_id, "kind": "video"},
     )
     assert any(row["id"] == item["artifact_id"] for row in artifacts["items"])
+
+
+def test_action_execute_reve_image_grant_returns_sanitized_artifact_refs(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_reve_credential(mcp_client, project_id)
+    budget_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "reve", "monthly_budget_usd": 10.0},
+        headers=mcp_client._headers(),
+    )
+    assert budget_resp.status_code == 200
+    input_dir = mcp_settings.generated_assets_dir / "uploads"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    (input_dir / "reve-edit.png").write_bytes(b"reve-edit-source")
+    (input_dir / "reve-remix-a.png").write_bytes(_png_header(1, 1))
+    (input_dir / "reve-remix-b.png").write_bytes(_png_header(2, 1))
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _reve_image_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "generate-reve-image",
+            "run_token": run_token,
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.reve.com/v1/image/create",
+        json={
+            "image": base64.b64encode(b"reve-image").decode("ascii"),
+            "version": "reve-create@20250915",
+            "content_violation": False,
+            "request_id": "rsid-create",
+            "credits_used": 18,
+            "credits_remaining": 982,
+        },
+    )
+
+    def assert_reve_artifact(
+        result: dict,
+        *,
+        expected_bytes: bytes,
+        expected_credits: int,
+        expected_cost_cents: int,
+    ) -> None:
+        data = result["data"]
+        item = data["output_json"]["data"][0]
+        rendered = json.dumps(data)
+        assert data["credential_ref"] == credential_ref
+        assert data["action_call"]["credential_ref"] == credential_ref
+        assert data["action_call"]["provider_key"] == "reve"
+        assert data["action_call"]["connector_key"] == "reve"
+        assert data["action_call"]["run_id"] == started["data"]["run_id"]
+        assert data["action_call"]["run_plan_id"] == created["data"]["id"]
+        assert data["action_call"]["run_plan_step_id"] == claimed["data"]["id"]
+        assert data["cost_cents"] == expected_cost_cents
+        assert item["url"].startswith("/generated-assets/reve/reve-image-")
+        assert item["artifact_ref"] == item["url"]
+        assert isinstance(item["artifact_id"], int)
+        assert data["output_json"]["artifact_refs"] == [item["url"]]
+        assert data["output_json"]["usage"]["credits_used"] == expected_credits
+        assert "image" not in data["output_json"]
+        assert "credential_id" not in rendered
+        assert "reve-key" not in rendered
+        path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
+        assert path.read_bytes() == expected_bytes
+
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.reve.image.generate",
+            "input_json": {"prompt": "editorial hero", "aspect_ratio": "3:2"},
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+
+    assert_reve_artifact(
+        out,
+        expected_bytes=b"reve-image",
+        expected_credits=18,
+        expected_cost_cents=2,
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.reve.com/v1/image/edit",
+        json={
+            "image": base64.b64encode(b"reve-edit-image").decode("ascii"),
+            "version": "reve-edit@20250915",
+            "content_violation": False,
+            "request_id": "rsid-edit",
+            "credits_used": 30,
+            "credits_remaining": 952,
+        },
+    )
+    edit_out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.reve.image.edit",
+            "input_json": {
+                "edit_instruction": "make the product brighter",
+                "input_image_ref": "/generated-assets/uploads/reve-edit.png",
+                "aspect_ratio": "1:1",
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+    assert_reve_artifact(
+        edit_out,
+        expected_bytes=b"reve-edit-image",
+        expected_credits=30,
+        expected_cost_cents=4,
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.reve.com/v1/image/remix",
+        json={
+            "image": base64.b64encode(b"reve-remix-image").decode("ascii"),
+            "version": "reve-remix-fast@20251030",
+            "content_violation": False,
+            "request_id": "rsid-remix",
+            "credits_used": 5,
+            "credits_remaining": 947,
+        },
+    )
+    remix_out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.reve.image.remix",
+            "input_json": {
+                "prompt": "combine the references into a new campaign image",
+                "input_image_refs": [
+                    "/generated-assets/uploads/reve-remix-a.png",
+                    "/generated-assets/uploads/reve-remix-b.png",
+                ],
+                "version": "latest-fast",
+                "aspect_ratio": "auto",
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+    assert_reve_artifact(
+        remix_out,
+        expected_bytes=b"reve-remix-image",
+        expected_credits=5,
+        expected_cost_cents=1,
+    )
+    artifacts = mcp_client.call_tool_structured(
+        "artifact.query",
+        {"project_id": project_id, "kind": "image"},
+    )
+    artifact_ids = {
+        out["data"]["output_json"]["data"][0]["artifact_id"],
+        edit_out["data"]["output_json"]["data"][0]["artifact_id"],
+        remix_out["data"]["output_json"]["data"][0]["artifact_id"],
+    }
+    assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
 
 
 def test_action_execute_openai_image_edit_uses_input_reference_images(

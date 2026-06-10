@@ -41,6 +41,18 @@ from stackos.repositories.projects import (
 from stackos.repositories.run_plans import RunPlanRepository
 
 
+def _png_header(width: int, height: int) -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + (13).to_bytes(4, "big")
+        + b"IHDR"
+        + width.to_bytes(4, "big")
+        + height.to_bytes(4, "big")
+        + b"\x08\x02\x00\x00\x00"
+        + b"\x00\x00\x00\x00"
+    )
+
+
 class _FakeConnector:
     key = "fake.echo"
 
@@ -1004,6 +1016,9 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
         "utils.xai.image.generate": ("xai-imagine", True, "unknown"),
         "utils.xai.image.edit": ("xai-imagine", True, "unknown"),
         "utils.xai.video.generate": ("xai-imagine", True, "unknown"),
+        "utils.reve.image.generate": ("reve", True, "unknown"),
+        "utils.reve.image.edit": ("reve", True, "unknown"),
+        "utils.reve.image.remix": ("reve", True, "unknown"),
         "utils.web.scrape": ("firecrawl", True, "unknown"),
         "utils.web.read": ("jina", False, "ready"),
         "utils.sitemap.fetch": ("sitemap", False, "ready"),
@@ -1411,6 +1426,298 @@ def test_xai_video_generate_action_executes_and_registers_artifact(
     assert "xai-key" not in rendered
     path = tmp_path / item["url"].removeprefix("/generated-assets/")
     assert path.read_bytes() == b"video-bytes"
+
+
+def test_reve_actions_reject_invalid_versions_and_ref_counts(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="reve",
+        secret_payload=b"reve-key",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "reve")
+
+    edit_validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.reve.image.edit",
+        input_json={
+            "edit_instruction": "make it cinematic",
+            "input_image_ref": "/generated-assets/uploads/source.png",
+            "version": "reve-create@20250915",
+            "test_time_scaling": 16,
+        },
+        credential_ref=credential_ref,
+    )
+    remix_validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.reve.image.remix",
+        input_json={
+            "prompt": "mix",
+            "input_image_refs": [
+                f"/generated-assets/uploads/ref-{index}.png" for index in range(7)
+            ],
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert edit_validation.valid is False
+    assert any(issue.path == "$.version" for issue in edit_validation.issues)
+    assert any(issue.path == "$.test_time_scaling" for issue in edit_validation.issues)
+    assert remix_validation.valid is False
+    assert any(
+        issue.path == "$.input_image_refs" and issue.code == "range"
+        for issue in remix_validation.issues
+    )
+
+
+def test_reve_image_generate_action_executes_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="reve",
+        secret_payload=b"reve-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="reve",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "reve")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.reve.com/v1/image/create",
+        json={
+            "image": base64.b64encode(b"reve-image").decode("ascii"),
+            "version": "reve-create@20250915",
+            "content_violation": False,
+            "request_id": "rsid-create",
+            "credits_used": 18,
+            "credits_remaining": 982,
+        },
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.reve.image.generate",
+            input_json={"prompt": "poster", "aspect_ratio": "16:9"},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    item = result.output_json["data"][0]
+    rendered = json.dumps(result.model_dump(mode="json"))
+    assert body["prompt"] == "poster"
+    assert body["aspect_ratio"] == "16:9"
+    assert result.cost_cents == 2
+    assert item["url"].startswith("/generated-assets/reve/reve-image-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert result.output_json["artifact_refs"] == [item["url"]]
+    assert result.output_json["usage"]["credits_used"] == 18
+    assert "image" not in result.output_json
+    assert "reve-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"reve-image"
+
+
+def test_reve_image_edit_action_executes_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    source = source_dir / "source.png"
+    source.write_bytes(b"source-png")
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="reve",
+        secret_payload=b"reve-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="reve",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "reve")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.reve.com/v1/image/edit",
+        json={
+            "image": base64.b64encode(b"reve-edit").decode("ascii"),
+            "version": "reve-edit@20250915",
+            "content_violation": False,
+            "request_id": "rsid-edit",
+            "credits_used": 30,
+            "credits_remaining": 970,
+        },
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.reve.image.edit",
+            input_json={
+                "edit_instruction": "make it cinematic",
+                "input_image_ref": "/generated-assets/uploads/source.png",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    item = result.output_json["data"][0]
+    rendered = json.dumps(result.model_dump(mode="json"))
+    assert body["reference_image"] == base64.b64encode(b"source-png").decode("ascii")
+    assert body["edit_instruction"] == "make it cinematic"
+    assert result.cost_cents == 4
+    assert item["url"].startswith("/generated-assets/reve/reve-image-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert "image" not in result.output_json
+    assert "reve-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"reve-edit"
+
+
+def test_reve_image_remix_action_executes_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    first_bytes = _png_header(1, 1)
+    second_bytes = _png_header(2, 1)
+    first = source_dir / "first.png"
+    second = source_dir / "second.png"
+    first.write_bytes(first_bytes)
+    second.write_bytes(second_bytes)
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="reve",
+        secret_payload=b"reve-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="reve",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "reve")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.reve.com/v1/image/remix",
+        json={
+            "image": base64.b64encode(b"reve-remix").decode("ascii"),
+            "version": "reve-remix-fast@20251030",
+            "content_violation": False,
+            "request_id": "rsid-remix",
+            "credits_used": 5,
+            "credits_remaining": 995,
+        },
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.reve.image.remix",
+            input_json={
+                "prompt": "combine",
+                "input_image_refs": [
+                    "/generated-assets/uploads/first.png",
+                    "/generated-assets/uploads/second.png",
+                ],
+                "version": "reve-remix-fast@20251030",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    item = result.output_json["data"][0]
+    rendered = json.dumps(result.model_dump(mode="json"))
+    assert body["reference_images"] == [
+        base64.b64encode(first_bytes).decode("ascii"),
+        base64.b64encode(second_bytes).decode("ascii"),
+    ]
+    assert result.cost_cents == 1
+    assert item["url"].startswith("/generated-assets/reve/reve-image-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert "image" not in result.output_json
+    assert "reve-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"reve-remix"
+
+
+def test_reve_remix_pixel_preflight_fails_before_budget_or_action_call(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    oversized = source_dir / "oversized.png"
+    oversized.write_bytes(_png_header(8000, 4001))
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="reve",
+        secret_payload=b"reve-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="reve",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "reve")
+    repo = ActionRepository(session, asset_dir=tmp_path)
+
+    validation = repo.validate(
+        project_id=project_id,
+        action_ref="utils.reve.image.remix",
+        input_json={
+            "prompt": "combine",
+            "input_image_refs": ["/generated-assets/uploads/oversized.png"],
+        },
+        credential_ref=credential_ref,
+    )
+    with pytest.raises(ValidationError) as exc_info:
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="utils.reve.image.remix",
+                input_json={
+                    "prompt": "combine",
+                    "input_image_refs": ["/generated-assets/uploads/oversized.png"],
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert validation.valid is False
+    assert any(
+        issue.path == "$.input_image_refs"
+        and issue.code == "invalid_image_ref"
+        and "32 million pixels" in issue.message
+        for issue in validation.issues
+    )
+    assert "32 million pixels" in json.dumps(exc_info.value.data)
+    assert httpx_mock.get_requests() == []
+    assert session.exec(select(ActionCall)).all() == []
+    budget = IntegrationBudgetRepository(session).get(project_id, "reve")
+    assert budget.current_month_spend == 0
+    assert budget.current_month_calls == 0
 
 
 def test_trackbooth_catalog_search_filters_live_catalog_and_uses_api_key_header(

@@ -198,6 +198,8 @@ cover the migrated clean path for:
 - `openai-images`: `utils.image.generate`, `utils.image.edit`
 - `xai-imagine`: `utils.xai.image.generate`, `utils.xai.image.edit`, and
   `utils.xai.video.generate`
+- `reve`: `utils.reve.image.generate`, `utils.reve.image.edit`, and
+  `utils.reve.image.remix`
 - `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`
 - `jina`: `utils.web.read` with optional credentials
 - `sitemap`: `utils.sitemap.fetch`

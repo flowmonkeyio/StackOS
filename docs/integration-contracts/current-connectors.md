@@ -2,7 +2,7 @@
 
 Audit date: 2026-06-10
 
-Scope: executable connector contracts for OpenAI Images, xAI Imagine,
+Scope: executable connector contracts for OpenAI Images, xAI Imagine, Reve,
 Firecrawl, Jina Reader, Reddit, DataForSEO, Serper.dev, Ahrefs, WordPress,
 Ghost, sitemap, Trackbooth, and generic HTTP, plus connection-only setup
 providers that intentionally do not expose actions yet. This file is an
@@ -21,6 +21,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | --- | --- | --- | --- |
 | OpenAI Images | [Image generation guide](https://developers.openai.com/api/docs/guides/image-generation), [Images API reference](https://developers.openai.com/api/reference/resources/images) | [OpenAI API authentication](https://platform.openai.com/docs/api-reference/authentication) | [OpenAI rate limits guide](https://platform.openai.com/docs/guides/rate-limits), image generation pricing table in the guide above |
 | xAI Imagine | [Image generation](https://docs.x.ai/developers/model-capabilities/images/generation), [image editing](https://docs.x.ai/developers/model-capabilities/images/editing), [multi-image editing](https://docs.x.ai/developers/model-capabilities/images/multi-image-editing), [video generation](https://docs.x.ai/developers/model-capabilities/video/generation), [image-to-video](https://docs.x.ai/developers/model-capabilities/video/image-to-video), [reference-to-video](https://docs.x.ai/developers/model-capabilities/video/reference-to-video), [models](https://docs.x.ai/developers/models) | xAI examples use bearer auth with an API key from the xAI console | Video generation docs define submit/poll status values; [pricing](https://docs.x.ai/developers/pricing) documents Imagine output/input cost units |
+| Reve | [Docs overview](https://api.reve.com/console/docs), [create](https://api.reve.com/console/docs/create), [edit](https://api.reve.com/console/docs/edit), [remix](https://api.reve.com/console/docs/remix), [pricing](https://api.reve.com/console/pricing) | Reve examples use bearer auth with an API key from the Reve console | Image endpoints are synchronous and return `request_id`, `content_violation`, `credits_used`, and `credits_remaining`; pricing page documents base credit costs |
 | Firecrawl | [v2 introduction](https://docs.firecrawl.dev/api-reference/v2-introduction), [scrape](https://docs.firecrawl.dev/api-reference/v2-endpoint/scrape), [crawl](https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-post), [crawl status](https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-get), [map](https://docs.firecrawl.dev/api-reference/v2-endpoint/map), [extract](https://docs.firecrawl.dev/api-reference/v2-endpoint/extract) | v2 introduction and endpoint pages use bearer auth | [Errors](https://docs.firecrawl.dev/api-reference/errors), [rate limits](https://docs.firecrawl.dev/rate-limits) |
 | Jina Reader | [Reader API](https://jina.ai/en-US/reader/), [Reader repo](https://github.com/jina-ai/reader) | Reader API documents free and authenticated tiers | Reader API documents RPM tiers |
 | Reddit | [reddit.com API docs](https://www.reddit.com/dev/api/), [Reddit Data API Wiki](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki), [Data API Terms](https://redditinc.com/policies/data-api-terms), [OAuth2 wiki](https://github.com/reddit-archive/reddit/wiki/oauth2) | OAuth2 wiki and Data API Wiki | API docs listing pagination; Data API Wiki and Terms for usage limits/policy |
@@ -40,6 +41,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | --- | --- | --- | --- | --- |
 | `openai-images` | `utils.image.generate`, `utils.image.edit` | `stackos/actions/openai_images.py`, `stackos/integrations/openai_images.py` | `stackos/plugins/manifest.py` built-in utils media actions | API key payload; budget enforced by `openai-images` kind. |
 | `xai-imagine` | `utils.xai.image.generate`, `utils.xai.image.edit`, `utils.xai.video.generate` | `stackos/actions/xai_imagine.py`, `stackos/integrations/xai_imagine.py` | `stackos/plugins/manifest.py` built-in utils xAI media actions | API key payload; budget enforced by `xai-imagine` kind; images/videos are persisted to generated assets and registered as generic media artifacts. |
+| `reve` | `utils.reve.image.generate`, `utils.reve.image.edit`, `utils.reve.image.remix` | `stackos/actions/reve_images.py`, `stackos/integrations/reve_images.py` | `stackos/plugins/manifest.py` built-in utils Reve media actions | API key payload; budget enforced by `reve` kind; JSON base64 image outputs are persisted to generated assets and registered as generic image artifacts. `auth.test` is format-only because Reve does not document a free live credential probe. |
 | `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map` | `stackos/actions/firecrawl.py`, `stackos/integrations/firecrawl.py:24` | `stackos/plugins/manifest.py` built-in utils actions | Bearer API key payload; budget enforced by `firecrawl`; `utils.web.extract` is deferred, not executable. |
 | `jina` | `utils.web.read` | `stackos/actions/jina.py`, `stackos/integrations/jina_reader.py:17` | `stackos/plugins/manifest.py:384`, `stackos/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `stackos/actions/reddit.py`, `stackos/integrations/reddit.py:29` | `stackos/plugins/manifest.py:390`, `stackos/plugins/manifest.py:542`, `stackos/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
@@ -134,6 +136,45 @@ Recommended corrections:
 - Re-audit pricing and model names on the normal provider-doc schedule.
 - Add dedicated edit/extend video actions only when those workflows need them
   and the output artifact/audit contract is reviewed separately.
+
+### Reve
+
+Current: `utils.reve.image.generate`, `utils.reve.image.edit`, and
+`utils.reve.image.remix` map to `ReveImagesActionConnector`. The connector
+uses Reve's synchronous JSON endpoints, requests `application/json`, decodes
+base64 PNG output, persists generated bytes under generated assets, and
+registers generic `image` artifacts during repository-backed execution.
+
+Gaps/mismatches:
+
+- Resolved: create/edit/remix action schemas follow the official rendered
+  Reve docs and official JS bundle facts: 2560-character prompt/instruction
+  cap, 1-15 `test_time_scaling`, one edit reference image, and 1-6 remix
+  reference images.
+- Resolved: remix generated-assets refs are preflighted against Reve's
+  documented combined 32 million pixel cap; the 10 MiB per-file input check is
+  a StackOS safety cap before encoding local files as base64. StackOS v1 local
+  refs support WEBP/JPEG/PNG/GIF/TIFF because those formats have explicit
+  preflight parsers in the wrapper.
+- Resolved: pre-call budget estimates use official base credit costs
+  (create 18 credits, edit/remix 30 credits, fast edit/remix 5 credits), while
+  successful action-call cost reconciles from `credits_used`.
+- Resolved: reference images are daemon-local generated-assets files, encoded
+  as base64 inside the connector, and stripped from audit/request metadata.
+- Remaining: Reve does not document a free live credential probe. StackOS
+  `auth.test` for `reve` is format-only and does not make a billable image
+  request; operators should verify live credentials with a deliberate action.
+- Remaining: postprocessing (`upscale`, `remove_background`, `fit_image`,
+  `effect`) and binary `Accept: image/*` response modes are not exposed in v1.
+- Remaining: docs are console-rendered and JS-bundle-backed rather than a
+  stable OpenAPI spec; re-check against live official pages before adding
+  options.
+
+Recommended corrections:
+
+- Add live operator smoke evidence after a real Reve credential is connected.
+- Add endpoint-specific postprocessing actions only when their variable credit
+  costs and artifact outputs are modeled.
 
 ### Firecrawl
 

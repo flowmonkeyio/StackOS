@@ -26,6 +26,13 @@
   estimates, and actual-cost reconciliation from xAI usage ticks when present.
   Alibaba WAN remains skipped for v1 until public executable API docs are
   sufficient.
+- Added Reve image actions `utils.reve.image.generate`,
+  `utils.reve.image.edit`, and `utils.reve.image.remix` with provider-specific
+  capability metadata, generated-assets persistence, generic image artifact
+  registration, run-plan grant coverage, official credit-based budget
+  estimates, official 32M-pixel remix input preflight, and `credits_used` cost
+  reconciliation. Reve `auth.test` is intentionally non-billable format-only
+  because the provider does not document a free live credential probe.
 
 ## 1.0.0 - 2026-05-26
 
