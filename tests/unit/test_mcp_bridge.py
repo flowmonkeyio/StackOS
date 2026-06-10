@@ -589,6 +589,46 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "communication.reply" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
 
 
+def test_bridge_compacts_action_describe_with_capability_metadata() -> None:
+    compact = _bridge_compact_structured(
+        "action.describe",
+        {
+            "manifest": {
+                "action_ref": "utils.image.generate",
+                "plugin_slug": "utils",
+                "action_key": "image.generate",
+                "provider_key": "openai-images",
+                "capability_key": "image-generation",
+                "risk_level": "cost",
+                "operation": "image.generate",
+                "requires_credential": True,
+                "input_schema_json": {
+                    "type": "object",
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string", "maxLength": 32000},
+                    },
+                },
+                "config_json": {
+                    "capability_metadata": {
+                        "modes": ["text-to-image"],
+                        "limits": {"prompt_max_chars": 32000},
+                    },
+                    "docs": ["https://developers.openai.com/api/docs/guides/image-generation"],
+                },
+            },
+            "availability": {"status": "ready", "executable": True},
+            "connector_registered": True,
+            "execution_available": True,
+        },
+    )
+
+    assert compact is not None
+    assert compact["capability_metadata"]["modes"] == ["text-to-image"]
+    assert compact["capability_metadata"]["limits"]["prompt_max_chars"] == 32000
+    assert compact["input"]["properties"]["prompt"] == {"type": "string"}
+
+
 def test_bridge_compacts_communication_profile_without_flat_provider_fields() -> None:
     compact = _bridge_compact_profile(
         {

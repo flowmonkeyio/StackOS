@@ -420,6 +420,7 @@ def _bridge_compact_action_describe(structured: dict[str, Any]) -> dict[str, Any
             "required": required if isinstance(required, list) else [],
             "properties": compact_properties,
         },
+        "capability_metadata": manifest_config.get("capability_metadata", {}),
         "docs": manifest_config.get("docs", []),
     }
 
