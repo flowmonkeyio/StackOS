@@ -564,10 +564,15 @@ deferred `utils.video.generate` contract.
 
 ### 4. Kling 3.0 — Kuaishou
 
-- Status: GA on the Kling Open Platform (global developer API; paid API plan
-  purchased separately from consumer credits). Artificial Analysis
-  text-to-video #4–7 cluster (Pro/Std variants 1094–1104), above Veo 3.1
-  there; LMArena image-to-video top-12. Released 2026-02-04.
+- Status: deferred/not build-ready for StackOS v1. Kling 3.0 is a GA product
+  on the Kling Open Platform with a paid API plan, but automated public docs
+  review did not verify the executable endpoint/auth/task/status/schema
+  contract. Do not build a connector from the partial facts below until
+  official rendered API docs or operator-provided in-console evidence verify
+  the concrete contract.
+- Ranking context: Artificial Analysis text-to-video #4–7 cluster (Pro/Std
+  variants 1094–1104), above Veo 3.1 there; LMArena image-to-video top-12.
+  Released 2026-02-04.
 - Modes: text-to-video, image-to-video, multi-shot storyboard (up to 6 shots
   per clip), native audio with multilingual lip-synced dialogue, motion
   control/transfer, lip-sync endpoint; the 3.0 Omni ("O3") variant adds
@@ -580,9 +585,11 @@ deferred `utils.video.generate` contract.
 - Pricing: $0.084–$0.168/s reported from the developer pricing pages
   (credit-schedule: 6–12 credits/s by tier and audio). Confirm in-console
   during deep review.
-- Caveats: docs and pricing pages return HTTP 446 to automated tools —
-  everything above the pricing line needs in-console verification after
-  registration; watermark and commercial terms unverified.
+- Caveats: docs and pricing pages return HTTP 446 to automated tools. Endpoint
+  host, auth header, async submit/poll paths, status values, request/response
+  schemas, exact model ids, size/duration/fps/audio controls, output retention,
+  watermark behavior, commercial terms, and pricing need in-console
+  verification after registration.
 - Docs: developer docs
   <https://app.klingai.com/global/dev/document-api>, dev pricing
   <https://kling.ai/dev/pricing>, 3.0 launch
@@ -682,9 +689,11 @@ How the shortlist maps onto the StackOS pattern when integration starts:
 
 ## Open Verification Items For Deep Review
 
-1. Kling 3.0 aspect-ratio enum, per-second pricing, watermark, and commercial
-   terms — developer docs block automated review; verify in-console after
-   registration.
+1. Kling 3.0 executable API contract: endpoint host, auth, async submit/poll
+   paths, task statuses, model ids, request/response schemas, size/duration/
+   fps/audio controls, output retention, watermark, commercial terms, and
+   pricing. Developer docs block automated review; verify in-console after
+   registration before building any connector.
 2. BytePlus Seedance video build scope: decide whether v1 exposes full
    multimodal edit/extension/callback behavior or starts with text/image-to-
    video polling. Seedream image v1 scope is executable and documents deferred
