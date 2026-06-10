@@ -21,6 +21,7 @@ obvious without loading every document.
 | Changing resources or artifacts | [`resources-and-artifacts.md`](./resources-and-artifacts.md), [`project-memory.md`](./project-memory.md) |
 | Changing UI | [`ui-design-system.md`](./ui-design-system.md), [`ui-component-inventory.md`](./ui-component-inventory.md) |
 | Reviewing provider contracts | [`integration-contracts/`](./integration-contracts/) |
+| Selecting or integrating image/video generation providers | [`integration-contracts/media-generation.md`](./integration-contracts/media-generation.md), [`action-executor.md`](./action-executor.md) |
 | Before-commit or release validation | [`release-signoff.md`](./release-signoff.md) |
 
 ## Canonical Rules
