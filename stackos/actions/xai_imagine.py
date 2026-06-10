@@ -24,6 +24,7 @@ class XAIImagineActionConnector:
     key = "xai-imagine"
     _IMAGE_MODEL = XAIImagineIntegration.IMAGE_MODEL
     _VIDEO_MODEL = XAIImagineIntegration.VIDEO_MODEL
+    _VIDEO_MODELS = XAIImagineIntegration.VIDEO_MODELS
     _IMAGE_ASPECT_RATIOS = XAIImagineIntegration.IMAGE_ASPECT_RATIOS
     _IMAGE_RESOLUTIONS = XAIImagineIntegration.IMAGE_RESOLUTIONS
     _VIDEO_ASPECT_RATIOS = XAIImagineIntegration.VIDEO_ASPECT_RATIOS
@@ -65,11 +66,15 @@ class XAIImagineActionConnector:
                 )
             )
         model = payload.get("model", self._default_model(request.operation))
-        if not isinstance(model, str) or model != self._default_model(request.operation):
+        if request.operation == "video.generate":
+            valid_model = isinstance(model, str) and model in self._VIDEO_MODELS
+        else:
+            valid_model = isinstance(model, str) and model == self._default_model(request.operation)
+        if not valid_model:
             issues.append(
                 ActionValidationIssue(
                     path="$.model",
-                    message="model must be the latest supported Grok Imagine model for this action",
+                    message="model must be a supported Grok Imagine model for this action",
                     code="enum_mismatch",
                 )
             )
@@ -309,6 +314,7 @@ class XAIImagineActionConnector:
                     seconds=duration,
                     resolution=str(payload.get("resolution", "480p")),
                     input_images=input_images,
+                    model=str(payload.get("model", self._VIDEO_MODEL)),
                 )
             )
         raw_n = payload.get("n", 1)

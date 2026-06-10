@@ -1222,6 +1222,22 @@ def test_xai_video_action_rejects_mode_mismatches_and_reference_duration_cap(
         for issue in validation.issues
     )
 
+    preview_validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.xai.video.generate",
+        input_json={
+            "prompt": "runway walk",
+            "model": "grok-imagine-video-1.5-preview",
+            "mode": "text-to-video",
+        },
+        credential_ref=credential_ref,
+    )
+    assert preview_validation.valid is False
+    assert any(
+        issue.path == "$.model" and issue.code == "enum_mismatch"
+        for issue in preview_validation.issues
+    )
+
 
 def test_xai_actions_reject_single_image_edit_aspect_and_unsafe_poll_bounds(
     session: Session,

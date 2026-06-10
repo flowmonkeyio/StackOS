@@ -67,6 +67,7 @@ class XAIImagineIntegration(BaseIntegration):
         {"1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"}
     )
     VIDEO_RESOLUTIONS: ClassVar[frozenset[str]] = frozenset({"480p", "720p"})
+    VIDEO_MODELS: ClassVar[frozenset[str]] = frozenset({VIDEO_MODEL})
     TERMINAL_VIDEO_STATUSES: ClassVar[frozenset[str]] = frozenset({"done", "failed", "expired"})
     # Official pricing refs:
     # https://docs.x.ai/developers/pricing
@@ -75,10 +76,14 @@ class XAIImagineIntegration(BaseIntegration):
     # billing source of truth.
     _IMAGE_INPUT_COST_PER_IMAGE_USD = 0.01
     _IMAGE_OUTPUT_COSTS_USD: ClassVar[dict[str, float]] = {"1k": 0.05, "2k": 0.07}
-    _VIDEO_INPUT_IMAGE_COST_USD = 0.002
-    _VIDEO_OUTPUT_COSTS_PER_SECOND_USD: ClassVar[dict[str, float]] = {
-        "480p": 0.05,
-        "720p": 0.07,
+    _VIDEO_INPUT_IMAGE_COSTS_USD: ClassVar[dict[str, float]] = {
+        VIDEO_MODEL: 0.002,
+    }
+    _VIDEO_OUTPUT_COSTS_PER_SECOND_USD: ClassVar[dict[str, dict[str, float]]] = {
+        VIDEO_MODEL: {
+            "480p": 0.05,
+            "720p": 0.07,
+        },
     }
     _USD_TICKS_PER_DOLLAR = 10_000_000_000
     _OUTPUT_EXTENSIONS: ClassVar[dict[str, str]] = {
@@ -137,6 +142,7 @@ class XAIImagineIntegration(BaseIntegration):
                 seconds=duration if isinstance(duration, int) else 5,
                 resolution=str(body.get("resolution", "480p")),
                 input_images=input_images,
+                model=str(body.get("model", self.VIDEO_MODEL)),
             )
         return 0.0
 
@@ -158,13 +164,18 @@ class XAIImagineIntegration(BaseIntegration):
         seconds: int = 5,
         resolution: str = "480p",
         input_images: int = 0,
+        model: str = VIDEO_MODEL,
     ) -> float:
-        output_cost = cls._VIDEO_OUTPUT_COSTS_PER_SECOND_USD.get(
-            resolution, cls._VIDEO_OUTPUT_COSTS_PER_SECOND_USD["480p"]
+        output_costs = cls._VIDEO_OUTPUT_COSTS_PER_SECOND_USD.get(
+            model,
+            cls._VIDEO_OUTPUT_COSTS_PER_SECOND_USD[cls.VIDEO_MODEL],
         )
-        return (
-            max(1, seconds) * output_cost + max(0, input_images) * cls._VIDEO_INPUT_IMAGE_COST_USD
+        output_cost = output_costs.get(resolution, output_costs["480p"])
+        input_cost = cls._VIDEO_INPUT_IMAGE_COSTS_USD.get(
+            model,
+            cls._VIDEO_INPUT_IMAGE_COSTS_USD[cls.VIDEO_MODEL],
         )
+        return max(1, seconds) * output_cost + max(0, input_images) * input_cost
 
     def _extract_actual_cost_usd(
         self,
