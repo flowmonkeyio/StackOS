@@ -177,7 +177,7 @@ def test_readiness_check_resolves_cross_plugin_utility_action_contracts(
     assert all(item["code"] != "action_not_found" for item in media["missing"])
 
 
-def test_readiness_check_marketing_campaign_scopes_current_image_flow_only(
+def test_readiness_check_marketing_campaign_scopes_concrete_optional_video_actions(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -190,8 +190,30 @@ def test_readiness_check_marketing_campaign_scopes_current_image_flow_only(
 
     refs = {item["action_ref"] for item in readiness["actions"]}
     providers = {item["provider_key"] for item in readiness["missing"]}
-    assert refs == {"utils.image.generate", "utils.image.edit"}
-    assert providers == {"openai-images"}
+    assert {
+        "utils.image.generate",
+        "utils.image.edit",
+        "utils.google.video.generate",
+        "utils.byteplus.video.generate",
+        "utils.alibaba.video.generate",
+        "utils.kling.video.generate",
+        "utils.xai.video.generate",
+    } <= refs
+    assert providers == {
+        "openai-images",
+        "google-veo",
+        "byteplus-ark",
+        "alibaba-wan",
+        "kling",
+        "xai-imagine",
+    }
     assert "utils.video.generate" not in refs
+    video_missing = [
+        item
+        for item in readiness["missing"]
+        if (item.get("action_ref") or "").endswith(".video.generate")
+    ]
+    assert video_missing
+    assert {item["required_for"] for item in video_missing} == {"optional_action_execution"}
     assert all(item["code"] != "action_not_found" for item in readiness["missing"])
     assert readiness["next_steps"][0]["tool"] == "runPlan.create"

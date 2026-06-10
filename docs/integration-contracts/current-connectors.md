@@ -3,10 +3,11 @@
 Audit date: 2026-06-10
 
 Scope: executable connector contracts for OpenAI Images, xAI Imagine, Reve,
-Google Gemini Image, Ideogram, BytePlus Seedream, Firecrawl, Jina Reader,
-Reddit, DataForSEO, Serper.dev, Ahrefs, WordPress, Ghost, sitemap, Trackbooth,
-and generic HTTP, plus connection-only setup providers that intentionally do
-not expose actions yet. This file is an
+Google Gemini Image, Google Veo, Ideogram, BytePlus Seedream/Seedance,
+Alibaba Wan, Kling, Firecrawl, Jina Reader, Reddit, DataForSEO, Serper.dev,
+Ahrefs, WordPress, Ghost, sitemap, Trackbooth, and generic HTTP, plus
+connection-only setup providers that intentionally do not expose actions yet.
+This file is an
 integration-point audit only. It does not change manifests, tests, or runtime
 behavior.
 
@@ -24,8 +25,11 @@ Important consequence: provider docs should shape action schemas and connector c
 | xAI Imagine | [Image generation](https://docs.x.ai/developers/model-capabilities/images/generation), [image editing](https://docs.x.ai/developers/model-capabilities/images/editing), [multi-image editing](https://docs.x.ai/developers/model-capabilities/images/multi-image-editing), [video generation](https://docs.x.ai/developers/model-capabilities/video/generation), [image-to-video](https://docs.x.ai/developers/model-capabilities/video/image-to-video), [reference-to-video](https://docs.x.ai/developers/model-capabilities/video/reference-to-video), [models](https://docs.x.ai/developers/models) | xAI examples use bearer auth with an API key from the xAI console | Video generation docs define submit/poll status values; [pricing](https://docs.x.ai/developers/pricing) documents Imagine output/input cost units |
 | Reve | [Docs overview](https://api.reve.com/console/docs), [create](https://api.reve.com/console/docs/create), [edit](https://api.reve.com/console/docs/edit), [remix](https://api.reve.com/console/docs/remix), [pricing](https://api.reve.com/console/pricing) | Reve examples use bearer auth with an API key from the Reve console | Image endpoints are synchronous and return `request_id`, `content_violation`, `credits_used`, and `credits_remaining`; pricing page documents base credit costs |
 | Google Gemini Image | [Nano Banana image generation](https://ai.google.dev/gemini-api/docs/image-generation), [image understanding/input](https://ai.google.dev/gemini-api/docs/image-understanding), [generateContent API](https://ai.google.dev/api/generate-content), [pricing](https://ai.google.dev/gemini-api/docs/pricing) | Gemini Developer API examples use `x-goog-api-key` with an API key from Google AI Studio | Image endpoints are synchronous `models/{model}:generateContent`; generated image parts arrive as inline MIME/base64 data; pricing docs define image output prices and tokenized input caveats |
+| Google Veo | [Veo video generation](https://ai.google.dev/gemini-api/docs/video), [pricing](https://ai.google.dev/gemini-api/docs/pricing), [official python-genai SDK](https://github.com/googleapis/python-genai) | Gemini Developer API examples use `x-goog-api-key` with an API key from Google AI Studio | Veo uses Gemini long-running operations; StackOS submits `predictLongRunning`, polls `operations/{id}`, downloads generated media, and persists it as video artifacts |
 | Ideogram | [Generate v4](https://developer.ideogram.ai/api-reference/api-reference/generate-v4), [Remix v4](https://developer.ideogram.ai/api-reference/api-reference/remix-v4), [pricing](https://ideogram.ai/api-pricing/) | Ideogram examples use an `Api-Key` header with an API key from the Ideogram API dashboard | v4 image endpoints are synchronous multipart calls that return temporary URLs; docs define 23 2K resolutions, speed tiers, remix upload limits, and output prices |
-| BytePlus Seedream | [Image generation API](https://docs.byteplus.com/en/docs/ModelArk/1541523), [model list](https://docs.byteplus.com/en/docs/ModelArk/1330310), [pricing](https://docs.byteplus.com/en/docs/ModelArk/1544106), [base URL/auth](https://docs.byteplus.com/en/docs/ModelArk/1298459) | ModelArk uses bearer API-key auth from the BytePlus console; organization verification and model activation may be required | Image endpoint is synchronous `POST /api/v3/images/generations`; outputs may be 24-hour URLs or base64; pricing is per successfully generated output image |
+| BytePlus ModelArk | [Seedream image generation API](https://docs.byteplus.com/en/docs/ModelArk/1541523), [Seedance task create](https://docs.byteplus.com/en/docs/ModelArk/1520757), [Seedance task retrieve](https://docs.byteplus.com/en/docs/ModelArk/1521309), [model list](https://docs.byteplus.com/en/docs/ModelArk/1330310), [pricing](https://docs.byteplus.com/en/docs/ModelArk/1544106), [base URL/auth](https://docs.byteplus.com/en/docs/ModelArk/1298459) | ModelArk uses bearer API-key auth from the BytePlus console; organization verification and model activation may be required | Seedream image endpoint is synchronous; Seedance video endpoint is async task create/retrieve with 24-hour output URLs and status values including queued/running/succeeded/failed/expired |
+| Alibaba Wan | [video model lineup](https://www.alibabacloud.com/help/en/model-studio/video-generate-edit-model/), [text-to-video](https://www.alibabacloud.com/help/en/model-studio/text-to-video-api-reference/), [image-to-video](https://www.alibabacloud.com/help/en/model-studio/image-to-video-general-api-reference), [official DashScope SDK](https://github.com/dashscope/dashscope-sdk-python) | DashScope examples use bearer API-key auth and `X-DashScope-Async: enable` for async jobs | Wan uses async task submit/poll with `task_id`; output `video_url` is temporary and is persisted immediately |
+| Kling | [common info/auth](https://kling.ai/document-api/apiReference%2FcommonInfo), [text-to-video](https://kling.ai/document-api/apiReference%2Fmodel%2FtextToVideo), [image-to-video](https://kling.ai/document-api/apiReference%2Fmodel%2FimageToVideo) | Kling docs require AccessKey + SecretKey converted to a short-lived HS256 JWT sent as `Authorization: Bearer` | Kling text/image video endpoints create async tasks, poll `task_status`, and return `task_result.videos[].url` with 30-day provider retention |
 | Firecrawl | [v2 introduction](https://docs.firecrawl.dev/api-reference/v2-introduction), [scrape](https://docs.firecrawl.dev/api-reference/v2-endpoint/scrape), [crawl](https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-post), [crawl status](https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-get), [map](https://docs.firecrawl.dev/api-reference/v2-endpoint/map), [extract](https://docs.firecrawl.dev/api-reference/v2-endpoint/extract) | v2 introduction and endpoint pages use bearer auth | [Errors](https://docs.firecrawl.dev/api-reference/errors), [rate limits](https://docs.firecrawl.dev/rate-limits) |
 | Jina Reader | [Reader API](https://jina.ai/en-US/reader/), [Reader repo](https://github.com/jina-ai/reader) | Reader API documents free and authenticated tiers | Reader API documents RPM tiers |
 | Reddit | [reddit.com API docs](https://www.reddit.com/dev/api/), [Reddit Data API Wiki](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki), [Data API Terms](https://redditinc.com/policies/data-api-terms), [OAuth2 wiki](https://github.com/reddit-archive/reddit/wiki/oauth2) | OAuth2 wiki and Data API Wiki | API docs listing pagination; Data API Wiki and Terms for usage limits/policy |
@@ -47,8 +51,11 @@ Important consequence: provider docs should shape action schemas and connector c
 | `xai-imagine` | `utils.xai.image.generate`, `utils.xai.image.edit`, `utils.xai.video.generate` | `stackos/actions/xai_imagine.py`, `stackos/integrations/xai_imagine.py` | `stackos/plugins/manifest.py` built-in utils xAI media actions | API key payload; budget enforced by `xai-imagine` kind; images/videos are persisted to generated assets and registered as generic media artifacts. |
 | `reve` | `utils.reve.image.generate`, `utils.reve.image.edit`, `utils.reve.image.remix` | `stackos/actions/reve_images.py`, `stackos/integrations/reve_images.py` | `stackos/plugins/manifest.py` built-in utils Reve media actions | API key payload; budget enforced by `reve` kind; JSON base64 image outputs are persisted to generated assets and registered as generic image artifacts. `auth.test` is format-only because Reve does not document a free live credential probe. |
 | `google-gemini-image` | `utils.google.image.generate`, `utils.google.image.edit` | `stackos/actions/google_gemini_image.py`, `stackos/integrations/google_gemini_image.py` | `stackos/plugins/manifest.py` built-in utils Google Gemini image actions | API key payload; budget enforced by `google-gemini-image` kind; inline MIME/base64 outputs are persisted to generated assets and registered as generic image artifacts. `auth.test` is format-only because Google does not document a free live image credential probe. |
+| `google-veo` | `utils.google.video.generate` | `stackos/actions/google_veo.py`, `stackos/integrations/google_veo.py` | `stackos/plugins/manifest.py` built-in utils Google Veo action | API key payload; budget kind `google-veo`; long-running operation ids are retained in output metadata, and generated videos are persisted as generic video artifacts. |
 | `ideogram` | `utils.ideogram.image.generate`, `utils.ideogram.image.remix` | `stackos/actions/ideogram_images.py`, `stackos/integrations/ideogram_images.py` | `stackos/plugins/manifest.py` built-in utils Ideogram image actions | API key payload; budget enforced by `ideogram` kind; temporary provider URLs are downloaded immediately, stripped from outputs/audit, persisted to generated assets, and registered as generic image artifacts. `auth.test` is format-only because Ideogram does not document a free live image probe. |
-| `byteplus-seedream` (provider `byteplus-ark`) | `utils.byteplus.image.generate`, `utils.byteplus.image.edit` | `stackos/actions/byteplus_seedream.py`, `stackos/integrations/byteplus_ark.py` | `stackos/plugins/manifest.py` built-in utils BytePlus Seedream image actions | API key payload; budget enforced by `byteplus-ark` kind; provider URLs/base64 outputs are persisted to generated assets and registered as generic image artifacts. `auth.test` is format-only because ModelArk does not document a free live media probe. |
+| `byteplus-seedream` / `byteplus-seedance` (provider `byteplus-ark`) | `utils.byteplus.image.generate`, `utils.byteplus.image.edit`, `utils.byteplus.video.generate` | `stackos/actions/byteplus_seedream.py`, `stackos/actions/byteplus_seedance.py`, `stackos/integrations/byteplus_ark.py` | `stackos/plugins/manifest.py` built-in utils BytePlus media actions | API key payload; budget enforced by `byteplus-ark` kind; provider URLs/base64 outputs are persisted to generated assets and registered as generic media artifacts. `auth.test` is format-only because ModelArk does not document a free live media probe. |
+| `alibaba-wan` | `utils.alibaba.video.generate` | `stackos/actions/alibaba_wan.py`, `stackos/integrations/alibaba_wan.py` | `stackos/plugins/manifest.py` built-in utils Alibaba Wan action | API key payload; budget kind `alibaba-wan`; text mode is fully executable, while media-input modes require provider-fetchable URLs because the official API does not accept local generated-assets refs directly. |
+| `kling-video` (provider `kling`) | `utils.kling.video.generate` | `stackos/actions/kling_video.py`, `stackos/integrations/kling_video.py` | `stackos/plugins/manifest.py` built-in utils Kling action | JSON credential payload with `access_key` and `secret_key`; JWT signing happens inside the daemon. StackOS v1 exposes `kling-v3` only; async task ids and generated video artifacts are preserved without returning provider URLs. |
 | `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map` | `stackos/actions/firecrawl.py`, `stackos/integrations/firecrawl.py:24` | `stackos/plugins/manifest.py` built-in utils actions | Bearer API key payload; budget enforced by `firecrawl`; `utils.web.extract` is deferred, not executable. |
 | `jina` | `utils.web.read` | `stackos/actions/jina.py`, `stackos/integrations/jina_reader.py:17` | `stackos/plugins/manifest.py:384`, `stackos/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `stackos/actions/reddit.py`, `stackos/integrations/reddit.py:29` | `stackos/plugins/manifest.py:390`, `stackos/plugins/manifest.py:542`, `stackos/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
@@ -122,6 +129,9 @@ Gaps/mismatches:
   `grok-imagine-image` and deprecated `grok-imagine-image-pro` are not exposed.
 - Resolved: video generation uses async submit/poll/download for
   `grok-imagine-video` and preserves provider `request_id` in output metadata.
+- Deferred: `grok-imagine-video-1.5-preview` is not exposed because current
+  public xAI model docs list only `grok-imagine-video`; add it only with
+  official docs or operator-provided in-console evidence.
 - Resolved: pre-call budget estimates follow official Imagine pricing units:
   image output by `1k`/`2k`, video output by `480p`/`720p` seconds, and
   input-image charges for edit/image-reference modes. Successful responses
@@ -131,8 +141,6 @@ Gaps/mismatches:
   ratio for that mode.
 - Remaining: xAI video editing and video extension are documented separate
   endpoint families and are not exposed until dedicated actions exist.
-- Remaining: `grok-imagine-video-1.5-preview` is not exposed until
-  preview-model policy and image-to-video-only behavior are separately reviewed.
 - Remaining: official docs do not expose StackOS-ready controls for watermark,
   custom fps, custom audio controls, or exact temporary URL expiry.
 - Remaining: generated-assets input refs are limited to PNG/JPEG for v1; public
@@ -286,9 +294,13 @@ Gaps/mismatches:
   action-call cost records reconcile against `usage.generated_images` or
   persisted output count, while the budget ledger remains a conservative
   precharge/top-up guardrail.
-- Remaining: streaming partial images, external URL inputs, BMP/TIFF/GIF/HEIC/
-  HEIF uploads, `seededit-3-0-i2i` specialized controls, and Seedance video
-  remain deferred until dedicated schemas and tests land.
+- Resolved: Seedance video now has a dedicated `byteplus-seedance` connector
+  and `utils.byteplus.video.generate` action using the shared ModelArk wrapper.
+- Remaining: streaming partial images, external URL image inputs,
+  BMP/TIFF/GIF/HEIC/HEIF uploads for Seedream image actions,
+  `seededit-3-0-i2i` specialized controls, and advanced Seedance edit,
+  extension, callback, draft-task, and provider asset-id modes remain
+  unsupported until dedicated schemas and tests land.
 
 Recommended corrections:
 

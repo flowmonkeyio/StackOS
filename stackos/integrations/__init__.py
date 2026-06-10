@@ -17,15 +17,18 @@ from typing import TYPE_CHECKING
 
 from stackos.integrations._base import BaseIntegration, IntegrationCallResult
 from stackos.integrations.ahrefs import AhrefsIntegration
+from stackos.integrations.alibaba_wan import AlibabaWanIntegration
 from stackos.integrations.byteplus_ark import BytePlusArkIntegration
 from stackos.integrations.dataforseo import DataForSeoIntegration
 from stackos.integrations.firecrawl import FirecrawlIntegration
 from stackos.integrations.ghost import GhostIntegration
 from stackos.integrations.google_gemini_image import GoogleGeminiImageIntegration
 from stackos.integrations.google_paa import GooglePaaIntegration
+from stackos.integrations.google_veo import GoogleVeoIntegration
 from stackos.integrations.ideogram_images import IdeogramImagesIntegration
 from stackos.integrations.imap import ImapIntegration
 from stackos.integrations.jina_reader import JinaReaderIntegration
+from stackos.integrations.kling_video import KlingVideoIntegration
 from stackos.integrations.openai_images import OpenAIImagesIntegration
 from stackos.integrations.openrouter import OpenRouterIntegration
 from stackos.integrations.reddit import RedditIntegration
@@ -44,13 +47,16 @@ if TYPE_CHECKING:
 
 REGISTRY: dict[str, type[BaseIntegration]] = {
     "dataforseo": DataForSeoIntegration,
+    "alibaba-wan": AlibabaWanIntegration,
     "serper": SerperIntegration,
     "firecrawl": FirecrawlIntegration,
     "openai-images": OpenAIImagesIntegration,
     "xai-imagine": XAIImagineIntegration,
     "reve": ReveImagesIntegration,
     "google-gemini-image": GoogleGeminiImageIntegration,
+    "google-veo": GoogleVeoIntegration,
     "ideogram": IdeogramImagesIntegration,
+    "kling": KlingVideoIntegration,
     "byteplus-ark": BytePlusArkIntegration,
     "openrouter": OpenRouterIntegration,
     "reddit": RedditIntegration,
@@ -81,6 +87,7 @@ def integration_class_for(kind: str) -> type[BaseIntegration] | None:
 __all__ = [
     "REGISTRY",
     "AhrefsIntegration",
+    "AlibabaWanIntegration",
     "BaseIntegration",
     "BytePlusArkIntegration",
     "DataForSeoIntegration",
@@ -88,10 +95,12 @@ __all__ = [
     "GhostIntegration",
     "GoogleGeminiImageIntegration",
     "GooglePaaIntegration",
+    "GoogleVeoIntegration",
     "IdeogramImagesIntegration",
     "ImapIntegration",
     "IntegrationCallResult",
     "JinaReaderIntegration",
+    "KlingVideoIntegration",
     "OpenAIImagesIntegration",
     "OpenRouterIntegration",
     "RedditIntegration",

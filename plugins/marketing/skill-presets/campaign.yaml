@@ -91,7 +91,7 @@ presets:
         - Run media production before pages, pages before signoff, and signoff before the gallery is finalized.
         - Materialize generated media into the workspace media/ directory before page building so every page reference is a relative path.
         - "Respect the generation_budget_review gate: draft on cheap settings, finalize on high, and stop for approval before exceeding budget."
-        - When video is requested but utils.video.generate is deferred or unconfigured, surface the gap during planning and record the explicit operator decision in the plan, either image-only downgrade or stop.
+        - When video is requested but no provider-specific video action is configured, surface the gap during planning and record the explicit operator decision in the plan, either image-only downgrade or stop.
         - "Close out truthfully: hand the operator the gallery link as the single front door, with closeout claims that match recorded evidence."
       must_not_do:
         - Do not generate media before plan approval.

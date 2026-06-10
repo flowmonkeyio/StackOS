@@ -183,7 +183,7 @@ presets:
         - Record each produced asset against its manifest id with the prompt used, the model, and the cost.
         - Store produced assets as artifacts plus creative resource records.
         - Respect budget gates and stop for approval before spend would exceed them.
-        - Report blockers, such as utils.video.generate being deferred or unconfigured, instead of substituting scope.
+        - Report blockers, such as no configured provider-specific video action for requested video, instead of substituting scope.
       must_not_do:
         - Do not invent new assets that are not in the approved manifest.
         - Do not expose or request raw credentials; execute providers only through granted actions.

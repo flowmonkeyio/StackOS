@@ -202,10 +202,13 @@ cover the migrated clean path for:
   `utils.reve.image.remix`
 - `google-gemini-image`: `utils.google.image.generate` and
   `utils.google.image.edit`
+- `google-veo`: `utils.google.video.generate`
 - `ideogram`: `utils.ideogram.image.generate` and
   `utils.ideogram.image.remix`
 - `byteplus-ark`: `utils.byteplus.image.generate` and
-  `utils.byteplus.image.edit`
+  `utils.byteplus.image.edit`, plus `utils.byteplus.video.generate`
+- `alibaba-wan`: `utils.alibaba.video.generate`
+- `kling-video`: `utils.kling.video.generate`
 - `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`
 - `jina`: `utils.web.read` with optional credentials
 - `sitemap`: `utils.sitemap.fetch`
@@ -240,11 +243,11 @@ metadata, such as `deferred-partner-api`, `deferred-inbound`,
 `project-local-http`. `utils.web.extract`
 is intentionally deferred until StackOS has an explicit Firecrawl status-poll
 action and output artifact contract. `utils.video.generate` is intentionally
-deferred until a supported video vendor backend is selected and its connector
-lands; the provider-neutral `video-generation` provider, credential wiring,
-input contract, and `video-generation` budget kind are already in place so the
-action becomes executable by adding the connector and dropping the deferred
-mode. Catalog availability reports those modes
+deferred as a provider-neutral planning placeholder. Concrete video execution
+is exposed through provider-specific actions such as
+`utils.xai.video.generate`, `utils.google.video.generate`,
+`utils.byteplus.video.generate`, `utils.alibaba.video.generate`, and
+`utils.kling.video.generate`. Catalog availability reports those modes
 directly instead of treating them as missing connectors. Outbrain and user-owned
 webhook actions remain deferred until endpoint-level contracts or project-local
 static HTTP config are supplied.

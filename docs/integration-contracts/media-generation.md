@@ -6,12 +6,15 @@ updated during connector delivery. `utils.image.generate` / `utils.image.edit`
 `utils.reve.image.generate`, `utils.reve.image.edit`, and
 `utils.reve.image.remix`, and provider-specific xAI Imagine actions
 `utils.xai.image.generate`, `utils.xai.image.edit`, and
-`utils.xai.video.generate`, plus Google Gemini image actions
+`utils.xai.video.generate`, plus Google Gemini image actions and Google Veo
+video action
 `utils.google.image.generate` and `utils.google.image.edit`, plus Ideogram
 image actions `utils.ideogram.image.generate` and
 `utils.ideogram.image.remix`, plus BytePlus Seedream image actions
-`utils.byteplus.image.generate` and `utils.byteplus.image.edit`, are executable.
-Provider-neutral
+`utils.byteplus.image.generate` and `utils.byteplus.image.edit`, plus
+provider-specific video actions `utils.google.video.generate`,
+`utils.byteplus.video.generate`, `utils.alibaba.video.generate`, and
+`utils.kling.video.generate`, are executable. Provider-neutral
 `utils.video.generate` remains deferred (`deferred-video-backend-selection`).
 
 Shape of the list: the top four per category by leaderboard rank and API
@@ -426,15 +429,16 @@ Recraft V4.1 (vector/SVG output).
 ## Video Generation — Top 4 Plus Requested Addition
 
 All five video APIs are asynchronous (submit job, poll status, download
-output) — the connector design must use the polling pattern anticipated by the
-deferred `utils.video.generate` contract.
+output). Provider-specific StackOS actions use this polling pattern; the
+provider-neutral `utils.video.generate` contract remains a deferred placeholder
+until StackOS deliberately adds a cross-provider backend abstraction.
 
 ### 1. Seedance 2.0 — ByteDance
 
-- Status: deferred/build-gated for StackOS v1. Public API on BytePlus ModelArk;
-  organization/model activation, terms acceptance, active billing, and a stored
-  StackOS credential are required before connector delivery starts. #1 on both
-  arenas for text-to-video and #1-2 for image-to-video.
+- Status: executable in StackOS as `utils.byteplus.video.generate`. Public API
+  on BytePlus ModelArk; organization/model activation, terms acceptance, active
+  billing, and a stored StackOS credential are required before live calls. #1
+  on both arenas for text-to-video and #1-2 for image-to-video.
 - API shape: async task API on the ap-southeast ModelArk data plane:
   `POST /contents/generations/tasks`, `GET /contents/generations/tasks/{id}`,
   list tasks, and delete/cancel task. Connector must submit, poll/retrieve,
@@ -451,9 +455,11 @@ deferred `utils.video.generate` contract.
   videos, and audio plus optional prompt, video modification/editing, video
   extension, synchronized mono audio via `generate_audio`, and optional
   `return_last_frame`. Audio cannot be input alone.
-- Size control: Seedance 2.0 duration is 4-15 s or `-1`; output is 24 fps.
-  Resolutions are `480p | 720p | 1080p`, but Fast excludes 1080p. Ratios are
-  `16:9`, `4:3`, `1:1`, `3:4`, `9:16`, `21:9`, and `adaptive`.
+- Size control: Seedance 2.0 duration is 4-15 s or `-1`; Seedance 1.5 Pro is
+  4-12 s or `-1`; Seedance 1.0 is 2-12 s or `-1`. Output is 24 fps.
+  Resolutions are `480p | 720p | 1080p`, but 2.0 Fast excludes 1080p. Ratios
+  are `16:9`, `4:3`, `1:1`, `3:4`, `9:16`, `21:9`, and `adaptive`. The
+  official task priority is an integer 0-9.
 - Inputs: image refs may be URL, base64, or asset id; common formats include
   JPEG/PNG/WEBP/BMP/TIFF/GIF plus HEIC/HEIF for 1.5/2.0. Image dimensions must
   be 300-6000 px, each under 30 MB, request body <=64 MB; first frame uses
@@ -479,19 +485,23 @@ deferred `utils.video.generate` contract.
   <https://docs.byteplus.com/en/docs/ModelArk/1330310>, billing
   <https://docs.byteplus.com/en/docs/ModelArk/1544106>, video terms
   <https://docs.byteplus.com/en/docs/ModelArk/Specific_Terms_for_the_BytePlus_Video_Generation_Model_Services>.
+  StackOS v1 scope exposes text-to-video, image-to-video,
+  first-last-frame, and multimodal reference-to-video with generated-assets
+  image refs plus provider-fetchable video/audio URLs. Draft-task inputs,
+  provider asset ids, callbacks, and edit/extension-specific flows remain
+  unsupported provider features until they get dedicated schemas and tests.
   Evidence note: rendered official BytePlus docs verify endpoint/auth shape,
   exact model ids, media limits, task retention, URL expiry, watermark behavior,
-  task statuses, usage fields, timeout bounds, and billing formulas. Build
-  remains gated on operator account, billing, and stored-credential
-  confirmation.
+  task statuses, usage fields, timeout bounds, and billing formulas. Live smoke
+  remains operator evidence after account/billing/model activation is confirmed.
 
 ### 2. WAN 2.7 — Alibaba
 
-- Status: skipped/deferred for StackOS v1. Alibaba's lineup confirms
-  `wan2.7-t2v`, `wan2.7-i2v`, `wan2.7-r2v`, and `wan2.7-videoedit`, but the
-  accessible public API references do not fully verify executable WAN 2.7
-  schemas across t2v/r2v/videoedit. Do not build a connector from the partial
-  facts below.
+- Status: executable in StackOS as `utils.alibaba.video.generate`. Alibaba's
+  lineup confirms `wan2.7-t2v`, `wan2.7-i2v`, `wan2.7-r2v`, and
+  `wan2.7-videoedit`; StackOS v1 implements the verified DashScope
+  text-to-video/image-to-video task family and keeps advanced r2v/video-edit
+  breadth out of the public schema until those flows are separately signed off.
 - API shape: asynchronous DashScope HTTP API. Text-to-video uses
   `POST /api/v1/services/aigc/video-generation/video-synthesis` with
   `X-DashScope-Async: enable`; image-to-video uses the same submit/poll model.
@@ -507,11 +517,14 @@ deferred `utils.video.generate` contract.
   such as `1280*720`, `720*1280`, `960*960`, `1088*832`, `832*1088`,
   `1920*1080`, `1080*1920`, `1440*1440`, `1632*1248`, and `1248*1632`,
   depending on model/resolution tier.
-- Pricing: pricing gaps alone are no longer considered blockers by operator
-  direction, but WAN remains skipped because the executable API docs are not
-  complete enough. Older wan2.6 references list $0.10/s (720P), $0.15/s
-  (1080P), and flash tiers from $0.025/s. Partial docs show `watermark`
-  defaults false and output URLs expire after 24 h.
+- Pricing: pricing gaps alone are not build blockers by operator direction.
+  StackOS v1 does not pre-estimate WAN cost yet. Older wan2.6 references list
+  $0.10/s (720P), $0.15/s (1080P), and flash tiers from $0.025/s. Docs show
+  `watermark` defaults false and output URLs expire after 24 h.
+- StackOS v1 scope exposes text-to-video, image-to-video, first-last-frame,
+  and video-continuation using provider-fetchable URLs for media inputs.
+  Local generated-assets image upload, r2v/videoedit-specific contracts,
+  motion controls, and lip-sync are unsupported provider features.
 - Docs: lineup
   <https://www.alibabacloud.com/help/en/model-studio/video-generate-edit-model/>,
   i2v reference
@@ -522,19 +535,17 @@ deferred `utils.video.generate` contract.
 
 ### 3. Veo 3.1 — Google
 
-- Status: deferred/build-gated for StackOS v1. Google docs mark Veo 3.1 /
-  3.1 Fast / 3.1 Lite as preview models; Veo 3 and Veo 2 are the stable
-  Gemini API model families. Connector delivery requires operator confirmation
-  of paid-tier billing and a stored StackOS credential, plus an explicit v1
-  scope decision on whether to expose only stable `veo-3.0-*`/`veo-2.0-*` or
-  include the preview `veo-3.1-*` surface. #4 on LMArena text-to-video;
+- Status: executable in StackOS as `utils.google.video.generate`. Google docs
+  mark Veo 3.1 / 3.1 Fast / 3.1 Lite as preview models. StackOS v1 includes
+  only those latest Veo 3.1 preview ids; older Veo 3/Veo 2 ids are omitted until
+  their model-specific parameter matrix is separately implemented. Live calls
+  require paid-tier billing and a stored StackOS credential. #4 on LMArena text-to-video;
   strongest Western entry on image-to-video boards.
 - API shape: asynchronous Gemini `predictLongRunning`; connector must submit,
   poll until `done=true`, download output, and persist before the 2-day
   server-side retention window expires.
-- Models: `veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview`,
-  `veo-3.1-lite-generate-preview`, stable `veo-3.0-generate-001`,
-  `veo-3.0-fast-generate-001`, and `veo-2.0-generate-001`.
+- Models: `veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview`, and
+  `veo-3.1-lite-generate-preview`.
 - Modes: text-to-video, image-to-video, first+last frame interpolation, up to
   3 reference images, provider-documented video-to-video for Veo 3.1 variants,
   extend +7 s per step up to 20 steps, and native audio generation from prompt
@@ -542,36 +553,34 @@ deferred `utils.video.generate` contract.
   the last 2 days. If StackOS v1 defers arbitrary video-to-video, list it as an
   unsupported provider feature rather than implying the provider lacks it.
 - Size control: `aspectRatio` `16:9 | 9:16`; 24 fps. Veo 3.1/3.1 Fast support
-  `resolution` `720p | 1080p | 4k`; Lite supports `720p | 1080p`; Veo 3
-  stable supports `720p | 1080p`; Veo 2 supports `720p`. Veo 3.1 preview
-  models support `durationSeconds` `4 | 6 | 8` with 8 s required for 1080p/4k
-  where supported; Veo 3 stable is documented as 8 s; Veo 2 supports
-  `5 | 6 | 8`. Veo 2 can return 1 or 2 videos per request; Veo 3/3.1 return 1.
+  `resolution` `720p | 1080p | 4k`; Lite supports `720p | 1080p`.
+  `durationSeconds` is `4 | 6 | 8`, with 8 s required for 1080p/4k and
+  first/last-frame interpolation in StackOS v1. Veo 3.1 returns one video.
 - Safety and region: SynthID watermark, safety filters, and memorization
-  checks apply. EU/UK/CH/MENA restrict `personGeneration` for Veo 3/3.1 to
-  `allow_adult`.
+  checks apply. Current Google docs list `personGeneration` as `allow_all` for
+  text-to-video and `allow_adult` for image/interpolation modes in Veo 3.1;
+  regional restrictions still apply.
 - Pricing: budget unit is generated seconds. Veo 3.1 Standard is $0.40/s for
   720p/1080p and $0.60/s for 4K; Fast is $0.10/s 720p, $0.12/s 1080p,
   $0.30/s 4K; Lite is $0.05/s 720p and $0.08/s 1080p. Audio is included.
   Google pricing docs warn that preview models may change before becoming
   stable and can have more restrictive rate limits.
-- StackOS v1 scope decision: use stable `veo-3.0-generate-001` as the default
-  model. The action may expose Veo 3.1 preview model ids only with explicit
-  preview capability metadata and no silent default to preview. If v1 defers
-  video-to-video, extension, or reference-image modes, list them in unsupported
-  provider features while preserving the verified provider capability facts in
-  this contract.
+- StackOS v1 scope decision: default to latest `veo-3.1-generate-preview`
+  while listing preview status in capability metadata. The action exposes
+  text-to-video, image-to-video, and first+last-frame. Video-to-video,
+  extension, audio-specific controls, camera controls, reference-to-video, and
+  older Veo 3/Veo 2 ids are listed as unsupported provider features while
+  preserving the verified provider capability facts in this contract.
 - Docs: <https://ai.google.dev/gemini-api/docs/video>, pricing
   <https://ai.google.dev/gemini-api/docs/pricing>.
 
 ### 4. Kling 3.0 — Kuaishou
 
-- Status: deferred/not build-ready for StackOS v1. Kling 3.0 is a GA product
-  on the Kling Open Platform with a paid API plan, but automated public docs
-  review did not verify the executable endpoint/auth/task/status/schema
-  contract. Do not build a connector from the partial facts below until
-  official rendered API docs or operator-provided in-console evidence verify
-  the concrete contract.
+- Status: executable in StackOS as `utils.kling.video.generate`. Kling 3.0 is
+  a GA product on the Kling Open Platform with a paid API plan. Official
+  browser-rendered docs verify the endpoint host, JWT auth shape, task
+  endpoints, status enum, latest `kling-v3` model id, duration/aspect/quality
+  enums, base64 image input rules, and output retention.
 - Ranking context: Artificial Analysis text-to-video #4–7 cluster (Pro/Std
   variants 1094–1104), above Veo 3.1 there; LMArena image-to-video top-12.
   Released 2026-02-04.
@@ -580,18 +589,23 @@ deferred `utils.video.generate` contract.
   control/transfer, lip-sync endpoint; the 3.0 Omni ("O3") variant adds
   reference-to-video (character traits + voice from a reference video) and
   video editing.
-- Size control: API pricing distinguishes `720p` and `1080p` tiers; aspect
-  ratios `16:9, 9:16, 1:1` (historical official enum — mirror-sourced, the
-  developer docs block automated review); duration up to 15 s. Consumer-app
-  "4K/60fps" claims are not present in API tiers.
-- Pricing: $0.084–$0.168/s reported from the developer pricing pages
-  (credit-schedule: 6–12 credits/s by tier and audio). Confirm in-console
-  during deep review.
-- Caveats: docs and pricing pages return HTTP 446 to automated tools. Endpoint
-  host, auth header, async submit/poll paths, status values, request/response
-  schemas, exact model ids, size/duration/fps/audio controls, output retention,
-  watermark behavior, commercial terms, and pricing need in-console
-  verification after registration.
+- Size control: StackOS v1 exposes only `kling-v3`, where API `mode` enum is
+  `std | pro | 4k`, mapping to 720P, 1080P, and native 4K tiers. Text-to-video
+  aspect ratios are `16:9, 9:16, 1:1`; duration enum is string seconds `3`
+  through `15`.
+- Inputs and output: image-to-video accepts `image` and optional `image_tail`
+  as URL or raw base64 with no `data:image/...` prefix. StackOS v1 accepts
+  generated-assets PNG/JPEG refs and converts them to raw base64. Task statuses
+  are `submitted`, `processing`, `succeed`, and `failed`; generated videos are
+  retained by Kling for 30 days, but StackOS still persists immediately.
+- Pricing: StackOS v1 does not pre-estimate Kling cost yet. The official API
+  platform bills through resource packages/paid API plan; exact credit-second
+  budget modeling is a follow-up.
+- StackOS v1 scope exposes text-to-video, image-to-video, and first-last-frame
+  for `kling-v3` only. Older Kling v1/v2 model ids, multi-shot,
+  reference-to-video/Omni, camera_control, motion brush, multi-elements-to-video,
+  video extension, lip sync, avatar, voices, and element controls are
+  unsupported provider features until they get dedicated schemas and tests.
 - Docs: developer docs
   <https://app.klingai.com/global/dev/document-api>, dev pricing
   <https://kling.ai/dev/pricing>, 3.0 launch
@@ -601,10 +615,10 @@ deferred `utils.video.generate` contract.
 
 - Status: GA on the xAI API; official docs and pricing page list
   `grok-imagine-video` output at $0.05/s for 480p and $0.07/s for 720p, with
-  image inputs charged at $0.002/image. xAI pricing docs also list
-  image-to-video-only `grok-imagine-video-1.5-preview`; it is intentionally not
-  exposed in v1 because StackOS is delivering the stable provider-specific
-  generate surface first.
+  image inputs charged at $0.002/image. StackOS does not expose
+  `grok-imagine-video-1.5-preview` because current public xAI model docs list
+  only `grok-imagine-video`; add the preview only with official docs or
+  operator-provided in-console evidence.
 - API shape: async REST. Submit to `/v1/videos/generations`,
   `/v1/videos/edits`, or `/v1/videos/extensions`, receive `request_id`, then
   poll `GET /v1/videos/{request_id}` until `pending`, `done`, `expired`, or
@@ -626,11 +640,10 @@ deferred `utils.video.generate` contract.
   can occur synchronously before a job id is created.
 - StackOS v1 scope decision: `utils.xai.video.generate` exposes text-to-video,
   image-to-video, and reference-to-video through `grok-imagine-video`. Video
-  editing and extension are separate endpoint families and remain unsupported
-  until they get dedicated actions. `grok-imagine-video-1.5-preview` remains
-  unsupported until preview-model policy and image-to-video-only behavior are
-  reviewed. Metadata gaps such as exact URL expiry, fps, audio behavior, and
-  watermark policy are documented limitations, not build blockers.
+  editing, extension, and undocumented preview model ids remain unsupported
+  until they get dedicated actions and official/console-backed contracts.
+  Metadata gaps such as exact URL expiry, fps, audio behavior, and watermark
+  policy are documented limitations, not build blockers.
 - Docs: <https://docs.x.ai/developers/model-capabilities/video/generation>,
   image-to-video
   <https://docs.x.ai/developers/model-capabilities/video/image-to-video>,
@@ -671,19 +684,19 @@ How the shortlist maps onto the StackOS pattern when integration starts:
 - Provider shape: register per-vendor providers and actions. The
   provider-neutral `video-generation` provider remains only as a deferred
   placeholder until concrete video backends are delivered.
-- Candidate video APIs are async job APIs; connectors need submit → poll →
+- Candidate video APIs are async job APIs; connectors use submit → poll →
   download → persist-to-generated-assets, with provider job ids recorded in
-  action audit metadata. xAI is executable through this path; WAN remains
-  skipped for v1 because the public executable API contract is not verified.
-  WAN output URLs expire in 24 h where documented; Veo stores server-side for
-  2 days.
+  action audit metadata. xAI, Google Veo, BytePlus Seedance, Alibaba Wan, and
+  Kling are executable through provider-specific actions. WAN and Seedance
+  output URLs expire in 24 h where documented; Veo stores server-side for
+  2 days; Kling generated videos are cleared after 30 days.
 - Image APIs return base64 or URLs synchronously; persistence mirrors the
   existing `openai-images` integration (bytes into generated assets, local
   artifact URLs, no payloads in agent responses).
 - Watermark flags differ: WAN `watermark` defaults false, Seedance exposes a
   request parameter, Veo always embeds invisible SynthID, Nano Banana always
-  embeds SynthID, Kling unverified. Record per-provider behavior in the
-  contract review before exposing actions.
+  embeds SynthID, and Kling exposes `watermark_info.enabled`. Record
+  per-provider behavior in the contract review before expanding actions.
 - Budget kinds: one per platform (`google-veo`, `byteplus-ark`,
   `alibaba-wan`, `kling`, `xai-imagine`, `reve`, `ideogram`) following the
   `openai-images` budget pattern, since pricing units differ (per second by
@@ -691,13 +704,16 @@ How the shortlist maps onto the StackOS pattern when integration starts:
 
 ## Open Verification Items For Deep Review
 
-1. Kling 3.0 executable API contract: endpoint host, auth, async submit/poll
-   paths, task statuses, model ids, request/response schemas, size/duration/
-   fps/audio controls, output retention, watermark, commercial terms, and
-   pricing. Developer docs block automated review; verify in-console after
-   registration before building any connector.
-2. BytePlus Seedance video build scope: decide whether v1 exposes full
-   multimodal edit/extension/callback behavior or starts with text/image-to-
-   video polling. Seedream image v1 scope is executable and documents deferred
-   streaming, external URLs, extra upload formats, non-lite 5.0, and Seededit.
-3. HappyHorse Model Studio beta access criteria and GA timeline.
+1. Live credential smoke for Google Veo, BytePlus Seedance, Alibaba Wan, and
+   Kling after the operator confirms account, billing/model activation, and a
+   stored StackOS credential. Mocked wrapper/action tests are complete; live
+   smoke must never require secrets in chat.
+2. Pricing-budget modeling for Google Veo, BytePlus Seedance, Alibaba Wan, and
+   Kling. Pricing gaps are not execution blockers, but pre-call budget estimates
+   remain zero until provider-specific billing units are modeled and tested.
+3. Dedicated action contracts for advanced video features: Veo
+   video-to-video/extension/reference-image modes, Seedance edit/extension/
+   callbacks/provider asset ids, WAN r2v/videoedit/lip-sync, Kling multi-shot/
+   reference/Omni/motion/extension/lip-sync/voices/elements, and xAI
+   video-edit/video-extension/preview-model behavior.
+4. HappyHorse Model Studio beta access criteria and GA timeline.

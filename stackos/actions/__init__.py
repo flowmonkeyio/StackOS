@@ -9,7 +9,9 @@ from stackos.action_availability import (
     build_action_exposure,
 )
 from stackos.actions.ahrefs import AhrefsActionConnector
+from stackos.actions.alibaba_wan import AlibabaWanVideoActionConnector
 from stackos.actions.apollo import ApolloActionConnector
+from stackos.actions.byteplus_seedance import BytePlusSeedanceVideoActionConnector
 from stackos.actions.byteplus_seedream import BytePlusSeedreamImageActionConnector
 from stackos.actions.clay import ClayActionConnector
 from stackos.actions.connectors import (
@@ -25,12 +27,14 @@ from stackos.actions.firecrawl import FirecrawlActionConnector
 from stackos.actions.ghost import GhostActionConnector
 from stackos.actions.google_ads import GoogleAdsActionConnector
 from stackos.actions.google_gemini_image import GoogleGeminiImageActionConnector
+from stackos.actions.google_veo import GoogleVeoVideoActionConnector
 from stackos.actions.google_workspace import GoogleWorkspaceActionConnector
 from stackos.actions.http import HttpActionConnector
 from stackos.actions.hubspot import HubSpotActionConnector
 from stackos.actions.ideogram_images import IdeogramImagesActionConnector
 from stackos.actions.imap import ImapActionConnector
 from stackos.actions.jina import JinaActionConnector
+from stackos.actions.kling_video import KlingVideoActionConnector
 from stackos.actions.manifest import (
     ACTION_MANIFEST_SCHEMA_VERSION,
     ExecutableActionManifest,
@@ -65,11 +69,15 @@ from stackos.actions.wordpress import WordPressActionConnector
 from stackos.actions.xai_imagine import XAIImagineActionConnector
 
 DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(AlibabaWanVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(XAIImagineActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ReveImagesActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GoogleGeminiImageActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(GoogleVeoVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(IdeogramImagesActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(KlingVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedreamImageActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedanceVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
@@ -116,7 +124,9 @@ __all__ = [
     "ActionValidationIssue",
     "ActionValidationOut",
     "AhrefsActionConnector",
+    "AlibabaWanVideoActionConnector",
     "ApolloActionConnector",
+    "BytePlusSeedanceVideoActionConnector",
     "BytePlusSeedreamImageActionConnector",
     "ClayActionConnector",
     "DataForSeoActionConnector",
@@ -125,12 +135,14 @@ __all__ = [
     "GhostActionConnector",
     "GoogleAdsActionConnector",
     "GoogleGeminiImageActionConnector",
+    "GoogleVeoVideoActionConnector",
     "GoogleWorkspaceActionConnector",
     "HttpActionConnector",
     "HubSpotActionConnector",
     "IdeogramImagesActionConnector",
     "ImapActionConnector",
     "JinaActionConnector",
+    "KlingVideoActionConnector",
     "MetaAdsActionConnector",
     "MicrosoftGraphActionConnector",
     "MockProviderActionConnector",

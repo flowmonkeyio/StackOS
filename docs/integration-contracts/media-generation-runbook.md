@@ -30,8 +30,10 @@ Every concrete media tool uses the same StackOS split:
   changelog are delivered together.
 
 Use provider-specific providers and action refs when schemas differ. Keep the
-neutral `video-generation` provider only as the deferred placeholder until
-concrete video actions land.
+neutral `video-generation` provider only as a deferred planning placeholder
+until StackOS intentionally adds a provider-neutral abstraction. Do not wire
+workflow execution through the neutral placeholder when provider-specific
+actions exist.
 
 Commit one provider delivery at a time. A provider commit must contain that
 provider's contract updates, connector code, manifest/action metadata, tests,
@@ -63,6 +65,19 @@ Each provider delivery needs three tickets before implementation:
 For workflow-backed work, keep these tickets dependency-bridged into the
 engineering workflow spine. Do not claim final signoff while contract, build,
 verification, review, or tracker-audit gates are still open.
+
+## Workflow Wiring
+
+Provider-specific media actions should be exposed to workflows through
+`action_contracts`. If a branch is optional, such as "generate video only when
+the operator requested video", set `optional: true` on each provider-specific
+action contract and keep the concrete action refs on the producing step. This
+lets the run plan grant the selected provider action while `readiness.check`
+reports unconfigured optional branches as `required_for:
+optional_action_execution` instead of blocking the base workflow.
+
+Do not use the neutral `utils.video.generate` action in workflows for actual
+execution while it remains `deferred-video-backend-selection`.
 
 ## Commit Policy
 

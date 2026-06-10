@@ -60,10 +60,13 @@ uv run pytest \
   -q
 ```
 
-For provider connector changes, add the relevant integration wrapper tests:
+For provider connector changes, `make signoff` includes the integration wrapper
+tests and provider action execution tests. To isolate that slice while fixing a
+connector, run:
 
 ```bash
 uv run pytest tests/integration/test_integrations -q
+uv run pytest tests/integration/test_repositories/test_video_provider_actions.py -q
 ```
 
 For documentation-only edits that do not change commands, schemas, operation

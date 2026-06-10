@@ -24,8 +24,13 @@
   capability metadata, generated-assets persistence, generic media artifact
   registration, run-plan grant coverage, official-doc-based pre-call budget
   estimates, and actual-cost reconciliation from xAI usage ticks when present.
-  Alibaba WAN remains skipped for v1 until public executable API docs are
-  sufficient.
+- Added provider-specific video actions `utils.google.video.generate`,
+  `utils.byteplus.video.generate`, `utils.alibaba.video.generate`, and
+  `utils.kling.video.generate` with async submit/poll/download/persist
+  wrappers, daemon-held credential handling, provider capability metadata,
+  generated-assets video artifact registration, mocked wrapper/action execution
+  tests, and official documentation references. Provider-neutral
+  `utils.video.generate` remains deferred as a planning placeholder.
 - Added Reve image actions `utils.reve.image.generate`,
   `utils.reve.image.edit`, and `utils.reve.image.remix` with provider-specific
   capability metadata, generated-assets persistence, generic image artifact
@@ -55,11 +60,10 @@
   validation, priced Seedream 5 Lite / 4.5 / 4.0 budget estimates, and
   successful-output cost reconciliation. BytePlus `auth.test` is non-billable
   format-only because ModelArk does not document a free media credential probe.
-- Documented the video-provider gates for the media generation program:
-  BytePlus Seedance and Google Veo remain deferred/build-gated until operator
-  account, billing, model activation/scope, and stored-credential checks are
-  complete; Kling is explicitly deferred until official rendered docs or
-  operator in-console evidence verify the executable API contract.
+- Documented the media-generation runbook and updated the contract ledgers for
+  executable Google Veo, BytePlus Seedance, Alibaba Wan, and Kling video
+  actions. Live credential smoke and pricing-budget modeling remain follow-up
+  verification items, not connector blockers.
 
 ## 1.0.0 - 2026-05-26
 

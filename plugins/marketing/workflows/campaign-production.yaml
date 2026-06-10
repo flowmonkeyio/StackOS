@@ -201,20 +201,44 @@ capability_requirements:
       - openai-images
   - key: video-generation
     required: false
-    description: Short video generation; required at readiness time only when the media request includes video. The video.generate action is deferred until a vendor backend is wired.
+    description: Short video generation; required at readiness time only when the media request includes video. Use one selected provider-specific action for execution.
     preferred_providers:
-      - video-generation
+      - google-veo
+      - byteplus-ark
+      - alibaba-wan
+      - kling
+      - xai-imagine
 auth_requirements:
   - key: openai_images
     provider: openai-images
     auth_type: api-key
     optional: false
     description: Daemon-held OpenAI key for image generation and reference edits.
-  - key: video_generation
-    provider: video-generation
+  - key: google_veo
+    provider: google-veo
     auth_type: api-key
     optional: true
-    description: Daemon-held key for the selected video backend; optional until the video connector is enabled.
+    description: Daemon-held Gemini API key for Google Veo video generation.
+  - key: byteplus_ark
+    provider: byteplus-ark
+    auth_type: api-key
+    optional: true
+    description: Daemon-held BytePlus ModelArk key for Seedance video generation.
+  - key: alibaba_wan
+    provider: alibaba-wan
+    auth_type: api-key
+    optional: true
+    description: Daemon-held Alibaba DashScope key for Wan video generation.
+  - key: kling
+    provider: kling
+    auth_type: jwt-access-key
+    optional: true
+    description: Daemon-held Kling AccessKey/SecretKey JSON credential for Kling video generation.
+  - key: xai_imagine
+    provider: xai-imagine
+    auth_type: api-key
+    optional: true
+    description: Daemon-held xAI API key for Grok Imagine video generation.
 action_contracts:
   - key: image_generate
     action: image.generate
@@ -230,12 +254,45 @@ action_contracts:
     risk_level: cost
     auth_ref: openai_images
     approval_ref: generation_budget_review
-  - key: video_generate
-    action: video.generate
+  - key: google_video_generate
+    action: google.video.generate
     capability: video-generation
-    provider: video-generation
+    provider: google-veo
+    optional: true
     risk_level: cost
-    auth_ref: video_generation
+    auth_ref: google_veo
+    approval_ref: generation_budget_review
+  - key: byteplus_video_generate
+    action: byteplus.video.generate
+    capability: video-generation
+    provider: byteplus-ark
+    optional: true
+    risk_level: cost
+    auth_ref: byteplus_ark
+    approval_ref: generation_budget_review
+  - key: alibaba_video_generate
+    action: alibaba.video.generate
+    capability: video-generation
+    provider: alibaba-wan
+    optional: true
+    risk_level: cost
+    auth_ref: alibaba_wan
+    approval_ref: generation_budget_review
+  - key: kling_video_generate
+    action: kling.video.generate
+    capability: video-generation
+    provider: kling
+    optional: true
+    risk_level: cost
+    auth_ref: kling
+    approval_ref: generation_budget_review
+  - key: xai_video_generate
+    action: xai.video.generate
+    capability: video-generation
+    provider: xai-imagine
+    optional: true
+    risk_level: cost
+    auth_ref: xai_imagine
     approval_ref: generation_budget_review
 resource_contracts:
   - key: brand_profiles
@@ -298,7 +355,7 @@ steps:
       - Persist every product photo as an artifact so downstream steps reference stable refs; reject inputs that are neither reachable URLs nor readable files.
       - Complete the brief to professional standard; objective, audience and awareness level, single-minded proposition, tone, mandatories and do-not-say rules, placement-resolved deliverables, and a success metric per deliverable.
       - Propose campaign_name and a campaign slug when missing, and record the campaign-brief resource with status intake.
-      - When the media request includes video, check video.generate availability now and carry the result into planning as an explicit operator decision point.
+      - When the media request includes video, check provider-specific video action availability now and carry the selected provider into planning as an explicit operator decision point.
     input_refs:
       - campaign_name
       - brand_identity
@@ -354,7 +411,7 @@ steps:
       - Plan each landing page variant in advance with its own media requirements, assigned angle or hypothesis, and message-match to the ad creatives pointing at it.
       - For video entries, plan single short clips with a hook in the first two to three seconds, one camera move and one action per shot, named palette anchors, and product-only reference frames.
       - Estimate generation cost from the draft-cheap finalize-high ladder and include it in the plan for the approval gate.
-      - When video was requested but video.generate is deferred or its provider is unconfigured, present the operator an explicit image-only downgrade or stop decision inside the plan instead of silently dropping video.
+      - When video was requested but no provider-specific video action is configured for execution, present the operator an explicit image-only downgrade or stop decision inside the plan instead of silently dropping video.
       - After the plan_confirmation gate passes, record the approved plan and its decisions with rationale in campaign.md and update the campaign-brief resource to status approved.
     context_refs:
       - existing_creatives
@@ -387,6 +444,11 @@ steps:
     action_refs:
       - image_generate
       - image_edit
+      - google_video_generate
+      - byteplus_video_generate
+      - alibaba_video_generate
+      - kling_video_generate
+      - xai_video_generate
     approval_refs:
       - plan_confirmation
       - generation_budget_review
@@ -533,7 +595,7 @@ learning_hooks:
       - campaign-production
 failure_handling:
   - If required inputs are missing, especially the media format request, stop intake and elicit the operator decision instead of defaulting it.
-  - If video is requested while video.generate is deferred or its provider is unconfigured, surface the gap before planning completes and record the operator's downgrade or stop decision in the plan.
+  - If video is requested while no provider-specific video action is configured, surface the gap before planning completes and record the operator's downgrade or stop decision in the plan.
   - If a generation repeatedly misses acceptance criteria, change one variable per retry, then stop for operator guidance instead of burning budget.
   - If the budget or plan approval gate is denied, store the brief and plan without generating and report the denial truthfully.
   - If visual signoff finds blocking issues, return to the specific producing step with the recorded findings and re-verify after fixes.

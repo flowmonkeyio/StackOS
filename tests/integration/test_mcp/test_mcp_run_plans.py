@@ -836,7 +836,7 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
     assert with_inputs["plan"]["key"] == "core.project-memory-review.run"
 
 
-def test_run_plan_validate_marketing_template_wires_current_image_flow(
+def test_run_plan_validate_marketing_template_wires_optional_provider_video_flow(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -851,16 +851,27 @@ def test_run_plan_validate_marketing_template_wires_current_image_flow(
     assert validation["warnings"] == []
     plan = validation["plan"]
     produce_media = next(step for step in plan["steps"] if step["id"] == "produce-media")
-    assert produce_media["action_refs"] == ["utils.image.generate", "utils.image.edit"]
+    expected_action_refs = [
+        "utils.image.generate",
+        "utils.image.edit",
+        "utils.google.video.generate",
+        "utils.byteplus.video.generate",
+        "utils.alibaba.video.generate",
+        "utils.kling.video.generate",
+        "utils.xai.video.generate",
+    ]
+    assert produce_media["action_refs"] == expected_action_refs
     grants = plan["grant_snapshot_json"]["mcp_tool_grants"]
     produce_action_grant = next(
         grant
         for grant in grants
         if grant["step_id"] == "produce-media" and grant["tool"] == "action.execute"
     )
-    assert produce_action_grant["action_refs"] == ["utils.image.generate", "utils.image.edit"]
+    assert produce_action_grant["action_refs"] == expected_action_refs
     assert "utils.video.generate" not in produce_media["action_refs"]
-    assert all("video" not in ref for grant in grants for ref in grant.get("action_refs", []))
+    assert "utils.video.generate" not in {
+        ref for grant in grants for ref in grant.get("action_refs", [])
+    }
 
 
 def test_run_plan_template_and_workflow_key_must_match(

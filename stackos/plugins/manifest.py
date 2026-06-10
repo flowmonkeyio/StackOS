@@ -690,6 +690,41 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 },
             ),
             ProviderManifest(
+                key="google-veo",
+                name="Google Veo",
+                description="Google Gemini API Veo video generation provider.",
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="Gemini API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Store the Gemini Developer API key from Google AI Studio. "
+                        "StackOS resolves it inside the daemon for Veo video actions."
+                    ),
+                    "docs": [
+                        "https://ai.google.dev/gemini-api/docs/video",
+                        "https://ai.google.dev/gemini-api/docs/pricing",
+                        "https://github.com/googleapis/python-genai",
+                    ],
+                },
+            ),
+            ProviderManifest(
                 key="ideogram",
                 name="Ideogram",
                 description="Ideogram 4.0 image generation and remix provider.",
@@ -751,13 +786,92 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 config={
                     "setup_note": (
                         "Store the BytePlus ModelArk API key. StackOS resolves it "
-                        "inside the daemon for Seedream image actions and future "
-                        "ModelArk media actions."
+                        "inside the daemon for Seedream image actions and Seedance "
+                        "video generation actions."
                     ),
                     "docs": [
                         "https://docs.byteplus.com/en/docs/ModelArk/1541523",
                         "https://docs.byteplus.com/en/docs/ModelArk/1330310",
                         "https://docs.byteplus.com/en/docs/ModelArk/1544106",
+                        "https://docs.byteplus.com/en/docs/ModelArk/1520757",
+                        "https://docs.byteplus.com/en/docs/ModelArk/1521309",
+                    ],
+                },
+            ),
+            ProviderManifest(
+                key="alibaba-wan",
+                name="Alibaba Wan",
+                description="Alibaba Model Studio Wan async video generation provider.",
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="Model Studio API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Store the Alibaba Model Studio/DashScope API key. StackOS "
+                        "resolves it inside the daemon for Wan video actions."
+                    ),
+                    "docs": [
+                        "https://www.alibabacloud.com/help/en/model-studio/video-generate-edit-model/",
+                        "https://www.alibabacloud.com/help/en/model-studio/text-to-video-api-reference/",
+                        "https://www.alibabacloud.com/help/en/model-studio/image-to-video-general-api-reference",
+                        "https://github.com/dashscope/dashscope-sdk-python",
+                    ],
+                },
+            ),
+            ProviderManifest(
+                key="kling",
+                name="Kling AI",
+                description="Kling AI text-to-video and image-to-video provider.",
+                auth_type="jwt-access-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="access_key_secret",
+                        label="Access key and secret key",
+                        auth_type="jwt-access-key",
+                        payload_format="json",
+                        fields=[
+                            AuthFieldManifest(
+                                key="access_key",
+                                label="Access Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            ),
+                            AuthFieldManifest(
+                                key="secret_key",
+                                label="Secret Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            ),
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Store the Kling AccessKey and SecretKey as a daemon-held JSON "
+                        "credential. StackOS signs short-lived JWTs inside the daemon."
+                    ),
+                    "docs": [
+                        "https://kling.ai/document-api/apiReference%2FcommonInfo",
+                        "https://kling.ai/document-api/apiReference%2Fmodel%2FtextToVideo",
+                        "https://kling.ai/document-api/apiReference%2Fmodel%2FimageToVideo",
                     ],
                 },
             ),
@@ -1575,7 +1689,10 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             "enum": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
                         },
                         "resolution": {"type": "string", "enum": ["480p", "720p"]},
-                        "model": {"type": "string", "enum": ["grok-imagine-video"]},
+                        "model": {
+                            "type": "string",
+                            "enum": ["grok-imagine-video"],
+                        },
                         "input_image_ref": {
                             "type": "string",
                             "description": "Generated-assets PNG/JPEG ref for image-to-video.",
@@ -1638,7 +1755,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             "grok-imagine-video": {
                                 "status": "StackOS v1 stable video model",
                                 "resolutions": ["480p", "720p"],
-                            }
+                            },
                         },
                         "safety": {
                             "status_values": ["pending", "done", "expired", "failed"],
@@ -1649,7 +1766,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             ),
                         },
                         "unsupported_provider_features": [
-                            "grok-imagine-video-1.5-preview image-to-video preview model",
+                            "undocumented grok-imagine-video-1.5-preview model",
                             "video editing endpoint",
                             "video extension endpoint",
                             "custom fps",
@@ -1670,6 +1787,543 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "https://docs.x.ai/developers/model-capabilities/video/reference-to-video",
                         "https://docs.x.ai/developers/models",
                         "https://docs.x.ai/developers/pricing",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="google.video.generate",
+                name="Generate Google Veo Video",
+                description=(
+                    "Generate and persist Veo videos through the Gemini API from "
+                    "text, an input image, or first and last frame images."
+                ),
+                provider="google-veo",
+                capability="video-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1},
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "veo-3.1-generate-preview",
+                                "veo-3.1-fast-generate-preview",
+                                "veo-3.1-lite-generate-preview",
+                            ],
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["text-to-video", "image-to-video", "first-last-frame"],
+                        },
+                        "duration_seconds": {"type": "integer", "enum": [4, 6, 8]},
+                        "aspect_ratio": {"type": "string", "enum": ["16:9", "9:16"]},
+                        "resolution": {"type": "string", "enum": ["720p", "1080p", "4k"]},
+                        "input_image_ref": {
+                            "type": "string",
+                            "description": (
+                                "Generated-assets PNG/JPEG ref for image-to-video or the "
+                                "first frame in first-last-frame mode."
+                            ),
+                        },
+                        "last_frame_ref": {
+                            "type": "string",
+                            "description": (
+                                "Generated-assets PNG/JPEG ref for first-last-frame mode."
+                            ),
+                        },
+                        "enhance_prompt": {"type": "boolean"},
+                        "person_generation": {
+                            "type": "string",
+                            "enum": ["allow_all", "allow_adult"],
+                        },
+                        "seed": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+                        "poll_interval_seconds": {"type": "number", "minimum": 1, "maximum": 60},
+                        "poll_timeout_seconds": {"type": "number", "minimum": 60, "maximum": 3600},
+                    },
+                },
+                output_schema=_VIDEO_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "google-veo",
+                    "operation": "video.generate",
+                    "requires_credential": True,
+                    "budget_kind": "google-veo",
+                    "enforce_budget": True,
+                    "default_model": "veo-3.1-generate-preview",
+                    "capability_metadata": {
+                        "modalities": {"input": ["text", "image"], "output": ["video"]},
+                        "modes": ["text-to-video", "image-to-video", "first-last-frame"],
+                        "execution": {
+                            "mode": "async",
+                            "provider_endpoint": ("/v1beta/models/{model}:predictLongRunning"),
+                            "poll_endpoint": "/v1beta/operations/{operation}",
+                            "persistence": (
+                                "Veo-generated media URIs are downloaded immediately into "
+                                "generated assets and registered as generic video artifacts."
+                            ),
+                        },
+                        "limits": {
+                            "duration_seconds": [4, 6, 8],
+                            "aspect_ratios": ["16:9", "9:16"],
+                            "resolutions": ["720p", "1080p", "4k"],
+                            "duration_rules": [
+                                "1080p and 4k require duration_seconds 8",
+                                "first-last-frame requires duration_seconds 8",
+                            ],
+                            "person_generation": {
+                                "text-to-video": ["allow_all"],
+                                "image-to-video": ["allow_adult"],
+                                "first-last-frame": ["allow_adult"],
+                            },
+                            "input_image_formats": ["png", "jpg", "jpeg"],
+                            "max_input_image_bytes": 20000000,
+                        },
+                        "models": {
+                            "veo-3.1-generate-preview": {
+                                "status": "default",
+                                "modes": ["text-to-video", "image-to-video", "first-last-frame"],
+                            },
+                            "veo-3.1-fast-generate-preview": {"status": "supported"},
+                            "veo-3.1-lite-generate-preview": {"status": "supported"},
+                        },
+                        "safety": {
+                            "watermark": "Generated videos include Google's SynthID watermark.",
+                            "person_generation": {
+                                "text-to-video": ["allow_all"],
+                                "image-to-video": ["allow_adult"],
+                                "first-last-frame": ["allow_adult"],
+                            },
+                            "retention": "Official docs describe temporary generated video URIs.",
+                        },
+                        "unsupported_provider_features": [
+                            "reference-to-video",
+                            "video extension",
+                            "video-to-video editing",
+                            "older Veo 3 and Veo 2 model ids",
+                            "camera controls",
+                            "audio generation controls",
+                        ],
+                        "docs": [
+                            "https://ai.google.dev/gemini-api/docs/video",
+                            "https://ai.google.dev/gemini-api/docs/pricing",
+                            "https://github.com/googleapis/python-genai",
+                        ],
+                    },
+                    "docs": [
+                        "https://ai.google.dev/gemini-api/docs/video",
+                        "https://ai.google.dev/gemini-api/docs/pricing",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="alibaba.video.generate",
+                name="Generate Alibaba Wan Video",
+                description=(
+                    "Generate and persist Wan videos through Alibaba Model Studio from "
+                    "text, provider-fetchable images, or provider-fetchable video clips."
+                ),
+                provider="alibaba-wan",
+                capability="video-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1},
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "text-to-video",
+                                "image-to-video",
+                                "first-last-frame",
+                                "video-continuation",
+                            ],
+                        },
+                        "region": {
+                            "type": "string",
+                            "enum": ["singapore", "virginia", "beijing"],
+                        },
+                        "resolution": {"type": "string", "enum": ["720P", "1080P"]},
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+                        },
+                        "duration": {"type": "integer", "minimum": 2, "maximum": 15},
+                        "prompt_extend": {"type": "boolean"},
+                        "watermark": {"type": "boolean"},
+                        "negative_prompt": {"type": "string"},
+                        "seed": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+                        "first_frame_url": {
+                            "type": "string",
+                            "description": (
+                                "Provider-fetchable http(s) image URL for image modes."
+                            ),
+                        },
+                        "last_frame_url": {
+                            "type": "string",
+                            "description": (
+                                "Provider-fetchable http(s) image URL for first-last-frame."
+                            ),
+                        },
+                        "first_clip_url": {
+                            "type": "string",
+                            "description": (
+                                "Provider-fetchable http(s) video URL for video-continuation."
+                            ),
+                        },
+                        "audio_url": {"type": "string"},
+                        "poll_interval_seconds": {"type": "number", "minimum": 1, "maximum": 60},
+                        "poll_timeout_seconds": {"type": "number", "minimum": 60, "maximum": 3600},
+                    },
+                },
+                output_schema=_VIDEO_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "alibaba-wan",
+                    "operation": "video.generate",
+                    "requires_credential": True,
+                    "budget_kind": "alibaba-wan",
+                    "enforce_budget": True,
+                    "default_models": {
+                        "text-to-video": "wan2.7-t2v",
+                        "image-to-video": "wan2.7-i2v",
+                    },
+                    "capability_metadata": {
+                        "modalities": {
+                            "input": ["text", "image-url", "video-url", "audio-url"],
+                            "output": ["video"],
+                        },
+                        "modes": [
+                            "text-to-video",
+                            "image-to-video",
+                            "first-last-frame",
+                            "video-continuation",
+                        ],
+                        "execution": {
+                            "mode": "async",
+                            "provider_endpoint": (
+                                "/api/v1/services/aigc/video-generation/video-synthesis"
+                            ),
+                            "poll_endpoint": "/api/v1/tasks/{task_id}",
+                            "persistence": (
+                                "Wan task output video_url is downloaded immediately into "
+                                "generated assets and registered as a generic video artifact."
+                            ),
+                        },
+                        "limits": {
+                            "duration_seconds": [2, 15],
+                            "resolutions": ["720P", "1080P"],
+                            "text_to_video_aspect_ratios": [
+                                "16:9",
+                                "9:16",
+                                "1:1",
+                                "4:3",
+                                "3:4",
+                            ],
+                            "media_inputs": "http(s) URLs only in StackOS v1 connector",
+                        },
+                        "models": {
+                            "wan2.7-t2v": {"modes": ["text-to-video"]},
+                            "wan2.6-t2v": {"modes": ["text-to-video"]},
+                            "wan2.7-i2v": {
+                                "modes": [
+                                    "image-to-video",
+                                    "first-last-frame",
+                                    "video-continuation",
+                                ]
+                            },
+                        },
+                        "safety": {
+                            "url_retention": "Official docs describe 24-hour temporary URLs.",
+                            "prompt_extend_default": True,
+                        },
+                        "unsupported_provider_features": [
+                            "local generated-assets image upload",
+                            "model override in public action schema",
+                            "wan2.7-r2v reference-to-video",
+                            "wan2.7-videoedit video editing",
+                            "advanced motion controls",
+                        ],
+                        "docs": [
+                            "https://www.alibabacloud.com/help/en/model-studio/video-generate-edit-model/",
+                            "https://www.alibabacloud.com/help/en/model-studio/text-to-video-api-reference/",
+                            "https://www.alibabacloud.com/help/en/model-studio/image-to-video-general-api-reference",
+                            "https://github.com/dashscope/dashscope-sdk-python",
+                        ],
+                    },
+                    "docs": [
+                        "https://www.alibabacloud.com/help/en/model-studio/video-generate-edit-model/",
+                        "https://www.alibabacloud.com/help/en/model-studio/text-to-video-api-reference/",
+                        "https://www.alibabacloud.com/help/en/model-studio/image-to-video-general-api-reference",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="byteplus.video.generate",
+                name="Generate BytePlus Seedance Video",
+                description=(
+                    "Generate and persist Seedance videos through BytePlus ModelArk "
+                    "from text, generated-assets images, or reference media URLs."
+                ),
+                provider="byteplus-ark",
+                capability="video-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "prompt": {"type": "string"},
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "text-to-video",
+                                "image-to-video",
+                                "first-last-frame",
+                                "reference-to-video",
+                            ],
+                        },
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "dreamina-seedance-2-0-260128",
+                                "dreamina-seedance-2-0-fast-260128",
+                                "seedance-1-5-pro-251215",
+                                "seedance-1-0-pro-250528",
+                                "seedance-1-0-pro-fast-251015",
+                            ],
+                        },
+                        "region": {"type": "string", "enum": ["ap-southeast-1", "eu-west-1"]},
+                        "resolution": {"type": "string", "enum": ["480p", "720p", "1080p"]},
+                        "ratio": {
+                            "type": "string",
+                            "enum": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
+                        },
+                        "duration": {
+                            "type": "integer",
+                            "description": (
+                                "-1 for model default; model-specific ranges are "
+                                "2.0: 4-15, 1.5 Pro: 4-12, 1.0: 2-12 seconds."
+                            ),
+                        },
+                        "input_image_refs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "Generated-assets image refs. Use one for image-to-video "
+                                "or two for first-last-frame."
+                            ),
+                        },
+                        "reference_video_urls": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": 3,
+                        },
+                        "reference_audio_urls": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": 3,
+                        },
+                        "generate_audio": {"type": "boolean"},
+                        "watermark": {"type": "boolean"},
+                        "return_last_frame": {"type": "boolean"},
+                        "seed": {"type": "integer", "minimum": -1, "maximum": 4294967295},
+                        "priority": {"type": "integer", "minimum": 0, "maximum": 9},
+                        "poll_interval_seconds": {"type": "number", "minimum": 1, "maximum": 60},
+                        "poll_timeout_seconds": {"type": "number", "minimum": 60, "maximum": 3600},
+                    },
+                },
+                output_schema=_VIDEO_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "byteplus-seedance",
+                    "operation": "video.generate",
+                    "requires_credential": True,
+                    "budget_kind": "byteplus-ark",
+                    "enforce_budget": True,
+                    "default_model": "dreamina-seedance-2-0-260128",
+                    "capability_metadata": {
+                        "modalities": {
+                            "input": ["text", "image", "video-url", "audio-url"],
+                            "output": ["video"],
+                        },
+                        "modes": [
+                            "text-to-video",
+                            "image-to-video",
+                            "first-last-frame",
+                            "reference-to-video",
+                        ],
+                        "execution": {
+                            "mode": "async",
+                            "provider_endpoint": "/api/v3/contents/generations/tasks",
+                            "poll_endpoint": "/api/v3/contents/generations/tasks/{task_id}",
+                            "persistence": (
+                                "Seedance output video_url is downloaded immediately into "
+                                "generated assets and registered as a generic video artifact."
+                            ),
+                        },
+                        "limits": {
+                            "duration_seconds": {
+                                "dreamina-seedance-2-0-260128": [-1, 4, 15],
+                                "dreamina-seedance-2-0-fast-260128": [-1, 4, 15],
+                                "seedance-1-5-pro-251215": [-1, 4, 12],
+                                "seedance-1-0-pro-250528": [-1, 2, 12],
+                                "seedance-1-0-pro-fast-251015": [-1, 2, 12],
+                            },
+                            "resolutions": ["480p", "720p", "1080p"],
+                            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
+                            "max_reference_images": 9,
+                            "max_reference_videos": 3,
+                            "max_reference_audio": 3,
+                            "input_image_formats": ["jpg", "jpeg", "png", "webp", "bmp"],
+                            "priority": [0, 9],
+                            "seed": [-1, 4294967295],
+                        },
+                        "models": {
+                            "dreamina-seedance-2-0-260128": {"status": "default"},
+                            "dreamina-seedance-2-0-fast-260128": {
+                                "unsupported_resolution": "1080p"
+                            },
+                            "seedance-1-5-pro-251215": {"status": "supported"},
+                            "seedance-1-0-pro-250528": {"status": "supported"},
+                            "seedance-1-0-pro-fast-251015": {"status": "supported"},
+                        },
+                        "safety": {
+                            "url_retention": "Official docs state video URLs expire in 24h.",
+                            "status_values": [
+                                "queued",
+                                "running",
+                                "cancelled",
+                                "succeeded",
+                                "failed",
+                                "expired",
+                            ],
+                        },
+                        "unsupported_provider_features": [
+                            "draft-task input",
+                            "provider asset-id inputs",
+                            "callback URL registration",
+                        ],
+                        "docs": [
+                            "https://docs.byteplus.com/en/docs/ModelArk/1520757",
+                            "https://docs.byteplus.com/en/docs/ModelArk/1521309",
+                        ],
+                    },
+                    "docs": [
+                        "https://docs.byteplus.com/en/docs/ModelArk/1520757",
+                        "https://docs.byteplus.com/en/docs/ModelArk/1521309",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="kling.video.generate",
+                name="Generate Kling Video",
+                description=(
+                    "Generate and persist Kling videos from text, one input image, "
+                    "or first and last frame images."
+                ),
+                provider="kling",
+                capability="video-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1, "maxLength": 2500},
+                        "negative_prompt": {"type": "string", "maxLength": 2500},
+                        "mode": {
+                            "type": "string",
+                            "enum": ["text-to-video", "image-to-video", "first-last-frame"],
+                        },
+                        "model_name": {
+                            "type": "string",
+                            "enum": ["kling-v3"],
+                        },
+                        "quality_mode": {"type": "string", "enum": ["std", "pro", "4k"]},
+                        "duration": {"type": "integer", "minimum": 3, "maximum": 15},
+                        "aspect_ratio": {"type": "string", "enum": ["16:9", "9:16", "1:1"]},
+                        "sound": {"type": "string", "enum": ["on", "off"]},
+                        "cfg_scale": {"type": "number", "minimum": 0, "maximum": 1},
+                        "input_image_ref": {
+                            "type": "string",
+                            "description": (
+                                "Generated-assets PNG/JPEG ref for image-to-video or "
+                                "the first frame in first-last-frame mode."
+                            ),
+                        },
+                        "image_tail_ref": {
+                            "type": "string",
+                            "description": ("Generated-assets PNG/JPEG ref for the last frame."),
+                        },
+                        "watermark_enabled": {"type": "boolean"},
+                        "callback_url": {"type": "string"},
+                        "external_task_id": {"type": "string"},
+                        "poll_interval_seconds": {"type": "number", "minimum": 1, "maximum": 60},
+                        "poll_timeout_seconds": {"type": "number", "minimum": 60, "maximum": 3600},
+                    },
+                },
+                output_schema=_VIDEO_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "kling-video",
+                    "operation": "video.generate",
+                    "requires_credential": True,
+                    "budget_kind": "kling",
+                    "enforce_budget": True,
+                    "default_model": "kling-v3",
+                    "capability_metadata": {
+                        "modalities": {"input": ["text", "image"], "output": ["video"]},
+                        "modes": ["text-to-video", "image-to-video", "first-last-frame"],
+                        "execution": {
+                            "mode": "async",
+                            "provider_endpoint": "/v1/videos/text2video or /v1/videos/image2video",
+                            "poll_endpoint": "/v1/videos/{endpoint}/{task_id}",
+                            "persistence": (
+                                "Kling-generated media URLs are downloaded immediately into "
+                                "generated assets and registered as generic video artifacts."
+                            ),
+                        },
+                        "limits": {
+                            "duration_seconds": [3, 15],
+                            "quality_modes": ["std", "pro", "4k"],
+                            "text_aspect_ratios": ["16:9", "9:16", "1:1"],
+                            "input_image_formats": ["jpg", "jpeg", "png"],
+                            "max_input_image_bytes": 10485760,
+                            "local_image_encoding": "raw base64 without data URI prefix",
+                        },
+                        "models": {
+                            "kling-v3": {"status": "default latest model"},
+                        },
+                        "safety": {
+                            "status_values": ["submitted", "processing", "succeed", "failed"],
+                            "retention": "Generated videos are cleared after 30 days.",
+                        },
+                        "unsupported_provider_features": [
+                            "multi-shot storyboard mode",
+                            "reference-to-video endpoint",
+                            "older Kling v1/v2 model ids with narrower duration/quality maps",
+                            "camera_control",
+                            "motion brush",
+                            "multi-elements-to-video",
+                            "video extension",
+                            "lip sync",
+                            "avatar",
+                            "voice_list and element_list controls",
+                        ],
+                        "docs": [
+                            "https://kling.ai/document-api/apiReference%2FcommonInfo",
+                            "https://kling.ai/document-api/apiReference%2Fmodel%2FtextToVideo",
+                            "https://kling.ai/document-api/apiReference%2Fmodel%2FimageToVideo",
+                        ],
+                    },
+                    "docs": [
+                        "https://kling.ai/document-api/apiReference%2FcommonInfo",
+                        "https://kling.ai/document-api/apiReference%2Fmodel%2FtextToVideo",
+                        "https://kling.ai/document-api/apiReference%2Fmodel%2FimageToVideo",
                     ],
                 },
             ),

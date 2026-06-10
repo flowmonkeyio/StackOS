@@ -416,8 +416,24 @@ def test_marketing_campaign_production_template_validates_and_describes(
     assert gates["plan_confirmation"]["required_when"] == "always"
     produce_media = next(step for step in spec["steps"] if step["id"] == "produce-media")
     assert "plan_confirmation" in produce_media["approval_refs"]
-    assert produce_media["action_refs"] == ["image_generate", "image_edit"]
+    assert produce_media["action_refs"] == [
+        "image_generate",
+        "image_edit",
+        "google_video_generate",
+        "byteplus_video_generate",
+        "alibaba_video_generate",
+        "kling_video_generate",
+        "xai_video_generate",
+    ]
     actions = {contract["action"] for contract in spec["action_contracts"]}
-    assert actions == {"image.generate", "image.edit", "video.generate"}
+    assert actions == {
+        "image.generate",
+        "image.edit",
+        "google.video.generate",
+        "byteplus.video.generate",
+        "alibaba.video.generate",
+        "kling.video.generate",
+        "xai.video.generate",
+    }
     shared_resources = {contract["resource"] for contract in spec["resource_contracts"]}
     assert {"creative", "landing-page", "campaign-brief", "campaign-evidence"} <= shared_resources

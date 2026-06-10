@@ -103,12 +103,21 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert "xai-imagine" in utils_providers
     assert "reve" in utils_providers
     assert "google-gemini-image" in utils_providers
+    assert "google-veo" in utils_providers
     assert "ideogram" in utils_providers
     assert "byteplus-ark" in utils_providers
+    assert "alibaba-wan" in utils_providers
+    assert "kling" in utils_providers
     assert _auth_field_keys(utils_providers["reve"]) == ["api_key"]
     assert _auth_field_keys(utils_providers["google-gemini-image"]) == ["api_key"]
+    assert _auth_field_keys(utils_providers["google-veo"]) == ["api_key"]
     assert _auth_field_keys(utils_providers["ideogram"]) == ["api_key"]
     assert _auth_field_keys(utils_providers["byteplus-ark"]) == ["api_key"]
+    assert _auth_field_keys(utils_providers["alibaba-wan"]) == ["api_key"]
+    assert _auth_field_keys(utils_providers["kling"], "access_key_secret") == [
+        "access_key",
+        "secret_key",
+    ]
     assert _auth_field_keys(utils_providers["openrouter"]) == [
         "api_key",
         "http_referer",
@@ -240,11 +249,58 @@ def test_builtin_plugin_manifests_validate() -> None:
         "reference-to-video",
     ]
     assert xai_video_capabilities["limits"]["reference_to_video_duration_max_seconds"] == 10
+    assert set(xai_video_capabilities["models"]) == {"grok-imagine-video"}
     assert (
-        "grok-imagine-video-1.5-preview image-to-video preview model"
+        "undocumented grok-imagine-video-1.5-preview model"
         in xai_video_capabilities["unsupported_provider_features"]
     )
     assert "video editing endpoint" in xai_video_capabilities["unsupported_provider_features"]
+    google_video = utils_actions["google.video.generate"]
+    assert google_video.provider == "google-veo"
+    assert google_video.config["connector"] == "google-veo"
+    assert google_video.input_schema["properties"]["duration_seconds"]["enum"] == [4, 6, 8]
+    google_video_capabilities = google_video.config["capability_metadata"]
+    assert set(google_video_capabilities["models"]) == {
+        "veo-3.1-generate-preview",
+        "veo-3.1-fast-generate-preview",
+        "veo-3.1-lite-generate-preview",
+    }
+    assert google_video_capabilities["limits"]["person_generation"] == {
+        "text-to-video": ["allow_all"],
+        "image-to-video": ["allow_adult"],
+        "first-last-frame": ["allow_adult"],
+    }
+    byteplus_video = utils_actions["byteplus.video.generate"]
+    assert byteplus_video.provider == "byteplus-ark"
+    assert byteplus_video.config["connector"] == "byteplus-seedance"
+    assert byteplus_video.input_schema["properties"]["priority"] == {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9,
+    }
+    assert byteplus_video.config["capability_metadata"]["limits"]["duration_seconds"][
+        "seedance-1-5-pro-251215"
+    ] == [-1, 4, 12]
+    alibaba_video = utils_actions["alibaba.video.generate"]
+    assert alibaba_video.provider == "alibaba-wan"
+    assert alibaba_video.config["connector"] == "alibaba-wan"
+    assert (
+        "wan2.7-r2v reference-to-video"
+        in alibaba_video.config["capability_metadata"]["unsupported_provider_features"]
+    )
+    assert (
+        "wan2.7-videoedit video editing"
+        in alibaba_video.config["capability_metadata"]["unsupported_provider_features"]
+    )
+    kling_video = utils_actions["kling.video.generate"]
+    assert kling_video.provider == "kling"
+    assert kling_video.config["connector"] == "kling-video"
+    assert kling_video.input_schema["properties"]["model_name"]["enum"] == ["kling-v3"]
+    assert set(kling_video.config["capability_metadata"]["models"]) == {"kling-v3"}
+    assert (
+        "camera_control"
+        in kling_video.config["capability_metadata"]["unsupported_provider_features"]
+    )
     reve_image_generate = utils_actions["reve.image.generate"]
     assert reve_image_generate.provider == "reve"
     assert reve_image_generate.config["connector"] == "reve"
