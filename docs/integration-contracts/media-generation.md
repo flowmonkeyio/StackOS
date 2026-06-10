@@ -1,10 +1,11 @@
 # Media Generation Provider Shortlist
 
-Status: pre-integration shortlist, researched 2026-06-09. This is the first
-gate before per-provider deep contract reviews and connector delivery. No new
-shortlisted provider is executable yet; `utils.video.generate` remains
-deferred (`deferred-video-backend-selection`) and `utils.image.generate` /
-`utils.image.edit` (OpenAI) are the only executable media actions.
+Status: shortlist plus first executable delivery, researched 2026-06-09 and
+updated during connector delivery. `utils.image.generate` / `utils.image.edit`
+(OpenAI) and provider-specific xAI Imagine actions
+`utils.xai.image.generate`, `utils.xai.image.edit`, and
+`utils.xai.video.generate` are executable. Provider-neutral
+`utils.video.generate` remains deferred (`deferred-video-backend-selection`).
 
 Shape of the list: the top four per category by leaderboard rank and API
 maturity, plus operator-requested additions (Seedream and Grok on images,
@@ -49,7 +50,7 @@ Use this split for each delivery:
 Keep the provider-neutral `video-generation` provider and
 `utils.video.generate` action only as the deferred placeholder. Concrete video
 delivery uses per-vendor providers/actions such as `google-veo`,
-`byteplus-seedance`, `alibaba-wan`, `kling`, and `xai-grok-video`.
+`byteplus-seedance`, `alibaba-wan`, `kling`, and `xai-imagine`.
 
 Each media action must list `capability_metadata` in its config:
 
@@ -312,10 +313,13 @@ already registered and integrated.
 
 ### 6. Grok Imagine Image — xAI (requested include)
 
-- Status: GA on the xAI API. Current docs recommend
-  `grok-imagine-image-quality`; no official deprecation source for
-  `grok-imagine-image-pro` has been signed off yet. LMArena text-to-image #7
-  (1234) — it would have been next in line for the merit list anyway.
+- Status: GA on the xAI API. StackOS v1 chooses
+  `grok-imagine-image-quality` for quality output. xAI pricing docs also list
+  cheaper `grok-imagine-image`; it is intentionally not exposed in v1.
+  `grok-imagine-image-pro` is deprecated and should not be used for new
+  StackOS actions.
+  LMArena text-to-image #7 (1234) — it would have been next in line for the
+  merit list anyway.
 - API shape: JSON requests under `https://api.x.ai/v1`, bearer auth, and
   OpenAI-compatible image generation for the generation endpoint. Image editing
   uses xAI JSON (`image.url` or base64 data URI), not OpenAI SDK multipart
@@ -328,14 +332,23 @@ already registered and integrated.
   `1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 19.5:9, 9:19.5, 20:9, 9:20, auto`;
   resolution tiers `1k | 2k`.
 - Output and pricing: images return temporary URLs by default, with base64
-  output also supported. Official models page lists Imagine API image pricing
-  at $0.02/image. Watermark policy is not verified from official image docs.
+  output also supported. Official pricing lists `grok-imagine-image-quality`
+  image output at $0.05 for 1k and $0.07 for 2k, with image input charged at
+  $0.01/image for edit/reference inputs. Watermark policy is not verified from
+  official image docs.
+- StackOS v1 scope decision: executable actions use
+  `grok-imagine-image-quality` only. `utils.xai.image.generate` supports
+  text-to-image; `utils.xai.image.edit` supports single/multi-image JSON edits
+  with generated-assets PNG/JPEG refs. Cheaper `grok-imagine-image`,
+  mask/inpainting, transparency, and deprecated `grok-imagine-image-pro` are
+  not exposed.
 - Docs: generation
   <https://docs.x.ai/developers/model-capabilities/images/generation>, editing
   <https://docs.x.ai/developers/model-capabilities/images/editing>,
   multi-image editing
   <https://docs.x.ai/developers/model-capabilities/images/multi-image-editing>,
-  models + pricing <https://docs.x.ai/developers/models>.
+  models <https://docs.x.ai/developers/models>, pricing
+  <https://docs.x.ai/developers/pricing>.
 
 Image runners-up (not shortlisted): FLUX.2 [pro]/[max] (Black Forest Labs —
 free WxH up to 4MP, unified gen+edit, ≤8 refs, api.bfl.ai), Wan 2.7 Image
@@ -406,10 +419,11 @@ deferred `utils.video.generate` contract.
 
 ### 2. WAN 2.7 — Alibaba
 
-- Status: GA on Alibaba Cloud Model Studio / DashScope with the
-  best-documented international API of the Chinese providers; #3 on LMArena
-  text-to-video (1385), above Veo 3.1. Models `wan2.7-t2v`, `wan2.7-i2v`,
-  `wan2.7-r2v`, `wan2.7-videoedit`.
+- Status: skipped/deferred for StackOS v1. Alibaba's lineup confirms
+  `wan2.7-t2v`, `wan2.7-i2v`, `wan2.7-r2v`, and `wan2.7-videoedit`, but the
+  accessible public API references do not fully verify executable WAN 2.7
+  schemas across t2v/r2v/videoedit. Do not build a connector from the partial
+  facts below.
 - API shape: asynchronous DashScope HTTP API. Text-to-video uses
   `POST /api/v1/services/aigc/video-generation/video-synthesis` with
   `X-DashScope-Async: enable`; image-to-video uses the same submit/poll model.
@@ -425,11 +439,11 @@ deferred `utils.video.generate` contract.
   such as `1280*720`, `720*1280`, `960*960`, `1088*832`, `832*1088`,
   `1920*1080`, `1080*1920`, `1440*1440`, `1632*1248`, and `1248*1632`,
   depending on model/resolution tier.
-- Pricing: wan2.6 reference $0.10/s (720P), $0.15/s (1080P), flash tiers from
-  $0.025/s; wan2.7 not yet on the international pricing page — confirm during
-  deep review. 50 s free quota on listed international wan2.6 video models.
-  `watermark` parameter defaults false. Output URLs expire after 24 h — the
-  connector must download and persist promptly.
+- Pricing: pricing gaps alone are no longer considered blockers by operator
+  direction, but WAN remains skipped because the executable API docs are not
+  complete enough. Older wan2.6 references list $0.10/s (720P), $0.15/s
+  (1080P), and flash tiers from $0.025/s. Partial docs show `watermark`
+  defaults false and output URLs expire after 24 h.
 - Docs: lineup
   <https://www.alibabacloud.com/help/en/model-studio/video-generate-edit-model/>,
   i2v reference
@@ -509,8 +523,12 @@ deferred `utils.video.generate` contract.
 
 ### 5. Grok Imagine Video — xAI (requested include)
 
-- Status: GA on the xAI API; official docs and model page list
-  `grok-imagine-video` at $0.05/s. Cheapest shortlisted video API.
+- Status: GA on the xAI API; official docs and pricing page list
+  `grok-imagine-video` output at $0.05/s for 480p and $0.07/s for 720p, with
+  image inputs charged at $0.002/image. xAI pricing docs also list
+  image-to-video-only `grok-imagine-video-1.5-preview`; it is intentionally not
+  exposed in v1 because StackOS is delivering the stable provider-specific
+  generate surface first.
 - API shape: async REST. Submit to `/v1/videos/generations`,
   `/v1/videos/edits`, or `/v1/videos/extensions`, receive `request_id`, then
   poll `GET /v1/videos/{request_id}` until `pending`, `done`, `expired`, or
@@ -530,6 +548,13 @@ deferred `utils.video.generate` contract.
   `invalid_argument`, `permission_denied`, `failed_precondition`,
   `service_unavailable`, and `internal_error`; auth/model/rate-limit failures
   can occur synchronously before a job id is created.
+- StackOS v1 scope decision: `utils.xai.video.generate` exposes text-to-video,
+  image-to-video, and reference-to-video through `grok-imagine-video`. Video
+  editing and extension are separate endpoint families and remain unsupported
+  until they get dedicated actions. `grok-imagine-video-1.5-preview` remains
+  unsupported until preview-model policy and image-to-video-only behavior are
+  reviewed. Metadata gaps such as exact URL expiry, fps, audio behavior, and
+  watermark policy are documented limitations, not build blockers.
 - Docs: <https://docs.x.ai/developers/model-capabilities/video/generation>,
   image-to-video
   <https://docs.x.ai/developers/model-capabilities/video/image-to-video>,
@@ -539,7 +564,8 @@ deferred `utils.video.generate` contract.
   <https://docs.x.ai/developers/model-capabilities/video/reference-to-video>,
   video extension
   <https://docs.x.ai/developers/model-capabilities/video/extension>, models
-  <https://docs.x.ai/developers/models>.
+  <https://docs.x.ai/developers/models>, pricing
+  <https://docs.x.ai/developers/pricing>.
 
 Video runners-up and watch list: HappyHorse 1.0 (Alibaba Taotian — #2 on all
 boards, v2v editing, 7-language lip sync; excluded only because the Model
@@ -569,10 +595,12 @@ How the shortlist maps onto the StackOS pattern when integration starts:
 - Provider shape: register per-vendor providers and actions. The
   provider-neutral `video-generation` provider remains only as a deferred
   placeholder until concrete video backends are delivered.
-- All five video APIs are async job APIs; the connector needs submit → poll →
+- Candidate video APIs are async job APIs; connectors need submit → poll →
   download → persist-to-generated-assets, with provider job ids recorded in
-  action audit metadata. WAN output URLs expire in 24 h; Veo stores
-  server-side for 2 days.
+  action audit metadata. xAI is executable through this path; WAN remains
+  skipped for v1 because the public executable API contract is not verified.
+  WAN output URLs expire in 24 h where documented; Veo stores server-side for
+  2 days.
 - Image APIs return base64 or URLs synchronously; persistence mirrors the
   existing `openai-images` integration (bytes into generated assets, local
   artifact URLs, no payloads in agent responses).
@@ -587,14 +615,10 @@ How the shortlist maps onto the StackOS pattern when integration starts:
 
 ## Open Verification Items For Deep Review
 
-1. wan2.7 video pricing on the international Model Studio pricing page.
-2. Kling 3.0 aspect-ratio enum, per-second pricing, watermark, and commercial
+1. Kling 3.0 aspect-ratio enum, per-second pricing, watermark, and commercial
    terms — developer docs block automated review; verify in-console after
    registration.
-3. Grok Imagine image `grok-imagine-image-pro` deprecation source and image
-   watermark policy; Grok Imagine video native audio behavior in API outputs,
-   fps, exact temporary URL expiry, and watermark policy.
-4. BytePlus build scope: decide whether Seedream v1 exposes streaming and
+2. BytePlus build scope: decide whether Seedream v1 exposes streaming and
    legacy model ids, and whether Seedance v1 exposes full multimodal
    edit/extension/callback behavior or starts with text/image-to-video polling.
-5. HappyHorse Model Studio beta access criteria and GA timeline.
+3. HappyHorse Model Studio beta access criteria and GA timeline.

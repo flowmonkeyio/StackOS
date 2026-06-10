@@ -196,6 +196,8 @@ Registered first-party connectors are one provider per connector file and now
 cover the migrated clean path for:
 
 - `openai-images`: `utils.image.generate`, `utils.image.edit`
+- `xai-imagine`: `utils.xai.image.generate`, `utils.xai.image.edit`, and
+  `utils.xai.video.generate`
 - `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`
 - `jina`: `utils.web.read` with optional credentials
 - `sitemap`: `utils.sitemap.fetch`
@@ -249,6 +251,15 @@ for public URL or file-id references, not local generated-assets files.
 `input_fidelity` is forwarded only for the models that accept it. Other
 connectors normalize wrapper results into action output JSON and record the
 provider, operation, cost, status, and redacted payloads in `action_calls`.
+
+The xAI Imagine connector follows the same generated-assets contract for Grok
+images and videos. Image actions use JSON/base64 payloads where the provider
+requires them, while video generation submits a job, polls by `request_id`,
+downloads the temporary video URL, registers a generic `video` artifact, and
+returns local artifact refs plus safe provider job metadata. Successful xAI
+responses reconcile action-call cost from `usage.cost_in_usd_ticks` when
+present; pre-call budget checks still reserve the estimate and top up only when
+the actual connector cost is higher.
 
 Communication setup is not an action connector. Telegram communication profile
 setup uses the shared `communicationProfile.upsert/get/list` operations across

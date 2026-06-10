@@ -1,8 +1,13 @@
 # Current Executable Connector Contract Audit
 
-Audit date: 2026-06-02
+Audit date: 2026-06-10
 
-Scope: executable connector contracts for OpenAI Images, Firecrawl, Jina Reader, Reddit, DataForSEO, Serper.dev, Ahrefs, WordPress, Ghost, sitemap, Trackbooth, and generic HTTP, plus connection-only setup providers that intentionally do not expose actions yet. This file is an integration-point audit only. It does not change manifests, tests, or runtime behavior.
+Scope: executable connector contracts for OpenAI Images, xAI Imagine,
+Firecrawl, Jina Reader, Reddit, DataForSEO, Serper.dev, Ahrefs, WordPress,
+Ghost, sitemap, Trackbooth, and generic HTTP, plus connection-only setup
+providers that intentionally do not expose actions yet. This file is an
+integration-point audit only. It does not change manifests, tests, or runtime
+behavior.
 
 ## StackOS Contract Boundary
 
@@ -15,6 +20,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | Provider | Official docs used | Auth docs | Rate/error/pagination docs |
 | --- | --- | --- | --- |
 | OpenAI Images | [Image generation guide](https://developers.openai.com/api/docs/guides/image-generation), [Images API reference](https://developers.openai.com/api/reference/resources/images) | [OpenAI API authentication](https://platform.openai.com/docs/api-reference/authentication) | [OpenAI rate limits guide](https://platform.openai.com/docs/guides/rate-limits), image generation pricing table in the guide above |
+| xAI Imagine | [Image generation](https://docs.x.ai/developers/model-capabilities/images/generation), [image editing](https://docs.x.ai/developers/model-capabilities/images/editing), [multi-image editing](https://docs.x.ai/developers/model-capabilities/images/multi-image-editing), [video generation](https://docs.x.ai/developers/model-capabilities/video/generation), [image-to-video](https://docs.x.ai/developers/model-capabilities/video/image-to-video), [reference-to-video](https://docs.x.ai/developers/model-capabilities/video/reference-to-video), [models](https://docs.x.ai/developers/models) | xAI examples use bearer auth with an API key from the xAI console | Video generation docs define submit/poll status values; [pricing](https://docs.x.ai/developers/pricing) documents Imagine output/input cost units |
 | Firecrawl | [v2 introduction](https://docs.firecrawl.dev/api-reference/v2-introduction), [scrape](https://docs.firecrawl.dev/api-reference/v2-endpoint/scrape), [crawl](https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-post), [crawl status](https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-get), [map](https://docs.firecrawl.dev/api-reference/v2-endpoint/map), [extract](https://docs.firecrawl.dev/api-reference/v2-endpoint/extract) | v2 introduction and endpoint pages use bearer auth | [Errors](https://docs.firecrawl.dev/api-reference/errors), [rate limits](https://docs.firecrawl.dev/rate-limits) |
 | Jina Reader | [Reader API](https://jina.ai/en-US/reader/), [Reader repo](https://github.com/jina-ai/reader) | Reader API documents free and authenticated tiers | Reader API documents RPM tiers |
 | Reddit | [reddit.com API docs](https://www.reddit.com/dev/api/), [Reddit Data API Wiki](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki), [Data API Terms](https://redditinc.com/policies/data-api-terms), [OAuth2 wiki](https://github.com/reddit-archive/reddit/wiki/oauth2) | OAuth2 wiki and Data API Wiki | API docs listing pagination; Data API Wiki and Terms for usage limits/policy |
@@ -33,6 +39,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | Connector key | Action refs | Current implementation refs | Manifest refs | Auth/setup implication |
 | --- | --- | --- | --- | --- |
 | `openai-images` | `utils.image.generate`, `utils.image.edit` | `stackos/actions/openai_images.py`, `stackos/integrations/openai_images.py` | `stackos/plugins/manifest.py` built-in utils media actions | API key payload; budget enforced by `openai-images` kind. |
+| `xai-imagine` | `utils.xai.image.generate`, `utils.xai.image.edit`, `utils.xai.video.generate` | `stackos/actions/xai_imagine.py`, `stackos/integrations/xai_imagine.py` | `stackos/plugins/manifest.py` built-in utils xAI media actions | API key payload; budget enforced by `xai-imagine` kind; images/videos are persisted to generated assets and registered as generic media artifacts. |
 | `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map` | `stackos/actions/firecrawl.py`, `stackos/integrations/firecrawl.py:24` | `stackos/plugins/manifest.py` built-in utils actions | Bearer API key payload; budget enforced by `firecrawl`; `utils.web.extract` is deferred, not executable. |
 | `jina` | `utils.web.read` | `stackos/actions/jina.py`, `stackos/integrations/jina_reader.py:17` | `stackos/plugins/manifest.py:384`, `stackos/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `stackos/actions/reddit.py`, `stackos/integrations/reddit.py:29` | `stackos/plugins/manifest.py:390`, `stackos/plugins/manifest.py:542`, `stackos/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
@@ -90,6 +97,43 @@ Recommended corrections:
 
 - Add a scheduled provider-doc audit for OpenAI image pricing and model profile changes.
 - Keep persisted output URL/artifact-id behavior documented in the manifest or action docs, because consumers should not expect raw base64.
+
+### xAI Imagine
+
+Current: `utils.xai.image.generate`, `utils.xai.image.edit`, and
+`utils.xai.video.generate` map to `XAIImagineActionConnector`. The connector
+uses the StackOS v1 Grok Imagine model choices, validates image/video
+size-control enums, enforces mode-specific image-reference rules, downloads
+temporary xAI-hosted media promptly, and registers generated outputs as generic
+`image` or `video` artifacts when repository context is available.
+
+Gaps/mismatches:
+
+- Resolved: image actions use `grok-imagine-image-quality`; cheaper
+  `grok-imagine-image` and deprecated `grok-imagine-image-pro` are not exposed.
+- Resolved: video generation uses async submit/poll/download for
+  `grok-imagine-video` and preserves provider `request_id` in output metadata.
+- Resolved: pre-call budget estimates follow official Imagine pricing units:
+  image output by `1k`/`2k`, video output by `480p`/`720p` seconds, and
+  input-image charges for edit/image-reference modes. Successful responses
+  reconcile action-call cost from xAI `usage.cost_in_usd_ticks`, with budget
+  top-up when actual cost exceeds the pre-call estimate.
+- Resolved: single-image edits reject `aspect_ratio`; xAI keeps the input image
+  ratio for that mode.
+- Remaining: xAI video editing and video extension are documented separate
+  endpoint families and are not exposed until dedicated actions exist.
+- Remaining: `grok-imagine-video-1.5-preview` is not exposed until
+  preview-model policy and image-to-video-only behavior are separately reviewed.
+- Remaining: official docs do not expose StackOS-ready controls for watermark,
+  custom fps, custom audio controls, or exact temporary URL expiry.
+- Remaining: generated-assets input refs are limited to PNG/JPEG for v1; public
+  URL/file-id inputs can be added after the asset and trust model is explicit.
+
+Recommended corrections:
+
+- Re-audit pricing and model names on the normal provider-doc schedule.
+- Add dedicated edit/extend video actions only when those workflows need them
+  and the output artifact/audit contract is reviewed separately.
 
 ### Firecrawl
 

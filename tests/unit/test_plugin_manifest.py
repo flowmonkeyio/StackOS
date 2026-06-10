@@ -84,7 +84,7 @@ def test_builtin_plugin_manifests_validate() -> None:
     }
     assert resources_by_plugin["publishing"] >= {"published-post", "publish-target"}
     assert resources_by_plugin["seo"] >= {"keyword-opportunity", "content-piece"}
-    assert resources_by_plugin["utils"] >= {"generated-image", "web-document"}
+    assert resources_by_plugin["utils"] >= {"generated-image", "generated-video", "web-document"}
     publishing = next(
         manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "publishing"
     )
@@ -100,6 +100,7 @@ def test_builtin_plugin_manifests_validate() -> None:
     utils = next(manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "utils")
     utils_providers = {provider.key: provider for provider in utils.providers}
     assert "openrouter" in utils_providers
+    assert "xai-imagine" in utils_providers
     assert _auth_field_keys(utils_providers["openrouter"]) == [
         "api_key",
         "http_referer",
@@ -190,6 +191,52 @@ def test_builtin_plugin_manifests_validate() -> None:
         "prompt",
         "input_image_refs",
     ]
+    xai_image_generate = utils_actions["xai.image.generate"]
+    assert xai_image_generate.provider == "xai-imagine"
+    assert xai_image_generate.config["connector"] == "xai-imagine"
+    assert xai_image_generate.config["operation"] == "image.generate"
+    assert xai_image_generate.config["budget_kind"] == "xai-imagine"
+    assert xai_image_generate.config["default_model"] == "grok-imagine-image-quality"
+    xai_generate_capabilities = xai_image_generate.config["capability_metadata"]
+    assert xai_generate_capabilities["models"]["grok-imagine-image-quality"]["status"] == (
+        "StackOS v1 quality image model"
+    )
+    assert xai_generate_capabilities["limits"]["resolutions"] == ["1k", "2k"]
+    assert (
+        "cheaper grok-imagine-image model"
+        in xai_generate_capabilities["unsupported_provider_features"]
+    )
+    assert (
+        "legacy grok-imagine-image-pro model"
+        in xai_generate_capabilities["unsupported_provider_features"]
+    )
+    xai_image_edit = utils_actions["xai.image.edit"]
+    assert xai_image_edit.config["operation"] == "image.edit"
+    xai_edit_capabilities = xai_image_edit.config["capability_metadata"]
+    assert xai_edit_capabilities["limits"]["max_input_images"] == 3
+    assert xai_edit_capabilities["limits"]["max_input_image_bytes"] == 20_971_520
+    assert "multi-image edits" in xai_edit_capabilities["limits"]["aspect_ratio"]
+    assert (
+        "OpenAI SDK multipart images.edit shape"
+        in xai_edit_capabilities["unsupported_provider_features"]
+    )
+    xai_video_generate = utils_actions["xai.video.generate"]
+    assert xai_video_generate.provider == "xai-imagine"
+    assert xai_video_generate.config["connector"] == "xai-imagine"
+    assert xai_video_generate.config["operation"] == "video.generate"
+    xai_video_capabilities = xai_video_generate.config["capability_metadata"]
+    assert xai_video_capabilities["execution"]["mode"] == "async"
+    assert xai_video_capabilities["modes"] == [
+        "text-to-video",
+        "image-to-video",
+        "reference-to-video",
+    ]
+    assert xai_video_capabilities["limits"]["reference_to_video_duration_max_seconds"] == 10
+    assert (
+        "grok-imagine-video-1.5-preview image-to-video preview model"
+        in xai_video_capabilities["unsupported_provider_features"]
+    )
+    assert "video editing endpoint" in xai_video_capabilities["unsupported_provider_features"]
     assert "video-generation" in utils_providers
     assert _auth_field_keys(utils_providers["video-generation"]) == ["api_key"]
     video_generate = utils_actions["video.generate"]

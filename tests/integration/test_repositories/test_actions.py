@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -1000,6 +1001,9 @@ def test_action_execute_idempotency_replays_without_second_connector_call(
 def test_builtin_action_connectors_describe_availability(session: Session) -> None:
     action_refs = {
         "utils.image.generate": ("openai-images", True, "unknown"),
+        "utils.xai.image.generate": ("xai-imagine", True, "unknown"),
+        "utils.xai.image.edit": ("xai-imagine", True, "unknown"),
+        "utils.xai.video.generate": ("xai-imagine", True, "unknown"),
         "utils.web.scrape": ("firecrawl", True, "unknown"),
         "utils.web.read": ("jina", False, "ready"),
         "utils.sitemap.fetch": ("sitemap", False, "ready"),
@@ -1154,6 +1158,259 @@ def test_openai_image_edit_action_rejects_ref_cap_and_wrong_fidelity_model(
     )
 
     assert mini_validation.valid is True
+
+
+def test_xai_video_action_rejects_mode_mismatches_and_reference_duration_cap(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="xai-imagine",
+        secret_payload=b"xai-key",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "xai-imagine")
+
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.xai.video.generate",
+        input_json={
+            "prompt": "runway walk",
+            "mode": "reference-to-video",
+            "duration": 12,
+            "input_image_ref": "/generated-assets/uploads/source.png",
+            "reference_image_refs": ["/generated-assets/uploads/ref.png"],
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(issue.path == "$.duration" and issue.code == "range" for issue in validation.issues)
+    assert any(
+        issue.path == "$.input_image_ref" and issue.code == "mode_mismatch"
+        for issue in validation.issues
+    )
+
+
+def test_xai_actions_reject_single_image_edit_aspect_and_unsafe_poll_bounds(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="xai-imagine",
+        secret_payload=b"xai-key",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "xai-imagine")
+
+    edit_validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.xai.image.edit",
+        input_json={
+            "prompt": "make it cinematic",
+            "input_image_refs": ["/generated-assets/uploads/source.png"],
+            "aspect_ratio": "1:1",
+        },
+        credential_ref=credential_ref,
+    )
+    video_validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.xai.video.generate",
+        input_json={
+            "prompt": "runway walk",
+            "poll_interval_seconds": 0,
+            "poll_timeout_seconds": 9999,
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert edit_validation.valid is False
+    assert any(
+        issue.path == "$.aspect_ratio" and issue.code == "mode_mismatch"
+        for issue in edit_validation.issues
+    )
+    assert video_validation.valid is False
+    assert any(
+        issue.path == "$.poll_interval_seconds" and issue.code == "range"
+        for issue in video_validation.issues
+    )
+    assert any(
+        issue.path == "$.poll_timeout_seconds" and issue.code == "range"
+        for issue in video_validation.issues
+    )
+
+
+def test_xai_image_generate_action_executes_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="xai-imagine",
+        secret_payload=b"xai-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="xai-imagine",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "xai-imagine")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.x.ai/v1/images/generations",
+        json={
+            "data": [{"b64_json": base64.b64encode(b"image-bytes").decode("ascii")}],
+            "usage": {"cost_in_usd_ticks": 300000000},
+        },
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.xai.image.generate",
+            input_json={"prompt": "poster", "aspect_ratio": "1:1", "resolution": "1k"},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    item = result.output_json["data"][0]
+    rendered = json.dumps(result.model_dump(mode="json"))
+    assert result.cost_cents == 3
+    assert item["url"].startswith("/generated-assets/xai-imagine/xai-image-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert result.output_json["artifact_refs"] == [item["url"]]
+    assert "b64_json" not in item
+    assert "xai-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"image-bytes"
+
+
+def test_xai_image_edit_action_executes_without_single_image_aspect_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    source = source_dir / "source.png"
+    source.write_bytes(b"source-png")
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="xai-imagine",
+        secret_payload=b"xai-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="xai-imagine",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "xai-imagine")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.x.ai/v1/images/edits",
+        json={
+            "data": [{"b64_json": base64.b64encode(b"edited-image").decode("ascii")}],
+            "usage": {"cost_in_usd_ticks": 600000000},
+        },
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.xai.image.edit",
+            input_json={
+                "prompt": "make it cinematic",
+                "input_image_refs": ["/generated-assets/uploads/source.png"],
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    item = result.output_json["data"][0]
+    rendered = json.dumps(result.model_dump(mode="json"))
+    assert "aspect_ratio" not in body
+    assert body["image"]["url"].startswith("data:image/png;base64,")
+    assert result.cost_cents == 6
+    assert item["url"].startswith("/generated-assets/xai-imagine/xai-image-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert result.output_json["artifact_refs"] == [item["url"]]
+    assert "b64_json" not in item
+    assert "xai-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"edited-image"
+
+
+def test_xai_video_generate_action_executes_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="xai-imagine",
+        secret_payload=b"xai-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="xai-imagine",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "xai-imagine")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.x.ai/v1/videos/generations",
+        json={"request_id": "req_123"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.x.ai/v1/videos/req_123",
+        json={
+            "status": "done",
+            "model": "grok-imagine-video",
+            "video": {"url": "https://cdn.x.ai/video.mp4", "duration": 5},
+            "usage": {"cost_in_usd_ticks": 3100000000},
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://cdn.x.ai/video.mp4",
+        content=b"video-bytes",
+        headers={"content-type": "video/mp4"},
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.xai.video.generate",
+            input_json={
+                "prompt": "video",
+                "duration": 5,
+                "poll_interval_seconds": 1,
+                "poll_timeout_seconds": 60,
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    item = result.output_json["data"][0]
+    rendered = json.dumps(result.model_dump(mode="json"))
+    assert result.cost_cents == 31
+    assert result.output_json["request_id"] == "req_123"
+    assert item["url"].startswith("/generated-assets/xai-imagine/xai-video-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert result.output_json["artifact_refs"] == [item["url"]]
+    assert "https://cdn.x.ai/video.mp4" not in rendered
+    assert "xai-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"video-bytes"
 
 
 def test_trackbooth_catalog_search_filters_live_catalog_and_uses_api_key_header(

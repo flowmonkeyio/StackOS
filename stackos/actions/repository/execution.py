@@ -260,6 +260,17 @@ class ActionExecutionMixin:
         duration_ms = int((time.perf_counter() - started) * 1000)
         output_json = _redact_for_audit(result.output_json)
         result_metadata = _redact_for_audit(result.metadata_json) if result.metadata_json else None
+        actual_cost_cents = max(0, result.cost_cents)
+        if (
+            manifest.enforce_budget
+            and manifest.budget_kind
+            and actual_cost_cents > estimated_cost_cents
+        ):
+            IntegrationBudgetRepository(self._s).record_call(
+                project_id=project_id,
+                kind=manifest.budget_kind,
+                cost_usd=(actual_cost_cents - estimated_cost_cents) / 100,
+            )
         row = self._record_call(
             project_id=project_id,
             manifest=manifest,
@@ -279,7 +290,7 @@ class ActionExecutionMixin:
             or None,
             status=ActionCallStatus.SUCCESS,
             dry_run=False,
-            cost_cents=max(estimated_cost_cents, result.cost_cents),
+            cost_cents=actual_cost_cents,
             duration_ms=duration_ms,
         )
         row = self._apply_context_output_policy(

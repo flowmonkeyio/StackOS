@@ -238,7 +238,9 @@ Use deferred action metadata when a provider is planned but not executable:
 - no connector code exists,
 - official docs are incomplete or console-only facts are missing,
 - operator registration/billing/credential confirmation is missing,
-- pricing or safety constraints are unknown for a spend-bearing action,
+- pricing is unknown for a spend-bearing action and no conservative budget
+  guardrail or explicit operator waiver is recorded,
+- safety constraints are unknown for a spend-bearing action,
 - async status/download semantics are not implemented, or
 - tests and docs are not delivered in the same change.
 

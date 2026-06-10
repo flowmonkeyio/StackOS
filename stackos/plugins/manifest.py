@@ -297,6 +297,32 @@ _IMAGE_ACTION_OUTPUT_SCHEMA = {
             },
         },
         "artifact_refs": {"type": "array", "items": {"type": "string"}},
+        "usage": {"type": "object", "additionalProperties": True},
+    },
+}
+_VIDEO_ACTION_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "request_id": {"type": "string"},
+        "status": {"type": "string"},
+        "data": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "url": {"type": "string"},
+                    "artifact_ref": {"type": "string"},
+                    "artifact_id": {"type": "integer"},
+                    "file_format": {"type": "string", "enum": ["mp4"]},
+                    "source_model": {"type": "string"},
+                    "request_id": {"type": "string"},
+                },
+            },
+        },
+        "artifact_refs": {"type": "array", "items": {"type": "string"}},
+        "usage": {"type": "object", "additionalProperties": True},
     },
 }
 _WEB_SCRAPE_INPUT_SCHEMA = {
@@ -549,6 +575,43 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         ],
                     )
                 ],
+            ),
+            ProviderManifest(
+                key="xai-imagine",
+                name="xAI Imagine",
+                description="Grok Imagine image and video generation provider.",
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="xAI API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                                placeholder="xai-...",
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Store the xAI API key from console.x.ai. StackOS resolves it "
+                        "inside the daemon for Grok Imagine image and video actions."
+                    ),
+                    "docs": [
+                        "https://docs.x.ai/developers/model-capabilities/images/generation",
+                        "https://docs.x.ai/developers/model-capabilities/video/generation",
+                        "https://docs.x.ai/developers/models",
+                        "https://docs.x.ai/developers/pricing",
+                    ],
+                },
             ),
             ProviderManifest(
                 key="video-generation",
@@ -1108,6 +1171,361 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 },
             ),
             ActionManifest(
+                key="xai.image.generate",
+                name="Generate Grok Image",
+                description="Generate and persist images through xAI Grok Imagine.",
+                provider="xai-imagine",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1},
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": [
+                                "1:1",
+                                "16:9",
+                                "9:16",
+                                "4:3",
+                                "3:4",
+                                "3:2",
+                                "2:3",
+                                "2:1",
+                                "1:2",
+                                "19.5:9",
+                                "9:19.5",
+                                "20:9",
+                                "9:20",
+                                "auto",
+                            ],
+                        },
+                        "resolution": {"type": "string", "enum": ["1k", "2k"]},
+                        "n": {"type": "integer", "minimum": 1, "maximum": 10},
+                        "model": {
+                            "type": "string",
+                            "enum": ["grok-imagine-image-quality"],
+                        },
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "xai-imagine",
+                    "operation": "image.generate",
+                    "requires_credential": True,
+                    "budget_kind": "xai-imagine",
+                    "enforce_budget": True,
+                    "default_model": "grok-imagine-image-quality",
+                    "capability_metadata": {
+                        "modalities": {
+                            "input": ["text"],
+                            "output": ["image"],
+                        },
+                        "modes": ["text-to-image"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/images/generations",
+                            "persistence": (
+                                "xAI image outputs are requested as base64 where supported, "
+                                "written to generated assets, and registered as generic "
+                                "image artifacts during repository-backed execution."
+                            ),
+                        },
+                        "limits": {
+                            "max_outputs_per_request": 10,
+                            "resolutions": ["1k", "2k"],
+                            "aspect_ratios": [
+                                "1:1",
+                                "16:9",
+                                "9:16",
+                                "4:3",
+                                "3:4",
+                                "3:2",
+                                "2:3",
+                                "2:1",
+                                "1:2",
+                                "19.5:9",
+                                "9:19.5",
+                                "20:9",
+                                "9:20",
+                                "auto",
+                            ],
+                        },
+                        "models": {
+                            "grok-imagine-image-quality": {
+                                "status": "StackOS v1 quality image model",
+                                "resolutions": ["1k", "2k"],
+                            }
+                        },
+                        "safety": {
+                            "moderation": (
+                                "Provider moderation result may be returned on image responses."
+                            ),
+                            "watermark": "No official image watermark toggle verified in xAI docs.",
+                        },
+                        "unsupported_provider_features": [
+                            "cheaper grok-imagine-image model",
+                            "legacy grok-imagine-image-pro model",
+                            "mask/inpainting controls",
+                            "transparent background controls",
+                        ],
+                        "docs": [
+                            "https://docs.x.ai/developers/model-capabilities/images/generation",
+                            "https://docs.x.ai/developers/models",
+                            "https://docs.x.ai/developers/pricing",
+                        ],
+                    },
+                    "docs": [
+                        "https://docs.x.ai/developers/model-capabilities/images/generation",
+                        "https://docs.x.ai/developers/models",
+                        "https://docs.x.ai/developers/pricing",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="xai.image.edit",
+                name="Edit Grok Image",
+                description="Edit or compose up to three images through xAI Grok Imagine.",
+                provider="xai-imagine",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt", "input_image_refs"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1},
+                        "input_image_refs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "maxItems": 3,
+                            "description": (
+                                "Generated-assets PNG/JPEG refs sent as xAI JSON data URIs."
+                            ),
+                        },
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": [
+                                "1:1",
+                                "16:9",
+                                "9:16",
+                                "4:3",
+                                "3:4",
+                                "3:2",
+                                "2:3",
+                                "2:1",
+                                "1:2",
+                                "19.5:9",
+                                "9:19.5",
+                                "20:9",
+                                "9:20",
+                                "auto",
+                            ],
+                        },
+                        "resolution": {"type": "string", "enum": ["1k", "2k"]},
+                        "model": {
+                            "type": "string",
+                            "enum": ["grok-imagine-image-quality"],
+                        },
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "xai-imagine",
+                    "operation": "image.edit",
+                    "requires_credential": True,
+                    "budget_kind": "xai-imagine",
+                    "enforce_budget": True,
+                    "default_model": "grok-imagine-image-quality",
+                    "capability_metadata": {
+                        "modalities": {
+                            "input": ["text", "image"],
+                            "output": ["image"],
+                        },
+                        "modes": ["image-to-image", "multi-image-compose", "style-transfer"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/images/edits",
+                            "persistence": (
+                                "xAI-hosted temporary output URLs are downloaded and "
+                                "persisted into generated assets; action responses return "
+                                "local URLs and artifact ids when repository-backed."
+                            ),
+                        },
+                        "limits": {
+                            "max_input_images": 3,
+                            "max_input_image_bytes": 20971520,
+                            "input_image_formats": ["png", "jpg", "jpeg"],
+                            "aspect_ratio": (
+                                "Only accepted for multi-image edits; single-image edits keep "
+                                "the input image ratio."
+                            ),
+                            "resolutions": ["1k", "2k"],
+                        },
+                        "models": {
+                            "grok-imagine-image-quality": {
+                                "status": "StackOS v1 quality image model",
+                                "max_input_images": 3,
+                            }
+                        },
+                        "safety": {
+                            "moderation": (
+                                "Provider moderation result may be returned on image responses."
+                            ),
+                            "watermark": "No official image watermark toggle verified in xAI docs.",
+                        },
+                        "unsupported_provider_features": [
+                            "cheaper grok-imagine-image model",
+                            "OpenAI SDK multipart images.edit shape",
+                            "mask/inpainting controls",
+                            "transparent background controls",
+                            "video input",
+                        ],
+                        "docs": [
+                            "https://docs.x.ai/developers/model-capabilities/images/editing",
+                            "https://docs.x.ai/developers/model-capabilities/images/multi-image-editing",
+                            "https://docs.x.ai/developers/models",
+                            "https://docs.x.ai/developers/pricing",
+                        ],
+                    },
+                    "docs": [
+                        "https://docs.x.ai/developers/model-capabilities/images/editing",
+                        "https://docs.x.ai/developers/model-capabilities/images/multi-image-editing",
+                        "https://docs.x.ai/developers/models",
+                        "https://docs.x.ai/developers/pricing",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="xai.video.generate",
+                name="Generate Grok Video",
+                description=(
+                    "Generate and persist Grok Imagine videos from text, one first-frame "
+                    "image, or up to seven reference images."
+                ),
+                provider="xai-imagine",
+                capability="video-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1},
+                        "mode": {
+                            "type": "string",
+                            "enum": ["text-to-video", "image-to-video", "reference-to-video"],
+                        },
+                        "duration": {"type": "integer", "minimum": 1, "maximum": 15},
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
+                        },
+                        "resolution": {"type": "string", "enum": ["480p", "720p"]},
+                        "model": {"type": "string", "enum": ["grok-imagine-video"]},
+                        "input_image_ref": {
+                            "type": "string",
+                            "description": "Generated-assets PNG/JPEG ref for image-to-video.",
+                        },
+                        "reference_image_refs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "maxItems": 7,
+                            "description": (
+                                "Generated-assets PNG/JPEG refs for reference-to-video; "
+                                "cannot be combined with image-to-video."
+                            ),
+                        },
+                        "poll_interval_seconds": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 30,
+                        },
+                        "poll_timeout_seconds": {
+                            "type": "number",
+                            "minimum": 60,
+                            "maximum": 1800,
+                        },
+                    },
+                },
+                output_schema=_VIDEO_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "xai-imagine",
+                    "operation": "video.generate",
+                    "requires_credential": True,
+                    "budget_kind": "xai-imagine",
+                    "enforce_budget": True,
+                    "default_model": "grok-imagine-video",
+                    "capability_metadata": {
+                        "modalities": {
+                            "input": ["text", "image"],
+                            "output": ["video"],
+                        },
+                        "modes": ["text-to-video", "image-to-video", "reference-to-video"],
+                        "execution": {
+                            "mode": "async",
+                            "provider_endpoint": "/v1/videos/generations",
+                            "poll_endpoint": "/v1/videos/{request_id}",
+                            "persistence": (
+                                "xAI temporary video URLs are downloaded immediately into "
+                                "generated assets and registered as generic video artifacts."
+                            ),
+                        },
+                        "limits": {
+                            "duration_seconds": [1, 15],
+                            "reference_to_video_duration_max_seconds": 10,
+                            "max_reference_images": 7,
+                            "input_image_formats": ["png", "jpg", "jpeg"],
+                            "resolutions": ["480p", "720p"],
+                            "aspect_ratios": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
+                        },
+                        "models": {
+                            "grok-imagine-video": {
+                                "status": "StackOS v1 stable video model",
+                                "resolutions": ["480p", "720p"],
+                            }
+                        },
+                        "safety": {
+                            "status_values": ["pending", "done", "expired", "failed"],
+                            "watermark": "No official video watermark toggle verified in xAI docs.",
+                            "url_retention": (
+                                "Official docs say URLs are temporary; exact duration is "
+                                "not specified."
+                            ),
+                        },
+                        "unsupported_provider_features": [
+                            "grok-imagine-video-1.5-preview image-to-video preview model",
+                            "video editing endpoint",
+                            "video extension endpoint",
+                            "custom fps",
+                            "custom audio controls",
+                            "exact provider URL-expiry duration",
+                        ],
+                        "docs": [
+                            "https://docs.x.ai/developers/model-capabilities/video/generation",
+                            "https://docs.x.ai/developers/model-capabilities/video/image-to-video",
+                            "https://docs.x.ai/developers/model-capabilities/video/reference-to-video",
+                            "https://docs.x.ai/developers/models",
+                            "https://docs.x.ai/developers/pricing",
+                        ],
+                    },
+                    "docs": [
+                        "https://docs.x.ai/developers/model-capabilities/video/generation",
+                        "https://docs.x.ai/developers/model-capabilities/video/image-to-video",
+                        "https://docs.x.ai/developers/model-capabilities/video/reference-to-video",
+                        "https://docs.x.ai/developers/models",
+                        "https://docs.x.ai/developers/pricing",
+                    ],
+                },
+            ),
+            ActionManifest(
                 key="video.generate",
                 name="Generate Video",
                 description=(
@@ -1366,6 +1784,12 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 key="generated-image",
                 name="Generated Image",
                 description="Generated image artifact metadata reusable by any workflow.",
+                schema_data=_ARTIFACT_RESOURCE_SCHEMA,
+            ),
+            ResourceManifest(
+                key="generated-video",
+                name="Generated Video",
+                description="Generated video artifact metadata reusable by any workflow.",
                 schema_data=_ARTIFACT_RESOURCE_SCHEMA,
             ),
             ResourceManifest(

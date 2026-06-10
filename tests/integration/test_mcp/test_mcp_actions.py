@@ -258,6 +258,20 @@ def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
     return status["connections"][0]["credential_ref"]
 
 
+def _create_xai_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/xai-imagine/credentials",
+        json={"auth_method_key": "api_key", "fields": {"api_key": "xai-key"}},
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "xai-imagine"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
@@ -385,6 +399,30 @@ def _image_action_plan_json() -> dict:
                 "id": "generate-image",
                 "title": "Generate image",
                 "action_refs": ["utils.image.generate"],
+            }
+        ],
+    }
+
+
+def _xai_video_action_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "utils.xai-video-action.run",
+        "title": "xAI video action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "generate-xai-video",
+                    "tool": "action.execute",
+                    "action_refs": ["utils.xai.video.generate"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "generate-xai-video",
+                "title": "Generate xAI video",
+                "action_refs": ["utils.xai.video.generate"],
             }
         ],
     }
@@ -926,6 +964,104 @@ def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(
     )
     assert artifact["uri"] == item["url"]
     assert artifact["plugin_slug"] == "utils"
+
+
+def test_action_execute_xai_video_grant_returns_sanitized_artifact_refs(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_xai_credential(mcp_client, project_id)
+    budget_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "xai-imagine", "monthly_budget_usd": 10.0},
+        headers=mcp_client._headers(),
+    )
+    assert budget_resp.status_code == 200
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _xai_video_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "generate-xai-video",
+            "run_token": run_token,
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.x.ai/v1/videos/generations",
+        json={"request_id": "req_123"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.x.ai/v1/videos/req_123",
+        json={
+            "status": "done",
+            "model": "grok-imagine-video",
+            "video": {"url": "https://cdn.x.ai/video.mp4", "duration": 5},
+            "usage": {"cost_in_usd_ticks": 3100000000},
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://cdn.x.ai/video.mp4",
+        content=b"video-bytes",
+        headers={"content-type": "video/mp4"},
+    )
+
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.xai.video.generate",
+            "input_json": {
+                "prompt": "editorial product motion",
+                "duration": 5,
+                "resolution": "480p",
+                "poll_interval_seconds": 1,
+                "poll_timeout_seconds": 60,
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+
+    data = out["data"]
+    item = data["output_json"]["data"][0]
+    rendered = json.dumps(data)
+    assert data["credential_ref"] == credential_ref
+    assert data["action_call"]["credential_ref"] == credential_ref
+    assert data["action_call"]["provider_key"] == "xai-imagine"
+    assert data["action_call"]["connector_key"] == "xai-imagine"
+    assert data["action_call"]["run_id"] == started["data"]["run_id"]
+    assert data["action_call"]["run_plan_id"] == created["data"]["id"]
+    assert data["action_call"]["run_plan_step_id"] == claimed["data"]["id"]
+    assert data["cost_cents"] == 31
+    assert data["output_json"]["request_id"] == "req_123"
+    assert item["url"].startswith("/generated-assets/xai-imagine/xai-video-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert data["output_json"]["artifact_refs"] == [item["url"]]
+    assert "https://cdn.x.ai/video.mp4" not in rendered
+    assert "credential_id" not in rendered
+    assert "xai-key" not in rendered
+    path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"video-bytes"
+    artifacts = mcp_client.call_tool_structured(
+        "artifact.query",
+        {"project_id": project_id, "kind": "video"},
+    )
+    assert any(row["id"] == item["artifact_id"] for row in artifacts["items"])
 
 
 def test_action_execute_openai_image_edit_uses_input_reference_images(

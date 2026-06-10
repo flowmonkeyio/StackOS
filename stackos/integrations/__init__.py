@@ -32,6 +32,7 @@ from stackos.integrations.smtp import SmtpIntegration
 from stackos.integrations.telegram_bot import TelegramBotIntegration
 from stackos.integrations.trackbooth import TrackboothIntegration
 from stackos.integrations.wordpress import WordPressIntegration
+from stackos.integrations.xai_imagine import XAIImagineIntegration
 
 if TYPE_CHECKING:
     pass
@@ -42,6 +43,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "serper": SerperIntegration,
     "firecrawl": FirecrawlIntegration,
     "openai-images": OpenAIImagesIntegration,
+    "xai-imagine": XAIImagineIntegration,
     "openrouter": OpenRouterIntegration,
     "reddit": RedditIntegration,
     "google-paa": GooglePaaIntegration,
@@ -88,5 +90,6 @@ __all__ = [
     "TelegramBotIntegration",
     "TrackboothIntegration",
     "WordPressIntegration",
+    "XAIImagineIntegration",
     "integration_class_for",
 ]

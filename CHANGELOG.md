@@ -19,6 +19,13 @@
   wiring and the deferred `utils.video.generate` action contract
   (`deferred-video-backend-selection`); execution becomes available once a
   supported vendor backend connector lands.
+- Added xAI Imagine actions `utils.xai.image.generate`, `utils.xai.image.edit`,
+  and `utils.xai.video.generate` with latest Grok models, provider-specific
+  capability metadata, generated-assets persistence, generic media artifact
+  registration, run-plan grant coverage, official-doc-based pre-call budget
+  estimates, and actual-cost reconciliation from xAI usage ticks when present.
+  Alibaba WAN remains skipped for v1 until public executable API docs are
+  sufficient.
 
 ## 1.0.0 - 2026-05-26
 
