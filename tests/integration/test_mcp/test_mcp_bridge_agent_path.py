@@ -264,6 +264,14 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
     assert compact["connections"][0]["credential_ref"].startswith("cred_")
     assert compact["providers"][0]["status"] == "connected"
     assert "auth_methods" not in compact["providers"][0]
+    assert compact["providers"][0]["setup"]["provider_key"] == "mock-provider"
+    assert compact["providers"][0]["setup"]["local_setup_url"].endswith(
+        f"/projects/{project_id}/connections?provider_key=mock-provider"
+    )
+    assert compact["providers"][0]["setup"]["credential_label"] == "Fake API key"
+    assert compact["providers"][0]["setup"]["fallback_url"] == "http://127.0.0.1:5180/"
+    assert "No vendor registration exists" in compact["providers"][0]["setup"]["setup_note"]
+    assert compact["providers"][0]["setup"]["urls"][0]["key"] == "fallback_url"
     assert "auth_methods" in standard["providers"][0]
     assert resolved_compact["project_id"] == project_id
     assert resolved_compact["ready"] is True

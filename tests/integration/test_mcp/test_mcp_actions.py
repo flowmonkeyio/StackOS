@@ -83,6 +83,26 @@ def test_action_describe_reports_project_availability(
     assert described["execution_available"] is True
     assert described["availability"]["credential_state"] == "available"
     assert described["availability"]["budget_state"] == "available"
+    assert described["provider_setup"]["provider_key"] == "openai-images"
+    assert described["provider_setup"]["local_setup_url"].endswith(
+        f"/projects/{project_id}/connections?provider_key=openai-images"
+    )
+    assert described["provider_setup"]["api_key_url"] == "https://platform.openai.com/api-keys"
+    assert described["provider_setup"]["billing_url"].startswith("https://platform.openai.com/")
+    assert described["execution_context"]["discover"]["operation"] == "executionContext.discover"
+    assert described["execution_context"]["discover"]["arguments"] == {
+        "action_ref": "utils.image.generate",
+        "project_id": project_id,
+        "provider_key": "openai-images",
+    }
+    assert described["execution_context"]["pass_context_ref_to"] == [
+        "action.validate",
+        "action.run",
+        "action.execute",
+    ]
+    assert described["execution_context"]["payload_boundary"]["provider_context_json"].startswith(
+        "reusable provider/account scope"
+    )
     capability_metadata = described["manifest"]["config_json"]["capability_metadata"]
     assert capability_metadata["modes"] == ["text-to-image"]
     assert capability_metadata["limits"]["prompt_max_chars"] == 32000
@@ -90,6 +110,35 @@ def test_action_describe_reports_project_availability(
     image_items = [item for item in listed["items"] if item["action_ref"] == "utils.image.generate"]
     assert image_items
     assert image_items[0]["exposure"]["visible_by_default"] is True
+
+
+def test_execution_context_discover_compact_returns_create_guidance(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    discovered = mcp_client.call_tool_structured(
+        "executionContext.discover",
+        {
+            "project_id": project_id,
+            "plugin_slug": "trackbooth",
+            "provider_key": "trackbooth",
+            "action_ref": "trackbooth.api.offers_findall",
+            "ticket_key": "copy-offers",
+        },
+    )
+
+    assert discovered["context_refs"] == []
+    assert discovered["next_calls"]["create"]["operation"] == "executionContext.create"
+    assert discovered["next_calls"]["create"]["arguments"] == {
+        "project_id": project_id,
+        "name": "trackbooth.api.offers_findall context",
+        "plugin_slug": "trackbooth",
+        "provider_key": "trackbooth",
+        "action_ref": "trackbooth.api.offers_findall",
+        "ticket_key": "copy-offers",
+    }
 
 
 def test_action_list_hides_disconnected_external_integrations_by_default(
@@ -213,6 +262,13 @@ def test_integration_list_summarizes_hidden_external_actions(
     assert row["next_action"]["ui_url"].endswith(
         f"/projects/{project_id}/connections?provider_key=openai-images"
     )
+    assert row["setup"]["provider_key"] == "openai-images"
+    assert row["setup"]["local_setup_url"].endswith(
+        f"/projects/{project_id}/connections?provider_key=openai-images"
+    )
+    assert row["setup"]["api_key_url"] == "https://platform.openai.com/api-keys"
+    assert row["setup"]["docs_url"].endswith("/image-generation")
+    assert row["next_action"]["setup"]["api_key_url"] == "https://platform.openai.com/api-keys"
     assert any(action["action_ref"] == "utils.image.generate" for action in row["actions"])
 
 

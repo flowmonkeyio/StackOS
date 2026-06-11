@@ -28,6 +28,15 @@ providers:
     auth_type: none
     config:
       setup_note: Local agent chat stores messages and interactions in StackOS resources; the agent runner owns model invocation and decisions.
+      setup:
+        credential_label: none
+        local_setup_note: No external registration is required; this is a local StackOS surface.
+        setup_note: Local agent chat stores messages and interactions in StackOS resources; the agent runner owns model invocation and decisions.
+        fallback_url: http://127.0.0.1:5180/
+        fallback_reason: Local StackOS daemon/UI; no vendor registration page exists.
+        verified_at: "2026-06-11"
+        url_confidence:
+          fallback_url: verified
       docs:
         - docs/integration-contracts/communications.md
   - key: telegram-bot
@@ -61,6 +70,24 @@ providers:
             description: Leave blank for Telegram's hosted Bot API. Use only with the official self-hosted Telegram Bot API server.
     config:
       setup_note: Store only Telegram token material and transport endpoints here. Bot identity, agent guidance, command intent guidance, access, trigger, context, and response policy belong on project-scoped communication-profile records. The provider_facets.telegram-bot object stores only safe Telegram-specific refs/settings such as auth_profile_key, bot username, webhook settings, allowed updates, and provider id maps.
+      setup:
+        credential_label: Telegram Bot Token
+        setup_note: Create or manage the bot in BotFather, then paste only the bot token and optional webhook secret into StackOS.
+        homepage_url: https://telegram.org/
+        signup_url: https://telegram.org/apps
+        console_url: https://t.me/BotFather
+        api_key_url: https://core.telegram.org/bots/features#botfather
+        docs_url: https://core.telegram.org/bots/api
+        fallback_url: https://core.telegram.org/bots#how-do-i-create-a-bot
+        fallback_reason: Bot creation/token issuance happens in Telegram's BotFather chat rather than a normal web console.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: verified
+          api_key_url: verified
+          docs_url: verified
+          fallback_url: verified
       docs:
         - docs/integration-contracts/communications.md
         - https://core.telegram.org/bots/api
@@ -88,6 +115,23 @@ providers:
             description: Used by daemon-side Slack Events API and interaction signature verification.
     config:
       setup_note: Store only the Slack bot token and signing secret here. StackOS discovers safe workspace and bot identity metadata during credential testing. Agent identity, access, trigger, context, response, send, and handoff policy belong to project-scoped communication-profile records with slack-bot provider facets.
+      setup:
+        credential_label: Slack Bot Token and Signing Secret
+        setup_note: Create or select a Slack app, configure bot scopes, install it to the workspace, then copy the bot token and signing secret into StackOS.
+        homepage_url: https://slack.com/
+        signup_url: https://slack.com/get-started
+        console_url: https://api.slack.com/apps
+        api_key_url: https://api.slack.com/apps
+        billing_url: https://slack.com/pricing
+        docs_url: https://docs.slack.dev/
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: verified
+          api_key_url: verified
+          billing_url: verified
+          docs_url: verified
       scopes:
         - chat:write
         - app_mentions:read
@@ -178,6 +222,16 @@ providers:
             required: false
     config:
       setup_note: SMTP is send-only. Use IMAP or provider webhooks for mailbox read/unread, replies, bounces, or delivery events.
+      setup:
+        credential_label: SMTP host, username, and password or app password
+        setup_note: SMTP is a protocol, not one vendor. Use the mailbox provider's SMTP settings or app-password page, then enter host, port, TLS mode, username, and password in StackOS.
+        docs_url: https://www.rfc-editor.org/rfc/rfc5321.html
+        fallback_url: https://www.rfc-editor.org/rfc/rfc5321.html
+        fallback_reason: Exact registration, billing, and password pages are mailbox-provider specific.
+        verified_at: "2026-06-11"
+        url_confidence:
+          docs_url: verified
+          fallback_url: verified
       deferred_auth_methods:
         - oauth-xoauth2
       docs:
@@ -247,6 +301,16 @@ providers:
             required: false
     config:
       setup_note: IMAP operations must use UIDs and UIDVALIDITY, not sequence-number-only references.
+      setup:
+        credential_label: IMAP host, username, and password or app password
+        setup_note: IMAP is a protocol, not one vendor. Use the mailbox provider's IMAP settings or app-password page, then enter host, port, TLS mode, username, and password in StackOS.
+        docs_url: https://www.rfc-editor.org/rfc/rfc9051.html
+        fallback_url: https://www.rfc-editor.org/rfc/rfc9051.html
+        fallback_reason: Exact registration, billing, and password pages are mailbox-provider specific.
+        verified_at: "2026-06-11"
+        url_confidence:
+          docs_url: verified
+          fallback_url: verified
       deferred_auth_methods:
         - oauth-xoauth2
       docs:

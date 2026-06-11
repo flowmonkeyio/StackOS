@@ -145,13 +145,23 @@ request/response fields, and common token variants before the agent calls
 Use `integration.list` when the agent needs to answer "which integrations are
 available or missing for this project?" without treating every disconnected
 provider as a blocker. It returns provider rows, connected counts, visible
-action counts, hidden action counts, and safe next setup hints.
+action counts, hidden action counts, and safe next setup hints. Each provider
+row includes normalized `setup` guidance derived from the provider manifest:
+the local StackOS connection URL plus safe vendor registration, API-key,
+billing, docs, fallback, and URL-confidence metadata when known.
 
 Use `readiness.check` before `auth.status` for selected work. It reuses action
 availability and workflow template action contracts to report only the
 credentials, budgets, or connectors needed by that workflow/action. This keeps
 an agent from treating every disconnected provider in the project as a blocker
-for one concrete run.
+for one concrete run. Missing credential items include the same provider
+`setup` guidance, so an agent can answer "where do I connect it in StackOS?"
+and "where do I get the vendor key?" from the scoped blocker.
+
+Use `action.describe` when the agent already knows the action and needs its
+payload schema, capability metadata, and provider setup context in one response.
+Use `auth.status` for sanitized credential diagnostics; compact responses keep
+only a small setup summary and omit full auth-method details.
 
 Run-plan-scoped execution operation:
 
@@ -184,6 +194,11 @@ context, output policy, request budget, and artifact namespace for
 classification is part of the action contract: read-like POST reporting actions
 may be classified as read when catalog metadata and semantics say they are
 safe, but idempotency alone never makes a mutating action read-safe.
+
+`action.describe` includes an `execution_context` block for agent consumers.
+It names when to use a context, the payload boundary between `input_json` and
+provider scope, and the next `executionContext.discover` /
+`executionContext.create` calls for the selected action.
 
 `action.execute` is not direct execution surface. It is callable only through a
 started run plan, exactly one active claimed step, an explicit

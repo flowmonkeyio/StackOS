@@ -423,7 +423,9 @@ is usable for planning/run-plan creation; `execution_ready=false` means only the
 listed action dependencies need setup before affected steps execute. Optional
 action-contract gaps are reported as `required_for:
 optional_action_execution`; resolve them only when the operator selected that
-branch.
+branch. Missing credential rows include provider setup guidance from
+`config.setup`, including the local connection URL and safe vendor registration,
+API-key, billing, docs, confidence, and fallback fields when known.
 
 ## Execution Context Refs
 
@@ -451,6 +453,11 @@ Agent flow:
    are terminal audit records, so StackOS records these limits and exposes them
    in action metadata/UI; agents should obey them until a running-call lifecycle
    exists for hard concurrency enforcement.
+
+Agent-facing discovery surfaces reinforce this path. `action.describe` returns
+`execution_context` guidance for the selected action, and
+`executionContext.discover` returns a scoped `executionContext.create` next call
+when no reusable context exists yet.
 
 Risk labels come from the action or generated catalog contract, not HTTP method
 alone. Catalog-marked or semantically read-only reporting/list/export POST

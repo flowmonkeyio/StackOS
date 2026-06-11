@@ -11,6 +11,8 @@ from typing import Any
 import yaml
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
+from stackos.provider_setup import find_provider_setup_secret_paths
+
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
 _DEFAULT_PLUGIN_DISPLAY_ORDER = {
     "engineering": 10,
@@ -106,6 +108,19 @@ class ProviderManifest(BaseModel):
     @classmethod
     def _key(cls, value: str) -> str:
         return _validate_key(value)
+
+    @field_validator("config")
+    @classmethod
+    def _config(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        secret_paths = find_provider_setup_secret_paths(value.get("setup"), path="$.setup")
+        if secret_paths:
+            raise ValueError(
+                "provider config.setup contains unsupported or secret-like fields: "
+                + ", ".join(secret_paths[:8])
+            )
+        return value
 
 
 class ActionManifest(BaseModel):
@@ -472,6 +487,21 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         payload_format="none",
                     )
                 ],
+                config={
+                    "setup": {
+                        "credential_label": "Local daemon state",
+                        "setup_note": (
+                            "No external registration is required. Use the local StackOS "
+                            "daemon/UI for setup, connections, and project state."
+                        ),
+                        "fallback_url": "http://127.0.0.1:5180/",
+                        "fallback_reason": (
+                            "Local StackOS provider; no vendor registration page exists."
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {"fallback_url": "verified"},
+                    }
+                },
             )
         ],
         actions=[
@@ -575,6 +605,38 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         ],
                     )
                 ],
+                config={
+                    "setup_note": (
+                        "Store the OpenAI API key from the OpenAI Platform. StackOS "
+                        "resolves it inside the daemon for image generation and editing."
+                    ),
+                    "setup": {
+                        "credential_label": "OpenAI API key",
+                        "setup_note": (
+                            "Create an OpenAI Platform account, add billing if needed, "
+                            "create an API key, and store only that key in StackOS."
+                        ),
+                        "homepage_url": "https://openai.com/api/",
+                        "signup_url": "https://platform.openai.com/signup",
+                        "console_url": "https://platform.openai.com/",
+                        "api_key_url": "https://platform.openai.com/api-keys",
+                        "billing_url": (
+                            "https://platform.openai.com/settings/organization/billing/overview"
+                        ),
+                        "docs_url": (
+                            "https://developers.openai.com/api/docs/guides/image-generation"
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "verified",
+                            "console_url": "verified",
+                            "api_key_url": "verified",
+                            "billing_url": "verified",
+                            "docs_url": "verified",
+                        },
+                    },
+                },
             ),
             ProviderManifest(
                 key="xai-imagine",
@@ -605,6 +667,28 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "Store the xAI API key from console.x.ai. StackOS resolves it "
                         "inside the daemon for Grok Imagine image and video actions."
                     ),
+                    "setup": {
+                        "credential_label": "xAI API key",
+                        "setup_note": (
+                            "Create or sign in to xAI Console, add billing/credits if "
+                            "needed, create an API key, and store it in StackOS."
+                        ),
+                        "homepage_url": "https://x.ai/",
+                        "signup_url": "https://console.x.ai/",
+                        "console_url": "https://console.x.ai/",
+                        "api_key_url": "https://console.x.ai/",
+                        "billing_url": "https://console.x.ai/",
+                        "docs_url": "https://docs.x.ai/overview",
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "verified",
+                            "console_url": "verified",
+                            "api_key_url": "directional",
+                            "billing_url": "directional",
+                            "docs_url": "verified",
+                        },
+                    },
                     "docs": [
                         "https://docs.x.ai/developers/model-capabilities/images/generation",
                         "https://docs.x.ai/developers/model-capabilities/video/generation",
@@ -643,6 +727,35 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "records credential storage format without making a billable "
                         "image request."
                     ),
+                    "setup": {
+                        "credential_label": "Reve API key",
+                        "setup_note": (
+                            "Use the official Reve app/API console to register and find "
+                            "API credentials; exact API-key and billing pages are not "
+                            "publicly verified."
+                        ),
+                        "homepage_url": "https://app.reve.com/",
+                        "signup_url": "https://app.reve.com/",
+                        "console_url": "https://app.reve.com/",
+                        "api_key_url": "https://app.reve.com/",
+                        "billing_url": "https://app.reve.com/",
+                        "docs_url": "https://api.reve.com/console/docs",
+                        "fallback_url": "https://app.reve.com/",
+                        "fallback_reason": (
+                            "Exact Reve credential and billing routes are app-gated; "
+                            "the official app is the closest public setup entry."
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "directional",
+                            "signup_url": "directional",
+                            "console_url": "directional",
+                            "api_key_url": "directional",
+                            "billing_url": "directional",
+                            "docs_url": "directional",
+                            "fallback_url": "directional",
+                        },
+                    },
                     "docs": [
                         "https://api.reve.com/console/docs",
                         "https://api.reve.com/console/docs/create",
@@ -681,6 +794,29 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "StackOS resolves it inside the daemon for Gemini image "
                         "generation and editing actions."
                     ),
+                    "setup": {
+                        "credential_label": "Gemini API key",
+                        "setup_note": (
+                            "Create or sign in to Google AI Studio, create a Gemini API "
+                            "key, attach billing in Google Cloud if required, and store "
+                            "the key in StackOS."
+                        ),
+                        "homepage_url": "https://ai.google.dev/",
+                        "signup_url": "https://aistudio.google.com/",
+                        "console_url": "https://aistudio.google.com/",
+                        "api_key_url": "https://aistudio.google.com/app/apikey",
+                        "billing_url": "https://console.cloud.google.com/billing",
+                        "docs_url": "https://ai.google.dev/gemini-api/docs/image-generation",
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "verified",
+                            "console_url": "verified",
+                            "api_key_url": "verified",
+                            "billing_url": "verified",
+                            "docs_url": "verified",
+                        },
+                    },
                     "docs": [
                         "https://ai.google.dev/gemini-api/docs/image-generation",
                         "https://ai.google.dev/gemini-api/docs/image-understanding",
@@ -717,6 +853,35 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "Store the Gemini Developer API key from Google AI Studio. "
                         "StackOS resolves it inside the daemon for Veo video actions."
                     ),
+                    "setup": {
+                        "credential_label": "Gemini API key",
+                        "setup_note": (
+                            "Create or sign in to Google AI Studio, create a Gemini API "
+                            "key, attach billing in Google Cloud if required, and store "
+                            "the key in StackOS."
+                        ),
+                        "homepage_url": "https://ai.google.dev/",
+                        "signup_url": "https://aistudio.google.com/",
+                        "console_url": "https://aistudio.google.com/",
+                        "api_key_url": "https://aistudio.google.com/app/apikey",
+                        "billing_url": "https://console.cloud.google.com/billing",
+                        "docs_url": "https://ai.google.dev/gemini-api/docs/video-generation",
+                        "fallback_url": "https://ai.google.dev/gemini-api/docs/video",
+                        "fallback_reason": (
+                            "Google may route Veo docs under video or video-generation "
+                            "paths; both are official Gemini API documentation targets."
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "verified",
+                            "console_url": "verified",
+                            "api_key_url": "verified",
+                            "billing_url": "verified",
+                            "docs_url": "directional",
+                            "fallback_url": "verified",
+                        },
+                    },
                     "docs": [
                         "https://ai.google.dev/gemini-api/docs/video",
                         "https://ai.google.dev/gemini-api/docs/pricing",
@@ -753,6 +918,28 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "StackOS resolves it inside the daemon for Ideogram image "
                         "generation and remix actions."
                     ),
+                    "setup": {
+                        "credential_label": "Ideogram API key",
+                        "setup_note": (
+                            "Open the Ideogram API dashboard, create or copy an API key, "
+                            "confirm plan/credits, and store the key in StackOS."
+                        ),
+                        "homepage_url": "https://ideogram.ai/",
+                        "signup_url": "https://ideogram.ai/api",
+                        "console_url": "https://ideogram.ai/api",
+                        "api_key_url": "https://ideogram.ai/api",
+                        "billing_url": "https://ideogram.ai/pricing",
+                        "docs_url": "https://developer.ideogram.ai/",
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "verified",
+                            "console_url": "verified",
+                            "api_key_url": "verified",
+                            "billing_url": "verified",
+                            "docs_url": "verified",
+                        },
+                    },
                     "docs": [
                         "https://developer.ideogram.ai/api-reference/api-reference/generate-v4",
                         "https://developer.ideogram.ai/api-reference/api-reference/remix-v4",
@@ -789,6 +976,34 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "inside the daemon for Seedream image actions and Seedance "
                         "video generation actions."
                     ),
+                    "setup": {
+                        "credential_label": "BytePlus ModelArk API key",
+                        "setup_note": (
+                            "Register/sign in to BytePlus, enable ModelArk, create an "
+                            "IAM/API key, confirm billing, and store the key in StackOS."
+                        ),
+                        "homepage_url": "https://www.byteplus.com/en/product/modelark",
+                        "signup_url": "https://console.byteplus.com/",
+                        "console_url": "https://console.byteplus.com/",
+                        "api_key_url": "https://console.byteplus.com/iam/keymanage/",
+                        "billing_url": "https://console.byteplus.com/finance/",
+                        "docs_url": "https://docs.byteplus.com/en/docs/ModelArk/",
+                        "fallback_url": "https://docs.byteplus.com/en/docs/ModelArk/",
+                        "fallback_reason": (
+                            "Some ModelArk setup routes are account-gated; official "
+                            "console and ModelArk docs are the nearest setup targets."
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "directional",
+                            "console_url": "directional",
+                            "api_key_url": "directional",
+                            "billing_url": "directional",
+                            "docs_url": "verified",
+                            "fallback_url": "verified",
+                        },
+                    },
                     "docs": [
                         "https://docs.byteplus.com/en/docs/ModelArk/1541523",
                         "https://docs.byteplus.com/en/docs/ModelArk/1330310",
@@ -826,6 +1041,35 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "Store the Alibaba Model Studio/DashScope API key. StackOS "
                         "resolves it inside the daemon for Wan video actions."
                     ),
+                    "setup": {
+                        "credential_label": "Alibaba Model Studio/DashScope API key",
+                        "setup_note": (
+                            "Register for Alibaba Cloud, enable Model Studio/DashScope, "
+                            "create API credentials, confirm billing, and store the key "
+                            "in StackOS."
+                        ),
+                        "homepage_url": ("https://www.alibabacloud.com/help/en/model-studio/"),
+                        "signup_url": "https://account.alibabacloud.com/register/",
+                        "console_url": "https://bailian.console.alibabacloud.com/",
+                        "api_key_url": "https://bailian.console.alibabacloud.com/",
+                        "billing_url": "https://billing-cost.console.aliyun.com/",
+                        "docs_url": ("https://www.alibabacloud.com/help/en/model-studio/"),
+                        "fallback_url": ("https://www.alibabacloud.com/help/en/model-studio/"),
+                        "fallback_reason": (
+                            "Exact credential screens are account/region gated; the "
+                            "official Model Studio console and docs are the nearest setup path."
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "verified",
+                            "console_url": "directional",
+                            "api_key_url": "directional",
+                            "billing_url": "directional",
+                            "docs_url": "verified",
+                            "fallback_url": "verified",
+                        },
+                    },
                     "docs": [
                         "https://www.alibabacloud.com/help/en/model-studio/video-generate-edit-model/",
                         "https://www.alibabacloud.com/help/en/model-studio/text-to-video-api-reference/",
@@ -868,6 +1112,33 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "Store the Kling AccessKey and SecretKey as a daemon-held JSON "
                         "credential. StackOS signs short-lived JWTs inside the daemon."
                     ),
+                    "setup": {
+                        "credential_label": "Kling AccessKey and SecretKey",
+                        "setup_note": (
+                            "Use the official Kling AI/API console and documentation to "
+                            "obtain access keys, then store both AccessKey and SecretKey "
+                            "in StackOS."
+                        ),
+                        "homepage_url": "https://klingai.com/",
+                        "signup_url": "https://app.klingai.com/",
+                        "console_url": "https://app.klingai.com/",
+                        "api_key_url": "https://kling.ai/document-api",
+                        "docs_url": "https://kling.ai/document-api",
+                        "fallback_url": "https://kling.ai/document-api",
+                        "fallback_reason": (
+                            "Exact billing/key pages are not publicly verified; official "
+                            "Kling API docs and app are the closest setup targets."
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "directional",
+                            "console_url": "directional",
+                            "api_key_url": "directional",
+                            "docs_url": "verified",
+                            "fallback_url": "verified",
+                        },
+                    },
                     "docs": [
                         "https://kling.ai/document-api/apiReference%2FcommonInfo",
                         "https://kling.ai/document-api/apiReference%2Fmodel%2FtextToVideo",
@@ -908,6 +1179,20 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "removal on 2026-09-24, so the first backend will be chosen among "
                         "actively supported video APIs before video.generate is enabled."
                     ),
+                    "setup": {
+                        "credential_label": "Concrete video provider credential",
+                        "setup_note": (
+                            "This neutral provider is a placeholder. Choose the concrete "
+                            "video backend first, then use that provider's registration, "
+                            "API-key, billing, and docs URLs."
+                        ),
+                        "fallback_url": "http://127.0.0.1:5180/",
+                        "fallback_reason": (
+                            "No vendor registration page exists for the neutral placeholder."
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {"fallback_url": "verified"},
+                    },
                 },
             ),
             ProviderManifest(
@@ -956,6 +1241,28 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "only. StackOS does not expose generic text-generation actions "
                         "until a workflow-owned policy, grant, and audit contract exists."
                     ),
+                    "setup": {
+                        "credential_label": "OpenRouter API key",
+                        "setup_note": (
+                            "Sign in to OpenRouter, create an API key, add credits if "
+                            "needed, and store the key in StackOS."
+                        ),
+                        "homepage_url": "https://openrouter.ai/",
+                        "signup_url": "https://openrouter.ai/sign-in",
+                        "console_url": "https://openrouter.ai/settings/keys",
+                        "api_key_url": "https://openrouter.ai/settings/keys",
+                        "billing_url": "https://openrouter.ai/settings/credits",
+                        "docs_url": "https://openrouter.ai/docs",
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "verified",
+                            "console_url": "verified",
+                            "api_key_url": "verified",
+                            "billing_url": "verified",
+                            "docs_url": "verified",
+                        },
+                    },
                     "docs": [
                         "https://openrouter.ai/docs/api/reference/authentication",
                         "https://openrouter.ai/docs/api/api-reference/models/get-models",
@@ -986,6 +1293,40 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         ],
                     )
                 ],
+                config={
+                    "setup_note": (
+                        "Store the Firecrawl API key from the Firecrawl app. StackOS "
+                        "resolves it inside the daemon for scrape, crawl, and map actions."
+                    ),
+                    "setup": {
+                        "credential_label": "Firecrawl API key",
+                        "setup_note": (
+                            "Sign in to Firecrawl, create/copy an API key, confirm plan "
+                            "limits, and store the key in StackOS."
+                        ),
+                        "homepage_url": "https://www.firecrawl.dev/",
+                        "signup_url": "https://app.firecrawl.dev/",
+                        "console_url": "https://app.firecrawl.dev/",
+                        "api_key_url": "https://app.firecrawl.dev/",
+                        "billing_url": "https://www.firecrawl.dev/pricing",
+                        "docs_url": "https://docs.firecrawl.dev/",
+                        "fallback_url": "https://docs.firecrawl.dev/",
+                        "fallback_reason": (
+                            "Exact key screen can be app-gated; official app and docs "
+                            "are the nearest setup targets."
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "directional",
+                            "console_url": "directional",
+                            "api_key_url": "directional",
+                            "billing_url": "verified",
+                            "docs_url": "verified",
+                            "fallback_url": "verified",
+                        },
+                    },
+                },
             ),
             ProviderManifest(
                 key="jina",
@@ -1018,6 +1359,33 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "Jina Reader can run without a key; add a daemon-held API key "
                         "only when higher quota is needed."
                     ),
+                    "setup": {
+                        "credential_label": "Optional Jina API key",
+                        "setup_note": (
+                            "Jina Reader can run without a key. For higher quota, use "
+                            "Jina's API dashboard and store the API key in StackOS."
+                        ),
+                        "homepage_url": "https://jina.ai/",
+                        "signup_url": "https://jina.ai/",
+                        "console_url": "https://jina.ai/api-dashboard/",
+                        "api_key_url": "https://jina.ai/api-dashboard/",
+                        "billing_url": "https://jina.ai/pricing",
+                        "docs_url": "https://docs.jina.ai/",
+                        "fallback_url": "https://jina.ai/api-dashboard/",
+                        "fallback_reason": (
+                            "Exact dashboard routing can vary; use the official Jina API dashboard."
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "directional",
+                            "console_url": "directional",
+                            "api_key_url": "directional",
+                            "billing_url": "verified",
+                            "docs_url": "verified",
+                            "fallback_url": "directional",
+                        },
+                    },
                 },
             ),
             ProviderManifest(
@@ -1066,6 +1434,26 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "Store the OAuth app JSON in the encrypted payload; do not "
                         "persist access tokens in agent-visible state."
                     ),
+                    "setup": {
+                        "credential_label": "Reddit app client id, client secret, and user agent",
+                        "setup_note": (
+                            "Create a Reddit app under developer preferences, then store "
+                            "client id, client secret, and user agent in StackOS."
+                        ),
+                        "homepage_url": "https://www.reddit.com/",
+                        "signup_url": "https://www.reddit.com/register/",
+                        "console_url": "https://www.reddit.com/prefs/apps",
+                        "api_key_url": "https://www.reddit.com/prefs/apps",
+                        "docs_url": "https://www.reddit.com/dev/api/",
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "verified",
+                            "console_url": "verified",
+                            "api_key_url": "verified",
+                            "docs_url": "verified",
+                        },
+                    },
                 },
             ),
             ProviderManifest(
@@ -1100,7 +1488,20 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "Use any non-empty fake key. This provider never calls a vendor "
                         "network, but it still goes through credential storage, run-plan "
                         "grants, action execution, redaction, and audit."
-                    )
+                    ),
+                    "setup": {
+                        "credential_label": "Fake API key",
+                        "setup_note": (
+                            "No vendor registration exists. Use any non-empty fake key "
+                            "when testing StackOS credential and action execution flow."
+                        ),
+                        "fallback_url": "http://127.0.0.1:5180/",
+                        "fallback_reason": (
+                            "Local test provider; no vendor registration page exists."
+                        ),
+                        "verified_at": "2026-06-11",
+                        "url_confidence": {"fallback_url": "verified"},
+                    },
                 },
             ),
         ],

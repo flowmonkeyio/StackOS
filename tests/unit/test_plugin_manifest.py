@@ -554,6 +554,45 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert "acting_as_account" not in trackbooth_actions["catalog.sync"].input_schema["properties"]
 
 
+def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
+    providers = [
+        (plugin.slug, provider)
+        for plugin in BUILTIN_PLUGIN_MANIFESTS
+        for provider in plugin.providers
+    ]
+
+    assert len(providers) == 43
+    for plugin_slug, provider in providers:
+        config = provider.config or {}
+        setup = config.get("setup")
+        assert isinstance(setup, dict), f"{plugin_slug}:{provider.key} missing setup metadata"
+        assert setup.get("setup_note") or config.get("setup_note"), (
+            f"{plugin_slug}:{provider.key} missing setup note"
+        )
+        assert setup.get("verified_at") == "2026-06-11"
+        if provider.auth_type not in {"none", "local"}:
+            assert setup.get("credential_label"), (
+                f"{plugin_slug}:{provider.key} missing credential label"
+            )
+            assert any(
+                setup.get(key)
+                for key in (
+                    "homepage_url",
+                    "signup_url",
+                    "console_url",
+                    "api_key_url",
+                    "docs_url",
+                    "fallback_url",
+                )
+            ), f"{plugin_slug}:{provider.key} missing setup URL"
+        for key, value in setup.items():
+            if key.endswith("_url") and value is not None:
+                assert isinstance(value, str)
+                assert value.startswith(("https://", "http://")), (
+                    f"{plugin_slug}:{provider.key} has non-URL {key}"
+                )
+
+
 def test_communications_plugin_yaml_facade_validates() -> None:
     manifest = load_plugin_manifest_file(Path("plugins/communications/plugin.yaml"))
 
@@ -910,6 +949,53 @@ def test_manifest_rejects_unknown_fields() -> None:
                 "slug": "bad-plugin",
                 "name": "Bad",
                 "unexpected": True,
+            }
+        )
+
+
+def test_manifest_rejects_secret_like_provider_setup_metadata() -> None:
+    with pytest.raises(ValidationError):
+        PluginManifest.model_validate(
+            {
+                "slug": "bad-provider-setup",
+                "name": "Bad Provider Setup",
+                "providers": [
+                    {
+                        "key": "bad-provider",
+                        "name": "Bad Provider",
+                        "config": {
+                            "setup": {
+                                "credential_label": "API key",
+                                "setup_note": "Use api_key=sk-real-value here",
+                                "verified_at": "2026-06-11",
+                            }
+                        },
+                    }
+                ],
+            }
+        )
+
+
+def test_manifest_rejects_secret_like_provider_setup_url() -> None:
+    with pytest.raises(ValidationError):
+        PluginManifest.model_validate(
+            {
+                "slug": "bad-provider-setup-url",
+                "name": "Bad Provider Setup URL",
+                "providers": [
+                    {
+                        "key": "bad-provider",
+                        "name": "Bad Provider",
+                        "config": {
+                            "setup": {
+                                "credential_label": "API key",
+                                "setup_note": "Use the setup page.",
+                                "api_key_url": "https://example.com/setup?token=secret-value",
+                                "verified_at": "2026-06-11",
+                            }
+                        },
+                    }
+                ],
             }
         )
 

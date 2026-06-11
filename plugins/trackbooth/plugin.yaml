@@ -41,6 +41,22 @@ providers:
       optional_on_behalf_header: X-Acting-As-Account
       connection_category: Affiliation
       setup_note: Store the account API key here. Custom API URLs are provider connection config, not per-operation action input.
+      setup:
+        credential_label: Trackbooth API key
+        setup_note: Trackbooth setup is account-specific. Store the account API key in StackOS; use the production API base URL unless local testing requires an override.
+        homepage_url: https://apis.trackbooth.com
+        console_url: https://apis.trackbooth.com
+        api_key_url: https://apis.trackbooth.com
+        docs_url: https://apis.trackbooth.com
+        fallback_url: https://apis.trackbooth.com
+        fallback_reason: No public self-service registration/API-key page is verified; use the Trackbooth account/API endpoint and StackOS local connection form.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: directional
+          console_url: directional
+          api_key_url: directional
+          docs_url: directional
+          fallback_url: directional
 resources:
   - key: agent-api-operation
     name: Agent API Operation

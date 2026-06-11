@@ -42,6 +42,23 @@ providers:
           required: true
     config:
       setup_note: DataForSEO uses HTTP Basic auth with the API login as username and API password as the daemon-held secret. Exposed StackOS actions stay limited to documented live SERP and keyword evidence endpoints.
+      setup:
+        credential_label: DataForSEO API login and password
+        setup_note: Register for DataForSEO, open API access, then store the API login and API password in StackOS.
+        homepage_url: https://dataforseo.com/
+        signup_url: https://app.dataforseo.com/register
+        console_url: https://app.dataforseo.com/
+        api_key_url: https://app.dataforseo.com/api-access
+        billing_url: https://app.dataforseo.com/billing
+        docs_url: https://docs.dataforseo.com/
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: directional
+          console_url: directional
+          api_key_url: directional
+          billing_url: directional
+          docs_url: verified
       docs:
         - https://docs.dataforseo.com/v3/serp-se-type-live-advanced/
         - https://docs.dataforseo.com/v3/keywords_data-google_ads-search_volume-live/
@@ -63,6 +80,26 @@ providers:
           required: true
     config:
       setup_note: Serper.dev Google Search requests use a daemon-held key in the provider header and consume provider credits. Keep searches bounded with explicit query, locale, page, and result-count inputs.
+      setup:
+        credential_label: Serper API key
+        setup_note: Register with Serper, create or copy the API key, and store it in StackOS.
+        homepage_url: https://serper.dev/
+        signup_url: https://serper.dev/signup
+        console_url: https://serper.dev/
+        api_key_url: https://serper.dev/api-key
+        billing_url: https://serper.dev/pricing
+        docs_url: https://serper.dev/api
+        fallback_url: https://serper.dev/
+        fallback_reason: Exact dashboard routes can change; the official site is the fallback for key and usage setup.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: directional
+          console_url: directional
+          api_key_url: directional
+          billing_url: verified
+          docs_url: verified
+          fallback_url: verified
       docs:
         - https://serper.dev/
   - key: ahrefs
@@ -83,6 +120,26 @@ providers:
           required: true
     config:
       setup_note: Ahrefs API v3 usage consumes API units; confirm the plan, key limits, and remaining units before high-volume runs.
+      setup:
+        credential_label: Ahrefs API key
+        setup_note: Confirm the Ahrefs plan has API access/API units, then create or copy the API key and store it in StackOS.
+        homepage_url: https://ahrefs.com/
+        signup_url: https://app.ahrefs.com/user/sign-up
+        console_url: https://app.ahrefs.com/
+        api_key_url: https://app.ahrefs.com/api
+        billing_url: https://app.ahrefs.com/account/subscription
+        docs_url: https://docs.ahrefs.com/
+        fallback_url: https://docs.ahrefs.com/
+        fallback_reason: API access is plan/account gated; official API docs and Ahrefs app are the nearest setup path.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: directional
+          console_url: directional
+          api_key_url: directional
+          billing_url: directional
+          docs_url: verified
+          fallback_url: verified
 actions:
   - key: keyword.research
     name: Research Keywords

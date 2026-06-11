@@ -53,6 +53,27 @@ providers:
           secret: false
           required: false
           placeholder: v25.0
+    config:
+      setup:
+        credential_label: Meta Marketing API OAuth access token
+        setup_note: Create/select a Meta developer app and Business portfolio, grant Marketing API permissions, then store the access token and safe account refs in StackOS.
+        homepage_url: https://www.facebook.com/business/ads
+        signup_url: https://www.facebook.com/business/tools/ads-manager
+        console_url: https://developers.facebook.com/apps/
+        api_key_url: https://developers.facebook.com/apps/
+        billing_url: https://business.facebook.com/billing_hub
+        docs_url: https://developers.facebook.com/docs/marketing-api
+        fallback_url: https://developers.facebook.com/docs/marketing-api
+        fallback_reason: Token generation is app/business/account specific; use the official developer app console.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: directional
+          console_url: verified
+          api_key_url: directional
+          billing_url: directional
+          docs_url: verified
+          fallback_url: verified
   - key: google-ads
     name: Google Ads
     description: Google Ads API provider contract for customers, budgets, campaigns, ad groups, assets, ads, reporting, and conversions.
@@ -95,6 +116,24 @@ providers:
           secret: false
           required: false
           placeholder: safe customer account reference
+    config:
+      setup:
+        credential_label: Google Ads developer token and OAuth refresh token
+        setup_note: Enable Google Ads API access, create OAuth client credentials, collect a refresh token, and store all four required secret fields in StackOS.
+        homepage_url: https://ads.google.com/home/
+        signup_url: https://ads.google.com/home/
+        console_url: https://ads.google.com/aw/apicenter
+        api_key_url: https://ads.google.com/aw/apicenter
+        billing_url: https://ads.google.com/aw/billing/summary
+        docs_url: https://developers.google.com/google-ads/api/docs/start
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: verified
+          api_key_url: verified
+          billing_url: verified
+          docs_url: verified
   - key: outbrain
     name: Outbrain
     description: Outbrain Amplify provider contract. OB-TOKEN-V1 generation, storage, expiry checks, and rotation stay daemon-side.
@@ -128,6 +167,24 @@ providers:
         model: daemon-managed-ob-token-v1
         max_age_days: 30
         stores_secrets_in_manifest: false
+      setup:
+        credential_label: Outbrain OB-TOKEN-V1
+        setup_note: Outbrain token generation is account/login gated; start from the official Amplify API docs and store only the daemon-managed token in StackOS.
+        homepage_url: https://www.outbrain.com/
+        signup_url: https://my.outbrain.com/
+        console_url: https://my.outbrain.com/
+        api_key_url: https://amplifyv01.docs.apiary.io/
+        docs_url: https://amplifyv01.docs.apiary.io/
+        fallback_url: https://amplifyv01.docs.apiary.io/
+        fallback_reason: Exact token and billing pages are login-gated; official API docs are the closest public setup target.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: directional
+          console_url: directional
+          api_key_url: directional
+          docs_url: verified
+          fallback_url: verified
   - key: taboola
     name: Taboola
     description: Taboola Backstage API provider contract for account-scoped campaigns, items, reports, and conversion rules.
@@ -154,6 +211,25 @@ providers:
           secret: false
           required: false
           placeholder: safe account reference
+    config:
+      setup:
+        credential_label: Taboola Backstage client credentials
+        setup_note: Register/sign in to Taboola Realize/Backstage, create client credentials for the account, then store client id, client secret, and safe account ref in StackOS.
+        homepage_url: https://www.taboola.com/
+        signup_url: https://signup.realize.com/
+        console_url: https://developers.taboola.com/backstage-api/reference/welcome
+        api_key_url: https://developers.taboola.com/backstage-api/reference/welcome
+        docs_url: https://developers.taboola.com/backstage-api/reference/welcome
+        fallback_url: https://developers.taboola.com/backstage-api/reference/welcome
+        fallback_reason: Exact client-credential and billing pages can be account-gated; official Backstage docs are the closest public setup path.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: verified
+          api_key_url: directional
+          docs_url: verified
+          fallback_url: verified
   - key: custom-media-tool
     name: Custom Media Tool
     description: Placeholder for project-local paid media tooling. Install a project plugin with concrete HTTP connector config before execution.
@@ -161,6 +237,14 @@ providers:
     config:
       connection_setup: project-local-plugin-required
       setup_note: Custom media tools need a project-local plugin that declares the endpoint, method, allowlisted host, auth injection, timeout, and response contract.
+      setup:
+        credential_label: Project-local endpoint/auth profile
+        setup_note: No public vendor registration exists. Install a project-local media plugin that declares endpoint, auth injection, allowlisted host, timeout, and response contract.
+        fallback_url: http://127.0.0.1:5180/
+        fallback_reason: Custom media providers are project-local; use StackOS extension docs and the local Connections UI.
+        verified_at: "2026-06-11"
+        url_confidence:
+          fallback_url: verified
 actions:
   - key: meta.account.list
     name: List Meta Ad Accounts

@@ -13,6 +13,7 @@ from stackos.agent_responses import (
     compact_tracker_ticket,
     compact_tracker_verify,
 )
+from stackos.provider_setup import build_provider_setup
 
 from .catalog import _bridge_tool_accepts_field
 from .constants import _AGENT_COMPACT_DEFAULT_TOOL_NAMES, _AGENT_RESPONSE_MODE_FIELD
@@ -224,6 +225,11 @@ def _bridge_compact_auth_status(structured: dict[str, Any]) -> dict[str, Any]:
                     if isinstance(item.get("profile_key"), str)
                 ],
                 "setup_required": not bool(provider_connections),
+                "setup": _bridge_provider_setup(
+                    provider_key=key,
+                    project_id=_bridge_as_int(structured.get("project_id")),
+                    config_json=_bridge_dict(provider.get("config_json")),
+                ),
             }
         )
     return {
@@ -250,6 +256,20 @@ def _bridge_compact_connection(connection: dict[str, Any]) -> dict[str, Any]:
         "provider_account_id": account.get("provider_account_id"),
         "setup_required": bool(connection.get("setup_required", False)),
     }
+
+
+def _bridge_provider_setup(
+    *,
+    provider_key: str | None,
+    project_id: int | None,
+    config_json: dict[str, Any],
+) -> dict[str, Any]:
+    setup = build_provider_setup(
+        project_id=project_id,
+        provider_key=provider_key,
+        provider_config_json=config_json,
+    )
+    return setup.model_dump(mode="json", exclude_none=True) if setup is not None else {}
 
 
 def _bridge_compact_tool_profile_resolve(structured: dict[str, Any]) -> dict[str, Any]:
@@ -422,6 +442,8 @@ def _bridge_compact_action_describe(structured: dict[str, Any]) -> dict[str, Any
         },
         "capability_metadata": manifest_config.get("capability_metadata", {}),
         "docs": manifest_config.get("docs", []),
+        "provider_setup": structured.get("provider_setup") or {},
+        "execution_context": structured.get("execution_context") or {},
     }
 
 

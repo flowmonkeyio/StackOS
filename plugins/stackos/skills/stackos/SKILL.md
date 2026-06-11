@@ -132,12 +132,15 @@ run token.
   plan, claim the step, then retry with `run_id`. `not_granted_to_active_step`
   means the active step exists but the grant snapshot does not cover this tool
   or argument shape.
-- Connect vendors: inspect the run plan's needed providers, share
-  scoped readiness first with `toolbox.call` for `readiness.check` using the
-  selected `workflow_key` or `action_ref`. Share
-  `/projects/{project_id}/connections` only for the listed providers, wait for
-  the operator to connect them in the UI, then run `toolbox.call` for
-  `auth.status` and `auth.test`.
+- Connect/setup vendors: inspect scoped readiness first with
+  `toolbox.call` for `readiness.check` using the selected `workflow_key` or
+  `action_ref`; use `integration.list` for catalog/setup questions and
+  `action.describe` for one action. Read returned `setup`/`provider_setup`
+  fields for StackOS connect, register, API-key, billing, docs, and fallback
+  URLs. Share exact URLs from those fields; when `url_confidence` is
+  `directional`, say it is the closest official destination. Never ask for
+  secrets in chat. After the operator connects a provider, run `auth.status`
+  and `auth.test`.
 - Inspect integrations: call `toolbox.call` for `integration.list` when the
   agent needs a project-level provider inventory, connected counts, hidden
   external action counts, and safe setup links. Do not use broad `auth.status`

@@ -15,6 +15,7 @@ from stackos.generated_inventory import (
     generated_action_public_key,
     generated_action_visible_for_project,
 )
+from stackos.provider_setup import build_provider_setup
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.plugins import PluginRepository
 
@@ -68,6 +69,15 @@ class ActionCatalogMixin:
             agent_execute_available=availability.executable,
             availability=availability,
             exposure=exposure,
+            provider_setup=build_provider_setup(
+                project_id=project_id,
+                provider_key=manifest.provider_key,
+                provider_config_json=provider_config_json,
+            ),
+            execution_context=_action_execution_context_guidance(
+                project_id=project_id,
+                manifest=manifest,
+            ),
         )
 
     def _manifest(
@@ -265,3 +275,64 @@ class ActionCatalogMixin:
     def _require_project(self, project_id: int) -> None:
         if self._s.get(Project, project_id) is None:
             raise NotFoundError(f"project {project_id} not found")
+
+
+def _action_execution_context_guidance(
+    *,
+    project_id: int | None,
+    manifest: ExecutableActionManifest,
+) -> dict[str, Any]:
+    discover_args: dict[str, Any] = {"action_ref": manifest.action_ref}
+    create_args: dict[str, Any] = {
+        "name": f"{manifest.action_ref} context",
+        "plugin_slug": manifest.plugin_slug,
+        "action_ref": manifest.action_ref,
+    }
+    if project_id is not None:
+        discover_args["project_id"] = project_id
+        create_args["project_id"] = project_id
+    if manifest.provider_key is not None:
+        discover_args["provider_key"] = manifest.provider_key
+        create_args["provider_key"] = manifest.provider_key
+    return {
+        "purpose": (
+            "Reuse context_ref when repeated action calls share credential, provider scope, "
+            "output policy, request budget, or artifact namespace."
+        ),
+        "decision_rule": (
+            "If provider/account scope or credential selection repeats across calls, stop "
+            "passing it inline and resolve or create an execution context."
+        ),
+        "use_when": [
+            "several calls use the same provider/account/credential",
+            "provider_context_json should not be repeated in every call",
+            "outputs should use a shared artifact namespace or file-backed policy",
+            "request budget limits should be visible to future agents",
+        ],
+        "discover": {
+            "operation": "executionContext.discover",
+            "arguments": discover_args,
+        },
+        "create": {
+            "operation": "executionContext.create",
+            "arguments": create_args,
+            "notes": [
+                "add credential_ref only when selecting a stored credential reference",
+                "add provider_context_json only for provider/account scope, never endpoint payload",
+                "add task_key, ticket_key, run_plan_id, or run_id to make future discovery scoped",
+            ],
+        },
+        "payload_boundary": {
+            "input_json": "endpoint payload for this one action call",
+            "provider_context_json": "reusable provider/account scope, not endpoint payload",
+            "context_ref": "preferred carrier for repeated credential/provider context",
+        },
+        "pass_context_ref_to": [
+            "action.validate",
+            "action.run",
+            "action.execute",
+        ],
+        "provider_context_schema_source": (
+            "action.provider_context_schema_json" if manifest.provider_context_schema_json else None
+        ),
+    }

@@ -59,6 +59,30 @@ def _context_query_grant_plan_json(key: str = "ops.context-read.run") -> dict:
     }
 
 
+def _action_grant_plan_json(key: str = "ops.action-guidance.run") -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": key,
+        "title": "Action Guidance",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "call-action",
+                    "tool": "action.execute",
+                    "action_refs": ["core.catalog.describe"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "call-action",
+                "title": "Call action",
+                "action_refs": ["core.catalog.describe"],
+            }
+        ],
+    }
+
+
 def _create_learning(mcp: MCPClient, project_id: int) -> dict:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/learnings",
@@ -334,6 +358,60 @@ def test_run_plan_grant_allows_only_active_claimed_step_tool(
     assert written["data"]["data_json"] == {"body": "active step can write"}
     assert completed["data"]["status"] == "completed"
     assert after_completion["code"] == -32007
+
+
+def test_run_plan_claim_step_guides_provider_action_context_flow(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _action_grant_plan_json()},
+    )
+    run_plan_id = created["data"]["id"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "step_id": "call-action",
+            "run_token": started["data"]["run_token"],
+        },
+    )
+
+    guidance = claimed["data"]["action_execution_guidance"]
+    assert claimed["data"]["allowed_tools"] == ["action.execute"]
+    assert guidance["preferred_path"] == [
+        "action.describe",
+        "executionContext.discover_or_resolve",
+        "action.validate",
+        "action.execute",
+    ]
+    assert guidance["next_calls"][:2] == [
+        {
+            "operation": "action.describe",
+            "arguments": {
+                "project_id": project_id,
+                "action_ref": "core.catalog.describe",
+            },
+        },
+        {
+            "operation": "executionContext.discover",
+            "arguments": {
+                "project_id": project_id,
+                "action_ref": "core.catalog.describe",
+                "run_plan_id": run_plan_id,
+                "run_id": started["data"]["run_id"],
+            },
+        },
+    ]
+    assert guidance["payload_boundary"]["context_ref"].startswith("preferred carrier")
 
 
 def test_run_plan_grant_argument_restrictions_are_enforced(

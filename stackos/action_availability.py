@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
 from stackos.db.models import Credential, IntegrationBudget
+from stackos.provider_setup import ProviderSetupOut, provider_local_setup_url
 
 if TYPE_CHECKING:
     from stackos.actions.manifest import ExecutableActionManifest
@@ -48,6 +49,7 @@ class ActionExposureNextActionOut(BaseModel):
     reason: str
     arguments: dict[str, Any] = Field(default_factory=dict)
     ui_url: str | None = None
+    setup: ProviderSetupOut | None = None
 
 
 class ActionExposureOut(BaseModel):
@@ -78,10 +80,7 @@ class ActionAvailabilityContext:
 
 def integration_setup_url(project_id: int | None, provider_key: str | None = None) -> str | None:
     """Return the local setup URL for a project/provider when known."""
-    if project_id is None:
-        return None
-    suffix = f"?provider_key={provider_key}" if provider_key else ""
-    return f"http://127.0.0.1:5180/projects/{project_id}/connections{suffix}"
+    return provider_local_setup_url(project_id, provider_key)
 
 
 def build_action_exposure(

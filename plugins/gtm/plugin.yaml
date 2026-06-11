@@ -63,6 +63,24 @@ providers:
           secret: false
           required: false
           placeholder: safe CRM property mapping reference
+    config:
+      setup:
+        credential_label: HubSpot OAuth/private app access token
+        setup_note: Create a HubSpot private app or OAuth app with the CRM scopes needed by the workflow, then store the access token in StackOS.
+        homepage_url: https://www.hubspot.com/
+        signup_url: https://app.hubspot.com/signup-hubspot/crm
+        console_url: https://app.hubspot.com/
+        api_key_url: https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview
+        billing_url: https://www.hubspot.com/pricing
+        docs_url: https://developers.hubspot.com/docs/api-reference/latest/overview
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: directional
+          api_key_url: verified
+          billing_url: verified
+          docs_url: verified
   - key: salesforce
     name: Salesforce
     description: Salesforce provider contract for accounts, leads, contacts, opportunities, notes, tasks, and pipeline reads.
@@ -108,6 +126,27 @@ providers:
           secret: false
           required: false
           placeholder: safe external ID mapping reference
+    config:
+      setup:
+        credential_label: Salesforce OAuth access token
+        setup_note: Create or use a Salesforce connected app, authorize the required REST API scopes, then store the OAuth token details in StackOS.
+        homepage_url: https://www.salesforce.com/
+        signup_url: https://developer.salesforce.com/signup
+        console_url: https://login.salesforce.com/
+        api_key_url: https://help.salesforce.com/s/articleView?id=sf.connected_app_create.htm&type=5
+        billing_url: https://www.salesforce.com/pricing/
+        docs_url: https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/intro_rest.htm
+        fallback_url: https://help.salesforce.com/s/articleView?id=sf.connected_app_create.htm&type=5
+        fallback_reason: Salesforce credential setup is org-specific; connected-app creation is the closest official public setup page.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: directional
+          api_key_url: directional
+          billing_url: verified
+          docs_url: verified
+          fallback_url: directional
   - key: pipedrive
     name: Pipedrive
     description: Pipedrive CRM provider contract for organizations, people, deals, activities, and notes.
@@ -141,6 +180,24 @@ providers:
           secret: false
           required: false
           placeholder: safe custom field mapping reference
+    config:
+      setup:
+        credential_label: Pipedrive OAuth token or personal API key
+        setup_note: Use a Pipedrive app/OAuth credential when available; for personal-key setups, copy the API key from personal preferences and store it in StackOS.
+        homepage_url: https://www.pipedrive.com/
+        signup_url: https://www.pipedrive.com/en/register
+        console_url: https://app.pipedrive.com/
+        api_key_url: https://support.pipedrive.com/en/article/how-can-i-find-my-personal-api-key
+        billing_url: https://www.pipedrive.com/en/pricing
+        docs_url: https://developers.pipedrive.com/docs/api/v1
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: directional
+          api_key_url: verified
+          billing_url: verified
+          docs_url: verified
   - key: apollo
     name: Apollo
     description: Apollo provider contract for people search and endpoint-specific enrichment.
@@ -188,6 +245,23 @@ providers:
           placeholder: safe API plan reference
     config:
       setup_note: Store the Apollo key daemon-side. Mark access_scope=master only for keys that are allowed to call People API Search; agents receive only credential refs and safe scope labels.
+      setup:
+        credential_label: Apollo API key
+        setup_note: Create an Apollo API key; mark it as master in StackOS only if it is allowed to call People API Search.
+        homepage_url: https://www.apollo.io/
+        signup_url: https://app.apollo.io/#/signup
+        console_url: https://app.apollo.io/
+        api_key_url: https://docs.apollo.io/docs/create-api-key
+        billing_url: https://www.apollo.io/pricing
+        docs_url: https://docs.apollo.io/
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: directional
+          api_key_url: verified
+          billing_url: verified
+          docs_url: verified
   - key: clay
     name: Clay
     description: Clay enrichment and workflow provider contract.
@@ -209,6 +283,27 @@ providers:
           secret: false
           required: false
           placeholder: safe workspace reference
+    config:
+      setup:
+        credential_label: Clay webhook/API token
+        setup_note: Clay setup is workspace-specific; use the Clay workspace/API or webhook configuration, then store only the token in StackOS.
+        homepage_url: https://www.clay.com/
+        signup_url: https://app.clay.com/signup
+        console_url: https://app.clay.com/
+        api_key_url: https://app.clay.com/
+        billing_url: https://www.clay.com/pricing
+        docs_url: https://university.clay.com/
+        fallback_url: https://university.clay.com/docs/using-clay-as-an-api
+        fallback_reason: Exact credential screens are app/workspace gated; use the official Clay app and API guidance.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: directional
+          console_url: directional
+          api_key_url: directional
+          billing_url: verified
+          docs_url: verified
+          fallback_url: verified
   - key: clearbit-by-hubspot
     name: Clearbit By HubSpot
     description: Clearbit by HubSpot enrichment provider contract.
@@ -243,6 +338,27 @@ providers:
           secret: false
           required: false
           placeholder: safe enrichment field mapping reference
+    config:
+      setup:
+        credential_label: Clearbit/HubSpot enrichment API key
+        setup_note: Clearbit is now HubSpot-owned; if a legacy Clearbit key is not available, start from HubSpot Data Breeze/Data products and record the approved credential path in StackOS.
+        homepage_url: https://clearbit.com/
+        signup_url: https://app.hubspot.com/signup-hubspot/crm
+        console_url: https://app.clearbit.com/
+        api_key_url: https://app.clearbit.com/
+        billing_url: https://www.hubspot.com/pricing
+        docs_url: https://www.hubspot.com/products/data
+        fallback_url: https://www.hubspot.com/products/data
+        fallback_reason: Exact Clearbit credential screens are not publicly verifiable; use the official HubSpot/Clearbit product path.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: directional
+          console_url: directional
+          api_key_url: directional
+          billing_url: verified
+          docs_url: directional
+          fallback_url: directional
   - key: outreach
     name: Outreach
     description: Outreach sequence provider contract.
@@ -282,6 +398,24 @@ providers:
           secret: false
           required: false
           placeholder: safe mailbox policy reference
+    config:
+      setup:
+        credential_label: Outreach OAuth access token
+        setup_note: Create or use an Outreach app/OAuth integration, approve the required scopes, then store the access token in StackOS.
+        homepage_url: https://www.outreach.ai/
+        signup_url: https://www.outreach.ai/request-demo
+        console_url: https://developers.outreach.io/
+        api_key_url: https://developers.outreach.io/
+        billing_url: https://www.outreach.ai/pricing
+        docs_url: https://developers.outreach.io/
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: verified
+          api_key_url: directional
+          billing_url: verified
+          docs_url: verified
   - key: salesloft
     name: Salesloft
     description: Salesloft cadence provider contract.
@@ -321,6 +455,24 @@ providers:
           secret: false
           required: false
           placeholder: safe cadence policy reference
+    config:
+      setup:
+        credential_label: Salesloft OAuth access token
+        setup_note: Create or use a Salesloft OAuth application, approve the required scopes, then store the OAuth token in StackOS.
+        homepage_url: https://www.salesloft.com/
+        signup_url: https://www.salesloft.com/talk-to-sales
+        console_url: https://accounts.salesloft.com/oauth/applications
+        api_key_url: https://accounts.salesloft.com/oauth/applications
+        billing_url: https://www.salesloft.com/pricing
+        docs_url: https://developers.salesloft.com/
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: verified
+          api_key_url: verified
+          billing_url: verified
+          docs_url: verified
   - key: google-workspace
     name: Google Workspace
     description: Gmail send and Google Calendar event provider contract.
@@ -348,6 +500,24 @@ providers:
           secret: false
           required: false
           placeholder: safe send policy reference
+    config:
+      setup:
+        credential_label: Google OAuth credential
+        setup_note: Create OAuth credentials in Google Cloud for Gmail/Calendar scopes, complete user consent, then store the token in StackOS.
+        homepage_url: https://workspace.google.com/
+        signup_url: https://workspace.google.com/business/signup/welcome
+        console_url: https://console.cloud.google.com/
+        api_key_url: https://console.cloud.google.com/apis/credentials
+        billing_url: https://support.google.com/a/answer/1230658
+        docs_url: https://developers.google.com/workspace
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: verified
+          api_key_url: verified
+          billing_url: verified
+          docs_url: verified
   - key: microsoft-365
     name: Microsoft 365
     description: Microsoft Graph mail send and calendar event provider contract.
@@ -375,6 +545,24 @@ providers:
           secret: false
           required: false
           placeholder: delegated or application permission reference
+    config:
+      setup:
+        credential_label: Microsoft Graph OAuth credential
+        setup_note: Register an app in Microsoft Entra ID, grant Graph mail/calendar permissions, authorize it, then store the OAuth token in StackOS.
+        homepage_url: https://www.microsoft.com/en-us/microsoft-365
+        signup_url: https://www.microsoft.com/en-us/microsoft-365/business
+        console_url: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
+        api_key_url: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
+        billing_url: https://admin.microsoft.com/Adminportal/Home#/BillingAccounts
+        docs_url: https://learn.microsoft.com/en-us/graph/overview
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: verified
+          api_key_url: verified
+          billing_url: verified
+          docs_url: verified
   - key: custom-gtm-tool
     name: Custom GTM Tool
     description: Placeholder for project-local GTM or RevOps tooling. Install a project plugin with concrete HTTP connector config before execution.
@@ -382,6 +570,14 @@ providers:
     config:
       connection_setup: project-local-plugin-required
       setup_note: Custom GTM tools need a project-local plugin that declares the endpoint, method, allowlisted host, auth injection, timeout, and response contract.
+      setup:
+        credential_label: Project-local endpoint/auth profile
+        setup_note: No public vendor registration exists. Install a project-local plugin that declares endpoint, auth injection, allowlisted host, timeout, and response contract.
+        fallback_url: http://127.0.0.1:5180/
+        fallback_reason: Custom GTM providers are project-local; use StackOS extension docs and the local Connections UI.
+        verified_at: "2026-06-11"
+        url_confidence:
+          fallback_url: verified
 actions:
   - key: hubspot.crm.companies.batch_upsert
     name: Batch Upsert HubSpot Companies

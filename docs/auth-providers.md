@@ -50,8 +50,10 @@ provider/profile they need; `auth.status` is still available for diagnostics.
    `auth.status` when it needs full sanitized diagnostics.
 3. If setup is missing, the agent points the operator to
    `/projects/{project_id}/connections?provider_key={provider_key}` in the local
-   UI. Only the operator/local admin uses setup routes or interactive OAuth
-   starts.
+   UI and uses the provider manifest `setup` metadata to answer where to
+   register, where to find the vendor API key/token, where billing/credits live,
+   and which official docs apply. Only the operator/local admin uses setup
+   routes or interactive OAuth starts.
 4. The operator chooses the provider auth method and enters the fields required
    by that method, or starts the provider OAuth flow when one is configured.
 5. The agent calls `toolbox.call` for `auth.test` with the selected
@@ -66,6 +68,16 @@ Provider manifests declare `auth_methods`. Each method defines its fields,
 which fields are daemon-secret, whether the payload is raw or JSON, and whether
 setup is an interactive OAuth-style flow. The Connections UI renders this
 schema directly:
+
+Provider manifests also declare safe self-service setup metadata under
+`config.setup`. It is not credential material. It may include
+`credential_label`, `setup_note`, official `homepage_url`, `signup_url`,
+`console_url`, `api_key_url`, `billing_url`, `docs_url`, `support_url`,
+`fallback_url`, `fallback_reason`, per-field `url_confidence`, and
+`verified_at`. If an exact API-key or billing page is not publicly verifiable,
+use the closest official homepage/docs/console URL and mark that field
+`directional` so agents can say it is the starting point rather than a verified
+deep link.
 
 - API-key providers usually have one secret `api_key` field.
 - Slack bot providers expose only secret `bot_token` and `signing_secret`

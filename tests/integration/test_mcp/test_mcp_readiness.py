@@ -67,7 +67,19 @@ def test_readiness_check_reports_scoped_action_missing_setup(
         item for item in readiness["missing"] if item["code"] == "credential_required"
     )
     assert credential["provider_key"] == "openai-images"
-    assert credential["ui_url"].endswith(f"/projects/{project_id}/connections")
+    assert credential["ui_url"].endswith(
+        f"/projects/{project_id}/connections?provider_key=openai-images"
+    )
+    assert credential["setup"]["local_setup_url"].endswith(
+        f"/projects/{project_id}/connections?provider_key=openai-images"
+    )
+    assert credential["setup"]["api_key_url"] == "https://platform.openai.com/api-keys"
+    assert credential["setup"]["signup_url"] == "https://platform.openai.com/signup"
+    assert credential["setup"]["docs_url"].endswith("/image-generation")
+    assert readiness["next_steps"][0]["setup"]["api_key_url"] == (
+        "https://platform.openai.com/api-keys"
+    )
+    assert readiness["next_steps"][0]["arguments"]["provider_key"] == "openai-images"
 
 
 def test_readiness_check_keeps_engineering_workflow_usable_without_provider_noise(

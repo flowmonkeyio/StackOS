@@ -424,6 +424,16 @@ class ExecutionContextRepository:
             run_plan_id=run_plan_id,
             run_id=run_id,
         )
+        create_call = _create_call_hint(
+            project_id=project_id,
+            plugin_slug=plugin_slug,
+            provider_key=provider_key,
+            action_ref=action_ref,
+            task_key=task_key,
+            ticket_key=ticket_key,
+            run_plan_id=run_plan_id,
+            run_id=run_id,
+        )
         return ExecutionContextDiscoveryOut(
             project_id=project_id,
             filters_json=filters_json,
@@ -444,6 +454,17 @@ class ExecutionContextRepository:
                     {"operation": "executionContext.link", "arguments": link_call}
                     for link_call in link_calls
                 ],
+                "create": {
+                    "operation": "executionContext.create",
+                    "arguments": create_call,
+                    "notes": [
+                        "add credential_ref only when selecting a stored credential reference",
+                        (
+                            "add provider_context_json only for provider/account scope, "
+                            "never endpoint payload"
+                        ),
+                    ],
+                },
                 "resolve": [
                     {
                         "operation": "executionContext.resolve",
@@ -1293,6 +1314,36 @@ def _link_call_hints(
     return [
         {"project_id": project_id, "context_ref": "ctx_existing", **target} for target in targets
     ]
+
+
+def _create_call_hint(
+    *,
+    project_id: int,
+    plugin_slug: str | None,
+    provider_key: str | None,
+    action_ref: str | None,
+    task_key: str | None,
+    ticket_key: str | None,
+    run_plan_id: int | None,
+    run_id: int | None,
+) -> dict[str, Any]:
+    context_name = action_ref or provider_key or plugin_slug or "provider action"
+    args: dict[str, Any] = {
+        "project_id": project_id,
+        "name": f"{context_name} context",
+    }
+    for key, value in {
+        "plugin_slug": plugin_slug,
+        "provider_key": provider_key,
+        "action_ref": action_ref,
+        "task_key": task_key,
+        "ticket_key": ticket_key,
+        "run_plan_id": run_plan_id,
+        "run_id": run_id,
+    }.items():
+        if value is not None and value != "":
+            args[key] = value
+    return args
 
 
 def _clean_filter_payload(

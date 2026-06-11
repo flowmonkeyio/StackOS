@@ -88,6 +88,13 @@ as credential config; secret fields such as API keys, passwords, client
 secrets, refresh tokens, and bearer tokens stay only in the encrypted backing
 payload.
 
+Providers also declare `config.setup` as the single self-service source for
+agents and setup UIs. Include the credential label, setup note, official
+registration/console/API-key/billing/docs URLs when known, fallback URL/reason
+when exact pages are account-gated, `url_confidence` (`verified` or
+`directional`), and `verified_at`. Do not repeat this provider setup guidance
+inside every action.
+
 Custom internal tools can use the generic HTTP/Webhook connector by declaring a
 static action config:
 

@@ -13,6 +13,7 @@ from stackos.mcp.contract import MCPInput
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations._helpers import operation_spec
 from stackos.operations.spec import OperationExample, OperationSpec
+from stackos.provider_setup import ProviderSetupOut, provider_local_setup_url
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.plugins import PluginRepository
 from stackos.workflows import WorkflowTemplateLoader
@@ -63,6 +64,7 @@ class ReadinessMissingItemOut(BaseModel):
     budget_kind: str | None = None
     next_tool: str | None = None
     ui_url: str | None = None
+    setup: ProviderSetupOut | None = None
 
 
 class ReadinessActionOut(BaseModel):
@@ -78,6 +80,7 @@ class ReadinessActionOut(BaseModel):
     availability_reasons: list[str] = Field(default_factory=list)
     credential_state: str | None = None
     budget_state: str | None = None
+    setup: ProviderSetupOut | None = None
     missing: list[ReadinessMissingItemOut] = Field(default_factory=list)
 
 
@@ -101,6 +104,7 @@ class ReadinessNextStepOut(BaseModel):
     reason: str
     arguments: dict[str, object] = Field(default_factory=dict)
     ui_url: str | None = None
+    setup: ProviderSetupOut | None = None
 
 
 class ReadinessCheckOut(BaseModel):
@@ -174,6 +178,7 @@ def _action_readiness(
         budget_state=described.availability.budget_state,
         budget_kind=described.availability.budget_kind,
         credential_refs=described.availability.credential_refs,
+        provider_setup=described.provider_setup,
     )
     next_steps = _next_steps_for_action(project_id=project_id, action=action)
     return ReadinessCheckOut(
@@ -364,6 +369,7 @@ def _workflow_action_readiness(
             workflow_key=workflow_key,
             optional_auth=optional_auth,
             optional_action=optional_action,
+            provider_setup=described.provider_setup,
         )
         actions.append(action)
     return actions, warnings
@@ -445,6 +451,7 @@ def _action_out(
     workflow_key: str | None = None,
     optional_auth: bool = False,
     optional_action: bool = False,
+    provider_setup: ProviderSetupOut | None = None,
 ) -> ReadinessActionOut:
     missing = [
         _missing_item(
@@ -457,6 +464,7 @@ def _action_out(
             reason=reason,
             optional_auth=optional_auth,
             optional_action=optional_action,
+            provider_setup=provider_setup,
         )
         for reason in availability_reasons
     ]
@@ -471,6 +479,7 @@ def _action_out(
         availability_reasons=list(availability_reasons),
         credential_state=credential_state,
         budget_state=budget_state,
+        setup=provider_setup,
         missing=[item for item in missing if item is not None],
     )
 
@@ -486,6 +495,7 @@ def _missing_item(
     reason: str,
     optional_auth: bool,
     optional_action: bool,
+    provider_setup: ProviderSetupOut | None,
 ) -> ReadinessMissingItemOut | None:
     if reason == "credential_required":
         required_for = _required_for(
@@ -507,7 +517,8 @@ def _missing_item(
             workflow_key=workflow_key,
             provider_key=provider_key,
             next_tool="auth.status",
-            ui_url=_connections_url(project_id),
+            ui_url=_connections_url(project_id, provider_key),
+            setup=provider_setup,
         )
     if reason == "credential_not_connected":
         required_for = _required_for(
@@ -526,7 +537,8 @@ def _missing_item(
             provider_key=provider_key,
             credential_refs=credential_refs,
             next_tool="auth.test",
-            ui_url=_connections_url(project_id),
+            ui_url=_connections_url(project_id, provider_key),
+            setup=provider_setup,
         )
     if reason == "budget_required":
         required_for = _required_for(
@@ -639,6 +651,8 @@ def _dedupe_missing(items: list[ReadinessMissingItemOut]) -> list[ReadinessMissi
         existing.credential_refs = list(
             dict.fromkeys([*existing.credential_refs, *item.credential_refs])
         )
+        if existing.setup is None and item.setup is not None:
+            existing.setup = item.setup
     return list(grouped.values())
 
 
@@ -673,8 +687,16 @@ def _next_steps_for_action(
         ReadinessNextStepOut(
             tool=missing.next_tool or "action.describe",
             reason=missing.message,
-            arguments={"project_id": project_id},
+            arguments={
+                key: value
+                for key, value in {
+                    "project_id": project_id,
+                    "provider_key": missing.provider_key,
+                }.items()
+                if value is not None
+            },
             ui_url=missing.ui_url,
+            setup=missing.setup,
         )
     ]
 
@@ -691,12 +713,15 @@ def _compact_action_summary(action: ReadinessActionOut) -> ReadinessActionOut:
         availability_reasons=action.availability_reasons,
         credential_state=action.credential_state,
         budget_state=action.budget_state,
+        setup=action.setup,
         missing=action.missing,
     )
 
 
-def _connections_url(project_id: int) -> str:
-    return f"http://127.0.0.1:5180/projects/{project_id}/connections"
+def _connections_url(project_id: int, provider_key: str | None = None) -> str:
+    return provider_local_setup_url(project_id, provider_key) or (
+        f"http://127.0.0.1:5180/projects/{project_id}/connections"
+    )
 
 
 def operation_specs() -> list[OperationSpec]:

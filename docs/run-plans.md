@@ -156,6 +156,12 @@ selecting it, setting non-secret budget/schedule configuration, and creating or
 starting the run plan are direct setup operations. Once execution begins, the
 run-plan grant snapshot is the boundary for workflow writes and tool execution.
 
+When a claimed step declares provider `action_refs`, `runPlan.claimStep`
+returns `action_execution_guidance`. Agents should use that guidance to
+describe the action, discover or create an execution context for repeated
+provider scope, validate payloads, and then call the step-granted
+`action.execute`.
+
 ## Audit
 
 Runs store top-level execution state. Run steps and tool calls store the

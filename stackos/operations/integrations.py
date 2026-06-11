@@ -15,6 +15,7 @@ from stackos.mcp.contract import MCPInput
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations._helpers import operation_spec
 from stackos.operations.spec import OperationExample, OperationSpec
+from stackos.provider_setup import ProviderSetupOut, build_provider_setup
 from stackos.repositories.plugins import ActionOut, PluginRepository, ProviderOut
 
 
@@ -74,6 +75,7 @@ class IntegrationListItemOut(BaseModel):
     hidden_action_count: int = 0
     required_action_count: int = 0
     optional_action_count: int = 0
+    setup: ProviderSetupOut | None = None
     next_action: ActionExposureNextActionOut | None = None
     actions: list[IntegrationActionSummaryOut] = Field(default_factory=list)
 
@@ -202,6 +204,12 @@ def _integration_item(
         executable_actions=executable_actions,
         hidden_actions=hidden_actions,
     )
+    setup = build_provider_setup(
+        project_id=project_id,
+        provider_key=provider.key,
+        provider_name=provider.name,
+        provider_config_json=provider.config_json,
+    )
     next_action = None
     if state in {"not_connected", "partially_available"}:
         next_action = ActionExposureNextActionOut(
@@ -209,6 +217,7 @@ def _integration_item(
             reason=f"Connect provider {provider.key!r} before its required actions appear.",
             arguments={"project_id": project_id, "provider_key": provider.key},
             ui_url=integration_setup_url(project_id, provider.key),
+            setup=setup,
         )
     elif state == "provider_disabled":
         next_action = ActionExposureNextActionOut(
@@ -237,6 +246,7 @@ def _integration_item(
         hidden_action_count=len(hidden_actions),
         required_action_count=len(required_actions),
         optional_action_count=len(optional_actions),
+        setup=setup,
         next_action=next_action,
         actions=[_action_summary(row) for row in actions] if include_actions else [],
     )

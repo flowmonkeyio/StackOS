@@ -620,6 +620,25 @@ def test_bridge_compacts_action_describe_with_capability_metadata() -> None:
             "availability": {"status": "ready", "executable": True},
             "connector_registered": True,
             "execution_available": True,
+            "provider_setup": {
+                "provider_key": "openai-images",
+                "local_setup_url": (
+                    "http://127.0.0.1:5180/projects/1/connections?provider_key=openai-images"
+                ),
+                "api_key_url": "https://platform.openai.com/api-keys",
+                "docs_url": "https://developers.openai.com/api/docs/guides/image-generation",
+            },
+            "execution_context": {
+                "decision_rule": "If provider/account scope repeats, use context_ref.",
+                "discover": {
+                    "operation": "executionContext.discover",
+                    "arguments": {
+                        "project_id": 1,
+                        "action_ref": "utils.image.generate",
+                    },
+                },
+                "pass_context_ref_to": ["action.validate", "action.run", "action.execute"],
+            },
         },
     )
 
@@ -627,6 +646,13 @@ def test_bridge_compacts_action_describe_with_capability_metadata() -> None:
     assert compact["capability_metadata"]["modes"] == ["text-to-image"]
     assert compact["capability_metadata"]["limits"]["prompt_max_chars"] == 32000
     assert compact["input"]["properties"]["prompt"] == {"type": "string"}
+    assert compact["provider_setup"]["api_key_url"] == "https://platform.openai.com/api-keys"
+    assert compact["execution_context"]["discover"]["operation"] == "executionContext.discover"
+    assert compact["execution_context"]["pass_context_ref_to"] == [
+        "action.validate",
+        "action.run",
+        "action.execute",
+    ]
 
 
 def test_bridge_compacts_communication_profile_without_flat_provider_fields() -> None:

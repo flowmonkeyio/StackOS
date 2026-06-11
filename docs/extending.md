@@ -29,6 +29,21 @@ providers:
     name: Meta Ads
     auth_type: oauth
     description: Media-buying account and campaign operations.
+    config:
+      setup:
+        credential_label: Meta Marketing API OAuth access token
+        setup_note: Create/select a Meta developer app and store the approved token in StackOS.
+        homepage_url: https://www.facebook.com/business/ads
+        signup_url: https://www.facebook.com/business/tools/ads-manager
+        console_url: https://developers.facebook.com/apps/
+        api_key_url: https://developers.facebook.com/apps/
+        billing_url: https://business.facebook.com/billing_hub
+        docs_url: https://developers.facebook.com/docs/marketing-api
+        fallback_url: https://developers.facebook.com/docs/marketing-api
+        fallback_reason: Token generation is app/business/account specific.
+        verified_at: "2026-06-11"
+        url_confidence:
+          api_key_url: directional
 ```
 
 Provider implementation belongs in daemon-side integration code. It should own:
@@ -41,6 +56,26 @@ Provider implementation belongs in daemon-side integration code. It should own:
 - safe error messages
 
 Agents should pass provider/account references, not secrets.
+
+Provider setup metadata is required for every provider, including local,
+custom, and placeholder providers. Put it once in provider manifest
+`config.setup`; do not duplicate setup prose across actions or workflow docs.
+Agents use this one object to answer "where do I connect this in StackOS?",
+"where do I register?", "where do I get the API key?", and "what official docs
+or fallback URL should I open?"
+
+Required setup fields:
+
+- `credential_label`
+- `setup_note`
+- `verified_at`
+- at least one official URL such as `homepage_url`, `signup_url`,
+  `console_url`, `api_key_url`, `billing_url`, `docs_url`, or `fallback_url`
+  when the provider is external
+- `fallback_reason` when the exact API-key, billing, or registration URL is
+  not public or provider/account specific
+- `url_confidence` entries with `verified` or `directional` for non-obvious
+  deep links
 
 ## Add An Action
 

@@ -68,6 +68,14 @@ Before an integration delivery is signed off, verify:
   no-secret auth resolution, audit coverage, and grant tests
 - setup metadata tells operators which safe refs/scopes/accounts are needed
   without exposing tokens, API keys, passwords, or raw provider ids
+- provider manifest `config.setup` includes the credential label, setup note,
+  official registration/console/API-key/billing/docs URLs where verified,
+  `url_confidence`, `verified_at`, and a fallback URL/reason when exact vendor
+  setup pages are account-gated or not public
+- `integration.list`, `readiness.check`, `action.describe`, and compact
+  `auth.status` expose enough setup metadata for an agent to answer where to
+  connect in StackOS, where to register with the vendor, and where to get the
+  API key
 
 For media-generation image or video tools, also follow
 [`media-generation-runbook.md`](./media-generation-runbook.md). It is the

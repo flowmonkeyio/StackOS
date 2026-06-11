@@ -11,6 +11,7 @@ from stackos.action_availability import ActionAvailabilityOut, ActionExposureOut
 from stackos.actions.connectors import ActionValidationIssue
 from stackos.actions.manifest import ExecutableActionManifest
 from stackos.db.models import ActionCallStatus
+from stackos.provider_setup import ProviderSetupOut
 
 
 class ActionCallOut(BaseModel):
@@ -82,6 +83,8 @@ class ActionDescribeOut(BaseModel):
     agent_execute_available: bool = False
     availability: ActionAvailabilityOut
     exposure: ActionExposureOut
+    provider_setup: ProviderSetupOut | None = None
+    execution_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class ActionValidationOut(BaseModel):

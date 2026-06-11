@@ -116,6 +116,7 @@ class RunPlanStepOut(BaseModel):
     result_json: dict[str, Any] | None
     metadata_json: dict[str, Any] | None
     allowed_tools: list[str] = Field(default_factory=list)
+    action_execution_guidance: dict[str, Any] = Field(default_factory=dict)
     error: str | None
     claimed_by: str | None
     claimed_at: datetime | None
@@ -1272,6 +1273,11 @@ class RunPlanRepository:
                     step_id=step.step_id,
                 )
             )
+            data.action_execution_guidance = _step_action_execution_guidance(
+                step=step,
+                plan=plan,
+                allowed_tools=data.allowed_tools,
+            )
         return data
 
     def _plan_out(self, row: RunPlan) -> RunPlanOut:
@@ -1282,6 +1288,61 @@ class RunPlanRepository:
         ]
         data.consistency_issues = RunPlanLifecycleReconciler(self._s).consistency_issues(row)
         return data
+
+
+def _step_action_execution_guidance(
+    *,
+    step: RunPlanStep,
+    plan: RunPlan,
+    allowed_tools: list[str],
+) -> dict[str, Any]:
+    action_refs = [ref for ref in step.action_refs_json or [] if isinstance(ref, str) and ref]
+    if not action_refs:
+        return {}
+    next_calls: list[dict[str, Any]] = []
+    for action_ref in action_refs[:8]:
+        next_calls.extend(
+            [
+                {
+                    "operation": "action.describe",
+                    "arguments": {
+                        "project_id": plan.project_id,
+                        "action_ref": action_ref,
+                    },
+                },
+                {
+                    "operation": "executionContext.discover",
+                    "arguments": {
+                        "project_id": plan.project_id,
+                        "action_ref": action_ref,
+                        "run_plan_id": plan.id,
+                        "run_id": plan.run_id,
+                    },
+                },
+            ]
+        )
+    guidance: dict[str, Any] = {
+        "action_refs": action_refs,
+        "preferred_path": [
+            "action.describe",
+            "executionContext.discover_or_resolve",
+            "action.validate",
+            "action.execute",
+        ],
+        "context_rule": (
+            "Use context_ref when the step repeats credential, provider scope, output policy, "
+            "request budget, or artifact namespace across action calls."
+        ),
+        "payload_boundary": {
+            "input_json": "endpoint payload for this one action call",
+            "provider_context_json": "reusable provider/account scope, not endpoint payload",
+            "context_ref": "preferred carrier for repeated credential/provider context",
+        },
+        "next_calls": next_calls,
+    }
+    if "action.execute" not in set(allowed_tools):
+        guidance["warning"] = "step declares action_refs but does not grant action.execute"
+    return guidance
 
 
 __all__ = [

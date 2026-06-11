@@ -38,6 +38,26 @@ providers:
           placeholder: https://example.com
     config:
       setup_note: Use the HTTPS WordPress site root and a user with permission to create posts.
+      setup:
+        credential_label: WordPress username and application password
+        setup_note: Use the target WordPress site URL and create an Application Password for a user with post permissions, then store the username and password in StackOS.
+        homepage_url: https://wordpress.com/
+        signup_url: https://wordpress.com/start
+        console_url: https://wordpress.com/me/security
+        api_key_url: https://wordpress.com/me/security
+        billing_url: https://wordpress.com/me/purchases
+        docs_url: https://developer.wordpress.com/docs/api/
+        fallback_url: https://wordpress.org/documentation/article/application-passwords/
+        fallback_reason: WordPress.com and self-hosted WordPress expose application passwords in different admin screens.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: directional
+          api_key_url: directional
+          billing_url: directional
+          docs_url: verified
+          fallback_url: verified
   - key: ghost
     name: Ghost
     description: Ghost Admin API publishing provider using an Admin API key.
@@ -69,6 +89,26 @@ providers:
           placeholder: v5.0
     config:
       setup_note: Enter the Ghost site/admin domain root; the connector appends /ghost/api/admin/ paths and pins Accept-Version.
+      setup:
+        credential_label: Ghost Admin API key
+        setup_note: In Ghost Admin, open Settings, Integrations, create or select a custom integration, then copy the Admin API key into StackOS.
+        homepage_url: https://ghost.org/
+        signup_url: https://ghost.org/pricing/
+        console_url: https://ghost.org/docs/admin-api/
+        api_key_url: https://ghost.org/docs/admin-api/
+        billing_url: https://ghost.org/pricing/
+        docs_url: https://ghost.org/docs/admin-api/
+        fallback_url: https://ghost.org/docs/admin-api/
+        fallback_reason: The exact Admin settings URL depends on the Ghost site domain; use Ghost Admin Settings -> Integrations.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: verified
+          console_url: directional
+          api_key_url: verified
+          billing_url: verified
+          docs_url: verified
+          fallback_url: verified
 actions:
   - key: wordpress.post.create
     name: Create WordPress Post

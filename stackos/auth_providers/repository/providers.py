@@ -11,6 +11,7 @@ from sqlmodel import col, select
 from stackos.artifacts import redact_secrets
 from stackos.config import Settings
 from stackos.db.models import AuthProvider, Plugin, Project, Provider
+from stackos.provider_setup import sanitize_provider_setup_config
 from stackos.repositories.base import Envelope, NotFoundError, ValidationError
 
 from .schema import AuthFieldOut, AuthMethodOut, AuthProviderOut, AuthStartOut
@@ -221,7 +222,11 @@ class ProviderMetadataMixin:
         if config_json is None:
             return None
         visible_config = {key: value for key, value in config_json.items() if key != "auth_methods"}
+        raw_setup = visible_config.pop("setup", None)
         safe = redact_secrets(visible_config)
+        safe_setup = sanitize_provider_setup_config(raw_setup)
+        if safe_setup:
+            safe["setup"] = safe_setup
         if "auth_methods" in config_json:
             safe["auth_methods"] = config_json["auth_methods"]
         return safe or None

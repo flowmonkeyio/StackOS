@@ -22,6 +22,7 @@ _MODE_ALIASES: dict[str, ResponseMode] = {
 }
 
 _REF_FIELD_SUFFIXES = ("_id", "_ids", "_key", "_keys", "_ref", "_refs", "_token")
+_URL_FIELD_SUFFIXES = ("_url", "_urls")
 _SCALAR_KEEP_FIELDS = frozenset(
     {
         "id",
@@ -121,6 +122,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "source",
         "source_kind",
         "source_provider",
+        "setup",
         "summary",
         "used_usd",
         "auto_bootstrap",
@@ -176,6 +178,7 @@ _LIST_KEEP_FIELDS = frozenset(
 )
 _VERBATIM_KEEP_FIELDS = frozenset(
     {
+        "action_execution_guidance",
         "binding",
         "candidate_projects",
         "content_model_json",
@@ -186,6 +189,7 @@ _VERBATIM_KEEP_FIELDS = frozenset(
         "exposure",
         "provenance",
         "next_action",
+        "setup",
         "setup_state",
         "ui_health",
         "ui_urls",
@@ -329,6 +333,8 @@ def _compact_page(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
         if key in payload:
             out[key] = payload[key]
     for key in (
+        "context_refs",
+        "filters_json",
         "hidden_count",
         "connected_count",
         "ready_count",
@@ -336,9 +342,12 @@ def _compact_page(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
         "executable_action_count",
         "hidden_action_count",
         "filters",
+        "next_calls",
     ):
         if key in payload:
-            out[key] = _compact_value(payload[key])
+            out[key] = (
+                copy.deepcopy(payload[key]) if key == "next_calls" else _compact_value(payload[key])
+            )
     return out
 
 
@@ -497,7 +506,11 @@ def _compact_mapping(value: dict[str, Any]) -> dict[str, Any]:
         if key in _VERBATIM_KEEP_FIELDS:
             out[key] = copy.deepcopy(item)
             continue
-        if key in _SCALAR_KEEP_FIELDS or key.endswith(_REF_FIELD_SUFFIXES):
+        if (
+            key in _SCALAR_KEEP_FIELDS
+            or key.endswith(_REF_FIELD_SUFFIXES)
+            or key.endswith(_URL_FIELD_SUFFIXES)
+        ):
             out[key] = _compact_value(item)
             continue
         if key in _LIST_KEEP_FIELDS:
@@ -521,7 +534,11 @@ def _ids_and_refs(value: dict[str, Any]) -> dict[str, Any]:
     for key, item in value.items():
         if key in {"warnings", "errors"}:
             continue
-        if key in _SCALAR_KEEP_FIELDS or key.endswith(_REF_FIELD_SUFFIXES):
+        if (
+            key in _SCALAR_KEEP_FIELDS
+            or key.endswith(_REF_FIELD_SUFFIXES)
+            or key.endswith(_URL_FIELD_SUFFIXES)
+        ):
             refs[key] = item
     return refs
 

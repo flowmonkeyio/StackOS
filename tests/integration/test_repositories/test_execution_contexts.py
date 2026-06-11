@@ -685,6 +685,48 @@ def test_execution_context_discover_returns_refs_filters_and_next_calls(
             },
         }
     ]
+    assert discovered.next_calls["create"]["operation"] == "executionContext.create"
+    assert discovered.next_calls["create"]["arguments"] == {
+        "project_id": project_id,
+        "name": "provider action context",
+        "task_key": "workflow-123",
+        "run_id": 456,
+    }
+
+
+def test_execution_context_discover_returns_create_next_call_when_empty(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = ExecutionContextRepository(session)
+
+    discovered = repo.discover(
+        project_id=project_id,
+        plugin_slug="trackbooth",
+        provider_key="trackbooth",
+        action_ref="trackbooth.api.offers_findall",
+        ticket_key="copy-offers",
+        run_plan_id=42,
+    )
+
+    assert discovered.context_refs == []
+    assert discovered.next_calls["resolve"] == []
+    assert discovered.next_calls["create"] == {
+        "operation": "executionContext.create",
+        "arguments": {
+            "project_id": project_id,
+            "name": "trackbooth.api.offers_findall context",
+            "plugin_slug": "trackbooth",
+            "provider_key": "trackbooth",
+            "action_ref": "trackbooth.api.offers_findall",
+            "ticket_key": "copy-offers",
+            "run_plan_id": 42,
+        },
+        "notes": [
+            "add credential_ref only when selecting a stored credential reference",
+            "add provider_context_json only for provider/account scope, never endpoint payload",
+        ],
+    }
 
 
 def test_execution_context_pagination_total_ignores_cursor(
