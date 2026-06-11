@@ -29,6 +29,7 @@ from typing import Any, ClassVar
 import httpx
 
 from stackos.integrations._base import BaseIntegration, IntegrationCallResult
+from stackos.integrations._media import download_generated_media, sanitize_media_audit_payload
 from stackos.mcp.errors import IntegrationDownError
 
 
@@ -86,14 +87,6 @@ class XAIImagineIntegration(BaseIntegration):
         },
     }
     _USD_TICKS_PER_DOLLAR = 10_000_000_000
-    _OUTPUT_EXTENSIONS: ClassVar[dict[str, str]] = {
-        "image/jpeg": "jpg",
-        "image/jpg": "jpg",
-        "image/png": "png",
-        "image/webp": "webp",
-        "video/mp4": "mp4",
-        "application/octet-stream": "mp4",
-    }
 
     def __init__(
         self,
@@ -114,6 +107,25 @@ class XAIImagineIntegration(BaseIntegration):
             "Authorization": f"Bearer {self.payload.decode('utf-8')}",
             "Content-Type": "application/json",
         }
+
+    def _record_call(
+        self,
+        *,
+        op: str,
+        request: Any,
+        response: Any,
+        duration_ms: int,
+        error: str | None,
+        cost_cents: int,
+    ) -> None:
+        super()._record_call(
+            op=op,
+            request=request,
+            response=sanitize_media_audit_payload(response),
+            duration_ms=duration_ms,
+            error=error,
+            cost_cents=cost_cents,
+        )
 
     def _estimate_cost_usd(self, op: str, **kwargs: Any) -> float:
         body = kwargs.get("json")
@@ -476,15 +488,12 @@ class XAIImagineIntegration(BaseIntegration):
         return out
 
     async def _download_media(self, url: str, *, fallback_ext: str) -> tuple[bytes, str]:
-        response = await self._request_with_retry("GET", url, op="media.download")
-        content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
-        ext = self._OUTPUT_EXTENSIONS.get(content_type, fallback_ext)
-        if not response.content:
-            raise IntegrationDownError(
-                "xAI Imagine returned an empty media download",
-                data={"vendor": self.vendor},
-            )
-        return response.content, ext
+        return await download_generated_media(
+            self,
+            url,
+            fallback_ext=fallback_ext,
+            empty_message="xAI Imagine returned an empty media download",
+        )
 
     def _write_media(self, raw: bytes, *, subdir: str, prefix: str, ext: str) -> dict[str, str]:
         if self._asset_dir is None:

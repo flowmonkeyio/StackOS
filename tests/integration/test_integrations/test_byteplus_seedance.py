@@ -13,7 +13,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from stackos.integrations.byteplus_ark import BytePlusArkIntegration
-from stackos.mcp.errors import IntegrationDownError
+from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 
 
 def test_seedance_text_to_video_task_polls_and_persists_output(
@@ -181,4 +181,31 @@ def test_seedance_raises_on_failed_status(
             )
 
     with pytest.raises(IntegrationDownError, match="ended with status failed"):
+        asyncio.run(go())
+
+
+def test_seedance_raises_rate_limited_after_retries(
+    httpx_mock: HTTPXMock,
+    project_id: int,
+) -> None:
+    submit_url = "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks"
+    for _ in range(4):
+        httpx_mock.add_response(
+            method="POST",
+            url=submit_url,
+            status_code=429,
+            headers={"retry-after": "0"},
+            json={"error": {"message": "rate limited"}},
+        )
+
+    async def go() -> Any:
+        async with httpx.AsyncClient() as client:
+            integ = BytePlusArkIntegration(
+                payload=b"ark-key",
+                project_id=project_id,
+                http=client,
+            )
+            return await integ.generate_seedance_video(prompt="retry", poll_interval_seconds=0)
+
+    with pytest.raises(RateLimitedError, match="429"):
         asyncio.run(go())

@@ -74,7 +74,7 @@ def test_text_to_video_submits_dashscope_task_polls_and_persists(
     assert request.headers["X-DashScope-Async"] == "enable"
     body = json.loads(request.content.decode("utf-8"))
     assert body == {
-        "model": "wan2.7-t2v",
+        "model": "wan2.6-t2v",
         "input": {"prompt": "video prompt"},
         "parameters": {
             "duration": 5,
@@ -148,6 +148,85 @@ def test_image_to_video_sends_url_media_protocol(
     assert "size" not in body["parameters"]
 
 
+def test_video_continuation_sends_first_clip_and_optional_last_frame(
+    httpx_mock: HTTPXMock,
+    project_id: int,
+    tmp_path,
+) -> None:
+    httpx_mock.add_response(
+        method="POST",
+        url="https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis",
+        json={"output": {"task_id": "task_cont", "task_status": "PENDING"}},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://dashscope-intl.aliyuncs.com/api/v1/tasks/task_cont",
+        json={
+            "output": {
+                "task_id": "task_cont",
+                "task_status": "SUCCEEDED",
+                "video_url": "https://dashscope-result.example/cont.mp4",
+            }
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://dashscope-result.example/cont.mp4",
+        content=b"wan-continuation",
+        headers={"content-type": "video/mp4"},
+    )
+
+    async def go() -> None:
+        async with httpx.AsyncClient() as client:
+            integ = AlibabaWanIntegration(
+                payload=b"dashscope-key",
+                project_id=project_id,
+                http=client,
+                asset_dir=tmp_path,
+            )
+            await integ.generate_video(
+                prompt="continue clip",
+                mode="video-continuation",
+                first_clip_url="https://cdn.example/clip.mp4",
+                last_frame_url="https://cdn.example/last.png",
+                resolution="720P",
+                duration=6,
+                poll_interval_seconds=0,
+            )
+
+    asyncio.run(go())
+    body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    assert body["model"] == "wan2.7-i2v"
+    assert body["input"]["media"] == [
+        {"type": "first_clip", "url": "https://cdn.example/clip.mp4"},
+        {"type": "last_frame", "url": "https://cdn.example/last.png"},
+    ]
+
+
+def test_video_continuation_rejects_audio_url(
+    httpx_mock: HTTPXMock,
+    project_id: int,
+) -> None:
+    async def go() -> None:
+        async with httpx.AsyncClient() as client:
+            integ = AlibabaWanIntegration(
+                payload=b"dashscope-key",
+                project_id=project_id,
+                http=client,
+            )
+            await integ.generate_video(
+                prompt="continue clip",
+                mode="video-continuation",
+                first_clip_url="https://cdn.example/clip.mp4",
+                audio_url="https://cdn.example/audio.mp3",
+                poll_interval_seconds=0,
+            )
+
+    with pytest.raises(IntegrationDownError, match="does not support audio_url"):
+        asyncio.run(go())
+    assert httpx_mock.get_requests() == []
+
+
 def test_failed_task_status_raises(
     httpx_mock: HTTPXMock,
     project_id: int,
@@ -179,4 +258,28 @@ def test_failed_task_status_raises(
             return await integ.generate_video(prompt="bad", poll_interval_seconds=0)
 
     with pytest.raises(IntegrationDownError, match="ended with status FAILED"):
+        asyncio.run(go())
+
+
+def test_text_to_video_raises_on_auth_failure(
+    httpx_mock: HTTPXMock,
+    project_id: int,
+) -> None:
+    httpx_mock.add_response(
+        method="POST",
+        url="https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis",
+        status_code=401,
+        json={"message": "invalid api key"},
+    )
+
+    async def go() -> Any:
+        async with httpx.AsyncClient() as client:
+            integ = AlibabaWanIntegration(
+                payload=b"bad-key",
+                project_id=project_id,
+                http=client,
+            )
+            return await integ.generate_video(prompt="auth", poll_interval_seconds=0)
+
+    with pytest.raises(IntegrationDownError, match="client error 401"):
         asyncio.run(go())

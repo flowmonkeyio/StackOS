@@ -286,3 +286,34 @@ def test_generate_video_raises_on_operation_error(
 
     with pytest.raises(IntegrationDownError, match="operation failed"):
         asyncio.run(go())
+
+
+def test_generate_video_raises_on_completed_operation_without_video(
+    httpx_mock: HTTPXMock,
+    project_id: int,
+) -> None:
+    httpx_mock.add_response(
+        method="POST",
+        url=(
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "veo-3.1-generate-preview:predictLongRunning"
+        ),
+        json={"name": "operations/veo-empty"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://generativelanguage.googleapis.com/v1beta/operations/veo-empty",
+        json={"name": "operations/veo-empty", "done": True, "response": {}},
+    )
+
+    async def go() -> Any:
+        async with httpx.AsyncClient() as client:
+            integ = GoogleVeoIntegration(
+                payload=b"gemini-key",
+                project_id=project_id,
+                http=client,
+            )
+            return await integ.generate_video(prompt="empty", poll_interval_seconds=0)
+
+    with pytest.raises(IntegrationDownError, match="completed without generated video"):
+        asyncio.run(go())

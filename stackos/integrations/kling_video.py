@@ -29,6 +29,7 @@ from stackos.integrations._base import BaseIntegration, IntegrationCallResult
 from stackos.integrations._media import (
     data_url_payload,
     download_generated_media,
+    sanitize_media_audit_payload,
     write_generated_media,
 )
 from stackos.mcp.errors import IntegrationDownError
@@ -72,6 +73,25 @@ class KlingVideoIntegration(BaseIntegration):
             "Content-Type": "application/json",
         }
 
+    def _record_call(
+        self,
+        *,
+        op: str,
+        request: Any,
+        response: Any,
+        duration_ms: int,
+        error: str | None,
+        cost_cents: int,
+    ) -> None:
+        super()._record_call(
+            op=op,
+            request=request,
+            response=sanitize_media_audit_payload(response),
+            duration_ms=duration_ms,
+            error=error,
+            cost_cents=cost_cents,
+        )
+
     async def generate_video(
         self,
         *,
@@ -87,7 +107,6 @@ class KlingVideoIntegration(BaseIntegration):
         input_image_path: Path | None = None,
         image_tail_path: Path | None = None,
         watermark_enabled: bool | None = None,
-        callback_url: str | None = None,
         external_task_id: str | None = None,
         poll_interval_seconds: float = 10.0,
         poll_timeout_seconds: float = 1800.0,
@@ -106,7 +125,6 @@ class KlingVideoIntegration(BaseIntegration):
             input_image_path=input_image_path,
             image_tail_path=image_tail_path,
             watermark_enabled=watermark_enabled,
-            callback_url=callback_url,
             external_task_id=external_task_id,
         )
         submitted = await self.call(
@@ -126,7 +144,6 @@ class KlingVideoIntegration(BaseIntegration):
                 "has_image": input_image_path is not None,
                 "has_image_tail": image_tail_path is not None,
                 "watermark_enabled": watermark_enabled,
-                "callback_url": callback_url,
                 "external_task_id": external_task_id,
             },
         )
@@ -165,7 +182,6 @@ class KlingVideoIntegration(BaseIntegration):
         input_image_path: Path | None,
         image_tail_path: Path | None,
         watermark_enabled: bool | None,
-        callback_url: str | None,
         external_task_id: str | None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -193,8 +209,6 @@ class KlingVideoIntegration(BaseIntegration):
             body["cfg_scale"] = cfg_scale
         if watermark_enabled is not None:
             body["watermark_info"] = {"enabled": watermark_enabled}
-        if callback_url is not None:
-            body["callback_url"] = callback_url
         if external_task_id is not None:
             body["external_task_id"] = external_task_id
         return body

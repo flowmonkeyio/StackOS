@@ -1766,7 +1766,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             ),
                         },
                         "unsupported_provider_features": [
-                            "undocumented grok-imagine-video-1.5-preview model",
+                            "grok-imagine-video-1.5-preview image-to-video-only preview model",
                             "video editing endpoint",
                             "video extension endpoint",
                             "custom fps",
@@ -1869,6 +1869,11 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             "duration_seconds": [4, 6, 8],
                             "aspect_ratios": ["16:9", "9:16"],
                             "resolutions": ["720p", "1080p", "4k"],
+                            "resolutions_by_model": {
+                                "veo-3.1-generate-preview": ["720p", "1080p", "4k"],
+                                "veo-3.1-fast-generate-preview": ["720p", "1080p", "4k"],
+                                "veo-3.1-lite-generate-preview": ["720p", "1080p"],
+                            },
                             "duration_rules": [
                                 "1080p and 4k require duration_seconds 8",
                                 "first-last-frame requires duration_seconds 8",
@@ -1887,7 +1892,10 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                                 "modes": ["text-to-video", "image-to-video", "first-last-frame"],
                             },
                             "veo-3.1-fast-generate-preview": {"status": "supported"},
-                            "veo-3.1-lite-generate-preview": {"status": "supported"},
+                            "veo-3.1-lite-generate-preview": {
+                                "status": "supported",
+                                "resolutions": ["720p", "1080p"],
+                            },
                         },
                         "safety": {
                             "watermark": "Generated videos include Google's SynthID watermark.",
@@ -1945,7 +1953,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         },
                         "region": {
                             "type": "string",
-                            "enum": ["singapore", "virginia", "beijing"],
+                            "enum": ["singapore", "beijing"],
                         },
                         "resolution": {"type": "string", "enum": ["720P", "1080P"]},
                         "aspect_ratio": {
@@ -1989,7 +1997,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "budget_kind": "alibaba-wan",
                     "enforce_budget": True,
                     "default_models": {
-                        "text-to-video": "wan2.7-t2v",
+                        "text-to-video": "wan2.6-t2v",
                         "image-to-video": "wan2.7-i2v",
                     },
                     "capability_metadata": {
@@ -2027,8 +2035,10 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             "media_inputs": "http(s) URLs only in StackOS v1 connector",
                         },
                         "models": {
-                            "wan2.7-t2v": {"modes": ["text-to-video"]},
-                            "wan2.6-t2v": {"modes": ["text-to-video"]},
+                            "wan2.6-t2v": {
+                                "modes": ["text-to-video"],
+                                "status": "official T2V API reference contract",
+                            },
                             "wan2.7-i2v": {
                                 "modes": [
                                     "image-to-video",
@@ -2044,6 +2054,10 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "unsupported_provider_features": [
                             "local generated-assets image upload",
                             "model override in public action schema",
+                            (
+                                "wan2.7-t2v until Alibaba publishes a matching "
+                                "executable T2V API contract"
+                            ),
                             "wan2.7-r2v reference-to-video",
                             "wan2.7-videoedit video editing",
                             "advanced motion controls",
@@ -2096,7 +2110,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                                 "seedance-1-0-pro-fast-251015",
                             ],
                         },
-                        "region": {"type": "string", "enum": ["ap-southeast-1", "eu-west-1"]},
+                        "region": {"type": "string", "enum": ["ap-southeast-1"]},
                         "resolution": {"type": "string", "enum": ["480p", "720p", "1080p"]},
                         "ratio": {
                             "type": "string",
@@ -2105,8 +2119,9 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "duration": {
                             "type": "integer",
                             "description": (
-                                "-1 for model default; model-specific ranges are "
-                                "2.0: 4-15, 1.5 Pro: 4-12, 1.0: 2-12 seconds."
+                                "-1 for model default on 2.0/1.5 only; "
+                                "model-specific ranges are 2.0: 4-15, "
+                                "1.5 Pro: 4-12, 1.0: 2-12 seconds."
                             ),
                         },
                         "input_image_refs": {
@@ -2170,8 +2185,8 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                                 "dreamina-seedance-2-0-260128": [-1, 4, 15],
                                 "dreamina-seedance-2-0-fast-260128": [-1, 4, 15],
                                 "seedance-1-5-pro-251215": [-1, 4, 12],
-                                "seedance-1-0-pro-250528": [-1, 2, 12],
-                                "seedance-1-0-pro-fast-251015": [-1, 2, 12],
+                                "seedance-1-0-pro-250528": [2, 12],
+                                "seedance-1-0-pro-fast-251015": [2, 12],
                             },
                             "resolutions": ["480p", "720p", "1080p"],
                             "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
@@ -2181,15 +2196,58 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             "input_image_formats": ["jpg", "jpeg", "png", "webp", "bmp"],
                             "priority": [0, 9],
                             "seed": [-1, 4294967295],
+                            "regions": ["ap-southeast-1"],
+                            "reference_to_video_models": [
+                                "dreamina-seedance-2-0-260128",
+                                "dreamina-seedance-2-0-fast-260128",
+                            ],
+                            "generate_audio_models": [
+                                "dreamina-seedance-2-0-260128",
+                                "dreamina-seedance-2-0-fast-260128",
+                                "seedance-1-5-pro-251215",
+                            ],
+                            "priority_models": [
+                                "dreamina-seedance-2-0-260128",
+                                "dreamina-seedance-2-0-fast-260128",
+                            ],
                         },
                         "models": {
-                            "dreamina-seedance-2-0-260128": {"status": "default"},
-                            "dreamina-seedance-2-0-fast-260128": {
-                                "unsupported_resolution": "1080p"
+                            "dreamina-seedance-2-0-260128": {
+                                "status": "default",
+                                "modes": [
+                                    "text-to-video",
+                                    "image-to-video",
+                                    "first-last-frame",
+                                    "reference-to-video",
+                                ],
                             },
-                            "seedance-1-5-pro-251215": {"status": "supported"},
-                            "seedance-1-0-pro-250528": {"status": "supported"},
-                            "seedance-1-0-pro-fast-251015": {"status": "supported"},
+                            "dreamina-seedance-2-0-fast-260128": {
+                                "modes": [
+                                    "text-to-video",
+                                    "image-to-video",
+                                    "first-last-frame",
+                                    "reference-to-video",
+                                ],
+                                "unsupported_resolution": "1080p",
+                            },
+                            "seedance-1-5-pro-251215": {
+                                "status": "supported",
+                                "modes": ["text-to-video", "image-to-video", "first-last-frame"],
+                            },
+                            "seedance-1-0-pro-250528": {
+                                "status": "supported",
+                                "modes": ["text-to-video", "image-to-video", "first-last-frame"],
+                                "unsupported_features": ["generate_audio", "priority"],
+                            },
+                            "seedance-1-0-pro-fast-251015": {
+                                "status": "supported",
+                                "modes": ["text-to-video", "image-to-video"],
+                                "unsupported_features": [
+                                    "first-last-frame",
+                                    "generate_audio",
+                                    "priority",
+                                ],
+                            },
                         },
                         "safety": {
                             "url_retention": "Official docs state video URLs expire in 24h.",
@@ -2205,6 +2263,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "unsupported_provider_features": [
                             "draft-task input",
                             "provider asset-id inputs",
+                            "eu-west-1 Seedance video region until official docs publish it",
                             "callback URL registration",
                         ],
                         "docs": [
@@ -2260,7 +2319,6 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             "description": ("Generated-assets PNG/JPEG ref for the last frame."),
                         },
                         "watermark_enabled": {"type": "boolean"},
-                        "callback_url": {"type": "string"},
                         "external_task_id": {"type": "string"},
                         "poll_interval_seconds": {"type": "number", "minimum": 1, "maximum": 60},
                         "poll_timeout_seconds": {"type": "number", "minimum": 60, "maximum": 3600},
@@ -2296,7 +2354,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             "local_image_encoding": "raw base64 without data URI prefix",
                         },
                         "models": {
-                            "kling-v3": {"status": "default latest model"},
+                            "kling-v3": {"status": "StackOS v1 default executable model"},
                         },
                         "safety": {
                             "status_values": ["submitted", "processing", "succeed", "failed"],
@@ -2305,11 +2363,14 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "unsupported_provider_features": [
                             "multi-shot storyboard mode",
                             "reference-to-video endpoint",
+                            "kling-v3-omni model until Omni-specific schemas are added",
+                            "kling-video-o1 model until O1-specific schemas are added",
                             "older Kling v1/v2 model ids with narrower duration/quality maps",
                             "camera_control",
                             "motion brush",
                             "multi-elements-to-video",
                             "video extension",
+                            "callback_url until StackOS owns a configured ingress route",
                             "lip sync",
                             "avatar",
                             "voice_list and element_list controls",

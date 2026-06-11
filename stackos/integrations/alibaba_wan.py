@@ -21,7 +21,11 @@ from typing import Any, ClassVar
 import httpx
 
 from stackos.integrations._base import BaseIntegration, IntegrationCallResult
-from stackos.integrations._media import download_generated_media, write_generated_media
+from stackos.integrations._media import (
+    download_generated_media,
+    sanitize_media_audit_payload,
+    write_generated_media,
+)
 from stackos.mcp.errors import IntegrationDownError
 
 
@@ -35,12 +39,11 @@ class AlibabaWanIntegration(BaseIntegration):
     DEFAULT_REGION = "singapore"
     REGION_BASE_URLS: ClassVar[dict[str, str]] = {
         "singapore": "https://dashscope-intl.aliyuncs.com/api/v1",
-        "virginia": "https://dashscope-us.aliyuncs.com/api/v1",
         "beijing": "https://dashscope.aliyuncs.com/api/v1",
     }
-    DEFAULT_T2V_MODEL = "wan2.7-t2v"
+    DEFAULT_T2V_MODEL = "wan2.6-t2v"
     DEFAULT_I2V_MODEL = "wan2.7-i2v"
-    T2V_MODELS: ClassVar[frozenset[str]] = frozenset({"wan2.7-t2v", "wan2.6-t2v"})
+    T2V_MODELS: ClassVar[frozenset[str]] = frozenset({"wan2.6-t2v"})
     I2V_MODELS: ClassVar[frozenset[str]] = frozenset({"wan2.7-i2v"})
     MODES: ClassVar[frozenset[str]] = frozenset(
         {"text-to-video", "image-to-video", "first-last-frame", "video-continuation"}
@@ -86,6 +89,25 @@ class AlibabaWanIntegration(BaseIntegration):
             "Content-Type": "application/json",
             "X-DashScope-Async": "enable",
         }
+
+    def _record_call(
+        self,
+        *,
+        op: str,
+        request: Any,
+        response: Any,
+        duration_ms: int,
+        error: str | None,
+        cost_cents: int,
+    ) -> None:
+        super()._record_call(
+            op=op,
+            request=request,
+            response=sanitize_media_audit_payload(response),
+            duration_ms=duration_ms,
+            error=error,
+            cost_cents=cost_cents,
+        )
 
     async def generate_video(
         self,
@@ -245,7 +267,14 @@ class AlibabaWanIntegration(BaseIntegration):
                     "Alibaba Wan video-continuation mode requires first_clip_url",
                     data={"vendor": AlibabaWanIntegration.vendor},
                 )
+            if audio_url is not None:
+                raise IntegrationDownError(
+                    "Alibaba Wan video-continuation mode does not support audio_url",
+                    data={"vendor": AlibabaWanIntegration.vendor},
+                )
             items.append({"type": "first_clip", "url": first_clip_url})
+            if last_frame_url is not None:
+                items.append({"type": "last_frame", "url": last_frame_url})
         if audio_url is not None and mode != "video-continuation":
             items.append({"type": "driving_audio", "url": audio_url})
         return items

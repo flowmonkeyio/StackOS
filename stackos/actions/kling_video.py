@@ -173,15 +173,25 @@ class KlingVideoActionConnector:
                     code="type_mismatch",
                 )
             )
-        for key in ("callback_url", "external_task_id"):
-            if payload.get(key) is not None and not isinstance(payload[key], str):
-                issues.append(
-                    ActionValidationIssue(
-                        path=f"$.{key}",
-                        message=f"{key} must be a string",
-                        code="type_mismatch",
-                    )
+        callback_url = payload.get("callback_url")
+        if callback_url is not None:
+            issues.append(
+                ActionValidationIssue(
+                    path="$.callback_url",
+                    message="callback_url is not supported by the StackOS v1 Kling action",
+                    code="unsupported_feature",
                 )
+            )
+        if payload.get("external_task_id") is not None and not isinstance(
+            payload["external_task_id"], str
+        ):
+            issues.append(
+                ActionValidationIssue(
+                    path="$.external_task_id",
+                    message="external_task_id must be a string",
+                    code="type_mismatch",
+                )
+            )
         issues.extend(self._validate_image_refs(request, mode=mode))
         issues.extend(self._validate_poll_controls(payload))
         return issues
@@ -337,11 +347,6 @@ class KlingVideoActionConnector:
                 watermark_enabled=(
                     payload["watermark_enabled"]
                     if isinstance(payload.get("watermark_enabled"), bool)
-                    else None
-                ),
-                callback_url=(
-                    str(payload["callback_url"])
-                    if isinstance(payload.get("callback_url"), str)
                     else None
                 ),
                 external_task_id=(

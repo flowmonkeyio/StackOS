@@ -284,6 +284,20 @@ def _create_xai_credential(mcp: MCPClient, project_id: int) -> str:
     return status["connections"][0]["credential_ref"]
 
 
+def _create_google_veo_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/google-veo/credentials",
+        json={"auth_method_key": "api_key", "fields": {"api_key": "gemini-key"}},
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "google-veo"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _create_reve_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/reve/credentials",
@@ -336,6 +350,37 @@ def _create_byteplus_ark_credential(mcp: MCPClient, project_id: int) -> str:
     status = mcp.call_tool_structured(
         "auth.status",
         {"project_id": project_id, "provider_key": "byteplus-ark"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
+def _create_alibaba_wan_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/alibaba-wan/credentials",
+        json={"auth_method_key": "api_key", "fields": {"api_key": "dashscope-key"}},
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "alibaba-wan"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
+def _create_kling_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/kling/credentials",
+        json={
+            "auth_method_key": "access_key_secret",
+            "fields": {"access_key": "ak-test", "secret_key": "sk-test"},
+        },
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "kling"},
     )
     return status["connections"][0]["credential_ref"]
 
@@ -491,6 +536,30 @@ def _xai_video_action_plan_json() -> dict:
                 "id": "generate-xai-video",
                 "title": "Generate xAI video",
                 "action_refs": ["utils.xai.video.generate"],
+            }
+        ],
+    }
+
+
+def _single_video_action_plan_json(action_ref: str, step_id: str) -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": f"{action_ref}.run",
+        "title": f"{action_ref} action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": step_id,
+                    "tool": "action.execute",
+                    "action_refs": [action_ref],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": step_id,
+                "title": f"Execute {action_ref}",
+                "action_refs": [action_ref],
             }
         ],
     }
@@ -1243,6 +1312,290 @@ def test_action_execute_xai_video_grant_returns_sanitized_artifact_refs(
         {"project_id": project_id, "kind": "video"},
     )
     assert any(row["id"] == item["artifact_id"] for row in artifacts["items"])
+
+
+def test_action_execute_provider_video_grants_return_sanitized_artifact_refs(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    cases = [
+        {
+            "action_ref": "utils.google.video.generate",
+            "step_id": "generate-google-video",
+            "provider": "google-veo",
+            "connector": "google-veo",
+            "budget_kind": "google-veo",
+            "credential": _create_google_veo_credential,
+            "input": {
+                "prompt": "cinematic product motion",
+                "duration_seconds": 6,
+                "resolution": "720p",
+                "poll_interval_seconds": 1,
+                "poll_timeout_seconds": 60,
+            },
+            "asset_prefix": "/generated-assets/google-veo/google-veo-video-",
+            "provider_url": "https://generativelanguage.googleapis.com/download/mcp-video",
+            "bytes": b"google-veo-video",
+            "mock": lambda: (
+                httpx_mock.add_response(
+                    method="POST",
+                    url=(
+                        "https://generativelanguage.googleapis.com/v1beta/models/"
+                        "veo-3.1-generate-preview:predictLongRunning"
+                    ),
+                    json={"name": "operations/mcp-veo"},
+                ),
+                httpx_mock.add_response(
+                    method="GET",
+                    url="https://generativelanguage.googleapis.com/v1beta/operations/mcp-veo",
+                    json={
+                        "name": "operations/mcp-veo",
+                        "done": True,
+                        "response": {
+                            "generateVideoResponse": {
+                                "generatedSamples": [
+                                    {
+                                        "video": {
+                                            "uri": (
+                                                "https://generativelanguage.googleapis.com/"
+                                                "download/mcp-video"
+                                            )
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                    },
+                ),
+                httpx_mock.add_response(
+                    method="GET",
+                    url="https://generativelanguage.googleapis.com/download/mcp-video",
+                    content=b"google-veo-video",
+                    headers={"content-type": "video/mp4"},
+                ),
+            ),
+            "secret": "gemini-key",
+        },
+        {
+            "action_ref": "utils.byteplus.video.generate",
+            "step_id": "generate-byteplus-video",
+            "provider": "byteplus-ark",
+            "connector": "byteplus-seedance",
+            "budget_kind": "byteplus-ark",
+            "credential": _create_byteplus_ark_credential,
+            "input": {
+                "prompt": "cinematic product motion",
+                "duration": 5,
+                "poll_interval_seconds": 1,
+                "poll_timeout_seconds": 60,
+            },
+            "asset_prefix": "/generated-assets/byteplus-ark/byteplus-seedance-video-",
+            "provider_url": "https://ark-output.example/mcp-video.mp4",
+            "bytes": b"byteplus-seedance-video",
+            "mock": lambda: (
+                httpx_mock.add_response(
+                    method="POST",
+                    url=(
+                        "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks"
+                    ),
+                    json={"id": "cgt-mcp"},
+                ),
+                httpx_mock.add_response(
+                    method="GET",
+                    url=(
+                        "https://ark.ap-southeast.bytepluses.com/api/v3/"
+                        "contents/generations/tasks/cgt-mcp"
+                    ),
+                    json={
+                        "id": "cgt-mcp",
+                        "status": "succeeded",
+                        "content": {"video_url": "https://ark-output.example/mcp-video.mp4"},
+                    },
+                ),
+                httpx_mock.add_response(
+                    method="GET",
+                    url="https://ark-output.example/mcp-video.mp4",
+                    content=b"byteplus-seedance-video",
+                    headers={"content-type": "video/mp4"},
+                ),
+            ),
+            "secret": "ark-key",
+        },
+        {
+            "action_ref": "utils.alibaba.video.generate",
+            "step_id": "generate-alibaba-video",
+            "provider": "alibaba-wan",
+            "connector": "alibaba-wan",
+            "budget_kind": "alibaba-wan",
+            "credential": _create_alibaba_wan_credential,
+            "input": {
+                "prompt": "cinematic product motion",
+                "duration": 5,
+                "poll_interval_seconds": 1,
+                "poll_timeout_seconds": 60,
+            },
+            "asset_prefix": "/generated-assets/alibaba-wan/alibaba-wan-video-",
+            "provider_url": "https://dashscope-result.example/mcp-video.mp4",
+            "bytes": b"alibaba-wan-video",
+            "mock": lambda: (
+                httpx_mock.add_response(
+                    method="POST",
+                    url=(
+                        "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/"
+                        "video-generation/video-synthesis"
+                    ),
+                    json={"output": {"task_id": "task_mcp", "task_status": "PENDING"}},
+                ),
+                httpx_mock.add_response(
+                    method="GET",
+                    url="https://dashscope-intl.aliyuncs.com/api/v1/tasks/task_mcp",
+                    json={
+                        "output": {
+                            "task_id": "task_mcp",
+                            "task_status": "SUCCEEDED",
+                            "video_url": "https://dashscope-result.example/mcp-video.mp4",
+                        }
+                    },
+                ),
+                httpx_mock.add_response(
+                    method="GET",
+                    url="https://dashscope-result.example/mcp-video.mp4",
+                    content=b"alibaba-wan-video",
+                    headers={"content-type": "video/mp4"},
+                ),
+            ),
+            "secret": "dashscope-key",
+        },
+        {
+            "action_ref": "utils.kling.video.generate",
+            "step_id": "generate-kling-video",
+            "provider": "kling",
+            "connector": "kling-video",
+            "budget_kind": "kling",
+            "credential": _create_kling_credential,
+            "input": {
+                "prompt": "cinematic product motion",
+                "duration": 5,
+                "poll_interval_seconds": 1,
+                "poll_timeout_seconds": 60,
+            },
+            "asset_prefix": "/generated-assets/kling/kling-video-",
+            "provider_url": "https://kling.example/mcp-video.mp4",
+            "bytes": b"kling-video",
+            "mock": lambda: (
+                httpx_mock.add_response(
+                    method="POST",
+                    url="https://api-singapore.klingai.com/v1/videos/text2video",
+                    json={
+                        "code": 0,
+                        "data": {"task_id": "task-mcp", "task_status": "submitted"},
+                    },
+                ),
+                httpx_mock.add_response(
+                    method="GET",
+                    url="https://api-singapore.klingai.com/v1/videos/text2video/task-mcp",
+                    json={
+                        "code": 0,
+                        "data": {
+                            "task_id": "task-mcp",
+                            "task_status": "succeed",
+                            "task_result": {
+                                "videos": [
+                                    {
+                                        "id": "video-mcp",
+                                        "url": "https://kling.example/mcp-video.mp4",
+                                    }
+                                ]
+                            },
+                        },
+                    },
+                ),
+                httpx_mock.add_response(
+                    method="GET",
+                    url="https://kling.example/mcp-video.mp4",
+                    content=b"kling-video",
+                    headers={"content-type": "video/mp4"},
+                ),
+            ),
+            "secret": "sk-test",
+        },
+    ]
+
+    for case in cases:
+        credential_ref = case["credential"](mcp_client, project_id)
+        budget_resp = mcp_client.test_client.post(
+            f"/api/v1/projects/{project_id}/budgets",
+            json={"kind": case["budget_kind"], "monthly_budget_usd": 10.0},
+            headers=mcp_client._headers(),
+        )
+        assert budget_resp.status_code == 200
+        created = mcp_client.call_tool_structured(
+            "runPlan.create",
+            {
+                "project_id": project_id,
+                "run_plan_json": _single_video_action_plan_json(
+                    case["action_ref"],
+                    case["step_id"],
+                ),
+            },
+        )
+        started = mcp_client.call_tool_structured(
+            "runPlan.start",
+            {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+        )
+        run_token = started["data"]["run_token"]
+        claimed = mcp_client.call_tool_structured(
+            "runPlan.claimStep",
+            {
+                "run_plan_id": created["data"]["id"],
+                "step_id": case["step_id"],
+                "run_token": run_token,
+            },
+        )
+        case["mock"]()
+
+        out = mcp_client.call_tool_structured(
+            "action.execute",
+            {
+                "project_id": project_id,
+                "action_ref": case["action_ref"],
+                "input_json": case["input"],
+                "credential_ref": credential_ref,
+                "run_token": run_token,
+            },
+        )
+
+        data = out["data"]
+        assert "output_json" in data, data
+        item = data["output_json"]["data"][0]
+        rendered = json.dumps(data)
+        assert data["credential_ref"] == credential_ref
+        assert data["action_call"]["credential_ref"] == credential_ref
+        assert data["action_call"]["provider_key"] == case["provider"]
+        assert data["action_call"]["connector_key"] == case["connector"]
+        assert data["action_call"]["run_id"] == started["data"]["run_id"]
+        assert data["action_call"]["run_plan_id"] == created["data"]["id"]
+        assert data["action_call"]["run_plan_step_id"] == claimed["data"]["id"]
+        assert item["url"].startswith(case["asset_prefix"])
+        assert item["artifact_ref"] == item["url"]
+        assert isinstance(item["artifact_id"], int)
+        assert data["output_json"]["artifact_refs"] == [item["url"]]
+        assert case["provider_url"] not in rendered
+        assert case["secret"] not in rendered
+        assert "credential_id" not in rendered
+        path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
+        assert path.read_bytes() == case["bytes"]
+        step_calls = mcp_client.call_tool_structured(
+            "run.listStepCalls",
+            {"run_step_id": claimed["data"]["id"]},
+        )
+        rendered_step_calls = json.dumps(step_calls)
+        assert case["provider_url"] not in rendered_step_calls
+        assert case["secret"] not in rendered_step_calls
 
 
 def test_action_execute_reve_image_grant_returns_sanitized_artifact_refs(

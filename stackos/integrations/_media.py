@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import ipaddress
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -20,6 +21,40 @@ _OUTPUT_EXTENSIONS: dict[str, str] = {
     "application/octet-stream": "mp4",
 }
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+_MEDIA_URL_KEYS = frozenset(
+    {
+        "asset_url",
+        "audio_url",
+        "download_url",
+        "image_url",
+        "media_url",
+        "provider_url",
+        "uri",
+        "url",
+        "video_url",
+    }
+)
+_MEDIA_BLOB_KEYS = frozenset({"b64_json", "image"})
+_UNSAFE_HOSTNAMES = frozenset({"localhost", "localhost.localdomain"})
+
+
+def sanitize_media_audit_payload(value: Any) -> Any:
+    """Strip temporary provider media URLs and raw media blobs before audit storage."""
+    if isinstance(value, dict):
+        clean: dict[str, Any] = {}
+        for raw_key, nested in value.items():
+            key = str(raw_key)
+            normalized = key.lower()
+            if normalized in _MEDIA_URL_KEYS and isinstance(nested, str):
+                clean[key] = "[downloaded-to-generated-assets]"
+            elif normalized in _MEDIA_BLOB_KEYS and isinstance(nested, str):
+                clean[key] = "[persisted-to-generated-assets]"
+            else:
+                clean[key] = sanitize_media_audit_payload(nested)
+        return clean
+    if isinstance(value, list):
+        return [sanitize_media_audit_payload(item) for item in value]
+    return value
 
 
 async def download_generated_media(
@@ -31,7 +66,8 @@ async def download_generated_media(
     empty_message: str = "provider returned an empty media download",
 ) -> tuple[bytes, str]:
     """Download temporary provider media and infer a stable file extension."""
-    current_url = url
+    vendor = getattr(integration, "vendor", "unknown")
+    current_url = validate_generated_media_url(url, vendor=vendor)
     current_headers = headers
     response = None
     for _ in range(5):
@@ -47,22 +83,56 @@ async def download_generated_media(
         location = response.headers.get("location")
         if not location:
             break
-        next_url = urljoin(current_url, location)
+        next_url = validate_generated_media_url(urljoin(current_url, location), vendor=vendor)
         if not _same_origin(current_url, next_url):
             current_headers = None
         current_url = next_url
     if response is None or response.status_code in _REDIRECT_STATUSES:
         raise IntegrationDownError(
             "provider media download returned too many redirects",
-            data={"vendor": getattr(integration, "vendor", "unknown")},
+            data={"vendor": vendor},
         )
     if not response.content:
         raise IntegrationDownError(
             empty_message,
-            data={"vendor": getattr(integration, "vendor", "unknown")},
+            data={"vendor": vendor},
         )
     content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     return response.content, media_file_format(content_type, current_url, fallback_ext=fallback_ext)
+
+
+def validate_generated_media_url(url: str, *, vendor: str) -> str:
+    """Reject provider media URLs that would make the daemon fetch unsafe origins."""
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if parsed.scheme.lower() != "https" or not parsed.netloc or hostname is None:
+        raise IntegrationDownError(
+            "provider media URL must be an absolute HTTPS URL",
+            data={"vendor": vendor},
+        )
+    if parsed.username is not None or parsed.password is not None:
+        raise IntegrationDownError(
+            "provider media URL must not include userinfo",
+            data={"vendor": vendor},
+        )
+
+    normalized_hostname = hostname.rstrip(".").lower()
+    if normalized_hostname in _UNSAFE_HOSTNAMES or normalized_hostname.endswith(".localhost"):
+        raise IntegrationDownError(
+            "provider media URL host is not allowed",
+            data={"vendor": vendor},
+        )
+
+    try:
+        address = ipaddress.ip_address(normalized_hostname)
+    except ValueError:
+        return url
+    if not address.is_global:
+        raise IntegrationDownError(
+            "provider media URL host is not allowed",
+            data={"vendor": vendor},
+        )
+    return url
 
 
 def _same_origin(left: str, right: str) -> bool:
@@ -200,5 +270,7 @@ __all__ = [
     "image_inline_data",
     "image_mime_type",
     "media_file_format",
+    "sanitize_media_audit_payload",
+    "validate_generated_media_url",
     "write_generated_media",
 ]

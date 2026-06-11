@@ -25,6 +25,7 @@ from stackos.integrations._base import BaseIntegration, IntegrationCallResult
 from stackos.integrations._media import (
     download_generated_media,
     image_inline_data,
+    sanitize_media_audit_payload,
     write_generated_media,
 )
 from stackos.mcp.errors import IntegrationDownError
@@ -49,6 +50,11 @@ class GoogleVeoIntegration(BaseIntegration):
     )
     ASPECT_RATIOS: ClassVar[frozenset[str]] = frozenset({"16:9", "9:16"})
     RESOLUTIONS: ClassVar[frozenset[str]] = frozenset({"720p", "1080p", "4k"})
+    RESOLUTIONS_BY_MODEL: ClassVar[dict[str, frozenset[str]]] = {
+        "veo-3.1-generate-preview": frozenset({"720p", "1080p", "4k"}),
+        "veo-3.1-fast-generate-preview": frozenset({"720p", "1080p", "4k"}),
+        "veo-3.1-lite-generate-preview": frozenset({"720p", "1080p"}),
+    }
     PERSON_GENERATION_VALUES: ClassVar[frozenset[str]] = frozenset({"allow_all", "allow_adult"})
     INPUT_IMAGE_FORMATS: ClassVar[frozenset[str]] = frozenset({"jpg", "jpeg", "png"})
     MAX_INPUT_IMAGE_BYTES = 20_000_000
@@ -73,6 +79,25 @@ class GoogleVeoIntegration(BaseIntegration):
             "x-goog-api-key": self.payload.decode("utf-8"),
             "Content-Type": "application/json",
         }
+
+    def _record_call(
+        self,
+        *,
+        op: str,
+        request: Any,
+        response: Any,
+        duration_ms: int,
+        error: str | None,
+        cost_cents: int,
+    ) -> None:
+        super()._record_call(
+            op=op,
+            request=request,
+            response=sanitize_media_audit_payload(response),
+            duration_ms=duration_ms,
+            error=error,
+            cost_cents=cost_cents,
+        )
 
     async def generate_video(
         self,
@@ -215,14 +240,14 @@ class GoogleVeoIntegration(BaseIntegration):
         operation_name: str,
         model: str,
     ) -> dict[str, Any]:
-        if self._asset_dir is None:
-            return data
         samples = _generated_samples(data)
         if not samples:
             raise IntegrationDownError(
                 "Google Veo operation completed without generated videos",
                 data={"vendor": self.vendor, "operation_name": operation_name},
             )
+        if self._asset_dir is None:
+            return data
         persisted: list[dict[str, Any]] = []
         for index, sample in enumerate(samples):
             video = sample.get("video") if isinstance(sample, dict) else None

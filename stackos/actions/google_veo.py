@@ -101,6 +101,22 @@ class GoogleVeoVideoActionConnector:
                     code="enum_mismatch",
                 )
             )
+        elif (
+            isinstance(model, str)
+            and isinstance(resolution, str)
+            and resolution
+            not in GoogleVeoIntegration.RESOLUTIONS_BY_MODEL.get(
+                model,
+                GoogleVeoIntegration.RESOLUTIONS,
+            )
+        ):
+            issues.append(
+                ActionValidationIssue(
+                    path="$.resolution",
+                    message=f"{model} supports resolution 720p or 1080p only",
+                    code="model_mismatch",
+                )
+            )
         elif resolution in {"1080p", "4k"} and duration is not None and duration != 8:
             issues.append(
                 ActionValidationIssue(

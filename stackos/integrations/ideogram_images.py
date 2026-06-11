@@ -13,14 +13,13 @@ of signed provider URLs.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Any, ClassVar
-from urllib.parse import urlparse
 
 import httpx
 
 from stackos.integrations._base import BaseIntegration, IntegrationCallResult
+from stackos.integrations._media import download_generated_media, write_generated_media
 from stackos.mcp.errors import IntegrationDownError
 
 
@@ -61,12 +60,6 @@ class IdeogramImagesIntegration(BaseIntegration):
         "1024x3072",
         "3072x1024",
     )
-    _OUTPUT_EXTENSIONS: ClassVar[dict[str, str]] = {
-        "image/jpeg": "jpg",
-        "image/jpg": "jpg",
-        "image/png": "png",
-        "image/webp": "webp",
-    }
     _COSTS_USD: ClassVar[dict[str, float]] = {
         "TURBO": 0.03,
         "DEFAULT": 0.06,
@@ -279,45 +272,26 @@ class IdeogramImagesIntegration(BaseIntegration):
         item: dict[str, Any],
         provider_url: str,
     ) -> dict[str, Any]:
-        try:
-            response = await self._http.get(provider_url)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise IntegrationDownError(
-                "Ideogram generated image URL could not be downloaded",
-                data={"vendor": self.vendor},
-            ) from exc
-        file_info = self._write_image(
-            response.content,
-            mime_type=response.headers.get("content-type"),
-            source_url=provider_url,
+        assert self._asset_dir is not None
+        raw, ext = await download_generated_media(
+            self,
+            provider_url,
+            fallback_ext="png",
+            empty_message="Ideogram returned an empty image download",
+        )
+        file_info = write_generated_media(
+            raw,
+            asset_dir=self._asset_dir,
+            asset_url_prefix=self._asset_url_prefix,
+            subdir="ideogram",
+            prefix="ideogram",
+            ext=ext,
         )
         clean = {key: value for key, value in item.items() if key != "url"}
         clean.update(file_info)
         clean["source_model"] = self.MODEL
         clean["provider_url_persisted"] = True
         return clean
-
-    def _write_image(
-        self,
-        raw: bytes,
-        *,
-        mime_type: str | None,
-        source_url: str,
-    ) -> dict[str, str]:
-        digest = hashlib.sha256(raw).hexdigest()
-        file_format = _file_format(mime_type, source_url)
-        filename = f"ideogram-{digest[:32]}.{file_format}"
-        assert self._asset_dir is not None
-        target_dir = self._asset_dir / "ideogram"
-        target_dir.mkdir(parents=True, exist_ok=True)
-        path = target_dir / filename
-        if not path.exists():
-            path.write_bytes(raw)
-        return {
-            "url": f"{self._asset_url_prefix}/ideogram/{filename}",
-            "file_format": file_format,
-        }
 
     async def test_credentials(self) -> dict[str, Any]:
         return {
@@ -348,17 +322,6 @@ def _compact_form(values: dict[str, Any]) -> dict[str, str]:
 
 def _multipart_fields(values: dict[str, str]) -> dict[str, tuple[None, str]]:
     return {key: (None, value) for key, value in values.items()}
-
-
-def _file_format(mime_type: str | None, source_url: str) -> str:
-    if isinstance(mime_type, str):
-        clean_mime = mime_type.split(";", 1)[0].strip().lower()
-        if clean_mime in IdeogramImagesIntegration._OUTPUT_EXTENSIONS:
-            return IdeogramImagesIntegration._OUTPUT_EXTENSIONS[clean_mime]
-    suffix = Path(urlparse(source_url).path).suffix.lower().lstrip(".")
-    if suffix in {"jpg", "jpeg", "png", "webp"}:
-        return "jpg" if suffix == "jpeg" else suffix
-    return "png"
 
 
 def _mime_type_for_suffix(suffix: str) -> str:

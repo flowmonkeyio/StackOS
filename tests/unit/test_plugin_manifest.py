@@ -251,7 +251,7 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert xai_video_capabilities["limits"]["reference_to_video_duration_max_seconds"] == 10
     assert set(xai_video_capabilities["models"]) == {"grok-imagine-video"}
     assert (
-        "undocumented grok-imagine-video-1.5-preview model"
+        "grok-imagine-video-1.5-preview image-to-video-only preview model"
         in xai_video_capabilities["unsupported_provider_features"]
     )
     assert "video editing endpoint" in xai_video_capabilities["unsupported_provider_features"]
@@ -265,6 +265,9 @@ def test_builtin_plugin_manifests_validate() -> None:
         "veo-3.1-fast-generate-preview",
         "veo-3.1-lite-generate-preview",
     }
+    assert google_video_capabilities["limits"]["resolutions_by_model"][
+        "veo-3.1-lite-generate-preview"
+    ] == ["720p", "1080p"]
     assert google_video_capabilities["limits"]["person_generation"] == {
         "text-to-video": ["allow_all"],
         "image-to-video": ["allow_adult"],
@@ -273,17 +276,47 @@ def test_builtin_plugin_manifests_validate() -> None:
     byteplus_video = utils_actions["byteplus.video.generate"]
     assert byteplus_video.provider == "byteplus-ark"
     assert byteplus_video.config["connector"] == "byteplus-seedance"
+    assert byteplus_video.input_schema["properties"]["region"]["enum"] == ["ap-southeast-1"]
     assert byteplus_video.input_schema["properties"]["priority"] == {
         "type": "integer",
         "minimum": 0,
         "maximum": 9,
     }
-    assert byteplus_video.config["capability_metadata"]["limits"]["duration_seconds"][
-        "seedance-1-5-pro-251215"
-    ] == [-1, 4, 12]
+    byteplus_capabilities = byteplus_video.config["capability_metadata"]
+    assert byteplus_capabilities["limits"]["duration_seconds"]["seedance-1-5-pro-251215"] == [
+        -1,
+        4,
+        12,
+    ]
+    assert byteplus_capabilities["limits"]["duration_seconds"]["seedance-1-0-pro-250528"] == [
+        2,
+        12,
+    ]
+    assert byteplus_capabilities["limits"]["reference_to_video_models"] == [
+        "dreamina-seedance-2-0-260128",
+        "dreamina-seedance-2-0-fast-260128",
+    ]
+    assert byteplus_capabilities["models"]["seedance-1-0-pro-fast-251015"]["modes"] == [
+        "text-to-video",
+        "image-to-video",
+    ]
+    assert (
+        "eu-west-1 Seedance video region until official docs publish it"
+        in byteplus_capabilities["unsupported_provider_features"]
+    )
     alibaba_video = utils_actions["alibaba.video.generate"]
     assert alibaba_video.provider == "alibaba-wan"
     assert alibaba_video.config["connector"] == "alibaba-wan"
+    assert alibaba_video.input_schema["properties"]["region"]["enum"] == ["singapore", "beijing"]
+    assert alibaba_video.config["default_models"]["text-to-video"] == "wan2.6-t2v"
+    assert set(alibaba_video.config["capability_metadata"]["models"]) == {
+        "wan2.6-t2v",
+        "wan2.7-i2v",
+    }
+    assert (
+        "wan2.7-t2v until Alibaba publishes a matching executable T2V API contract"
+        in alibaba_video.config["capability_metadata"]["unsupported_provider_features"]
+    )
     assert (
         "wan2.7-r2v reference-to-video"
         in alibaba_video.config["capability_metadata"]["unsupported_provider_features"]
@@ -297,8 +330,21 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert kling_video.config["connector"] == "kling-video"
     assert kling_video.input_schema["properties"]["model_name"]["enum"] == ["kling-v3"]
     assert set(kling_video.config["capability_metadata"]["models"]) == {"kling-v3"}
+    assert "callback_url" not in kling_video.input_schema["properties"]
     assert (
         "camera_control"
+        in kling_video.config["capability_metadata"]["unsupported_provider_features"]
+    )
+    assert (
+        "callback_url until StackOS owns a configured ingress route"
+        in kling_video.config["capability_metadata"]["unsupported_provider_features"]
+    )
+    assert (
+        "kling-v3-omni model until Omni-specific schemas are added"
+        in kling_video.config["capability_metadata"]["unsupported_provider_features"]
+    )
+    assert (
+        "kling-video-o1 model until O1-specific schemas are added"
         in kling_video.config["capability_metadata"]["unsupported_provider_features"]
     )
     reve_image_generate = utils_actions["reve.image.generate"]

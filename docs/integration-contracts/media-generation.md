@@ -96,7 +96,7 @@ already registered and integrated.
 | Google AI Studio + Cloud billing | <https://aistudio.google.com/> (API key); paid tier required for Veo | Pay-as-you-go through the linked Google Cloud billing account | Veo 3.1 (video) + Nano Banana 2 (image) |
 | Ideogram | <https://ideogram.ai/> (API access), pricing <https://ideogram.ai/api-pricing/> | Pay-as-you-go API billing | Ideogram 4.0 (image) |
 | BytePlus ModelArk | <https://console.byteplus.com/> (ModelArk product) | Pay-as-you-go; organization/real-name verification required; free trial quotas | Seedance 2.0 (video) + Seedream (image) |
-| Alibaba Cloud Model Studio | <https://www.alibabacloud.com/> console, Model Studio, Singapore region for international | Pay-as-you-go; API keys are region-locked (Singapore vs Beijing) | WAN 2.7 (video); also Wan 2.7 Image (runner-up) and HappyHorse when it leaves limited beta |
+| Alibaba Cloud Model Studio | <https://www.alibabacloud.com/> console, Model Studio, Singapore region for international | Pay-as-you-go; API keys are region-locked (Singapore vs Beijing) | Wan video (`wan2.6-t2v` text + `wan2.7-i2v` media modes); also Wan 2.7 Image (runner-up) and HappyHorse when it leaves limited beta |
 | Kling Open Platform (Kuaishou) | <https://app.klingai.com/global/dev/document-api> | Separate paid API plan (resource packages), distinct from consumer credits | Kling 3.0 (video) |
 | xAI Console | <https://console.x.ai/> | Prepaid credits | Grok Imagine video + Grok Imagine image |
 
@@ -439,7 +439,7 @@ until StackOS deliberately adds a cross-provider backend abstraction.
   on BytePlus ModelArk; organization/model activation, terms acceptance, active
   billing, and a stored StackOS credential are required before live calls. #1
   on both arenas for text-to-video and #1-2 for image-to-video.
-- API shape: async task API on the ap-southeast ModelArk data plane:
+- API shape: async task API on the documented ap-southeast ModelArk data plane:
   `POST /contents/generations/tasks`, `GET /contents/generations/tasks/{id}`,
   list tasks, and delete/cancel task. Connector must submit, poll/retrieve,
   download `content.video_url`, persist bytes, and record task id. Task ids are
@@ -450,16 +450,19 @@ until StackOS deliberately adds a cross-provider backend abstraction.
   `dreamina-seedance-2-0-fast-260128`; docs also list
   `seedance-1-5-pro-251215`, `seedance-1-0-pro-250528`, and
   `seedance-1-0-pro-fast-251015`.
-- Modes: text-to-video, first-frame image-to-video, first+last-frame
-  image-to-video, Seedance 2.0 multimodal reference generation using images,
-  videos, and audio plus optional prompt, video modification/editing, video
+- Modes: text-to-video, first-frame image-to-video, and first+last-frame
+  image-to-video. Seedance 2.0 models also support multimodal reference
+  generation using images, videos, and audio plus optional prompt; 1.0 Pro Fast
+  does not support first+last-frame. Video modification/editing, video
   extension, synchronized mono audio via `generate_audio`, and optional
-  `return_last_frame`. Audio cannot be input alone.
+  `return_last_frame` are provider capabilities. Audio cannot be input alone.
 - Size control: Seedance 2.0 duration is 4-15 s or `-1`; Seedance 1.5 Pro is
-  4-12 s or `-1`; Seedance 1.0 is 2-12 s or `-1`. Output is 24 fps.
+  4-12 s or `-1`; Seedance 1.0 is 2-12 s and does not document `-1`.
+  Output is 24 fps.
   Resolutions are `480p | 720p | 1080p`, but 2.0 Fast excludes 1080p. Ratios
-  are `16:9`, `4:3`, `1:1`, `3:4`, `9:16`, `21:9`, and `adaptive`. The
-  official task priority is an integer 0-9.
+  are `16:9`, `4:3`, `1:1`, `3:4`, `9:16`, `21:9`, and `adaptive`.
+  `generate_audio` is limited to Seedance 2.0 and 1.5 models; task `priority`
+  is limited to Seedance 2.0 models and is an integer 0-9.
 - Inputs: image refs may be URL, base64, or asset id; common formats include
   JPEG/PNG/WEBP/BMP/TIFF/GIF plus HEIC/HEIF for 1.5/2.0. Image dimensions must
   be 300-6000 px, each under 30 MB, request body <=64 MB; first frame uses
@@ -485,23 +488,26 @@ until StackOS deliberately adds a cross-provider backend abstraction.
   <https://docs.byteplus.com/en/docs/ModelArk/1330310>, billing
   <https://docs.byteplus.com/en/docs/ModelArk/1544106>, video terms
   <https://docs.byteplus.com/en/docs/ModelArk/Specific_Terms_for_the_BytePlus_Video_Generation_Model_Services>.
-  StackOS v1 scope exposes text-to-video, image-to-video,
-  first-last-frame, and multimodal reference-to-video with generated-assets
-  image refs plus provider-fetchable video/audio URLs. Draft-task inputs,
-  provider asset ids, callbacks, and edit/extension-specific flows remain
-  unsupported provider features until they get dedicated schemas and tests.
+  StackOS v1 scope exposes text-to-video, image-to-video, model-gated
+  first-last-frame, and Seedance 2.0 multimodal reference-to-video with
+  generated-assets image refs plus provider-fetchable video/audio URLs.
+  `eu-west-1` Seedance video remains unsupported until official video docs
+  publish that endpoint. Draft-task inputs, provider asset ids, callbacks, and
+  edit/extension-specific flows remain unsupported provider features until they
+  get dedicated schemas and tests.
   Evidence note: rendered official BytePlus docs verify endpoint/auth shape,
   exact model ids, media limits, task retention, URL expiry, watermark behavior,
   task statuses, usage fields, timeout bounds, and billing formulas. Live smoke
   remains operator evidence after account/billing/model activation is confirmed.
 
-### 2. WAN 2.7 — Alibaba
+### 2. WAN — Alibaba
 
 - Status: executable in StackOS as `utils.alibaba.video.generate`. Alibaba's
   lineup confirms `wan2.7-t2v`, `wan2.7-i2v`, `wan2.7-r2v`, and
-  `wan2.7-videoedit`; StackOS v1 implements the verified DashScope
-  text-to-video/image-to-video task family and keeps advanced r2v/video-edit
-  breadth out of the public schema until those flows are separately signed off.
+  `wan2.7-videoedit`; StackOS v1 implements only the verified public API
+  contracts: `wan2.6-t2v` for text-to-video and `wan2.7-i2v` for
+  image/video-input modes. `wan2.7-t2v` stays unsupported until Alibaba
+  publishes a matching executable T2V API request contract.
 - API shape: asynchronous DashScope HTTP API. Text-to-video uses
   `POST /api/v1/services/aigc/video-generation/video-synthesis` with
   `X-DashScope-Async: enable`; image-to-video uses the same submit/poll model.
@@ -523,8 +529,9 @@ until StackOS deliberately adds a cross-provider backend abstraction.
   `watermark` defaults false and output URLs expire after 24 h.
 - StackOS v1 scope exposes text-to-video, image-to-video, first-last-frame,
   and video-continuation using provider-fetchable URLs for media inputs.
-  Local generated-assets image upload, r2v/videoedit-specific contracts,
-  motion controls, and lip-sync are unsupported provider features.
+  Local generated-assets image upload, Virginia-region media modes,
+  `wan2.7-t2v`, r2v/videoedit-specific contracts, motion controls, and
+  lip-sync are unsupported provider features.
 - Docs: lineup
   <https://www.alibabacloud.com/help/en/model-studio/video-generate-edit-model/>,
   i2v reference
@@ -579,8 +586,9 @@ until StackOS deliberately adds a cross-provider backend abstraction.
 - Status: executable in StackOS as `utils.kling.video.generate`. Kling 3.0 is
   a GA product on the Kling Open Platform with a paid API plan. Official
   browser-rendered docs verify the endpoint host, JWT auth shape, task
-  endpoints, status enum, latest `kling-v3` model id, duration/aspect/quality
-  enums, base64 image input rules, and output retention.
+  endpoints, status enum, `kling-v3` model id, current `kling-v3-omni` and
+  `kling-video-o1` model ids, duration/aspect/quality enums, base64 image input
+  rules, and output retention.
 - Ranking context: Artificial Analysis text-to-video #4–7 cluster (Pro/Std
   variants 1094–1104), above Veo 3.1 there; LMArena image-to-video top-12.
   Released 2026-02-04.
@@ -602,10 +610,11 @@ until StackOS deliberately adds a cross-provider backend abstraction.
   platform bills through resource packages/paid API plan; exact credit-second
   budget modeling is a follow-up.
 - StackOS v1 scope exposes text-to-video, image-to-video, and first-last-frame
-  for `kling-v3` only. Older Kling v1/v2 model ids, multi-shot,
-  reference-to-video/Omni, camera_control, motion brush, multi-elements-to-video,
-  video extension, lip sync, avatar, voices, and element controls are
-  unsupported provider features until they get dedicated schemas and tests.
+  for `kling-v3` only. `kling-v3-omni`, `kling-video-o1`, older Kling v1/v2
+  model ids, multi-shot, reference-to-video/Omni, camera_control, motion brush,
+  multi-elements-to-video, video extension, lip sync, avatar, voices, callback
+  URLs, and element controls are unsupported provider features until they get
+  dedicated schemas and tests.
 - Docs: developer docs
   <https://app.klingai.com/global/dev/document-api>, dev pricing
   <https://kling.ai/dev/pricing>, 3.0 launch
@@ -616,9 +625,9 @@ until StackOS deliberately adds a cross-provider backend abstraction.
 - Status: GA on the xAI API; official docs and pricing page list
   `grok-imagine-video` output at $0.05/s for 480p and $0.07/s for 720p, with
   image inputs charged at $0.002/image. StackOS does not expose
-  `grok-imagine-video-1.5-preview` because current public xAI model docs list
-  only `grok-imagine-video`; add the preview only with official docs or
-  operator-provided in-console evidence.
+  `grok-imagine-video-1.5-preview` because xAI documents it as an
+  image-to-video-only preview model and StackOS v1 keeps preview-model behavior
+  out of executable scope until separately signed off.
 - API shape: async REST. Submit to `/v1/videos/generations`,
   `/v1/videos/edits`, or `/v1/videos/extensions`, receive `request_id`, then
   poll `GET /v1/videos/{request_id}` until `pending`, `done`, `expired`, or
@@ -640,7 +649,7 @@ until StackOS deliberately adds a cross-provider backend abstraction.
   can occur synchronously before a job id is created.
 - StackOS v1 scope decision: `utils.xai.video.generate` exposes text-to-video,
   image-to-video, and reference-to-video through `grok-imagine-video`. Video
-  editing, extension, and undocumented preview model ids remain unsupported
+  editing, extension, and preview model ids remain unsupported
   until they get dedicated actions and official/console-backed contracts.
   Metadata gaps such as exact URL expiry, fps, audio behavior, and watermark
   policy are documented limitations, not build blockers.

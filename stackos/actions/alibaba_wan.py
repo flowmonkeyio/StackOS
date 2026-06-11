@@ -60,7 +60,7 @@ class AlibabaWanVideoActionConnector:
             issues.append(
                 ActionValidationIssue(
                     path="$.region",
-                    message="region must be singapore, virginia, or beijing",
+                    message="region must be singapore or beijing",
                     code="enum_mismatch",
                 )
             )
@@ -162,6 +162,14 @@ class AlibabaWanVideoActionConnector:
                             code="mode_mismatch",
                         )
                     )
+        if mode == "video-continuation" and payload.get("audio_url") is not None:
+            issues.append(
+                ActionValidationIssue(
+                    path="$.audio_url",
+                    message="audio_url is not valid for video-continuation",
+                    code="mode_mismatch",
+                )
+            )
         return issues
 
     @staticmethod

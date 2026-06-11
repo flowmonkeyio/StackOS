@@ -82,11 +82,14 @@ class BytePlusSeedanceVideoActionConnector:
                 )
             )
         region = payload.get("region", BytePlusArkIntegration.DEFAULT_REGION)
-        if not isinstance(region, str) or region not in BytePlusArkIntegration.REGION_BASE_URLS:
+        if (
+            not isinstance(region, str)
+            or region not in BytePlusArkIntegration.SEEDANCE_REGION_BASE_URLS
+        ):
             issues.append(
                 ActionValidationIssue(
                     path="$.region",
-                    message="region must be ap-southeast-1 or eu-west-1",
+                    message="region must be ap-southeast-1",
                     code="enum_mismatch",
                 )
             )
@@ -110,6 +113,8 @@ class BytePlusSeedanceVideoActionConnector:
                     code="model_mismatch",
                 )
             )
+        if isinstance(model, str):
+            issues.extend(self._validate_model_feature_support(payload, model=model, mode=mode))
         ratio = payload.get("ratio", "16:9")
         if not isinstance(ratio, str) or ratio not in BytePlusArkIntegration.SEEDANCE_RATIOS:
             issues.append(
@@ -129,21 +134,82 @@ class BytePlusSeedanceVideoActionConnector:
         if (
             not isinstance(duration, int)
             or isinstance(duration, bool)
+            or (
+                duration == -1
+                and model not in BytePlusArkIntegration.SEEDANCE_DEFAULT_DURATION_MODELS
+            )
             or (duration != -1 and (duration < min_duration or duration > max_duration))
         ):
+            duration_message = (
+                f"duration must be -1 or an integer between {min_duration} "
+                f"and {max_duration} seconds for {model}"
+                if model in BytePlusArkIntegration.SEEDANCE_DEFAULT_DURATION_MODELS
+                else (
+                    f"duration must be an integer between {min_duration} "
+                    f"and {max_duration} seconds for {model}"
+                )
+            )
             issues.append(
                 ActionValidationIssue(
                     path="$.duration",
-                    message=(
-                        f"duration must be -1 or an integer between {min_duration} "
-                        f"and {max_duration} seconds for {model}"
-                    ),
+                    message=duration_message,
                     code="range",
                 )
             )
         issues.extend(self._validate_media_refs(request, mode=mode))
         issues.extend(self._validate_flags(payload))
         issues.extend(self._validate_poll_controls(payload))
+        return issues
+
+    def _validate_model_feature_support(
+        self,
+        payload: dict[str, Any],
+        *,
+        model: str,
+        mode: str,
+    ) -> list[ActionValidationIssue]:
+        issues: list[ActionValidationIssue] = []
+        if mode == "reference-to-video" and model not in BytePlusArkIntegration.SEEDANCE_2_MODELS:
+            issues.append(
+                ActionValidationIssue(
+                    path="$.mode",
+                    message="reference-to-video requires a Seedance 2.0 model",
+                    code="model_mismatch",
+                )
+            )
+        if (
+            mode == "first-last-frame"
+            and model in BytePlusArkIntegration.SEEDANCE_FIRST_LAST_UNSUPPORTED_MODELS
+        ):
+            issues.append(
+                ActionValidationIssue(
+                    path="$.mode",
+                    message="Seedance 1.0 Pro Fast does not support first-last-frame mode",
+                    code="model_mismatch",
+                )
+            )
+        if (
+            payload.get("generate_audio") is not None
+            and model not in BytePlusArkIntegration.SEEDANCE_AUDIO_MODELS
+        ):
+            issues.append(
+                ActionValidationIssue(
+                    path="$.generate_audio",
+                    message="generate_audio requires a Seedance 2.0 or 1.5 model",
+                    code="model_mismatch",
+                )
+            )
+        if (
+            payload.get("priority") is not None
+            and model not in BytePlusArkIntegration.SEEDANCE_2_MODELS
+        ):
+            issues.append(
+                ActionValidationIssue(
+                    path="$.priority",
+                    message="priority requires a Seedance 2.0 model",
+                    code="model_mismatch",
+                )
+            )
         return issues
 
     def _validate_media_refs(

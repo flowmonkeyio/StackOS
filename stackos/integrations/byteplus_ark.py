@@ -29,6 +29,7 @@ from stackos.integrations._base import BaseIntegration, IntegrationCallResult
 from stackos.integrations._media import (
     data_url_payload,
     download_generated_media,
+    sanitize_media_audit_payload,
     write_generated_media,
 )
 from stackos.mcp.errors import IntegrationDownError
@@ -45,6 +46,9 @@ class BytePlusArkIntegration(BaseIntegration):
     REGION_BASE_URLS: ClassVar[dict[str, str]] = {
         "ap-southeast-1": "https://ark.ap-southeast.bytepluses.com/api/v3",
         "eu-west-1": "https://ark.eu-west.bytepluses.com/api/v3",
+    }
+    SEEDANCE_REGION_BASE_URLS: ClassVar[dict[str, str]] = {
+        "ap-southeast-1": "https://ark.ap-southeast.bytepluses.com/api/v3",
     }
     DEFAULT_SEEDREAM_MODEL = "seedream-5-0-lite-260128"
     DEFAULT_SEEDANCE_MODEL = "dreamina-seedance-2-0-260128"
@@ -63,6 +67,26 @@ class BytePlusArkIntegration(BaseIntegration):
             "seedance-1-0-pro-250528",
             "seedance-1-0-pro-fast-251015",
         }
+    )
+    SEEDANCE_2_MODELS: ClassVar[frozenset[str]] = frozenset(
+        {"dreamina-seedance-2-0-260128", "dreamina-seedance-2-0-fast-260128"}
+    )
+    SEEDANCE_AUDIO_MODELS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "dreamina-seedance-2-0-260128",
+            "dreamina-seedance-2-0-fast-260128",
+            "seedance-1-5-pro-251215",
+        }
+    )
+    SEEDANCE_DEFAULT_DURATION_MODELS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "dreamina-seedance-2-0-260128",
+            "dreamina-seedance-2-0-fast-260128",
+            "seedance-1-5-pro-251215",
+        }
+    )
+    SEEDANCE_FIRST_LAST_UNSUPPORTED_MODELS: ClassVar[frozenset[str]] = frozenset(
+        {"seedance-1-0-pro-fast-251015"}
     )
     SEEDANCE_DURATION_RANGES: ClassVar[dict[str, tuple[int, int]]] = {
         "dreamina-seedance-2-0-260128": (4, 15),
@@ -188,7 +212,7 @@ class BytePlusArkIntegration(BaseIntegration):
         super()._record_call(
             op=op,
             request=request,
-            response=_sanitize_media_fields(response),
+            response=sanitize_media_audit_payload(response),
             duration_ms=duration_ms,
             error=error,
             cost_cents=cost_cents,
@@ -331,6 +355,14 @@ class BytePlusArkIntegration(BaseIntegration):
         poll_interval_seconds: float = 10.0,
         poll_timeout_seconds: float = 1800.0,
     ) -> IntegrationCallResult:
+        self._ensure_seedance_video_contract(
+            model=model,
+            mode=mode,
+            region=region,
+            duration=duration,
+            generate_audio=generate_audio,
+            priority=priority,
+        )
         content = self._seedance_content(
             prompt=prompt,
             mode=mode,
@@ -360,7 +392,7 @@ class BytePlusArkIntegration(BaseIntegration):
         submitted = await self.call(
             op="video.generate",
             method="POST",
-            url=f"{self.base_url_for_region(region)}/contents/generations/tasks",
+            url=f"{self.seedance_base_url_for_region(region)}/contents/generations/tasks",
             json_body=body,
             headers=self._auth_headers(),
             request_log_body={
@@ -399,6 +431,47 @@ class BytePlusArkIntegration(BaseIntegration):
             cost_usd=submitted.cost_usd + poll_result.cost_usd,
             duration_ms=submitted.duration_ms + poll_result.duration_ms,
         )
+
+    def _ensure_seedance_video_contract(
+        self,
+        *,
+        model: str,
+        mode: str,
+        region: str,
+        duration: int,
+        generate_audio: bool | None,
+        priority: int | None,
+    ) -> None:
+        if region not in self.SEEDANCE_REGION_BASE_URLS:
+            raise IntegrationDownError(
+                "BytePlus Seedance video region is not supported",
+                data={"vendor": self.vendor, "region": region},
+            )
+        if mode == "reference-to-video" and model not in self.SEEDANCE_2_MODELS:
+            raise IntegrationDownError(
+                "BytePlus Seedance reference-to-video requires a Seedance 2.0 model",
+                data={"vendor": self.vendor, "model": model, "mode": mode},
+            )
+        if mode == "first-last-frame" and model in self.SEEDANCE_FIRST_LAST_UNSUPPORTED_MODELS:
+            raise IntegrationDownError(
+                "BytePlus Seedance 1.0 Pro Fast does not support first-last-frame mode",
+                data={"vendor": self.vendor, "model": model, "mode": mode},
+            )
+        if duration == -1 and model not in self.SEEDANCE_DEFAULT_DURATION_MODELS:
+            raise IntegrationDownError(
+                "BytePlus Seedance default duration is not supported for this model",
+                data={"vendor": self.vendor, "model": model},
+            )
+        if generate_audio is not None and model not in self.SEEDANCE_AUDIO_MODELS:
+            raise IntegrationDownError(
+                "BytePlus Seedance generate_audio is not supported for this model",
+                data={"vendor": self.vendor, "model": model},
+            )
+        if priority is not None and model not in self.SEEDANCE_2_MODELS:
+            raise IntegrationDownError(
+                "BytePlus Seedance priority is only supported for Seedance 2.0 models",
+                data={"vendor": self.vendor, "model": model},
+            )
 
     def _seedance_content(
         self,
@@ -480,7 +553,10 @@ class BytePlusArkIntegration(BaseIntegration):
             poll_result = await self.call(
                 op="video.poll",
                 method="GET",
-                url=f"{self.base_url_for_region(region)}/contents/generations/tasks/{task_id}",
+                url=(
+                    f"{self.seedance_base_url_for_region(region)}"
+                    f"/contents/generations/tasks/{task_id}"
+                ),
                 headers=self._auth_headers(),
                 request_log_body={"task_id": task_id, "region": region},
             )
@@ -582,6 +658,13 @@ class BytePlusArkIntegration(BaseIntegration):
     @classmethod
     def base_url_for_region(cls, region: str) -> str:
         return cls.REGION_BASE_URLS.get(region, cls.REGION_BASE_URLS[cls.DEFAULT_REGION])
+
+    @classmethod
+    def seedance_base_url_for_region(cls, region: str) -> str:
+        return cls.SEEDANCE_REGION_BASE_URLS.get(
+            region,
+            cls.SEEDANCE_REGION_BASE_URLS[cls.DEFAULT_REGION],
+        )
 
     def _image_payloads(self, paths: list[Path]) -> list[str]:
         if not paths:
@@ -723,18 +806,20 @@ class BytePlusArkIntegration(BaseIntegration):
         item: dict[str, Any],
         provider_url: str,
     ) -> dict[str, Any]:
-        try:
-            response = await self._http.get(provider_url)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise IntegrationDownError(
-                "BytePlus Seedream image URL could not be downloaded",
-                data={"vendor": self.vendor},
-            ) from exc
-        file_info = self._write_image(
-            response.content,
-            mime_type=response.headers.get("content-type"),
-            source_url=provider_url,
+        assert self._asset_dir is not None
+        raw, ext = await download_generated_media(
+            self,
+            provider_url,
+            fallback_ext="jpg",
+            empty_message="BytePlus Seedream returned an empty image download",
+        )
+        file_info = write_generated_media(
+            raw,
+            asset_dir=self._asset_dir,
+            asset_url_prefix=self._asset_url_prefix,
+            subdir="byteplus-ark",
+            prefix="byteplus-ark",
+            ext=ext,
         )
         clean = {key: value for key, value in item.items() if key != "url"}
         clean.update(file_info)
@@ -953,21 +1038,6 @@ def _contains_media_output(items: list[Any]) -> bool:
         if isinstance(item.get("b64_json"), str) and item["b64_json"]:
             return True
     return False
-
-
-def _sanitize_media_fields(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {
-            key: "[downloaded-to-generated-assets]"
-            if key == "url"
-            else "[persisted-to-generated-assets]"
-            if key in {"b64_json", "image"}
-            else _sanitize_media_fields(nested)
-            for key, nested in value.items()
-        }
-    if isinstance(value, list):
-        return [_sanitize_media_fields(item) for item in value]
-    return value
 
 
 __all__ = ["BytePlusArkIntegration"]

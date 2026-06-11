@@ -150,6 +150,22 @@ def test_google_veo_video_action_rejects_undocumented_parameter_combinations(
         for issue in person.issues
     )
 
+    lite_4k = repo.validate(
+        project_id=project_id,
+        action_ref="utils.google.video.generate",
+        input_json={
+            "prompt": "cinematic",
+            "model": "veo-3.1-lite-generate-preview",
+            "duration_seconds": 8,
+            "resolution": "4k",
+        },
+        credential_ref=credential_ref,
+    )
+    assert lite_4k.valid is False
+    assert any(
+        issue.path == "$.resolution" and issue.code == "model_mismatch" for issue in lite_4k.issues
+    )
+
 
 def test_alibaba_wan_video_action_executes_and_registers_artifact(
     session: Session,
@@ -202,7 +218,7 @@ def test_alibaba_wan_video_action_executes_and_registers_artifact(
     post_body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
     item = result.output_json["data"][0]
     rendered = json.dumps(result.model_dump(mode="json"))
-    assert post_body["model"] == "wan2.7-t2v"
+    assert post_body["model"] == "wan2.6-t2v"
     assert post_body["parameters"]["size"] == "1280*720"
     assert item["url"].startswith("/generated-assets/alibaba-wan/alibaba-wan-video-")
     assert item["artifact_ref"] == item["url"]
@@ -229,6 +245,24 @@ def test_alibaba_wan_video_action_rejects_missing_provider_fetchable_urls(
 
     assert validation.valid is False
     assert any(issue.path == "$.first_frame_url" for issue in validation.issues)
+
+    continuation_audio = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.alibaba.video.generate",
+        input_json={
+            "prompt": "extend clip",
+            "mode": "video-continuation",
+            "first_clip_url": "https://cdn.example/clip.mp4",
+            "audio_url": "https://cdn.example/audio.mp3",
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert continuation_audio.valid is False
+    assert any(
+        issue.path == "$.audio_url" and issue.code == "mode_mismatch"
+        for issue in continuation_audio.issues
+    )
 
 
 def test_byteplus_seedance_video_action_executes_and_registers_artifact(
@@ -318,6 +352,98 @@ def test_byteplus_seedance_video_action_rejects_schema_and_model_duration_mismat
     )
     assert duration.valid is False
     assert any(issue.path == "$.duration" and issue.code == "range" for issue in duration.issues)
+
+    default_duration_1_0 = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.video.generate",
+        input_json={
+            "prompt": "seedance",
+            "model": "seedance-1-0-pro-250528",
+            "duration": -1,
+        },
+        credential_ref=credential_ref,
+    )
+    assert default_duration_1_0.valid is False
+    assert any(
+        issue.path == "$.duration" and issue.code == "range"
+        for issue in default_duration_1_0.issues
+    )
+
+    region = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.video.generate",
+        input_json={
+            "prompt": "seedance",
+            "region": "eu-west-1",
+        },
+        credential_ref=credential_ref,
+    )
+    assert region.valid is False
+    assert any(
+        issue.path == "$.region" and issue.code == "enum_mismatch" for issue in region.issues
+    )
+
+    reference_mode = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.video.generate",
+        input_json={
+            "mode": "reference-to-video",
+            "model": "seedance-1-5-pro-251215",
+            "reference_video_urls": ["https://media.example/ref.mp4"],
+        },
+        credential_ref=credential_ref,
+    )
+    assert reference_mode.valid is False
+    assert any(
+        issue.path == "$.mode" and issue.code == "model_mismatch" for issue in reference_mode.issues
+    )
+
+    first_last_fast = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.video.generate",
+        input_json={
+            "mode": "first-last-frame",
+            "model": "seedance-1-0-pro-fast-251015",
+        },
+        credential_ref=credential_ref,
+    )
+    assert first_last_fast.valid is False
+    assert any(
+        issue.path == "$.mode" and issue.code == "model_mismatch"
+        for issue in first_last_fast.issues
+    )
+
+    audio = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.video.generate",
+        input_json={
+            "prompt": "seedance",
+            "model": "seedance-1-0-pro-250528",
+            "generate_audio": True,
+        },
+        credential_ref=credential_ref,
+    )
+    assert audio.valid is False
+    assert any(
+        issue.path == "$.generate_audio" and issue.code == "model_mismatch"
+        for issue in audio.issues
+    )
+
+    priority_model = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.video.generate",
+        input_json={
+            "prompt": "seedance",
+            "model": "seedance-1-5-pro-251215",
+            "priority": 1,
+        },
+        credential_ref=credential_ref,
+    )
+    assert priority_model.valid is False
+    assert any(
+        issue.path == "$.priority" and issue.code == "model_mismatch"
+        for issue in priority_model.issues
+    )
 
 
 def test_kling_video_action_executes_and_registers_artifact(
@@ -419,3 +545,18 @@ def test_kling_video_action_rejects_older_model_ids(
 
     assert validation.valid is False
     assert any(issue.path == "$.model_name" for issue in validation.issues)
+
+    callback_validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.kling.video.generate",
+        input_json={
+            "prompt": "kling",
+            "callback_url": "https://example.com/webhook",
+        },
+        credential_ref=credential_ref,
+    )
+    assert callback_validation.valid is False
+    assert any(
+        issue.path == "$.callback_url" and issue.code == "unsupported_feature"
+        for issue in callback_validation.issues
+    )
