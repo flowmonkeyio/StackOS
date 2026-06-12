@@ -94,9 +94,8 @@ def build_action_exposure(
 ) -> ActionExposureOut:
     """Classify default agent visibility for one action.
 
-    Only external provider actions whose required integration is missing are
-    hidden from normal discovery. Core/internal and no-credential local actions
-    remain visible so agents can still inspect generic StackOS capabilities.
+    Normal discovery should surface currently usable actions. Setup and catalog
+    inspection can still request unavailable action contracts explicitly.
     """
     external_provider = _is_external_provider(provider_key)
     requires_integration = external_provider and requires_credential
@@ -135,8 +134,8 @@ def build_action_exposure(
     if availability.status == "missing_connector":
         return ActionExposureOut(
             state="missing_connector",
-            visible_by_default=not external_provider,
-            hidden_reason="missing_connector" if external_provider else None,
+            visible_by_default=False,
+            hidden_reason="missing_connector",
             external_provider=external_provider,
             requires_integration=requires_integration,
             next_action=ActionExposureNextActionOut(
@@ -228,11 +227,15 @@ def build_action_exposure(
         state = "external_optional"
     elif not availability.executable and availability.status != "ready":
         state = "internal_not_executable"
+    hide_internal_unavailable = availability.status in {"deferred", "project_local_required"}
     return ActionExposureOut(
         state=state,
-        visible_by_default=True,
+        visible_by_default=not hide_internal_unavailable,
         external_provider=external_provider,
         requires_integration=requires_integration,
+        hidden_reason=_not_executable_hidden_reason(availability.status)
+        if hide_internal_unavailable
+        else None,
         next_action=_blocked_next_action(availability, base_arguments),
     )
 

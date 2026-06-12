@@ -32,6 +32,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
         "communications",
         "gtm",
         "marketing",
+        "branding",
         "media-buying",
         "trackbooth",
         "publishing",
@@ -61,6 +62,9 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     communications = repo.get_plugin("communications")
     assert communications.name == "Communications"
     assert communications.manifest_json["ui"]["nav"]["section"] == "Communications"
+    branding = repo.get_plugin("branding")
+    assert branding.name == "Branding"
+    assert branding.manifest_json["ui"]["nav"]["section"] == "Branding"
     engineering = repo.get_plugin("engineering")
     assert engineering.name == "Engineering"
     assert engineering.manifest_json["ui"]["nav"]["section"] == "Engineering"
@@ -455,6 +459,7 @@ def test_catalog_syncs_builtin_manifests_once_per_repository_instance(
     catalog = repo.catalog()
 
     assert {plugin.plugin.slug for plugin in catalog.plugins} >= {
+        "branding",
         "communications",
         "core",
         "engineering",
@@ -523,6 +528,7 @@ def test_disabled_plugin_is_filtered_from_project_catalog(
     assert "seo-content" not in {
         capability.key for capability in repo.list_capabilities(project_id=project_id)
     }
-    assert "content-piece" not in {
-        resource.key for resource in repo.list_resources(project_id=project_id)
+    assert ("seo", "content-piece") not in {
+        (resource.plugin_slug, resource.key)
+        for resource in repo.list_resources(project_id=project_id)
     }

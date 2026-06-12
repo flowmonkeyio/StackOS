@@ -1,0 +1,312 @@
+schema_version: stackos.workflow-template.v1
+key: branding.distribution-run
+name: Branding Distribution Run
+version: 0.1.0
+description: Publication mechanics only for approved canonical pieces and ready renditions, enforcing canonical-first and per-send approvals.
+domain: branding
+owner:
+  team: StackOS
+when_to_use:
+  - Approved canonical pieces and ready renditions need scheduled API or operator-assisted publication.
+  - Publication records and outcome snapshots must be initialized.
+when_not_to_use:
+  - Routing or drafting is still open; use branding.piece-production first.
+  - Renditions are not ready; use branding.rendition-production first.
+agent_requirements:
+  - role: distribution-operator
+    requirement: required
+    agent_preset_ref: branding.distribution-operator
+    purpose: Execute approved publication mechanics without deciding routing.
+    applies_to_steps:
+      - schedule-sends
+      - publish-canonical
+      - approve-and-send-renditions
+      - record-distribution
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Execute action grants, approvals, resource writes, and audit records.
+skill_preset_requirements:
+  - skill_preset_ref: branding.brand-orchestrator
+    requirement: required
+    purpose: Preserve decision/execution separation and canonical-first distribution.
+inputs:
+  - key: content_piece_ref
+    name: Content Piece Ref
+    type: string
+    required: true
+  - key: distribution_window
+    name: Distribution Window
+    type: string
+    required: false
+context_requirements:
+  - id: content_pieces
+    source: resources
+    purpose: Load approved content-piece, canonical URL, and ready renditions.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - content-piece
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 20
+    return_mode: compact
+  - id: channel_charters
+    source: resources
+    purpose: Enforce publication mode, cadence caps, and channel-specific approval expectations.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - channel
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 30
+    return_mode: compact
+  - id: routing_policies
+    source: resources
+    purpose: Enforce canonical-first, native-short exception, stagger windows, and attribution conventions.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - routing-policy
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 5
+    return_mode: compact
+  - id: prior_distribution
+    source: resources
+    purpose: Avoid duplicate sends and respect frequency caps.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - distribution-record
+    fields:
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 50
+    return_mode: compact
+capability_requirements:
+  - key: content-distribution
+    required: true
+auth_requirements:
+  - key: git_remote
+    provider: git-remote
+    auth_type: git-credential
+    optional: true
+  - key: x_api
+    provider: x-api
+    auth_type: oauth
+    optional: true
+  - key: linkedin_api
+    provider: linkedin-api
+    auth_type: oauth
+    optional: true
+  - key: esp
+    provider: esp
+    auth_type: api-key
+    optional: true
+  - key: wordpress
+    provider: wordpress
+    auth_type: application-password
+    optional: true
+  - key: ghost
+    provider: ghost
+    auth_type: admin-api-key
+    optional: true
+action_contracts:
+  - key: git_blog_publish
+    action: publish.git-blog
+    capability: content-distribution
+    provider: git-remote
+    optional: true
+    risk_level: write
+    auth_ref: git_remote
+    approval_ref: canonical_publish_approval
+  - key: wordpress_post_create
+    action: publishing.wordpress.post.create
+    capability: cms-publishing
+    provider: wordpress
+    optional: true
+    risk_level: write
+    auth_ref: wordpress
+    approval_ref: canonical_publish_approval
+  - key: ghost_post_create
+    action: publishing.ghost.post.create
+    capability: cms-publishing
+    provider: ghost
+    optional: true
+    risk_level: write
+    auth_ref: ghost
+    approval_ref: canonical_publish_approval
+  - key: publish_x
+    action: publish.x
+    capability: content-distribution
+    provider: x-api
+    optional: true
+    risk_level: write
+    auth_ref: x_api
+    approval_ref: outbound_send_approval
+  - key: publish_linkedin
+    action: publish.linkedin
+    capability: content-distribution
+    provider: linkedin-api
+    optional: true
+    risk_level: write
+    auth_ref: linkedin_api
+    approval_ref: outbound_send_approval
+  - key: publish_email
+    action: publish.email
+    capability: content-distribution
+    provider: esp
+    optional: true
+    risk_level: write
+    auth_ref: esp
+    approval_ref: outbound_send_approval
+resource_contracts:
+  - key: content_piece
+    resource: content-piece
+    purpose: Approved piece and renditions to publish.
+    required: true
+  - key: channels
+    resource: channel
+    purpose: Channel publication mode and cadence caps.
+    required: true
+  - key: routing_policy
+    resource: routing-policy
+    purpose: Canonical-first and stagger rules.
+    required: true
+  - key: distribution_records
+    resource: distribution-record
+    purpose: One record per send or handoff.
+    required: true
+policies:
+  - key: canonical_first
+    kind: publication
+    description: No rendition publishes before canonical home exists, except native-short collection policy.
+  - key: per_send_approval
+    kind: approval
+    description: Every outbound API send or operator handoff has explicit operator approval.
+  - key: decision_execution_separation
+    kind: governance
+    description: Distribution operator publishes approved plan only and does not alter routing decisions.
+approval_gates:
+  - key: canonical_publish_approval
+    description: Operator approves canonical publish action or confirms canonical already exists.
+    required_when: canonical URL is missing
+    approver: operator
+  - key: outbound_send_approval
+    description: Operator approves each outbound send or operator-assisted handoff packet.
+    required_when: always per planned send
+    approver: operator
+steps:
+  - id: schedule-sends
+    title: Schedule Sends
+    purpose: Build send schedule from channel plan, cadence caps, stagger windows, and prior distribution records.
+    input_refs:
+      - content_piece_ref
+      - distribution_window
+    context_refs:
+      - content_pieces
+      - channel_charters
+      - routing_policies
+      - prior_distribution
+    resource_refs:
+      - content_piece
+      - channels
+      - routing_policy
+      - distribution_records
+    policy_refs:
+      - canonical_first
+      - decision_execution_separation
+    output_refs:
+      - send_schedule
+    success_criteria:
+      - Schedule respects channel caps and routing-policy stagger windows.
+      - No routing decisions are changed by the operator role.
+  - id: publish-canonical
+    title: Publish Canonical
+    purpose: Ensure the canonical archive exists before non-native-short renditions publish.
+    depends_on:
+      - schedule-sends
+    action_refs:
+      - git_blog_publish
+      - wordpress_post_create
+      - ghost_post_create
+    approval_refs:
+      - canonical_publish_approval
+    policy_refs:
+      - canonical_first
+    resource_refs:
+      - content_piece
+    output_refs:
+      - canonical_publish_result
+    success_criteria:
+      - Content-piece has canonical URL or native-short exception is documented.
+      - API publish result or operator confirmation is captured.
+  - id: approve-and-send-renditions
+    title: Approve And Send Renditions
+    purpose: For each planned channel, either execute approved API action or hand off paste-ready packet.
+    depends_on:
+      - publish-canonical
+    action_refs:
+      - publish_x
+      - publish_linkedin
+      - publish_email
+    approval_refs:
+      - outbound_send_approval
+    policy_refs:
+      - per_send_approval
+      - canonical_first
+    resource_refs:
+      - channels
+      - distribution_records
+    output_refs:
+      - send_results
+    success_criteria:
+      - API-mode sends use action.execute only after approval.
+      - Operator-assisted sends produce packet artifacts and are recorded even when manual send is pending.
+  - id: record-distribution
+    title: Record Distribution
+    purpose: Write distribution-records and schedule T+1d, T+7d, and T+30d snapshots.
+    depends_on:
+      - approve-and-send-renditions
+    resource_refs:
+      - distribution_records
+      - content_piece
+    output_refs:
+      - distribution_record_refs
+    success_criteria:
+      - Every send or handoff has a distribution-record.
+      - Snapshot schedule is attached for outcome-capture.
+outputs:
+  - key: send_schedule
+    type: array
+  - key: canonical_publish_result
+    type: object
+  - key: send_results
+    type: array
+  - key: distribution_record_refs
+    type: array
+failure_handling:
+  - If canonical publication fails, stop non-native-short sends.
+  - If an API action is unavailable, switch only that charter to operator-assisted after operator approval and record the reason.
+metadata:
+  plugin_slug: branding
+  grants:
+    - context.query
+    - action.execute:git_blog_publish
+    - action.execute:wordpress_post_create
+    - action.execute:ghost_post_create
+    - action.execute:publish_x
+    - action.execute:publish_linkedin
+    - action.execute:publish_email
+    - resource.upsert
+    - artifact.create

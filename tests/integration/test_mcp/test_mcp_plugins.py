@@ -13,6 +13,7 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
         "communications",
         "gtm",
         "marketing",
+        "branding",
         "media-buying",
         "trackbooth",
         "publishing",
@@ -81,6 +82,21 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
     assert {a["key"] for a in publishing["plugins"][0]["actions"]} >= {
         "wordpress.post.create",
         "ghost.post.create",
+    }
+
+    branding = mcp_client.call_tool_structured(
+        "catalog.describe",
+        {"plugin_slug": "branding"},
+    )
+    assert {r["key"] for r in branding["plugins"][0]["resources"]} >= {
+        "evidence-item",
+        "content-piece",
+        "distribution-record",
+    }
+    assert {a["key"] for a in branding["plugins"][0]["actions"]} >= {
+        "publish.git-blog",
+        "evidence.capture",
+        "distribution.snapshot",
     }
 
     engineering = mcp_client.call_tool_structured(

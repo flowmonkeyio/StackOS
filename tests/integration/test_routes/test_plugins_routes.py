@@ -14,6 +14,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "communications",
         "gtm",
         "marketing",
+        "branding",
         "media-buying",
         "trackbooth",
         "publishing",
@@ -186,6 +187,22 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "publish-target",
     }
 
+    branding_catalog = api.get("/api/v1/catalog/branding")
+    assert branding_catalog.status_code == 200
+    assert branding_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == (
+        "Branding"
+    )
+    assert {r["key"] for r in branding_catalog.json()["resources"]} >= {
+        "evidence-item",
+        "content-piece",
+        "distribution-record",
+    }
+    assert {a["key"] for a in branding_catalog.json()["actions"]} >= {
+        "publish.git-blog",
+        "evidence.capture",
+        "distribution.snapshot",
+    }
+
 
 def test_single_action_describe_can_be_project_aware(api: TestClient, project_id: int) -> None:
     credential = api.post(
@@ -247,4 +264,4 @@ def test_disabled_seo_plugin_is_filtered_from_project_catalog(
 
     resources = api.get("/api/v1/resources", params={"project_id": project_id})
     assert resources.status_code == 200
-    assert "content-piece" not in {r["key"] for r in resources.json()}
+    assert ("seo", "content-piece") not in {(r["plugin_slug"], r["key"]) for r in resources.json()}

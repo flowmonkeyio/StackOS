@@ -34,6 +34,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "communications",
         "gtm",
         "marketing",
+        "branding",
         "media-buying",
         "trackbooth",
         "publishing",
@@ -85,6 +86,16 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert resources_by_plugin["publishing"] >= {"published-post", "publish-target"}
     assert resources_by_plugin["seo"] >= {"keyword-opportunity", "content-piece"}
     assert resources_by_plugin["utils"] >= {"generated-image", "generated-video", "web-document"}
+    assert resources_by_plugin["branding"] >= {
+        "brand-profile",
+        "position",
+        "evidence-item",
+        "stream",
+        "channel",
+        "routing-policy",
+        "content-piece",
+        "distribution-record",
+    }
     publishing = next(
         manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "publishing"
     )
@@ -561,7 +572,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 43
+    assert len(providers) == 48
     for plugin_slug, provider in providers:
         config = provider.config or {}
         setup = config.get("setup")
@@ -714,6 +725,161 @@ def test_communications_plugin_yaml_facade_validates() -> None:
         "communication-cursor",
         "agent-request-source",
     }
+
+
+def test_branding_plugin_yaml_facade_validates() -> None:
+    manifest = load_plugin_manifest_file(Path("plugins/branding/plugin.yaml"))
+
+    assert manifest.slug == "branding"
+    assert manifest.ui is not None
+    assert manifest.ui["nav"]["section"] == "Branding"
+    assert {capability.key for capability in manifest.capabilities} >= {
+        "authority-content",
+        "evidence-governance",
+        "content-distribution",
+        "outcome-learning",
+    }
+    assert {provider.key for provider in manifest.providers} == {
+        "git-remote",
+        "x-api",
+        "linkedin-api",
+        "esp",
+        "channel-metrics",
+    }
+    providers = {provider.key: provider for provider in manifest.providers}
+    assert _auth_field_keys(providers["git-remote"], "deploy_key_or_token")[:2] == [
+        "remote_url",
+        "branch",
+    ]
+    assert _auth_field_keys(providers["x-api"], "oauth2_token")[:2] == [
+        "access_token",
+        "refresh_token",
+    ]
+    assert _auth_field_keys(providers["linkedin-api"], "oauth2_token")[:2] == [
+        "access_token",
+        "refresh_token",
+    ]
+    assert _auth_field_keys(providers["esp"], "api_key")[0] == "api_key"
+    actions = {action.key: action for action in manifest.actions}
+    assert set(actions) == {
+        "publish.git-blog",
+        "publish.x",
+        "publish.linkedin",
+        "publish.email",
+        "distribution.snapshot",
+        "evidence.capture",
+        "evidence.sanitize-mark",
+    }
+    assert actions["publish.git-blog"].config["execution_mode"] == "deferred-git-publisher"
+    assert actions["publish.x"].config["execution_mode"] == "deferred-social-publisher"
+    assert actions["publish.linkedin"].config["execution_mode"] == "deferred-social-publisher"
+    assert actions["publish.email"].config["execution_mode"] == "deferred-esp-publisher"
+    assert actions["distribution.snapshot"].config["execution_mode"] == ("deferred-channel-metrics")
+    assert actions["evidence.capture"].config["connector"] == "branding"
+    assert actions["evidence.capture"].config["operation"] == "evidence.capture"
+    assert actions["evidence.capture"].config["default_sanitization_status"] == "raw"
+    assert (
+        actions["evidence.capture"].input_schema["properties"]["sanitization_status"]["default"]
+        == "raw"
+    )
+    assert actions["evidence.capture"].input_schema["properties"]["sanitization_status"][
+        "enum"
+    ] == ["raw"]
+    assert "evidence_payload" in actions["evidence.capture"].input_schema["properties"]
+    assert actions["evidence.capture"].output_schema["required"] == [
+        "evidence_ref",
+        "resource_record_id",
+        "sanitization_status",
+    ]
+    assert actions["evidence.sanitize-mark"].config["connector"] == "branding"
+    assert actions["evidence.sanitize-mark"].config["operation"] == "evidence.sanitize-mark"
+    assert "decision_ref" in actions["evidence.sanitize-mark"].input_schema["required"]
+    assert "decision_ref" in actions["evidence.sanitize-mark"].input_schema["properties"]
+    assert actions["evidence.sanitize-mark"].output_schema["required"] == [
+        "evidence_ref",
+        "resource_record_id",
+        "verdict",
+    ]
+    assert all(
+        action.config.get("deferred_reason")
+        for key, action in actions.items()
+        if key
+        not in {
+            "evidence.capture",
+            "evidence.sanitize-mark",
+        }
+    )
+    resources = {resource.key: resource for resource in manifest.resources}
+    assert set(resources) == {
+        "brand-profile",
+        "position",
+        "evidence-item",
+        "stream",
+        "channel",
+        "routing-policy",
+        "content-piece",
+        "distribution-record",
+    }
+    assert all(resource.ui_schema is not None for resource in resources.values())
+    assert all(
+        resource.config["schema_version"] == "stackos.resource.v1"
+        for resource in resources.values()
+    )
+    assert {key: resource.config["record_kind"] for key, resource in resources.items()} == {
+        "brand-profile": "brand-profile",
+        "position": "position",
+        "evidence-item": "evidence-item",
+        "stream": "stream",
+        "channel": "channel",
+        "routing-policy": "routing-policy",
+        "content-piece": "content-piece",
+        "distribution-record": "distribution-record",
+    }
+    assert all(resource.config["agent_guidance"] for resource in resources.values())
+    assert resources["content-piece"].schema_data["properties"]["status"]["enum"] == [
+        "captured",
+        "routed",
+        "drafted",
+        "evidence-checked",
+        "voice-checked",
+        "sanitized",
+        "approved",
+        "renditions-ready",
+        "published",
+        "measured",
+    ]
+    evidence_schema = resources["evidence-item"].schema_data
+    verdict_schema = evidence_schema["properties"]["sanitization_verdict"]
+    assert verdict_schema["required"] == [
+        "verdict",
+        "reviewer",
+        "reason",
+        "decided_at",
+        "decision_ref",
+    ]
+    assert evidence_schema["allOf"][0]["then"]["required"] == ["sanitization_verdict"]
+    claim_map_item_schema = resources["content-piece"].schema_data["properties"][
+        "claim_evidence_map"
+    ]["items"]
+    assert claim_map_item_schema["allOf"][0]["then"]["properties"]["evidence_refs"]["minItems"] == 1
+    content_piece_all_of = resources["content-piece"].schema_data["allOf"]
+    assert content_piece_all_of[0]["then"]["required"] == ["channel_plan"]
+    assert {"approval_ref", "review_log"} <= set(content_piece_all_of[3]["then"]["required"])
+    assert len(content_piece_all_of[3]["then"]["properties"]["review_log"]["allOf"]) == 3
+    assert "canonical_url" in content_piece_all_of[-1]["then"]["required"]
+    distribution_schema = resources["distribution-record"].schema_data
+    assert distribution_schema["properties"]["qualitative_outcomes"]["items"]["required"] == [
+        "outcome_type",
+        "summary",
+        "source_ref",
+    ]
+    assert "canonical_mode" in distribution_schema["required"]
+    required_by_condition = [set(item["then"]["required"]) for item in distribution_schema["allOf"]]
+    assert {"canonical_url"} in required_by_condition
+    assert {"native_short_collection_ref"} in required_by_condition
+    assert {"provider_publish_ref", "published_at"} in required_by_condition
+    assert {"operator_handoff_packet_ref"} in required_by_condition
+    assert {"operator_handoff_packet_ref", "operator_publication_ref"} in required_by_condition
 
 
 def test_gtm_plugin_yaml_facade_validates() -> None:

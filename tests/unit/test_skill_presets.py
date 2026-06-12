@@ -16,11 +16,13 @@ def test_skill_preset_loader_lists_bundled_presets() -> None:
     keys = {item.key for item in listing.presets}
 
     assert "stackos.sdlc.delivery-orchestrator" in keys
+    assert "branding.brand-orchestrator" in keys
     assert all(item.generic_preset for item in listing.presets)
     assert all(item.adaptation_required for item in listing.presets)
     by_key = {item.key: item for item in listing.presets}
     assert by_key["stackos.sdlc.delivery-orchestrator"].plugin_slug == "engineering"
     assert by_key["stackos.sdlc.delivery-orchestrator"].skill_type == ("main-agent-orchestration")
+    assert by_key["branding.brand-orchestrator"].plugin_slug == "branding"
 
 
 def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
@@ -85,6 +87,34 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert "One-brain architecture: ✅/❌" in reporting["task_end"]["fields"]
     assert reporting["task_end"]["style"]["no_long_paragraphs"] is True
     assert "do not restate every mechanical step" in reporting["task_end"]["content_rule"]
+
+
+def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None:
+    loaded = SkillPresetLoader().describe_preset(key="branding.brand-orchestrator")
+    contract = loaded.preset.operating_contract
+    contract_text = " ".join(
+        [
+            contract.mission,
+            *contract.responsibilities,
+            *contract.must_do,
+            *contract.must_not_do,
+            *contract.required_outputs,
+            *contract.success_criteria,
+            *contract.self_check,
+        ]
+    )
+    refs = [item.ref for item in loaded.preset.project_adaptation.required_context_refs]
+
+    assert loaded.summary.plugin_slug == "branding"
+    assert loaded.preset.project_adaptation.required is True
+    assert "stackos:stackos" in refs
+    assert "Level 2 branding overlay" in refs
+    assert "claims-to-evidence map" in contract_text
+    assert "canonical-first" in contract_text
+    assert "operator-assisted publication as a governed path" in contract_text
+    assert "Do not collapse claim, voice, and sanitization review" in contract_text
+    assert "current tracker/run-plan context" in " ".join(contract.must_do)
+    assert loaded.preset.metadata_json["evidence_lock"]["required_before_approval"] is True
 
 
 def test_skill_preset_loader_reads_bundled_plugin_assets_without_clone_root(

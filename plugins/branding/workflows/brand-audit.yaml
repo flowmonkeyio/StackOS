@@ -1,0 +1,276 @@
+schema_version: stackos.workflow-template.v1
+key: branding.brand-audit
+name: Branding Brand Audit
+version: 0.1.0
+description: Monthly or quarterly governance pass across positions, streams, channels, routing policy, outcomes, and ratified changes.
+domain: branding
+owner:
+  team: StackOS
+when_to_use:
+  - Standing positions, stream health, or channel routing policy need periodic governance review.
+  - Outcome evidence suggests charters or routing policy should change.
+when_not_to_use:
+  - A single draft needs review; use branding.piece-review.
+agent_requirements:
+  - role: brand-strategist
+    requirement: required
+    agent_preset_ref: branding.brand-strategist
+    purpose: Review positions, streams, channel/routing health, and propose changes without ratifying them.
+    applies_to_steps:
+      - review-positions
+      - review-stream-health
+      - review-channel-routing
+      - propose-governance-changes
+  - role: distribution-strategist
+    requirement: recommended
+    agent_preset_ref: branding.distribution-strategist
+    purpose: Interpret distribution outcomes against channel charters.
+    applies_to_steps:
+      - review-channel-routing
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Query resources and record ratified decisions.
+skill_preset_requirements:
+  - skill_preset_ref: branding.brand-orchestrator
+    requirement: required
+    purpose: Keep governance changes separate from production and require operator ratification.
+inputs:
+  - key: audit_period
+    name: Audit Period
+    type: string
+    required: false
+  - key: audit_depth
+    name: Audit Depth
+    type: string
+    required: false
+    description: Monthly or quarterly-deep.
+context_requirements:
+  - id: positions
+    source: resources
+    purpose: Active, retired, and forming positions to review against new evidence.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - position
+    fields:
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 50
+    return_mode: compact
+  - id: evidence_items
+    source: resources
+    purpose: Evidence accumulated since the last audit.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - evidence-item
+    fields:
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 50
+    return_mode: compact
+  - id: streams
+    source: resources
+    purpose: Stream cadence, source coverage, and production health.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - stream
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 30
+    return_mode: compact
+  - id: channels
+    source: resources
+    purpose: Channel charters, success signals, and routing criteria.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - channel
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 30
+    return_mode: compact
+  - id: routing_policies
+    source: resources
+    purpose: Active cross-channel routing rules and ratified decision refs.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - routing-policy
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 5
+    return_mode: compact
+  - id: distribution_records
+    source: resources
+    purpose: Outcome snapshots and qualitative results.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - distribution-record
+    fields:
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 50
+    return_mode: compact
+capability_requirements:
+  - key: authority-content
+    required: true
+  - key: outcome-learning
+    required: true
+action_contracts: []
+resource_contracts:
+  - key: positions
+    resource: position
+    purpose: Standing opinions and lifecycle state.
+    required: true
+  - key: evidence
+    resource: evidence-item
+    purpose: New evidence and outcomes.
+    required: true
+  - key: streams
+    resource: stream
+    purpose: Stream health and source coverage.
+    required: true
+  - key: channels
+    resource: channel
+    purpose: Channel charter health.
+    required: true
+  - key: routing_policy
+    resource: routing-policy
+    purpose: Governed routing rules.
+    required: true
+policies:
+  - key: ratified_changes_only
+    kind: governance
+    description: Charters, routing policy, and position state change only after operator ratifies decision records.
+  - key: strategist_proposes_operator_ratifies
+    kind: governance
+    description: Strategists propose changes but never ratify them.
+approval_gates:
+  - key: audit_ratification
+    description: Operator ratifies every position, charter, stream, or routing-policy change.
+    required_when: always
+    approver: operator
+steps:
+  - id: review-positions
+    title: Review Positions
+    purpose: Check active positions against new evidence and propose strengthen, retire, or form decisions.
+    input_refs:
+      - audit_period
+      - audit_depth
+    context_refs:
+      - positions
+      - evidence_items
+    resource_refs:
+      - positions
+      - evidence
+    policy_refs:
+      - strategist_proposes_operator_ratifies
+    output_refs:
+      - position_findings
+    success_criteria:
+      - Every proposed change cites evidence or notes evidence gaps.
+  - id: review-stream-health
+    title: Review Stream Health
+    purpose: Identify starved streams, missing source coverage, and cadence drift.
+    depends_on:
+      - review-positions
+    context_refs:
+      - streams
+      - evidence_items
+    resource_refs:
+      - streams
+      - evidence
+    output_refs:
+      - stream_findings
+    success_criteria:
+      - Health findings distinguish source starvation from production neglect.
+  - id: review-channel-routing
+    title: Review Channel And Routing
+    purpose: Compare outcome evidence against channel charter expectations and routing policy.
+    depends_on:
+      - review-stream-health
+    context_refs:
+      - channels
+      - routing_policies
+      - distribution_records
+    resource_refs:
+      - channels
+      - routing_policy
+    policy_refs:
+      - ratified_changes_only
+    output_refs:
+      - channel_routing_findings
+    success_criteria:
+      - Proposed charter or routing changes name outcome evidence and tradeoffs.
+  - id: propose-governance-changes
+    title: Propose Governance Changes
+    purpose: Prepare explicit decision records for any position, stream, channel, or routing-policy change.
+    depends_on:
+      - review-channel-routing
+    resource_refs:
+      - positions
+      - streams
+      - channels
+      - routing_policy
+    policy_refs:
+      - strategist_proposes_operator_ratifies
+      - ratified_changes_only
+    output_refs:
+      - proposed_decisions
+    success_criteria:
+      - Each proposal is separately ratifiable and reversible.
+  - id: ratify-and-record
+    title: Ratify And Record
+    purpose: Operator ratifies changes and StackOS records decisions and updated resources.
+    depends_on:
+      - propose-governance-changes
+    approval_refs:
+      - audit_ratification
+    resource_refs:
+      - positions
+      - streams
+      - channels
+      - routing_policy
+    policy_refs:
+      - ratified_changes_only
+    output_refs:
+      - ratified_change_refs
+    success_criteria:
+      - Every applied change has a decision ref.
+      - Rejected proposals remain visible as audit findings, not hidden.
+outputs:
+  - key: position_findings
+    type: array
+  - key: stream_findings
+    type: array
+  - key: channel_routing_findings
+    type: array
+  - key: proposed_decisions
+    type: array
+  - key: ratified_change_refs
+    type: array
+failure_handling:
+  - If the operator does not ratify, leave resources unchanged and store findings as audit output.
+metadata:
+  plugin_slug: branding
+  cadence: monthly-or-quarterly
+  grants:
+    - context.query
+    - resource.upsert
+    - decision.record

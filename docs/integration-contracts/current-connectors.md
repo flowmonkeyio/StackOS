@@ -5,7 +5,8 @@ Audit date: 2026-06-10
 Scope: executable connector contracts for OpenAI Images, xAI Imagine, Reve,
 Google Gemini Image, Google Veo, Ideogram, BytePlus Seedream/Seedance,
 Alibaba Wan, Kling, Firecrawl, Jina Reader, Reddit, DataForSEO, Serper.dev,
-Ahrefs, WordPress, Ghost, sitemap, Trackbooth, and generic HTTP, plus
+Ahrefs, WordPress, Ghost, sitemap, Trackbooth, generic HTTP, and the internal
+Branding evidence connector, plus
 connection-only setup providers that intentionally do not expose actions yet.
 This file is an
 integration-point audit only. It does not change manifests, tests, or runtime
@@ -42,6 +43,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | Sitemap | [sitemaps.org protocol](https://www.sitemaps.org/protocol.html), [sitemaps.org FAQ](https://www.sitemaps.org/faq.html), [Google robots.txt sitemap field](https://developers.google.com/search/reference/robots_txt) | none | Protocol/FAQ define URL/index limits and optional fields |
 | Trackbooth | Live Agent API catalog export fetched by `trackbooth.catalog.sync`; local generated bundle in `plugins/trackbooth/agent-api/` is a reference/test fixture | `X-API-Key` with optional `X-Acting-As-Account`; default API URL `https://apis.trackbooth.com`; credential config may point to localhost or remote HTTPS | Live `GET /api/agent-api/catalog/export` for sync, live compact catalog/search and operation detail only for diagnostics, generated OpenAPI/catalog fixtures, and schema constraints audit |
 | Generic HTTP | [RFC 9110 HTTP semantics](https://www.rfc-editor.org/rfc/rfc9110), [RFC 7617 Basic auth](https://www.rfc-editor.org/rfc/rfc7617), [RFC 6750 bearer usage](https://www.rfc-editor.org/rfc/rfc6750), [RFC 9457 problem details](https://www.rfc-editor.org/rfc/rfc9457) | RFC 7617 and RFC 6750 | RFC 9110 and RFC 9457 |
+| Branding internal evidence | `branding.evidence.capture` and `branding.evidence.sanitize-mark` are internal StackOS resource actions documented by `plugins/branding/plugin.yaml`, `plugins/branding/README.md`, and `docs/plugins.md`; they have no external provider API. | none | Not paginated; one evidence resource is captured or marked per action call. |
 
 ## Current Executable Surface
 
@@ -65,6 +67,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `stackos/actions/ahrefs.py`, `stackos/integrations/ahrefs.py:22` | `plugins/seo/plugin.yaml:31`, `plugins/seo/plugin.yaml:120`, `plugins/seo/plugin.yaml:148` | Bearer API key payload; requires eligible paid plan/API units. |
 | `wordpress` | `publishing.wordpress.post.create` | `stackos/actions/wordpress.py`, `stackos/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
 | `ghost` | `publishing.ghost.post.create` | `stackos/actions/ghost.py`, `stackos/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
+| `branding` | `branding.evidence.capture`, `branding.evidence.sanitize-mark` | `stackos/actions/branding.py` | `plugins/branding/plugin.yaml` | Internal resource connector; no provider credentials. Capture writes raw evidence only, and public clearance is a separate sanitize-mark action with reviewer, reason, and decision ref. |
 | `http` | plugin-defined custom actions only | `stackos/actions/http.py:170` | documented in `docs/plugins.md:77`; no first-party manifest row | Static plugin config supplies URL/method/auth mode; daemon injects credential if allowed. |
 | `trackbooth` | Fixed `trackbooth.catalog.sync`, `trackbooth.catalog.search`, `trackbooth.operation.describe`; sync upserts generated action rows from the live bulk export and exposes stable refs like `trackbooth.api.links_create` | `stackos/actions/trackbooth.py`, `stackos/integrations/trackbooth.py` | `plugins/trackbooth/plugin.yaml`, `plugins/trackbooth/agent-api/*` | API key payload; safe `api_base_url` config defaults to production and may point to localhost for local testing. |
 

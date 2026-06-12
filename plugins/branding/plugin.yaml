@@ -1,0 +1,1667 @@
+slug: branding
+name: Branding
+version: 0.1.0
+description: First-party StackOS package for governed, evidence-grounded authority content production and distribution.
+display_order: 36
+source: builtin
+capabilities:
+  - key: authority-content
+    name: Authority Content
+    description: Produce evidence-grounded canonical pieces and channel renditions from captured operational receipts.
+    kind: domain
+  - key: evidence-governance
+    name: Evidence Governance
+    description: Capture, classify, sanitize, clear, and trace evidence used in public claims.
+    kind: domain
+  - key: content-distribution
+    name: Content Distribution
+    description: Govern canonical-first distribution through API or operator-assisted publication modes.
+    kind: domain
+  - key: outcome-learning
+    name: Outcome Learning
+    description: Capture distribution outcomes and promote useful replies, questions, and citations back into evidence.
+    kind: domain
+providers:
+  - key: git-remote
+    name: Git Remote
+    description: Git-backed canonical publishing target for static sites or repository-rendered blogs.
+    auth_type: git-credential
+    auth_methods:
+      - key: deploy_key_or_token
+        label: Deploy key or token
+        auth_type: git-credential
+        payload_format: json
+        fields:
+          - key: remote_url
+            label: Remote URL
+            type: url
+            secret: false
+            required: true
+            placeholder: https://github.com/org/site.git
+          - key: branch
+            label: Branch
+            type: text
+            secret: false
+            required: false
+            placeholder: main
+          - key: username
+            label: Username
+            type: text
+            secret: false
+            required: false
+          - key: deploy_key
+            label: Deploy Key
+            type: secret
+            secret: true
+            required: false
+          - key: access_token
+            label: Access Token
+            type: secret
+            secret: true
+            required: false
+    config:
+      setup_note: Store only repository access material here. Canonical site path, content format, and publication policy belong in Level 2 project resources.
+      setup:
+        credential_label: Git remote deploy key or token
+        setup_note: Create a deploy key or repository-scoped token for the canonical site repo, then store the safe remote URL and secret material in StackOS.
+        homepage_url: https://git-scm.com/
+        docs_url: https://git-scm.com/docs
+        fallback_url: https://git-scm.com/book/en/v2/Git-on-the-Server-Setting-Up-the-Server
+        fallback_reason: Exact registration and key setup depend on the git host selected by the Level 2 project.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          docs_url: verified
+          fallback_url: verified
+  - key: x-api
+    name: X API
+    description: X API publishing provider contract for approved posts or threads.
+    auth_type: oauth
+    auth_methods:
+      - key: oauth2_token
+        label: OAuth2 token
+        auth_type: oauth
+        payload_format: json
+        fields:
+          - key: access_token
+            label: Access Token
+            type: secret
+            secret: true
+            required: true
+          - key: refresh_token
+            label: Refresh Token
+            type: secret
+            secret: true
+            required: false
+          - key: account_ref
+            label: Account Ref
+            type: text
+            secret: false
+            required: false
+    config:
+      setup_note: Store X OAuth material and safe account refs only. Channel charter, handle, cadence, and approval policy belong in project resources.
+      setup:
+        credential_label: X OAuth token
+        setup_note: Create or select an X developer app with posting access, complete the required plan/app review, and store OAuth material in StackOS.
+        homepage_url: https://developer.x.com/
+        signup_url: https://developer.x.com/en/portal/petition/essential/basic-info
+        console_url: https://developer.x.com/en/portal/dashboard
+        api_key_url: https://developer.x.com/en/portal/dashboard
+        docs_url: https://docs.x.com/
+        fallback_url: https://developer.x.com/en/portal/dashboard
+        fallback_reason: X app access and posting permissions depend on the account plan and app review state.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: directional
+          console_url: directional
+          api_key_url: directional
+          docs_url: verified
+          fallback_url: directional
+  - key: linkedin-api
+    name: LinkedIn API
+    description: LinkedIn publishing provider contract for member or organization posts where API access permits it.
+    auth_type: oauth
+    auth_methods:
+      - key: oauth2_token
+        label: OAuth2 token
+        auth_type: oauth
+        payload_format: json
+        fields:
+          - key: access_token
+            label: Access Token
+            type: secret
+            secret: true
+            required: true
+          - key: refresh_token
+            label: Refresh Token
+            type: secret
+            secret: true
+            required: false
+          - key: author_ref
+            label: Author Ref
+            type: text
+            secret: false
+            required: false
+    config:
+      setup_note: LinkedIn posting APIs require app permissions that may not be available for every account. Charters may use operator-assisted mode instead.
+      setup:
+        credential_label: LinkedIn OAuth token
+        setup_note: Create or select a LinkedIn developer app, request the required posting access, and store OAuth material plus safe author refs in StackOS.
+        homepage_url: https://www.linkedin.com/developers/
+        signup_url: https://www.linkedin.com/developers/
+        console_url: https://www.linkedin.com/developers/apps
+        api_key_url: https://www.linkedin.com/developers/apps
+        docs_url: https://learn.microsoft.com/linkedin/
+        fallback_url: https://learn.microsoft.com/linkedin/marketing/
+        fallback_reason: LinkedIn product access and posting permissions are app/account specific.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: verified
+          signup_url: directional
+          console_url: directional
+          api_key_url: directional
+          docs_url: verified
+          fallback_url: directional
+  - key: esp
+    name: Email Service Provider
+    description: Provider-agnostic ESP contract for digest or standalone authority emails with list management, opt-in, unsubscribe, and metrics owned by the ESP.
+    auth_type: api-key
+    auth_methods:
+      - key: api_key
+        label: API key
+        auth_type: api-key
+        payload_format: json
+        fields:
+          - key: api_key
+            label: API Key
+            type: secret
+            secret: true
+            required: true
+          - key: sender_ref
+            label: Sender Ref
+            type: text
+            secret: false
+            required: false
+          - key: audience_ref
+            label: Audience Ref
+            type: text
+            secret: false
+            required: false
+    config:
+      setup_note: Concrete ESP selection is a Level 2 project decision. Do not use raw SMTP for branding distribution.
+      setup:
+        credential_label: ESP API key
+        setup_note: Select a project-approved ESP that exposes send and metrics APIs, then store only its API key and safe sender/audience refs in StackOS.
+        homepage_url: https://resend.com/
+        signup_url: https://resend.com/signup
+        docs_url: https://resend.com/docs
+        fallback_url: https://resend.com/docs/send-with-nodejs
+        fallback_reason: Resend is a directional ESP/API example; Level 2 may select Buttondown, ConvertKit, Resend, or another compliant ESP.
+        verified_at: "2026-06-11"
+        url_confidence:
+          homepage_url: directional
+          signup_url: directional
+          docs_url: directional
+          fallback_url: directional
+  - key: channel-metrics
+    name: Channel Metrics
+    description: Provider-neutral metrics contract for channel-native outcome snapshots.
+    auth_type: mixed
+    auth_methods:
+      - key: channel_credential
+        label: Channel credential
+        auth_type: mixed
+        payload_format: json
+        fields:
+          - key: provider_ref
+            label: Provider Ref
+            type: text
+            secret: false
+            required: true
+          - key: access_token
+            label: Access Token
+            type: secret
+            secret: true
+            required: false
+          - key: api_key
+            label: API Key
+            type: secret
+            secret: true
+            required: false
+    config:
+      setup_note: Metrics retrieval is channel-specific. Level 2 maps each channel charter to a provider credential, permission scope, and snapshot cadence.
+      setup:
+        credential_label: Channel metrics credential
+        setup_note: Use the selected channel provider's analytics or API console, then store only the provider credential material and safe provider ref in StackOS.
+        docs_url: https://developers.google.com/analytics
+        fallback_url: https://developers.google.com/analytics
+        fallback_reason: There is no single metrics console for all branding channels; use the concrete channel provider selected in the Level 2 overlay.
+        verified_at: "2026-06-11"
+        url_confidence:
+          docs_url: directional
+          fallback_url: directional
+actions:
+  - key: publish.git-blog
+    name: Publish Git Blog Piece
+    description: Publish an approved canonical piece to a git-backed site repo.
+    provider: git-remote
+    capability: content-distribution
+    risk_level: write
+    input_schema: &publish_git_blog_input
+      type: object
+      additionalProperties: false
+      required:
+        - content_piece_ref
+        - canonical_artifact_ref
+        - target_path
+      properties:
+        content_piece_ref:
+          type: string
+        canonical_artifact_ref:
+          type: string
+        target_path:
+          type: string
+        commit_message:
+          type: string
+        branch:
+          type: string
+        canonical_url:
+          type: string
+        decision_ref:
+          type: string
+        approval_ref:
+          type: string
+    output_schema: &object_schema
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-git-publisher
+      deferred_reason: Git-backed canonical publishing needs a dedicated daemon connector for checkout, commit, push, and artifact rendering.
+  - key: publish.x
+    name: Publish X Post
+    description: Publish an approved X post or thread after an explicit per-send approval gate.
+    provider: x-api
+    capability: content-distribution
+    risk_level: write
+    input_schema: &publish_social_input
+      type: object
+      additionalProperties: false
+      required:
+        - distribution_record_ref
+        - content_piece_ref
+        - rendition_artifact_ref
+        - channel_ref
+      properties:
+        distribution_record_ref:
+          type: string
+        content_piece_ref:
+          type: string
+        rendition_artifact_ref:
+          type: string
+        channel_ref:
+          type: string
+        canonical_url:
+          type: string
+        approval_ref:
+          type: string
+        scheduled_for:
+          type: string
+        thread_policy:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-social-publisher
+      deferred_reason: X publishing needs a dedicated connector for OAuth scope validation, post/thread creation, idempotency, and provider response audit.
+  - key: publish.linkedin
+    name: Publish LinkedIn Post
+    description: Publish an approved LinkedIn member or organization post where API access permits it.
+    provider: linkedin-api
+    capability: content-distribution
+    risk_level: write
+    input_schema: *publish_social_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-social-publisher
+      deferred_reason: LinkedIn publishing needs a dedicated connector and may be replaced by operator-assisted mode where API access is unavailable.
+  - key: publish.email
+    name: Publish Email
+    description: Send an approved digest or standalone authority email through a configured ESP API.
+    provider: esp
+    capability: content-distribution
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - content_piece_ref
+        - rendition_artifact_ref
+        - channel_ref
+        - audience_ref
+      properties:
+        content_piece_ref:
+          type: string
+        rendition_artifact_ref:
+          type: string
+        channel_ref:
+          type: string
+        audience_ref:
+          type: string
+        subject:
+          type: string
+        canonical_url:
+          type: string
+        approval_ref:
+          type: string
+        scheduled_for:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-esp-publisher
+      deferred_reason: ESP provider is intentionally undecided; implement a concrete API connector before executing email sends.
+  - key: distribution.snapshot
+    name: Snapshot Distribution Outcome
+    description: Pull channel-native metrics for one distribution record into outcome snapshots.
+    provider: channel-metrics
+    capability: outcome-learning
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - distribution_record_ref
+        - channel_ref
+        - provider_publish_ref
+      properties:
+        distribution_record_ref:
+          type: string
+        channel_ref:
+          type: string
+        provider_publish_ref:
+          type: string
+        snapshot_label:
+          type: string
+          enum:
+            - t_plus_1d
+            - t_plus_7d
+            - t_plus_30d
+            - manual
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      execution_mode: deferred-channel-metrics
+      deferred_reason: Outcome metrics need channel-specific connectors and permission mapping from the Level 2 channel charter.
+  - key: evidence.capture
+    name: Capture Branding Evidence
+    description: Capture or update one operational evidence item from a structured, traceable payload.
+    capability: evidence-governance
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - evidence_type
+        - source
+        - captured_at
+      properties:
+        title:
+          type: string
+        evidence_type:
+          type: string
+          enum:
+            - incident
+            - metric
+            - artifact
+            - run
+            - learning
+            - outcome
+        source:
+          type: object
+          additionalProperties: false
+          required:
+            - system
+            - ref
+          properties:
+            system:
+              type: string
+            ref:
+              type: string
+            url:
+              type: string
+        external_id:
+          type: string
+        captured_at:
+          type: string
+        summary:
+          type: string
+        evidence_payload:
+          type: object
+          additionalProperties: true
+        stream_refs:
+          type: array
+          items:
+            type: string
+        altitude:
+          type: string
+          enum:
+            - A0
+            - A1
+            - A2
+            - A3
+            - A4
+        sanitization_status:
+          type: string
+          enum:
+            - raw
+          default: raw
+    output_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - evidence_ref
+        - resource_record_id
+        - sanitization_status
+      properties:
+        evidence_ref:
+          type: string
+        resource_record_id:
+          type: integer
+        sanitization_status:
+          type: string
+          enum:
+            - raw
+            - cleared
+            - blocked
+    config:
+      schema_version: stackos.action.v1
+      connector: branding
+      operation: evidence.capture
+      default_sanitization_status: raw
+  - key: evidence.sanitize-mark
+    name: Mark Evidence Sanitization
+    description: Record a cleared or blocked sanitization verdict with reviewer and reason.
+    capability: evidence-governance
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - evidence_ref
+        - verdict
+        - reviewer
+        - reason
+        - decision_ref
+      properties:
+        evidence_ref:
+          type: string
+        verdict:
+          type: string
+          enum:
+            - cleared
+            - blocked
+        reviewer:
+          type: string
+        reason:
+          type: string
+        decision_ref:
+          type: string
+        decided_at:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - evidence_ref
+        - resource_record_id
+        - verdict
+      properties:
+        evidence_ref:
+          type: string
+        resource_record_id:
+          type: integer
+        verdict:
+          type: string
+          enum:
+            - cleared
+            - blocked
+        decision_ref:
+          type: string
+    config:
+      schema_version: stackos.action.v1
+      connector: branding
+      operation: evidence.sanitize-mark
+resources:
+  - key: brand-profile
+    name: Brand Profile
+    description: Generic operator identity, masthead, voice rules, editorial filter, and sanitization policy reference.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - profile_name
+        - status
+      properties:
+        profile_name:
+          type: string
+        status:
+          type: string
+          enum:
+            - draft
+            - active
+            - retired
+        identity:
+          type: object
+          additionalProperties: false
+          properties:
+            display_name:
+              type: string
+            handle_conventions:
+              type: string
+            bio_conventions:
+              type: string
+            masthead:
+              type: string
+        base_voice_register:
+          type: string
+          description: Project-adapted base register summary, not operator-specific sample copy in this Level 1 template.
+        editorial_filter:
+          type: object
+          additionalProperties: false
+          properties:
+            evidence_requirement:
+              type: string
+            untraceable_claim_default:
+              type: string
+              enum:
+                - cut
+            canonical_first:
+              type: boolean
+        voice_rules:
+          type: array
+          items:
+            type: string
+        kill_tests:
+          type: array
+          items:
+            type: string
+        sanitization_policy_ref:
+          type: string
+        notes:
+          type: string
+    ui_schema:
+      table_columns:
+        - profile_name
+        - status
+        - sanitization_policy_ref
+      summary_fields:
+        - base_voice_register
+      detail_sections:
+        - title: Identity
+          fields:
+            - profile_name
+            - status
+            - identity
+        - title: Voice
+          fields:
+            - base_voice_register
+            - voice_rules
+            - kill_tests
+        - title: Governance
+          fields:
+            - editorial_filter
+            - sanitization_policy_ref
+            - notes
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: brand-profile
+      agent_guidance: Keep the Level 1 profile generic; Level 2 overlays provide actual voice, identity conventions, and disclosure policy refs.
+  - key: position
+    name: Position
+    description: Standing opinion or doctrine with evidence base, lifecycle state, and deployment log.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - statement
+        - status
+      properties:
+        statement:
+          type: string
+        rationale:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - retired
+            - forming
+        evidence_refs:
+          type: array
+          items:
+            type: string
+        altitude:
+          type: string
+          enum: &altitude_enum
+            - A0
+            - A1
+            - A2
+            - A3
+            - A4
+        deploy_log:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              content_piece_ref:
+                type: string
+              channel_refs:
+                type: array
+                items:
+                  type: string
+              deployed_at:
+                type: string
+              outcome_summary:
+                type: string
+        audit_state:
+          type: object
+          additionalProperties: false
+          properties:
+            last_reviewed_at:
+              type: string
+            last_decision_ref:
+              type: string
+            review_notes:
+              type: string
+    ui_schema:
+      table_columns:
+        - statement
+        - status
+        - altitude
+      summary_fields:
+        - rationale
+      detail_sections:
+        - title: Position
+          fields:
+            - statement
+            - rationale
+            - status
+            - altitude
+        - title: Evidence
+          fields:
+            - evidence_refs
+            - audit_state
+        - title: Deployment
+          fields:
+            - deploy_log
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: position
+      agent_guidance: Treat positions as evidence-backed standing opinions. Do not create operator-specific positions in the generic plugin.
+  - key: evidence-item
+    name: Evidence Item
+    description: One captured operational receipt that may support public claims after sanitization clearance.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - evidence_type
+        - source
+        - captured_at
+        - sanitization_status
+      properties:
+        title:
+          type: string
+        evidence_type:
+          type: string
+          enum:
+            - incident
+            - metric
+            - artifact
+            - run
+            - learning
+            - outcome
+        source:
+          type: object
+          additionalProperties: false
+          required:
+            - system
+            - ref
+          properties:
+            system:
+              type: string
+            ref:
+              type: string
+            url:
+              type: string
+            captured_by:
+              type: string
+        captured_at:
+          type: string
+        summary:
+          type: string
+        evidence_payload:
+          type: object
+          additionalProperties: true
+        sanitization_status:
+          type: string
+          enum:
+            - raw
+            - cleared
+            - blocked
+        sanitization_verdict:
+          type: object
+          additionalProperties: false
+          required:
+            - verdict
+            - reviewer
+            - reason
+            - decided_at
+            - decision_ref
+          properties:
+            verdict:
+              type: string
+              enum:
+                - cleared
+                - blocked
+            reviewer:
+              type: string
+            reason:
+              type: string
+            decided_at:
+              type: string
+            decision_ref:
+              type: string
+        stream_refs:
+          type: array
+          items:
+            type: string
+        altitude:
+          type: string
+          enum: *altitude_enum
+        claim_refs:
+          type: array
+          items:
+            type: string
+      allOf:
+        - if:
+            properties:
+              sanitization_status:
+                enum:
+                  - cleared
+                  - blocked
+            required:
+              - sanitization_status
+          then:
+            required:
+              - sanitization_verdict
+    ui_schema:
+      table_columns:
+        - title
+        - evidence_type
+        - sanitization_status
+        - captured_at
+      summary_fields:
+        - summary
+      detail_sections:
+        - title: Receipt
+          fields:
+            - title
+            - evidence_type
+            - source
+            - captured_at
+            - summary
+            - evidence_payload
+        - title: Clearance
+          fields:
+            - sanitization_status
+            - sanitization_verdict
+        - title: Usage
+          fields:
+            - stream_refs
+            - altitude
+            - claim_refs
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: evidence-item
+      agent_guidance: Capture receipts without embellishment. Public claims may use only cleared evidence; blocked evidence wins conflicts.
+  - key: stream
+    name: Stream
+    description: Recurring authority format definition with altitude, source-of-record description, cadence, outline, and default channel plan.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - stream_name
+        - altitude
+        - status
+      properties:
+        stream_name:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - paused
+            - retired
+        altitude:
+          type: string
+          enum: *altitude_enum
+        altitude_meaning:
+          type: string
+          description: A0 short positions, A1 doctrine/frameworks, A2 systems deep-dives, A3 operations ground truth, A4 adoptable artifacts.
+        source_of_record_description:
+          type: string
+        cadence:
+          type: object
+          additionalProperties: false
+          properties:
+            target:
+              type: string
+            minimum_gap:
+              type: string
+            review_cadence:
+              type: string
+        template_outline:
+          type: string
+        evidence_depth:
+          type: string
+        default_channel_plan:
+          type: array
+          description: Routing prior; strategist must confirm or explain deviations per piece before drafting.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - channel_ref
+              - rationale
+            properties:
+              channel_ref:
+                type: string
+              role:
+                type: string
+              rationale:
+                type: string
+              primary:
+                type: boolean
+        notes:
+          type: string
+    ui_schema:
+      table_columns:
+        - stream_name
+        - status
+        - altitude
+      summary_fields:
+        - source_of_record_description
+        - cadence
+      detail_sections:
+        - title: Format
+          fields:
+            - stream_name
+            - status
+            - altitude
+            - altitude_meaning
+            - template_outline
+            - evidence_depth
+        - title: Cadence
+          fields:
+            - cadence
+        - title: Routing Prior
+          fields:
+            - default_channel_plan
+            - notes
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: stream
+      agent_guidance: Streams define repeatable content form and routing priors; do not treat priors as mechanical fan-out.
+  - key: channel
+    name: Channel
+    description: Distribution surface charter with role, audience, register delta, form contract, cadence caps, routing criteria, publication mode, and success signals.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - channel_name
+        - publication_mode
+        - status
+      properties:
+        channel_name:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - paused
+            - retired
+        role:
+          type: string
+          description: Example roles include archive, discourse, professional reach, or relationship; Level 2 may define other roles.
+        audience:
+          type: string
+        register_delta:
+          type: string
+        form_contract:
+          type: object
+          additionalProperties: false
+          properties:
+            accepted_forms:
+              type: array
+              items:
+                type: string
+            length_guidance:
+              type: string
+            link_policy:
+              type: string
+            media_policy:
+              type: string
+            no_new_claims:
+              type: boolean
+        cadence_caps:
+          type: object
+          additionalProperties: true
+        routing_criteria:
+          type: array
+          items:
+            type: string
+        publication_mode:
+          type: string
+          enum:
+            - api
+            - operator-assisted
+        provider_action_ref:
+          type: string
+        operator_assisted_instructions:
+          type: string
+        success_signals:
+          type: array
+          items:
+            type: string
+        kill_tests:
+          type: array
+          items:
+            type: string
+    ui_schema:
+      table_columns:
+        - channel_name
+        - role
+        - publication_mode
+        - status
+      summary_fields:
+        - audience
+        - register_delta
+      detail_sections:
+        - title: Charter
+          fields:
+            - channel_name
+            - status
+            - role
+            - audience
+            - register_delta
+            - form_contract
+        - title: Routing And Cadence
+          fields:
+            - cadence_caps
+            - routing_criteria
+            - success_signals
+        - title: Publication
+          fields:
+            - publication_mode
+            - provider_action_ref
+            - operator_assisted_instructions
+            - kill_tests
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: channel
+      agent_guidance: A channel is a charter, not just a destination. Publication mode controls whether StackOS executes an API action or prepares an operator handoff.
+  - key: routing-policy
+    name: Routing Policy
+    description: Cross-channel routing rules, canonical-first invariant, cadence caps, link conventions, and ratified governance history.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - policy_name
+        - status
+        - canonical_first
+      properties:
+        policy_name:
+          type: string
+        status:
+          type: string
+          enum:
+            - draft
+            - active
+            - retired
+        canonical_first:
+          type: boolean
+        native_short_exception:
+          type: object
+          additionalProperties: false
+          properties:
+            allowed:
+              type: boolean
+            collection_cadence:
+              type: string
+            requirements:
+              type: array
+              items:
+                type: string
+        stagger_windows:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              channel_ref:
+                type: string
+              window:
+                type: string
+        global_frequency_caps:
+          type: object
+          additionalProperties: true
+        link_attribution_conventions:
+          type: array
+          items:
+            type: string
+        routing_decision_requirements:
+          type: array
+          items:
+            type: string
+        ratified_decision_refs:
+          type: array
+          items:
+            type: string
+    ui_schema:
+      table_columns:
+        - policy_name
+        - status
+        - canonical_first
+      summary_fields:
+        - global_frequency_caps
+      detail_sections:
+        - title: Invariants
+          fields:
+            - canonical_first
+            - native_short_exception
+            - link_attribution_conventions
+        - title: Timing
+          fields:
+            - stagger_windows
+            - global_frequency_caps
+        - title: Governance
+          fields:
+            - routing_decision_requirements
+            - ratified_decision_refs
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: routing-policy
+      agent_guidance: Treat routing policy as governed state. Changes require ratified decision records; never silently mutate routing rules during production.
+  - key: content-piece
+    name: Content Piece
+    description: One evidence-grounded unit of thinking with channel plan, evidence map, canonical URL, renditions, and lifecycle status.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - piece_type
+        - status
+      properties:
+        title:
+          type: string
+        piece_type:
+          type: string
+          enum:
+            - standard
+            - digest
+            - native-short
+        status:
+          type: string
+          enum:
+            - captured
+            - routed
+            - drafted
+            - evidence-checked
+            - voice-checked
+            - sanitized
+            - approved
+            - renditions-ready
+            - published
+            - measured
+        stream_ref:
+          type: string
+        altitude:
+          type: string
+          enum: *altitude_enum
+        evidence_refs:
+          type: array
+          items:
+            type: string
+        claim_evidence_map:
+          type: array
+          description: Every claim must point to cleared evidence refs, or the claim is cut.
+          items:
+            type: object
+            additionalProperties: false
+            allOf:
+              - if:
+                  properties:
+                    verdict:
+                      const: supported
+                  required:
+                    - verdict
+                then:
+                  required:
+                    - evidence_refs
+                  properties:
+                    evidence_refs:
+                      minItems: 1
+            required:
+              - claim_ref
+              - verdict
+            properties:
+              claim_ref:
+                type: string
+              claim_text:
+                type: string
+              evidence_refs:
+                type: array
+                items:
+                  type: string
+              verdict:
+                type: string
+                enum:
+                  - supported
+                  - cut
+                  - needs-review
+        channel_plan:
+          type: array
+          description: Channels plus rationale and decision refs, decided before drafting and confirmed after canonical draft.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - channel_ref
+              - rationale
+              - decision_ref
+            properties:
+              channel_ref:
+                type: string
+              role:
+                type: string
+              rationale:
+                type: string
+              decision_ref:
+                type: string
+              deviation_from_stream_default:
+                type: boolean
+              confirmed_after_draft:
+                type: boolean
+              confirmation_notes:
+                type: string
+        canonical_artifact_ref:
+          type: string
+        canonical_url:
+          type: string
+        approval_ref:
+          type: string
+        renditions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              channel_ref:
+                type: string
+              form:
+                type: string
+              artifact_ref:
+                type: string
+              status:
+                type: string
+              inherited_evidence_map:
+                type: boolean
+        review_log:
+          type: array
+          contains:
+            type: object
+            required:
+              - review_type
+            properties:
+              review_type:
+                const: claim
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - review_type
+              - verdict
+              - reviewer
+              - artifact_ref
+              - reviewed_at
+            properties:
+              review_type:
+                type: string
+                enum:
+                  - claim
+                  - voice
+                  - sanitization
+              verdict:
+                type: string
+              reviewer:
+                type: string
+              artifact_ref:
+                type: string
+              reviewed_at:
+                type: string
+      allOf:
+        - if:
+            properties:
+              status:
+                enum:
+                  - routed
+                  - drafted
+                  - evidence-checked
+                  - voice-checked
+                  - sanitized
+                  - approved
+                  - renditions-ready
+                  - published
+                  - measured
+            required:
+              - status
+          then:
+            required:
+              - channel_plan
+        - if:
+            properties:
+              status:
+                enum:
+                  - drafted
+                  - evidence-checked
+                  - voice-checked
+                  - sanitized
+                  - approved
+                  - renditions-ready
+                  - published
+                  - measured
+            required:
+              - status
+          then:
+            required:
+              - canonical_artifact_ref
+              - evidence_refs
+        - if:
+            properties:
+              status:
+                enum:
+                  - evidence-checked
+                  - voice-checked
+                  - sanitized
+                  - approved
+                  - renditions-ready
+                  - published
+                  - measured
+            required:
+              - status
+          then:
+            required:
+              - claim_evidence_map
+        - if:
+            properties:
+              status:
+                enum:
+                  - approved
+                  - renditions-ready
+                  - published
+                  - measured
+            required:
+              - status
+          then:
+            required:
+              - approval_ref
+              - review_log
+            properties:
+              review_log:
+                allOf:
+                  - contains:
+                      type: object
+                      required:
+                        - review_type
+                      properties:
+                        review_type:
+                          const: claim
+                  - contains:
+                      type: object
+                      required:
+                        - review_type
+                      properties:
+                        review_type:
+                          const: voice
+                  - contains:
+                      type: object
+                      required:
+                        - review_type
+                      properties:
+                        review_type:
+                          const: sanitization
+        - if:
+            properties:
+              status:
+                enum:
+                  - renditions-ready
+                  - published
+                  - measured
+            required:
+              - status
+          then:
+            required:
+              - renditions
+        - if:
+            properties:
+              status:
+                enum:
+                  - published
+                  - measured
+              piece_type:
+                not:
+                  const: native-short
+            required:
+              - status
+              - piece_type
+          then:
+            required:
+              - canonical_url
+    ui_schema:
+      table_columns:
+        - title
+        - piece_type
+        - status
+        - canonical_url
+      summary_fields:
+        - stream_ref
+        - altitude
+      detail_sections:
+        - title: Piece
+          fields:
+            - title
+            - piece_type
+            - status
+            - stream_ref
+            - altitude
+        - title: Evidence And Routing
+          fields:
+            - evidence_refs
+            - claim_evidence_map
+            - channel_plan
+        - title: Canonical And Renditions
+          fields:
+            - canonical_artifact_ref
+            - canonical_url
+            - approval_ref
+            - renditions
+            - review_log
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: content-piece
+      agent_guidance: This is the unit of output. Keep the channel plan, claim map, canonical URL, renditions, and status in one record; do not split truth across duplicate docs.
+  - key: distribution-record
+    name: Distribution Record
+    description: One publication or operator-assisted send of one rendition on one channel, with outcome snapshots and qualitative results.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - content_piece_ref
+        - channel_ref
+        - publication_mode
+        - status
+        - canonical_mode
+      properties:
+        content_piece_ref:
+          type: string
+        channel_ref:
+          type: string
+        rendition_form:
+          type: string
+        rendition_artifact_ref:
+          type: string
+        publication_mode:
+          type: string
+          enum:
+            - api
+            - operator-assisted
+        status:
+          type: string
+          enum:
+            - planned
+            - approval-needed
+            - handed-off
+            - published
+            - failed
+            - measured
+        canonical_mode:
+          type: string
+          enum:
+            - canonical-first
+            - native-short-exception
+        scheduled_for:
+          type: string
+        published_at:
+          type: string
+        canonical_url:
+          type: string
+        native_short_collection_ref:
+          type: string
+        provider_publish_ref:
+          type: string
+        operator_handoff_packet_ref:
+          type: string
+        operator_publication_ref:
+          type: string
+        approval_ref:
+          type: string
+        outcome_snapshots:
+          type: object
+          additionalProperties: false
+          properties:
+            t_plus_1d:
+              type: object
+              additionalProperties: true
+            t_plus_7d:
+              type: object
+              additionalProperties: true
+            t_plus_30d:
+              type: object
+              additionalProperties: true
+        qualitative_outcomes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - outcome_type
+              - summary
+              - source_ref
+            properties:
+              outcome_type:
+                type: string
+              summary:
+                type: string
+              source_ref:
+                type: string
+              promoted_evidence_ref:
+                type: string
+      allOf:
+        - if:
+            properties:
+              status:
+                enum:
+                  - approval-needed
+                  - handed-off
+                  - published
+                  - measured
+            required:
+              - status
+          then:
+            required:
+              - rendition_artifact_ref
+        - if:
+            properties:
+              canonical_mode:
+                const: canonical-first
+              status:
+                enum:
+                  - approval-needed
+                  - handed-off
+                  - published
+                  - measured
+            required:
+              - canonical_mode
+              - status
+          then:
+            required:
+              - canonical_url
+        - if:
+            properties:
+              canonical_mode:
+                const: native-short-exception
+              status:
+                enum:
+                  - approval-needed
+                  - handed-off
+                  - published
+                  - measured
+            required:
+              - canonical_mode
+              - status
+          then:
+            required:
+              - native_short_collection_ref
+        - if:
+            properties:
+              status:
+                enum:
+                  - handed-off
+                  - published
+                  - measured
+            required:
+              - status
+          then:
+            required:
+              - approval_ref
+        - if:
+            properties:
+              publication_mode:
+                const: api
+              status:
+                enum:
+                  - published
+                  - measured
+            required:
+              - publication_mode
+              - status
+          then:
+            required:
+              - provider_publish_ref
+              - published_at
+        - if:
+            properties:
+              publication_mode:
+                const: operator-assisted
+              status:
+                enum:
+                  - handed-off
+            required:
+              - publication_mode
+              - status
+          then:
+            required:
+              - operator_handoff_packet_ref
+        - if:
+            properties:
+              publication_mode:
+                const: operator-assisted
+              status:
+                enum:
+                  - published
+                  - measured
+            required:
+              - publication_mode
+              - status
+          then:
+            required:
+              - operator_handoff_packet_ref
+              - operator_publication_ref
+    ui_schema:
+      table_columns:
+        - content_piece_ref
+        - channel_ref
+        - publication_mode
+        - status
+        - canonical_mode
+        - published_at
+      summary_fields:
+        - rendition_form
+        - canonical_url
+      detail_sections:
+        - title: Send
+          fields:
+            - content_piece_ref
+            - channel_ref
+            - rendition_form
+            - publication_mode
+            - status
+            - canonical_mode
+            - scheduled_for
+            - published_at
+        - title: References
+          fields:
+            - rendition_artifact_ref
+            - canonical_url
+            - native_short_collection_ref
+            - provider_publish_ref
+            - operator_handoff_packet_ref
+            - operator_publication_ref
+            - approval_ref
+        - title: Outcomes
+          fields:
+            - outcome_snapshots
+            - qualitative_outcomes
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: distribution-record
+      agent_guidance: Record API and operator-assisted sends the same way. Outcome snapshots and notable replies can become future evidence-items.
+ui:
+  nav:
+    section: Branding
+    items:
+      - key: branding.resources
+        label: Data
+        to: resources?plugin_slug=branding
+        matchPrefix: true
+      - key: branding.templates
+        label: Workflows
+        to: workflow-templates?plugin_slug=branding
+config:
+  schema_version: stackos.plugin.v1
+  level: 1
+  project_adaptation: required
+  generic_boundary: No operator-specific voice, sources, channel handles, positions, or disclosure rules belong in this plugin.
+  provider_connectors:
+    status: partial
+    executable:
+      - evidence.capture
+      - evidence.sanitize-mark
+    deferred:
+      - publish.git-blog
+      - publish.x
+      - publish.linkedin
+      - publish.email
+      - distribution.snapshot

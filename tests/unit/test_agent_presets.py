@@ -13,7 +13,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     listing = AgentPresetLoader().list_presets()
     keys = {item.key for item in listing.presets}
 
-    assert len(keys) == 35
+    assert len(keys) == 43
     assert "stackos.sdlc.requirements-flow-definer" in keys
     assert "stackos.sdlc.codebase-explorer" in keys
     assert "stackos.sdlc.planning" in keys
@@ -33,6 +33,14 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert "communications.workflow.rich-telegram-reply" in keys
     assert "trackbooth.agent-api-operator" in keys
     assert "stackos.workflow.workflow-author" in keys
+    assert "branding.evidence-curator" in keys
+    assert "branding.narrative-writer" in keys
+    assert "branding.distribution-strategist" in keys
+    assert "branding.claim-auditor" in keys
+    assert "branding.voice-reviewer" in keys
+    assert "branding.sanitization-reviewer" in keys
+    assert "branding.distribution-operator" in keys
+    assert "branding.brand-strategist" in keys
     assert "trackbooth.workflow-author" not in keys
     assert all(item.generic_preset for item in listing.presets)
     assert all(item.adaptation_required for item in listing.presets)
@@ -48,6 +56,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert by_key["stackos.sdlc.requirements-flow-definer"].plugin_slug == "engineering"
     assert by_key["trackbooth.agent-api-operator"].plugin_slug == "trackbooth"
     assert by_key["stackos.workflow.workflow-author"].plugin_slug == "core"
+    assert by_key["branding.claim-auditor"].plugin_slug == "branding"
 
 
 def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
@@ -108,6 +117,67 @@ def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> N
     assert "route approval" in contract_text
     assert "every inbound media item" in contract_text
     assert "partial forwarding" in contract_text
+
+
+def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None:
+    loader = AgentPresetLoader()
+    curator = loader.describe_preset(key="branding.evidence-curator")
+    claim = loader.describe_preset(key="branding.claim-auditor")
+    voice = loader.describe_preset(key="branding.voice-reviewer")
+    sanitization = loader.describe_preset(key="branding.sanitization-reviewer")
+    operator = loader.describe_preset(key="branding.distribution-operator")
+    strategist = loader.describe_preset(key="branding.distribution-strategist")
+
+    claim_text = " ".join(
+        [
+            claim.preset.prompt_contract.mission,
+            *claim.preset.prompt_contract.must_do,
+            *claim.preset.prompt_contract.must_not_do,
+            *claim.preset.prompt_contract.self_check,
+        ]
+    )
+    operator_text = " ".join(
+        [
+            operator.preset.prompt_contract.mission,
+            *operator.preset.prompt_contract.must_do,
+            *operator.preset.prompt_contract.must_not_do,
+        ]
+    )
+    strategist_text = " ".join(
+        [
+            strategist.preset.prompt_contract.mission,
+            *strategist.preset.prompt_contract.must_do,
+            *strategist.preset.prompt_contract.must_not_do,
+        ]
+    )
+    claim_refs = [item.ref for item in claim.preset.project_adaptation.required_context_refs]
+
+    assert claim.summary.plugin_slug == "branding"
+    assert claim.preset.project_adaptation.required is True
+    assert "stackos:stackos" in claim_refs
+    assert "Level 2 branding overlay" in claim_refs
+    assert "Default unsupported or untraceable claims to cut" in claim_text
+    assert "Do not publish or decide routing" in claim_text
+    assert "Do not send without approval" in operator_text
+    assert "Do not change channel plan" in operator_text
+    assert "Do not publish, send, or operate provider actions" in strategist_text
+    assert "branding.digest-assembly" in claim.preset.applies_to_workflows
+    assert "branding.rendition-production" in sanitization.preset.applies_to_workflows
+    assert "branding.outcome-capture" in sanitization.preset.applies_to_workflows
+    assert "action.execute" in curator.preset.recommended_tools
+    assert "action.execute" in operator.preset.recommended_tools
+    assert "action.execute" not in strategist.preset.recommended_tools
+    assert "decision.record" in strategist.preset.recommended_tools
+    mutating_tools = {
+        "resource.upsert",
+        "artifact.create",
+        "decision.record",
+        "action.execute",
+        "runPlan.claimStep",
+        "runPlan.recordStep",
+    }
+    for reviewer in (claim, voice, sanitization):
+        assert mutating_tools.isdisjoint(reviewer.preset.recommended_tools)
 
 
 def test_trackbooth_agent_preset_names_runtime_sync_and_stackos_boundaries() -> None:

@@ -233,6 +233,8 @@ cover the migrated clean path for:
 - `ahrefs`: `seo.competitor.keywords`, `seo.backlink.research`
 - `wordpress`: `publishing.wordpress.post.create`
 - `ghost`: `publishing.ghost.post.create`
+- `branding`: `branding.evidence.capture`,
+  `branding.evidence.sanitize-mark`
 - `http`: static custom HTTP/Webhook actions declared by installed plugins
 - `telegram-bot`: project-scoped Telegram bot identity, message/photo sends,
   callback answers, diagnostic update inspection, and webhook set/delete/info

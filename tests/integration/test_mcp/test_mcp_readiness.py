@@ -102,6 +102,76 @@ def test_readiness_check_keeps_engineering_workflow_usable_without_provider_nois
     assert readiness["next_steps"][0]["tool"] == "runPlan.create"
 
 
+def test_readiness_check_branding_evidence_harvest_internal_actions_ready(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {"project_id": project_id, "workflow_key": "branding.evidence-harvest"},
+    )
+
+    assert readiness["scope"] == "workflow"
+    assert readiness["ready"] is True
+    assert readiness["execution_ready"] is True
+    assert readiness["missing"] == []
+    refs = {item["action_ref"] for item in readiness["actions"]}
+    assert {"branding.evidence.capture", "branding.evidence.sanitize-mark"} <= refs
+    assert {item["availability_status"] for item in readiness["actions"]} == {"ready"}
+
+
+def test_readiness_check_deferred_branding_action_points_to_action_describe(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {"project_id": project_id, "action_ref": "branding.publish.x"},
+    )
+
+    assert readiness["scope"] == "action"
+    assert readiness["ready"] is False
+    assert readiness["execution_ready"] is False
+    missing = readiness["missing"][0]
+    assert missing["code"] == "execution_mode_not_directly_executable"
+    assert missing["action_ref"] == "branding.publish.x"
+    assert missing["setup"]["provider_key"] == "x-api"
+    assert missing["setup"]["console_url"] == "https://developer.x.com/en/portal/dashboard"
+    assert missing["ui_url"].endswith(f"/projects/{project_id}/connections?provider_key=x-api")
+    assert readiness["next_steps"][0]["tool"] == "action.describe"
+    assert readiness["next_steps"][0]["arguments"] == {
+        "project_id": project_id,
+        "action_ref": "branding.publish.x",
+    }
+    assert readiness["next_steps"][0]["setup"]["provider_key"] == "x-api"
+
+
+def test_readiness_check_branding_distribution_deferred_actions_include_setup(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {"project_id": project_id, "workflow_key": "branding.distribution-run"},
+    )
+
+    deferred = {
+        item["action_ref"]: item
+        for item in readiness["missing"]
+        if item["code"] == "execution_mode_not_directly_executable"
+    }
+    assert deferred["branding.publish.x"]["setup"]["provider_key"] == "x-api"
+    assert deferred["branding.publish.x"]["setup"]["docs_url"] == "https://docs.x.com/"
+    assert deferred["branding.publish.email"]["setup"]["provider_key"] == "esp"
+    assert deferred["branding.publish.git-blog"]["setup"]["provider_key"] == "git-remote"
+
+
 def test_readiness_check_reports_customer_support_workflow_slack_setup(
     mcp_client: MCPClient,
     seeded_project: dict,

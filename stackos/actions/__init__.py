@@ -11,6 +11,7 @@ from stackos.action_availability import (
 from stackos.actions.ahrefs import AhrefsActionConnector
 from stackos.actions.alibaba_wan import AlibabaWanVideoActionConnector
 from stackos.actions.apollo import ApolloActionConnector
+from stackos.actions.branding import BrandingActionConnector
 from stackos.actions.byteplus_seedance import BytePlusSeedanceVideoActionConnector
 from stackos.actions.byteplus_seedream import BytePlusSeedreamImageActionConnector
 from stackos.actions.clay import ClayActionConnector
@@ -91,6 +92,7 @@ DEFAULT_ACTION_CONNECTORS.register(HttpActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(HubSpotActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SalesforceActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ApolloActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(BrandingActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(PipedriveActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(OutreachActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SalesloftActionConnector())
@@ -126,6 +128,7 @@ __all__ = [
     "AhrefsActionConnector",
     "AlibabaWanVideoActionConnector",
     "ApolloActionConnector",
+    "BrandingActionConnector",
     "BytePlusSeedanceVideoActionConnector",
     "BytePlusSeedreamImageActionConnector",
     "ClayActionConnector",

@@ -43,6 +43,7 @@ from stackos.repositories.projects import (
     IntegrationCredentialRepository,
     ProjectRepository,
 )
+from stackos.repositories.resources import ResourceRepository
 from stackos.repositories.run_plans import RunPlanRepository
 
 
@@ -4428,6 +4429,96 @@ def test_firecrawl_extract_is_manifest_deferred_until_status_action_exists(
     assert described.manifest.connector_key is None
     assert described.availability.status == "deferred"
     assert described.availability.execution_mode == "deferred-firecrawl-async-extract"
+
+
+def test_branding_evidence_actions_capture_raw_and_mark_sanitization(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = ActionRepository(session)
+    capture_payload = {
+        "title": "Kitchen run receipt",
+        "evidence_type": "run",
+        "source": {"system": "ops-ledger", "ref": "run-42", "url": "https://example.com/run-42"},
+        "captured_at": "2026-06-11T10:00:00Z",
+        "summary": "Service recovery run completed.",
+        "evidence_payload": {"duration_minutes": 17},
+        "stream_refs": ["ops-ground-truth"],
+        "altitude": "A3",
+    }
+
+    validation = repo.validate(
+        project_id=project_id,
+        action_ref="branding.evidence.capture",
+        input_json=capture_payload,
+    )
+    created = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="branding.evidence.capture",
+            input_json=capture_payload,
+        )
+    ).data
+
+    assert validation.valid is True
+    assert validation.connector_registered is True
+    assert created.output_json["sanitization_status"] == "raw"
+    record_id = created.output_json["resource_record_id"]
+    record = ResourceRepository(session).get_record(record_id)
+    assert record.plugin_slug == "branding"
+    assert record.resource_key == "evidence-item"
+    assert record.data_json["sanitization_status"] == "raw"
+    assert record.data_json["source"]["system"] == "ops-ledger"
+
+    invalid_capture = repo.validate(
+        project_id=project_id,
+        action_ref="branding.evidence.capture",
+        input_json={**capture_payload, "sanitization_status": "cleared"},
+    )
+    assert invalid_capture.valid is False
+    assert {issue.code for issue in invalid_capture.issues} >= {
+        "enum_mismatch",
+        "fail_closed_clearance",
+    }
+
+    missing_decision = repo.validate(
+        project_id=project_id,
+        action_ref="branding.evidence.sanitize-mark",
+        input_json={
+            "evidence_ref": created.output_json["evidence_ref"],
+            "verdict": "cleared",
+            "reviewer": "operator",
+            "reason": "Public-safe aggregate receipt.",
+        },
+    )
+    assert missing_decision.valid is False
+    assert any(issue.path == "$.decision_ref" for issue in missing_decision.issues)
+
+    marked = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="branding.evidence.sanitize-mark",
+            input_json={
+                "evidence_ref": created.output_json["evidence_ref"],
+                "verdict": "cleared",
+                "reviewer": "operator",
+                "reason": "Public-safe aggregate receipt.",
+                "decision_ref": "decision:clear-run-42",
+                "decided_at": "2026-06-11T11:00:00Z",
+            },
+        )
+    ).data
+    updated = ResourceRepository(session).get_record(record_id)
+
+    assert marked.output_json["verdict"] == "cleared"
+    assert updated.data_json["sanitization_status"] == "cleared"
+    assert updated.data_json["sanitization_verdict"] == {
+        "verdict": "cleared",
+        "reviewer": "operator",
+        "reason": "Public-safe aggregate receipt.",
+        "decision_ref": "decision:clear-run-42",
+        "decided_at": "2026-06-11T11:00:00Z",
+    }
 
 
 def test_salesforce_builtin_account_upsert_uses_external_id_endpoint(

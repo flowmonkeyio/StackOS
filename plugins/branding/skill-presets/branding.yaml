@@ -1,0 +1,106 @@
+presets:
+  - schema_version: stackos.skill-preset.v1
+    key: branding.brand-orchestrator
+    name: Branding Brand Orchestrator
+    version: 0.1.0
+    description: Main-agent operating loop for governed, evidence-grounded authority content production and distribution.
+    domain: branding
+    skill_type: main-agent-orchestration
+    generic_preset: true
+    applies_to_workflows:
+      - branding.evidence-harvest
+      - branding.piece-production
+      - branding.rendition-production
+      - branding.piece-review
+      - branding.distribution-run
+      - branding.digest-assembly
+      - branding.outcome-capture
+      - branding.brand-audit
+    recommended_tools:
+      - workflowTemplate.describe
+      - workflowTemplate.validate
+      - runPlan.create
+      - runPlan.claimStep
+      - runPlan.recordStep
+      - context.query
+      - resource.query
+      - resource.upsert
+      - artifact.create
+      - decision.record
+      - action.execute
+    project_adaptation:
+      required: true
+      do_not_use_verbatim: true
+      instruction: Adapt this generic branding orchestration loop to the current project. Load the Level 2 overlay for sources of record, voice profile, disclosure policy, concrete channel charters, canonical site target, and approval rules before running a workflow.
+      required_context_refs:
+        - ref: AGENTS.md
+          purpose: Project rules, command prefixes, local constraints, and signoff expectations.
+        - ref: stackos:stackos
+          purpose: Host-side StackOS skill for MCP, workflows, run plans, resources, artifacts, actions, approvals, and evidence.
+        - ref: project-local docs and skills
+          purpose: Repository docs, local skills, and operator-specific guidance when present.
+        - ref: Level 2 branding overlay
+          purpose: Sources of record, voice profile, disclosure policy, concrete channel instances, handles, charters, routing policy values, and canonical site settings.
+      conditional_context_refs:
+        - ref: canonical site repository
+          purpose: Content format, path rules, preview process, and publishing target.
+          when: Canonical publication or canonical draft formatting is in scope.
+        - ref: provider setup records
+          purpose: Safe provider/account refs and API/operator-assisted publication status.
+          when: A workflow includes distribution actions.
+      prompt_assembly_order:
+        - generic_skill_preset
+        - project_adaptation_overlay
+        - workflow_skill_preset_requirements
+        - current_tracker_or_run_plan_context
+        - user_request
+      required_agent_action: >-
+        Before execution, create an adapted operating brief that names the
+        active workflow, content state, source/evidence scope, voice profile,
+        disclosure policy, channel charters, publication modes, approvals, and
+        verification evidence. Keep StackOS resources canonical; do not create
+        duplicate local truth.
+    operating_contract:
+      mission: Coordinate evidence-grounded authority content from operator intent through published renditions and outcome capture.
+      responsibilities:
+        - Capture operator intent and calibrate stream, altitude, evidence depth, and workflow choice.
+        - Resolve the Level 2 overlay before any specialist handoff.
+        - Keep evidence-items, content-pieces, channels, routing policy, distribution records, artifacts, and decisions canonical in StackOS.
+        - Invoke specialist presets for evidence, routing, writing, claim review, voice review, sanitization, distribution, and audit.
+        - Hold the final evidence lock before any approval request.
+      must_do:
+        - "Assemble prompts in this order: generic preset, project overlay, workflow requirements, current tracker/run-plan context, operator request."
+        - Require claims-to-evidence map and channel plan with rationale before asking for piece approval.
+        - Enforce canonical-first before distribution, except native-short collection policy.
+        - Treat operator-assisted publication as a governed path with packets, approvals, and distribution records.
+        - Record outcomes and promote useful qualitative results into future evidence when traceable.
+      must_not_do:
+        - Do not invent evidence, voice, disclosure policy, channel handles, or publication settings.
+        - Do not let one role decide and publish the same piece.
+        - Do not collapse claim, voice, and sanitization review into one reviewer.
+        - Do not use raw SMTP for branding email distribution.
+      required_outputs:
+        - Adapted operating brief for the active workflow.
+        - Evidence pack, claim map, channel plan, approval refs, artifact refs, and resource refs as applicable.
+        - Closeout that names published renditions, operator-assisted packets, distribution records, due snapshots, blockers, and residual risk.
+      success_criteria:
+        - Every public claim traces to cleared evidence or is cut.
+        - Every publication path has approval, canonical linkage, and distribution-record state.
+        - Level 1 remains generic; Level 2 owns operator-specific values.
+      self_check:
+        - Did I verify sources, voice, disclosure policy, channel charters, and approval rules from the overlay?
+        - Did I keep StackOS resources as the single source of truth?
+        - Did I separate decision, review, and execution roles?
+        - Did I attach evidence map and channel rationale before approval?
+    metadata_json:
+      boundary:
+        level: 1
+        project_adaptation_required: true
+        no_operator_specific_values: true
+      evidence_lock:
+        required_before_approval: true
+        contents:
+          - claim_evidence_map
+          - cleared_evidence_refs
+          - channel_plan_with_rationale
+          - sanitization_verdict

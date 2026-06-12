@@ -592,6 +592,8 @@ def _missing_item(
             workflow_key=workflow_key,
             provider_key=provider_key,
             next_tool="action.describe",
+            ui_url=_connections_url(project_id, provider_key) if provider_key else None,
+            setup=provider_setup,
         )
     if reason.startswith("execution_mode:"):
         required_for = _required_for(
@@ -609,6 +611,8 @@ def _missing_item(
             workflow_key=workflow_key,
             provider_key=provider_key,
             next_tool="action.describe",
+            ui_url=_connections_url(project_id, provider_key) if provider_key else None,
+            setup=provider_setup,
         )
     if reason.startswith("project_id_required"):
         return None
@@ -687,18 +691,48 @@ def _next_steps_for_action(
         ReadinessNextStepOut(
             tool=missing.next_tool or "action.describe",
             reason=missing.message,
-            arguments={
-                key: value
-                for key, value in {
-                    "project_id": project_id,
-                    "provider_key": missing.provider_key,
-                }.items()
-                if value is not None
-            },
+            arguments=_next_step_arguments(project_id=project_id, missing=missing),
             ui_url=missing.ui_url,
             setup=missing.setup,
         )
     ]
+
+
+def _next_step_arguments(
+    *,
+    project_id: int,
+    missing: ReadinessMissingItemOut,
+) -> dict[str, object]:
+    tool = missing.next_tool or "action.describe"
+    if tool == "action.describe":
+        return {
+            key: value
+            for key, value in {
+                "project_id": project_id,
+                "action_ref": missing.action_ref,
+            }.items()
+            if value is not None
+        }
+    if tool in {"auth.status", "auth.test"}:
+        return {
+            key: value
+            for key, value in {
+                "project_id": project_id,
+                "provider_key": missing.provider_key,
+            }.items()
+            if value is not None
+        }
+    if tool in {"budget.set", "budget.update"}:
+        return {
+            key: value
+            for key, value in {
+                "project_id": project_id,
+                "budget_kind": missing.budget_kind,
+                "provider_key": missing.provider_key,
+            }.items()
+            if value is not None
+        }
+    return {"project_id": project_id}
 
 
 def _compact_action_summary(action: ReadinessActionOut) -> ReadinessActionOut:

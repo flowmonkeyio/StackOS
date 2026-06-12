@@ -1,0 +1,202 @@
+schema_version: stackos.workflow-template.v1
+key: branding.piece-review
+name: Branding Piece Review
+version: 0.1.0
+description: Re-runnable adversarial review for a canonical draft or channel rendition without running production.
+domain: branding
+owner:
+  team: StackOS
+when_to_use:
+  - A draft or rendition needs standalone claim, voice, and sanitization review.
+  - A prior production run repaired content and needs focused re-review.
+when_not_to_use:
+  - The task is full production from evidence; use branding.piece-production.
+agent_requirements:
+  - role: claim-auditor
+    requirement: required
+    agent_preset_ref: branding.claim-auditor
+    purpose: Rank unsupported claims above every other finding.
+    applies_to_steps:
+      - claim-audit
+  - role: voice-reviewer
+    requirement: required
+    agent_preset_ref: branding.voice-reviewer
+    purpose: Check base register and channel form when a target channel is provided.
+    applies_to_steps:
+      - voice-check
+  - role: sanitization-reviewer
+    requirement: required
+    agent_preset_ref: branding.sanitization-reviewer
+    purpose: Apply disclosure policy and fail closed on unclear exposure.
+    applies_to_steps:
+      - sanitization-check
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Resolve evidence, content-piece, channel, and artifact refs for review.
+skill_preset_requirements:
+  - skill_preset_ref: branding.brand-orchestrator
+    requirement: required
+    purpose: Keep standalone review aligned with the evidence lock, role separation, and StackOS resource/artifact truth.
+inputs:
+  - key: target_artifact_ref
+    name: Target Artifact Ref
+    type: string
+    required: true
+  - key: content_piece_ref
+    name: Content Piece Ref
+    type: string
+    required: false
+  - key: channel_ref
+    name: Channel Ref
+    type: string
+    required: false
+context_requirements:
+  - id: evidence_items
+    source: resources
+    purpose: Evidence records available for claim traceability.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - evidence-item
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 50
+    return_mode: compact
+  - id: content_pieces
+    source: resources
+    purpose: Optional canonical content-piece and evidence map.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - content-piece
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 20
+    return_mode: compact
+  - id: channel_charters
+    source: resources
+    purpose: Optional target channel charter for form and voice review.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - channel
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 30
+    return_mode: compact
+capability_requirements:
+  - key: authority-content
+    required: true
+action_contracts: []
+resource_contracts:
+  - key: evidence
+    resource: evidence-item
+    purpose: Cleared evidence used for claim traceability.
+  - key: piece
+    resource: content-piece
+    purpose: Optional canonical piece and claim evidence map.
+  - key: channel
+    resource: channel
+    purpose: Optional target channel charter.
+policies:
+  - key: severity_order
+    kind: review
+    description: Findings are ordered unsupported claim, sanitization risk, voice drift, charter-form violation.
+  - key: read_only_review
+    kind: governance
+    description: Reviewers produce findings and do not rewrite, publish, or decide routing.
+approval_gates: []
+steps:
+  - id: load-review-package
+    title: Load Review Package
+    purpose: Resolve artifact, evidence map, and optional channel charter.
+    input_refs:
+      - target_artifact_ref
+      - content_piece_ref
+      - channel_ref
+    context_refs:
+      - evidence_items
+      - content_pieces
+      - channel_charters
+    resource_refs:
+      - evidence
+      - piece
+      - channel
+    policy_refs:
+      - read_only_review
+    output_refs:
+      - review_package
+    success_criteria:
+      - Review scope and available evidence are explicit.
+  - id: claim-audit
+    title: Claim Audit
+    purpose: Trace claims or identify unsupported claims to cut.
+    depends_on:
+      - load-review-package
+    policy_refs:
+      - severity_order
+      - read_only_review
+    output_refs:
+      - claim_findings
+    success_criteria:
+      - Unsupported claims are the highest severity.
+  - id: voice-check
+    title: Voice Check
+    purpose: Check adapted voice and channel form without changing text.
+    depends_on:
+      - claim-audit
+    policy_refs:
+      - severity_order
+      - read_only_review
+    output_refs:
+      - voice_findings
+    success_criteria:
+      - Voice and form findings are separate from claim findings.
+  - id: sanitization-check
+    title: Sanitization Check
+    purpose: Apply disclosure policy and fail closed.
+    depends_on:
+      - voice-check
+    policy_refs:
+      - severity_order
+      - read_only_review
+    output_refs:
+      - sanitization_findings
+    success_criteria:
+      - Blocked verdicts include reasons and stop release.
+  - id: findings-report
+    title: Findings Report
+    purpose: Produce ordered review report with repair guidance.
+    depends_on:
+      - sanitization-check
+    policy_refs:
+      - severity_order
+    output_refs:
+      - review_report
+    success_criteria:
+      - Report is ordered by severity and names the evidence or policy behind each finding.
+outputs:
+  - key: review_package
+    type: object
+  - key: claim_findings
+    type: array
+  - key: voice_findings
+    type: array
+  - key: sanitization_findings
+    type: array
+  - key: review_report
+    type: object
+failure_handling:
+  - If evidence refs are unavailable, mark claim review blocked instead of approving by intuition.
+metadata:
+  plugin_slug: branding
+  grants:
+    - context.query
+    - artifact.create

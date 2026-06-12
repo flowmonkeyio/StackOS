@@ -48,6 +48,8 @@ actions:
   resources, and generic agent request triggers.
 - `engineering`: tracked delivery workflow, SDLC agent presets, and engineering
   decision/evidence records.
+- `branding`: governed, evidence-grounded authority content production,
+  canonical-first distribution, and outcome capture.
 - `gtm`: go-to-market and RevOps provider contracts, resources, and templates.
 - `marketing`: campaign production workflow, brand profile and campaign brief
   records, signoff evidence, and creative production agent presets.
@@ -119,8 +121,10 @@ credential inside the connector process.
 
 If a first-party provider connector is not implemented yet, mark the action with
 an explicit `execution_mode` and `deferred_reason` instead of omitting intent.
-The action remains visible for planning, templating, auth setup, and resource
-design, while availability reports the deferred or project-local state.
+The action remains available through catalog/setup inspection and
+`include_unavailable_integrations=true` for planning, templating, auth setup,
+and resource design, while normal action discovery hides it until execution is
+actually available.
 
 ## Resources
 

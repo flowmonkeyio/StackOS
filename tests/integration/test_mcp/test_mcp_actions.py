@@ -177,6 +177,19 @@ def test_action_list_hides_disconnected_external_integrations_by_default(
             "include_unavailable_integrations": True,
         },
     )
+    branding_internal = mcp_client.call_tool_structured(
+        "action.list",
+        {"project_id": project_id, "plugin_slug": "branding", "query": "evidence"},
+    )
+    branding_internal_full = mcp_client.call_tool_structured(
+        "action.list",
+        {
+            "project_id": project_id,
+            "plugin_slug": "branding",
+            "query": "evidence",
+            "include_unavailable_integrations": True,
+        },
+    )
 
     assert not any(item["action_ref"] == "utils.image.generate" for item in hidden["items"])
     assert hidden["hidden_count"] >= 1
@@ -193,6 +206,22 @@ def test_action_list_hides_disconnected_external_integrations_by_default(
     assert extract_items
     assert extract_items[0]["exposure"]["visible_by_default"] is False
     assert extract_items[0]["exposure"]["hidden_reason"] == "action_deferred"
+    visible_evidence_items = [
+        item
+        for item in branding_internal["items"]
+        if item["action_ref"] == "branding.evidence.capture"
+    ]
+    assert visible_evidence_items
+    assert visible_evidence_items[0]["availability_status"] == "ready"
+    assert visible_evidence_items[0]["exposure"]["visible_by_default"] is True
+    evidence_items = [
+        item
+        for item in branding_internal_full["items"]
+        if item["action_ref"] == "branding.evidence.capture"
+    ]
+    assert evidence_items
+    assert evidence_items[0]["availability_status"] == "ready"
+    assert evidence_items[0]["exposure"]["visible_by_default"] is True
 
 
 def test_action_list_exposes_serper_only_after_connection(

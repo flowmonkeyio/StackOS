@@ -1,0 +1,262 @@
+schema_version: stackos.workflow-template.v1
+key: branding.outcome-capture
+name: Branding Outcome Capture
+version: 0.1.0
+description: Scheduled workflow that pulls due distribution snapshots, records outcomes, and promotes useful qualitative outcomes into future evidence.
+domain: branding
+owner:
+  team: StackOS
+when_to_use:
+  - Distribution records have due T+1d, T+7d, or T+30d snapshots.
+  - Replies, questions, citations, or requests should be captured as future evidence.
+when_not_to_use:
+  - Publication has not happened yet; use branding.distribution-run.
+agent_requirements:
+  - role: distribution-strategist
+    requirement: required
+    agent_preset_ref: branding.distribution-strategist
+    purpose: Interpret outcome signals against channel charters and flag qualitative outcomes.
+    applies_to_steps:
+      - flag-qualitative-outcomes
+      - update-health-rollups
+  - role: evidence-curator
+    requirement: required
+    agent_preset_ref: branding.evidence-curator
+    purpose: Promote flagged outcomes into traceable evidence-items.
+    applies_to_steps:
+      - promote-outcomes
+  - role: sanitization-reviewer
+    requirement: required
+    agent_preset_ref: branding.sanitization-reviewer
+    purpose: Prepare cleared or blocked public-use recommendations for promoted outcome evidence.
+    applies_to_steps:
+      - clear-promoted-outcomes
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Execute snapshot actions and update distribution/evidence resources.
+skill_preset_requirements:
+  - skill_preset_ref: branding.brand-orchestrator
+    requirement: required
+    purpose: Close the content feedback loop without duplicating outcome truth.
+inputs:
+  - key: snapshot_due_window
+    name: Snapshot Due Window
+    type: string
+    required: false
+context_requirements:
+  - id: distribution_records
+    source: resources
+    purpose: Find due distribution snapshots and prior metrics.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - distribution-record
+    fields:
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 50
+    return_mode: compact
+  - id: channel_charters
+    source: resources
+    purpose: Interpret outcomes using channel success signals.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - channel
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 30
+    return_mode: compact
+  - id: content_pieces
+    source: resources
+    purpose: Link outcomes back to canonical pieces and streams.
+    filters:
+      plugin_slug: branding
+      resource_keys:
+        - content-piece
+    fields:
+      - title
+      - status
+      - data_json
+    max_items: 50
+    return_mode: compact
+capability_requirements:
+  - key: outcome-learning
+    required: true
+  - key: evidence-governance
+    required: true
+auth_requirements:
+  - key: channel_metrics
+    provider: channel-metrics
+    auth_type: mixed
+    optional: true
+action_contracts:
+  - key: distribution_snapshot
+    action: distribution.snapshot
+    capability: outcome-learning
+    provider: channel-metrics
+    optional: true
+    risk_level: read
+    auth_ref: channel_metrics
+  - key: evidence_capture
+    action: evidence.capture
+    capability: evidence-governance
+    optional: true
+    risk_level: write
+  - key: sanitize_mark
+    action: evidence.sanitize-mark
+    capability: evidence-governance
+    optional: true
+    risk_level: write
+resource_contracts:
+  - key: distribution_records
+    resource: distribution-record
+    purpose: Outcome snapshots and qualitative outcomes.
+    required: true
+  - key: evidence_items
+    resource: evidence-item
+    purpose: Promoted outcomes as future evidence.
+    required: true
+  - key: content_pieces
+    resource: content-piece
+    purpose: Link outcomes to content and stream health.
+  - key: channels
+    resource: channel
+    purpose: Channel charter success signals.
+policies:
+  - key: outcome_traceability
+    kind: traceability
+    description: Outcome snapshots and qualitative outcomes retain channel, publication, and source refs.
+  - key: feedback_flywheel
+    kind: learning
+    description: Notable inbound questions, replies, and citations may become evidence-items for future positions.
+approval_gates:
+  - key: outcome_evidence_clearance
+    description: Operator marks promoted outcome evidence raw, cleared, or blocked before it can support future public claims.
+    required_when: when qualitative outcomes are promoted
+    approver: operator
+steps:
+  - id: find-due-snapshots
+    title: Find Due Snapshots
+    purpose: Identify distribution records with due outcome snapshots.
+    input_refs:
+      - snapshot_due_window
+    context_refs:
+      - distribution_records
+      - channel_charters
+    resource_refs:
+      - distribution_records
+      - channels
+    output_refs:
+      - due_snapshot_records
+    success_criteria:
+      - Due records are grouped by channel and snapshot label.
+  - id: run-snapshots
+    title: Run Snapshots
+    purpose: Pull channel-native metrics where connectors are available or record operator-assisted metric collection needs.
+    depends_on:
+      - find-due-snapshots
+    action_refs:
+      - distribution_snapshot
+    resource_refs:
+      - distribution_records
+    policy_refs:
+      - outcome_traceability
+    output_refs:
+      - snapshot_results
+    success_criteria:
+      - Snapshot results include source refs and timestamp.
+      - Missing connectors are visible as deferred collection items.
+  - id: flag-qualitative-outcomes
+    title: Flag Qualitative Outcomes
+    purpose: Identify notable replies, inbound questions, requests, or citations.
+    depends_on:
+      - run-snapshots
+    context_refs:
+      - content_pieces
+      - channel_charters
+    policy_refs:
+      - feedback_flywheel
+    output_refs:
+      - flagged_outcomes
+    success_criteria:
+      - Qualitative outcomes are linked to channel and content-piece refs.
+  - id: promote-outcomes
+    title: Promote Outcomes
+    purpose: Capture flagged outcomes as evidence-items when they have enough traceability.
+    depends_on:
+      - flag-qualitative-outcomes
+    action_refs:
+      - evidence_capture
+    resource_refs:
+      - evidence_items
+      - distribution_records
+    policy_refs:
+      - outcome_traceability
+    output_refs:
+      - promoted_evidence_refs
+    success_criteria:
+      - Promoted outcomes preserve original distribution refs.
+      - Non-promoted outcomes have reasons.
+      - Promoted evidence remains raw unless separately cleared.
+  - id: clear-promoted-outcomes
+    title: Clear Promoted Outcomes
+    purpose: Apply operator clearance and sanitization verdicts to promoted outcome evidence.
+    depends_on:
+      - promote-outcomes
+    action_refs:
+      - sanitize_mark
+    approval_refs:
+      - outcome_evidence_clearance
+    resource_refs:
+      - evidence_items
+      - distribution_records
+    policy_refs:
+      - outcome_traceability
+      - feedback_flywheel
+    output_refs:
+      - outcome_clearance_summary
+    success_criteria:
+      - Cleared and blocked promoted outcomes include reviewer, reason, and timestamp.
+      - Ambiguous outcomes remain raw or blocked and cannot support public claims.
+  - id: update-health-rollups
+    title: Update Health Rollups
+    purpose: Summarize stream and channel health for later brand audits.
+    depends_on:
+      - clear-promoted-outcomes
+    resource_refs:
+      - content_pieces
+      - channels
+      - distribution_records
+    output_refs:
+      - health_rollup
+    success_criteria:
+      - Rollups distinguish metric snapshots from qualitative evidence.
+outputs:
+  - key: due_snapshot_records
+    type: array
+  - key: snapshot_results
+    type: array
+  - key: flagged_outcomes
+    type: array
+  - key: promoted_evidence_refs
+    type: array
+  - key: outcome_clearance_summary
+    type: object
+  - key: health_rollup
+    type: object
+failure_handling:
+  - If metrics access is unavailable, record the missing access and preserve the distribution-record for manual follow-up.
+metadata:
+  plugin_slug: branding
+  grants:
+    - context.query
+    - action.execute:distribution_snapshot
+    - action.execute:evidence_capture
+    - action.execute:sanitize_mark
+    - resource.upsert
