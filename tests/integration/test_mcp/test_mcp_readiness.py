@@ -102,7 +102,7 @@ def test_readiness_check_keeps_engineering_workflow_usable_without_provider_nois
     assert readiness["next_steps"][0]["tool"] == "runPlan.create"
 
 
-def test_readiness_check_branding_evidence_harvest_internal_actions_ready(
+def test_readiness_check_branding_content_optional_image_setup(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -110,16 +110,20 @@ def test_readiness_check_branding_evidence_harvest_internal_actions_ready(
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "workflow_key": "branding.evidence-harvest"},
+        {"project_id": project_id, "workflow_key": "branding.content-production"},
     )
 
     assert readiness["scope"] == "workflow"
     assert readiness["ready"] is True
     assert readiness["execution_ready"] is True
-    assert readiness["missing"] == []
+    assert readiness["workflow"]["workflow_key"] == "branding.content-production"
     refs = {item["action_ref"] for item in readiness["actions"]}
-    assert {"branding.evidence.capture", "branding.evidence.sanitize-mark"} <= refs
-    assert {item["availability_status"] for item in readiness["actions"]} == {"ready"}
+    assert "utils.image.generate" in refs
+    assert {
+        item["required_for"]
+        for item in readiness["missing"]
+        if item["provider_key"] == "openai-images"
+    } == {"optional_action_execution"}
 
 
 def test_readiness_check_deferred_branding_action_points_to_action_describe(
@@ -150,7 +154,7 @@ def test_readiness_check_deferred_branding_action_points_to_action_describe(
     assert readiness["next_steps"][0]["setup"]["provider_key"] == "x-api"
 
 
-def test_readiness_check_branding_distribution_deferred_actions_include_setup(
+def test_readiness_check_branding_content_optional_image_setup(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -158,18 +162,18 @@ def test_readiness_check_branding_distribution_deferred_actions_include_setup(
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "workflow_key": "branding.distribution-run"},
+        {"project_id": project_id, "workflow_key": "branding.content-production"},
     )
 
-    deferred = {
-        item["action_ref"]: item
-        for item in readiness["missing"]
-        if item["code"] == "execution_mode_not_directly_executable"
-    }
-    assert deferred["branding.publish.x"]["setup"]["provider_key"] == "x-api"
-    assert deferred["branding.publish.x"]["setup"]["docs_url"] == "https://docs.x.com/"
-    assert deferred["branding.publish.email"]["setup"]["provider_key"] == "esp"
-    assert deferred["branding.publish.git-blog"]["setup"]["provider_key"] == "git-remote"
+    image_missing = [
+        item for item in readiness["missing"] if item.get("action_ref") == "utils.image.generate"
+    ]
+    assert readiness["ready"] is True
+    assert readiness["execution_ready"] is True
+    assert {item["code"] for item in image_missing} == {"credential_required", "budget_required"}
+    credential_missing = next(item for item in image_missing if item["code"] == "credential_required")
+    assert credential_missing["required_for"] == "optional_action_execution"
+    assert credential_missing["setup"]["provider_key"] == "openai-images"
 
 
 def test_readiness_check_reports_customer_support_workflow_slack_setup(

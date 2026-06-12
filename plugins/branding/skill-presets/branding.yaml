@@ -3,19 +3,12 @@ presets:
     key: branding.brand-orchestrator
     name: Branding Brand Orchestrator
     version: 0.1.0
-    description: Main-agent operating loop for governed, evidence-grounded authority content production and distribution.
+    description: Main-agent operating loop for interview-led, evidence-grounded authority content production and automated channel publication.
     domain: branding
     skill_type: main-agent-orchestration
     generic_preset: true
     applies_to_workflows:
-      - branding.evidence-harvest
-      - branding.piece-production
-      - branding.rendition-production
-      - branding.piece-review
-      - branding.distribution-run
-      - branding.digest-assembly
-      - branding.outcome-capture
-      - branding.brand-audit
+      - branding.content-production
     recommended_tools:
       - workflowTemplate.describe
       - workflowTemplate.validate
@@ -45,9 +38,6 @@ presets:
         - ref: canonical site repository
           purpose: Content format, path rules, preview process, and publishing target.
           when: Canonical publication or canonical draft formatting is in scope.
-        - ref: provider setup records
-          purpose: Safe provider/account refs and API/operator-assisted publication status.
-          when: A workflow includes distribution actions.
       prompt_assembly_order:
         - generic_skill_preset
         - project_adaptation_overlay
@@ -56,40 +46,51 @@ presets:
         - user_request
       required_agent_action: >-
         Before execution, create an adapted operating brief that names the
-        active workflow, content state, source/evidence scope, voice profile,
-        disclosure policy, channel charters, publication modes, approvals, and
-        verification evidence. Keep StackOS resources canonical; do not create
-        duplicate local truth.
+        active workflow, content state, interview/source/evidence scope, voice
+        profile, disclosure policy, channel charters, image generation plan
+        when selected, publication modes, approvals, verification evidence, and
+        the content-piece fields that will make the output findable later. Keep
+        StackOS resources canonical; do not create duplicate local truth.
     operating_contract:
-      mission: Coordinate evidence-grounded authority content from operator intent through published renditions and outcome capture.
+      mission: Coordinate evidence-grounded authority content from operator interview and intent through canonical drafts, channel publication jobs, optional generated images, approval, automated publication, and durable content memory.
       responsibilities:
-        - Capture operator intent and calibrate stream, altitude, evidence depth, and workflow choice.
+        - Capture operator intent through journalist-style questions and calibrate stream, altitude, evidence depth, image needs, and content scope.
         - Resolve the Level 2 overlay before any specialist handoff.
-        - Keep evidence-items, content-pieces, channels, routing policy, distribution records, artifacts, and decisions canonical in StackOS.
-        - Invoke specialist presets for evidence, routing, writing, claim review, voice review, sanitization, distribution, and audit.
+        - Query brand-profile, positions, prior content-pieces, evidence-items, and channels before drafting so new work stays consistent with previous work.
+        - Keep evidence-items, content-pieces, channels, routing policy, artifacts, and decisions canonical in StackOS.
+        - Treat the content-piece record as the future query index for approved work; artifacts store bulky content but never replace resource memory.
+        - Invoke specialist presets for evidence, routing, writing, claim review, voice review, and sanitization.
         - Hold the final evidence lock before any approval request.
       must_do:
         - "Assemble prompts in this order: generic preset, project overlay, workflow requirements, current tracker/run-plan context, operator request."
         - Require claims-to-evidence map and channel plan with rationale before asking for piece approval.
-        - Enforce canonical-first before distribution, except native-short collection policy.
-        - Treat operator-assisted publication as a governed path with packets, approvals, and distribution records.
-        - Record outcomes and promote useful qualitative results into future evidence when traceable.
+        - Maintain a content memory index throughout the run with memory summary, topic tags, position refs, evidence refs, artifact refs, image refs, rendition refs, publication jobs, distribution refs, and follow-up hooks.
+        - Treat generated images as optional but required when the selected structure or website packet needs them; require placement, prompt, acceptance criteria, and approval before spend.
+        - Enforce canonical-first before channel publication, except native-short collection policy.
+        - "Treat publication as automation-first after approval: use API integration, browser-assisted platform UI, site/admin UI, or local script when configured; use fallback handoff only when automation is unavailable, platform-blocked, or explicitly waived."
+        - Upsert the approved content-piece before closeout, and update positions or brand-profile only when the operator explicitly approves the change.
       must_not_do:
         - Do not invent evidence, voice, disclosure policy, channel handles, or publication settings.
-        - Do not let one role decide and publish the same piece.
+        - Do not leave approved work only in chat, local files, or artifacts without a content-piece resource ref.
+        - Do not let one role decide and review the same piece.
         - Do not collapse claim, voice, and sanitization review into one reviewer.
-        - Do not use raw SMTP for branding email distribution.
+        - Do not turn branding email into a raw SMTP send path.
       required_outputs:
         - Adapted operating brief for the active workflow.
         - Evidence pack, claim map, channel plan, approval refs, artifact refs, and resource refs as applicable.
-        - Closeout that names published renditions, operator-assisted packets, distribution records, due snapshots, blockers, and residual risk.
+        - Interview pack, selected angle, optional image plan, generated image artifact refs, channel packets, publication bundle, publication jobs, distribution records, and follow-up hooks when applicable.
+        - Content memory index and approved content-piece ref that future runs can query.
+        - Closeout that names each channel's publication status, URL/provider refs when published, automation mode used, publication bundle, approved content memory, blockers, and residual risk.
       success_criteria:
         - Every public claim traces to cleared evidence or is cut.
-        - Every publication path has approval, canonical linkage, and distribution-record state.
+        - Every channel publication job has approval, canonical linkage, publication bundle refs, distribution-record refs, and content-memory state.
+        - Future agents can recover the approved piece, artifact refs, image refs, publication jobs, distribution records, channel packets, positions, evidence, and follow-up hooks from StackOS resources without reading this chat.
         - Level 1 remains generic; Level 2 owns operator-specific values.
       self_check:
         - Did I verify sources, voice, disclosure policy, channel charters, and approval rules from the overlay?
+        - Did I interview for why, surprise, tradeoffs, stakes, and follow-up angles instead of relying only on logs?
         - Did I keep StackOS resources as the single source of truth?
+        - Did I upsert a content-piece memory index before closeout?
         - Did I separate decision, review, and execution roles?
         - Did I attach evidence map and channel rationale before approval?
     metadata_json:
@@ -103,4 +104,9 @@ presets:
           - claim_evidence_map
           - cleared_evidence_refs
           - channel_plan_with_rationale
+          - image_plan_when_selected
           - sanitization_verdict
+          - content_memory_index
+          - artifact_refs_indexed
+          - publication_jobs_indexed
+          - distribution_records_indexed

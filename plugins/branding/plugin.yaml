@@ -15,7 +15,7 @@ capabilities:
     kind: domain
   - key: content-distribution
     name: Content Distribution
-    description: Govern canonical-first distribution through API or operator-assisted publication modes.
+    description: Govern canonical-first distribution through API, browser, admin UI, script, or fallback handoff publication modes.
     kind: domain
   - key: outcome-learning
     name: Outcome Learning
@@ -144,7 +144,7 @@ providers:
             secret: false
             required: false
     config:
-      setup_note: LinkedIn posting APIs require app permissions that may not be available for every account. Charters may use operator-assisted mode instead.
+      setup_note: LinkedIn posting APIs require app permissions that may not be available for every account. Charters may use browser automation or another approved execution mode instead.
       setup:
         credential_label: LinkedIn OAuth token
         setup_note: Create or select a LinkedIn developer app, request the required posting access, and store OAuth material plus safe author refs in StackOS.
@@ -326,7 +326,7 @@ actions:
     config:
       schema_version: stackos.action.v1
       execution_mode: deferred-social-publisher
-      deferred_reason: LinkedIn publishing needs a dedicated connector and may be replaced by operator-assisted mode where API access is unavailable.
+      deferred_reason: LinkedIn publishing needs a dedicated connector and may be replaced by browser automation where API access is unavailable.
   - key: publish.email
     name: Publish Email
     description: Send an approved digest or standalone authority email through a configured ESP API.
@@ -973,10 +973,21 @@ resources:
           type: string
           enum:
             - api
-            - operator-assisted
+            - browser
+            - admin-ui
+            - script
+            - fallback-handoff
         provider_action_ref:
           type: string
-        operator_assisted_instructions:
+        browser_target:
+          type: string
+        admin_url:
+          type: string
+        script_ref:
+          type: string
+        execution_instructions:
+          type: string
+        fallback_handoff_instructions:
           type: string
         success_signals:
           type: array
@@ -1013,12 +1024,16 @@ resources:
           fields:
             - publication_mode
             - provider_action_ref
-            - operator_assisted_instructions
+            - browser_target
+            - admin_url
+            - script_ref
+            - execution_instructions
+            - fallback_handoff_instructions
             - kill_tests
     config:
       schema_version: stackos.resource.v1
       record_kind: channel
-      agent_guidance: A channel is a charter, not just a destination. Publication mode controls whether StackOS executes an API action or prepares an operator handoff.
+      agent_guidance: A channel is a charter, not just a destination. Publication mode controls whether the approved output is executed through a StackOS API action, browser automation, admin UI, project script, or a fallback handoff when automation is blocked.
   - key: routing-policy
     name: Routing Policy
     description: Cross-channel routing rules, canonical-first invariant, cadence caps, link conventions, and ratified governance history.
@@ -1104,7 +1119,7 @@ resources:
       agent_guidance: Treat routing policy as governed state. Changes require ratified decision records; never silently mutate routing rules during production.
   - key: content-piece
     name: Content Piece
-    description: One evidence-grounded unit of thinking with channel plan, evidence map, canonical URL, renditions, and lifecycle status.
+    description: One evidence-grounded unit of thinking with durable memory summary, channel plan, evidence map, canonical URL, image refs, renditions, publication jobs, follow-up hooks, and lifecycle status.
     schema:
       type: object
       additionalProperties: false
@@ -1139,6 +1154,17 @@ resources:
         altitude:
           type: string
           enum: *altitude_enum
+        memory_summary:
+          type: string
+          description: Future-facing summary of what this piece establishes, updates, or leaves open.
+        topic_tags:
+          type: array
+          items:
+            type: string
+        position_refs:
+          type: array
+          items:
+            type: string
         evidence_refs:
           type: array
           items:
@@ -1211,6 +1237,36 @@ resources:
           type: string
         approval_ref:
           type: string
+        image_refs:
+          type: array
+          description: Generated or selected image artifacts indexed for future reuse and inspection.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - artifact_ref
+              - placement
+            properties:
+              artifact_ref:
+                type: string
+              placement:
+                type: string
+              channel_ref:
+                type: string
+              source:
+                type: string
+                enum:
+                  - generated
+                  - existing
+                  - supplied
+              aspect_ratio:
+                type: string
+              prompt_artifact_ref:
+                type: string
+              acceptance_criteria:
+                type: array
+                items:
+                  type: string
         renditions:
           type: array
           items:
@@ -1227,6 +1283,92 @@ resources:
                 type: string
               inherited_evidence_map:
                 type: boolean
+        publication_bundle_ref:
+          type: string
+          description: Single channel-ready publication bundle artifact. It contains one platform-formatted section per selected channel with exact copy blocks, destination hints, image refs, filenames, alt text, and execution notes for API, browser, admin UI, script, or fallback use.
+        publication_jobs:
+          type: array
+          description: Per-channel publication execution index with exact copy, media refs, selected mode, execution target, status, and distribution refs.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - channel_ref
+              - publication_mode
+              - publication_bundle_ref
+              - packet_artifact_ref
+              - copy_artifact_ref
+              - status
+            properties:
+              channel_ref:
+                type: string
+              channel_name:
+                type: string
+              destination_hint:
+                type: string
+                description: Human-readable destination such as website path, X handle, LinkedIn page, or email list.
+              publication_mode:
+                type: string
+                enum:
+                  - api
+                  - browser
+                  - admin-ui
+                  - script
+                  - fallback-handoff
+              publication_bundle_ref:
+                type: string
+                description: Artifact containing the complete channel-ready publication bundle for all selected channels.
+              packet_artifact_ref:
+                type: string
+                description: Artifact containing the complete platform-formatted packet and execution notes.
+              copy_artifact_ref:
+                type: string
+                description: Artifact containing the exact text/copy to publish for this channel.
+              image_refs:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - artifact_ref
+                    - placement
+                  properties:
+                    artifact_ref:
+                      type: string
+                    placement:
+                      type: string
+                    alt_text:
+                      type: string
+                    filename_hint:
+                      type: string
+              provider_action_ref:
+                type: string
+              browser_target:
+                type: string
+              admin_url:
+                type: string
+              script_ref:
+                type: string
+              distribution_record_ref:
+                type: string
+              provider_publish_ref:
+                type: string
+              published_url:
+                type: string
+              execution_notes:
+                type: string
+              blocker_reason:
+                type: string
+              status:
+                type: string
+                enum:
+                  - approved
+                  - published
+                  - scheduled
+                  - staged
+                  - blocked
+                  - failed
+                  - skipped
         review_log:
           type: array
           contains:
@@ -1260,6 +1402,38 @@ resources:
                 type: string
               reviewed_at:
                 type: string
+        follow_up_hooks:
+          type: array
+          description: Candidate future pieces, unresolved questions, and continuation angles discovered during production.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - hook
+              - rationale
+            properties:
+              hook:
+                type: string
+              rationale:
+                type: string
+              evidence_refs:
+                type: array
+                items:
+                  type: string
+              position_refs:
+                type: array
+                items:
+                  type: string
+              suggested_channels:
+                type: array
+                items:
+                  type: string
+              status:
+                type: string
+                enum:
+                  - proposed
+                  - accepted
+                  - parked
       allOf:
         - if:
             properties:
@@ -1327,6 +1501,7 @@ resources:
             required:
               - approval_ref
               - review_log
+              - memory_summary
             properties:
               review_log:
                 allOf:
@@ -1363,6 +1538,8 @@ resources:
           then:
             required:
               - renditions
+              - publication_bundle_ref
+              - publication_jobs
         - if:
             properties:
               status:
@@ -1395,8 +1572,11 @@ resources:
             - status
             - stream_ref
             - altitude
+            - memory_summary
+            - topic_tags
         - title: Evidence And Routing
           fields:
+            - position_refs
             - evidence_refs
             - claim_evidence_map
             - channel_plan
@@ -1405,15 +1585,21 @@ resources:
             - canonical_artifact_ref
             - canonical_url
             - approval_ref
+            - image_refs
             - renditions
+            - publication_bundle_ref
+            - publication_jobs
             - review_log
+        - title: Future Memory
+          fields:
+            - follow_up_hooks
     config:
       schema_version: stackos.resource.v1
       record_kind: content-piece
-      agent_guidance: This is the unit of output. Keep the channel plan, claim map, canonical URL, renditions, and status in one record; do not split truth across duplicate docs.
+      agent_guidance: This is the unit of output and the future query index. Keep memory summary, topic tags, position refs, evidence refs, claim map, artifact refs, image refs, renditions, the publication bundle ref, publication jobs, distribution refs, follow-up hooks, and status in one record; artifacts hold bulky content but must not be the only source of truth.
   - key: distribution-record
     name: Distribution Record
-    description: One publication or operator-assisted send of one rendition on one channel, with outcome snapshots and qualitative results.
+    description: One publication attempt or result for one rendition on one channel, with automation mode, execution refs, outcome snapshots, and qualitative results.
     schema:
       type: object
       additionalProperties: false
@@ -1436,13 +1622,18 @@ resources:
           type: string
           enum:
             - api
-            - operator-assisted
+            - browser
+            - admin-ui
+            - script
+            - fallback-handoff
         status:
           type: string
           enum:
             - planned
             - approval-needed
-            - handed-off
+            - scheduled
+            - staged
+            - blocked
             - published
             - failed
             - measured
@@ -1461,9 +1652,17 @@ resources:
           type: string
         provider_publish_ref:
           type: string
-        operator_handoff_packet_ref:
+        automation_session_ref:
           type: string
-        operator_publication_ref:
+        script_run_ref:
+          type: string
+        publication_bundle_ref:
+          type: string
+        fallback_handoff_ref:
+          type: string
+        execution_log_ref:
+          type: string
+        blocker_reason:
           type: string
         approval_ref:
           type: string
@@ -1504,7 +1703,9 @@ resources:
               status:
                 enum:
                   - approval-needed
-                  - handed-off
+                  - scheduled
+                  - staged
+                  - blocked
                   - published
                   - measured
             required:
@@ -1519,7 +1720,8 @@ resources:
               status:
                 enum:
                   - approval-needed
-                  - handed-off
+                  - scheduled
+                  - staged
                   - published
                   - measured
             required:
@@ -1535,7 +1737,8 @@ resources:
               status:
                 enum:
                   - approval-needed
-                  - handed-off
+                  - scheduled
+                  - staged
                   - published
                   - measured
             required:
@@ -1548,7 +1751,9 @@ resources:
             properties:
               status:
                 enum:
-                  - handed-off
+                  - scheduled
+                  - staged
+                  - blocked
                   - published
                   - measured
             required:
@@ -1562,6 +1767,7 @@ resources:
                 const: api
               status:
                 enum:
+                  - scheduled
                   - published
                   - measured
             required:
@@ -1570,24 +1776,10 @@ resources:
           then:
             required:
               - provider_publish_ref
-              - published_at
         - if:
             properties:
               publication_mode:
-                const: operator-assisted
-              status:
-                enum:
-                  - handed-off
-            required:
-              - publication_mode
-              - status
-          then:
-            required:
-              - operator_handoff_packet_ref
-        - if:
-            properties:
-              publication_mode:
-                const: operator-assisted
+                const: api
               status:
                 enum:
                   - published
@@ -1597,8 +1789,69 @@ resources:
               - status
           then:
             required:
-              - operator_handoff_packet_ref
-              - operator_publication_ref
+              - published_at
+        - if:
+            properties:
+              publication_mode:
+                enum:
+                  - browser
+                  - admin-ui
+                  - script
+              status:
+                enum:
+                  - scheduled
+                  - staged
+                  - published
+                  - measured
+            required:
+              - publication_mode
+              - status
+          then:
+            required:
+              - execution_log_ref
+        - if:
+            properties:
+              publication_mode:
+                const: browser
+              status:
+                enum:
+                  - published
+                  - measured
+            required:
+              - publication_mode
+              - status
+          then:
+            required:
+              - automation_session_ref
+        - if:
+            properties:
+              publication_mode:
+                const: script
+              status:
+                enum:
+                  - published
+                  - measured
+            required:
+              - publication_mode
+              - status
+          then:
+            required:
+              - script_run_ref
+        - if:
+            properties:
+              publication_mode:
+                const: fallback-handoff
+              status:
+                enum:
+                  - blocked
+                  - staged
+            required:
+              - publication_mode
+              - status
+          then:
+            required:
+              - fallback_handoff_ref
+              - blocker_reason
     ui_schema:
       table_columns:
         - content_piece_ref
@@ -1627,8 +1880,12 @@ resources:
             - canonical_url
             - native_short_collection_ref
             - provider_publish_ref
-            - operator_handoff_packet_ref
-            - operator_publication_ref
+            - automation_session_ref
+            - script_run_ref
+            - publication_bundle_ref
+            - fallback_handoff_ref
+            - execution_log_ref
+            - blocker_reason
             - approval_ref
         - title: Outcomes
           fields:
@@ -1637,7 +1894,7 @@ resources:
     config:
       schema_version: stackos.resource.v1
       record_kind: distribution-record
-      agent_guidance: Record API and operator-assisted sends the same way. Outcome snapshots and notable replies can become future evidence-items.
+      agent_guidance: Record API, browser, admin UI, script, and fallback publication attempts the same way. Outcome snapshots and notable replies can become future evidence-items.
 ui:
   nav:
     section: Branding

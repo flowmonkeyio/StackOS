@@ -96,6 +96,11 @@ class WorkflowAuthoringGuideOut(BaseModel):
     summary: str
     audience: list[str]
     principles: list[str]
+    complete_package_scope: list[str]
+    package_authoring_path: list[str]
+    reasoning_gates: list[str]
+    mechanical_gates: list[str]
+    independent_signoff: list[str]
     decision_path: list[str]
     template_contract_fields: list[str]
     template_must_not_include: list[str]
@@ -127,12 +132,113 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "and run plans are concrete execution instances.",
             "Templates are inert contracts. Agents decide strategy; StackOS validates "
             "state, resolves safe refs, executes explicit calls, and records audit.",
+            "A workflow identity should represent one end-to-end job the operator can "
+            "ask for, not a composable stage that must be chained with other workflows "
+            "to finish one deliverable.",
             "Create a new template only when the reusable method is genuinely new.",
             "Use a workflow extension when an existing workflow only needs project "
             "defaults, selected context, guardrails, agent/skill requirements, or step guidance.",
             "Use a one-off run plan when the work is not reusable.",
+            "Optional branches such as media generation, provider execution, or extra "
+            "review depth belong inside the workflow with explicit approvals and "
+            "optional action contracts when they are part of the same job.",
             "Keep domain behavior in plugins through manifests, resources, actions, "
             "templates, and extensions.",
+        ],
+        complete_package_scope=[
+            "Plugin manifest entries for capabilities, providers, resources, actions, "
+            "workflow templates, presets, and navigation when the workflow belongs to a domain.",
+            "Resource schemas with ui_schema, record_kind, and agent_guidance for durable "
+            "state the workflow reads or writes.",
+            "Action contracts and connector registrations for executable provider or "
+            "internal operations, or explicit deferred execution_mode/deferred_reason "
+            "when a connector is intentionally not executable.",
+            "Workflow templates that encode reusable inputs, context, contracts, "
+            "approval gates, grants, ordered steps, outputs, policies, and failure handling.",
+            "Agent presets for specialist roles and skill presets for the main-agent "
+            "orchestrator loop, all marked for project adaptation when generic.",
+            "Provider setup context in manifest provider config when external actions "
+            "need registration, connection, API-key, billing, or docs URLs.",
+            "Tests and docs proving the package loads, resolves, validates, reports "
+            "readiness, creates run plans, grants tools, and keeps business invariants visible.",
+        ],
+        package_authoring_path=[
+            "Define the package boundary first: domain, reusable method, generic vs "
+            "project-specific facts, and the level of operator adaptation expected.",
+            "Name the operator-facing job and expected closeout first. If one user "
+            "request would need several new workflow templates to complete, collapse "
+            "those stages into one workflow with ordered steps.",
+            "Inventory existing plugins, resources, actions, workflows, agent presets, "
+            "skill presets, and provider setup before creating new names.",
+            "Model durable state and invariants before steps: decide which records are "
+            "the source of truth, which fields drive readiness, and which claims must "
+            "be auditable later.",
+            "Treat resources as future memory and artifacts as bulky evidence or output "
+            "blobs. The workflow closeout should write a queryable resource index that "
+            "points at artifacts, decisions, approvals, and follow-up hooks.",
+            "Separate reasoning roles from mechanical execution roles: decision makers, "
+            "adversarial reviewers, operators, and the main orchestrator must have "
+            "clear non-overlapping authority.",
+            "Reuse or adapt existing generic presets before inventing new agents. Add "
+            "a specialist preset only when it owns a materially distinct boundary.",
+            "Draft the package together: manifest resources/actions, workflow templates, "
+            "agent presets, skill presets, docs, and tests should evolve as one contract.",
+            "Wire runtime execution explicitly: action refs, resource refs, auth/provider "
+            "requirements, approval gates, run-plan grants, tracker evidence, and "
+            "readiness diagnostics.",
+            "Validate mechanically with manifest/template loaders, workflowTemplate.validate, "
+            "agentPreset.resolveForWorkflow, skillPreset.resolveForWorkflow, readiness.check, "
+            "and runPlan.validate/create where applicable.",
+            "Verify behavior against the real source of truth for the domain, not only "
+            "against local docs or the implementation that was just written.",
+            "Close with independent signoff, documentation updates, changelog/release "
+            "notes when user-facing, and a clean diff that excludes temporary files.",
+        ],
+        reasoning_gates=[
+            "Is the workflow one complete operator-facing job with a clear closeout, "
+            "rather than one stage in a private workflow chain?",
+            "Does this package preserve one source of truth for durable state, setup "
+            "guidance, and workflow method?",
+            "Are generic/plugin-level facts cleanly separated from project/operator overlays?",
+            "Will future agents find created work through resources and artifact refs "
+            "without reading chat history, temporary files, or private notes?",
+            "Are business invariants encoded in schemas, workflow policies, review steps, "
+            "approval gates, and tests instead of living only in prose?",
+            "Are decisions made by agents/humans and execution performed by tools/connectors, "
+            "with no hidden strategy inside connectors?",
+            "Are adversarial review roles separated when the workflow depends on independent "
+            "judgment, such as claim, safety, voice, quality, or release review?",
+            "Can a future agent answer how to register, connect, prepare, run, and recover "
+            "the package without reading private implementation notes?",
+        ],
+        mechanical_gates=[
+            "Plugin manifest validates and indexes every declared resource, provider, action, "
+            "workflow template, agent preset, and skill preset.",
+            "All workflow templates pass workflowTemplate.validate and their referenced "
+            "agent/skill presets resolve.",
+            "Every executable action has a connector, registry entry, grant path, "
+            "auth/no-secret boundary, input/output schemas, docs, and tests; every "
+            "non-executable action is explicitly deferred.",
+            "readiness.check reports precise missing credentials, connectors, budgets, "
+            "and provider setup URLs for affected workflows or actions.",
+            "runPlan.create/runPlan.validate produce grants that match the workflow's "
+            "action, resource, artifact, decision, context, and communication needs.",
+            "Tracker/run-plan evidence, approval gates, and audit outputs are part of "
+            "the definition of done, not after-the-fact notes.",
+            "Docs route users to the canonical StackOS operation and only summarize "
+            "repo-local details that cannot live in the operation response.",
+        ],
+        independent_signoff=[
+            "Workflow/package reviewer: validate flow, roles, approval gates, failure "
+            "handling, tracker dependencies, and run-plan grant shape.",
+            "Business/domain reviewer: compare schemas, policies, and workflow outputs "
+            "against the actual domain source or operator brief, not the implementation.",
+            "Action/provider reviewer: compare executable actions against official "
+            "provider docs or connector contracts, including setup URLs and no-secret auth.",
+            "Test/readiness reviewer: prove validation, readiness, and representative "
+            "run-plan execution paths with focused automated tests or recorded manual evidence.",
+            "Documentation/self-service reviewer: confirm future agents can discover "
+            "what exists, when to use it, where to connect/register, and how to execute it.",
         ],
         decision_path=[
             "Choose the workflow identity: new template, project extension, or one-off run plan.",

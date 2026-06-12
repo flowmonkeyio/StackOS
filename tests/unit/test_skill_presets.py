@@ -111,7 +111,12 @@ def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None
     assert "Level 2 branding overlay" in refs
     assert "claims-to-evidence map" in contract_text
     assert "canonical-first" in contract_text
-    assert "operator-assisted publication as a governed path" in contract_text
+    assert "automation-first after approval" in contract_text
+    assert "API integration, browser-assisted platform UI, site/admin UI, or local script" in contract_text
+    assert "content memory index" in contract_text
+    assert "publication jobs" in contract_text
+    assert "distribution records" in contract_text
+    assert "without reading this chat" in contract_text
     assert "Do not collapse claim, voice, and sanitization review" in contract_text
     assert "current tracker/run-plan context" in " ".join(contract.must_do)
     assert loaded.preset.metadata_json["evidence_lock"]["required_before_approval"] is True

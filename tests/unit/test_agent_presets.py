@@ -13,7 +13,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     listing = AgentPresetLoader().list_presets()
     keys = {item.key for item in listing.presets}
 
-    assert len(keys) == 43
+    assert len(keys) == 41
     assert "stackos.sdlc.requirements-flow-definer" in keys
     assert "stackos.sdlc.codebase-explorer" in keys
     assert "stackos.sdlc.planning" in keys
@@ -35,12 +35,10 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert "stackos.workflow.workflow-author" in keys
     assert "branding.evidence-curator" in keys
     assert "branding.narrative-writer" in keys
-    assert "branding.distribution-strategist" in keys
+    assert "branding.channel-strategist" in keys
     assert "branding.claim-auditor" in keys
     assert "branding.voice-reviewer" in keys
     assert "branding.sanitization-reviewer" in keys
-    assert "branding.distribution-operator" in keys
-    assert "branding.brand-strategist" in keys
     assert "trackbooth.workflow-author" not in keys
     assert all(item.generic_preset for item in listing.presets)
     assert all(item.adaptation_required for item in listing.presets)
@@ -125,8 +123,7 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
     claim = loader.describe_preset(key="branding.claim-auditor")
     voice = loader.describe_preset(key="branding.voice-reviewer")
     sanitization = loader.describe_preset(key="branding.sanitization-reviewer")
-    operator = loader.describe_preset(key="branding.distribution-operator")
-    strategist = loader.describe_preset(key="branding.distribution-strategist")
+    strategist = loader.describe_preset(key="branding.channel-strategist")
 
     claim_text = " ".join(
         [
@@ -134,13 +131,6 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
             *claim.preset.prompt_contract.must_do,
             *claim.preset.prompt_contract.must_not_do,
             *claim.preset.prompt_contract.self_check,
-        ]
-    )
-    operator_text = " ".join(
-        [
-            operator.preset.prompt_contract.mission,
-            *operator.preset.prompt_contract.must_do,
-            *operator.preset.prompt_contract.must_not_do,
         ]
     )
     strategist_text = " ".join(
@@ -158,14 +148,13 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
     assert "Level 2 branding overlay" in claim_refs
     assert "Default unsupported or untraceable claims to cut" in claim_text
     assert "Do not publish or decide routing" in claim_text
-    assert "Do not send without approval" in operator_text
-    assert "Do not change channel plan" in operator_text
-    assert "Do not publish, send, or operate provider actions" in strategist_text
-    assert "branding.digest-assembly" in claim.preset.applies_to_workflows
-    assert "branding.rendition-production" in sanitization.preset.applies_to_workflows
-    assert "branding.outcome-capture" in sanitization.preset.applies_to_workflows
+    assert (
+        "Do not publish, send, click final external publication controls, or operate provider actions"
+        in strategist_text
+    )
+    assert "branding.content-production" in sanitization.preset.applies_to_workflows
+    assert sanitization.preset.applies_to_workflows == ["branding.content-production"]
     assert "action.execute" in curator.preset.recommended_tools
-    assert "action.execute" in operator.preset.recommended_tools
     assert "action.execute" not in strategist.preset.recommended_tools
     assert "decision.record" in strategist.preset.recommended_tools
     mutating_tools = {

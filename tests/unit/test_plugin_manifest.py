@@ -862,12 +862,60 @@ def test_branding_plugin_yaml_facade_validates() -> None:
         "claim_evidence_map"
     ]["items"]
     assert claim_map_item_schema["allOf"][0]["then"]["properties"]["evidence_refs"]["minItems"] == 1
+    content_piece_properties = resources["content-piece"].schema_data["properties"]
+    assert {
+        "memory_summary",
+        "topic_tags",
+        "position_refs",
+        "image_refs",
+        "publication_bundle_ref",
+        "publication_jobs",
+        "follow_up_hooks",
+    } <= set(content_piece_properties)
+    assert content_piece_properties["image_refs"]["items"]["required"] == [
+        "artifact_ref",
+        "placement",
+    ]
+    assert content_piece_properties["follow_up_hooks"]["items"]["required"] == [
+        "hook",
+        "rationale",
+    ]
+    assert content_piece_properties["publication_jobs"]["items"]["required"] == [
+        "channel_ref",
+        "publication_mode",
+        "publication_bundle_ref",
+        "packet_artifact_ref",
+        "copy_artifact_ref",
+        "status",
+    ]
+    assert content_piece_properties["publication_jobs"]["items"]["properties"][
+        "publication_mode"
+    ]["enum"] == ["api", "browser", "admin-ui", "script", "fallback-handoff"]
     content_piece_all_of = resources["content-piece"].schema_data["allOf"]
     assert content_piece_all_of[0]["then"]["required"] == ["channel_plan"]
-    assert {"approval_ref", "review_log"} <= set(content_piece_all_of[3]["then"]["required"])
+    assert {"approval_ref", "review_log", "memory_summary"} <= set(
+        content_piece_all_of[3]["then"]["required"]
+    )
     assert len(content_piece_all_of[3]["then"]["properties"]["review_log"]["allOf"]) == 3
+    assert "publication_bundle_ref" in content_piece_all_of[4]["then"]["required"]
+    assert "publication_jobs" in content_piece_all_of[4]["then"]["required"]
     assert "canonical_url" in content_piece_all_of[-1]["then"]["required"]
     distribution_schema = resources["distribution-record"].schema_data
+    channel_schema = resources["channel"].schema_data
+    assert channel_schema["properties"]["publication_mode"]["enum"] == [
+        "api",
+        "browser",
+        "admin-ui",
+        "script",
+        "fallback-handoff",
+    ]
+    assert distribution_schema["properties"]["publication_mode"]["enum"] == [
+        "api",
+        "browser",
+        "admin-ui",
+        "script",
+        "fallback-handoff",
+    ]
     assert distribution_schema["properties"]["qualitative_outcomes"]["items"]["required"] == [
         "outcome_type",
         "summary",
@@ -877,9 +925,12 @@ def test_branding_plugin_yaml_facade_validates() -> None:
     required_by_condition = [set(item["then"]["required"]) for item in distribution_schema["allOf"]]
     assert {"canonical_url"} in required_by_condition
     assert {"native_short_collection_ref"} in required_by_condition
-    assert {"provider_publish_ref", "published_at"} in required_by_condition
-    assert {"operator_handoff_packet_ref"} in required_by_condition
-    assert {"operator_handoff_packet_ref", "operator_publication_ref"} in required_by_condition
+    assert {"provider_publish_ref"} in required_by_condition
+    assert {"published_at"} in required_by_condition
+    assert {"execution_log_ref"} in required_by_condition
+    assert {"automation_session_ref"} in required_by_condition
+    assert {"script_run_ref"} in required_by_condition
+    assert {"fallback_handoff_ref", "blocker_reason"} in required_by_condition
 
 
 def test_gtm_plugin_yaml_facade_validates() -> None:

@@ -80,6 +80,26 @@ outputs:
     assert validation_by_key["template"]["key"] == "core.project-memory-review"
     assert validation_by_key["template"]["name"] == "Repo Project Memory Review"
     assert authoring_guide["source_of_truth_operation"] == "workflowTemplate.authoringGuide"
+    assert "Plugin manifest entries" in authoring_guide["complete_package_scope"][0]
+    assert any(
+        "agent presets, skill presets" in item
+        for item in authoring_guide["package_authoring_path"]
+    )
+    assert any("one end-to-end job" in item for item in authoring_guide["principles"])
+    assert any(
+        "several new workflow templates" in item
+        for item in authoring_guide["package_authoring_path"]
+    )
+    assert any(
+        "future memory" in item for item in authoring_guide["package_authoring_path"]
+    )
+    assert any(
+        "private workflow chain" in item for item in authoring_guide["reasoning_gates"]
+    )
+    assert any("readiness.check" in item for item in authoring_guide["mechanical_gates"])
+    assert any(
+        "official provider docs" in item for item in authoring_guide["independent_signoff"]
+    )
     assert "workflowTemplate.validate" in {
         item["name"] for item in authoring_guide["canonical_operations"]
     }

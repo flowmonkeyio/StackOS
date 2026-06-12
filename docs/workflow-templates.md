@@ -12,6 +12,76 @@ The canonical workflow authoring guide is the StackOS operation
 `workflowTemplate.validate`. Keep this page as repo-local reference material,
 not a second copy of the authoring path.
 
+## Complete Workflow Package
+
+A complete workflow package is more than workflow YAML. Build it as one
+contract:
+
+- plugin manifest capability/provider/resource/action/workflow/preset entries
+- resource schemas with `ui_schema`, `record_kind`, and `agent_guidance`
+- action contracts plus executable connectors, or explicit `execution_mode`
+  deferral
+- workflow templates with inputs, context, policies, approvals, grants, ordered
+  steps, outputs, and failure handling
+- agent presets for specialist roles and skill presets for the main-agent
+  orchestration loop
+- provider setup context for registration, connection, API-key, billing, docs,
+  fallback URLs, and readiness diagnostics when external services are involved
+- tests and docs proving load, resolution, readiness, run-plan grants, and the
+  business invariants the package must preserve
+
+Use this reasoning path before authoring files:
+
+1. Define the reusable boundary, generic/plugin facts, project overlay facts,
+   and operator adaptation points.
+2. Name the operator-facing job and closeout first. If one user request would
+   need several new workflow templates to complete, collapse those stages into
+   one workflow with ordered steps.
+3. Inventory existing plugins, resources, actions, workflows, agent presets,
+   skill presets, and provider setup so names and connectors are reused.
+4. Model durable state and invariants first; then write workflow steps around
+   those records and guarantees. Resources are future memory; artifacts hold
+   bulky content and must be indexed by resources when the output should be
+   discoverable later.
+5. Separate decision, review, and execution roles. The orchestrator coordinates
+   the package, but specialist presets own bounded reasoning or mechanical
+   duties.
+6. Reuse or adapt existing generic presets before inventing new agents. Add a
+   specialist role only when it owns a materially distinct boundary.
+7. Wire runtime behavior explicitly with action refs, resource refs,
+   approval gates, grants, readiness checks, tracker evidence, and run-plan
+   outputs.
+8. Verify against the actual domain source, operator brief, or official
+   provider documentation. Do not sign off only against the code just written.
+
+Workflow identity should follow the engineering pattern: one template represents
+one complete piece of work, not a private chain of reusable stages. A domain may
+ship multiple workflows, but each one should be independently invokable and
+able to reach its own closeout. Optional branches such as generated images,
+provider execution, extra review depth, or channel variants belong inside the
+same workflow when they are part of the same operator request. It is fine for
+different workflows to duplicate internal step patterns; avoid composable
+workflow fragments that make one deliverable require several workflow runs.
+
+The closeout should prove future accessibility. If a workflow creates something
+the project will need later, it must write a queryable resource record that
+stores the summary, state, decision refs, artifact refs, approvals, and follow-up
+hooks. Do not leave durable truth only in chat, local files, or artifacts.
+
+Use this mechanical closeout before claiming done:
+
+- validate manifests and every workflow template
+- resolve all workflow agent and skill preset requirements
+- run `readiness.check` for affected workflows/actions
+- prove representative `runPlan.create` / `runPlan.validate` paths and
+  step-grant shape
+- run focused tests for manifests, actions/connectors, MCP grants, readiness,
+  and plugin inventory
+- update only the docs that are authoritative for the package, then remove
+  temporary planning files
+- get independent signoff for flow correctness, domain accuracy, provider/action
+  contracts, readiness, and self-service documentation
+
 ## Template Schema
 
 A template should be generic across domains and include:

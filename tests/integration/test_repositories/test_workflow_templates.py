@@ -96,32 +96,8 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         plugin_slug="communications",
     )
     branding_listing = repo.list_templates(plugin_slug="branding")
-    branding_piece_described = repo.describe_template(
-        key="branding.piece-production",
-        plugin_slug="branding",
-    )
-    branding_evidence_described = repo.describe_template(
-        key="branding.evidence-harvest",
-        plugin_slug="branding",
-    )
-    branding_rendition_described = repo.describe_template(
-        key="branding.rendition-production",
-        plugin_slug="branding",
-    )
-    branding_digest_described = repo.describe_template(
-        key="branding.digest-assembly",
-        plugin_slug="branding",
-    )
-    branding_outcome_described = repo.describe_template(
-        key="branding.outcome-capture",
-        plugin_slug="branding",
-    )
-    branding_review_described = repo.describe_template(
-        key="branding.piece-review",
-        plugin_slug="branding",
-    )
-    branding_audit_described = repo.describe_template(
-        key="branding.brand-audit",
+    branding_content_described = repo.describe_template(
+        key="branding.content-production",
         plugin_slug="branding",
     )
 
@@ -137,77 +113,98 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "engineering.tracked-delivery",
     ]
     assert [item.key for item in branding_listing.templates] == [
-        "branding.brand-audit",
-        "branding.digest-assembly",
-        "branding.distribution-run",
-        "branding.evidence-harvest",
-        "branding.outcome-capture",
-        "branding.piece-production",
-        "branding.piece-review",
-        "branding.rendition-production",
+        "branding.content-production",
     ]
-    assert branding_piece_described.summary.plugin_slug == "branding"
-    assert branding_piece_described.spec.action_contracts == []
-    branding_agent_refs = {
-        item.agent_preset_ref for item in branding_piece_described.spec.agent_requirements
+    assert branding_content_described.summary.plugin_slug == "branding"
+    assert branding_content_described.spec.metadata_json["default_branding_workflow"] is True
+    assert branding_content_described.spec.metadata_json["workflow_family"] == (
+        "content-production"
+    )
+    assert [step.id for step in branding_content_described.spec.steps] == [
+        "interview-capture",
+        "research-fact-collection",
+        "angle-and-structure",
+        "draft-canonical",
+        "editorial-review",
+        "sanitization-review",
+        "produce-optional-images",
+        "render-channel-packets",
+        "approve-and-record",
+        "execute-publication",
+    ]
+    branding_content_agent_refs = {
+        item.agent_preset_ref for item in branding_content_described.spec.agent_requirements
     }
-    assert branding_agent_refs == {
+    assert branding_content_agent_refs == {
         "branding.claim-auditor",
-        "branding.distribution-strategist",
+        "branding.channel-strategist",
+        "branding.evidence-curator",
         "branding.narrative-writer",
         "branding.sanitization-reviewer",
         "branding.voice-reviewer",
     }
-    branding_steps = {step.id: step for step in branding_piece_described.spec.steps}
-    assert branding_steps["claim-audit"].depends_on == ["draft-canonical"]
-    assert branding_steps["voice-check"].depends_on == ["claim-audit"]
-    assert branding_steps["sanitization-check"].depends_on == ["voice-check"]
-    assert branding_steps["approve-and-record"].approval_refs == ["piece_and_plan_approval"]
-    assert branding_piece_described.spec.skill_preset_requirements[0].skill_preset_ref == (
-        "branding.brand-orchestrator"
-    )
-    assert (
-        "action.execute:sanitize_mark" in branding_evidence_described.spec.metadata_json["grants"]
-    )
-    branding_rendition_agent_refs = {
-        item.agent_preset_ref for item in branding_rendition_described.spec.agent_requirements
+    branding_content_actions = {
+        item.key: item for item in branding_content_described.spec.action_contracts
     }
-    assert "branding.sanitization-reviewer" in branding_rendition_agent_refs
-    branding_rendition_steps = {step.id: step for step in branding_rendition_described.spec.steps}
-    assert branding_rendition_steps["render-renditions"].approval_refs == [
-        "generation_budget_review"
-    ]
-    assert branding_rendition_steps["rendition-sanitization-check"].depends_on == [
-        "claim-consistency-check"
-    ]
-    assert branding_rendition_steps["approve-rendition-set"].depends_on == [
-        "rendition-sanitization-check"
-    ]
-    branding_digest_agent_refs = {
-        item.agent_preset_ref for item in branding_digest_described.spec.agent_requirements
+    assert branding_content_actions["image_generate"].action == "utils.image.generate"
+    assert branding_content_actions["image_generate"].optional is True
+    assert branding_content_actions["publish_linkedin"].action == "publish.linkedin"
+    assert branding_content_actions["publish_linkedin"].optional is True
+    assert branding_content_actions["publish_x"].action == "publish.x"
+    assert branding_content_actions["publish_x"].optional is True
+    branding_content_steps = {
+        step.id: step for step in branding_content_described.spec.steps
     }
-    assert "branding.claim-auditor" in branding_digest_agent_refs
-    branding_digest_steps = {step.id: step for step in branding_digest_described.spec.steps}
-    assert branding_digest_steps["aggregate-claim-check"].depends_on == ["compose-digest"]
-    assert branding_digest_steps["aggregate-voice-check"].depends_on == ["aggregate-claim-check"]
-    assert branding_digest_steps["aggregate-sanitization-check"].depends_on == [
-        "aggregate-voice-check"
+    assert branding_content_steps["produce-optional-images"].action_refs == [
+        "image_generate"
     ]
-    branding_outcome_steps = {step.id: step for step in branding_outcome_described.spec.steps}
-    assert [gate.key for gate in branding_outcome_described.spec.approval_gates] == [
-        "outcome_evidence_clearance"
+    assert branding_content_steps["angle-and-structure"].depends_on == [
+        "research-fact-collection"
     ]
-    assert branding_outcome_steps["clear-promoted-outcomes"].approval_refs == [
-        "outcome_evidence_clearance"
+    assert "research_source_traceability" in {
+        item.key for item in branding_content_described.spec.policies
+    }
+    assert "durable_resource_memory" in {
+        item.key for item in branding_content_described.spec.policies
+    }
+    assert "publication_automation_first" in {
+        item.key for item in branding_content_described.spec.policies
+    }
+    assert branding_content_steps["produce-optional-images"].approval_refs == [
+        "image_generation_approval"
     ]
-    assert branding_outcome_steps["update-health-rollups"].depends_on == ["clear-promoted-outcomes"]
-    assert "action.execute:sanitize_mark" in branding_outcome_described.spec.metadata_json["grants"]
-    assert branding_review_described.spec.action_contracts == []
-    assert branding_review_described.spec.approval_gates == []
-    assert branding_review_described.spec.skill_preset_requirements[0].skill_preset_ref == (
-        "branding.brand-orchestrator"
+    assert branding_content_steps["approve-and-record"].approval_refs == [
+        "content_packet_approval"
+    ]
+    assert "action.execute:image_generate" in (
+        branding_content_described.spec.metadata_json["grants"]
     )
-    assert branding_audit_described.spec.action_contracts == []
+    assert "action.execute:publish_linkedin" in (
+        branding_content_described.spec.metadata_json["grants"]
+    )
+    assert "content_memory_index" in {
+        item.key for item in branding_content_described.spec.outputs
+    }
+    assert "publication_jobs" in {item.key for item in branding_content_described.spec.outputs}
+    assert "publication_bundle_ref" in {
+        item.key for item in branding_content_described.spec.outputs
+    }
+    assert "distribution_record_refs" in {
+        item.key for item in branding_content_described.spec.outputs
+    }
+    assert "publication_jobs" in branding_content_steps["render-channel-packets"].output_refs
+    assert "publication_bundle_ref" in branding_content_steps["render-channel-packets"].output_refs
+    assert "content_memory_index" in branding_content_steps["approve-and-record"].output_refs
+    assert "publication_jobs" in branding_content_steps["approve-and-record"].output_refs
+    assert "durable_resource_memory" in branding_content_steps["approve-and-record"].policy_refs
+    assert branding_content_steps["execute-publication"].depends_on == ["approve-and-record"]
+    assert branding_content_steps["execute-publication"].action_refs == [
+        "publish_git_blog",
+        "publish_x",
+        "publish_linkedin",
+        "publish_email",
+    ]
+    assert "distribution_record_refs" in branding_content_steps["execute-publication"].output_refs
     intake_described = repo.describe_template(
         key="communications.customer-feedback-intake",
         plugin_slug="communications",
