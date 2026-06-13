@@ -13,6 +13,7 @@ obvious without loading every document.
 | Auditing agent-facing flows and release clarity | [`agent-experience-audit.md`](./agent-experience-audit.md), [`agent-operating-model.md`](./agent-operating-model.md), [`operations.md`](./operations.md) |
 | Setting up generic agents or workflow roles | [`agent-presets.md`](./agent-presets.md), [`agent-operating-model.md`](./agent-operating-model.md), [`workflow-templates.md`](./workflow-templates.md), [`task-tracker.md`](./task-tracker.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
+| Adding or using browser automation | [`browser-automation.md`](./browser-automation.md), [`operations.md`](./operations.md), [`setup.md`](./setup.md), [`security.md`](./security.md) |
 | Adding or changing task/ticket tracking | [`task-tracker.md`](./task-tracker.md), [`run-plans.md`](./run-plans.md), [`operations.md`](./operations.md) |
 | Adding providers, auth, or credentials | [`auth-providers.md`](./auth-providers.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |
 | Adding or changing communications, chat, email, targets, or memberships | [`integration-contracts/communications.md`](./integration-contracts/communications.md), [`operations.md`](./operations.md), [`resources-and-artifacts.md`](./resources-and-artifacts.md) |

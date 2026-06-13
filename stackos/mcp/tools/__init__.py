@@ -9,6 +9,7 @@ from stackos.mcp.tools import (
     agent_requests,
     artifacts,
     auth,
+    browser,
     communications,
     context,
     cost,
@@ -34,6 +35,7 @@ def register_all(registry: ToolRegistry) -> None:
     actions.register(registry)
     projects.register(registry)
     auth.register(registry)
+    browser.register(registry)
     communications.register(registry)
     tool_profiles.register(registry)
     agent_presets.register(registry)

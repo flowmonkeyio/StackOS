@@ -102,7 +102,7 @@ def test_readiness_check_keeps_engineering_workflow_usable_without_provider_nois
     assert readiness["next_steps"][0]["tool"] == "runPlan.create"
 
 
-def test_readiness_check_branding_content_optional_image_setup(
+def test_readiness_check_branding_content_optional_image_repair_setup(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -171,7 +171,9 @@ def test_readiness_check_branding_content_optional_image_setup(
     assert readiness["ready"] is True
     assert readiness["execution_ready"] is True
     assert {item["code"] for item in image_missing} == {"credential_required", "budget_required"}
-    credential_missing = next(item for item in image_missing if item["code"] == "credential_required")
+    credential_missing = next(
+        item for item in image_missing if item["code"] == "credential_required"
+    )
     assert credential_missing["required_for"] == "optional_action_execution"
     assert credential_missing["setup"]["provider_key"] == "openai-images"
 

@@ -89,6 +89,37 @@ audit. Possession of the raw daemon
 token is therefore treated as local administrator authority, not as a normal
 agent credential.
 
+## Daemon-Owned Browser Automation
+
+StackOS browser automation uses a daemon-owned Camoufox runtime. Agents can
+open persistent sessions, call public page/context methods, run arbitrary page
+JavaScript, inject scripts, and capture screenshots. This is intentionally a
+full-control automation surface, similar to a normal browser automation test
+session, because publishing/admin workflows often require the same freedom.
+It is a local trusted-administrator capability, not an externally exposed
+multi-tenant browser sandbox.
+
+The boundary is not a browser-method allowlist. The boundary is local daemon
+auth, workspace/project scoping, run-plan grants when a workflow step uses the
+tools, and audit receipts. Browser profile directories, executable paths, raw
+handles, and daemon-local profile storage stay daemon-side. Screenshots are
+stored as generated-assets artifacts, and browser receipts record method names,
+session/page refs, URL/origin where available, hashed input summaries, result
+summaries, and artifact refs.
+
+Immediate browser operation responses are intentionally raw. Page/context calls,
+storage-state reads, cookie reads, DOM reads, screenshots, and arbitrary
+JavaScript can return sensitive page data to the calling agent because that is
+the requested full-control browser surface. Persisted receipts and transport
+errors are the redacted surfaces; callers must treat raw browser outputs as
+sensitive working data.
+
+Agents may pass normal Camoufox/Playwright launch options, but StackOS rejects
+launch options that would override daemon-owned controls such as the executable
+path, persistent-context mode, or profile directory. Runtime status exposes
+readiness booleans and same-project live session refs; it does not expose local
+browser executable paths or profile paths.
+
 ## UI Token Bootstrap Trade-Off
 
 Adding `/api/v1/auth/ui-token` accepts a reduction in defence depth.

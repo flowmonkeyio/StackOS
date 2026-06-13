@@ -8,6 +8,7 @@ from stackos.mcp.contract import MCPInput
 from stackos.operations.spec import (
     OperationExample,
     OperationHandler,
+    OperationResponsePolicy,
     OperationSpec,
     OperationSurface,
     OperationSurfaces,
@@ -32,6 +33,7 @@ def operation_spec(
     examples: tuple[OperationExample, ...] = (),
     secret_policy: str = "no-secret-output",
     category: str | None = None,
+    response_policy: OperationResponsePolicy | None = None,
 ) -> OperationSpec:
     return OperationSpec(
         name=name,
@@ -56,6 +58,7 @@ def operation_spec(
         grant_policy=grant_policy,
         secret_policy=secret_policy,
         category=category,
+        response_policy=response_policy,
     )
 
 

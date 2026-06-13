@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -112,6 +114,42 @@ def _check_scheduler_jobs(settings: Settings) -> tuple[bool, int]:
     """
     daemon_up = _tcp_can_connect(settings.host, settings.port)
     return daemon_up, 4 if daemon_up else 0
+
+
+def _check_browser_runtime() -> tuple[bool, dict[str, object]]:
+    """Return Camoufox package/browser-binary readiness."""
+    if importlib.util.find_spec("camoufox") is None:
+        return False, {
+            "package_installed": False,
+            "browser_downloaded": False,
+            "browser_path_present": False,
+            "repair": "install/sync StackOS Python dependencies, then run `stackos install`",
+        }
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "camoufox", "path"],
+            capture_output=True,
+            text=True,
+            timeout=4,
+            check=False,
+        )
+    except Exception as exc:
+        return False, {
+            "package_installed": True,
+            "browser_downloaded": False,
+            "browser_path_present": False,
+            "error": str(exc),
+            "repair": "run `python3 -m camoufox fetch` or `stackos install`",
+        }
+    path = result.stdout.strip()
+    ok = result.returncode == 0 and bool(path)
+    return ok, {
+        "package_installed": True,
+        "browser_downloaded": ok,
+        "browser_path_present": bool(path),
+        "stderr": result.stderr.strip() or None,
+        "repair": None if ok else "run `python3 -m camoufox fetch` or `stackos install`",
+    }
 
 
 def _count_traversable_named(
@@ -440,6 +478,7 @@ def doctor(
     # Alembic-head and scheduler-job probes.
     alembic_ok, alembic_version = _check_alembic_at_head(settings, db_present)
     scheduler_ok, scheduler_job_count = _check_scheduler_jobs(settings)
+    browser_ok, browser_info = _check_browser_runtime()
     home = _doctor_home()
     install_checks, install_info = _check_installed_assets(home)
     codex_mcp_ok, codex_mcp_info = _check_codex_mcp_registered()
@@ -456,6 +495,7 @@ def doctor(
         "credentials_decrypt": credentials_ok,
         "alembic_at_head": alembic_ok,
         "scheduler_jobs_healthy": scheduler_ok,
+        "browser_runtime_ready": browser_ok,
         "codex_mcp_registered": codex_mcp_ok,
         "claude_mcp_registered": claude_mcp_ok,
         "launchd_plist_present": launchd_ok,
@@ -473,6 +513,7 @@ def doctor(
         "credential_issues": credential_issues,
         "alembic_version": alembic_version,
         "scheduler_job_count": scheduler_job_count,
+        "browser_runtime": browser_info,
         "home_dir": str(home),
         "install_checks": install_info,
         "codex_mcp": codex_mcp_info,
@@ -492,7 +533,7 @@ def doctor(
         code = 7
     elif not alembic_ok:
         code = 4
-    elif not all(install_checks.values()):
+    elif not all(install_checks.values()) or not browser_ok:
         code = 9
     elif not daemon_up:
         code = 1
@@ -522,5 +563,8 @@ def doctor(
                 else "run `stackos install` or `make install` to refresh managed assets"
             )
             typer.echo(f"  note: installed StackOS plugin or skill assets are stale — {repair}.")
+        if not browser_ok:
+            repair = browser_info.get("repair")
+            typer.echo(f"  note: browser runtime is not ready — {repair}.")
 
     _exit(code)

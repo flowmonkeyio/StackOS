@@ -29,7 +29,7 @@ from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.migrate import current_alembic_version, upgrade_to_head
 
-HEAD_REVISION = "0020_execution_contexts"
+HEAD_REVISION = "0021_browser_automation"
 
 
 @pytest.fixture
@@ -155,6 +155,71 @@ def test_doctor_reports_stale_stackos_plugin_skill_cache(sandbox: Path) -> None:
     assert skill["cache_count"] == 1
     assert skill["caches"][0]["ok"] is False
     assert "stackos install" in skill["repair"]
+
+
+def test_ensure_camoufox_browser_reports_missing_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: None)
+
+    ok, message = installer.ensure_camoufox_browser()
+
+    assert ok is False
+    assert "not importable" in message
+
+
+def test_ensure_camoufox_browser_hides_existing_browser_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _ = kwargs
+        assert args[-1] == "path"
+        return subprocess.CompletedProcess(args, 0, "/private/camoufox\n", "")
+
+    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+
+    ok, message = installer.ensure_camoufox_browser()
+
+    assert ok is True
+    assert message == "Camoufox browser present."
+    assert "/private" not in message
+
+
+def test_ensure_camoufox_browser_fetches_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _ = kwargs
+        calls.append(args[-1])
+        if args[-1] == "path":
+            return subprocess.CompletedProcess(args, 1, "", "missing")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+
+    ok, message = installer.ensure_camoufox_browser()
+
+    assert ok is True
+    assert message == "Camoufox browser fetched."
+    assert calls == ["path", "fetch"]
+
+
+def test_doctor_browser_runtime_hides_existing_browser_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _ = kwargs
+        return subprocess.CompletedProcess(args, 0, "/private/camoufox\n", "")
+
+    monkeypatch.setattr(doctor_cli.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(doctor_cli.subprocess, "run", fake_run)
+
+    ok, details = doctor_cli._check_browser_runtime()
+
+    assert ok is True
+    assert details["browser_downloaded"] is True
+    assert details["browser_path_present"] is True
+    assert "executable_path" not in details
 
 
 def test_doctor_exits_9_for_stale_stackos_plugin_skill_cache(sandbox: Path) -> None:

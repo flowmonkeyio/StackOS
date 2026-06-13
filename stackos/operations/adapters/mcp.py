@@ -16,6 +16,7 @@ def operation_to_tool_spec(operation: OperationSpec) -> ToolSpec:
         input_model=operation.input_model,
         output_model=operation.output_model,
         handler=operation.handler,
+        read_only=operation.read_only,
         operation_name=operation.name,
         operation_category=operation.category_name,
         operation_grant_policy=operation.grant_policy,

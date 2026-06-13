@@ -31,6 +31,13 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("workspace.connect", SYSTEM_SKILL)
     check_grant("auth.status", SYSTEM_SKILL)
     check_grant("auth.test", SYSTEM_SKILL)
+    check_grant("browser.runtime.status", SYSTEM_SKILL)
+    check_grant("browser.session.start", SYSTEM_SKILL)
+    check_grant("browser.page.call", SYSTEM_SKILL)
+    check_grant("browser.context.call", SYSTEM_SKILL)
+    check_grant("browser.script.run", SYSTEM_SKILL)
+    check_grant("browser.script.inject", SYSTEM_SKILL)
+    check_grant("browser.page.screenshot", SYSTEM_SKILL)
     check_grant("action.run", SYSTEM_SKILL)
     check_grant("agentPreset.list", SYSTEM_SKILL)
     check_grant("agentPreset.describe", SYSTEM_SKILL)
@@ -148,6 +155,11 @@ def test_run_plan_controller_has_dynamic_step_tools() -> None:
     check_grant("tracker.reopen", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("resource.upsert", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("context.query", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("browser.runtime.status", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("browser.session.start", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("browser.page.call", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("browser.context.call", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("browser.script.run", RUN_PLAN_CONTROLLER_SKILL)
 
 
 def test_check_grant_raises_for_unknown_skill() -> None:

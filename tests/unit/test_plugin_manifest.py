@@ -888,9 +888,9 @@ def test_branding_plugin_yaml_facade_validates() -> None:
         "copy_artifact_ref",
         "status",
     ]
-    assert content_piece_properties["publication_jobs"]["items"]["properties"][
-        "publication_mode"
-    ]["enum"] == ["api", "browser", "admin-ui", "script", "fallback-handoff"]
+    assert content_piece_properties["publication_jobs"]["items"]["properties"]["publication_mode"][
+        "enum"
+    ] == ["api", "browser", "admin-ui", "script", "fallback-handoff"]
     content_piece_all_of = resources["content-piece"].schema_data["allOf"]
     assert content_piece_all_of[0]["then"]["required"] == ["channel_plan"]
     assert {"approval_ref", "review_log", "memory_summary"} <= set(

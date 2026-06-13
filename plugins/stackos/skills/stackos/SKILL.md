@@ -10,11 +10,12 @@ durable state. The daemon owns projects, credentials, workflow templates, run
 plans, resources, actions, context, learnings, experiments, decisions, and audit
 trails.
 
-Use StackOS tools for durable state and execution planning. The direct MCP
-surface is intentionally small: call `workspace.startSession` or
-`workspace.resolve` first, then use `toolbox.describe` and `toolbox.call` for
-project setup, workflow templates, run plans, tracker, resources, context, and
-actions.
+Use StackOS tools for durable state, execution planning, and daemon-owned
+browser automation. The direct MCP surface is intentionally focused: call
+`workspace.startSession` or `workspace.resolve` first, use direct `browser.*`
+tools for live browser sessions when needed, then use `toolbox.describe` and
+`toolbox.call` for project setup, workflow templates, run plans, tracker,
+resources, context, and actions.
 
 The MCP bridge intentionally exposes a compact direct tool list. Do not try to
 call hidden daemon tools directly. Use `toolbox.describe` with exact
@@ -69,6 +70,20 @@ run token.
    `intent_summary`, and an `idempotency_key` for non-read actions. Provider
    side-effect operations return raw redacted provider output by default; do not
    request compact or ack shapes for them.
+10. For browser automation, use the direct `browser.*` tools when mounted, or
+    `toolbox.call` for the same operation names before the current Codex session
+    is restarted. `browser.session.start` opens a persistent Camoufox session
+    (`headless=false` by default for operator login/inspection). Use
+    `browser.page.call` and `browser.context.call` for public Camoufox/
+    Playwright methods with raw args/kwargs, `browser.script.run` and
+    `browser.script.inject` for arbitrary JavaScript, and
+    `browser.page.screenshot` for generated-assets evidence. Treat this as the
+    same class of browser control as a normal Playwright/test browser session:
+    this is local trusted-admin browser automation, not an externally exposed
+    sandbox. StackOS records redacted receipts, but it does not maintain a
+    restrictive browser-method allowlist. The daemon owns executable/profile
+    paths and rejects launch options that try to override those controls. Treat
+    immediate browser tool output as sensitive raw browser data.
 
 ## Common Flows
 
@@ -126,6 +141,15 @@ run token.
   `toolbox.call` for `operation.list` first, then `operation.describe` for the
   few operations you intend to use. Keep `toolbox.describe` scoped to exact
   tool names.
+- Use browser automation: call `browser.runtime.status`, then
+  `browser.session.start`. If the platform needs login, pause and let the
+  operator complete login in the opened browser session, then continue with
+  `browser.page.call`, `browser.context.call`, `browser.script.run`, or
+  `browser.script.inject`. Use `browser.page.snapshot` for text state and
+  `browser.page.screenshot` for visual proof or publication evidence. Stop the
+  session with `browser.session.stop` when done. Treat the browser method
+  manifest as guidance, not an allowlist: public page/context methods may be
+  called through the raw method/args/kwargs operations.
 - Repair denied tools: read `toolbox.describe.tool_statuses`. `unknown_tool`
   means the name is wrong or removed. `local_admin_required` means operator
   setup is needed. `run_plan_step_grant_required` means create/start the run

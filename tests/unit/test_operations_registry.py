@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 168
+    assert len(names) == 182
     assert {
         "action.execute",
         "auth.status",
@@ -43,6 +43,13 @@ def test_operation_registry_documents_core_operations() -> None:
         "skillPreset.list",
         "skillPreset.describe",
         "skillPreset.resolveForWorkflow",
+        "browser.runtime.status",
+        "browser.session.start",
+        "browser.page.call",
+        "browser.context.call",
+        "browser.script.run",
+        "browser.script.inject",
+        "browser.page.screenshot",
     } <= names
 
     described = registry.get("action.execute").describe_out()
@@ -204,6 +211,18 @@ def test_operation_registry_documents_core_operations() -> None:
     assert auth_test.surfaces["cli"].command == "ops call auth.test"
     assert auth_test.grant_policy == "direct-setup-write"
     assert any("auth.status" in item for item in auth_test.prerequisites)
+
+    browser_call = registry.get("browser.page.call").describe_out()
+    assert browser_call.category == "browser"
+    assert browser_call.mutating is True
+    assert browser_call.response_policy.default_mode == "raw"
+    assert browser_call.response_policy.allowed_modes == ["raw"]
+    assert "public method" in browser_call.summary
+
+    browser_context = registry.get("browser.context.call").describe_out()
+    assert browser_context.mutating is True
+    assert browser_context.response_policy.default_mode == "raw"
+    assert "context-level browser control" in browser_context.purpose
 
     project_list = registry.get("project.list").describe_out()
     assert project_list.surfaces["mcp"].enabled is True

@@ -112,7 +112,10 @@ def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None
     assert "claims-to-evidence map" in contract_text
     assert "canonical-first" in contract_text
     assert "automation-first after approval" in contract_text
-    assert "API integration, browser-assisted platform UI, site/admin UI, or local script" in contract_text
+    assert (
+        "API integration, browser-assisted platform UI, site/admin UI, or local script"
+        in contract_text
+    )
     assert "content memory index" in contract_text
     assert "publication jobs" in contract_text
     assert "distribution records" in contract_text

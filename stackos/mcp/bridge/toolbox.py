@@ -324,11 +324,12 @@ def _bridge_tool_statuses(
             )
             continue
         allowed_now = name in allowed
+        direct_visible = name in _AGENT_VISIBLE_TOOL_ORDER
         row: dict[str, Any] = {
             "name": name,
             "exists": True,
             "allowed": allowed_now,
-            "call_via": "toolbox.call",
+            "call_via": "direct_or_toolbox.call" if direct_visible else "toolbox.call",
         }
         operation = _tool_operation_context(tool)
         if operation is not None:

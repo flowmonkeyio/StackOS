@@ -159,12 +159,7 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert names[: len(_AGENT_VISIBLE_TOOL_ORDER)] == list(_AGENT_VISIBLE_TOOL_ORDER)
     assert "toolbox.describe" in names
     assert "toolbox.call" in names
-    assert names == [
-        "workspace.startSession",
-        "workspace.resolve",
-        "toolbox.describe",
-        "toolbox.call",
-    ]
+    assert names == [*_AGENT_VISIBLE_TOOL_ORDER, "toolbox.describe", "toolbox.call"]
     assert "workspace.bootstrap" not in names
     assert "action.run" not in names
     assert "toolProfile.resolve" not in names
@@ -174,6 +169,10 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "project.create" not in names
     assert "project.get" not in names
     assert "project.setActive" not in names
+    assert "browser.page.call" in names
+    assert "browser.context.call" in names
+    assert "browser.script.run" in names
+    assert "browser.page.screenshot" in names
     assert "agentRequest.list" not in names
     assert "agentRequest.claim" not in names
     assert "agentRequest.create" not in names

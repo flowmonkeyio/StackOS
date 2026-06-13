@@ -530,7 +530,8 @@ steps:
       - publication_bundle_ref
     success_criteria:
       - API-capable channels execute through StackOS action.execute with provider responses recorded in distribution-records.
-      - Browser or admin UI channels are operated by the agent in the platform UI using the approved publication bundle; login, MFA, or session setup is the only expected human participation.
+      - Browser or admin UI channels are operated by the agent in the platform UI using the approved publication bundle and StackOS browser tools; login, MFA, or session setup is the only expected human participation.
+      - Browser publication may use runtime status, profile/session management, public page/context calls, arbitrary script run/injection, snapshots, screenshots, and page refs as needed for the platform UI.
       - Script channels run the approved project publishing script or local admin command and record commit, deployment, URL, or provider result refs.
       - Fallback handoff mode is used only when automation is unavailable, blocked by platform policy, or explicitly waived, and the blocker is recorded on the publication job and distribution-record.
       - Closeout reports channel status as published, scheduled, staged, blocked, or failed with the exact resource/artifact refs needed for audit and follow-up.
@@ -592,3 +593,34 @@ metadata:
     - action.execute:publish_x
     - action.execute:publish_linkedin
     - action.execute:publish_email
+    - browser.runtime.status
+    - browser.method.manifest
+    - browser.profile.list
+    - browser.profile.create
+    - browser.session.list
+    - browser.session.start
+    - browser.session.status
+    - browser.session.stop
+    - browser.page.call
+    - browser.context.call
+    - browser.script.run
+    - browser.script.inject
+    - browser.page.snapshot
+    - browser.page.screenshot
+  mcp_tool_grants:
+    - step_id: execute-publication
+      tools:
+        - browser.runtime.status
+        - browser.method.manifest
+        - browser.profile.list
+        - browser.profile.create
+        - browser.session.list
+        - browser.session.start
+        - browser.session.status
+        - browser.session.stop
+        - browser.page.call
+        - browser.context.call
+        - browser.script.run
+        - browser.script.inject
+        - browser.page.snapshot
+        - browser.page.screenshot

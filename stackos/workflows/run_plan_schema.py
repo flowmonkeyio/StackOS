@@ -640,6 +640,37 @@ def _default_mcp_tool_grants(
     return grants
 
 
+def _template_mcp_tool_grants(
+    spec: Any,
+    *,
+    action_contract_refs: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Return template-declared MCP grants, resolving action contract aliases."""
+    raw_entries = (spec.metadata_json or {}).get("mcp_tool_grants")
+    if raw_entries is None:
+        return []
+    if not isinstance(raw_entries, list):
+        raise ValueError("metadata.mcp_tool_grants must be a list")
+    grants: list[dict[str, Any]] = []
+    for index, item in enumerate(raw_entries):
+        if not isinstance(item, dict):
+            raise ValueError(f"metadata.mcp_tool_grants[{index}] must be an object")
+        grant = dict(item)
+        raw_action_refs = grant.get("action_refs", grant.get("action_ref"))
+        if raw_action_refs is not None:
+            action_refs = (
+                [raw_action_refs]
+                if isinstance(raw_action_refs, str)
+                else _string_list(raw_action_refs)
+            )
+            grant["action_refs"] = [
+                action_contract_refs.get(action_ref, action_ref) for action_ref in action_refs
+            ]
+            grant.pop("action_ref", None)
+        grants.append(grant)
+    return grants
+
+
 def run_plan_from_template(
     loaded: LoadedWorkflowTemplate,
     *,
@@ -782,7 +813,8 @@ def run_plan_from_template(
             spec,
             steps,
             resource_contract_map=resource_contract_map,
-        ),
+        )
+        + _template_mcp_tool_grants(spec, action_contract_refs=action_contract_refs),
     }
     return RunPlanSpec(
         key=key or f"{spec.key}.run",

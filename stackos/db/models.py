@@ -28,6 +28,7 @@ from stackos.db.model_auth import (
     IntegrationCredential,
     OAuthState,
 )
+from stackos.db.model_browser import BrowserActionReceipt, BrowserProfile, BrowserSession
 from stackos.db.model_context import (
     ContextIndexEntry,
     ContextSnapshot,
@@ -134,6 +135,9 @@ __all__ = [
     "ApprovalRequestStatus",
     "Artifact",
     "AuthProvider",
+    "BrowserActionReceipt",
+    "BrowserProfile",
+    "BrowserSession",
     "Capability",
     "ContextIndexEntry",
     "ContextSnapshot",

@@ -27,7 +27,7 @@ import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, cast, get_origin
 
 import mcp.types as mcp_types
@@ -95,7 +95,7 @@ class ToolSpec:
     output_model: Any
     handler: ToolHandler
     streaming: bool = False
-    read_only: bool = field(init=False)
+    read_only: bool | None = None
     operation_name: str | None = None
     operation_category: str | None = None
     operation_grant_policy: str | None = None
@@ -105,7 +105,8 @@ class ToolSpec:
     output_schema_model: Any | None = None
 
     def __post_init__(self) -> None:
-        self.read_only = not verb_is_mutating(self.name)
+        if self.read_only is None:
+            self.read_only = not verb_is_mutating(self.name)
 
 
 class ToolRegistry:

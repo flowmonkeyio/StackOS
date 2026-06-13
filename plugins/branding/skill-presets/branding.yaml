@@ -21,6 +21,20 @@ presets:
       - artifact.create
       - decision.record
       - action.execute
+      - browser.runtime.status
+      - browser.method.manifest
+      - browser.profile.list
+      - browser.profile.create
+      - browser.session.list
+      - browser.session.start
+      - browser.session.status
+      - browser.session.stop
+      - browser.page.call
+      - browser.context.call
+      - browser.script.run
+      - browser.script.inject
+      - browser.page.snapshot
+      - browser.page.screenshot
     project_adaptation:
       required: true
       do_not_use_verbatim: true

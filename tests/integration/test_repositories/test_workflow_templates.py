@@ -8,6 +8,7 @@ import pytest
 from sqlmodel import Session
 
 from stackos.repositories.base import ConflictError
+from stackos.workflows.run_plan_schema import run_plan_from_template
 from stackos.workflows.template_loader import WorkflowTemplateLoader
 from stackos.workflows.template_schema import WorkflowTemplateSpec
 
@@ -152,15 +153,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert branding_content_actions["publish_linkedin"].optional is True
     assert branding_content_actions["publish_x"].action == "publish.x"
     assert branding_content_actions["publish_x"].optional is True
-    branding_content_steps = {
-        step.id: step for step in branding_content_described.spec.steps
-    }
-    assert branding_content_steps["produce-optional-images"].action_refs == [
-        "image_generate"
-    ]
-    assert branding_content_steps["angle-and-structure"].depends_on == [
-        "research-fact-collection"
-    ]
+    branding_content_steps = {step.id: step for step in branding_content_described.spec.steps}
+    assert branding_content_steps["produce-optional-images"].action_refs == ["image_generate"]
+    assert branding_content_steps["angle-and-structure"].depends_on == ["research-fact-collection"]
     assert "research_source_traceability" in {
         item.key for item in branding_content_described.spec.policies
     }
@@ -173,18 +168,40 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert branding_content_steps["produce-optional-images"].approval_refs == [
         "image_generation_approval"
     ]
-    assert branding_content_steps["approve-and-record"].approval_refs == [
-        "content_packet_approval"
+    assert branding_content_steps["approve-and-record"].approval_refs == ["content_packet_approval"]
+    assert (
+        "action.execute:image_generate" in (branding_content_described.spec.metadata_json["grants"])
+    )
+    assert (
+        "action.execute:publish_linkedin"
+        in (branding_content_described.spec.metadata_json["grants"])
+    )
+    assert "browser.page.call" in branding_content_described.spec.metadata_json["grants"]
+    assert "browser.script.run" in branding_content_described.spec.metadata_json["grants"]
+    assert "browser.script.inject" in branding_content_described.spec.metadata_json["grants"]
+    assert "browser.page.screenshot" in branding_content_described.spec.metadata_json["grants"]
+    assert branding_content_described.spec.metadata_json["mcp_tool_grants"] == [
+        {
+            "step_id": "execute-publication",
+            "tools": [
+                "browser.runtime.status",
+                "browser.method.manifest",
+                "browser.profile.list",
+                "browser.profile.create",
+                "browser.session.list",
+                "browser.session.start",
+                "browser.session.status",
+                "browser.session.stop",
+                "browser.page.call",
+                "browser.context.call",
+                "browser.script.run",
+                "browser.script.inject",
+                "browser.page.snapshot",
+                "browser.page.screenshot",
+            ],
+        }
     ]
-    assert "action.execute:image_generate" in (
-        branding_content_described.spec.metadata_json["grants"]
-    )
-    assert "action.execute:publish_linkedin" in (
-        branding_content_described.spec.metadata_json["grants"]
-    )
-    assert "content_memory_index" in {
-        item.key for item in branding_content_described.spec.outputs
-    }
+    assert "content_memory_index" in {item.key for item in branding_content_described.spec.outputs}
     assert "publication_jobs" in {item.key for item in branding_content_described.spec.outputs}
     assert "publication_bundle_ref" in {
         item.key for item in branding_content_described.spec.outputs
@@ -204,6 +221,36 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "publish_linkedin",
         "publish_email",
     ]
+    branding_run_plan = run_plan_from_template(branding_content_described)
+    execute_publication_grants = [
+        grant
+        for grant in branding_run_plan.grant_snapshot_json["mcp_tool_grants"]
+        if grant["step_id"] == "execute-publication"
+    ]
+    execute_publication_tools = {
+        tool
+        for grant in execute_publication_grants
+        for tool in ([grant["tool"]] if "tool" in grant else grant["tools"])
+    }
+    assert {
+        "action.execute",
+        "resource.upsert",
+        "artifact.create",
+        "browser.runtime.status",
+        "browser.method.manifest",
+        "browser.profile.list",
+        "browser.profile.create",
+        "browser.session.list",
+        "browser.session.start",
+        "browser.session.status",
+        "browser.session.stop",
+        "browser.page.call",
+        "browser.context.call",
+        "browser.script.run",
+        "browser.script.inject",
+        "browser.page.snapshot",
+        "browser.page.screenshot",
+    } <= execute_publication_tools
     assert "distribution_record_refs" in branding_content_steps["execute-publication"].output_refs
     intake_described = repo.describe_template(
         key="communications.customer-feedback-intake",

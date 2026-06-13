@@ -123,16 +123,37 @@ hide external ids, per-file delivery state, provider request ids, idempotency
 state, partial success information, or retry guidance.
 
 MCP tools are generated from the same operation specs, so the daemon has one
-callable contract per StackOS primitive. The agent bridge intentionally
-advertises only `workspace.startSession`, `workspace.resolve`,
-`toolbox.describe`, and `toolbox.call`; use `operation.list` and
-`operation.describe` through the toolbox for purpose, prerequisites, return
-notes, examples, and schemas. Use `toolbox.describe` for exact hidden setup and
-step-granted tools before calling them.
+callable contract per StackOS primitive. The agent bridge advertises
+`workspace.startSession`, `workspace.resolve`, `toolbox.describe`,
+`toolbox.call`, and local full-control `browser.*` tools. Use
+`operation.list` and `operation.describe` through the toolbox for purpose,
+prerequisites, return notes, examples, and schemas. Use `toolbox.describe` for
+exact hidden setup and step-granted tools before calling them.
 
 The UI reads the same docs at `/projects/{project_id}/operations`. That page is
 not a second registry; it renders `GET /api/v1/operations` and
 `GET /api/v1/operations/{operation_name}`.
+
+## Browser Operations
+
+Browser automation is exposed as generic StackOS operations instead of
+provider-specific workflow glue. `browser.page.call` and
+`browser.context.call` mirror public Camoufox/Playwright methods through raw
+method names plus `args`, `kwargs`, or named `arguments`. Convenience operations
+such as `browser.script.run`, `browser.script.inject`, and
+`browser.page.screenshot` sit on top of that parity model.
+
+Do not turn the browser method manifest into an allowlist. It exists for
+discovery, guidance, and drift tests while preserving full browser control for
+agents. Browser side-effect operations are raw-only; persisted receipts store
+redacted summaries and artifact refs rather than raw scripts, returned values,
+or daemon-local paths.
+
+Browser side-effect operations advertise `secret_policy=raw-browser-output`.
+That means the immediate operation payload can contain page, cookie, storage,
+or JavaScript-returned data. Browser session state and generated artifacts are
+local operational state and must be treated as sensitive; receipts are redacted
+for audit, not as a browser capability restriction.
 
 ## Generic REST Calls
 
@@ -308,6 +329,20 @@ The current core operation registry includes:
 - `agentRequest.linkRunPlan`
 - `agentRequest.complete`
 - `agentRequest.ignore`
+- `browser.runtime.status`
+- `browser.method.manifest`
+- `browser.profile.create`
+- `browser.profile.list`
+- `browser.session.start`
+- `browser.session.stop`
+- `browser.session.list`
+- `browser.session.status`
+- `browser.page.call`
+- `browser.context.call`
+- `browser.script.run`
+- `browser.script.inject`
+- `browser.page.snapshot`
+- `browser.page.screenshot`
 - `communication.reply`
 - `communication.send`
 - `communicationProfile.list`

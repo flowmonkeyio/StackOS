@@ -42,6 +42,41 @@ def _start_resource_run_plan(mcp: MCPClient, project_id: int) -> str:
     return token
 
 
+def _start_browser_status_run_plan(mcp: MCPClient, project_id: int) -> str:
+    plan_json = {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "browser-grant-check.run",
+        "title": "Browser grant check",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "inspect-browser",
+                    "tool": "browser.runtime.status",
+                }
+            ]
+        },
+        "steps": [{"id": "inspect-browser", "title": "Inspect browser"}],
+    }
+    created = mcp.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": plan_json},
+    )
+    started = mcp.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    token = started["data"]["run_token"]
+    mcp.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "inspect-browser",
+            "run_token": token,
+        },
+    )
+    return token
+
+
 def _start_run_for_skill(mcp: MCPClient, project_id: int, skill_name: str) -> str:
     env = mcp.call_tool_structured(
         "run.start",
@@ -74,6 +109,53 @@ def test_run_plan_controller_can_call_step_grant_tool(
     )
 
     assert out["data"]["resource_key"] == "learning"
+
+
+def test_run_plan_controller_can_call_browser_step_grant_tool(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    pid = seeded_project["data"]["id"]
+    token = _start_browser_status_run_plan(mcp_client, pid)
+
+    out = mcp_client.call_tool_structured(
+        "browser.runtime.status",
+        {
+            "project_id": pid,
+            "run_token": token,
+        },
+    )
+
+    assert out["provider"] == "camoufox"
+    assert out["executable_path"] is None
+
+
+def test_run_plan_browser_grant_rejects_cross_project_arguments(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    pid = seeded_project["data"]["id"]
+    token = _start_browser_status_run_plan(mcp_client, pid)
+    other = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "browser-grant-other-project",
+            "name": "Browser Grant Other Project",
+            "domain": "browser-grant-other.example",
+            "locale": "en-US",
+        },
+    )
+
+    err = mcp_client.call_tool_error(
+        "browser.runtime.status",
+        {
+            "project_id": other["data"]["id"],
+            "run_token": token,
+        },
+    )
+
+    assert err["code"] == -32007
+    assert "not scoped to this project" in err["data"]["detail"]
 
 
 def test_terminal_run_plan_token_cannot_mutate_tracker_state(

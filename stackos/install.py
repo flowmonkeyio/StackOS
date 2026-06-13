@@ -26,6 +26,7 @@ Public surface:
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import json
 import os
 import shutil
@@ -84,6 +85,40 @@ def _repo_root_if_clone() -> Path | None:
 def detect_mode() -> InstallMode:
     """Return the install mode based on the on-disk layout."""
     return "clone" if _repo_root_if_clone() is not None else "pipx"
+
+
+def ensure_camoufox_browser(*, timeout_seconds: int = 180) -> tuple[bool, str]:
+    """Ensure the packaged Camoufox browser binary is fetched.
+
+    The Python dependency is declared in ``pyproject.toml``. This helper owns the
+    second Camoufox setup step (`python -m camoufox fetch`) so clone-mode and
+    package-mode installs converge on the same ready-to-run browser state.
+    """
+    if importlib.util.find_spec("camoufox") is None:
+        return (
+            False,
+            "Camoufox package is not importable; install/sync Python dependencies first.",
+        )
+    path_probe = subprocess.run(
+        [sys.executable, "-m", "camoufox", "path"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    if path_probe.returncode == 0 and path_probe.stdout.strip():
+        return True, "Camoufox browser present."
+    fetch = subprocess.run(
+        [sys.executable, "-m", "camoufox", "fetch"],
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        check=False,
+    )
+    if fetch.returncode != 0:
+        detail = (fetch.stderr or fetch.stdout).strip()
+        return False, f"Camoufox fetch failed: {detail or 'unknown error'}"
+    return True, "Camoufox browser fetched."
 
 
 def _bundled_assets_root() -> Traversable:

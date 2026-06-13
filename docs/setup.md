@@ -14,18 +14,20 @@ Every supported setup path should land at the same state:
 1. Create local data and state directories.
 2. Create `seed.bin` and `auth.token` with mode `0600`.
 3. Run database migrations.
-4. Hydrate the `stackos` skill mirrors for Codex and Claude from the canonical
+4. Fetch the packaged Camoufox browser runtime for daemon-owned browser
+   automation.
+5. Hydrate the `stackos` skill mirrors for Codex and Claude from the canonical
    package-managed skill.
-5. Hydrate the `stackos` Codex plugin from bundled assets and refresh any
+6. Hydrate the `stackos` Codex plugin from bundled assets and refresh any
    existing Codex runtime cache copy.
-6. Register the stdio MCP bridge for supported agent runtimes.
-7. Start the daemon now, or install daemon autostart.
-8. Open the StackOS UI at `http://127.0.0.1:5180/`.
-9. Create or select a project.
-10. Enable needed plugins.
-11. Add provider connections.
-12. Connect any working repository through workspace binding.
-13. Run workflow templates, run plans, and action calls.
+7. Register the stdio MCP bridge for supported agent runtimes.
+8. Start the daemon now, or install daemon autostart.
+9. Open the StackOS UI at `http://127.0.0.1:5180/`.
+10. Create or select a project.
+11. Enable needed plugins.
+12. Add provider connections.
+13. Connect any working repository through workspace binding.
+14. Run workflow templates, run plans, browser sessions, and action calls.
 
 Agents never receive the auth token, seed, API keys, OAuth tokens, SMTP
 passwords, app passwords, or encrypted credential payloads. They receive safe
@@ -44,9 +46,9 @@ make serve
 ```
 
 `make install` syncs Python dependencies, initializes state, runs migrations,
-checks the committed UI bundle, installs Codex and Claude skill mirrors,
-installs plugin assets, refreshes any existing Codex plugin cache copy,
-registers MCP bridge entries, and runs `doctor`. It is
+fetches the Camoufox browser runtime, checks the committed UI bundle, installs
+Codex and Claude skill mirrors, installs plugin assets, refreshes any existing
+Codex plugin cache copy, registers MCP bridge entries, and runs `doctor`. It is
 normal for the final doctor check to report `daemon_up: False` before
 `make serve` starts the daemon.
 
@@ -81,8 +83,9 @@ stackos start
 
 `stackos install` initializes local state, runs database migrations, hydrates
 Codex and Claude skill mirrors from the package-managed `stackos:stackos`
-skill, hydrates plugin assets, refreshes any existing Codex plugin cache copy,
-registers MCP bridge entries, and runs `doctor`. Operators and customers should
+skill, fetches the Camoufox browser runtime, hydrates plugin assets, refreshes
+any existing Codex plugin cache copy, registers MCP bridge entries, and runs
+`doctor`. Operators and customers should
 not edit the managed StackOS skill by hand. Project-specific agent guidance
 belongs in project docs, workflow templates, tracker tasks, and adapted agent
 presets. A daemon-down doctor result is treated as a first-run warning during

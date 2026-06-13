@@ -149,8 +149,8 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
     assert "Default unsupported or untraceable claims to cut" in claim_text
     assert "Do not publish or decide routing" in claim_text
     assert (
-        "Do not publish, send, click final external publication controls, or operate provider actions"
-        in strategist_text
+        "Do not publish, send, click final external publication controls, "
+        "or operate provider actions" in strategist_text
     )
     assert "branding.content-production" in sanitization.preset.applies_to_workflows
     assert sanitization.preset.applies_to_workflows == ["branding.content-production"]
