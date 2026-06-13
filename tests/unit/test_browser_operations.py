@@ -25,6 +25,7 @@ from stackos.mcp.context import MCPContext
 from stackos.mcp.server import ToolRegistry
 from stackos.mcp.tools import register_all
 from stackos.operations.browser import (
+    BrowserHandleCallInput,
     BrowserPageCallInput,
     BrowserPageSnapshotInput,
     BrowserProfileCreateInput,
@@ -82,6 +83,28 @@ class FakeBrowserRuntime:
             page_ref=f"{session_ref}:page-1",
             url="https://example.com/context?auth=secret",
             value={"cookies": [{"name": "session", "value": "cookie-secret"}]},
+            page_refs=[f"{session_ref}:page-1", f"{session_ref}:page-2"],
+        )
+
+    async def handle_call(
+        self,
+        *,
+        session_ref: str,
+        handle_ref: str,
+        method: str,
+        arguments: dict[str, Any],
+        raw_args: list[Any] | None = None,
+        raw_kwargs: dict[str, Any] | None = None,
+    ) -> BrowserCallResult:
+        _ = arguments, raw_args, raw_kwargs
+        if method == "explode":
+            raise RuntimeError("handle secret-token")
+        return BrowserCallResult(
+            method=method,
+            status="ok",
+            page_ref=f"{session_ref}:page-1",
+            url="https://example.com/handle?auth=secret",
+            value={"handle_ref": handle_ref, "clicked": True},
             page_refs=[f"{session_ref}:page-1", f"{session_ref}:page-2"],
         )
 
@@ -156,8 +179,19 @@ class FakeDynamicPage:
     async def public_method(self, value: str, *, suffix: str) -> dict[str, str]:
         return {"value": value, "suffix": suffix}
 
+    def locator(self, selector: str) -> FakeLocator:
+        return FakeLocator(selector)
+
     async def title(self) -> str:
         return "Fake Page"
+
+
+class FakeLocator:
+    def __init__(self, selector: str) -> None:
+        self.selector = selector
+
+    async def count(self) -> int:
+        return 3
 
 
 class FakeDynamicContext:
@@ -260,6 +294,7 @@ def test_browser_operation_specs_are_raw_side_effects() -> None:
         "browser.session.stop",
         "browser.page.call",
         "browser.context.call",
+        "browser.handle.call",
         "browser.script.run",
         "browser.script.inject",
         "browser.page.snapshot",
@@ -280,6 +315,7 @@ def test_browser_mcp_tools_use_operation_read_only_flags() -> None:
     assert registry.get("browser.profile.list").read_only is True
     assert registry.get("browser.page.call").read_only is False
     assert registry.get("browser.context.call").read_only is False
+    assert registry.get("browser.handle.call").read_only is False
 
 
 def test_browser_runtime_status_is_repair_or_ready() -> None:
@@ -365,6 +401,30 @@ def test_runtime_dynamic_page_and_context_methods_support_page_refs() -> None:
 
     assert called.page_ref == f"{session_ref}:page-2"
     assert called.value == {"value": "hello", "suffix": "world"}
+
+    locator = asyncio.run(
+        runtime.page_call(
+            session_ref=session_ref,
+            spec=None,
+            method="locator",
+            arguments={"selector": "#submit"},
+            page_ref=f"{session_ref}:page-2",
+        )
+    )
+
+    assert locator.value["handle_ref"] == f"{session_ref}:handle-1"
+    assert locator.value["type"] == "FakeLocator"
+
+    counted = asyncio.run(
+        runtime.handle_call(
+            session_ref=session_ref,
+            handle_ref=locator.value["handle_ref"],
+            method="count",
+            arguments={},
+        )
+    )
+
+    assert counted.value == 3
 
     with pytest.raises(ValidationError):
         asyncio.run(
@@ -754,6 +814,104 @@ def test_context_call_receipt_summarizes_result(
     assert "cookie-secret" not in str(out.data.receipt.model_dump())
 
 
+def test_handle_call_receipt_summarizes_result(
+    browser_operation_context: tuple[int, str, MCPContext, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_id, session_ref, ctx, _session = browser_operation_context
+    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: FakeBrowserRuntime())
+
+    out = asyncio.run(
+        browser_ops._browser_handle_call(
+            BrowserHandleCallInput(
+                project_id=project_id,
+                session_ref=session_ref,
+                handle_ref=f"{session_ref}:handle-1",
+                method="click",
+                arguments={},
+            ),
+            ctx,
+            _emit=None,
+        )
+    )
+
+    assert out.data.result["value"]["clicked"] is True
+    assert out.data.receipt.operation == "browser.handle.call"
+    assert out.data.receipt.input_summary_json == {
+        "method": "click",
+        "handle_ref": f"{session_ref}:handle-1",
+    }
+    assert out.data.receipt.result_json["value_summary"] == {"type": "object", "key_count": 2}
+    assert "secret" not in str(out.data.receipt.model_dump())
+
+
+def test_session_list_marks_db_running_without_live_handle_stale(
+    browser_operation_context: tuple[int, str, MCPContext, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_id, session_ref, ctx, session = browser_operation_context
+
+    class EmptyRuntime:
+        def status(self) -> RuntimeStatus:
+            return RuntimeStatus(
+                provider="camoufox",
+                package_installed=True,
+                package_version="0.4.11",
+                browser_downloaded=True,
+                executable_path="/private/camoufox",
+                live_session_refs=[],
+            )
+
+    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: EmptyRuntime())
+
+    out = asyncio.run(
+        browser_ops._browser_session_list(
+            browser_ops.BrowserSessionListInput(project_id=project_id),
+            ctx,
+            _emit=None,
+        )
+    )
+
+    assert out.items[0].session_ref == session_ref
+    assert out.items[0].status == "stale"
+    repo = BrowserRepository(session)
+    row, _profile = repo.get_session(project_id=project_id, session_ref=session_ref)
+    assert row.status == "stale"
+
+
+def test_not_live_page_call_marks_session_stale(
+    browser_operation_context: tuple[int, str, MCPContext, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_id, session_ref, ctx, session = browser_operation_context
+
+    class NotLiveRuntime:
+        async def page_call(self, **_kwargs: Any) -> BrowserCallResult:
+            raise ValidationError(
+                "browser session is not live in this daemon process",
+                data={"session_ref": session_ref},
+            )
+
+    monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: NotLiveRuntime())
+
+    with pytest.raises(RepositoryError):
+        asyncio.run(
+            browser_ops._browser_page_call(
+                BrowserPageCallInput(
+                    project_id=project_id,
+                    session_ref=session_ref,
+                    method="title",
+                ),
+                ctx,
+                _emit=None,
+            )
+        )
+
+    repo = BrowserRepository(session)
+    row, _profile = repo.get_session(project_id=project_id, session_ref=session_ref)
+    assert row.status == "stale"
+
+
 def test_failed_screenshot_records_failed_receipt_without_artifact(
     browser_operation_context: tuple[int, str, MCPContext, Session],
     monkeypatch: pytest.MonkeyPatch,
@@ -865,16 +1023,16 @@ def test_failed_session_stop_records_failed_receipt(
 
     monkeypatch.setattr(browser_ops, "get_browser_runtime", lambda: MissingLiveRuntime())
 
-    with pytest.raises(RepositoryError):
-        asyncio.run(
-            browser_ops._browser_session_stop(
-                BrowserSessionRefInput(project_id=project_id, session_ref=session_ref),
-                ctx,
-                _emit=None,
-            )
+    out = asyncio.run(
+        browser_ops._browser_session_stop(
+            BrowserSessionRefInput(project_id=project_id, session_ref=session_ref),
+            ctx,
+            _emit=None,
         )
+    )
 
     receipt = _receipt_rows(session)[0]
     assert receipt.operation == "browser.session.stop"
-    assert receipt.status == "failed"
-    assert receipt.result_json["error_type"] == "ValidationError"
+    assert receipt.status == "stale"
+    assert out.data.status == "stale"
+    assert receipt.result_json["status"] == "stale"

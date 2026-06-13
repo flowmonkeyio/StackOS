@@ -99,6 +99,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "auth.status",
         "auth.test",
         "browser.context.call",
+        "browser.handle.call",
         "browser.method.manifest",
         "browser.page.call",
         "browser.page.screenshot",

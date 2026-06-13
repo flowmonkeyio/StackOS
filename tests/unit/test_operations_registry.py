@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 182
+    assert len(names) == 183
     assert {
         "action.execute",
         "auth.status",
@@ -47,6 +47,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "browser.session.start",
         "browser.page.call",
         "browser.context.call",
+        "browser.handle.call",
         "browser.script.run",
         "browser.script.inject",
         "browser.page.screenshot",
@@ -223,6 +224,11 @@ def test_operation_registry_documents_core_operations() -> None:
     assert browser_context.mutating is True
     assert browser_context.response_policy.default_mode == "raw"
     assert "context-level browser control" in browser_context.purpose
+
+    browser_handle = registry.get("browser.handle.call").describe_out()
+    assert browser_handle.mutating is True
+    assert browser_handle.response_policy.default_mode == "raw"
+    assert "object handle" in browser_handle.summary
 
     project_list = registry.get("project.list").describe_out()
     assert project_list.surfaces["mcp"].enabled is True

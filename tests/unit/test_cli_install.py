@@ -204,6 +204,47 @@ def test_ensure_camoufox_browser_fetches_when_missing(monkeypatch: pytest.Monkey
     assert calls == ["path", "fetch"]
 
 
+def test_ensure_camoufox_browser_reports_fetch_failure_without_raw_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _ = kwargs
+        if args[-1] == "path":
+            return subprocess.CompletedProcess(args, 1, "", "missing /private/camoufox")
+        return subprocess.CompletedProcess(args, 2, "", "failed at /private/camoufox secret-token")
+
+    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+
+    ok, message = installer.ensure_camoufox_browser()
+
+    assert ok is False
+    assert "Camoufox fetch failed: exit_code=2" in message
+    assert "output_sha256=" in message
+    assert "/private" not in message
+    assert "secret-token" not in message
+
+
+def test_ensure_camoufox_browser_reports_fetch_timeout_without_raw_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _ = kwargs
+        if args[-1] == "path":
+            return subprocess.CompletedProcess(args, 1, "", "missing")
+        raise subprocess.TimeoutExpired(args, timeout=1, output="secret")
+
+    monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+
+    ok, message = installer.ensure_camoufox_browser()
+
+    assert ok is False
+    assert "Camoufox fetch failed: error_type=TimeoutExpired" in message
+    assert "message_sha256=" in message
+    assert "secret" not in message
+
+
 def test_doctor_browser_runtime_hides_existing_browser_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -26,6 +26,7 @@ Public surface:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.util
 import json
 import os
@@ -99,26 +100,52 @@ def ensure_camoufox_browser(*, timeout_seconds: int = 180) -> tuple[bool, str]:
             False,
             "Camoufox package is not importable; install/sync Python dependencies first.",
         )
-    path_probe = subprocess.run(
-        [sys.executable, "-m", "camoufox", "path"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
+    try:
+        path_probe = subprocess.run(
+            [sys.executable, "-m", "camoufox", "path"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as exc:
+        return False, f"Camoufox path check failed: {_safe_process_error(exc)}"
     if path_probe.returncode == 0 and path_probe.stdout.strip():
         return True, "Camoufox browser present."
-    fetch = subprocess.run(
-        [sys.executable, "-m", "camoufox", "fetch"],
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-        check=False,
-    )
+    try:
+        fetch = subprocess.run(
+            [sys.executable, "-m", "camoufox", "fetch"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except Exception as exc:
+        return False, f"Camoufox fetch failed: {_safe_process_error(exc)}"
     if fetch.returncode != 0:
         detail = (fetch.stderr or fetch.stdout).strip()
-        return False, f"Camoufox fetch failed: {detail or 'unknown error'}"
+        return False, (
+            f"Camoufox fetch failed: exit_code={fetch.returncode}; {_safe_process_output(detail)}"
+        )
     return True, "Camoufox browser fetched."
+
+
+def _safe_process_error(exc: Exception) -> str:
+    message = str(exc)
+    return (
+        f"error_type={type(exc).__name__}; "
+        f"message_sha256={hashlib.sha256(message.encode('utf-8')).hexdigest()}; "
+        f"message_length={len(message)}"
+    )
+
+
+def _safe_process_output(output: str) -> str:
+    if not output:
+        return "output=empty"
+    return (
+        f"output_sha256={hashlib.sha256(output.encode('utf-8')).hexdigest()}; "
+        f"output_length={len(output)}"
+    )
 
 
 def _bundled_assets_root() -> Traversable:

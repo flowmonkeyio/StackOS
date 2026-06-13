@@ -183,6 +183,28 @@ class BrowserContextCallInput(MCPInput):
     kwargs: dict[str, Any] | None = None
 
 
+class BrowserHandleCallInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "session_ref": "browser-session:project-1:default:default",
+                "handle_ref": "browser-session:project-1:default:default:handle-1",
+                "method": "click",
+            }
+        },
+    )
+
+    project_id: int
+    session_ref: str
+    handle_ref: str
+    method: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    args: list[Any] | None = None
+    kwargs: dict[str, Any] | None = None
+
+
 class BrowserScriptRunInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
@@ -361,6 +383,12 @@ def _raise_safe_browser_error(
     ) from exc
 
 
+def _is_not_live_session_error(exc: Exception) -> bool:
+    if not isinstance(exc, ValidationError):
+        return False
+    return exc.detail == "browser session is not live in this daemon process"
+
+
 def _call_summary(
     method: str,
     arguments: dict[str, Any],
@@ -393,10 +421,16 @@ def _session_key_from_ref(session_ref: str) -> str:
 
 async def _browser_runtime_status(
     inp: BrowserRuntimeStatusInput,
-    _ctx: MCPContext,
+    ctx: MCPContext,
     _emit: ProgressEmitter,
 ) -> BrowserRuntimeStatusOut:
-    status = get_browser_runtime().status().to_dict(project_id=inp.project_id)
+    runtime_status = get_browser_runtime().status()
+    if inp.project_id is not None:
+        BrowserRepository(ctx.session).reconcile_running_sessions(
+            project_id=inp.project_id,
+            live_session_refs=runtime_status.live_session_refs,
+        )
+    status = runtime_status.to_dict(project_id=inp.project_id)
     status["method_manifest"] = browser_method_manifest()
     return BrowserRuntimeStatusOut.model_validate(status)
 
@@ -411,6 +445,7 @@ async def _browser_method_manifest(
         notes=[
             "The core policy is parity-first: public Camoufox/Playwright methods are callable.",
             "browser.page.call and browser.context.call accept raw method, args, and kwargs.",
+            "Object results return handle_ref values that can be used with browser.handle.call.",
             "Convenience operations exist for script run/injection, snapshots, and screenshots.",
         ],
     )
@@ -561,13 +596,31 @@ async def _browser_session_stop(
     try:
         stopped = await runtime.stop_session(session_ref=inp.session_ref)
         if not stopped:
-            raise ValidationError(
-                "browser session is not live in this daemon process",
-                data={
+            env = repo.mark_session_stale(
+                project_id=inp.project_id,
+                session_ref=inp.session_ref,
+            )
+            repo.record_receipt(
+                project_id=inp.project_id,
+                profile_id=env.data.profile_id,
+                session_id=env.data.id,
+                artifact_id=None,
+                session_ref=inp.session_ref,
+                page_ref=fallback_page_ref,
+                operation="browser.session.stop",
+                method="stop",
+                side_effect_class="session",
+                target_url=_redact_url(env.data.current_url),
+                target_origin=_origin(env.data.current_url),
+                status="stale",
+                input_summary_json={"session_ref": inp.session_ref},
+                result_json={
                     "session_ref": inp.session_ref,
-                    "repair": "Start the session again with browser.session.start.",
+                    "status": "stale",
+                    "repair": "Start a fresh session with browser.session.start.",
                 },
             )
+            return WriteEnvelope(data=env.data, run_id=ctx.run_id, project_id=env.project_id)
     except Exception as exc:
         repo.record_receipt(
             project_id=inp.project_id,
@@ -621,7 +674,12 @@ async def _browser_session_list(
     ctx: MCPContext,
     _emit: ProgressEmitter,
 ) -> Page[BrowserSessionOut]:
-    return BrowserRepository(ctx.session).list_sessions(project_id=inp.project_id)
+    repo = BrowserRepository(ctx.session)
+    repo.reconcile_running_sessions(
+        project_id=inp.project_id,
+        live_session_refs=get_browser_runtime().status().live_session_refs,
+    )
+    return repo.list_sessions(project_id=inp.project_id)
 
 
 async def _browser_session_status(
@@ -629,11 +687,16 @@ async def _browser_session_status(
     ctx: MCPContext,
     _emit: ProgressEmitter,
 ) -> BrowserSessionOut:
-    session, profile = BrowserRepository(ctx.session).get_session(
+    repo = BrowserRepository(ctx.session)
+    repo.reconcile_running_sessions(
+        project_id=inp.project_id,
+        live_session_refs=get_browser_runtime().status().live_session_refs,
+    )
+    session, profile = repo.get_session(
         project_id=inp.project_id,
         session_ref=inp.session_ref,
     )
-    return BrowserRepository(ctx.session).session_out(session, profile)
+    return repo.session_out(session, profile)
 
 
 async def _browser_page_call(
@@ -659,6 +722,8 @@ async def _browser_page_call(
             page_ref=inp.page_ref,
         )
     except Exception as exc:
+        if _is_not_live_session_error(exc):
+            repo.mark_session_stale(project_id=inp.project_id, session_ref=inp.session_ref)
         repo.record_receipt(
             project_id=inp.project_id,
             profile_id=profile.id,
@@ -734,6 +799,8 @@ async def _browser_context_call(
             raw_kwargs=inp.kwargs,
         )
     except Exception as exc:
+        if _is_not_live_session_error(exc):
+            repo.mark_session_stale(project_id=inp.project_id, session_ref=inp.session_ref)
         repo.record_receipt(
             project_id=inp.project_id,
             profile_id=profile.id,
@@ -777,6 +844,85 @@ async def _browser_context_call(
         operation="browser.context.call",
         method=inp.method,
         side_effect_class="context",
+        target_url=_redact_url(result.url),
+        target_origin=_origin(result.url),
+        status=result.status,
+        input_summary_json=input_summary,
+        result_json=_result_summary(result),
+    )
+    return WriteEnvelope(
+        data=BrowserCallOut(receipt=receipt, session=session_out, result=result.to_public_result()),
+        run_id=ctx.run_id,
+        project_id=inp.project_id,
+    )
+
+
+async def _browser_handle_call(
+    inp: BrowserHandleCallInput,
+    ctx: MCPContext,
+    _emit: ProgressEmitter,
+) -> WriteEnvelope[BrowserCallOut]:
+    repo = BrowserRepository(ctx.session)
+    session_row, profile = repo.get_session(project_id=inp.project_id, session_ref=inp.session_ref)
+    input_summary = _call_summary(inp.method, inp.arguments, inp.args, inp.kwargs)
+    input_summary["handle_ref"] = inp.handle_ref
+    page_refs = session_row.page_refs_json or []
+    fallback_page_ref = page_refs[0] if page_refs else f"{inp.session_ref}:page-1"
+    try:
+        result = await get_browser_runtime().handle_call(
+            session_ref=inp.session_ref,
+            handle_ref=inp.handle_ref,
+            method=inp.method,
+            arguments=dict(inp.arguments),
+            raw_args=inp.args,
+            raw_kwargs=inp.kwargs,
+        )
+    except Exception as exc:
+        if _is_not_live_session_error(exc):
+            repo.mark_session_stale(project_id=inp.project_id, session_ref=inp.session_ref)
+        repo.record_receipt(
+            project_id=inp.project_id,
+            profile_id=profile.id,
+            session_id=session_row.id,
+            artifact_id=None,
+            session_ref=inp.session_ref,
+            page_ref=fallback_page_ref,
+            operation="browser.handle.call",
+            method=inp.method,
+            side_effect_class="handle",
+            target_url=_redact_url(session_row.current_url),
+            target_origin=_origin(session_row.current_url),
+            status="failed",
+            input_summary_json=input_summary,
+            result_json=_failure_summary(
+                method=inp.method,
+                page_ref=fallback_page_ref,
+                url=session_row.current_url,
+                exc=exc,
+            ),
+            error=_error_summary(exc),
+        )
+        _raise_safe_browser_error(
+            operation="browser.handle.call",
+            method=inp.method,
+            exc=exc,
+        )
+    session_out = repo.update_session_url(
+        project_id=inp.project_id,
+        session_ref=inp.session_ref,
+        current_url=result.url,
+        page_refs=result.page_refs,
+    )
+    receipt = repo.record_receipt(
+        project_id=inp.project_id,
+        profile_id=profile.id,
+        session_id=session_row.id,
+        artifact_id=None,
+        session_ref=inp.session_ref,
+        page_ref=result.page_ref,
+        operation="browser.handle.call",
+        method=inp.method,
+        side_effect_class="handle",
         target_url=_redact_url(result.url),
         target_origin=_origin(result.url),
         status=result.status,
@@ -853,6 +999,8 @@ async def _browser_page_snapshot(
             page_ref=inp.page_ref,
         )
     except Exception as exc:
+        if _is_not_live_session_error(exc):
+            repo.mark_session_stale(project_id=inp.project_id, session_ref=inp.session_ref)
         repo.record_receipt(
             project_id=inp.project_id,
             profile_id=profile.id,
@@ -933,6 +1081,8 @@ async def _browser_page_screenshot(
             page_ref=inp.page_ref,
         )
     except Exception as exc:
+        if _is_not_live_session_error(exc):
+            repo.mark_session_stale(project_id=inp.project_id, session_ref=inp.session_ref)
         repo.record_receipt(
             project_id=inp.project_id,
             profile_id=profile.id,
@@ -1171,6 +1321,23 @@ def operation_specs():
             response_policy=_BROWSER_SIDE_EFFECT_POLICY,
         ),
         operation_spec(
+            name="browser.handle.call",
+            summary="Call any public method or property on a live browser object handle.",
+            input_model=BrowserHandleCallInput,
+            output_model=WriteEnvelope[BrowserCallOut],
+            handler=_browser_handle_call,
+            purpose=(
+                "Use this when a public page/context call returns an object such as a "
+                "locator, download, popup, response, or other Playwright handle. Pass "
+                "the returned handle_ref plus raw args/kwargs."
+            ),
+            mutating=True,
+            grant_policy=direct_browser,
+            secret_policy=raw_browser_output,
+            category="browser",
+            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+        ),
+        operation_spec(
             name="browser.script.run",
             summary="Run arbitrary JavaScript in the active page.",
             input_model=BrowserScriptRunInput,
@@ -1229,6 +1396,7 @@ def operation_specs():
 
 __all__ = [
     "BrowserContextCallInput",
+    "BrowserHandleCallInput",
     "BrowserPageCallInput",
     "BrowserPageSnapshotInput",
     "BrowserProfileCreateInput",

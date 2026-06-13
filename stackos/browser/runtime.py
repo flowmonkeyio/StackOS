@@ -132,6 +132,7 @@ class LiveBrowserSession:
     context: Any
     pages: dict[str, Any]
     active_page_ref: str
+    handles: dict[str, Any] = field(default_factory=dict)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     @property
@@ -588,6 +589,59 @@ class BrowserRuntime:
                 value=_json_safe(value, live=live),
             )
 
+    async def handle_call(
+        self,
+        *,
+        session_ref: str,
+        handle_ref: str,
+        method: str,
+        arguments: dict[str, Any],
+        raw_args: list[Any] | None = None,
+        raw_kwargs: dict[str, Any] | None = None,
+    ) -> BrowserCallResult:
+        live = self.get_session(session_ref=session_ref)
+        async with live.lock:
+            handle = live.handles.get(handle_ref)
+            if handle is None:
+                raise ValidationError(
+                    "browser handle ref is not live in this session",
+                    data={
+                        "handle_ref": handle_ref,
+                        "live_handle_refs": sorted(live.handles),
+                        "repair": (
+                            "Create a fresh handle with browser.page.call or browser.context.call."
+                        ),
+                    },
+                )
+            if method.startswith("_"):
+                raise ValidationError("private browser handle methods are not callable")
+            target = getattr(handle, method, None)
+            args = list(raw_args or arguments.pop("args", []) or [])
+            kwargs = dict(raw_kwargs or arguments.pop("kwargs", {}) or {})
+            if arguments:
+                kwargs.update(arguments)
+            if callable(target):
+                value = target(*args, **kwargs)
+            elif target is not None and not args and not kwargs:
+                value = target
+            else:
+                raise ValidationError(
+                    "browser handle method is not callable",
+                    data={"handle_ref": handle_ref, "method": method},
+                )
+            if isawaitable(value):
+                value = await value
+            self._sync_pages(live)
+            result_page_ref = self._page_ref_for(live, value) or live.page_ref
+            return BrowserCallResult(
+                method=method,
+                status="ok",
+                page_ref=result_page_ref,
+                url=live.page.url,
+                page_refs=live.page_refs,
+                value=_json_safe(value, live=live),
+            )
+
     async def snapshot(
         self,
         *,
@@ -653,6 +707,20 @@ class BrowserRuntime:
                 return ref
         return None
 
+    def _handle_ref_for(self, live: LiveBrowserSession, value: Any) -> str | None:
+        for ref, candidate in live.handles.items():
+            if candidate is value:
+                return ref
+        return None
+
+    def _store_handle(self, live: LiveBrowserSession, value: Any) -> str:
+        existing = self._handle_ref_for(live, value)
+        if existing is not None:
+            return existing
+        handle_ref = f"{live.session_ref}:handle-{len(live.handles) + 1}"
+        live.handles[handle_ref] = value
+        return handle_ref
+
     def _page_for_ref(
         self,
         live: LiveBrowserSession,
@@ -704,7 +772,21 @@ def _json_safe(value: Any, *, live: LiveBrowserSession | None = None) -> Any:
     for attr in ("url", "title", "status"):
         candidate = getattr(value, attr, None)
         if isinstance(candidate, str | int | float | bool):
-            return {attr: candidate, "repr": repr(value)}
+            handle_ref = (
+                get_browser_runtime()._store_handle(live, value) if live is not None else None
+            )
+            out: dict[str, Any] = {attr: candidate, "repr": repr(value)[:120]}
+            if handle_ref is not None:
+                out["handle_ref"] = handle_ref
+                out["type"] = type(value).__name__
+            return out
+    if live is not None:
+        handle_ref = get_browser_runtime()._store_handle(live, value)
+        return {
+            "handle_ref": handle_ref,
+            "type": type(value).__name__,
+            "repr": repr(value)[:120],
+        }
     return repr(value)
 
 

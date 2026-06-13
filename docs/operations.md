@@ -139,9 +139,12 @@ not a second registry; it renders `GET /api/v1/operations` and
 Browser automation is exposed as generic StackOS operations instead of
 provider-specific workflow glue. `browser.page.call` and
 `browser.context.call` mirror public Camoufox/Playwright methods through raw
-method names plus `args`, `kwargs`, or named `arguments`. Convenience operations
-such as `browser.script.run`, `browser.script.inject`, and
-`browser.page.screenshot` sit on top of that parity model.
+method names plus `args`, `kwargs`, or named `arguments`. Calls that return
+non-page browser objects return transient `handle_ref` values; use
+`browser.handle.call` to call public methods or properties on those returned
+objects. Convenience operations such as `browser.script.run`,
+`browser.script.inject`, and `browser.page.screenshot` sit on top of that
+parity model.
 
 Do not turn the browser method manifest into an allowlist. It exists for
 discovery, guidance, and drift tests while preserving full browser control for
@@ -339,6 +342,7 @@ The current core operation registry includes:
 - `browser.session.status`
 - `browser.page.call`
 - `browser.context.call`
+- `browser.handle.call`
 - `browser.script.run`
 - `browser.script.inject`
 - `browser.page.snapshot`

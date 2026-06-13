@@ -253,6 +253,37 @@ class BrowserRepository:
             total_estimate=len(rows),
         )
 
+    def reconcile_running_sessions(
+        self,
+        *,
+        project_id: int,
+        live_session_refs: list[str] | set[str] | tuple[str, ...],
+    ) -> list[str]:
+        """Mark DB-running sessions stale when this daemon has no live handle."""
+        self.require_project(project_id)
+        live = set(live_session_refs)
+        rows = list(
+            self._s.exec(
+                select(BrowserSession).where(
+                    col(BrowserSession.project_id) == project_id,
+                    col(BrowserSession.status) == "running",
+                )
+            ).all()
+        )
+        stale_refs: list[str] = []
+        now = _utcnow()
+        for row in rows:
+            if row.session_ref in live:
+                continue
+            row.status = "stale"
+            row.ended_at = now
+            row.updated_at = now
+            self._s.add(row)
+            stale_refs.append(row.session_ref)
+        if stale_refs:
+            self._s.commit()
+        return stale_refs
+
     def get_session(
         self,
         *,
@@ -278,6 +309,22 @@ class BrowserRepository:
         session_row, profile = self.get_session(project_id=project_id, session_ref=session_ref)
         now = _utcnow()
         session_row.status = "stopped"
+        session_row.ended_at = now
+        session_row.updated_at = now
+        self._s.add(session_row)
+        self._s.commit()
+        self._s.refresh(session_row)
+        return Envelope(data=self._session_out(session_row, profile), project_id=project_id)
+
+    def mark_session_stale(
+        self,
+        *,
+        project_id: int,
+        session_ref: str,
+    ) -> Envelope[BrowserSessionOut]:
+        session_row, profile = self.get_session(project_id=project_id, session_ref=session_ref)
+        now = _utcnow()
+        session_row.status = "stale"
         session_row.ended_at = now
         session_row.updated_at = now
         self._s.add(session_row)

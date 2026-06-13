@@ -603,6 +603,7 @@ metadata:
     - browser.session.stop
     - browser.page.call
     - browser.context.call
+    - browser.handle.call
     - browser.script.run
     - browser.script.inject
     - browser.page.snapshot
@@ -620,6 +621,7 @@ metadata:
         - browser.session.stop
         - browser.page.call
         - browser.context.call
+        - browser.handle.call
         - browser.script.run
         - browser.script.inject
         - browser.page.snapshot

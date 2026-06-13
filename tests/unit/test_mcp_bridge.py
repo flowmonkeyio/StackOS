@@ -506,6 +506,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert {"workspace.startSession", "workspace.resolve"} <= _AGENT_VISIBLE_TOOL_NAMES
     assert "browser.page.call" in _AGENT_VISIBLE_TOOL_NAMES
     assert "browser.context.call" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "browser.handle.call" in _AGENT_VISIBLE_TOOL_NAMES
     assert "browser.script.run" in _AGENT_VISIBLE_TOOL_NAMES
     assert "operation.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "operation.describe" in _AGENT_SETUP_TOOLBOX_NAMES
@@ -733,6 +734,7 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "agentRequest.create",
         "artifact.create",
         "browser.context.call",
+        "browser.handle.call",
         "browser.method.manifest",
         "browser.page.call",
         "browser.page.screenshot",

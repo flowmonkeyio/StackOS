@@ -171,6 +171,7 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "project.setActive" not in names
     assert "browser.page.call" in names
     assert "browser.context.call" in names
+    assert "browser.handle.call" in names
     assert "browser.script.run" in names
     assert "browser.page.screenshot" in names
     assert "agentRequest.list" not in names

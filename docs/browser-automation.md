@@ -23,6 +23,10 @@ login.
 - Page operations accept an optional `page_ref`. Context calls that create or
   return pages refresh the session's page refs, so agents can target new
   tabs/windows instead of being limited to the first page.
+- Calls that return a non-page browser object, such as a locator, download,
+  response, or popup-related handle, return a transient `handle_ref`. Use
+  `browser.handle.call` with that ref to call public methods or read public
+  properties on the returned object.
 - JavaScript execution and injection are first-class. Use
   `browser.script.run` for `page.evaluate` and `browser.script.inject` for
   `page.add_init_script`.
@@ -46,11 +50,13 @@ login.
 4. Use `browser.context.call` for context operations such as `cookies`,
    `storage_state`, `grant_permissions`, `pages`, downloads, routing, or any
    other public context method.
-5. Use `browser.script.run` or `browser.script.inject` when direct DOM/page
+5. Use `browser.handle.call` when a page/context method returns a `handle_ref`
+   and the next operation belongs to that returned object.
+6. Use `browser.script.run` or `browser.script.inject` when direct DOM/page
    JavaScript is the fastest or most faithful control path.
-6. Use `browser.page.snapshot` for text state and
+7. Use `browser.page.snapshot` for text state and
    `browser.page.screenshot` for visual evidence.
-7. Call `browser.session.stop` when the session is no longer needed.
+8. Call `browser.session.stop` when the session is no longer needed.
 
 ## First-Layer MCP
 
@@ -81,6 +87,16 @@ session ref.
 
 ```json
 {"tool_name":"browser.script.inject","arguments":{"project_id":1,"session_ref":"browser-session:project-1:default:linkedin","script":"window.__stackosInjected = true;","response_mode":"raw"}}
+```
+
+```json
+{"tool_name":"browser.page.call","arguments":{"project_id":1,"session_ref":"browser-session:project-1:default:linkedin","method":"locator","arguments":{"selector":"button[type=submit]"},"response_mode":"raw"}}
+```
+
+If that returns `{"handle_ref":"..."}`, call the handle directly:
+
+```json
+{"tool_name":"browser.handle.call","arguments":{"project_id":1,"session_ref":"browser-session:project-1:default:linkedin","handle_ref":"browser-session:project-1:default:linkedin:handle-1","method":"click","response_mode":"raw"}}
 ```
 
 ```json
@@ -128,6 +144,7 @@ Use this checklist after runtime or MCP wiring changes:
 5. Run arbitrary JavaScript with `browser.script.run`.
 6. Inject JavaScript with `browser.script.inject`, navigate, and verify it ran.
 7. Call at least one raw context method through `browser.context.call`.
-8. Capture a screenshot with `browser.page.screenshot` and confirm the artifact
+8. Create a returned-object handle, then call it with `browser.handle.call`.
+9. Capture a screenshot with `browser.page.screenshot` and confirm the artifact
    URI opens under `/generated-assets/browser/...`.
-9. Stop the session with `browser.session.stop`.
+10. Stop the session with `browser.session.stop`.

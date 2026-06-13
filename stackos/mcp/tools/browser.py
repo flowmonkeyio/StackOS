@@ -16,6 +16,7 @@ _BROWSER_OPERATION_NAMES: tuple[str, ...] = (
     "browser.session.status",
     "browser.page.call",
     "browser.context.call",
+    "browser.handle.call",
     "browser.script.run",
     "browser.script.inject",
     "browser.page.snapshot",

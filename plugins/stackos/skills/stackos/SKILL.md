@@ -75,8 +75,9 @@ run token.
     is restarted. `browser.session.start` opens a persistent Camoufox session
     (`headless=false` by default for operator login/inspection). Use
     `browser.page.call` and `browser.context.call` for public Camoufox/
-    Playwright methods with raw args/kwargs, `browser.script.run` and
-    `browser.script.inject` for arbitrary JavaScript, and
+    Playwright methods with raw args/kwargs, `browser.handle.call` for
+    returned locator/download/response-like object handles,
+    `browser.script.run` and `browser.script.inject` for arbitrary JavaScript, and
     `browser.page.screenshot` for generated-assets evidence. Treat this as the
     same class of browser control as a normal Playwright/test browser session:
     this is local trusted-admin browser automation, not an externally exposed
@@ -144,10 +145,11 @@ run token.
 - Use browser automation: call `browser.runtime.status`, then
   `browser.session.start`. If the platform needs login, pause and let the
   operator complete login in the opened browser session, then continue with
-  `browser.page.call`, `browser.context.call`, `browser.script.run`, or
-  `browser.script.inject`. Use `browser.page.snapshot` for text state and
-  `browser.page.screenshot` for visual proof or publication evidence. Stop the
-  session with `browser.session.stop` when done. Treat the browser method
+  `browser.page.call`, `browser.context.call`, `browser.handle.call`,
+  `browser.script.run`, or `browser.script.inject`. Use
+  `browser.page.snapshot` for text state and `browser.page.screenshot` for
+  visual proof or publication evidence. Stop the session with
+  `browser.session.stop` when done. Treat the browser method
   manifest as guidance, not an allowlist: public page/context methods may be
   called through the raw method/args/kwargs operations.
 - Repair denied tools: read `toolbox.describe.tool_statuses`. `unknown_tool`

@@ -177,6 +177,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         in (branding_content_described.spec.metadata_json["grants"])
     )
     assert "browser.page.call" in branding_content_described.spec.metadata_json["grants"]
+    assert "browser.handle.call" in branding_content_described.spec.metadata_json["grants"]
     assert "browser.script.run" in branding_content_described.spec.metadata_json["grants"]
     assert "browser.script.inject" in branding_content_described.spec.metadata_json["grants"]
     assert "browser.page.screenshot" in branding_content_described.spec.metadata_json["grants"]
@@ -194,6 +195,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
                 "browser.session.stop",
                 "browser.page.call",
                 "browser.context.call",
+                "browser.handle.call",
                 "browser.script.run",
                 "browser.script.inject",
                 "browser.page.snapshot",
@@ -246,6 +248,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "browser.session.stop",
         "browser.page.call",
         "browser.context.call",
+        "browser.handle.call",
         "browser.script.run",
         "browser.script.inject",
         "browser.page.snapshot",
