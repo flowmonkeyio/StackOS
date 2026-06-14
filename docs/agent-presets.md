@@ -128,7 +128,7 @@ The core support and engineering preset subset is deliberately small:
 | `stackos.sdlc.codebase-explorer` | Maps real execution paths, ownership, downstream fallout, tests, and docs before changes. |
 | `stackos.sdlc.planning` | Converts requirements and impact evidence into tracker tickets with dependencies and definition of done. |
 | `stackos.sdlc.architecture` | Chooses and challenges the project-native design, canonical owner, contracts, rollout, and validation plan. |
-| `stackos.sdlc.test-designer` | Maps acceptance criteria to proof surfaces and red-first gates when needed. |
+| `stackos.sdlc.test-designer` | Owns the full proof plan: TDD/red-first gates, automated checks, risk-appropriate manual proof, expected outcomes, and signoff evidence. |
 | `stackos.sdlc.delivery` | Implements scoped tickets, debugs root causes, verifies the diff, and records tracker/evidence updates truthfully. |
 | `stackos.sdlc.delivery-reviewer` | Reviews design and delivery across behavior, contracts, tests, tracker truth, docs, security, and release risk. |
 
@@ -138,9 +138,15 @@ the communications intake role; support investigation uses the support
 investigator and may use codebase exploration; delivery task handoff uses the
 support handoff role and may use planning; tracked delivery uses requirements,
 discovery, planning, architecture, test design, delivery, delivery review, and
-release closeout coordinated by the main agent. If a project already has local
-agents, adapt or replace them so each role maps cleanly to this subset without
-overlapping responsibilities.
+release closeout coordinated by the main agent. Test design is the single owner
+for test planning: it maps accepted requirements to automated proof, red-first
+TDD slices when needed, manual proof depth, expected outcomes, and evidence
+artifacts. The main orchestrator chooses that proof depth by reasoning from
+quality, production risk, and user/business impact; a quick smoke is not a
+substitute for full manual signoff or rehearsal when the risk calls for it. The
+main orchestrator or a designated reviewer verifies that plan before delivery
+starts. If a project already has local agents, adapt or replace them so each
+role maps cleanly to this subset without overlapping responsibilities.
 
 The main agent should detect or read the host convention before writing local
 agents. For Codex-style projects, inspect `.codex/config.toml` and existing
@@ -205,6 +211,8 @@ All presets are expected to work through the existing StackOS tracker:
 - delivery agents claim/update tickets as work starts and completes
 - verifier and reviewer agents compare completion claims with actual evidence
 - reviewers verify evidence before closeout
+- reviewer findings are claims until the orchestrator adjudicates them against
+  evidence, root cause, and user/business impact
 - tracker truth reviewers check that durable state matches code, docs, tests,
   run-plan steps, and verification outcomes
 - detached workflow step tickets versus child-ticket chains are blocking

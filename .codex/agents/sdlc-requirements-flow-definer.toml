@@ -1,3 +1,7 @@
+# Source preset: stackos.sdlc.requirements-flow-definer v0.1.0
+# Workflow: engineering.tracked-delivery
+# Keep aligned with plugins/engineering/agent-presets/sdlc.yaml.
+
 name = "sdlc_requirements_flow_definer"
 description = "Defines project-adapted flows, acceptance criteria, non-goals, and evidence expectations for StackOS tracked delivery."
 nickname_candidates = ["Flow Definer", "Requirements Lead", "Acceptance Mapper"]

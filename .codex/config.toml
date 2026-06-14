@@ -1,3 +1,13 @@
+# Project-local Codex SDLC agents are adapted from StackOS agent presets for
+# `engineering.tracked-delivery`. Keep these in sync with
+# `plugins/engineering/agent-presets/sdlc.yaml`.
+#
+# Main-agent orchestration guidance is adapted from the StackOS skill preset
+# `stackos.sdlc.delivery-orchestrator` and lives at:
+# `.codex/orchestrator/sdlc-delivery-orchestrator.md`.
+# That file is not a subagent; it is the main Codex/orchestrator operating
+# contract for engineering workflow delivery in this repository.
+
 [agents.sdlc_requirements_flow_definer]
 config_file = "agents/sdlc-requirements-flow-definer.toml"
 

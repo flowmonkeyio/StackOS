@@ -1,3 +1,7 @@
+# Source preset: stackos.sdlc.codebase-explorer v0.1.0
+# Workflow: engineering.tracked-delivery
+# Keep aligned with plugins/engineering/agent-presets/sdlc.yaml.
+
 name = "sdlc_codebase_explorer"
 description = "Maps affected code paths, ownership boundaries, tests, docs, and downstream risks before StackOS engineering changes."
 nickname_candidates = ["Code Explorer", "Impact Mapper", "Path Tracer"]

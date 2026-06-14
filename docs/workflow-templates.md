@@ -169,13 +169,36 @@ feedback -> route and media preflight -> canonical Slack thread -> intake reacti
 -> task-created reaction -> engineering.tracked-delivery
 ```
 
-The baseline separates method from specialization. Requirements and test design
-define what must be true, discovery and architecture map how the current project
-actually works, delivery changes the repo, verification proves the diff, and
-reviewers challenge both behavior and durable tracker truth. A template may
-compact or skip optional specialist roles for small work, but it should not
-erase acceptance criteria, dependencies, evidence, or closeout truth from the
-run plan.
+The baseline separates method from specialization. Requirements define what
+must be true, discovery and architecture map how the current project actually
+works, and test design owns the full proof plan before delivery begins. That
+test design includes TDD/red-first proof when needed, targeted automated checks,
+risk-appropriate manual proof, expected outcomes, and the evidence artifacts
+needed for signoff. The orchestrator chooses manual proof depth by reasoning
+from quality, production risk, and user/business impact, not by optimizing for
+speed. That depth may be no manual step, a narrow smoke, full manual signoff, a
+browser/user walkthrough, a provider live check, a migration rehearsal, or an
+operator-owned release gate. Delivery changes the repo, verification executes
+or truthfully marks every relevant proof item, and reviewers challenge
+behavior, test evidence, and durable tracker truth. A template may compact or
+skip optional specialist roles for small work, but it should not erase
+acceptance criteria, dependencies, evidence, or closeout truth from the run
+plan.
+
+The test design itself must be verified before implementation starts, either by
+the main orchestrator or a designated reviewer. A mechanical "manual smoke" is
+not a test design when the risk calls for full signoff or a production-like
+rehearsal. Manual proof scenarios should name preconditions, exact user or
+agent steps, expected outcomes, evidence such as screenshots/logs/artifacts,
+and whether each scenario is closeout-blocking, residual, or operator-owned.
+
+Reviewer output is evidence to adjudicate, not truth to copy into tickets. The
+orchestrator should classify each reviewer claim before action: valid
+unresolved issue, fixed issue, unsupported/false-positive claim, residual risk,
+or informational note. Status markers should be contextual: ✅ means verified
+good, fixed, or passing; ❌ means an unresolved blocker or failed required
+check; ⚠️ means residual risk, coverage gap, or operator-owned gate; ℹ️ means
+context or a rejected/unsupported claim.
 
 For workflow-backed tracker work, attachment is not readiness. A ticket created
 with `run_plan_id` and `step_id` is contained under the mirrored workflow step,

@@ -47,6 +47,12 @@ work, start here:
   before use. Workflow templates may recommend host-side skills such as
   `stackos:stackos` so the main agent knows how to operate StackOS MCP,
   workflows, run plans, tasks, tickets, dependencies, and evidence.
+- Project-local Codex SDLC agents live in `.codex/agents/*.toml` and are
+  adapted from `plugins/engineering/agent-presets/sdlc.yaml`. Main-agent
+  orchestration for `engineering.tracked-delivery` lives in
+  `.codex/orchestrator/sdlc-delivery-orchestrator.md` and is adapted from the
+  `stackos.sdlc.delivery-orchestrator` skill preset; it is guidance for the
+  main agent, not a subagent role.
 - Agents never receive secrets. They receive safe provider/account refs,
   auth-method keys, status, scopes, diagnostics, and opaque `credential_ref`
   values. `action.run` and `action.execute` resolve credentials inside the

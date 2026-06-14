@@ -3,10 +3,103 @@
 from __future__ import annotations
 
 import asyncio
+import tomllib
+from pathlib import Path
+
+import yaml
 
 from stackos.agents import AgentPresetLoader, parse_agent_preset_bundle_yaml
 from stackos.agents.schema import validate_agent_preset_obj
 from stackos.operations.agent_presets import AgentPresetDescribeInput, agent_preset_describe
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+LOCAL_CODEX_AGENT_PRESETS = {
+    "sdlc_requirements_flow_definer": (
+        "agents/sdlc-requirements-flow-definer.toml",
+        "stackos.sdlc.requirements-flow-definer",
+    ),
+    "sdlc_codebase_explorer": (
+        "agents/sdlc-codebase-explorer.toml",
+        "stackos.sdlc.codebase-explorer",
+    ),
+    "sdlc_planning": (
+        "agents/sdlc-planning.toml",
+        "stackos.sdlc.planning",
+    ),
+    "sdlc_architecture": (
+        "agents/sdlc-architecture.toml",
+        "stackos.sdlc.architecture",
+    ),
+    "sdlc_test_designer": (
+        "agents/sdlc-test-designer.toml",
+        "stackos.sdlc.test-designer",
+    ),
+    "sdlc_delivery": (
+        "agents/sdlc-delivery.toml",
+        "stackos.sdlc.delivery",
+    ),
+    "sdlc_delivery_reviewer": (
+        "agents/sdlc-delivery-reviewer.toml",
+        "stackos.sdlc.delivery-reviewer",
+    ),
+}
+
+
+def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
+    workflow = yaml.safe_load(
+        (REPO_ROOT / "plugins/engineering/workflows/tracked-delivery.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    workflow_refs = {
+        item["agent_preset_ref"] for item in workflow["agent_requirements"]
+    }
+    expected_refs = {preset for _config_path, preset in LOCAL_CODEX_AGENT_PRESETS.values()}
+
+    assert workflow_refs == expected_refs
+
+    config = tomllib.loads((REPO_ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
+    assert set(config["agents"]) == set(LOCAL_CODEX_AGENT_PRESETS)
+
+    for agent_name, (config_file, preset_ref) in LOCAL_CODEX_AGENT_PRESETS.items():
+        assert config["agents"][agent_name]["config_file"] == config_file
+        local_path = REPO_ROOT / ".codex" / config_file
+        local_text = local_path.read_text(encoding="utf-8")
+
+        assert f"Source preset: {preset_ref} v0.1.0" in local_text
+        assert "Workflow: engineering.tracked-delivery" in local_text
+        assert "Keep aligned with plugins/engineering/agent-presets/sdlc.yaml." in local_text
+        tomllib.loads(local_text)
+
+    test_designer_text = (
+        REPO_ROOT / ".codex/agents/sdlc-test-designer.toml"
+    ).read_text(encoding="utf-8")
+    reviewer_text = (
+        REPO_ROOT / ".codex/agents/sdlc-delivery-reviewer.toml"
+    ).read_text(encoding="utf-8")
+    planning_text = (REPO_ROOT / ".codex/agents/sdlc-planning.toml").read_text(
+        encoding="utf-8"
+    )
+    orchestrator_text = (
+        REPO_ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md"
+    ).read_text(encoding="utf-8")
+
+    assert "manual proof depth" in test_designer_text
+    assert "full manual signoff" in test_designer_text
+    assert "test-design verification status" in test_designer_text
+    assert "evidence-backed validity status" in reviewer_text
+    assert "claims to verify" in reviewer_text
+    assert "without concrete evidence" in reviewer_text
+    assert "include_graph=true" in planning_text
+    assert "detached branches" in planning_text
+    assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.1.0" in (
+        orchestrator_text
+    )
+    assert "not a subagent" in orchestrator_text
+    assert "Quality beats speed" in orchestrator_text
+    assert "Reviewer outputs are claims until verified" in orchestrator_text
 
 
 def test_agent_preset_loader_lists_bundled_roles() -> None:
@@ -84,11 +177,28 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     assert "pass run_plan_id and step_id together" in contract_text.lower()
     assert "never retry tracker.createticket with only one" in contract_text.lower()
 
+    test_designer = AgentPresetLoader().describe_preset(key="stackos.sdlc.test-designer")
+    test_designer_text = " ".join(
+        [
+            *test_designer.preset.prompt_contract.responsibilities,
+            *test_designer.preset.prompt_contract.must_do,
+            *test_designer.preset.prompt_contract.must_not_do,
+            *test_designer.preset.prompt_contract.handoff_outputs,
+            *test_designer.preset.prompt_contract.success_criteria,
+            *test_designer.preset.prompt_contract.self_check,
+        ]
+    ).lower()
+    assert "manual proof depth" in test_designer_text
+    assert "full manual signoff" in test_designer_text
+    assert "production risk" in test_designer_text
+    assert "vague \"smoke test\"" in test_designer_text
+
     reviewer = AgentPresetLoader().describe_preset(key="stackos.sdlc.delivery-reviewer")
     reviewer_text = " ".join(
         [
             *reviewer.preset.prompt_contract.responsibilities,
             *reviewer.preset.prompt_contract.must_do,
+            *reviewer.preset.prompt_contract.must_not_do,
             *reviewer.preset.prompt_contract.handoff_outputs,
             *reviewer.preset.prompt_contract.success_criteria,
             *reviewer.preset.prompt_contract.self_check,
@@ -96,6 +206,8 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     ).lower()
     assert "tracker.get with run_plan_id and include_graph=true" in reviewer_text
     assert "delivery/test/docs branches that bypass the workflow spine" in reviewer_text
+    assert "claims to verify" in reviewer_text
+    assert "without concrete evidence" in reviewer_text
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:

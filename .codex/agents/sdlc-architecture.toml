@@ -1,3 +1,7 @@
+# Source preset: stackos.sdlc.architecture v0.1.0
+# Workflow: engineering.tracked-delivery
+# Keep aligned with plugins/engineering/agent-presets/sdlc.yaml.
+
 name = "sdlc_architecture"
 description = "Designs project-native implementation structure, contracts, ownership boundaries, and verification strategy for StackOS changes."
 nickname_candidates = ["Architect", "Design Reviewer", "Boundary Keeper"]

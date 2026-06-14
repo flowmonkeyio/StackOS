@@ -46,6 +46,10 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert "delivery ledger" in contract_text
     assert "delivery calibration" in contract_text
     assert "smallest convincing proof" in contract_text
+    assert "quality over speed" in contract_text
+    assert "manual proof depth" in contract_text
+    assert "full manual signoff" in contract_text
+    assert "adjudicate reviewer claims" in contract_text
     assert "micro, standard, high-risk, or blocked" in contract_text
     assert "do not mechanically run every workflow phase" in contract_text
     assert "tracker" in contract_text
@@ -78,8 +82,13 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
         "Starting: <short work boundary>",
         "Ticket: <n>/<total>",
     ]
+    assert reporting["emoji_legend"]["pass_fixed"].startswith("✅")
+    assert reporting["emoji_legend"]["active_blocker"].startswith("❌")
+    assert reporting["emoji_legend"]["residual_risk"].startswith("⚠️")
+    assert reporting["emoji_legend"]["info_rejected"].startswith("ℹ️")
     assert "Agents/reviewers: <names or none>" in reporting["ticket_end"]["fields"]
-    assert "interpreted fixed issue" in reporting["ticket_end"]["fields"][-1]
+    assert "Findings adjudicated" in reporting["ticket_end"]["fields"][-1]
+    assert "active blocker" in reporting["ticket_end"]["fields"][-1]
     assert "synthesize useful TLDR content" in reporting["ticket_end"]["content_rule"]
     assert (
         "Calibration: <micro/standard/high-risk/blocked and why>" in reporting["task_end"]["fields"]

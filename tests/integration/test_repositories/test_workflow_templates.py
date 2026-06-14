@@ -409,6 +409,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     )
     engineering_text = engineering_described.spec.model_dump_json()
     assert "workflow_selection_precedence" in engineering_text
+    assert "quality_over_speed" in engineering_text
     assert "workflow-backed run plan before creating tracker tickets" in engineering_text
     assert "direct tracker task and a later workflow task" in engineering_text
     plan_step = next(step for step in engineering_described.spec.steps if step.id == "plan-tickets")
@@ -418,6 +419,18 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "tracker.updateTicket" in plan_text
     assert "bridge child tickets" in plan_text
     assert "detached branches" in plan_text
+    test_design_step = next(
+        step for step in engineering_described.spec.steps if step.id == "design-tests"
+    )
+    test_design_text = test_design_step.model_dump_json()
+    assert "manual proof depth" in test_design_text
+    assert "quality_over_speed" in test_design_text
+    assert "full manual signoff" in test_design_text
+    assert "unverified or incomplete proof plan" in test_design_text
+    verify_step = next(
+        step for step in engineering_described.spec.steps if step.id == "verify-delivery"
+    )
+    assert "test plan" in verify_step.model_dump_json()
     audit_step = next(
         step for step in engineering_described.spec.steps if step.id == "audit-tracker"
     )

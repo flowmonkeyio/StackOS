@@ -46,7 +46,7 @@ agent_requirements:
   - role: test-designer
     requirement: required
     agent_preset_ref: stackos.sdlc.test-designer
-    purpose: Map acceptance criteria and design risks to focused tests, red-first gates, manual checks, and signoff proof.
+    purpose: Map acceptance criteria and design risks to TDD/red-first proof, automated checks, manual scenarios, expected outcomes, and signoff evidence.
     applies_to_steps:
       - design-tests
   - role: delivery
@@ -190,6 +190,9 @@ policies:
   - key: main_agent_accountability
     kind: orchestration
     description: The curated SDLC subset supports the work; the main agent remains responsible for integration, final decisions, and user-facing truth.
+  - key: quality_over_speed
+    kind: verification
+    description: The orchestrator chooses proof depth from production risk and user/business impact; speed never justifies skipping the evidence needed for a high-quality outcome.
 steps:
   - id: scope-work
     title: Scope Work
@@ -323,21 +326,28 @@ steps:
       - Blocking design gaps are resolved before delivery starts.
       - Review findings are actionable and scoped.
   - id: design-tests
-    title: Design Tests And Verification
-    purpose: Map acceptance criteria and design risk to focused automated tests, red-first proof, manual checks, and signoff requirements.
+    title: Design Tests, TDD, And Manual Scenarios
+    purpose: "Own the full proof plan before delivery: TDD/red-first automated tests, verification commands, manual/user scenarios, expected outcomes, and signoff requirements."
     instructions:
+      - Own all test planning for this delivery, including automated tests, red-first/TDD gates, manual proof depth, docs/tracker checks, and signoff evidence.
+      - "Let the orchestrator reason about the manual proof needed for the risk profile: no manual step, narrow smoke, full manual signoff, browser/user walkthrough, provider live check, migration rehearsal, or operator-owned release gate."
       - For risky behavior, define the one narrow failing proof that should be locked before runtime edits.
+      - For manual scenarios, name preconditions, exact user/agent steps, expected outcomes, evidence artifacts or screenshots, and whether the scenario is required for closeout or residual/operator-owned.
       - Prefer targeted checks first and broaden based on blast radius.
       - Include docs/tracker/signoff verification when the project makes them part of done.
+      - Have the main orchestrator or a designated reviewer verify the test design before delivery starts; treat an unverified or incomplete proof plan as a blocker unless explicitly waived.
     policy_refs:
       - evidence_over_assertion
+      - quality_over_speed
       - truthful_tracker_state
     depends_on:
       - review-design
     output_refs:
       - test_plan
     success_criteria:
-      - Every acceptance criterion has a proof surface.
+      - Every acceptance criterion has an automated or manual proof surface.
+      - Manual scenarios include steps, expected outcomes, and evidence requirements.
+      - The test design itself has been verified or explicitly waived before implementation starts.
       - Delivery knows which checks prove the change and which checks are residual.
   - id: deliver-tickets
     title: Deliver Tickets
@@ -365,6 +375,7 @@ steps:
     purpose: Run and report the mandatory verification stack for the actual diff and risk profile.
     instructions:
       - Classify changed surfaces and choose the smallest convincing checks first.
+      - Execute, update, or explicitly mark every automated and manual proof item from the test plan; do not silently replace the test design with ad hoc checks.
       - Widen to project signoff when contracts, grants, adapters, migrations, UI, provider, or release behavior crosses boundaries.
       - Report pass, fail, blocked, and not-run checks truthfully.
     policy_refs:
@@ -378,6 +389,7 @@ steps:
       - verification_summary
     success_criteria:
       - Verification evidence matches the changed surfaces and definition of done.
+      - Verification covers the test plan's automated checks and manual scenarios, or records why an item is blocked, skipped, residual, or not applicable.
       - Unrun or blocked checks are explicit.
   - id: review-delivery
     title: Review Delivery
@@ -385,6 +397,7 @@ steps:
     instructions:
       - Reconstruct user/agent/operator flow, data flow, permission/grant boundary, and mutation safety before findings.
       - Review tests, fixtures, docs, tracker updates, and implementation together.
+      - Compare delivered verification against the approved test design, including manual scenarios and expected evidence.
       - Lead with confirmed findings ordered by severity; separate false positives, project decisions, and residual gaps.
     policy_refs:
       - evidence_over_assertion

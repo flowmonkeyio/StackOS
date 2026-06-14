@@ -191,6 +191,13 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "and runPlan.validate/create where applicable.",
             "Verify behavior against the real source of truth for the domain, not only "
             "against local docs or the implementation that was just written.",
+            "For engineering delivery, include an explicit test-design gate before "
+            "implementation. That gate should own TDD/red-first proof, automated "
+            "checks, risk-appropriate manual proof depth, expected outcomes, and "
+            "evidence artifacts. The orchestrator chooses that depth from quality, "
+            "production risk, and user/business impact, not speed; full manual "
+            "signoff or production-like rehearsal is required when the risk calls "
+            "for it.",
             "Close with independent signoff, documentation updates, changelog/release "
             "notes when user-facing, and a clean diff that excludes temporary files.",
         ],
@@ -208,6 +215,11 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "with no hidden strategy inside connectors?",
             "Are adversarial review roles separated when the workflow depends on independent "
             "judgment, such as claim, safety, voice, quality, or release review?",
+            "Does test design cover the accepted requirements with automated proof "
+            "or risk-appropriate manual proof, and has the orchestrator verified "
+            "that proof depth before implementation?",
+            "Are reviewer findings treated as claims for orchestrator adjudication "
+            "instead of automatically becoming tickets or blockers?",
             "Can a future agent answer how to register, connect, prepare, run, and recover "
             "the package without reading private implementation notes?",
         ],

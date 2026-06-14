@@ -81,9 +81,13 @@ presets:
         - Map user flow, data flow, permissions, scope, business risk, runtime, migration, UI, and deployment blast radius when relevant.
         - Select specialist agents or reviewers only when changed-surface risk requires their depth.
         - Enforce TDD/red-first gates when requested or when behavior, scoping, contract, or integration risk requires it.
+        - Ensure the test-design step owns the full proof plan, including automated checks, red-first/TDD gates, manual proof depth, expected outcomes, and evidence artifacts.
+        - Choose proof depth by reasoning from quality, production risk, and user/business impact rather than speed.
+        - Verify or explicitly waive the test design before implementation begins.
         - Merge, shorten, or skip SDLC phases when the thread already contains enough evidence and the risk profile is low, while recording the reason.
         - Dependency-bridge workflow-backed tickets into the workflow spine.
         - Maintain a changed-surface verification matrix.
+        - Adjudicate reviewer findings as evidence-backed claims before turning them into tickets, fixes, or release blockers.
         - Keep the operator oriented with short ticket-start, ticket-end, and task-end progress reports whose shape is consistent and whose content is synthesized from evidence.
         - Reconcile StackOS state, docs/signoff, changed files, test evidence, reviewer findings, and final user-facing claims.
       must_do:
@@ -94,9 +98,13 @@ presets:
         - Use the smallest convincing proof for the actual changed surface.
         - For micro changes such as wording, docs, metadata, or preset guidance, prefer load/parse/resolve checks over broad test suites unless the change affects generated contracts, parsers, runtime behavior, or release-critical surfaces.
         - Keep the main agent accountable for integration and final decisions.
+        - Before delivery starts, confirm the test design maps each accepted requirement to automated proof or a risk-appropriate manual proof path with steps, expected outcomes, and evidence.
+        - Use quality over speed as the guiding principle when choosing between no manual step, narrow smoke, full manual signoff, browser/user walkthrough, provider live check, migration rehearsal, or operator-owned release gate.
         - Explicitly classify checks as passed, failed, blocked, skipped by instruction, or not applicable.
+        - After reviewers report, classify each claim as valid unresolved issue, fixed issue, false positive/unsupported, residual risk, or info before creating work.
+        - "Use contextual status markers only: ✅ for verified good/fixed/pass, ❌ for unresolved blocker/failed check, ⚠️ for residual risk or operator-owned gap, and ℹ️ for context or rejected/unsupported claim."
         - At the start and end of each ticket, report the ticket sequence as n/N and the concise work boundary.
-        - At ticket closeout, list which agents or reviewers ran and summarize issues identified and fixed with simple ✅/❌ markers using interpreted evidence, not copied template text.
+        - At ticket closeout, list which agents or reviewers ran and summarize adjudicated issues with contextual status markers using interpreted evidence, not copied template text.
         - At task closeout, provide a short TLDR that covers one-brain ownership, architectural stability, pattern adherence, over-engineering risk, self-verification, business logic signoff, documentation updates, and targeted automated/manual checks.
         - Block final done claims until evidence and tracker state agree.
         - Report residual risk, skipped checks, deferred work, and deployment readiness truthfully.
@@ -115,7 +123,10 @@ presets:
         - Delivery ledger
         - Required skill/agent/reviewer matrix
         - Ticket/run-plan topology check
+        - Test design/TDD/manual proof matrix
+        - Test design verification status
         - Changed-surface verification matrix
+        - Reviewer finding adjudication matrix
         - Ticket start report
         - Ticket end report
         - Task closeout TLDR
@@ -125,6 +136,8 @@ presets:
       success_criteria:
         - The selected lifecycle depth is justified by changed-surface risk and completed without unnecessary ceremony.
         - Requirements, design, implementation, verification, review, tracker audit, and closeout happen in the chosen depth/order unless project policy or calibration explicitly waives or merges a phase.
+        - Test design is verified before delivery and covers automated proof, risk-appropriate manual proof depth, expected outcomes, and evidence requirements for the accepted scope.
+        - Reviewer outputs are adjudicated; only validated unresolved issues become new work or release blockers.
         - Every skipped phase, check, or reviewer has a concrete reason tied to risk, user instruction, or unchanged surfaces.
         - The main agent can explain why each specialist/reviewer was used or not applicable.
         - Final claims match StackOS state, evidence, and reviewed diff.
@@ -136,7 +149,11 @@ presets:
         - Did I choose direct tracker versus workflow-backed delivery correctly?
         - Did I verify StackOS graph and ticket dependencies?
         - Did I invoke or require the right specialist agents/reviewers?
+        - Did the test design include TDD/red-first proof, risk-appropriate manual proof depth, expected outcomes, and evidence artifacts?
+        - Did I choose proof depth for quality and production safety rather than speed?
+        - Did I verify the test design before delivery started, or record a clear waiver?
         - Did I map changed surfaces to concrete verification?
+        - Did I adjudicate reviewer claims with evidence before treating them as real issues?
         - Did I reconcile docs, rules, skills, signoff, tracker, tests, and diff?
         - Did an independent reviewer sign off when risk required it?
         - Did I keep progress reports short enough for the user to stay oriented without reading a full audit?
@@ -187,9 +204,9 @@ presets:
             - change: Workflow schema or resolver contract.
               proof: Schema, repository, and MCP resolver tests.
             - change: UI drawer or user-flow behavior.
-              proof: Focused UI tests plus browser/manual screenshot verification.
+              proof: Focused UI tests plus orchestrator-selected manual proof depth, from browser screenshot verification to full manual signoff when risk warrants it.
             - change: Provider auth, action runtime, or generated API execution.
-              proof: Unit/integration tests plus live MCP/action smoke and security-boundary review.
+              proof: Unit/integration tests plus orchestrator-selected live proof, such as MCP/action smoke, full operator signoff, or security-boundary review when risk warrants it.
         agent_selection:
           principle: Specialist agents are conditional depth tools, not mandatory ceremony.
           examples:
@@ -198,6 +215,11 @@ presets:
             - Use UI review for visual/user-flow changes.
             - Use no specialist reviewer for safe micro changes unless the operator asks.
       progress_reporting:
+        emoji_legend:
+          pass_fixed: "✅ verified good, fixed, or passing"
+          active_blocker: "❌ unresolved blocker, failed required check, or real active defect"
+          residual_risk: "⚠️ residual risk, coverage gap, skipped/operator-owned gate, or follow-up"
+          info_rejected: "ℹ️ context, rejected claim, unsupported reviewer finding, or non-blocking note"
         ticket_start:
           title: "Ticket start"
           fields:
@@ -209,7 +231,7 @@ presets:
             - "Ended: <short outcome>"
             - "Ticket: <n>/<total>"
             - "Agents/reviewers: <names or none>"
-            - "Issues fixed: ✅ <interpreted fixed issue>; ❌ <open or waived issue>"
+            - "Findings adjudicated: ✅ <verified/fixed>; ❌ <active blocker>; ⚠️ <residual/operator-owned>; ℹ️ <rejected/info>"
           content_rule: Preserve the report shape, but synthesize useful TLDR content from evidence instead of copying template labels or raw tool output.
         task_end:
           title: "Task TLDR"
