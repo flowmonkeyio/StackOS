@@ -20,6 +20,7 @@ Project context to read or account for:
 - `docs/operations.md`, `docs/action-executor.md`, and `docs/resources-and-artifacts.md` when operation/action/resource behavior changes.
 - `docs/security.md` and `docs/integration-contracts/AGENTS.md` when auth, credentials, providers, communications, or security boundaries are in scope.
 - `docs/ui-design-system.md` and `docs/ui-component-inventory.md` when UI is in scope.
+- `docs/browser-automation.md` when browser sessions, persistent profiles, login state, screenshots, or browser evidence are in scope.
 - `docs/release-signoff.md` for release readiness.
 
 Review rules:
@@ -46,6 +47,7 @@ Must do:
 - Compare every material claim against actual diff, tests, manual checks, docs, tracker evidence, and run-plan state.
 - Mark each finding with evidence-backed validity status: valid unresolved blocker, fixed issue, false positive/unsupported claim, residual risk, or info.
 - Include root cause, impact, and required fix for valid unresolved blockers.
+- For browser-assisted platform proof, verify the delivered evidence used the planned persistent `profile_key` or explains why a fresh profile was required.
 - For workflow-backed delivery, verify generated workflow step mirror tickets versus tracker-owned child-ticket evidence and dependencies.
 - Use `tracker.get` with `run_plan_id` and `include_graph=true` plus `runPlan.get` or `runPlan.checkConsistency` when state may have diverged; inspect step attachment versus dependency readiness, first-child bridges, terminal-child handoff edges, detached branches, and delivery/test/docs branches that bypass the workflow spine.
 - Classify workflow-spine warnings as blockers only when they hide required work or invalidate release/readiness claims.

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ConfigDict
 
@@ -32,11 +32,80 @@ class ArtifactCreateInput(MCPInput):
     resource_record_id: int | None = None
     kind: str
     uri: str
+    status: Literal["draft", "approved", "superseded", "archived"] = "draft"
     name: str | None = None
     mime_type: str | None = None
     size_bytes: int | None = None
     metadata_json: dict[str, Any] | None = None
     provenance_json: dict[str, Any] | None = None
+
+
+class ArtifactUpdateInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "artifact_id": 1,
+                "project_id": 1,
+                "status": "approved",
+                "metadata_patch_json": {"review": {"approved_by": "operator"}},
+            }
+        },
+    )
+
+    artifact_id: int
+    project_id: int | None = None
+    plugin_slug: str | None = None
+    resource_record_id: int | None = None
+    kind: str | None = None
+    uri: str | None = None
+    status: Literal["draft", "approved", "superseded", "archived"] | None = None
+    name: str | None = None
+    mime_type: str | None = None
+    size_bytes: int | None = None
+    superseded_by_artifact_id: int | None = None
+    metadata_json: dict[str, Any] | None = None
+    metadata_patch_json: dict[str, Any] | None = None
+    provenance_json: dict[str, Any] | None = None
+    provenance_patch_json: dict[str, Any] | None = None
+
+
+class ArtifactArchiveInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "artifact_id": 1,
+                "project_id": 1,
+                "reason": "Accidental scratch draft created during iteration.",
+            }
+        },
+    )
+
+    artifact_id: int
+    project_id: int | None = None
+    reason: str | None = None
+    metadata_patch_json: dict[str, Any] | None = None
+
+
+class ArtifactSupersedeInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "artifact_id": 1,
+                "replacement_artifact_id": 2,
+                "project_id": 1,
+                "reason": "Operator approved the refined packet.",
+            }
+        },
+    )
+
+    artifact_id: int
+    replacement_artifact_id: int
+    project_id: int | None = None
+    reason: str | None = None
+    metadata_patch_json: dict[str, Any] | None = None
 
 
 class ArtifactGetInput(MCPInput):
@@ -56,6 +125,8 @@ class ArtifactQueryInput(MCPInput):
     plugin_slug: str | None = None
     resource_record_id: int | None = None
     kind: str | None = None
+    status: Literal["draft", "approved", "superseded", "archived"] | None = None
+    include_inactive: bool = False
     limit: int | None = None
     after_id: int | None = None
 
@@ -71,11 +142,79 @@ async def _artifact_create(
         resource_record_id=inp.resource_record_id,
         kind=inp.kind,
         uri=inp.uri,
+        status=inp.status,
         name=inp.name,
         mime_type=inp.mime_type,
         size_bytes=inp.size_bytes,
         metadata_json=inp.metadata_json,
         provenance_json=inp.provenance_json,
+    )
+    return WriteEnvelope[ArtifactOut](
+        data=env.data,
+        run_id=ctx.run_id,
+        project_id=env.project_id,
+    )
+
+
+async def _artifact_update(
+    inp: ArtifactUpdateInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[ArtifactOut]:
+    env = ArtifactRepository(ctx.session).update(
+        inp.artifact_id,
+        project_id=inp.project_id,
+        fields=set(inp.model_fields_set) - {"artifact_id", "project_id"},
+        plugin_slug=inp.plugin_slug,
+        resource_record_id=inp.resource_record_id,
+        kind=inp.kind,
+        uri=inp.uri,
+        status=inp.status,
+        name=inp.name,
+        mime_type=inp.mime_type,
+        size_bytes=inp.size_bytes,
+        superseded_by_artifact_id=inp.superseded_by_artifact_id,
+        metadata_json=inp.metadata_json,
+        metadata_patch_json=inp.metadata_patch_json,
+        provenance_json=inp.provenance_json,
+        provenance_patch_json=inp.provenance_patch_json,
+    )
+    return WriteEnvelope[ArtifactOut](
+        data=env.data,
+        run_id=ctx.run_id,
+        project_id=env.project_id,
+    )
+
+
+async def _artifact_archive(
+    inp: ArtifactArchiveInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[ArtifactOut]:
+    env = ArtifactRepository(ctx.session).archive(
+        inp.artifact_id,
+        project_id=inp.project_id,
+        reason=inp.reason,
+        metadata_patch_json=inp.metadata_patch_json,
+    )
+    return WriteEnvelope[ArtifactOut](
+        data=env.data,
+        run_id=ctx.run_id,
+        project_id=env.project_id,
+    )
+
+
+async def _artifact_supersede(
+    inp: ArtifactSupersedeInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[ArtifactOut]:
+    env = ArtifactRepository(ctx.session).supersede(
+        inp.artifact_id,
+        project_id=inp.project_id,
+        replacement_artifact_id=inp.replacement_artifact_id,
+        reason=inp.reason,
+        metadata_patch_json=inp.metadata_patch_json,
     )
     return WriteEnvelope[ArtifactOut](
         data=env.data,
@@ -108,6 +247,8 @@ async def _artifact_query(
         plugin_slug=inp.plugin_slug,
         resource_record_id=inp.resource_record_id,
         kind=inp.kind,
+        status=inp.status,
+        include_inactive=inp.include_inactive,
         limit=inp.limit,
         after_id=inp.after_id,
     )
@@ -118,7 +259,14 @@ def register(registry: ToolRegistry) -> None:
 
     register_mcp_operation_names(
         registry,
-        ("artifact.create", "artifact.get", "artifact.query"),
+        (
+            "artifact.create",
+            "artifact.update",
+            "artifact.archive",
+            "artifact.supersede",
+            "artifact.get",
+            "artifact.query",
+        ),
     )
 
 

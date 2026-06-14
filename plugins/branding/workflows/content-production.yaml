@@ -269,10 +269,10 @@ policies:
     description: A draft that contradicts prior positions must ask whether the stance changed instead of silently writing around it.
   - key: image_generation_selected_only
     kind: media
-    description: Images are optional, but when the selected structure says images are needed, produce an explicit image plan and approved generation artifacts.
+    description: Images are optional. Operator-supplied media can satisfy the image plan without provider-generation approval; provider-generated media requires the image generation action approval before spend.
   - key: publication_automation_first
     kind: publication
-    description: "Approved outputs should be published or staged through the best available channel mode: API integration, browser-assisted platform UI, site/admin UI, or local script. Copy-paste handoff is a fallback only when automation is unavailable or explicitly waived."
+    description: "Approved outputs should be published or staged through the best available channel mode: API integration, browser-assisted platform UI, site/admin UI, or local script. Operator-confirmed manual publication is valid when the operator explicitly posts after reviewing copy/media; copy-paste handoff is otherwise a fallback only when automation is unavailable or explicitly waived."
   - key: durable_resource_memory
     kind: memory
     description: Approved work must be discoverable later through StackOS resources; artifacts hold blobs, but content-piece stores the queryable index and refs.
@@ -385,7 +385,7 @@ steps:
     success_criteria:
       - The draft uses the selected structure and avoids facts absent from the interview pack, research pack, or supporting artifacts.
       - Position changes are marked as explicit stance updates, not accidental contradictions.
-      - The draft artifact ref is written back to the content-piece memory index.
+      - The draft ref or intentionally preserved artifact ref is written back to the content-piece memory index; normal draft iteration stays in project-local working state.
   - id: editorial-review
     title: Editorial Review
     purpose: Run one compact review pass for factual support, prior-position consistency, voice, and channel form.
@@ -435,13 +435,11 @@ steps:
       - Sanitization verdict refs are attached to the content-piece review log before channel publication jobs.
   - id: produce-optional-images
     title: Produce Optional Images
-    purpose: Generate the selected image set only when the image plan requires generated website or channel assets.
+    purpose: Resolve the selected image set, generating assets only when the image plan requires provider-generated website or channel media.
     depends_on:
       - sanitization-review
     action_refs:
       - image_generate
-    approval_refs:
-      - image_generation_approval
     resource_refs:
       - content_piece
     policy_refs:
@@ -450,8 +448,9 @@ steps:
     output_refs:
       - generated_image_artifacts
     success_criteria:
-      - If no generated images are selected, the workflow records the no-image rationale and skips provider spend.
-      - If generated images are selected, every artifact maps to a placement, aspect ratio, prompt, acceptance criteria, and approval.
+      - If no generated images are selected, the workflow records the no-image rationale and marks the step skipped or complete without provider spend.
+      - If operator-supplied images satisfy the plan, record supplied media refs, placement, rights/usage notes, and operator ownership without requiring image_generation_approval.
+      - If generated images are selected, action.execute for image_generate requires image_generation_approval before provider spend, and every durable artifact maps to a placement, aspect ratio, prompt, acceptance criteria, and approval.
       - Website image needs can include multiple slots, such as hero, inline explainer, diagram, or social preview.
       - Generated or selected image artifacts are indexed in content-piece image_refs with placement and reuse context.
   - id: render-channel-packets
@@ -533,6 +532,7 @@ steps:
       - Browser or admin UI channels are operated by the agent in the platform UI using the approved publication bundle and StackOS browser tools; login, MFA, or session setup is the only expected human participation.
       - Browser publication may use runtime status, profile/session management, public page/context calls, arbitrary script run/injection, snapshots, screenshots, and page refs as needed for the platform UI.
       - Script channels run the approved project publishing script or local admin command and record commit, deployment, URL, or provider result refs.
+      - If the operator manually publishes after reviewing the final copy and uploading media, record operator-confirmed manual publication with channel, timestamp or URL when available, and the approved publication bundle refs; do not require API or browser publication evidence for that channel.
       - Fallback handoff mode is used only when automation is unavailable, blocked by platform policy, or explicitly waived, and the blocker is recorded on the publication job and distribution-record.
       - Closeout reports channel status as published, scheduled, staged, blocked, or failed with the exact resource/artifact refs needed for audit and follow-up.
 outputs:
@@ -574,19 +574,24 @@ failure_handling:
   - If the interview does not produce enough facts, ask bounded follow-up questions instead of drafting from vibe.
   - If research sources conflict, present the conflict and ask whether to narrow the claim, collect more evidence, or change the angle.
   - If prior positions conflict with the selected thesis, stop and ask whether this is an error or a position update.
-  - If image generation is selected but provider setup, budget approval, or acceptance criteria are missing, continue with text-only publication jobs only after explicit operator waiver.
+  - If image generation is selected but provider setup, budget approval, or acceptance criteria are missing, continue with operator-supplied media or text-only publication jobs only after explicit operator waiver.
   - If sanitization blocks a claim or image brief, repair from cleared evidence or stop before packets.
   - If the final content memory index cannot be written to content-piece, stop before publication; do not treat artifacts alone as durable memory.
-  - If a selected publication mode cannot execute, record the channel as blocked with setup or platform reason instead of silently converting the user to manual copy-paste work.
+  - If a selected publication mode cannot execute, record the channel as blocked with setup or platform reason instead of silently converting the user to manual copy-paste work; operator-confirmed manual publication is valid only when the operator explicitly confirms they posted the approved copy/media.
 metadata:
   plugin_slug: branding
   default_branding_workflow: true
   workflow_family: content-production
   output_mode: automated-publication
+  artifact_grant_policy: explicit
+  artifact_lifecycle_guidance: StackOS artifacts are durable records, not a scratchpad; use local project conventions for research notes, angle exploration, and draft iteration before operator-approved or final artifacts are preserved.
   grants:
     - context.query
     - resource.upsert
     - artifact.create
+    - artifact.update
+    - artifact.archive
+    - artifact.supersede
     - decision.record
     - action.execute:image_generate
     - action.execute:publish_git_blog
@@ -609,8 +614,30 @@ metadata:
     - browser.page.snapshot
     - browser.page.screenshot
   mcp_tool_grants:
+    - step_id: produce-optional-images
+      tools:
+        - artifact.create
+        - artifact.update
+        - artifact.archive
+        - artifact.supersede
+    - step_id: render-channel-packets
+      tools:
+        - artifact.create
+        - artifact.update
+        - artifact.archive
+        - artifact.supersede
+    - step_id: approve-and-record
+      tools:
+        - artifact.create
+        - artifact.update
+        - artifact.archive
+        - artifact.supersede
     - step_id: execute-publication
       tools:
+        - artifact.create
+        - artifact.update
+        - artifact.archive
+        - artifact.supersede
         - browser.runtime.status
         - browser.method.manifest
         - browser.profile.list

@@ -19,6 +19,9 @@ presets:
       - resource.query
       - resource.upsert
       - artifact.create
+      - artifact.update
+      - artifact.archive
+      - artifact.supersede
       - decision.record
       - action.execute
       - browser.runtime.status
@@ -73,19 +76,22 @@ presets:
         - Resolve the Level 2 overlay before any specialist handoff.
         - Query brand-profile, positions, prior content-pieces, evidence-items, and channels before drafting so new work stays consistent with previous work.
         - Keep evidence-items, content-pieces, channels, routing policy, artifacts, and decisions canonical in StackOS.
-        - Treat the content-piece record as the future query index for approved work; artifacts store bulky content but never replace resource memory.
+        - Treat the content-piece record as the future query index for approved work; artifacts store intentional durable outputs and evidence but never replace resource memory.
+        - Keep normal interview notes, research exploration, angle options, and draft iteration in project-local working state until the workflow intentionally preserves a durable artifact.
         - Invoke specialist presets for evidence, routing, writing, claim review, voice review, and sanitization.
         - Hold the final evidence lock before any approval request.
       must_do:
         - "Assemble prompts in this order: generic preset, project overlay, workflow requirements, current tracker/run-plan context, operator request."
         - Require claims-to-evidence map and channel plan with rationale before asking for piece approval.
         - Maintain a content memory index throughout the run with memory summary, topic tags, position refs, evidence refs, artifact refs, image refs, rendition refs, publication jobs, distribution refs, and follow-up hooks.
-        - Treat generated images as optional but required when the selected structure or website packet needs them; require placement, prompt, acceptance criteria, and approval before spend.
+        - Use artifact.update, artifact.archive, or artifact.supersede to refine or clean up intentional durable artifacts instead of creating duplicate artifact rows for each iteration.
+        - Treat generated images as optional but required when the selected structure or website packet needs them; require placement, prompt, acceptance criteria, and approval before provider spend, while operator-supplied media can satisfy the image plan without generation approval.
         - Enforce canonical-first before channel publication, except native-short collection policy.
-        - "Treat publication as automation-first after approval: use API integration, browser-assisted platform UI, site/admin UI, or local script when configured; use fallback handoff only when automation is unavailable, platform-blocked, or explicitly waived."
+        - "Treat publication as automation-first after approval: use API integration, browser-assisted platform UI, site/admin UI, or local script when configured; record operator-confirmed manual publication only when the operator explicitly confirms they posted the approved copy/media."
         - Upsert the approved content-piece before closeout, and update positions or brand-profile only when the operator explicitly approves the change.
       must_not_do:
         - Do not invent evidence, voice, disclosure policy, channel handles, or publication settings.
+        - Do not use StackOS artifacts as a scratchpad for every interview pack, research pack, angle option, draft version, or review report.
         - Do not leave approved work only in chat, local files, or artifacts without a content-piece resource ref.
         - Do not let one role decide and review the same piece.
         - Do not collapse claim, voice, and sanitization review into one reviewer.
@@ -105,6 +111,7 @@ presets:
         - Did I verify sources, voice, disclosure policy, channel charters, and approval rules from the overlay?
         - Did I interview for why, surprise, tradeoffs, stakes, and follow-up angles instead of relying only on logs?
         - Did I keep StackOS resources as the single source of truth?
+        - Did I preserve only intentional durable artifacts, and update/archive/supersede existing artifacts when refining or cleaning up?
         - Did I upsert a content-piece memory index before closeout?
         - Did I separate decision, review, and execution roles?
         - Did I attach evidence map and channel rationale before approval?

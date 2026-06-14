@@ -10,9 +10,21 @@ login.
   action.
 - Setup installs the Python `camoufox[geoip]` package and fetches the Camoufox
   browser binary during `make install` or `stackos install`.
+- Keep the Playwright dependency aligned with the Camoufox browser generation
+  fetched by the package-managed Camoufox tool. The current `camoufox==0.4.11`
+  fetch channel reports a Firefox 135.x-based browser, so StackOS pins
+  `playwright==1.51.0`, whose supported Firefox browser is 135.0. When the
+  Camoufox package/fetch channel moves to a newer browser line, update this pin
+  with the normal dependency resolver after validating the browser runtime. Do
+  not patch Playwright driver bundles by hand.
 - Profiles, sessions, pages, screenshots, and action receipts are
   project-scoped. Profile directories stay inside the daemon data directory and
   are never returned to agents.
+- Profiles are persistent across browser sessions. For platforms that require
+  login, choose a stable `profile_key` such as `default` or `linkedin`, let the
+  operator log in once, and reuse that same profile key for future sessions so
+  cookies and storage carry forward. A different profile key is a separate
+  browser profile and will not share the authenticated session.
 - The daemon owns the browser executable, persistent-context mode, and profile
   directory. Agent-provided launch options are passed through except those
   daemon-owned controls.
@@ -42,8 +54,9 @@ login.
 ## Agent Flow
 
 1. Call `browser.runtime.status`.
-2. Call `browser.session.start` with `headless=false` when the operator may
-   need to log in or observe posting.
+2. Call `browser.session.start` with a stable `profile_key` for platform work
+   that should keep cookies/session state. Use `headless=false` when the
+   operator may need to log in or observe posting.
 3. Use `browser.page.call` for page operations such as `goto`, `click`, `fill`,
    `press`, `set_input_files`, or any other public page method. Pass `page_ref`
    to target a known tab/page.

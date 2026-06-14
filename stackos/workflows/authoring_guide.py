@@ -176,6 +176,14 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "Treat resources as future memory and artifacts as bulky evidence or output "
             "blobs. The workflow closeout should write a queryable resource index that "
             "points at artifacts, decisions, approvals, and follow-up hooks.",
+            "Do not use artifact.create as a default scratchpad. Intermediate drafts, "
+            "research notes, angle exploration, and review scratch belong to the local "
+            "project's agent conventions until the workflow intentionally preserves an "
+            "approved output, final packet, durable evidence, operator-approved draft, "
+            "or other retained blob. For iterative workflows, set "
+            "metadata.artifact_grant_policy=explicit and grant artifact.create, "
+            "artifact.update, artifact.archive, and artifact.supersede only on durable "
+            "artifact steps.",
             "Separate reasoning roles from mechanical execution roles: decision makers, "
             "adversarial reviewers, operators, and the main orchestrator must have "
             "clear non-overlapping authority.",

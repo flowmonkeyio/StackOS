@@ -43,6 +43,20 @@ Use this reasoning path before authoring files:
    those records and guarantees. Resources are future memory; artifacts hold
    bulky content and must be indexed by resources when the output should be
    discoverable later.
+   Artifact creation is not the workflow scratchpad. Step `output_refs` may
+   describe logical outputs that stay in chat, local project working files,
+   tracker evidence, or resources until the workflow deliberately preserves
+   them. Use StackOS artifacts for approved outputs, final packets, durable
+   evidence, operator-approved drafts, or intentionally retained blobs. When a
+   template has many iterative outputs, set
+   `metadata.artifact_grant_policy: explicit` and add
+   `metadata.mcp_tool_grants` for `artifact.create`, `artifact.update`,
+   `artifact.archive`, and `artifact.supersede` only on steps that truly need
+   durable artifacts. Existing templates that omit this policy keep the
+   backward-compatible behavior where steps with `output_refs` receive artifact
+   lifecycle grants automatically. Do not prescribe local scratch paths in a
+   generic StackOS workflow; local projects own those conventions through their
+   agent instructions.
 5. Separate decision, review, and execution roles. The orchestrator coordinates
    the package, but specialist presets own bounded reasoning or mechanical
    duties.
@@ -191,6 +205,10 @@ not a test design when the risk calls for full signoff or a production-like
 rehearsal. Manual proof scenarios should name preconditions, exact user or
 agent steps, expected outcomes, evidence such as screenshots/logs/artifacts,
 and whether each scenario is closeout-blocking, residual, or operator-owned.
+For browser-assisted platform flows that require login, those preconditions
+must also name the stable StackOS browser `profile_key`, state whether the
+operator must log in once, and say whether reusing the resulting cookies/session
+is required for closeout or remains an operator-owned prerequisite.
 
 Reviewer output is evidence to adjudicate, not truth to copy into tickets. The
 orchestrator should classify each reviewer claim before action: valid

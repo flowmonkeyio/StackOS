@@ -223,11 +223,19 @@ def test_run_plan_schema_builds_template_derived_grants() -> None:
     assert result.warnings == []
     assert plan.steps[0].action_refs == ["communications.smtp.email.send"]
     grants = plan.grant_snapshot_json["mcp_tool_grants"]
-    assert {(grant["step_id"], grant["tool"]) for grant in grants} == {
+    grant_pairs = {
+        (grant["step_id"], tool)
+        for grant in grants
+        for tool in ([grant["tool"]] if "tool" in grant else grant["tools"])
+    }
+    assert grant_pairs == {
         ("notify", "action.execute"),
         ("notify", "resource.upsert"),
         ("notify", "context.query"),
         ("notify", "artifact.create"),
+        ("notify", "artifact.update"),
+        ("notify", "artifact.archive"),
+        ("notify", "artifact.supersede"),
     }
     action_grant = next(grant for grant in grants if grant["tool"] == "action.execute")
     resource_grant = next(grant for grant in grants if grant["tool"] == "resource.upsert")
@@ -236,6 +244,46 @@ def test_run_plan_schema_builds_template_derived_grants() -> None:
     assert resource_grant["resource_key"] == "communication-delivery"
     assert context_grant["sources"] == ["agent_requests"]
     assert context_grant["fields"] == ["status", "summary"]
+
+
+def test_run_plan_schema_allows_explicit_artifact_grant_policy_without_output_grants() -> None:
+    template = WorkflowTemplateSpec.model_validate(
+        {
+            "schema_version": "stackos.workflow-template.v1",
+            "key": "branding.iterative-content",
+            "name": "Iterative content",
+            "version": "0.1.0",
+            "metadata": {"artifact_grant_policy": "explicit"},
+            "steps": [
+                {
+                    "id": "draft",
+                    "title": "Draft",
+                    "output_refs": ["draft_output"],
+                }
+            ],
+            "outputs": [{"key": "draft_output", "type": "object"}],
+        }
+    )
+    plan = run_plan_from_template(
+        LoadedWorkflowTemplate(
+            summary=WorkflowTemplateSummaryOut(
+                key=template.key,
+                name=template.name,
+                version=template.version,
+                source="plugin",
+                precedence=10,
+                plugin_slug="branding",
+            ),
+            spec=template,
+        )
+    )
+
+    result = validate_run_plan_obj(plan.model_dump(mode="json"))
+
+    assert result.valid is True
+    assert result.warnings == []
+    assert plan.grant_snapshot_json["artifact_grant_policy"] == "explicit"
+    assert plan.grant_snapshot_json["mcp_tool_grants"] == []
 
 
 def test_run_plan_schema_requires_communication_reply_sources() -> None:

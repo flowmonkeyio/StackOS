@@ -199,9 +199,13 @@ preserving the richer REST/UI contracts.
 
 Workflow evidence follows the same boundary. Read project resources with
 `resource.query`; write reusable evidence from a started run-plan step using
-the granted write operations such as `resource.upsert`, `artifact.create`, or
+the granted write operations such as `resource.upsert`, `artifact.create`,
+`artifact.update`, `artifact.archive`, `artifact.supersede`, or
 `decision.record`. Tracker ticket comments and evidence are good for work
-state; resources/artifacts/decisions are for reusable project memory.
+state; resources/artifacts/decisions are for reusable project memory. Do not
+turn StackOS artifacts into scratch files for normal iteration; preserve only
+approved outputs, final packets, durable evidence, operator-approved drafts, or
+other intentionally retained blobs.
 
 ## Project Scope
 

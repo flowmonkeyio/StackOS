@@ -143,10 +143,14 @@ for test planning: it maps accepted requirements to automated proof, red-first
 TDD slices when needed, manual proof depth, expected outcomes, and evidence
 artifacts. The main orchestrator chooses that proof depth by reasoning from
 quality, production risk, and user/business impact; a quick smoke is not a
-substitute for full manual signoff or rehearsal when the risk calls for it. The
-main orchestrator or a designated reviewer verifies that plan before delivery
-starts. If a project already has local agents, adapt or replace them so each
-role maps cleanly to this subset without overlapping responsibilities.
+substitute for full manual signoff or rehearsal when the risk calls for it.
+When browser-assisted platform work depends on login state, the test plan must
+name the stable StackOS browser `profile_key`, whether the operator must log in
+once, whether cookies/session reuse is expected, and whether that precondition
+is closeout-blocking or operator-owned. The main orchestrator or a designated
+reviewer verifies that plan before delivery starts. If a project already has
+local agents, adapt or replace them so each role maps cleanly to this subset
+without overlapping responsibilities.
 
 The main agent should detect or read the host convention before writing local
 agents. For Codex-style projects, inspect `.codex/config.toml` and existing
@@ -240,8 +244,10 @@ Use these operations through MCP, REST, or CLI:
   and recommended agents plus skill requirements
 - `resource.query`: read existing workflow resources such as
   `engineering-decision` and `engineering-evidence`
-- `resource.upsert`, `artifact.create`, `decision.record`: write durable
-  workflow evidence only from a started run-plan step with an explicit grant
+- `resource.upsert`, `artifact.create`, `artifact.update`, `artifact.archive`,
+  `artifact.supersede`, `decision.record`: write or lifecycle durable workflow
+  evidence only from a started run-plan step with an explicit grant; artifacts
+  are intentional durable records, not scratch files for normal iteration
 
 Example:
 

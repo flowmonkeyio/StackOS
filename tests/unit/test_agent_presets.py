@@ -10,8 +10,10 @@ import yaml
 
 from stackos.agents import AgentPresetLoader, parse_agent_preset_bundle_yaml
 from stackos.agents.schema import validate_agent_preset_obj
-from stackos.operations.agent_presets import AgentPresetDescribeInput, agent_preset_describe
-
+from stackos.operations.agent_presets import (
+    AgentPresetDescribeInput,
+    agent_preset_describe,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -88,10 +90,12 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
 
     assert "manual proof depth" in test_designer_text
     assert "full manual signoff" in test_designer_text
+    assert "stable StackOS browser `profile_key`" in test_designer_text
     assert "test-design verification status" in test_designer_text
     assert "evidence-backed validity status" in reviewer_text
     assert "claims to verify" in reviewer_text
     assert "without concrete evidence" in reviewer_text
+    assert "planned persistent `profile_key`" in reviewer_text
     assert "include_graph=true" in planning_text
     assert "detached branches" in planning_text
     assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.1.0" in (
@@ -99,6 +103,7 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     )
     assert "not a subagent" in orchestrator_text
     assert "Quality beats speed" in orchestrator_text
+    assert "StackOS browser `profile_key`" in orchestrator_text
     assert "Reviewer outputs are claims until verified" in orchestrator_text
 
 
@@ -191,6 +196,7 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     assert "manual proof depth" in test_designer_text
     assert "full manual signoff" in test_designer_text
     assert "production risk" in test_designer_text
+    assert "stable stackos browser profile_key" in test_designer_text
     assert "vague \"smoke test\"" in test_designer_text
 
     reviewer = AgentPresetLoader().describe_preset(key="stackos.sdlc.delivery-reviewer")
@@ -208,6 +214,7 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     assert "delivery/test/docs branches that bypass the workflow spine" in reviewer_text
     assert "claims to verify" in reviewer_text
     assert "without concrete evidence" in reviewer_text
+    assert "planned persistent profile_key" in reviewer_text
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:
@@ -232,6 +239,7 @@ def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> N
 def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None:
     loader = AgentPresetLoader()
     curator = loader.describe_preset(key="branding.evidence-curator")
+    writer = loader.describe_preset(key="branding.narrative-writer")
     claim = loader.describe_preset(key="branding.claim-auditor")
     voice = loader.describe_preset(key="branding.voice-reviewer")
     sanitization = loader.describe_preset(key="branding.sanitization-reviewer")
@@ -243,6 +251,13 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
             *claim.preset.prompt_contract.must_do,
             *claim.preset.prompt_contract.must_not_do,
             *claim.preset.prompt_contract.self_check,
+        ]
+    )
+    curator_text = " ".join(
+        [
+            curator.preset.prompt_contract.mission,
+            *curator.preset.prompt_contract.must_do,
+            *curator.preset.prompt_contract.must_not_do,
         ]
     )
     strategist_text = " ".join(
@@ -267,11 +282,17 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
     assert "branding.content-production" in sanitization.preset.applies_to_workflows
     assert sanitization.preset.applies_to_workflows == ["branding.content-production"]
     assert "action.execute" in curator.preset.recommended_tools
+    assert "artifact.update" in curator.preset.recommended_tools
+    assert "artifact.archive" in writer.preset.recommended_tools
+    assert "artifact.supersede" in strategist.preset.recommended_tools
     assert "action.execute" not in strategist.preset.recommended_tools
     assert "decision.record" in strategist.preset.recommended_tools
     mutating_tools = {
         "resource.upsert",
         "artifact.create",
+        "artifact.update",
+        "artifact.archive",
+        "artifact.supersede",
         "decision.record",
         "action.execute",
         "runPlan.claimStep",
@@ -279,6 +300,10 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
     }
     for reviewer in (claim, voice, sanitization):
         assert mutating_tools.isdisjoint(reviewer.preset.recommended_tools)
+    assert "artifact clutter" in curator_text
+    assert "Do not create a new artifact for each draft revision" in " ".join(
+        writer.preset.prompt_contract.must_not_do
+    )
 
 
 def test_trackbooth_agent_preset_names_runtime_sync_and_stackos_boundaries() -> None:

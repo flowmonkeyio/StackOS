@@ -1,4 +1,33 @@
-from stackos.operations.actions import _compact_action_output
+from stackos.operations.actions import _approval_ref_for_action, _compact_action_output
+
+
+def test_approval_ref_for_action_resolves_template_contract_refs() -> None:
+    grant_snapshot = {
+        "template_plugin_slug": "branding",
+        "resolved_action_contracts": [
+            {
+                "key": "image_generate",
+                "action_ref": "utils.image.generate",
+            }
+        ],
+        "action_contracts": [
+            {
+                "key": "image_generate",
+                "action": "utils.image.generate",
+                "approval_ref": "image_generation_approval",
+            },
+            {
+                "key": "publish_linkedin",
+                "action": "publish.linkedin",
+            },
+        ],
+    }
+
+    assert (
+        _approval_ref_for_action(grant_snapshot, "utils.image.generate")
+        == "image_generation_approval"
+    )
+    assert _approval_ref_for_action(grant_snapshot, "branding.publish.linkedin") is None
 
 
 def test_telegram_file_download_compact_output_keeps_artifact_handoff_fields() -> None:

@@ -82,6 +82,7 @@ presets:
         - Select specialist agents or reviewers only when changed-surface risk requires their depth.
         - Enforce TDD/red-first gates when requested or when behavior, scoping, contract, or integration risk requires it.
         - Ensure the test-design step owns the full proof plan, including automated checks, red-first/TDD gates, manual proof depth, expected outcomes, and evidence artifacts.
+        - Ensure browser-assisted platform proof names any required stable StackOS browser profile_key, operator-login precondition, and cookie/session reuse expectation.
         - Choose proof depth by reasoning from quality, production risk, and user/business impact rather than speed.
         - Verify or explicitly waive the test design before implementation begins.
         - Merge, shorten, or skip SDLC phases when the thread already contains enough evidence and the risk profile is low, while recording the reason.
@@ -100,6 +101,7 @@ presets:
         - Keep the main agent accountable for integration and final decisions.
         - Before delivery starts, confirm the test design maps each accepted requirement to automated proof or a risk-appropriate manual proof path with steps, expected outcomes, and evidence.
         - Use quality over speed as the guiding principle when choosing between no manual step, narrow smoke, full manual signoff, browser/user walkthrough, provider live check, migration rehearsal, or operator-owned release gate.
+        - For browser-assisted platform flows that depend on login state, classify the persistent browser profile requirement as satisfied, blocked on operator login, closeout-blocking, operator-owned, or intentionally fresh-profile.
         - Explicitly classify checks as passed, failed, blocked, skipped by instruction, or not applicable.
         - After reviewers report, classify each claim as valid unresolved issue, fixed issue, false positive/unsupported, residual risk, or info before creating work.
         - "Use contextual status markers only: ✅ for verified good/fixed/pass, ❌ for unresolved blocker/failed check, ⚠️ for residual risk or operator-owned gap, and ℹ️ for context or rejected/unsupported claim."
@@ -150,6 +152,7 @@ presets:
         - Did I verify StackOS graph and ticket dependencies?
         - Did I invoke or require the right specialist agents/reviewers?
         - Did the test design include TDD/red-first proof, risk-appropriate manual proof depth, expected outcomes, and evidence artifacts?
+        - Did browser-assisted proof identify the stable profile_key and session reuse expectation when login state matters?
         - Did I choose proof depth for quality and production safety rather than speed?
         - Did I verify the test design before delivery started, or record a clear waiver?
         - Did I map changed surfaces to concrete verification?
@@ -205,6 +208,8 @@ presets:
               proof: Schema, repository, and MCP resolver tests.
             - change: UI drawer or user-flow behavior.
               proof: Focused UI tests plus orchestrator-selected manual proof depth, from browser screenshot verification to full manual signoff when risk warrants it.
+            - change: Browser-assisted platform flow that depends on authenticated state.
+              proof: Reuse the planned stable StackOS browser profile_key after operator login, then verify the user-visible flow and record whether persisted cookies/session state was required, already present, blocked, or operator-owned.
             - change: Provider auth, action runtime, or generated API execution.
               proof: Unit/integration tests plus orchestrator-selected live proof, such as MCP/action smoke, full operator signoff, or security-boundary review when risk warrants it.
         agent_selection:

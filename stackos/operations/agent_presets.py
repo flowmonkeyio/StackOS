@@ -214,7 +214,8 @@ def _setup_guidance() -> list[str]:
         (
             "For engineering decision or evidence records, read existing records with "
             "resource.query. Write reusable workflow evidence only through run-plan "
-            "grants such as resource.upsert, artifact.create, or decision.record."
+            "grants such as resource.upsert, artifact.create/update/archive/supersede, "
+            "or decision.record."
         ),
         (
             "Use the StackOS skill when the host supports skills; it teaches MCP, "

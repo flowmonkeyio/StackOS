@@ -22,7 +22,10 @@ RUN_PLAN_GRANTABLE_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "action.execute",
         "agentRequest.create",
+        "artifact.archive",
         "artifact.create",
+        "artifact.supersede",
+        "artifact.update",
         "browser.context.call",
         "browser.handle.call",
         "browser.method.manifest",

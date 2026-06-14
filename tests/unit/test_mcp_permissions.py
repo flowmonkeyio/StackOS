@@ -128,6 +128,12 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     with pytest.raises(ToolNotGrantedError):
         check_grant("artifact.create", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
+        check_grant("artifact.update", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("artifact.archive", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("artifact.supersede", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
         check_grant("action.execute", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("agentRequest.create", SYSTEM_SKILL)

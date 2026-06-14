@@ -40,7 +40,12 @@ agent powers.
 
 An artifact is a stored reference to generated or fetched material: image,
 video, export, screenshot, page snapshot, document, or any other blob-like
-output.
+output. Artifacts are intentional durable records, not the default scratchpad
+for normal agent iteration. Use them for approved outputs, final publication
+packets, durable evidence, operator-approved draft records, or workflow outputs
+that the workflow deliberately preserves. Local working drafts, research notes,
+angle exploration, and review scratch should follow the current project's local
+agent instructions instead of being forced into StackOS artifacts.
 
 Artifact rows live in `artifacts`:
 
@@ -49,8 +54,12 @@ Artifact rows live in `artifacts`:
 - `resource_record_id`: optional link to a generic resource record.
 - `kind`: generic type such as `image`, `web-document`, `video`, or `export`.
 - `uri`: local or external artifact reference.
+- `status`: lifecycle state, normally `draft`, `approved`, `superseded`, or
+  `archived`.
+- `superseded_by_artifact_id`: optional replacement artifact pointer.
 - `name`, `mime_type`, `size_bytes`: optional display/storage metadata.
 - `metadata_json`, `provenance_json`: sanitized metadata.
+- `created_at`, `updated_at`: lifecycle timestamps.
 
 MCP read tools:
 
@@ -60,6 +69,22 @@ MCP read tools:
 MCP write tool:
 
 - `artifact.create`
+- `artifact.update`
+- `artifact.archive`
+- `artifact.supersede`
+
+`artifact.create` creates a durable artifact row. New artifacts default to
+`draft` unless the caller supplies a different lifecycle status. Use
+`artifact.update` to refine an intentionally durable artifact, attach review
+metadata, or mark it `approved`. Use `artifact.supersede` when a durable draft
+or output is replaced by another artifact. Use `artifact.archive` for accidental
+artifact clutter or records that should no longer appear in normal active
+queries. Hard delete is intentionally not the default lifecycle operation
+because artifacts are part of workflow evidence and audit history.
+
+`artifact.query` returns active artifacts (`draft` and `approved`) by default.
+Pass `status` to query a specific state or `include_inactive=true` to include
+`superseded` and `archived` rows.
 
 Metadata and provenance are deep-redacted for secret-looking keys such as
 tokens, API keys, passwords, authorization headers, and credentials.

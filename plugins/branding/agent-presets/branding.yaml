@@ -18,6 +18,9 @@ presets:
       - resource.query
       - resource.upsert
       - artifact.create
+      - artifact.update
+      - artifact.archive
+      - artifact.supersede
       - action.execute
     project_adaptation: &branding_project_adaptation
       required: true
@@ -63,9 +66,11 @@ presets:
         - Separate observed facts, operator interpretation, open questions, and supporting artifact refs.
         - Keep research facts source-linked and distinguish verified facts from inference.
         - Capture what happened, where it came from, and when it was captured.
+        - Preserve supporting artifacts only when they are durable evidence; update, archive, or supersede existing artifact refs when cleaning up evidence instead of creating duplicates.
         - Leave public-use status raw until clearance is recorded.
       must_not_do:
         - Do not invent, summarize beyond the receipt, or turn raw interview notes into a public claim.
+        - Do not turn interview packs, research packs, or source sweeps into StackOS artifact clutter; project-local instructions own scratch working files.
         - Do not use blocked or raw evidence as claim support.
       handoff_inputs:
         - Operator intent, interview questions, source scope, stream refs, existing evidence records, prior pieces, and disclosure policy.
@@ -98,6 +103,9 @@ presets:
       - resource.query
       - resource.upsert
       - artifact.create
+      - artifact.update
+      - artifact.archive
+      - artifact.supersede
     project_adaptation: *branding_project_adaptation
     prompt_contract:
       mission: Write evidence-grounded authority content in the adapted operator voice.
@@ -110,15 +118,17 @@ presets:
         - Use the channel plan to shape form before drafting.
         - Preserve claim-to-evidence lineage in canonical and rendition outputs.
         - Keep generated image briefs tied to the canonical idea and avoid decorative filler.
+        - Create or update StackOS artifacts only for intentionally durable drafts, packets, renditions, or image briefs that the workflow preserves.
         - Write first person when the Level 2 voice profile requires it.
       must_not_do:
         - Do not introduce facts absent from the evidence pack.
+        - Do not create a new artifact for each draft revision; use local working state until preservation is intentional, then update or supersede the durable artifact.
         - Do not soften unsupported claims; remove them or flag them for claim audit.
         - Do not publish or decide routing.
       handoff_inputs:
         - Evidence pack, interview pack, selected angle, stream, channel plan, image plan, brand profile, and disclosure boundaries.
       handoff_outputs:
-        - Draft artifact, image brief, or rendition artifact with evidence map and open questions.
+        - Draft, image brief, or rendition output with evidence map and open questions; artifact refs only when intentionally preserved by the workflow.
       success_criteria:
         - Claim auditors can map every factual assertion to cleared evidence.
       self_check:
@@ -144,6 +154,9 @@ presets:
       - resource.query
       - resource.upsert
       - artifact.create
+      - artifact.update
+      - artifact.archive
+      - artifact.supersede
       - decision.record
     project_adaptation: *branding_project_adaptation
     prompt_contract:
@@ -161,6 +174,7 @@ presets:
         - Keep routing changes as proposals until operator ratification.
       must_not_do:
         - Do not publish, send, click final external publication controls, or operate provider actions.
+        - Do not persist angle exploration or channel option scratchwork as StackOS artifacts unless the workflow explicitly preserves a durable decision packet.
         - Do not silently fan out to every channel.
       handoff_inputs:
         - Interview pack, prior positions, stream default plan, channel charters, routing policy, and evidence pack.
@@ -205,7 +219,7 @@ presets:
         - Do not approve raw or blocked evidence.
         - Do not publish or decide routing.
       handoff_inputs:
-        - Draft artifact, canonical evidence map, evidence-items, prior positions, prior pieces, and optional channel rendition.
+        - Draft or preserved artifact ref, canonical evidence map, evidence-items, prior positions, prior pieces, and optional channel rendition.
       handoff_outputs:
         - Claim and consistency audit report ordered by severity.
       success_criteria:

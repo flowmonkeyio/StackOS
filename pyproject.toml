@@ -38,6 +38,10 @@ dependencies = [
     "PyYAML>=6.0",
     "anthropic>=0.39",
     "camoufox[geoip]>=0.4.11,<0.5",
+    # Camoufox 0.4.11 currently fetches a Firefox 135.x-based browser binary.
+    # Keep Playwright on the matching Firefox generation until Camoufox's
+    # package/fetch channel ships a newer browser line.
+    "playwright==1.51.0",
 ]
 
 [project.scripts]

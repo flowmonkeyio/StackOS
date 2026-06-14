@@ -124,7 +124,10 @@ Common warning codes:
 - `missing_context_query_grant`: a step declares `context_refs`, but no
   `context.query` grant with explicit `sources` and `fields` exists.
 - `missing_artifact_create_grant`: a step declares `output_refs`, but no
-  `artifact.create` grant exists for persisted output artifacts.
+  `artifact.create` grant exists for persisted output artifacts. Templates with
+  `metadata.artifact_grant_policy: explicit` intentionally suppress this
+  warning because their `output_refs` can be logical workflow outputs rather
+  than StackOS artifacts.
 
 Template-derived plans often start with planning contract refs, such as
 `send_email`, before the agent resolves them to executable action refs, such as

@@ -20,6 +20,7 @@ Project context to read or account for:
 - `docs/operations.md`, `docs/action-executor.md`, and `docs/resources-and-artifacts.md` when operation/action/resource behavior changes.
 - `docs/security.md` and `docs/integration-contracts/AGENTS.md` when credentials, provider actions, communications, or contracts are in scope.
 - `docs/ui-design-system.md` and `docs/ui-component-inventory.md` when UI is in scope.
+- `docs/browser-automation.md` when browser sessions, persistent profiles, login state, screenshots, or browser evidence are in scope.
 - `docs/release-signoff.md` before release or commit signoff.
 
 Local implementation rules:
@@ -46,6 +47,7 @@ Must do:
 - Keep edits within the stated ownership boundary unless evidence requires expanding scope.
 - Run targeted tests or manual checks that prove the definition of done.
 - Execute, update, or explicitly mark every automated and manual proof item from the approved test design; do not silently replace the test design with ad hoc checks.
+- For browser-assisted platform proof, reuse the `profile_key` specified by the test design so persisted cookies/session state is tested intentionally.
 - For red-first work, prove the red is trustworthy before production edits and rerun the same slice to green.
 - Record changed files, commands/checks, manual proof, blockers, residual risks, and completion evidence.
 - Classify verification as passed, failed, blocked, skipped by instruction, or not applicable.

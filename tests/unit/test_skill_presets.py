@@ -49,6 +49,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert "quality over speed" in contract_text
     assert "manual proof depth" in contract_text
     assert "full manual signoff" in contract_text
+    assert "stable stackos browser profile_key" in contract_text
     assert "adjudicate reviewer claims" in contract_text
     assert "micro, standard, high-risk, or blocked" in contract_text
     assert "do not mechanically run every workflow phase" in contract_text
@@ -85,7 +86,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert reporting["emoji_legend"]["pass_fixed"].startswith("✅")
     assert reporting["emoji_legend"]["active_blocker"].startswith("❌")
     assert reporting["emoji_legend"]["residual_risk"].startswith("⚠️")
-    assert reporting["emoji_legend"]["info_rejected"].startswith("ℹ️")
+    assert reporting["emoji_legend"]["info_rejected"].startswith("\u2139\ufe0f")
     assert "Agents/reviewers: <names or none>" in reporting["ticket_end"]["fields"]
     assert "Findings adjudicated" in reporting["ticket_end"]["fields"][-1]
     assert "active blocker" in reporting["ticket_end"]["fields"][-1]
@@ -129,6 +130,13 @@ def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None
     assert "publication jobs" in contract_text
     assert "distribution records" in contract_text
     assert "without reading this chat" in contract_text
+    assert "durable artifacts" in contract_text
+    assert "not use StackOS artifacts as a scratchpad" in contract_text
+    assert "operator-supplied media" in contract_text
+    assert "operator-confirmed manual publication" in contract_text
+    assert "artifact.update" in loaded.preset.recommended_tools
+    assert "artifact.archive" in loaded.preset.recommended_tools
+    assert "artifact.supersede" in loaded.preset.recommended_tools
     assert "Do not collapse claim, voice, and sanitization review" in contract_text
     assert "current tracker/run-plan context" in " ".join(contract.must_do)
     assert loaded.preset.metadata_json["evidence_lock"]["required_before_approval"] is True

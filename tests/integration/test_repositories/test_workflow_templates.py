@@ -149,6 +149,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     }
     assert branding_content_actions["image_generate"].action == "utils.image.generate"
     assert branding_content_actions["image_generate"].optional is True
+    assert branding_content_actions["image_generate"].approval_ref == (
+        "image_generation_approval"
+    )
     assert branding_content_actions["publish_linkedin"].action == "publish.linkedin"
     assert branding_content_actions["publish_linkedin"].optional is True
     assert branding_content_actions["publish_x"].action == "publish.x"
@@ -165,10 +168,12 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "publication_automation_first" in {
         item.key for item in branding_content_described.spec.policies
     }
-    assert branding_content_steps["produce-optional-images"].approval_refs == [
-        "image_generation_approval"
-    ]
+    assert branding_content_steps["produce-optional-images"].approval_refs == []
     assert branding_content_steps["approve-and-record"].approval_refs == ["content_packet_approval"]
+    assert branding_content_described.spec.metadata_json["artifact_grant_policy"] == "explicit"
+    assert "durable records, not a scratchpad" in (
+        branding_content_described.spec.metadata_json["artifact_lifecycle_guidance"]
+    )
     assert (
         "action.execute:image_generate" in (branding_content_described.spec.metadata_json["grants"])
     )
@@ -181,28 +186,41 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "browser.script.run" in branding_content_described.spec.metadata_json["grants"]
     assert "browser.script.inject" in branding_content_described.spec.metadata_json["grants"]
     assert "browser.page.screenshot" in branding_content_described.spec.metadata_json["grants"]
-    assert branding_content_described.spec.metadata_json["mcp_tool_grants"] == [
-        {
-            "step_id": "execute-publication",
-            "tools": [
-                "browser.runtime.status",
-                "browser.method.manifest",
-                "browser.profile.list",
-                "browser.profile.create",
-                "browser.session.list",
-                "browser.session.start",
-                "browser.session.status",
-                "browser.session.stop",
-                "browser.page.call",
-                "browser.context.call",
-                "browser.handle.call",
-                "browser.script.run",
-                "browser.script.inject",
-                "browser.page.snapshot",
-                "browser.page.screenshot",
-            ],
-        }
+    branding_template_tool_grants = {
+        item["step_id"]: set(item["tools"])
+        for item in branding_content_described.spec.metadata_json["mcp_tool_grants"]
+    }
+    artifact_lifecycle_tools = {
+        "artifact.create",
+        "artifact.update",
+        "artifact.archive",
+        "artifact.supersede",
+    }
+    assert artifact_lifecycle_tools <= branding_template_tool_grants[
+        "produce-optional-images"
     ]
+    assert artifact_lifecycle_tools <= branding_template_tool_grants[
+        "render-channel-packets"
+    ]
+    assert artifact_lifecycle_tools <= branding_template_tool_grants["approve-and-record"]
+    assert artifact_lifecycle_tools <= branding_template_tool_grants["execute-publication"]
+    assert {
+        "browser.runtime.status",
+        "browser.method.manifest",
+        "browser.profile.list",
+        "browser.profile.create",
+        "browser.session.list",
+        "browser.session.start",
+        "browser.session.status",
+        "browser.session.stop",
+        "browser.page.call",
+        "browser.context.call",
+        "browser.handle.call",
+        "browser.script.run",
+        "browser.script.inject",
+        "browser.page.snapshot",
+        "browser.page.screenshot",
+    } <= branding_template_tool_grants["execute-publication"]
     assert "content_memory_index" in {item.key for item in branding_content_described.spec.outputs}
     assert "publication_jobs" in {item.key for item in branding_content_described.spec.outputs}
     assert "publication_bundle_ref" in {
@@ -238,6 +256,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "action.execute",
         "resource.upsert",
         "artifact.create",
+        "artifact.update",
+        "artifact.archive",
+        "artifact.supersede",
         "browser.runtime.status",
         "browser.method.manifest",
         "browser.profile.list",
@@ -254,7 +275,24 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "browser.page.snapshot",
         "browser.page.screenshot",
     } <= execute_publication_tools
+    interview_grants = [
+        grant
+        for grant in branding_run_plan.grant_snapshot_json["mcp_tool_grants"]
+        if grant["step_id"] == "interview-capture"
+    ]
+    interview_tools = {
+        tool
+        for grant in interview_grants
+        for tool in ([grant["tool"]] if "tool" in grant else grant["tools"])
+    }
+    assert artifact_lifecycle_tools.isdisjoint(interview_tools)
     assert "distribution_record_refs" in branding_content_steps["execute-publication"].output_refs
+    image_step_text = branding_content_steps["produce-optional-images"].model_dump_json()
+    assert "operator-supplied images" in image_step_text
+    assert "without requiring image_generation_approval" in image_step_text
+    publication_step_text = branding_content_steps["execute-publication"].model_dump_json()
+    assert "operator-confirmed manual publication" in publication_step_text
+    assert "do not require API or browser publication evidence" in publication_step_text
     intake_described = repo.describe_template(
         key="communications.customer-feedback-intake",
         plugin_slug="communications",
@@ -426,11 +464,14 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "manual proof depth" in test_design_text
     assert "quality_over_speed" in test_design_text
     assert "full manual signoff" in test_design_text
+    assert "stable StackOS browser profile_key" in test_design_text
     assert "unverified or incomplete proof plan" in test_design_text
     verify_step = next(
         step for step in engineering_described.spec.steps if step.id == "verify-delivery"
     )
-    assert "test plan" in verify_step.model_dump_json()
+    verify_text = verify_step.model_dump_json()
+    assert "test plan" in verify_text
+    assert "profile_key specified by the test plan" in verify_text
     audit_step = next(
         step for step in engineering_described.spec.steps if step.id == "audit-tracker"
     )

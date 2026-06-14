@@ -80,8 +80,9 @@ cannot access MCP, mutating operation calls, or general mutation routes. The
 installable MCP bridge keeps the daemon bearer inside the bridge process rather
 than giving it to the agent. Normal agent workflow writes and external action
 execution go through MCP run-plan grants (`runPlan.claimStep` + step-scoped
-`resource.upsert`, `artifact.create`, `learning.create`, `decision.record`,
-`experiment.*`, `context.snapshot`, and `action.execute`). One explicit direct
+`resource.upsert`, `artifact.create`, `artifact.update`, `artifact.archive`,
+`artifact.supersede`, `learning.create`, `decision.record`, `experiment.*`,
+`context.snapshot`, and `action.execute`). One explicit direct
 provider action can use `action.run`, which still requires workspace project
 scope, daemon-held credentials, direct-action confirmation, derived or
 caller-provided idempotency for non-read calls, redaction, and action-call

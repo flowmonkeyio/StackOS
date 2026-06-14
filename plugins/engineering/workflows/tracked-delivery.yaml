@@ -333,6 +333,7 @@ steps:
       - "Let the orchestrator reason about the manual proof needed for the risk profile: no manual step, narrow smoke, full manual signoff, browser/user walkthrough, provider live check, migration rehearsal, or operator-owned release gate."
       - For risky behavior, define the one narrow failing proof that should be locked before runtime edits.
       - For manual scenarios, name preconditions, exact user/agent steps, expected outcomes, evidence artifacts or screenshots, and whether the scenario is required for closeout or residual/operator-owned.
+      - For browser-assisted platform flows that depend on login state, name the stable StackOS browser profile_key, operator login precondition, cookie/session reuse expectation, and whether that precondition blocks closeout.
       - Prefer targeted checks first and broaden based on blast radius.
       - Include docs/tracker/signoff verification when the project makes them part of done.
       - Have the main orchestrator or a designated reviewer verify the test design before delivery starts; treat an unverified or incomplete proof plan as a blocker unless explicitly waived.
@@ -347,6 +348,7 @@ steps:
     success_criteria:
       - Every acceptance criterion has an automated or manual proof surface.
       - Manual scenarios include steps, expected outcomes, and evidence requirements.
+      - Browser-login scenarios state whether a stable profile_key and persisted cookies/session are required, already satisfied, or operator-owned.
       - The test design itself has been verified or explicitly waived before implementation starts.
       - Delivery knows which checks prove the change and which checks are residual.
   - id: deliver-tickets
@@ -376,6 +378,7 @@ steps:
     instructions:
       - Classify changed surfaces and choose the smallest convincing checks first.
       - Execute, update, or explicitly mark every automated and manual proof item from the test plan; do not silently replace the test design with ad hoc checks.
+      - For browser-assisted platform proof, reuse the profile_key specified by the test plan so persisted cookies/session state is tested intentionally.
       - Widen to project signoff when contracts, grants, adapters, migrations, UI, provider, or release behavior crosses boundaries.
       - Report pass, fail, blocked, and not-run checks truthfully.
     policy_refs:
@@ -398,6 +401,7 @@ steps:
       - Reconstruct user/agent/operator flow, data flow, permission/grant boundary, and mutation safety before findings.
       - Review tests, fixtures, docs, tracker updates, and implementation together.
       - Compare delivered verification against the approved test design, including manual scenarios and expected evidence.
+      - For browser-assisted platform proof, verify the delivered evidence used the planned persistent profile_key or explains why a fresh profile was required.
       - Lead with confirmed findings ordered by severity; separate false positives, project decisions, and residual gaps.
     policy_refs:
       - evidence_over_assertion

@@ -791,12 +791,14 @@ class ExecutionContextRepository:
                 "id": artifact.id,
                 "kind": artifact.kind,
                 "uri": artifact.uri,
+                "status": artifact.status,
                 "name": artifact.name,
                 "mime_type": artifact.mime_type,
                 "size_bytes": artifact.size_bytes,
                 "metadata_json": artifact.metadata_json,
                 "provenance_json": artifact.provenance_json,
                 "created_at": artifact.created_at.isoformat(),
+                "updated_at": artifact.updated_at.isoformat(),
             },
         )
 

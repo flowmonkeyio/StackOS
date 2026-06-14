@@ -13,12 +13,18 @@ from stackos.context import (
 )
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.tools.artifacts import (
+    ArtifactArchiveInput,
     ArtifactCreateInput,
     ArtifactGetInput,
     ArtifactQueryInput,
+    ArtifactSupersedeInput,
+    ArtifactUpdateInput,
+    _artifact_archive,
     _artifact_create,
     _artifact_get,
     _artifact_query,
+    _artifact_supersede,
+    _artifact_update,
 )
 from stackos.mcp.tools.context import (
     ContextQueryInput,
@@ -160,12 +166,25 @@ def operation_specs():
         ),
         operation_spec(
             name="artifact.create",
-            summary="Create one artifact reference.",
+            summary="Create one intentional durable artifact reference.",
             input_model=ArtifactCreateInput,
             output_model=WriteEnvelope[ArtifactOut],
             handler=_artifact_create,
-            purpose="Use this inside a workflow step to store explicit artifact references.",
+            purpose=(
+                "Use this inside a workflow step only for intentional durable records: "
+                "approved outputs, final packets, evidence, operator-approved drafts, "
+                "or workflow outputs that should be preserved. Do not use artifacts as "
+                "a default scratchpad for normal iteration."
+            ),
             prerequisites=_run_step_prerequisites(),
+            when_to_use=(
+                "The artifact should remain queryable after the run.",
+                "The workflow, operator, or test design explicitly asks for a durable artifact.",
+                (
+                    "The payload is approved, final, durable evidence, or an intentionally "
+                    "preserved draft."
+                ),
+            ),
             examples=(
                 OperationExample(
                     title="Record artifact",
@@ -174,6 +193,82 @@ def operation_specs():
                         "plugin_slug": "engineering",
                         "kind": "report",
                         "uri": "stackos://artifact/report.md",
+                        "status": "approved",
+                    },
+                ),
+            ),
+            mutating=True,
+            grant_policy="run-plan-step-grant",
+        ),
+        operation_spec(
+            name="artifact.update",
+            summary="Update one existing durable artifact reference.",
+            input_model=ArtifactUpdateInput,
+            output_model=WriteEnvelope[ArtifactOut],
+            handler=_artifact_update,
+            purpose=(
+                "Use this when an intentionally durable artifact needs refinement, "
+                "metadata correction, status change, or provenance update. Prefer updating "
+                "the existing artifact over creating multiple draft artifacts for one output."
+            ),
+            prerequisites=_run_step_prerequisites(),
+            examples=(
+                OperationExample(
+                    title="Mark artifact approved",
+                    arguments={
+                        "project_id": 1,
+                        "artifact_id": 12,
+                        "status": "approved",
+                        "metadata_patch_json": {"review": {"approved_by": "operator"}},
+                    },
+                ),
+            ),
+            mutating=True,
+            grant_policy="run-plan-step-grant",
+        ),
+        operation_spec(
+            name="artifact.archive",
+            summary="Archive one artifact without hard deleting audit history.",
+            input_model=ArtifactArchiveInput,
+            output_model=WriteEnvelope[ArtifactOut],
+            handler=_artifact_archive,
+            purpose=(
+                "Use this to clean up accidental artifact clutter or no-longer-current "
+                "drafts while preserving audit lineage."
+            ),
+            prerequisites=_run_step_prerequisites(),
+            examples=(
+                OperationExample(
+                    title="Archive accidental draft",
+                    arguments={
+                        "project_id": 1,
+                        "artifact_id": 12,
+                        "reason": "Created during iteration and not approved for preservation.",
+                    },
+                ),
+            ),
+            mutating=True,
+            grant_policy="run-plan-step-grant",
+        ),
+        operation_spec(
+            name="artifact.supersede",
+            summary="Mark one artifact superseded by a replacement artifact.",
+            input_model=ArtifactSupersedeInput,
+            output_model=WriteEnvelope[ArtifactOut],
+            handler=_artifact_supersede,
+            purpose=(
+                "Use this when a durable draft or output is replaced by a newer durable "
+                "artifact and both lineage and cleanup matter."
+            ),
+            prerequisites=_run_step_prerequisites(),
+            examples=(
+                OperationExample(
+                    title="Supersede old publication packet",
+                    arguments={
+                        "project_id": 1,
+                        "artifact_id": 12,
+                        "replacement_artifact_id": 18,
+                        "reason": "Operator approved the refined packet.",
                     },
                 ),
             ),

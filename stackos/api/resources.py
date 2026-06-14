@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -67,6 +67,7 @@ class ArtifactCreateRequest(BaseModel):
 
     kind: str
     uri: str
+    status: Literal["draft", "approved", "superseded", "archived"] = "draft"
     plugin_slug: str | None = None
     resource_record_id: int | None = None
     name: str | None = None
@@ -162,6 +163,11 @@ async def query_project_artifacts(
     plugin_slug: str | None = Query(default=None),
     resource_record_id: int | None = Query(default=None),
     kind: str | None = Query(default=None),
+    artifact_status: Literal["draft", "approved", "superseded", "archived"] | None = Query(
+        default=None,
+        alias="status",
+    ),
+    include_inactive: bool = Query(default=False),
     page: PaginationParams = Depends(pagination_params),
     session: Session = Depends(get_session),
 ) -> PageResponse[ArtifactOut]:
@@ -172,6 +178,8 @@ async def query_project_artifacts(
             plugin_slug=plugin_slug,
             resource_record_id=resource_record_id,
             kind=kind,
+            status=artifact_status,
+            include_inactive=include_inactive,
             limit=page.limit,
             after_id=page.after,
         )
@@ -205,6 +213,7 @@ async def create_artifact(
             resource_record_id=body.resource_record_id,
             kind=body.kind,
             uri=body.uri,
+            status=body.status,
             name=body.name,
             mime_type=body.mime_type,
             size_bytes=body.size_bytes,

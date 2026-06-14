@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+from sqlmodel import col, select
 
 from stackos.action_availability import ActionAvailabilityOut, ActionExposureOut
 from stackos.actions import (
@@ -16,6 +17,7 @@ from stackos.actions import (
     ActionRepository,
     ActionValidationOut,
 )
+from stackos.db.models import ApprovalRequest, ApprovalRequestStatus
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.permissions import active_run_plan_step
@@ -26,6 +28,7 @@ from stackos.operations.spec import (
     OperationSurface,
     OperationSurfaces,
 )
+from stackos.repositories.base import ConflictError
 from stackos.repositories.plugins import ActionOut, PluginRepository
 
 
@@ -478,6 +481,13 @@ async def action_execute(
     action_ref = inp.action_ref
     if action_ref is None and inp.plugin_slug and inp.action_key:
         action_ref = f"{inp.plugin_slug}.{inp.action_key}"
+    if not inp.dry_run:
+        _ensure_action_contract_approval(
+            ctx,
+            plan_id=plan.id,
+            grant_snapshot=plan.grant_snapshot_json,
+            action_ref=action_ref,
+        )
     idempotency_key = inp.idempotency_key or _derive_workflow_idempotency_key(
         project_id=inp.project_id,
         run_id=ctx.run_id,
@@ -517,6 +527,72 @@ async def action_execute(
         run_id=env.run_id,
         project_id=env.project_id,
     )
+
+
+def _ensure_action_contract_approval(
+    ctx: MCPContext,
+    *,
+    plan_id: int | None,
+    grant_snapshot: dict[str, Any] | None,
+    action_ref: str | None,
+) -> None:
+    if plan_id is None or action_ref is None:
+        return
+    if not isinstance(grant_snapshot, dict):
+        return
+    approval_ref = _approval_ref_for_action(grant_snapshot, action_ref)
+    if approval_ref is None:
+        return
+    approval = ctx.session.exec(
+        select(ApprovalRequest).where(
+            col(ApprovalRequest.run_plan_id) == plan_id,
+            col(ApprovalRequest.approval_key) == approval_ref,
+        )
+    ).first()
+    if approval is None or approval.status != ApprovalRequestStatus.APPROVED:
+        raise ConflictError(
+            "action execution requires approval",
+            data={
+                "run_plan_id": plan_id,
+                "action_ref": action_ref,
+                "approval_ref": approval_ref,
+                "approval_status": str(approval.status) if approval is not None else "missing",
+            },
+        )
+
+
+def _approval_ref_for_action(
+    grant_snapshot: dict[str, Any],
+    action_ref: str,
+) -> str | None:
+    resolved_by_key: dict[str, str] = {}
+    for item in grant_snapshot.get("resolved_action_contracts") or []:
+        if not isinstance(item, dict):
+            continue
+        key = item.get("key")
+        resolved = item.get("action_ref")
+        if isinstance(key, str) and isinstance(resolved, str):
+            resolved_by_key[key] = resolved
+    template_plugin_slug = grant_snapshot.get("template_plugin_slug")
+    plugin_slug = template_plugin_slug if isinstance(template_plugin_slug, str) else None
+    for item in grant_snapshot.get("action_contracts") or []:
+        if not isinstance(item, dict):
+            continue
+        approval_ref = item.get("approval_ref")
+        if not isinstance(approval_ref, str) or not approval_ref:
+            continue
+        key = item.get("key")
+        candidates = []
+        if isinstance(key, str):
+            candidates.append(resolved_by_key.get(key))
+        raw_action = item.get("action")
+        if isinstance(raw_action, str):
+            candidates.append(raw_action)
+            if "." not in raw_action and plugin_slug:
+                candidates.append(f"{plugin_slug}.{raw_action}")
+        if action_ref in {candidate for candidate in candidates if candidate}:
+            return approval_ref
+    return None
 
 
 async def action_run(

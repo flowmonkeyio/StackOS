@@ -57,6 +57,7 @@ def test_resource_and_artifact_read_tools_are_callable(
 
     artifact = mcp_client.call_tool_structured("artifact.get", {"artifact_id": artifact_id})
     assert artifact["uri"] == "/generated-assets/read-tool.png"
+    assert artifact["status"] == "draft"
 
     artifacts = mcp_client.call_tool_structured("artifact.query", {"project_id": pid})
     assert [item["id"] for item in artifacts["items"]] == [artifact_id]
@@ -81,8 +82,26 @@ def test_resource_and_artifact_writes_are_registered_but_not_system_granted(
         "artifact.create",
         {"project_id": pid, "kind": "image", "uri": "/generated-assets/nope.png"},
     )
+    artifact_update_err = mcp_client.call_tool_error(
+        "artifact.update",
+        {"project_id": pid, "artifact_id": 1, "status": "approved"},
+    )
+    artifact_archive_err = mcp_client.call_tool_error(
+        "artifact.archive",
+        {"project_id": pid, "artifact_id": 1, "reason": "cleanup"},
+    )
+    artifact_supersede_err = mcp_client.call_tool_error(
+        "artifact.supersede",
+        {"project_id": pid, "artifact_id": 1, "replacement_artifact_id": 2},
+    )
 
     assert resource_err["code"] == -32007
     assert resource_err["data"]["tool"] == "resource.upsert"
     assert artifact_err["code"] == -32007
     assert artifact_err["data"]["tool"] == "artifact.create"
+    assert artifact_update_err["code"] == -32007
+    assert artifact_update_err["data"]["tool"] == "artifact.update"
+    assert artifact_archive_err["code"] == -32007
+    assert artifact_archive_err["data"]["tool"] == "artifact.archive"
+    assert artifact_supersede_err["code"] == -32007
+    assert artifact_supersede_err["data"]["tool"] == "artifact.supersede"

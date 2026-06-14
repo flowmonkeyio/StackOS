@@ -98,8 +98,10 @@ class Artifact(SQLModel, table=True):
     __tablename__ = "artifacts"
     __table_args__ = (
         Index("ix_artifacts_project", "project_id"),
+        Index("ix_artifacts_project_status", "project_id", "status"),
         Index("ix_artifacts_resource_record", "resource_record_id"),
         Index("ix_artifacts_plugin", "plugin_id"),
+        Index("ix_artifacts_superseded_by", "superseded_by_artifact_id"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -126,12 +128,15 @@ class Artifact(SQLModel, table=True):
     )
     kind: str = Field(max_length=80)
     uri: str = Field(max_length=2048)
+    status: str = Field(default="draft", max_length=40)
     name: str | None = Field(default=None, max_length=300)
     mime_type: str | None = Field(default=None, max_length=160)
     size_bytes: int | None = Field(default=None)
+    superseded_by_artifact_id: int | None = Field(default=None)
     metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     provenance_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
 class ProjectEvent(SQLModel, table=True):

@@ -21,18 +21,22 @@ The plugin owns only generic contracts:
 Durable memory lives in StackOS resources. `brand-profile` stores voice and
 editorial rules, `position` stores standing claims and stance changes,
 `evidence-item` stores facts and receipts, `channel` stores channel form, and
-`content-piece` is the approved output index. Artifacts can hold drafts, packets,
-and generated images, but the approved `content-piece` must store the refs,
-memory summary, topic tags, position refs, image refs, and follow-up hooks that
-future runs need.
+`content-piece` is the approved output index. Artifacts hold intentional durable
+records such as approved drafts, final publication packets, durable evidence,
+operator-approved draft records, and generated or selected media. Normal
+interview notes, research exploration, angle options, and draft iteration belong
+to project-local working conventions until the workflow explicitly preserves
+them. The approved `content-piece` must store the refs, memory summary, topic
+tags, position refs, image refs, and follow-up hooks that future runs need.
 
 Publication output lives in `content-piece.publication_jobs` and matching
 `distribution-record` resources. Each selected channel should have an approved
 job with the publication mode, publication bundle ref, exact copy artifact,
 image artifact refs, destination hint, execution target, result refs, and any
 blocker. Preferred modes are API integration, browser-assisted platform UI,
-site/admin UI, or project script. Fallback handoff is only for blocked or
-explicitly waived automation.
+site/admin UI, or project script. Operator-confirmed manual publication is valid
+when the operator explicitly confirms they posted the approved copy/media.
+Fallback handoff is only for blocked or explicitly waived automation.
 
 Level 2 project overlays own all operator-specific values:
 
@@ -47,5 +51,6 @@ Agents should start from `branding.brand-orchestrator`, then adapt the required
 specialist preset for each workflow step. For solo-operator branding work, run
 `branding.content-production`; do not chain separate branding workflows to finish
 one piece. StackOS resources remain the single source of truth; local files may
-mirror artifacts but should not replace evidence, content-piece, routing,
-approval, publication jobs, distribution records, or channel memory.
+hold scratch iteration or mirror durable artifacts, but they should not replace
+evidence, content-piece, routing, approval, publication jobs, distribution
+records, or channel memory.

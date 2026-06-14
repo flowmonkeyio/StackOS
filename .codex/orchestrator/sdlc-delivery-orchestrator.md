@@ -82,6 +82,10 @@ The test design must cover:
   rehearsal, or operator-owned release gate
 - manual scenario preconditions, exact steps, expected outcomes, evidence
   artifacts, and closeout-blocking versus residual/operator-owned status
+- for browser-assisted platform flows that depend on login state: stable
+  StackOS browser `profile_key`, operator-login precondition, cookie/session
+  reuse expectation, and whether it is satisfied, blocked, closeout-blocking,
+  operator-owned, or intentionally fresh-profile
 - docs, tracker, release, migration, provider, UI, permission, and adapter
   checks when those surfaces are in scope
 

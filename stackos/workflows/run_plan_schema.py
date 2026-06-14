@@ -508,6 +508,11 @@ def _tool_granted(grants: list[RunPlanMcpToolGrant], tool_name: str) -> bool:
     return any(grant.tool_name == tool_name for grant in grants)
 
 
+def _artifact_output_warning_enabled(plan: RunPlanSpec) -> bool:
+    snapshot = plan.grant_snapshot_json or {}
+    return snapshot.get("artifact_grant_policy") != "explicit"
+
+
 def _executable_readiness_warnings(plan: RunPlanSpec) -> list[RunPlanIssue]:
     """Return non-blocking warnings for plans that validate but may not run.
 
@@ -559,7 +564,11 @@ def _executable_readiness_warnings(plan: RunPlanSpec) -> list[RunPlanIssue]:
                     ),
                 )
             )
-        if step.output_refs and not _tool_granted(grants, "artifact.create"):
+        if (
+            step.output_refs
+            and not _tool_granted(grants, "artifact.create")
+            and _artifact_output_warning_enabled(plan)
+        ):
             warnings.append(
                 RunPlanIssue(
                     path=f"{path}.output_refs",
@@ -600,6 +609,8 @@ def _default_mcp_tool_grants(
     resource_contract_map: dict[str, str],
 ) -> list[dict[str, Any]]:
     context_requirements = {item.id: item for item in spec.context_requirements}
+    artifact_grant_policy = (spec.metadata_json or {}).get("artifact_grant_policy")
+    auto_artifact_grants = artifact_grant_policy != "explicit"
     grants: list[dict[str, Any]] = []
     for step in steps:
         if step.action_refs:
@@ -635,8 +646,18 @@ def _default_mcp_tool_grants(
                     "fields": sorted(fields),
                 }
             )
-        if step.output_refs:
-            grants.append({"step_id": step.id, "tool": "artifact.create"})
+        if step.output_refs and auto_artifact_grants:
+            grants.append(
+                {
+                    "step_id": step.id,
+                    "tools": [
+                        "artifact.create",
+                        "artifact.update",
+                        "artifact.archive",
+                        "artifact.supersede",
+                    ],
+                }
+            )
     return grants
 
 
@@ -809,6 +830,10 @@ def run_plan_from_template(
         "resource_contracts": [
             item.model_dump(mode="json", exclude_none=True) for item in spec.resource_contracts
         ],
+        "artifact_grant_policy": (spec.metadata_json or {}).get(
+            "artifact_grant_policy",
+            "auto_output_refs",
+        ),
         "mcp_tool_grants": _default_mcp_tool_grants(
             spec,
             steps,

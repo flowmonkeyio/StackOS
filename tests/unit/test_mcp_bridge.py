@@ -700,6 +700,9 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     assert "context.query" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "resource.upsert" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "artifact.create" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+    assert "artifact.update" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+    assert "artifact.archive" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+    assert "artifact.supersede" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "integration.set" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "integration.test" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "integration.list" in _AGENT_BASE_TOOLBOX_NAMES
@@ -709,6 +712,9 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     assert "plugin.disable" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "resource.upsert" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "artifact.create" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "artifact.update" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "artifact.archive" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "artifact.supersede" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "action.list" in _AGENT_BASE_TOOLBOX_NAMES
     assert "agentRequest.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.start" not in _AGENT_BASE_TOOLBOX_NAMES
@@ -733,6 +739,9 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "action.execute",
         "agentRequest.create",
         "artifact.create",
+        "artifact.update",
+        "artifact.archive",
+        "artifact.supersede",
         "browser.context.call",
         "browser.handle.call",
         "browser.method.manifest",
@@ -764,6 +773,9 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         _AGENT_ADMIN_GATED_TOOL_NAMES | _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     )
     assert "artifact.create" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "artifact.update" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "artifact.archive" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "artifact.supersede" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "learning.update" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "action.execute" not in _AGENT_BASE_TOOLBOX_NAMES
 

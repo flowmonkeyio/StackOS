@@ -30,6 +30,9 @@ from stackos.repositories.base import (
     ValidationError,
 )
 
+ARTIFACT_ACTIVE_STATUSES = frozenset({"draft", "approved"})
+ARTIFACT_STATUSES = frozenset({"draft", "approved", "superseded", "archived"})
+
 
 def _utcnow() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
@@ -120,12 +123,15 @@ class ArtifactOut(BaseModel):
     resource_record_id: int | None
     kind: str
     uri: str
+    status: str
     name: str | None
     mime_type: str | None
     size_bytes: int | None
+    superseded_by_artifact_id: int | None
     metadata_json: dict[str, Any] | None
     provenance_json: dict[str, Any] | None
     created_at: datetime
+    updated_at: datetime
 
 
 class ResourceRepository:
@@ -433,6 +439,7 @@ class ArtifactRepository:
         project_id: int | None = None,
         plugin_slug: str | None = None,
         resource_record_id: int | None = None,
+        status: str = "draft",
         name: str | None = None,
         mime_type: str | None = None,
         size_bytes: int | None = None,
@@ -444,6 +451,7 @@ class ArtifactRepository:
             raise ValidationError("kind is required")
         if not uri:
             raise ValidationError("uri is required")
+        status = self._validate_status(status)
         if project_id is not None:
             self._require_project(project_id)
         plugin = self._plugin_row(plugin_slug) if plugin_slug is not None else None
@@ -464,6 +472,7 @@ class ArtifactRepository:
             resource_record_id=resource_record_id,
             kind=kind,
             uri=uri,
+            status=status,
             name=name,
             mime_type=mime_type,
             size_bytes=size_bytes,
@@ -476,6 +485,137 @@ class ArtifactRepository:
         self._s.commit()
         self._s.refresh(row)
         return Envelope(data=self._artifact_out(row, plugin), project_id=project_id)
+
+    def update(
+        self,
+        artifact_id: int,
+        *,
+        project_id: int | None = None,
+        fields: set[str] | None = None,
+        kind: str | None = None,
+        uri: str | None = None,
+        plugin_slug: str | None = None,
+        resource_record_id: int | None = None,
+        status: str | None = None,
+        name: str | None = None,
+        mime_type: str | None = None,
+        size_bytes: int | None = None,
+        metadata_json: dict[str, Any] | None = None,
+        metadata_patch_json: dict[str, Any] | None = None,
+        provenance_json: dict[str, Any] | None = None,
+        provenance_patch_json: dict[str, Any] | None = None,
+        superseded_by_artifact_id: int | None = None,
+    ) -> Envelope[ArtifactOut]:
+        self._sync_catalog()
+        row = self._artifact_row(artifact_id, project_id=project_id)
+        requested = fields or set()
+        plugin = self._s.get(Plugin, row.plugin_id) if row.plugin_id is not None else None
+        if "plugin_slug" in requested:
+            plugin = self._plugin_row(plugin_slug) if plugin_slug is not None else None
+            row.plugin_id = plugin.id if plugin is not None else None
+        if "resource_record_id" in requested:
+            self._set_resource_record(row, resource_record_id)
+        if "kind" in requested:
+            if not kind:
+                raise ValidationError("kind cannot be empty")
+            row.kind = kind
+        if "uri" in requested:
+            if not uri:
+                raise ValidationError("uri cannot be empty")
+            row.uri = uri
+        if "status" in requested:
+            if status is None:
+                raise ValidationError("status cannot be null")
+            row.status = self._validate_status(status)
+        if "name" in requested:
+            row.name = name
+        if "mime_type" in requested:
+            row.mime_type = mime_type
+        if "size_bytes" in requested:
+            row.size_bytes = size_bytes
+        if "metadata_json" in requested:
+            row.metadata_json = redact_secrets(metadata_json) if metadata_json is not None else None
+        if "metadata_patch_json" in requested and metadata_patch_json is not None:
+            row.metadata_json = self._merge_json(row.metadata_json, metadata_patch_json)
+        if "provenance_json" in requested:
+            row.provenance_json = (
+                redact_secrets(provenance_json) if provenance_json is not None else None
+            )
+        if "provenance_patch_json" in requested and provenance_patch_json is not None:
+            row.provenance_json = self._merge_json(row.provenance_json, provenance_patch_json)
+        if "superseded_by_artifact_id" in requested:
+            row.superseded_by_artifact_id = superseded_by_artifact_id
+        row.updated_at = _utcnow()
+        self._s.add(row)
+        self._s.commit()
+        self._s.refresh(row)
+        plugin = self._s.get(Plugin, row.plugin_id) if row.plugin_id is not None else None
+        return Envelope(data=self._artifact_out(row, plugin), project_id=row.project_id)
+
+    def archive(
+        self,
+        artifact_id: int,
+        *,
+        project_id: int | None = None,
+        reason: str | None = None,
+        metadata_patch_json: dict[str, Any] | None = None,
+    ) -> Envelope[ArtifactOut]:
+        lifecycle_patch = {
+            "lifecycle": {
+                "archived_at": _utcnow().isoformat(),
+                **({"archive_reason": reason} if reason else {}),
+            }
+        }
+        merged_patch = self._merge_json(lifecycle_patch, metadata_patch_json or {})
+        return self.update(
+            artifact_id,
+            project_id=project_id,
+            fields={"status", "metadata_patch_json"},
+            status="archived",
+            metadata_patch_json=merged_patch,
+        )
+
+    def supersede(
+        self,
+        artifact_id: int,
+        *,
+        replacement_artifact_id: int,
+        project_id: int | None = None,
+        reason: str | None = None,
+        metadata_patch_json: dict[str, Any] | None = None,
+    ) -> Envelope[ArtifactOut]:
+        row = self._artifact_row(artifact_id, project_id=project_id)
+        replacement = self._artifact_row(replacement_artifact_id, project_id=project_id)
+        if row.id == replacement.id:
+            raise ValidationError("replacement_artifact_id must differ from artifact_id")
+        if (
+            row.project_id is not None
+            and replacement.project_id is not None
+            and row.project_id != replacement.project_id
+        ):
+            raise ConflictError(
+                "superseding artifact must belong to the same project",
+                data={
+                    "artifact_id": artifact_id,
+                    "replacement_artifact_id": replacement_artifact_id,
+                },
+            )
+        lifecycle_patch = {
+            "lifecycle": {
+                "superseded_at": _utcnow().isoformat(),
+                "replacement_artifact_id": replacement_artifact_id,
+                **({"supersede_reason": reason} if reason else {}),
+            }
+        }
+        merged_patch = self._merge_json(lifecycle_patch, metadata_patch_json or {})
+        return self.update(
+            artifact_id,
+            project_id=project_id,
+            fields={"status", "superseded_by_artifact_id", "metadata_patch_json"},
+            status="superseded",
+            superseded_by_artifact_id=replacement_artifact_id,
+            metadata_patch_json=merged_patch,
+        )
 
     def get(self, artifact_id: int) -> ArtifactOut:
         self._sync_catalog()
@@ -492,6 +632,8 @@ class ArtifactRepository:
         plugin_slug: str | None = None,
         resource_record_id: int | None = None,
         kind: str | None = None,
+        status: str | None = None,
+        include_inactive: bool = False,
         limit: int | None = None,
         after_id: int | None = None,
     ) -> Page[ArtifactOut]:
@@ -504,6 +646,10 @@ class ArtifactRepository:
             filters.append(col(Artifact.resource_record_id) == resource_record_id)
         if kind is not None:
             filters.append(col(Artifact.kind) == kind)
+        if status is not None:
+            filters.append(col(Artifact.status) == self._validate_status(status))
+        elif not include_inactive:
+            filters.append(col(Artifact.status).in_(ARTIFACT_ACTIVE_STATUSES))
         if plugin_slug is not None:
             filters.append(col(Plugin.slug) == plugin_slug)
 
@@ -539,13 +685,71 @@ class ArtifactRepository:
             resource_record_id=row.resource_record_id,
             kind=row.kind,
             uri=row.uri,
+            status=row.status,
             name=row.name,
             mime_type=row.mime_type,
             size_bytes=row.size_bytes,
+            superseded_by_artifact_id=row.superseded_by_artifact_id,
             metadata_json=row.metadata_json,
             provenance_json=row.provenance_json,
             created_at=row.created_at,
+            updated_at=row.updated_at,
         )
+
+    def _artifact_row(self, artifact_id: int, *, project_id: int | None = None) -> Artifact:
+        row = self._s.get(Artifact, artifact_id)
+        if row is None:
+            raise NotFoundError(f"artifact {artifact_id} not found")
+        if project_id is not None and row.project_id != project_id:
+            raise NotFoundError(
+                f"artifact {artifact_id} not found in project {project_id}",
+                data={"project_id": project_id, "artifact_id": artifact_id},
+            )
+        return row
+
+    def _set_resource_record(self, row: Artifact, resource_record_id: int | None) -> None:
+        record = self._s.get(ResourceRecord, resource_record_id) if resource_record_id else None
+        if resource_record_id is not None and record is None:
+            raise NotFoundError(f"resource record {resource_record_id} not found")
+        if record is None:
+            row.resource_record_id = None
+            return
+        if row.project_id is None:
+            row.project_id = record.project_id
+        elif row.project_id != record.project_id:
+            raise ConflictError(
+                "artifact project does not match resource record project",
+                data={
+                    "project_id": row.project_id,
+                    "resource_record_id": resource_record_id,
+                },
+            )
+        row.resource_record_id = resource_record_id
+
+    def _validate_status(self, status: str) -> str:
+        normalized = status.strip().lower()
+        if normalized not in ARTIFACT_STATUSES:
+            raise ValidationError(
+                "artifact status must be draft, approved, superseded, or archived",
+                data={"status": status, "allowed": sorted(ARTIFACT_STATUSES)},
+            )
+        return normalized
+
+    def _merge_json(
+        self,
+        base: dict[str, Any] | None,
+        patch: dict[str, Any],
+    ) -> dict[str, Any]:
+        clean_patch = redact_secrets(patch)
+        if base is None:
+            return dict(clean_patch)
+        merged = dict(base)
+        for key, value in clean_patch.items():
+            if isinstance(merged.get(key), dict) and isinstance(value, dict):
+                merged[key] = self._merge_json(merged[key], value)
+            else:
+                merged[key] = value
+        return merged
 
     def _plugin_row(self, plugin_slug: str) -> Plugin:
         row = self._s.exec(select(Plugin).where(Plugin.slug == plugin_slug)).first()
