@@ -4944,12 +4944,20 @@ def test_dataforseo_action_executes_with_daemon_side_login_config(
         ActionRepository(session).execute(
             project_id=project_id,
             action_ref="seo.serp.analyze",
-            input_json={"keyword": "stackos", "depth": 10},
+            input_json={
+                "keyword": "stackos",
+                "depth": 10,
+                "location_name": "United States",
+                "language_code": "en",
+            },
             credential_ref=credential_ref,
         )
     ).data
 
+    request_body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
     rendered = json.dumps(out.model_dump(mode="json"))
+    assert request_body[0]["location_name"] == "United States"
+    assert request_body[0]["language_code"] == "en"
     assert out.action_call.provider_key == "dataforseo"
     assert out.action_call.connector_key == "dataforseo"
     assert out.output_json["tasks"][0]["result"][0]["title"] == "Example"
@@ -4982,6 +4990,36 @@ def test_dataforseo_keyword_and_serp_limits_match_live_contracts(
         input_json={"keyword": "stackos", "depth": 101},
         credential_ref=credential_ref,
     )
+    valid_locale_validation = repo.validate(
+        project_id=project_id,
+        action_ref="seo.keyword.research",
+        input_json={
+            "keywords": ["seo automation"],
+            "location_name": "United States",
+            "language_code": "en",
+        },
+        credential_ref=credential_ref,
+    )
+    invalid_language_validation = repo.validate(
+        project_id=project_id,
+        action_ref="seo.keyword.research",
+        input_json={
+            "keywords": ["seo automation"],
+            "location_name": "United States",
+            "language_code": "English",
+        },
+        credential_ref=credential_ref,
+    )
+    legacy_locale_validation = repo.validate(
+        project_id=project_id,
+        action_ref="seo.keyword.research",
+        input_json={
+            "keywords": ["seo automation"],
+            "location": "United States",
+            "language": "en",
+        },
+        credential_ref=credential_ref,
+    )
 
     assert keyword_validation.valid is False
     assert any(
@@ -4990,6 +5028,17 @@ def test_dataforseo_keyword_and_serp_limits_match_live_contracts(
     assert serp_validation.valid is False
     assert any(
         issue.path == "$.depth" and issue.code == "range" for issue in serp_validation.issues
+    )
+    assert valid_locale_validation.valid is True
+    assert invalid_language_validation.valid is False
+    assert any(
+        issue.path == "$.language_code" and issue.code == "enum_mismatch"
+        for issue in invalid_language_validation.issues
+    )
+    assert legacy_locale_validation.valid is False
+    assert any(
+        issue.path in {"$.location", "$.language"} and issue.code == "additional_property"
+        for issue in legacy_locale_validation.issues
     )
 
 

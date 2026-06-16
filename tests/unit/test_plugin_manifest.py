@@ -1106,8 +1106,25 @@ def test_seo_plugin_yaml_facade_validates() -> None:
     }
     assert actions["serper.search"].input_schema["required"] == ["query"]
     assert actions["serper.search"].input_schema["properties"]["num"]["maximum"] == 100
+    keyword_properties = actions["keyword.research"].input_schema["properties"]
+    assert "language" not in keyword_properties
+    assert "location" not in keyword_properties
+    assert keyword_properties["language_code"]["description"] == (
+        "DataForSEO language_code, for example en."
+    )
+    assert "en" in keyword_properties["language_code"]["enum"]
+    assert "English" not in keyword_properties["language_code"]["enum"]
+    assert "United States" in keyword_properties["location_name"]["enum"]
     assert actions["competitor.keywords"].config["connector"] == "ahrefs"
     assert actions["backlink.research"].config["connector"] == "ahrefs"
+    assert actions["competitor.keywords"].input_schema["properties"]["limit"]["maximum"] == 1000
+    assert actions["backlink.research"].input_schema["properties"]["limit"]["maximum"] == 1000
+    assert actions["backlink.research"].input_schema["properties"]["mode"]["enum"] == [
+        "exact",
+        "prefix",
+        "domain",
+        "subdomains",
+    ]
     assert actions["keyword.research"].input_schema["required"] == ["keywords"]
     assert actions["paa.extract"].input_schema["required"] == ["keyword"]
 

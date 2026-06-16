@@ -63,6 +63,7 @@ class IntegrationCallResult:
     cost_usd: float
     duration_ms: int
     cached: bool = False
+    metadata: dict[str, Any] | None = None
 
 
 class BaseIntegration:
@@ -129,6 +130,18 @@ class BaseIntegration:
         """
         del op, request, response
         return estimated
+
+    def _extract_response_metadata(
+        self,
+        op: str,
+        *,
+        request: JsonBody | None,
+        response: Any,
+        http_response: httpx.Response,
+    ) -> dict[str, Any] | None:
+        """Return non-secret provider metadata from a successful response."""
+        del op, request, response, http_response
+        return None
 
     # ------------------------------------------------------------------
     # Helpers.
@@ -387,6 +400,12 @@ class BaseIntegration:
             response=data,
             estimated=estimated,
         )
+        metadata = self._extract_response_metadata(
+            op,
+            request=request_for_log,
+            response=data,
+            http_response=response,
+        )
         # If the vendor reports a different cost than estimated, reconcile
         # against the budget so the cap stays accurate.
         delta = actual_cost - estimated
@@ -410,6 +429,8 @@ class BaseIntegration:
             data=data,
             cost_usd=actual_cost,
             duration_ms=duration_ms,
+            cached=bool(metadata and metadata.get("cached")),
+            metadata=metadata,
         )
 
     async def test_credentials(self) -> dict[str, Any]:

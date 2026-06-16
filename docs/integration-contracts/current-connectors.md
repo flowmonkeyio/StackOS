@@ -36,7 +36,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | Reddit | [reddit.com API docs](https://www.reddit.com/dev/api/), [Reddit Data API Wiki](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki), [Data API Terms](https://redditinc.com/policies/data-api-terms), [OAuth2 wiki](https://github.com/reddit-archive/reddit/wiki/oauth2) | OAuth2 wiki and Data API Wiki | API docs listing pagination; Data API Wiki and Terms for usage limits/policy |
 | DataForSEO | [Live SERP advanced](https://docs.dataforseo.com/v3/serp-se-type-live-advanced/), [Google Ads search volume live](https://docs.dataforseo.com/v3/keywords_data-google_ads-search_volume-live/), [DataForSEO Labs Google domain intersection](https://docs.dataforseo.com/v3/dataforseo_labs-google-domain_intersection-live/), [DataForSEO Labs Google keywords for site](https://docs.dataforseo.com/v3/dataforseo_labs-google-keywords_for_site-live/), [user data probe](https://docs.dataforseo.com/v3/appendix-user-data/) | DataForSEO examples use API login/password Basic auth | Endpoint pages document task arrays, per-minute limits, and `tasks[].cost`; [errors appendix](https://docs.dataforseo.com/v3/appendix-errors/) |
 | Serper.dev | [Serper.dev Google Search API product/docs entrypoint](https://serper.dev/) | The public product page verifies the Google Search API and response shape; the exact endpoint/header contract comes from provider dashboard/playground examples rather than a stable public docs URL | Response examples include result blocks and provider credit metadata when available; StackOS bounds `num` and `page` inputs |
-| Ahrefs | [API v3 introduction](https://docs.ahrefs.com/en/api/docs/introduction), [API keys](https://docs.ahrefs.com/en/api/docs/api-keys-creation-and-management), [limits consumption](https://docs.ahrefs.com/api/docs/limits-consumption), [Site Explorer](https://docs.ahrefs.com/en/api/reference/site-explorer), [organic keywords](https://docs.ahrefs.com/api/reference/site-explorer/get-organic-keywords), [all backlinks](https://docs.ahrefs.com/api/reference/site-explorer/get-all-backlinks) | API keys page | API v3 introduction and limits consumption |
+| Ahrefs | [API v3 introduction](https://docs.ahrefs.com/en/api/docs/introduction), [API keys](https://docs.ahrefs.com/en/api/docs/api-keys-creation-and-management), [limits consumption](https://docs.ahrefs.com/en/api/docs/limits-consumption), [subscription limits/usage](https://docs.ahrefs.com/en/api/reference/subscription-info/get-limits-and-usage), [Site Explorer](https://docs.ahrefs.com/en/api/reference/site-explorer), [organic keywords](https://docs.ahrefs.com/en/api/reference/site-explorer/get-organic-keywords), [all backlinks](https://docs.ahrefs.com/en/api/reference/site-explorer/get-all-backlinks) | API keys page | API v3 introduction, pricing API row limits, limits consumption, and free subscription-info endpoint |
 | OpenRouter | [authentication](https://openrouter.ai/docs/api/reference/authentication), [models](https://openrouter.ai/docs/api/api-reference/models/get-models) | OpenRouter requests use a bearer token and optional attribution headers | The normal setup probe uses the read-only models endpoint; no text-generation action is exposed yet |
 | WordPress | [REST API authentication](https://developer.wordpress.org/rest-api/using-the-rest-api/authentication/), [Posts endpoint](https://developer.wordpress.org/rest-api/reference/posts/), [Application Passwords](https://developer.wordpress.org/rest-api/reference/application-passwords/) | Authentication and Application Passwords pages | [Pagination](https://developer.wordpress.org/rest-api/using-the-rest-api/pagination/), [global parameters](https://developer.wordpress.org/rest-api/using-the-rest-api/global-parameters/) |
 | Ghost | [Admin API overview](https://docs.ghost.org/admin-api/), [Admin posts overview](https://docs.ghost.org/admin-api/posts/overview), [creating a post](https://docs.ghost.org/admin-api/posts/creating-a-post), [uploading an image](https://docs.ghost.org/admin-api/images/uploading-an-image) | Admin API token authentication/JWT section | Admin API overview covers JSON shape, pagination, parameters, filtering, and errors |
@@ -64,7 +64,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | `sitemap` | `utils.sitemap.fetch` | `stackos/actions/sitemap.py`, `stackos/integrations/sitemap.py:84` | `stackos/plugins/manifest.py:525` | No provider and no credential. |
 | `dataforseo` | `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract` | `stackos/actions/dataforseo.py`, `stackos/integrations/dataforseo.py:25` | `plugins/seo/plugin.yaml:20`, `plugins/seo/plugin.yaml:36`, `plugins/seo/plugin.yaml:66`, `plugins/seo/plugin.yaml:94` | Basic auth: `login` in credential config and password in encrypted payload. |
 | `serper` | `seo.serper.search` | `stackos/actions/serper.py`, `stackos/integrations/serper.py` | `plugins/seo/plugin.yaml` | API key payload sent through the provider header; provider credit metadata is surfaced when present. |
-| `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `stackos/actions/ahrefs.py`, `stackos/integrations/ahrefs.py:22` | `plugins/seo/plugin.yaml:31`, `plugins/seo/plugin.yaml:120`, `plugins/seo/plugin.yaml:148` | Bearer API key payload; requires eligible paid plan/API units. |
+| `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `stackos/actions/ahrefs.py`, `stackos/integrations/ahrefs.py:22` | `plugins/seo/plugin.yaml:31`, `plugins/seo/plugin.yaml:120`, `plugins/seo/plugin.yaml:148` | Bearer API key payload; requires eligible paid plan/API units. Connector reads the free subscription-info endpoint first, enforces documented row caps (Lite 100, Standard 250, Advanced 500, Enterprise action-bounded at 1000), and surfaces Ahrefs API-unit headers in metadata. |
 | `wordpress` | `publishing.wordpress.post.create` | `stackos/actions/wordpress.py`, `stackos/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
 | `ghost` | `publishing.ghost.post.create` | `stackos/actions/ghost.py`, `stackos/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
 | `branding` | `branding.evidence.capture`, `branding.evidence.sanitize-mark` | `stackos/actions/branding.py` | `plugins/branding/plugin.yaml` | Internal resource connector; no provider credentials. Capture writes raw evidence only, and public clearance is a separate sanitize-mark action with reviewer, reason, and decision ref. |
@@ -83,7 +83,7 @@ Important consequence: provider docs should shape action schemas and connector c
 - Inputs should be explicit request payloads, not goals. For example, `publishing.ghost.post.create` receives a Ghost Admin API post payload; it should not decide title, status, author, tags, or schedule.
 - Output should be safe JSON plus provenance. The shared `_result()` wrapper currently adds vendor and operation metadata in `stackos/actions/vendor_utils.py`, while OpenAI Images strips `b64_json` when persisted by `stackos/integrations/openai_images.py:110`.
 - Rate-limit behavior must be visible at the action-call boundary. `BaseIntegration` has token-bucket pacing and retries for 429/5xx in `stackos/integrations/_base.py:177`, but generic HTTP does not use that base and currently collapses HTTP errors to status-only validation errors in `stackos/actions/http.py:230`.
-- Budget availability is only meaningful when pre-call estimates or post-call actual costs match provider billing. DataForSEO reconciles `tasks[].cost`; Ahrefs currently has `estimate_cost_cents == 0` despite API-unit billing.
+- Budget availability is only meaningful when pre-call estimates or post-call actual costs match provider billing. DataForSEO reconciles `tasks[].cost`; Ahrefs captures API-unit headers in action metadata, but `estimate_cost_cents == 0` and `enforce_budget: false` remain correct until StackOS has an API-unit budget model.
 - Pagination/status contracts must be modeled as actions before templates rely on them. Firecrawl crawl currently starts a job and returns an id, but the docs require polling `GET /v2/crawl/{id}` and following `next` when the result exceeds 10 MB.
 
 ## Provider Findings
@@ -367,6 +367,7 @@ Gaps/mismatches:
 
 - Resolved: keyword volume now caps requests at 1000 keywords and the wrapper default QPS is 0.2, matching the Google Ads Live 12 requests/minute contract.
 - Resolved: SERP live depth is capped at 100 for the exposed `seo.serp.analyze` action.
+- Resolved: exposed DataForSEO locale inputs now use provider-native `language_code` and `location_name` keys; schema enums reject display names such as `English` before a provider call.
 - DataForSEO docs distinguish current and legacy Labs routes. The wrapper uses `/dataforseo_labs/google/.../live` in `stackos/integrations/dataforseo.py:127` and `stackos/integrations/dataforseo.py:145`; comments should link current route docs so maintainers do not accidentally follow legacy pages.
 - `domain_intersection` and `keywords_for_site` are implemented in the connector but not exposed as plugin actions, except Ahrefs equivalents. That is okay, but undocumented dormant operations can confuse future action expansion.
 
@@ -428,16 +429,16 @@ Current: two SEO actions call Site Explorer organic keywords and all backlinks u
 
 Gaps/mismatches:
 
-- Resolved for agent safety: Ahrefs actions no longer claim StackOS budget enforcement while the connector does not read API-unit headers.
-- Wrapper does not read Ahrefs cost headers such as `x-api-units-cost-total-actual`, even though official docs say those headers are the source of unit consumption.
-- API v3 docs emphasize eligible paid plans and API key limits. Manifest has no setup note for plan eligibility or key-level limits.
-- `mode` for backlinks is a free string in `stackos/actions/ahrefs.py`; constrain to documented modes before expanding.
+- Resolved for agent safety: Ahrefs actions do not claim monetary StackOS budget enforcement while provider billing is API-unit based.
+- Resolved: wrapper reads Ahrefs unit headers such as `x-api-units-cost-total-actual` and the action connector stores them in metadata.
+- Resolved: action execution calls the free `subscription-info/limits-and-usage` endpoint before costed row calls and enforces documented row caps: Lite 100, Standard 250, Advanced 500, Enterprise action-bounded at 1000.
+- Resolved: backlink `mode` is constrained to documented values: `exact`, `prefix`, `domain`, and `subdomains`.
+- Remaining gap: API-unit budgets are not yet modeled as first-class StackOS budgets, so Ahrefs monetary budget enforcement stays disabled.
 
 Recommended corrections:
 
-- Add API-unit accounting: record unit headers in `metadata_json` and map units to budget policy before re-enabling StackOS budget gates for Ahrefs.
-- Link wrapper methods to organic keywords and all backlinks docs.
-- Add provider setup guidance for eligible paid plans and key limits.
+- Add an API-unit budget policy before re-enabling StackOS budget gates for Ahrefs.
+- Keep wrapper method docs, manifest plan-cap copy, and API-unit header capture synced with Ahrefs API documentation.
 
 ### WordPress
 
@@ -509,7 +510,7 @@ Recommended corrections:
 
 - `missing_connector` is reliable because registry keys are explicit in `stackos/actions/__init__.py:40`.
 - `missing_credential` is reliable for required credentials, but setup semantics can still be misleading when manifests use `auth_type: api-key` for OAuth/client-secret pairs or username/application-password pairs.
-- `missing_budget` is reliable as a gate, but not necessarily as a cost control. Ahrefs currently estimates zero. Reddit/Jina/WordPress/Ghost/sitemap/HTTP do not enforce budgets.
+- `missing_budget` is reliable as a gate, but not necessarily as a cost control. Ahrefs captures provider API-unit headers but still estimates zero monetary cost until StackOS models unit budgets. Reddit/Jina/WordPress/Ghost/sitemap/HTTP do not enforce budgets.
 - Optional credentials work for Jina because the manifest has `requires_credential: false` and `allows_credential: true` in `stackos/plugins/manifest.py:515`.
 - Provider-disabled/plugin-disabled statuses are generic and correct, but they do not express provider-specific plan eligibility, scopes, roles, or endpoint permissions.
 
@@ -534,9 +535,9 @@ Recommended corrections:
 - `stackos/plugins/manifest.py`: add Reddit auth method fields for `client_id` and `user_agent`; keep `client_secret` daemon-side.
 - `stackos/integrations/reddit.py`: link OAuth2/Data API docs and document listing pagination headers/fields.
 - `stackos/integrations/dataforseo.py`: link exact endpoint docs above each method; note keyword volume 12 RPM and task-size limits.
-- `plugins/seo/plugin.yaml`: add DataForSEO keyword count/depth/limit constraints once confirmed against endpoint docs.
-- `stackos/integrations/ahrefs.py`: link API v3 intro, API keys, limits consumption, organic keywords, and all backlinks; capture unit-cost headers.
-- `plugins/seo/plugin.yaml`: clarify Ahrefs plan/API-unit requirements and budget meaning.
+- `plugins/seo/plugin.yaml`: keep DataForSEO keyword count, SERP depth, provider-native locale keys, and locale enums synced with endpoint docs.
+- `stackos/integrations/ahrefs.py`: keep API v3 intro, API keys, limits consumption, subscription usage, organic keywords, and all backlinks links synced with unit-header capture.
+- `plugins/seo/plugin.yaml`: keep Ahrefs plan row caps, API-unit requirements, and budget meaning synced with pricing/API docs.
 - `stackos/integrations/wordpress.py`: link WordPress Authentication, Application Passwords, and Posts docs; mention HTTPS and post capability.
 - `plugins/publishing/plugin.yaml`: clarify WordPress credential shape and Ghost URL root/API version.
 - `stackos/integrations/ghost.py`: link Ghost Admin API auth/posts/images docs; document JWT `aud`, expiration, and `Accept-Version` target.

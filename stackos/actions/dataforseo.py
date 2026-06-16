@@ -50,25 +50,25 @@ class DataForSeoActionConnector:
                             code="length",
                         )
                     )
-                optional_str(payload, "location", issues)
-                optional_str(payload, "language", issues)
+                optional_str(payload, "location_name", issues)
+                optional_str(payload, "language_code", issues)
             case "serp.analyze" | "serp":
                 required_str(payload, "keyword", issues)
-                optional_str(payload, "location", issues)
-                optional_str(payload, "language", issues)
+                optional_str(payload, "location_name", issues)
+                optional_str(payload, "language_code", issues)
                 int_range(payload, "depth", issues, minimum=1, maximum=self._MAX_LIVE_SERP_DEPTH)
             case "domain_intersection":
                 str_list(payload, "domains", issues, required=True, length=2)
-                optional_str(payload, "location", issues)
-                optional_str(payload, "language", issues)
+                optional_str(payload, "location_name", issues)
+                optional_str(payload, "language_code", issues)
             case "keywords_for_site":
                 required_str(payload, "target", issues)
-                optional_str(payload, "location", issues)
-                optional_str(payload, "language", issues)
+                optional_str(payload, "location_name", issues)
+                optional_str(payload, "language_code", issues)
             case "paa":
                 required_str(payload, "keyword", issues)
-                optional_str(payload, "location", issues)
-                optional_str(payload, "language", issues)
+                optional_str(payload, "location_name", issues)
+                optional_str(payload, "language_code", issues)
             case _:
                 issues.extend(unknown_operation(request))
         return issues
@@ -95,33 +95,33 @@ class DataForSeoActionConnector:
                 case "keyword.research" | "keyword_volume":
                     call_result = await client.keyword_volume(
                         keywords=list(payload["keywords"]),
-                        location=str(payload.get("location", "United States")),
-                        language=str(payload.get("language", "en")),
+                        location_name=str(payload.get("location_name", "United States")),
+                        language_code=str(payload.get("language_code", "en")),
                     )
                 case "serp.analyze" | "serp":
                     call_result = await client.serp(
                         keyword=str(payload["keyword"]),
-                        location=str(payload.get("location", "United States")),
-                        language=str(payload.get("language", "en")),
+                        location_name=str(payload.get("location_name", "United States")),
+                        language_code=str(payload.get("language_code", "en")),
                         depth=int(payload.get("depth", 100)),
                     )
                 case "domain_intersection":
                     call_result = await client.intersection(
                         domains=list(payload["domains"]),
-                        location=str(payload.get("location", "United States")),
-                        language=str(payload.get("language", "en")),
+                        location_name=str(payload.get("location_name", "United States")),
+                        language_code=str(payload.get("language_code", "en")),
                     )
                 case "keywords_for_site":
                     call_result = await client.keywords_for_site(
                         target=str(payload["target"]),
-                        location=str(payload.get("location", "United States")),
-                        language=str(payload.get("language", "en")),
+                        location_name=str(payload.get("location_name", "United States")),
+                        language_code=str(payload.get("language_code", "en")),
                     )
                 case "paa":
                     call_result = await client.paa(
                         keyword=str(payload["keyword"]),
-                        location=str(payload.get("location", "United States")),
-                        language=str(payload.get("language", "en")),
+                        location_name=str(payload.get("location_name", "United States")),
+                        language_code=str(payload.get("language_code", "en")),
                     )
                 case _:
                     raise ValidationError(f"unsupported DataForSEO operation {request.operation!r}")

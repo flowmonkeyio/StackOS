@@ -6,15 +6,15 @@ the ``dataforseo`` credential row's ``config_json`` (login) +
 
 Operations:
 
-- ``serp(keyword, location, language, depth)`` — SERP results for a
+- ``serp(keyword, location_name, language_code, depth)`` — SERP results for a
   query.
-- ``keyword_volume(keywords, location, language)`` — search volume +
+- ``keyword_volume(keywords, location_name, language_code)`` — search volume +
   CPC.
-- ``intersection(domains, location, language)`` — competitor keyword
+- ``intersection(domains, location_name, language_code)`` — competitor keyword
   intersection.
-- ``keywords_for_site(target, location, language)`` — keyword
+- ``keywords_for_site(target, location_name, language_code)`` — keyword
   inventory for a domain.
-- ``paa(keyword, location, language)`` — People-Also-Ask boxes.
+- ``paa(keyword, location_name, language_code)`` — People-Also-Ask boxes.
 
 DataForSEO's response body reports the actual task cost in
 ``tasks[0].cost`` (USD); we override ``_extract_actual_cost_usd`` so
@@ -100,8 +100,8 @@ class DataForSeoIntegration(BaseIntegration):
         self,
         *,
         keyword: str,
-        location: str = "United States",
-        language: str = "en",
+        location_name: str = "United States",
+        language_code: str = "en",
         depth: int = 100,
     ) -> IntegrationCallResult:
         """SERP organic results for ``keyword``.
@@ -112,8 +112,8 @@ class DataForSeoIntegration(BaseIntegration):
         payload = [
             {
                 "keyword": keyword,
-                "location_name": location,
-                "language_code": language,
+                "location_name": location_name,
+                "language_code": language_code,
                 "depth": depth,
             }
         ]
@@ -129,8 +129,8 @@ class DataForSeoIntegration(BaseIntegration):
         self,
         *,
         keywords: list[str],
-        location: str = "United States",
-        language: str = "en",
+        location_name: str = "United States",
+        language_code: str = "en",
     ) -> IntegrationCallResult:
         """Monthly search volume + CPC for a keyword list."""
         # Endpoint ref:
@@ -139,8 +139,8 @@ class DataForSeoIntegration(BaseIntegration):
         payload = [
             {
                 "keywords": keywords,
-                "location_name": location,
-                "language_code": language,
+                "location_name": location_name,
+                "language_code": language_code,
             }
         ]
         return await self.call(
@@ -155,8 +155,8 @@ class DataForSeoIntegration(BaseIntegration):
         self,
         *,
         domains: list[str],
-        location: str = "United States",
-        language: str = "en",
+        location_name: str = "United States",
+        language_code: str = "en",
     ) -> IntegrationCallResult:
         """Keyword intersection across competitor domains."""
         # Endpoint ref:
@@ -167,8 +167,8 @@ class DataForSeoIntegration(BaseIntegration):
             {
                 "target1": domains[0],
                 "target2": domains[1],
-                "location_name": location,
-                "language_code": language,
+                "location_name": location_name,
+                "language_code": language_code,
             }
         ]
         return await self.call(
@@ -183,8 +183,8 @@ class DataForSeoIntegration(BaseIntegration):
         self,
         *,
         target: str,
-        location: str = "United States",
-        language: str = "en",
+        location_name: str = "United States",
+        language_code: str = "en",
     ) -> IntegrationCallResult:
         """All keywords ranking for ``target`` domain."""
         # Endpoint ref:
@@ -192,8 +192,8 @@ class DataForSeoIntegration(BaseIntegration):
         payload = [
             {
                 "target": target,
-                "location_name": location,
-                "language_code": language,
+                "location_name": location_name,
+                "language_code": language_code,
             }
         ]
         return await self.call(
@@ -208,16 +208,16 @@ class DataForSeoIntegration(BaseIntegration):
         self,
         *,
         keyword: str,
-        location: str = "United States",
-        language: str = "en",
+        location_name: str = "United States",
+        language_code: str = "en",
     ) -> IntegrationCallResult:
         """People-Also-Ask boxes for ``keyword``."""
         # Uses the same live advanced SERP endpoint as serp().
         payload = [
             {
                 "keyword": keyword,
-                "location_name": location,
-                "language_code": language,
+                "location_name": location_name,
+                "language_code": language_code,
                 "people_also_ask_click_depth": 1,
             }
         ]

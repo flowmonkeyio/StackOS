@@ -119,10 +119,10 @@ providers:
           secret: true
           required: true
     config:
-      setup_note: Ahrefs API v3 usage consumes API units; confirm the plan, key limits, and remaining units before high-volume runs.
+      setup_note: Ahrefs API v3 usage consumes API units; confirm Direct API eligibility, plan row caps, key limits, and remaining units before high-volume runs.
       setup:
         credential_label: Ahrefs API key
-        setup_note: Confirm the Ahrefs plan has API access/API units, then create or copy the API key and store it in StackOS.
+        setup_note: Confirm the Ahrefs plan has Direct API access/API units, then create or copy the API key and store it in StackOS. StackOS checks subscription usage before costed Ahrefs row calls.
         homepage_url: https://ahrefs.com/
         signup_url: https://app.ahrefs.com/user/sign-up
         console_url: https://app.ahrefs.com/
@@ -158,10 +158,360 @@ actions:
           maxItems: 1000
           items:
             type: string
-        location:
+        location_name:
           type: string
-        language:
+          description: DataForSEO location_name country value, for example United States.
+          enum: &dataforseo_country_location_names
+            - Afghanistan
+            - Albania
+            - Antarctica
+            - Algeria
+            - American Samoa
+            - Andorra
+            - Angola
+            - Antigua and Barbuda
+            - Azerbaijan
+            - Argentina
+            - Australia
+            - Austria
+            - The Bahamas
+            - Bahrain
+            - Bangladesh
+            - Armenia
+            - Barbados
+            - Belgium
+            - Bhutan
+            - Bolivia
+            - Bosnia and Herzegovina
+            - Botswana
+            - Brazil
+            - Belize
+            - Solomon Islands
+            - Brunei
+            - Bulgaria
+            - Myanmar (Burma)
+            - Burundi
+            - Cambodia
+            - Cameroon
+            - Canada
+            - Cabo Verde
+            - Central African Republic
+            - Sri Lanka
+            - Chad
+            - Chile
+            - China
+            - Christmas Island
+            - Cocos (Keeling) Islands
+            - Colombia
+            - Comoros
+            - Republic of the Congo
+            - Democratic Republic of the Congo
+            - Cook Islands
+            - Costa Rica
+            - Croatia
+            - Cyprus
+            - Czechia
+            - Benin
+            - Denmark
+            - Dominica
+            - Dominican Republic
+            - Ecuador
+            - El Salvador
+            - Equatorial Guinea
+            - Ethiopia
+            - Eritrea
+            - Estonia
+            - South Georgia and the South Sandwich Islands
+            - Fiji
+            - Finland
+            - France
+            - French Polynesia
+            - French Southern and Antarctic Lands
+            - Djibouti
+            - Gabon
+            - Georgia
+            - The Gambia
+            - Germany
+            - Ghana
+            - Kiribati
+            - Greece
+            - Grenada
+            - Guam
+            - Guatemala
+            - Guinea
+            - Guyana
+            - Haiti
+            - Heard Island and McDonald Islands
+            - Vatican City
+            - Honduras
+            - Hungary
+            - Iceland
+            - India
+            - Indonesia
+            - Iraq
+            - Ireland
+            - Israel
+            - Italy
+            - "Cote d'Ivoire"
+            - Jamaica
+            - Japan
+            - Kazakhstan
+            - Jordan
+            - Kenya
+            - South Korea
+            - Kuwait
+            - Kyrgyzstan
+            - Laos
+            - Lebanon
+            - Lesotho
+            - Latvia
+            - Liberia
+            - Libya
+            - Liechtenstein
+            - Lithuania
+            - Luxembourg
+            - Madagascar
+            - Malawi
+            - Malaysia
+            - Maldives
+            - Mali
+            - Malta
+            - Mauritania
+            - Mauritius
+            - Mexico
+            - Monaco
+            - Mongolia
+            - Moldova
+            - Montenegro
+            - Morocco
+            - Mozambique
+            - Oman
+            - Namibia
+            - Nauru
+            - Nepal
+            - Netherlands
+            - Curacao
+            - Sint Maarten
+            - Caribbean Netherlands
+            - New Caledonia
+            - Vanuatu
+            - New Zealand
+            - Nicaragua
+            - Niger
+            - Nigeria
+            - Niue
+            - Norfolk Island
+            - Norway
+            - Northern Mariana Islands
+            - United States Minor Outlying Islands
+            - Micronesia
+            - Marshall Islands
+            - Palau
+            - Pakistan
+            - Panama
+            - Papua New Guinea
+            - Paraguay
+            - Peru
+            - Philippines
+            - Pitcairn Islands
+            - Poland
+            - Portugal
+            - Guinea-Bissau
+            - Timor-Leste
+            - Qatar
+            - Romania
+            - Rwanda
+            - Saint Barthelemy
+            - Saint Helena, Ascension and Tristan da Cunha
+            - Saint Kitts and Nevis
+            - Saint Lucia
+            - Saint Martin
+            - Saint Pierre and Miquelon
+            - Saint Vincent and the Grenadines
+            - San Marino
+            - Sao Tome and Principe
+            - Saudi Arabia
+            - Senegal
+            - Serbia
+            - Seychelles
+            - Sierra Leone
+            - Singapore
+            - Slovakia
+            - Vietnam
+            - Slovenia
+            - Somalia
+            - South Africa
+            - Zimbabwe
+            - Spain
+            - South Sudan
+            - Sudan
+            - Suriname
+            - Eswatini
+            - Sweden
+            - Switzerland
+            - Syria
+            - Tajikistan
+            - Thailand
+            - Togo
+            - Tokelau
+            - Tonga
+            - Trinidad and Tobago
+            - United Arab Emirates
+            - Tunisia
+            - Turkiye
+            - Turkmenistan
+            - Tuvalu
+            - Uganda
+            - Ukraine
+            - North Macedonia
+            - Egypt
+            - United Kingdom
+            - Guernsey
+            - Jersey
+            - Isle of Man
+            - Tanzania
+            - United States
+            - Burkina Faso
+            - Uruguay
+            - Uzbekistan
+            - Venezuela
+            - Wallis and Futuna
+            - Samoa
+            - Yemen
+            - Zambia
+        language_code:
           type: string
+          description: DataForSEO language_code, for example en.
+          enum: &dataforseo_google_language_codes
+            - af
+            - ak
+            - sq
+            - am
+            - ar
+            - hy
+            - az
+            - ban
+            - eu
+            - be
+            - bn
+            - bs
+            - bg
+            - my
+            - ca
+            - ceb
+            - ny
+            - zh-CN
+            - zh-TW
+            - hr
+            - cs
+            - da
+            - nl
+            - en
+            - es-419
+            - et
+            - ee
+            - fo
+            - fa
+            - fil
+            - fi
+            - fr
+            - fy
+            - gaa
+            - gl
+            - lg
+            - ka
+            - de
+            - el
+            - gu
+            - ht
+            - ha
+            - he
+            - iw
+            - hi
+            - hu
+            - is
+            - bem
+            - ig
+            - id
+            - ga
+            - it
+            - ja
+            - kn
+            - kk
+            - km
+            - rw
+            - rn
+            - kg
+            - ko
+            - mfe
+            - crs
+            - kri
+            - ckb
+            - ky
+            - lo
+            - lv
+            - ln
+            - lt
+            - ach
+            - mk
+            - mg
+            - ms
+            - ml
+            - mt
+            - mi
+            - mr
+            - mn
+            - sr-ME
+            - ne
+            - nso
+            - "no"
+            - nyn
+            - om
+            - ps
+            - pcm
+            - pl
+            - pt
+            - pt-BR
+            - pt-PT
+            - pa
+            - qu
+            - ro
+            - rm
+            - ru
+            - sr
+            - sr-Latn
+            - st
+            - sn
+            - loz
+            - sd
+            - si
+            - sk
+            - sl
+            - so
+            - es
+            - sw
+            - sv
+            - tl
+            - tg
+            - ta
+            - te
+            - th
+            - ti
+            - to
+            - lua
+            - tn
+            - tum
+            - tr
+            - tk
+            - uk
+            - ur
+            - uz
+            - vi
+            - cy
+            - wo
+            - xh
+            - yo
+            - zu
     output_schema: &object_schema
       type: object
       additionalProperties: true
@@ -186,10 +536,14 @@ actions:
       properties:
         keyword:
           type: string
-        location:
+        location_name:
           type: string
-        language:
+          description: DataForSEO location_name country value, for example United States.
+          enum: *dataforseo_country_location_names
+        language_code:
           type: string
+          description: DataForSEO language_code, for example en.
+          enum: *dataforseo_google_language_codes
         depth:
           type: integer
           minimum: 1
@@ -216,10 +570,14 @@ actions:
       properties:
         keyword:
           type: string
-        location:
+        location_name:
           type: string
-        language:
+          description: DataForSEO location_name country value, for example United States.
+          enum: *dataforseo_country_location_names
+        language_code:
           type: string
+          description: DataForSEO language_code, for example en.
+          enum: *dataforseo_google_language_codes
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
@@ -269,7 +627,7 @@ actions:
       enforce_budget: false
   - key: competitor.keywords
     name: Competitor Keywords
-    description: Pull competitor organic keyword evidence for agent analysis; Ahrefs API-unit budget reconciliation is provider-side until unit headers are captured.
+    description: Pull competitor organic keyword evidence for agent analysis; StackOS captures Ahrefs API-unit headers while monetary budget enforcement remains disabled until API units are modeled.
     provider: ahrefs
     capability: seo-research
     risk_level: cost
@@ -285,6 +643,9 @@ actions:
           type: string
         limit:
           type: integer
+          minimum: 1
+          maximum: 1000
+          description: "Ahrefs plan row caps are enforced at runtime: Lite 100, Standard 250, Advanced 500, Enterprise bounded by the StackOS action cap of 1000."
         date:
           type: string
     output_schema: *object_schema
@@ -297,7 +658,7 @@ actions:
       enforce_budget: false
   - key: backlink.research
     name: Backlink Research
-    description: Pull backlink evidence for an agent-defined SEO investigation; Ahrefs API-unit budget reconciliation is provider-side until unit headers are captured.
+    description: Pull backlink evidence for an agent-defined SEO investigation; StackOS captures Ahrefs API-unit headers while monetary budget enforcement remains disabled until API units are modeled.
     provider: ahrefs
     capability: seo-research
     risk_level: cost
@@ -311,8 +672,16 @@ actions:
           type: string
         mode:
           type: string
+          enum:
+            - exact
+            - prefix
+            - domain
+            - subdomains
         limit:
           type: integer
+          minimum: 1
+          maximum: 1000
+          description: "Ahrefs plan row caps are enforced at runtime: Lite 100, Standard 250, Advanced 500, Enterprise bounded by the StackOS action cap of 1000."
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
