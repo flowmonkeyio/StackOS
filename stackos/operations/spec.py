@@ -22,8 +22,6 @@ ResponseMode = Literal["compact", "raw", "ack"]
 
 _RAW_ONLY_RESPONSE_OPERATIONS = frozenset(
     {
-        "action.execute",
-        "action.run",
         "communication.reply",
         "communication.send",
     }
@@ -33,6 +31,8 @@ _ACK_UNSAFE_RESPONSE_OPERATIONS = _RAW_ONLY_RESPONSE_OPERATIONS | frozenset(
     {
         "agentRequest.claim",
         "agentRequest.prepareRunPlan",
+        "action.execute",
+        "action.run",
         "auth.start",
         "auth.test",
         "readiness.check",

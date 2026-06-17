@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
+from stackos.config import Settings
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
-from stackos.repositories.base import NotFoundError, Page
+from stackos.repositories.base import NotFoundError, Page, ValidationError
 from stackos.repositories.resources import ArtifactOut, ArtifactRepository
 
 
@@ -113,6 +116,25 @@ class ArtifactGetInput(MCPInput):
 
     artifact_id: int
     project_id: int | None = None
+
+
+class ArtifactReadInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "project_id": 1,
+                "artifact_id": 1,
+                "json_path": "$.data.items[0]",
+                "max_bytes": 16000,
+            }
+        },
+    )
+
+    artifact_id: int
+    project_id: int | None = None
+    json_path: str | None = None
+    max_bytes: int = Field(default=16000, ge=1, le=200000)
 
 
 class ArtifactQueryInput(MCPInput):
@@ -237,6 +259,105 @@ async def _artifact_get(
     return artifact
 
 
+async def _artifact_read(
+    inp: ArtifactReadInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> dict[str, Any]:
+    artifact = ArtifactRepository(ctx.session).get(inp.artifact_id)
+    project_id = inp.project_id if inp.project_id is not None else ctx.project_id
+    if project_id is not None and artifact.project_id != project_id:
+        raise NotFoundError(
+            f"artifact {inp.artifact_id} not found in project {project_id}",
+            data={"project_id": project_id, "artifact_id": inp.artifact_id},
+        )
+
+    base = {
+        "artifact_id": inp.artifact_id,
+        "artifact": artifact.model_dump(mode="json"),
+        "json_path": inp.json_path,
+        "max_bytes": inp.max_bytes,
+    }
+    uri = artifact.uri
+    if not uri.startswith("/generated-assets/"):
+        return {
+            **base,
+            "content_available": False,
+            "read_instructions": (
+                "This artifact is a reference outside StackOS generated assets; "
+                "use the artifact URI/provider-specific access path instead."
+            ),
+        }
+
+    settings = ctx.extras.get("settings")
+    asset_root = Path(
+        getattr(settings, "generated_assets_dir", Settings().generated_assets_dir)
+    ).resolve()
+    path = (asset_root / uri.removeprefix("/generated-assets/")).resolve()
+    try:
+        path.relative_to(asset_root)
+    except ValueError as exc:
+        raise ValidationError("artifact path escaped generated assets") from exc
+
+    metadata = artifact.metadata_json if isinstance(artifact.metadata_json, dict) else {}
+    metadata_path = metadata.get("absolute_path") or metadata.get("path")
+    if isinstance(metadata_path, str) and Path(metadata_path).resolve() != path:
+        return {
+            **base,
+            "path": str(path),
+            "content_available": False,
+            "error": "artifact metadata path does not match generated asset URI",
+        }
+    if not path.exists() or not path.is_file():
+        return {
+            **base,
+            "path": str(path),
+            "content_available": False,
+            "error": "artifact file is missing",
+        }
+
+    raw = path.read_bytes()
+    mime_type = artifact.mime_type or ""
+    selected_json_path = inp.json_path or "$"
+    if _is_json_artifact(mime_type, path):
+        try:
+            value = json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValidationError("artifact file is not valid JSON") from exc
+        value = _select_json_path(value, selected_json_path)
+        content = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    elif _is_text_artifact(mime_type, path):
+        if inp.json_path not in (None, "", "$"):
+            raise ValidationError("json_path is only supported for JSON artifacts")
+        content = raw.decode("utf-8", errors="replace")
+    else:
+        return {
+            **base,
+            "path": str(path),
+            "content_available": False,
+            "content_type": mime_type or None,
+            "bytes": len(raw),
+            "sha256": metadata.get("sha256"),
+            "read_instructions": "This artifact is binary; use artifact metadata and URI.",
+        }
+
+    encoded = content.encode("utf-8")
+    truncated = len(encoded) > inp.max_bytes
+    if truncated:
+        content = encoded[: inp.max_bytes].decode("utf-8", errors="ignore")
+    return {
+        **base,
+        "path": str(path),
+        "json_path": selected_json_path if _is_json_artifact(mime_type, path) else None,
+        "content_available": True,
+        "content_type": mime_type or "application/octet-stream",
+        "bytes": len(raw),
+        "sha256": metadata.get("sha256"),
+        "content_truncated": truncated,
+        "content": content,
+    }
+
+
 async def _artifact_query(
     inp: ArtifactQueryInput,
     ctx: MCPContext,
@@ -265,9 +386,57 @@ def register(registry: ToolRegistry) -> None:
             "artifact.archive",
             "artifact.supersede",
             "artifact.get",
+            "artifact.read",
             "artifact.query",
         ),
     )
 
 
 __all__ = ["register"]
+
+
+def _is_json_artifact(mime_type: str, path: Path) -> bool:
+    return mime_type == "application/json" or path.suffix.lower() == ".json"
+
+
+def _is_text_artifact(mime_type: str, path: Path) -> bool:
+    if mime_type.startswith("text/"):
+        return True
+    if mime_type in {"application/markdown", "application/xml", "application/x-ndjson"}:
+        return True
+    return path.suffix.lower() in {".md", ".txt", ".csv", ".xml", ".html", ".log"}
+
+
+def _select_json_path(value: Any, json_path: str) -> Any:
+    if json_path in {"", "$"}:
+        return value
+    if not json_path.startswith("$."):
+        raise ValidationError("json_path must start with '$.'")
+    current = value
+    for token in json_path[2:].split("."):
+        if not token:
+            raise ValidationError("json_path contains an empty segment")
+        field, indexes = _split_json_path_token(token)
+        if field:
+            if not isinstance(current, dict) or field not in current:
+                raise ValidationError("json_path field was not found", data={"field": field})
+            current = current[field]
+        for index in indexes:
+            if not isinstance(current, list) or index >= len(current):
+                raise ValidationError("json_path array index was not found", data={"index": index})
+            current = current[index]
+    return current
+
+
+def _split_json_path_token(token: str) -> tuple[str, list[int]]:
+    field = token.split("[", 1)[0]
+    rest = token[len(field) :]
+    indexes: list[int] = []
+    while rest:
+        if not rest.startswith("[") or "]" not in rest:
+            raise ValidationError("json_path supports only simple field and [index] segments")
+        raw_index, rest = rest[1:].split("]", 1)
+        if not raw_index.isdigit():
+            raise ValidationError("json_path array index must be a non-negative integer")
+        indexes.append(int(raw_index))
+    return field, indexes

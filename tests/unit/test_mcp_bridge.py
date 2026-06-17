@@ -510,6 +510,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "browser.script.run" in _AGENT_VISIBLE_TOOL_NAMES
     assert "operation.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "operation.describe" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "schema.get" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "workspace.bootstrap" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "project.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "project.get" in _AGENT_SETUP_TOOLBOX_NAMES
@@ -736,12 +737,13 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "workflowTemplate.save",
     } == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert {
-        "action.execute",
-        "agentRequest.create",
-        "artifact.create",
-        "artifact.update",
-        "artifact.archive",
-        "artifact.supersede",
+            "action.execute",
+            "agentRequest.create",
+            "artifact.create",
+            "artifact.read",
+            "artifact.update",
+            "artifact.archive",
+            "artifact.supersede",
         "browser.context.call",
         "browser.handle.call",
         "browser.method.manifest",
@@ -758,11 +760,12 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "browser.session.status",
         "browser.session.stop",
         "communication.reply",
-        "communication.send",
-        "context.query",
-        "context.snapshot",
-        "decision.record",
-        "experiment.create",
+            "communication.send",
+            "context.query",
+            "context.snapshot",
+            "decision.record",
+            "executionContext.artifact.read",
+            "experiment.create",
         "experiment.recordDecision",
         "experiment.recordObservation",
         "learning.create",
@@ -940,9 +943,11 @@ def test_bridge_system_grant_matches_agent_operation_surface() -> None:
     system_tools = SKILL_TOOL_GRANTS[SYSTEM_SKILL]
     assert system_tools >= _AGENT_BASE_TOOLBOX_NAMES
     direct_safe_tools = {
-        "context.query",
-        "communication.reply",
-        "communication.send",
+            "context.query",
+            "artifact.read",
+            "executionContext.artifact.read",
+            "communication.reply",
+            "communication.send",
         *[name for name in _AGENT_RUN_PLAN_GATED_TOOL_NAMES if name.startswith("browser.")],
     }
     assert (_AGENT_RUN_PLAN_GATED_TOOL_NAMES - direct_safe_tools).isdisjoint(system_tools)
@@ -992,13 +997,18 @@ def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
 
     list_spec = registry.get("operation.list")
     describe_spec = registry.get("operation.describe")
+    schema_spec = registry.get("schema.get")
     assert list_spec.operation_name == "operation.list"
     assert describe_spec.operation_name == "operation.describe"
+    assert schema_spec.operation_name == "schema.get"
     assert _to_tool(list_spec).model_dump(by_alias=True)["_meta"]["operation_name"] == (
         "operation.list"
     )
     assert _to_tool(describe_spec).model_dump(by_alias=True)["_meta"]["operation_name"] == (
         "operation.describe"
+    )
+    assert _to_tool(schema_spec).model_dump(by_alias=True)["_meta"]["operation_name"] == (
+        "schema.get"
     )
 
     listed = asyncio.run(
@@ -1011,6 +1021,7 @@ def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
     listed_names = {item.name for item in listed.items}
     assert "operation.list" in listed_names
     assert "operation.describe" in listed_names
+    assert "schema.get" in listed_names
     assert "communication.send" in listed_names
     assert all(item.surfaces["mcp"].enabled for item in listed.items)
 
@@ -1040,6 +1051,18 @@ def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
     assert self_described.name == "operation.describe"
     assert self_described.grant_policy == "direct-read"
     assert "name" in self_described.input_schema["properties"]
+
+    schema = asyncio.run(
+        schema_spec.handler(
+            schema_spec.input_model.model_validate({"schema_ref": "stackos.action-output.v1"}),
+            None,  # type: ignore[arg-type]
+            ProgressEmitter(None, None),
+        )
+    )
+    assert schema.schema_ref == "stackos.action-output.v1"
+    assert schema.schema_data["properties"]["schema_version"]["const"] == (
+        "stackos.action-output.v1"
+    )
 
 
 def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:

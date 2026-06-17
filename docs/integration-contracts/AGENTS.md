@@ -34,6 +34,12 @@ is the local gate for provider-specific contract work.
   in run plans.
 - Resources store durable records and provenance; connectors normalize external
   responses into safe JSON and action-call audit rows.
+- External provider action outputs are file-backed by default when invoked
+  through `action.run` or `action.execute`. Connectors should return sanitized
+  JSON and summaries. The compact response carries `schema_ref` plus
+  `schema_operation=schema.get` for the shared response-file envelope; do not
+  invent connector-specific schema paths or raw-file write paths unless the
+  provider contract explicitly requires a separate generated asset.
 
 ## Review Shape
 
@@ -66,6 +72,10 @@ Before an integration delivery is signed off, verify:
   `deferred_reason`, and report the deferred/project-local availability state
 - executable actions have daemon connector docs links, sanitized error handling,
   no-secret auth resolution, audit coverage, and grant tests
+- executable external-provider actions return compact response-file paths,
+  `schema_ref`, and `schema_operation` by default and avoid dumping bulky raw
+  provider payloads into MCP responses;
+  connector-created durable artifacts still return artifact ids when intentional
 - setup metadata tells operators which safe refs/scopes/accounts are needed
   without exposing tokens, API keys, passwords, or raw provider ids
 - provider manifest `config.setup` includes the credential label, setup note,

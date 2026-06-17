@@ -399,7 +399,10 @@ def actions_run(
         bool,
         typer.Option(
             "--verbose",
-            help="Deprecated no-op; action.run always returns raw redacted execution details.",
+            help=(
+                "Deprecated no-op; use response-mode to choose compact file metadata "
+                "or raw audit shape."
+            ),
         ),
     ] = False,
 ) -> None:

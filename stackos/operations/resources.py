@@ -17,12 +17,14 @@ from stackos.mcp.tools.artifacts import (
     ArtifactCreateInput,
     ArtifactGetInput,
     ArtifactQueryInput,
+    ArtifactReadInput,
     ArtifactSupersedeInput,
     ArtifactUpdateInput,
     _artifact_archive,
     _artifact_create,
     _artifact_get,
     _artifact_query,
+    _artifact_read,
     _artifact_supersede,
     _artifact_update,
 )
@@ -161,6 +163,37 @@ def operation_specs():
             handler=_artifact_query,
             purpose="Use this to list project artifacts linked to resources or workflow runs.",
             examples=(OperationExample(title="Query artifacts", arguments={"project_id": 1}),),
+            mutating=False,
+            grant_policy="direct-read",
+        ),
+        operation_spec(
+            name="artifact.read",
+            summary="Read bounded content from one generated-assets artifact.",
+            input_model=ArtifactReadInput,
+            output_model=dict[str, object],
+            handler=_artifact_read,
+            purpose=(
+                "Use this to inspect the content of an intentional StackOS artifact without "
+                "dumping unbounded file data into the response. Raw external provider "
+                "response files are not artifacts by default; read those by their returned "
+                "file path instead."
+            ),
+            examples=(
+                OperationExample(
+                    title="Read JSON artifact content",
+                    arguments={
+                        "project_id": 1,
+                        "artifact_id": 12,
+                        "json_path": "$.response.output_json",
+                        "max_bytes": 16000,
+                    },
+                ),
+            ),
+            returns=(
+                "Artifact metadata, content availability, bounded content, and truncation state.",
+                "Only generated-assets JSON/text files are read; external or binary artifact "
+                "refs return instructions.",
+            ),
             mutating=False,
             grant_policy="direct-read",
         ),

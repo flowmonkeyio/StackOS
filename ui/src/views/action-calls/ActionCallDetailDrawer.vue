@@ -114,12 +114,15 @@ const summaryGroups = computed<UiFactGroup[]>(() => {
   if (fileOutput) {
     groups.splice(context ? 3 : 2, 0, {
       title: 'File Output',
-      description: 'Sanitized response stored as a context artifact.',
+      description: 'Sanitized request and response stored in a response file.',
       items: [
-        { label: 'Artifact', value: numberValue(fileOutput.artifact_id), mono: true },
+        { label: 'Schema version', value: stringValue(fileOutput.schema_version), mono: true, wide: true },
+        { label: 'Schema ref', value: stringValue(fileOutput.schema_ref), mono: true, wide: true },
+        { label: 'Schema operation', value: stringValue(fileOutput.schema_operation), mono: true, wide: true },
+        { label: 'Content type', value: stringValue(fileOutput.content_type), mono: true },
         { label: 'Bytes', value: numberValue(fileOutput.bytes) },
         { label: 'SHA-256', value: stringValue(fileOutput.sha256), mono: true, wide: true },
-        { label: 'Path', value: stringValue(fileOutput.absolute_path), mono: true, wide: true },
+        { label: 'Path', value: stringValue(fileOutput.path), mono: true, wide: true },
       ],
     })
   }

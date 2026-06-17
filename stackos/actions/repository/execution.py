@@ -8,11 +8,13 @@ import hashlib
 import json
 import re
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from stackos.action_availability import build_action_availability, build_action_exposure
+from stackos.action_output_contract import ACTION_OUTPUT_SCHEMA_REF, action_output_schema_hint
 from stackos.actions.connectors import ActionConnectorRequest
 from stackos.actions.manifest import ExecutableActionManifest
 from stackos.artifacts import redact_secret_text
@@ -20,13 +22,13 @@ from stackos.auth_providers import AuthRepository, ResolvedCredential
 from stackos.config import Settings
 from stackos.db.models import ActionCallStatus
 from stackos.repositories.base import ConflictError, Envelope, ValidationError
-from stackos.repositories.execution_contexts import ExecutionContextRepository
 from stackos.repositories.projects import IntegrationBudgetRepository
-from stackos.repositories.resources import ArtifactRepository
 
 from .schema import ActionExecutionOut
 from .utils import _redact_for_audit
 from .validation import RuntimeActionContext
+
+ACTION_OUTPUT_SCHEMA_VERSION = ACTION_OUTPUT_SCHEMA_REF
 
 
 class ActionExecutionMixin:
@@ -43,6 +45,8 @@ class ActionExecutionMixin:
         context_ref: str | None = None,
         provider_context_json: dict[str, Any] | None = None,
         credential_ref: str | None = None,
+        output_policy_json: dict[str, Any] | None = None,
+        default_external_file_output: bool = False,
         run_id: int | None = None,
         run_plan_id: int | None = None,
         run_plan_step_id: int | None = None,
@@ -71,6 +75,11 @@ class ActionExecutionMixin:
             credential_ref=resolved_ref,
             provider_context_json=explicit_provider_context,
         )
+        if output_policy_json is not None:
+            runtime_context = replace(
+                runtime_context,
+                output_policy_json=dict(output_policy_json),
+            )
         resolved_ref = runtime_context.credential_ref
         provider_context = runtime_context.provider_context_json
         provider_context_for_audit = provider_context or None
@@ -112,6 +121,11 @@ class ActionExecutionMixin:
                     "issues": [issue.model_dump(mode="json") for issue in validation_issues],
                 },
             )
+        effective_output_policy = _effective_output_policy(
+            manifest=manifest,
+            runtime_context=runtime_context,
+            default_external_file_output=default_external_file_output,
+        )
         metadata_json = _metadata_with_execution_context(metadata_json, runtime_context)
         if manifest.connector_key is None:
             raise ValidationError(
@@ -271,35 +285,96 @@ class ActionExecutionMixin:
                 kind=manifest.budget_kind,
                 cost_usd=(actual_cost_cents - estimated_cost_cents) / 100,
             )
-        row = self._record_call(
-            project_id=project_id,
-            manifest=manifest,
-            credential=credential,
-            credential_ref=resolved_ref,
-            run_id=run_id,
-            run_plan_id=run_plan_id,
-            run_plan_step_id=run_plan_step_id,
-            idempotency_key=idempotency_key,
-            request_json=payload,
-            provider_context_json=provider_context_for_audit,
-            response_json=output_json,
-            metadata_json={
-                **(_redact_for_audit(metadata_json) if metadata_json else {}),
-                **(result_metadata or {}),
-            }
-            or None,
-            status=ActionCallStatus.SUCCESS,
-            dry_run=False,
-            cost_cents=actual_cost_cents,
-            duration_ms=duration_ms,
-        )
-        row = self._apply_context_output_policy(
-            project_id=project_id,
-            manifest=manifest,
-            input_json=payload,
-            runtime_context=runtime_context,
-            row=row,
-        )
+        success_metadata = {
+            **(_redact_for_audit(metadata_json) if metadata_json else {}),
+            **(result_metadata or {}),
+        } or None
+        try:
+            if effective_output_policy["mode"] == "inline":
+                row = self._record_call(
+                    project_id=project_id,
+                    manifest=manifest,
+                    credential=credential,
+                    credential_ref=resolved_ref,
+                    run_id=run_id,
+                    run_plan_id=run_plan_id,
+                    run_plan_step_id=run_plan_step_id,
+                    idempotency_key=idempotency_key,
+                    request_json=payload,
+                    provider_context_json=provider_context_for_audit,
+                    response_json=output_json,
+                    metadata_json=success_metadata,
+                    status=ActionCallStatus.SUCCESS,
+                    dry_run=False,
+                    cost_cents=actual_cost_cents,
+                    duration_ms=duration_ms,
+                )
+            else:
+                row = self._record_call(
+                    project_id=project_id,
+                    manifest=manifest,
+                    credential=credential,
+                    credential_ref=resolved_ref,
+                    run_id=run_id,
+                    run_plan_id=run_plan_id,
+                    run_plan_step_id=run_plan_step_id,
+                    idempotency_key=idempotency_key,
+                    request_json=payload,
+                    provider_context_json=provider_context_for_audit,
+                    response_json=None,
+                    metadata_json=success_metadata,
+                    status=ActionCallStatus.SUCCESS,
+                    dry_run=False,
+                    cost_cents=actual_cost_cents,
+                    duration_ms=duration_ms,
+                    commit=False,
+                )
+                row = self._apply_output_policy(
+                    project_id=project_id,
+                    manifest=manifest,
+                    input_json=payload,
+                    provider_context_json=provider_context_for_audit,
+                    credential_ref=resolved_ref,
+                    runtime_context=runtime_context,
+                    policy=effective_output_policy,
+                    output_json=output_json,
+                    row=row,
+                )
+        except Exception as exc:
+            self._s.rollback()
+            safe_error = redact_secret_text(str(exc))
+            row = self._record_call(
+                project_id=project_id,
+                manifest=manifest,
+                credential=credential,
+                credential_ref=resolved_ref,
+                run_id=run_id,
+                run_plan_id=run_plan_id,
+                run_plan_step_id=run_plan_step_id,
+                idempotency_key=idempotency_key,
+                request_json=payload,
+                provider_context_json=provider_context_for_audit,
+                response_json={
+                    "output_persistence_failed": True,
+                    "response_summary": _json_summary(output_json),
+                },
+                metadata_json=success_metadata,
+                status=ActionCallStatus.FAILED,
+                dry_run=False,
+                cost_cents=actual_cost_cents,
+                duration_ms=duration_ms,
+                error=safe_error,
+            )
+            raise ConflictError(
+                "action output persistence failed",
+                data={
+                    "action_ref": manifest.action_ref,
+                    "action_call_id": row.id,
+                    "connector": manifest.connector_key,
+                    "side_effect": "provider_executed_output_not_persisted",
+                    "error": safe_error,
+                },
+            ) from exc
         return Envelope(
             data=ActionExecutionOut(
                 action_call=self._call_audit_out(row),
@@ -360,118 +435,88 @@ class ActionExecutionMixin:
             dry_run=dry_run,
         )
 
-    def _apply_context_output_policy(
+    def _apply_output_policy(
         self,
         *,
         project_id: int,
         manifest: ExecutableActionManifest,
         input_json: dict[str, Any],
+        provider_context_json: dict[str, Any] | None,
+        credential_ref: str | None,
         runtime_context: RuntimeActionContext,
+        policy: dict[str, Any],
+        output_json: dict[str, Any],
         row: Any,
     ) -> Any:
-        if runtime_context.context_ref is None:
-            return row
-        policy = _normalise_output_policy(runtime_context.output_policy_json)
         if policy["mode"] == "inline":
+            row.response_json = output_json
+            self._s.add(row)
+            self._s.commit()
+            self._s.refresh(row)
             return row
-        output_json = row.response_json if isinstance(row.response_json, dict) else {}
-        payload = _json_bytes(output_json)
+        envelope = _action_output_envelope(
+            project_id=project_id,
+            manifest=manifest,
+            input_json=input_json,
+            provider_context_json=provider_context_json,
+            credential_ref=credential_ref,
+            runtime_context=runtime_context,
+            row=row,
+            output_json=output_json,
+        )
+        payload = _json_bytes(envelope)
         if policy["mode"] == "file_if_large" and len(payload) <= policy["max_inline_bytes"]:
+            row.response_json = output_json
+            self._s.add(row)
+            self._s.commit()
+            self._s.refresh(row)
             return row
 
-        asset_root = (self._asset_dir or Settings().generated_assets_dir).resolve()
+        created_at = _utc_iso()
         semantic_name = _semantic_output_name(
             policy=policy,
             runtime_context=runtime_context,
             manifest=manifest,
             action_call_id=int(row.id),
+            created_at=created_at,
         )
-        relative_path = Path("action-outputs") / f"project-{project_id}" / f"{semantic_name}.json"
-        absolute_path = (asset_root / relative_path).resolve()
-        try:
-            absolute_path.relative_to(asset_root)
-        except ValueError as exc:
-            raise ValidationError(
-                "file-backed action output path escaped generated assets"
-            ) from exc
+        absolute_path = _resolve_output_path(
+            policy=policy,
+            generated_assets_dir=self._asset_dir or Settings().generated_assets_dir,
+            project_id=project_id,
+            semantic_name=semantic_name,
+        )
         absolute_path.parent.mkdir(parents=True, exist_ok=True)
         absolute_path.write_bytes(payload)
         sha256 = hashlib.sha256(payload).hexdigest()
-        uri = f"/generated-assets/{relative_path.as_posix()}"
-        input_hash = _stable_hash(
-            {
-                "action_ref": manifest.action_ref,
-                "context_ref": runtime_context.context_ref,
-                "input_json": input_json,
-            }
-        )
-        created_at = _utc_iso()
-        top_level_shape = _top_level_json_shape(output_json)
-        read_hints = _read_hints(
-            context_ref=runtime_context.context_ref,
-            top_level_shape=top_level_shape,
-        )
-        artifact = (
-            ArtifactRepository(self._s)
-            .create(
-                project_id=project_id,
-                plugin_slug=manifest.plugin_slug,
-                kind="action-output",
-                uri=uri,
-                name=f"{semantic_name}.json",
-                mime_type=policy["content_type"],
-                size_bytes=len(payload),
-                metadata_json={
-                    "file_backed_action_output": True,
-                    "absolute_path": str(absolute_path),
-                    "sha256": sha256,
-                    "content_type": policy["content_type"],
-                    "top_level_shape": top_level_shape,
-                    "json_path_examples": read_hints["json_path_examples"],
-                },
-                provenance_json={
-                    "action_ref": manifest.action_ref,
-                    "action_call_id": row.id,
-                    "context_ref": runtime_context.context_ref,
-                    "input_hash": input_hash,
-                    "output_policy_json": policy,
-                },
-            )
-            .data
-        )
-        context_artifact = ExecutionContextRepository(self._s).register_artifact(
-            project_id=project_id,
-            context_ref=runtime_context.context_ref,
-            artifact_id=artifact.id,
-            action_call_id=row.id,
-            semantic_name=semantic_name,
-            action_ref=manifest.action_ref,
-            input_hash=input_hash,
-            metadata_json={
-                "output_policy_json": policy,
-                "request_budget_json": runtime_context.request_budget_json,
-            },
-        )
         file_pointer = {
-            "absolute_path": str(absolute_path),
-            "uri": uri,
+            "path": str(absolute_path),
             "content_type": policy["content_type"],
+            "schema_version": ACTION_OUTPUT_SCHEMA_VERSION,
+            **action_output_schema_hint(),
             "bytes": len(payload),
             "sha256": sha256,
             "semantic_name": semantic_name,
-            "artifact_id": artifact.id,
-            "context_artifact_id": context_artifact.id,
             "action_ref": manifest.action_ref,
+            "provider_key": manifest.provider_key,
+            "operation": manifest.operation,
             "created_at": created_at,
-            "top_level_shape": top_level_shape,
-            "read": read_hints,
         }
         row.response_json = {
             "output_mode": "file",
             "file": file_pointer,
+            "receipt": {
+                "schema_version": ACTION_OUTPUT_SCHEMA_VERSION,
+                "action_ref": manifest.action_ref,
+                "provider_key": manifest.provider_key,
+                "operation": manifest.operation,
+                "cost_cents": row.cost_cents,
+                "duration_ms": row.duration_ms,
+            },
         }
         metadata = dict(row.metadata_json or {})
         metadata["file_backed_output"] = file_pointer
+        metadata["output_policy_json"] = policy
         row.metadata_json = metadata
         self._s.add(row)
         self._s.commit()
@@ -485,6 +530,8 @@ def _metadata_with_execution_context(
 ) -> dict[str, Any] | None:
     base = _redact_for_audit(metadata_json) if metadata_json else {}
     if runtime_context.context_ref is None:
+        if runtime_context.output_policy_json:
+            base["output_policy_json"] = runtime_context.output_policy_json
         return base or None
     base["execution_context"] = {
         key: value
@@ -497,6 +544,28 @@ def _metadata_with_execution_context(
         if value not in (None, {}, [])
     }
     return base
+
+
+def _effective_output_policy(
+    *,
+    manifest: ExecutableActionManifest,
+    runtime_context: RuntimeActionContext,
+    default_external_file_output: bool,
+) -> dict[str, Any]:
+    if runtime_context.output_policy_json:
+        return _normalise_output_policy(runtime_context.output_policy_json)
+    manifest_policy = manifest.config_json.get("output_policy_json") or manifest.config_json.get(
+        "default_output_policy_json"
+    )
+    if isinstance(manifest_policy, dict) and manifest_policy:
+        return _normalise_output_policy(manifest_policy)
+    if (
+        default_external_file_output
+        and manifest.provider_key is not None
+        and manifest.connector_key is not None
+    ):
+        return _normalise_output_policy({"mode": "always_file"})
+    return _normalise_output_policy({})
 
 
 def _normalise_output_policy(policy: dict[str, Any]) -> dict[str, Any]:
@@ -531,11 +600,92 @@ def _normalise_output_policy(policy: dict[str, Any]) -> dict[str, Any]:
     }
     if isinstance(semantic_name, str) and semantic_name.strip():
         output_policy["semantic_name"] = semantic_name.strip()
+    if isinstance(policy, dict) and any(
+        isinstance(policy.get(key), str) and policy[key].strip()
+        for key in ("file_path", "directory_path", "output_dir")
+    ):
+        raise ValidationError(
+            "output_policy_json accepts only path for file-backed outputs; "
+            "path must be a directory and StackOS generates the filename"
+        )
+    directory_path = policy.get("path") if isinstance(policy, dict) else None
+    if isinstance(directory_path, str) and directory_path.strip():
+        output_dir = Path(directory_path.strip()).expanduser()
+        if not output_dir.is_absolute():
+            raise ValidationError("output_policy_json.path must be an absolute directory path")
+        output_policy["directory_path"] = str(output_dir)
     return output_policy
 
 
 def _json_bytes(value: dict[str, Any]) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+
+
+def _action_output_envelope(
+    *,
+    project_id: int,
+    manifest: ExecutableActionManifest,
+    input_json: dict[str, Any],
+    provider_context_json: dict[str, Any] | None,
+    credential_ref: str | None,
+    runtime_context: RuntimeActionContext,
+    row: Any,
+    output_json: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": ACTION_OUTPUT_SCHEMA_VERSION,
+        "recorded_at": _utc_iso(),
+        "project": {"project_id": project_id},
+        "run": {
+            "run_id": row.run_id,
+            "run_plan_id": row.run_plan_id,
+            "run_plan_step_id": row.run_plan_step_id,
+        },
+        "action_call": {
+            "id": row.id,
+            "status": row.status.value if hasattr(row.status, "value") else str(row.status),
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+        },
+        "action": {
+            "action_ref": manifest.action_ref,
+            "plugin_slug": manifest.plugin_slug,
+            "action_key": manifest.action_key,
+            "provider_key": manifest.provider_key,
+            "connector_key": manifest.connector_key,
+            "operation": manifest.operation,
+            "risk_level": manifest.risk_level,
+        },
+        "request": {
+            "input_json": _redact_for_audit(input_json),
+            "provider_context_json": _redact_for_audit(provider_context_json)
+            if provider_context_json is not None
+            else None,
+            "credential_ref": credential_ref,
+            "context_ref": runtime_context.context_ref,
+        },
+        "response": {
+            "output_json": _redact_for_audit(output_json),
+            "metadata_json": _redact_for_audit(row.metadata_json),
+            "cost_cents": row.cost_cents,
+            "duration_ms": row.duration_ms,
+            "dry_run": row.dry_run,
+        },
+        "summaries": {
+            "request": _json_summary(input_json),
+            "response": _json_summary(output_json),
+        },
+    }
+
+
+def _json_summary(value: Any) -> dict[str, Any]:
+    shape = _top_level_json_shape(value)
+    summary: dict[str, Any] = {"top_level_shape": shape}
+    if isinstance(value, dict):
+        summary["keys"] = list(shape.get("keys") or [])
+    elif isinstance(value, list):
+        summary["length"] = len(value)
+    return summary
 
 
 def _semantic_output_name(
@@ -544,19 +694,37 @@ def _semantic_output_name(
     runtime_context: RuntimeActionContext,
     manifest: ExecutableActionManifest,
     action_call_id: int,
+    created_at: str,
 ) -> str:
+    stamp = re.sub(r"[^0-9TZ]+", "", created_at.replace("+00:00", "Z"))[:16]
     raw = (
         policy.get("semantic_name")
         or runtime_context.artifact_namespace
-        or f"{runtime_context.context_ref}_{manifest.action_key}"
+        or f"{manifest.provider_key or manifest.plugin_slug}-{manifest.action_key}"
     )
     base = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(raw)).strip("._-") or "action-output"
-    return f"{base[:120]}_{action_call_id}"
+    return f"{base[:96]}-{stamp}-{action_call_id}"
 
 
-def _stable_hash(value: dict[str, Any]) -> str:
-    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+def _resolve_output_path(
+    *,
+    policy: dict[str, Any],
+    generated_assets_dir: Path,
+    project_id: int,
+    semantic_name: str,
+) -> Path:
+    requested_dir = policy.get("directory_path")
+    if isinstance(requested_dir, str) and requested_dir.strip():
+        output_dir = Path(requested_dir).expanduser().resolve()
+        if output_dir.exists() and not output_dir.is_dir():
+            raise ValidationError("output_policy_json.path must point to a directory")
+        return output_dir / f"{semantic_name}.json"
+    return (
+        Path(generated_assets_dir).resolve()
+        / "action-outputs"
+        / f"project-{project_id}"
+        / f"{semantic_name}.json"
+    )
 
 
 def _utc_iso() -> str:
@@ -595,29 +763,6 @@ def _json_type(value: Any) -> str:
     if value is None:
         return "null"
     return "string"
-
-
-def _read_hints(
-    *,
-    context_ref: str,
-    top_level_shape: dict[str, Any],
-) -> dict[str, Any]:
-    examples = ["$"]
-    if top_level_shape.get("type") == "object":
-        for key in list(top_level_shape.get("keys") or [])[:5]:
-            examples.append(f"$.{key}")
-    return {
-        "operation": "executionContext.artifact.read",
-        "arguments": {
-            "context_ref": context_ref,
-            "json_path": examples[1] if len(examples) > 1 else "$",
-        },
-        "json_path_examples": examples,
-        "instructions": (
-            "Use executionContext.artifact.read with this artifact_id and an optional "
-            "json_path to inspect targeted fields without rerunning the provider action."
-        ),
-    }
 
 
 def _dedupe_validation_issues(issues: list[Any]) -> list[Any]:

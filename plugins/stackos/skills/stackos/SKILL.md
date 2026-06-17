@@ -64,12 +64,21 @@ run token.
    `executionContext.resolve`, or `executionContext.create` and pass
    `context_ref` instead of repeating credential/provider context on every
    call. The daemon resolves credentials inside the action process and returns
-   only sanitized output.
+   only sanitized output. External-provider action output is file-backed by
+   default; inspect the returned response-file path before rerunning provider
+   calls. If the envelope schema is needed, call `schema.get` with the returned
+   `schema_ref`. Use `artifact.read` only for intentional artifact rows.
 9. When the user asks for one explicit action and no workflow state is needed,
    use `toolbox.call` for `action.run` with `confirm_direct=true`,
-   `intent_summary`, and an `idempotency_key` for non-read actions. Provider
-   side-effect operations return raw redacted provider output by default; do not
-   request compact or ack shapes for them.
+   `intent_summary`, and an `idempotency_key` for non-read actions. External
+   provider actions return compact response-file metadata by default: path,
+   schema version, `schema_ref`, `schema_operation`, content type, byte size,
+   checksum, and semantic name. The sanitized request/response envelope lives
+   in the file. Fetch the schema through `schema.get` only when needed. Request
+   raw only when the next step truly needs the full public audit shape.
+   `artifact.read` remains available for intentional artifacts; pass
+   `response_mode=raw` when the bounded artifact content itself should enter
+   the context window.
 10. For browser automation, use the direct `browser.*` tools when mounted, or
     `toolbox.call` for the same operation names before the current Codex session
     is restarted. `browser.session.start` opens a persistent Camoufox session
@@ -245,14 +254,17 @@ run token.
 - Execute one direct action: describe/validate when useful, call
   `toolbox.call` for `readiness.check` when setup is uncertain, resolve an
   `executionContext.*` ref when the provider scope will be reused, call
-  `toolbox.call` for `action.run`, and read the raw redacted provider result.
+  `toolbox.call` for `action.run`, then inspect the returned response-file path
+  before making another paid or side-effecting provider call. Call `schema.get`
+  with `schema_ref` only when the file envelope schema is needed.
 - Execute a workflow action: validate the manifest and input, let the daemon
-  resolve credentials through `action.execute`, then store outputs as
-  resources, artifacts, learnings, or run step summaries. Keep endpoint payload
-  in `input_json`; keep provider scope such as acting-on-behalf options in
-  provider context or an execution context. For file-backed provider outputs,
-  use `executionContext.artifact.list` and `executionContext.artifact.read`
-  before rerunning production calls.
+  resolve credentials through `action.execute`, then store synthesized outputs
+  as resources, artifacts, learnings, or run step summaries. Keep endpoint
+  payload in `input_json`; keep provider scope such as acting-on-behalf options
+  in provider context or an execution context. External provider outputs are
+  file-backed by default; inspect the returned response-file path before
+  rerunning production calls. Call `schema.get` with `schema_ref` only when the
+  file envelope schema is needed. Use `artifact.read` for intentional artifacts.
 - Use engineering evidence/resources: read existing `engineering-decision` and
   `engineering-evidence` records with `resource.query`. Create durable evidence
   only inside a run-plan step with explicit grants such as `resource.upsert`,

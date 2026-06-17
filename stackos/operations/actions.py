@@ -24,12 +24,25 @@ from stackos.mcp.permissions import active_run_plan_step
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.spec import (
     OperationExample,
+    OperationResponsePolicy,
     OperationSpec,
     OperationSurface,
     OperationSurfaces,
 )
 from stackos.repositories.base import ConflictError
 from stackos.repositories.plugins import ActionOut, PluginRepository
+
+ACTION_FILE_OUTPUT_RESPONSE_POLICY = OperationResponsePolicy(
+    default_mode="compact",
+    allowed_modes=("compact", "raw"),
+    ack_safe=False,
+    compact_notes=(
+        "Compact action responses must keep action_call_id, action_ref, provider, status, "
+        "cost, file path, checksum, and warnings.",
+        "Raw provider output is stored in plain response files by default for external "
+        "provider actions.",
+    ),
+)
 
 
 class ActionListInput(MCPInput):
@@ -170,6 +183,15 @@ class ActionExecuteInput(MCPInput):
         default=None,
         description="Optional provider execution context, separate from endpoint input_json.",
     )
+    output_policy_json: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional output storage policy for this one call. Supported mode values are "
+            "inline, file_if_large, and always_file. External provider actions default to "
+            "plain file-backed output when omitted. Pass path as an absolute output "
+            "directory; StackOS generates the response filename."
+        ),
+    )
     credential_ref: str | None = None
     idempotency_key: str | None = None
     dry_run: bool = False
@@ -212,6 +234,15 @@ class ActionRunInput(MCPInput):
         default=None,
         description="Optional provider execution context, separate from endpoint input_json.",
     )
+    output_policy_json: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional output storage policy for this one call. Supported mode values are "
+            "inline, file_if_large, and always_file. External provider actions default to "
+            "plain file-backed output when omitted. Pass path as an absolute output "
+            "directory; StackOS generates the response filename."
+        ),
+    )
     credential_ref: str | None = None
     idempotency_key: str | None = None
     intent_id: str | None = None
@@ -222,8 +253,8 @@ class ActionRunInput(MCPInput):
     verbose: bool = Field(
         default=False,
         description=(
-            "Deprecated compatibility flag. action.run now always returns raw redacted "
-            "execution details because provider side effects are raw-only."
+            "Deprecated compatibility flag. Use response_mode when selecting compact "
+            "file-output metadata or the raw public audit shape."
         ),
     )
 
@@ -511,6 +542,8 @@ async def action_execute(
         input_json=inp.input_json,
         context_ref=inp.context_ref,
         provider_context_json=inp.provider_context_json,
+        output_policy_json=inp.output_policy_json,
+        default_external_file_output=True,
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
         run_plan_id=plan.id,
@@ -653,6 +686,8 @@ async def action_run(
         input_json=inp.input_json,
         context_ref=inp.context_ref,
         provider_context_json=inp.provider_context_json,
+        output_policy_json=inp.output_policy_json,
+        default_external_file_output=True,
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
         idempotency_key=idempotency_key,
@@ -783,16 +818,18 @@ def _compact_action_output(
 ) -> dict[str, Any]:
     if output_json.get("output_mode") == "file" and isinstance(output_json.get("file"), dict):
         file = output_json["file"]
-        return {
+        compact_file = {
             "output_mode": "file",
-            "absolute_path": file.get("absolute_path"),
-            "uri": file.get("uri"),
-            "artifact_id": file.get("artifact_id"),
+            "path": file.get("path"),
+            "content_type": file.get("content_type"),
+            "schema_version": file.get("schema_version"),
+            "schema_ref": file.get("schema_ref"),
+            "schema_operation": file.get("schema_operation"),
             "semantic_name": file.get("semantic_name"),
             "bytes": file.get("bytes"),
             "sha256": file.get("sha256"),
-            "read": file.get("read"),
         }
+        return {key: value for key, value in compact_file.items() if value is not None}
     if provider_key == "telegram-bot":
         return _compact_telegram_output(operation, output_json)
     compact: dict[str, Any] = {}
@@ -1081,7 +1118,10 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="action.execute",
-            summary="Execute one action inside an explicitly granted run-plan step.",
+            summary=(
+                "Execute one action inside an explicitly granted run-plan step and return "
+                "compact file-backed output metadata by default."
+            ),
             input_model=ActionExecuteInput,
             output_model=WriteEnvelope[ActionExecutionOut],
             handler=action_execute,
@@ -1107,11 +1147,16 @@ def operation_specs() -> list[OperationSpec]:
                 "The requested action_ref must match the step and mcp_tool_grants refs.",
                 "Pass context_ref when the active task/run has a reusable execution context; "
                 "pass only opaque credential_ref values for deliberate low-level overrides.",
+                "External provider action output is file-backed by default; inspect the "
+                "returned file path before rerunning the provider call. Call schema.get "
+                "with schema_ref only when the response-file envelope schema is needed.",
             ),
             returns=(
                 "A WriteEnvelope containing the public ActionExecutionOut.",
                 "A redacted audit row linked to run_id, run_plan_id, and run_plan_step_id.",
-                "Connector output JSON with secrets and provider raw credentials removed.",
+                "For external provider actions, compact file path, schema_ref, "
+                "schema_operation, and metadata for the sanitized request+response envelope "
+                "by default.",
             ),
             examples=(
                 OperationExample(
@@ -1125,10 +1170,14 @@ def operation_specs() -> list[OperationSpec]:
                 ),
             ),
             grant_policy="run-plan-step-action-ref",
+            response_policy=ACTION_FILE_OUTPUT_RESPONSE_POLICY,
         ),
         OperationSpec(
             name="action.run",
-            summary="Run one explicit action directly with raw redacted output and audit.",
+            summary=(
+                "Run one explicit action directly with compact file-backed output metadata "
+                "and audit."
+            ),
             input_model=ActionRunInput,
             output_model=WriteEnvelope[ActionRunOut],
             handler=action_run,
@@ -1156,12 +1205,15 @@ def operation_specs() -> list[OperationSpec]:
                 "For non-read actions, pass confirm_direct=true and intent_summary; "
                 "pass intent_id or idempotency_key when stable retries matter. "
                 "If omitted, StackOS derives a request-scoped idempotency key.",
-                "Provider side-effect results are raw-only so agents keep external ids, "
-                "delivery state, and retry safety context.",
+                "External provider action output is file-backed by default; inspect the "
+                "returned file path before rerunning the provider call. Call schema.get "
+                "with schema_ref only when the response-file envelope schema is needed.",
             ),
             returns=(
                 "A redacted action-call audit id linked to the project.",
-                "The full redacted action payload, provider output, metadata, and compact hints.",
+                "Compact output metadata with file path, schema_ref, schema_operation, "
+                "checksum, and summaries. Raw provider response data lives in the "
+                "file-backed envelope.",
             ),
             examples=(
                 OperationExample(
@@ -1180,6 +1232,7 @@ def operation_specs() -> list[OperationSpec]:
                 ),
             ),
             grant_policy="direct-action-policy",
+            response_policy=ACTION_FILE_OUTPUT_RESPONSE_POLICY,
         ),
     ]
 

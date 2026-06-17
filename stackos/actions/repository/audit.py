@@ -82,6 +82,7 @@ class ActionAuditMixin:
         cost_cents: int,
         duration_ms: int | None,
         error: str | None = None,
+        commit: bool = True,
     ) -> ActionCall:
         now = utcnow()
         row = ActionCall(
@@ -113,6 +114,9 @@ class ActionAuditMixin:
             completed_at=now,
         )
         self._s.add(row)
+        if not commit:
+            self._s.flush()
+            return row
         self._s.commit()
         self._s.refresh(row)
         return row

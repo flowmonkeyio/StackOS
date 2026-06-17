@@ -150,7 +150,7 @@ agent receives one explicit user request
 -> toolbox.call(action.run)
 -> daemon-side credential resolution
 -> connector execution
--> raw redacted provider result and action_calls audit row
+-> compact response-file path for external provider output and action_calls audit row
 ```
 
 `action.run` is available through the MCP toolbox, REST, and CLI. It still uses
@@ -190,12 +190,16 @@ tracker.createTask
 ```
 
 Agent-facing MCP responses are compact by default for noisy internal
-discovery/setup tools when the operation policy allows it. Pass
-`response_mode=raw` or `response_mode=standard` when the full normal daemon
-payload is needed, and use `response_mode=ack` only for safe internal writes.
-Provider side effects stay raw-only so agents keep external ids and retry
-context. This keeps simple MCP calls from flooding the context window while
-preserving the richer REST/UI contracts.
+discovery/setup tools when the operation policy allows it. Compact mode keeps
+ids, refs, counts, warnings, schema summaries, bounded lists/text, and next-call
+hints, while omitting file/content bodies. Pass `response_mode=raw` or
+`response_mode=standard` when the full normal daemon payload is needed, and use
+`response_mode=ack` only for safe internal writes. External provider actions
+through `action.run` and `action.execute` return compact response-file paths,
+`schema_ref`, and `schema_operation` by default; communication/browser
+side-effect operations remain raw-only until they define provider-safe compact
+contracts. This keeps simple MCP calls from
+flooding the context window while preserving the richer REST/UI contracts.
 
 Workflow evidence follows the same boundary. Read project resources with
 `resource.query`; write reusable evidence from a started run-plan step using

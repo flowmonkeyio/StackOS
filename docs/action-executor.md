@@ -57,11 +57,14 @@ Every internal execution writes an `action_calls` sidecar row with:
 - redacted request/response/metadata
 - status, dry-run flag, duration, cost, error, and idempotency key
 
-`action.execute` returns the public action-call audit shape for workflow runs.
-`action.run` returns raw redacted direct-action output by default because
-provider side effects need external ids, partial-delivery state, idempotency
-state, and retry context available to the next agent. Internal database
-identifiers such as `credential_id`, `action_id`, and replay-only
+`action.run` and `action.execute` return compact action-call metadata by
+default when the operation policy allows it. External provider actions write the
+sanitized request/response envelope to a response file and return the file
+path, schema version, `schema_ref`, `schema_operation`, byte size, content type,
+checksum, and semantic name. Agents fetch the schema through `schema.get` only
+when they need the envelope contract; compact action responses do not expose
+StackOS source paths or inline schema bodies.
+Internal database identifiers such as `credential_id`, `action_id`, and replay-only
 `idempotency_key` stay in storage and are not returned to agents. For write
 actions, callers may pass `idempotency_key` or the more agent-friendly
 `intent_id`; when neither is supplied, direct calls derive a request-scoped key
@@ -177,10 +180,13 @@ Direct one-action execution operation:
 
 `action.run` is direct execution for one explicit action. Non-read actions
 require `confirm_direct=true` and `intent_summary`; callers may pass
-`intent_id` or `idempotency_key` for stable retries. The result is raw redacted
-provider output so agents retain external refs and retry context. It is not a
-substitute for workflow
-memory, approval gates, artifacts, learnings, experiments, or decisions.
+`intent_id` or `idempotency_key` for stable retries. External provider action
+output is file-backed by default: the response returns compact action-call,
+file path, checksum, byte size, content type, semantic name, `schema_ref`, and
+`schema_operation`, while the sanitized request+response envelope is stored as
+a plain response file. Call `schema.get` with `schema_ref` if the agent needs
+the file envelope schema. It is not a substitute for workflow memory, approval
+gates, artifacts, learnings, experiments, or decisions.
 
 Action inputs are split into endpoint payload and provider execution context.
 `input_json` is the action-specific body/query/path contract. Optional
@@ -194,6 +200,13 @@ context, output policy, request budget, and artifact namespace for
 classification is part of the action contract: read-like POST reporting actions
 may be classified as read when catalog metadata and semantics say they are
 safe, but idempotency alone never makes a mutating action read-safe.
+
+`output_policy_json` may be passed on `action.run` or `action.execute` for a
+deliberate one-call override. Supported modes are `inline`, `file_if_large`,
+and `always_file`; callers may supply `semantic_name` and an absolute
+directory `path`. StackOS generates the filename inside that directory. When no
+path is supplied, the daemon writes under the configured generated-assets
+directory.
 
 `action.describe` includes an `execution_context` block for agent consumers.
 It names when to use a context, the payload boundary between `input_json` and

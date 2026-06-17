@@ -123,7 +123,8 @@ The agent-facing MCP bridge surface is intentionally small:
 - bootstrap/setup: workspace binding, budgets, schedules, safe auth
   status/test, workflow-template discovery, and run-plan creation/start
 - direct execution: `action.run` through `toolbox.call` for one explicit action
-  with raw redacted provider output
+  with compact response-file paths plus `schema_ref`/`schema_operation` for
+  external-provider output by default
 - workflow execution: run-plan controller tools, `action.execute`, resource and
   artifact writes, memory writes, and run audit tools
 - memory: context, learnings, experiments, decisions

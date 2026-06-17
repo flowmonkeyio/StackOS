@@ -845,7 +845,7 @@ def test_action_execute_uses_context_ref_defaults_for_credential_provider_contex
     }
 
 
-def test_action_execute_file_backs_context_output_and_registers_artifact(
+def test_action_execute_file_backs_context_output_as_plain_file(
     session: Session,
     project_id: int,
     tmp_path: Path,
@@ -877,25 +877,20 @@ def test_action_execute_file_backs_context_output_and_registers_artifact(
 
     assert out.output_json["output_mode"] == "file"
     pointer = out.output_json["file"]
-    assert pointer["absolute_path"].startswith(str(tmp_path))
-    assert pointer["uri"].startswith("/generated-assets/action-outputs/project-")
-    assert pointer["semantic_name"].startswith("analysis-output_")
+    assert pointer["path"].startswith(str(tmp_path))
+    assert pointer["semantic_name"].startswith("analysis-output-")
     assert pointer["bytes"] > 0
-    assert pointer["top_level_shape"]["keys"] == ["authorization", "echo", "nested"]
-    assert pointer["read"]["operation"] == "executionContext.artifact.read"
-    assert pointer["read"]["arguments"] == {
-        "context_ref": "ctx_provider_analysis",
-        "json_path": "$.authorization",
-    }
-    assert pointer["read"]["json_path_examples"] == [
-        "$",
-        "$.authorization",
-        "$.echo",
-        "$.nested",
-    ]
-    assert "without rerunning" in pointer["read"]["instructions"]
-    saved = json.loads(Path(pointer["absolute_path"]).read_text(encoding="utf-8"))
-    assert saved == {
+    assert pointer["schema_version"] == "stackos.action-output.v1"
+    assert pointer["schema_ref"] == "stackos.action-output.v1"
+    assert pointer["schema_operation"] == "schema.get"
+    assert "artifact_id" not in pointer
+    assert "context_artifact_id" not in pointer
+    assert "read" not in pointer
+    saved = json.loads(Path(pointer["path"]).read_text(encoding="utf-8"))
+    assert saved["schema_version"] == "stackos.action-output.v1"
+    assert saved["request"]["input_json"] == {"name": "Ada"}
+    assert saved["request"]["context_ref"] == "ctx_provider_analysis"
+    assert saved["response"]["output_json"] == {
         "echo": {"name": "Ada"},
         "authorization": "[redacted]",
         "nested": {"api_key": "[redacted]"},
@@ -905,17 +900,157 @@ def test_action_execute_file_backs_context_output_and_registers_artifact(
         context_ref="ctx_provider_analysis",
         action_ref="test-actions.echo.run",
     )
-    assert context_artifacts.total_estimate == 1
-    registered = context_artifacts.items[0]
-    assert registered.artifact_id == pointer["artifact_id"]
-    assert registered.action_call_id == out.action_call.id
-    assert registered.semantic_name == pointer["semantic_name"]
-    assert registered.action_ref == "test-actions.echo.run"
-    assert registered.artifact["metadata_json"]["sha256"] == pointer["sha256"]
+    assert context_artifacts.total_estimate == 0
     assert out.action_call.response_json == out.output_json
-    assert (
-        out.action_call.metadata_json["file_backed_output"]["artifact_id"] == pointer["artifact_id"]
-    )
+    assert out.action_call.metadata_json["file_backed_output"]["path"] == pointer["path"]
+
+
+def test_action_execute_rejects_explicit_file_path_for_file_backed_output(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+) -> None:
+    _seed_action(session)
+    credential_ref = _credential_ref(session, project_id)
+    fake = _FakeConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(fake)
+    repo = ActionRepository(session, connectors=registry, asset_dir=tmp_path)
+    requested_path = tmp_path / "requested" / "echo-response.json"
+
+    with pytest.raises(ValidationError, match="accepts only path"):
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="test-actions.echo.run",
+                input_json={"name": "Ada"},
+                credential_ref=credential_ref,
+                output_policy_json={"mode": "always_file", "file_path": str(requested_path)},
+                default_external_file_output=True,
+            )
+        )
+
+
+def test_action_execute_file_backs_external_output_under_requested_directory_path(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+) -> None:
+    _seed_action(session)
+    credential_ref = _credential_ref(session, project_id)
+    fake = _FakeConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(fake)
+    repo = ActionRepository(session, connectors=registry, asset_dir=tmp_path)
+    requested_dir = tmp_path / "requested-dir"
+
+    out = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="test-actions.echo.run",
+            input_json={"name": "Ada"},
+            credential_ref=credential_ref,
+            output_policy_json={"mode": "always_file", "path": str(requested_dir)},
+            default_external_file_output=True,
+        )
+    ).data
+
+    pointer = out.output_json["file"]
+    path = Path(pointer["path"])
+    assert path.parent == requested_dir
+    assert path.name.startswith("fake-provider-echo.run-")
+    assert path.name.endswith(f"-{out.action_call.id}.json")
+    assert pointer["schema_version"] == "stackos.action-output.v1"
+    assert pointer["schema_ref"] == "stackos.action-output.v1"
+    assert pointer["schema_operation"] == "schema.get"
+    assert "artifact_id" not in pointer
+    assert "context_artifact_id" not in pointer
+    assert "read" not in pointer
+    assert path.is_file()
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["request"]["input_json"] == {"name": "Ada"}
+    assert saved["request"]["credential_ref"] == credential_ref
+    assert saved["response"]["output_json"] == {
+        "echo": {"name": "Ada"},
+        "authorization": "[redacted]",
+        "nested": {"api_key": "[redacted]"},
+    }
+    assert "leaked-token" not in json.dumps(saved)
+    call = session.exec(select(ActionCall).where(ActionCall.id == out.action_call.id)).one()
+    assert call.response_json == out.output_json
+
+
+def test_action_execute_rejects_directory_path_aliases_for_file_backed_output(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+) -> None:
+    _seed_action(session)
+    credential_ref = _credential_ref(session, project_id)
+    fake = _FakeConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(fake)
+    repo = ActionRepository(session, connectors=registry, asset_dir=tmp_path)
+
+    for alias in ("directory_path", "output_dir"):
+        with pytest.raises(ValidationError, match="accepts only path"):
+            asyncio.run(
+                repo.execute(
+                    project_id=project_id,
+                    action_ref="test-actions.echo.run",
+                    input_json={"name": "Ada"},
+                    credential_ref=credential_ref,
+                    output_policy_json={"mode": "always_file", alias: str(tmp_path / alias)},
+                    default_external_file_output=True,
+                )
+            )
+
+
+def test_action_execute_rejects_relative_directory_path_for_file_backed_output(
+    session: Session,
+    project_id: int,
+) -> None:
+    _seed_action(session)
+    credential_ref = _credential_ref(session, project_id)
+    fake = _FakeConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(fake)
+    repo = ActionRepository(session, connectors=registry)
+
+    with pytest.raises(ValidationError, match="absolute directory path"):
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="test-actions.echo.run",
+                input_json={"name": "Ada"},
+                credential_ref=credential_ref,
+                output_policy_json={"mode": "always_file", "path": "tmp/action-outputs"},
+                default_external_file_output=True,
+            )
+        )
+
+
+def test_action_execute_keeps_internal_no_provider_output_inline_by_default(
+    session: Session,
+    project_id: int,
+) -> None:
+    _seed_action(session)
+    _seed_noauth_action(session)
+    fake = _NoAuthConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(fake)
+    repo = ActionRepository(session, connectors=registry)
+
+    out = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="test-actions.noauth.run",
+            input_json={"name": "Ada"},
+        )
+    ).data
+
+    assert out.output_json == {"ok": True}
+    assert "output_mode" not in out.output_json
 
 
 def test_action_validate_rejects_context_locked_provider_context_override(

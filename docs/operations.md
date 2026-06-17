@@ -109,7 +109,8 @@ operation result is always the raw redacted payload. When an agent requests a
 different shape, StackOS stores raw first for idempotency, then shapes the
 returned payload.
 
-- `compact`: next-call-sufficient ids, refs, counts, warnings, and action hints.
+- `compact`: next-call-sufficient ids, refs, counts, warnings, schema summaries,
+  bounded lists/text, and action hints. Compact mode omits file/content bodies.
 - `raw`/`standard`/`verbose`: full redacted daemon payload.
 - `ack`: minimal success envelope for safe internal writes only.
 
@@ -117,10 +118,15 @@ Errors are never compacted. Validation failures, grant denials, auth/setup
 diagnostics, and provider partial failures keep structured repair context so an
 agent can decide whether to retry, claim a step, reconnect a provider, or stop.
 
-Provider side-effect operations are raw-only for now, including `action.run`,
-`action.execute`, `communication.send`, and `communication.reply`. They must not
-hide external ids, per-file delivery state, provider request ids, idempotency
-state, partial success information, or retry guidance.
+External provider actions through `action.run` and `action.execute` are
+compact-by-default with raw mode still allowed. Their compact response must keep
+the action-call id, provider/action refs, cost, status, file path, checksum,
+`schema_ref`, `schema_operation`, and receipt metadata; raw provider response
+data lives in the file-backed action-output envelope by default. Agents call
+`schema.get` with `schema_ref` only when they need the envelope schema.
+Communication delivery operations
+such as `communication.send` and `communication.reply` remain raw-only until
+their own provider-safe compact contract exists.
 
 MCP tools are generated from the same operation specs, so the daemon has one
 callable contract per StackOS primitive. The agent bridge advertises
@@ -483,9 +489,13 @@ Agent flow:
    `action.execute`. StackOS applies the daemon-held `credential_ref`, validates
    and merges typed `provider_context_json`, records output/request-budget
    metadata, and keeps endpoint `input_json` separate.
-4. For large responses, set `output_policy_json.mode` to `file_if_large` or
-   `always_file`; use `executionContext.artifact.list` and
-   `executionContext.artifact.read` to inspect prior file-backed outputs later.
+4. External provider actions are file-backed by default. Use
+   `output_policy_json.mode` only for deliberate overrides such as `inline`,
+   `file_if_large`, a custom `semantic_name`, or an absolute directory `path`.
+   StackOS generates the response filename inside that directory. Inspect the
+   returned file path before rerunning paid/provider calls. If the response
+   envelope contract is needed, call `schema.get` with the returned
+   `schema_ref`. Use `artifact.read` only for intentional StackOS artifacts.
 5. Treat `request_budget_json` as the coordination contract for agents using
    the context. Supported fields are `max_parallel`, `max_calls`,
    `max_calls_per_run`, `window_seconds`, and `notes`. Current action-call rows
@@ -523,17 +533,21 @@ and still require the normal confirmation/idempotency protections.
    instead of repeating credential and provider scope. Explicit
    `credential_ref` or `provider_context_json` still works as a deliberate
    override when the context allows it.
-7. Direct action responses are raw redacted provider output by default so agents
-   keep external refs, partial-delivery state, idempotency state, and retry
-   context.
+7. Direct external-provider action responses are compact by default and point to
+   a sanitized action-output file with schema version, checksum, byte size, and
+   semantic name. Request raw only when the public audit shape itself is
+   required; read the returned file path only when the request/response envelope
+   is needed.
 8. The execution writes the same `action_calls` audit row as workflow
    execution, but without run-plan linkage.
 
-Agent-facing MCP setup/discovery tools default to compact bridge-shaped
-responses when the operation policy allows it. Use `response_mode=raw` or
-`response_mode=standard` for the normal daemon payload, and `response_mode=ack`
-only for safe internal writes. REST and UI surfaces keep their full contracts
-unless the caller explicitly passes `response_mode`.
+Agent-facing MCP setup/discovery tools default to compact operation-shaped
+responses when the operation policy allows it. The operation response shaper is
+the single source of truth for compact/raw/ack behavior; the bridge forwards the
+requested mode and protects legacy non-operation replies only. Use
+`response_mode=raw` or `response_mode=standard` for the normal daemon payload,
+and `response_mode=ack` only for safe internal writes. REST and UI surfaces keep
+their full contracts unless the caller explicitly passes `response_mode`.
 
 Use `action.execute` when the action belongs to a workflow:
 

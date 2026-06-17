@@ -59,20 +59,23 @@ def test_telegram_file_download_compact_output_keeps_artifact_handoff_fields() -
     }
 
 
-def test_file_backed_action_compact_output_keeps_artifact_pointer() -> None:
+def test_file_backed_action_compact_output_keeps_file_pointer() -> None:
     compact = _compact_action_output(
         provider_key="provider",
         operation="operation.execute",
         output_json={
             "output_mode": "file",
             "file": {
+                "path": "/tmp/generated/action-output.json",
                 "absolute_path": "/tmp/generated/action-output.json",
                 "uri": "/generated-assets/action-outputs/project-1/action-output.json",
-                "artifact_id": 42,
+                "content_type": "application/json",
+                "schema_version": "stackos.action-output.v1",
+                "schema_ref": "stackos.action-output.v1",
+                "schema_operation": "schema.get",
                 "semantic_name": "action-output",
                 "bytes": 1200,
                 "sha256": "abc",
-                "read": {"operation": "executionContext.artifact.read"},
                 "top_level_shape": {"type": "object"},
             },
         },
@@ -80,11 +83,12 @@ def test_file_backed_action_compact_output_keeps_artifact_pointer() -> None:
 
     assert compact == {
         "output_mode": "file",
-        "absolute_path": "/tmp/generated/action-output.json",
-        "uri": "/generated-assets/action-outputs/project-1/action-output.json",
-        "artifact_id": 42,
+        "path": "/tmp/generated/action-output.json",
+        "content_type": "application/json",
+        "schema_version": "stackos.action-output.v1",
+        "schema_ref": "stackos.action-output.v1",
+        "schema_operation": "schema.get",
         "semantic_name": "action-output",
         "bytes": 1200,
         "sha256": "abc",
-        "read": {"operation": "executionContext.artifact.read"},
     }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from stackos.mcp.contract import MCPInput, WriteEnvelope
+from stackos.operations.actions import operation_specs as action_operation_specs
 from stackos.operations.responses import resolve_response_mode, shape_operation_response
 from stackos.operations.spec import OperationSpec, OperationSurface, OperationSurfaces
 from stackos.repositories.base import ValidationError
@@ -44,6 +45,78 @@ def test_provider_side_effect_operations_are_raw_only() -> None:
 
     assert exc.value.data["side_effect"] == "not_started"
     assert exc.value.data["allowed_modes"] == ["raw"]
+
+
+def test_action_operations_default_to_compact_file_output_policy() -> None:
+    specs = {spec.name: spec for spec in action_operation_specs()}
+
+    for name in ("action.run", "action.execute"):
+        spec = specs[name]
+        assert resolve_response_mode(spec, {}, surface="mcp") == "compact"
+        assert resolve_response_mode(spec, {"response_mode": "raw"}, surface="mcp") == "raw"
+        with pytest.raises(ValidationError) as exc:
+            resolve_response_mode(spec, {"response_mode": "ack"}, surface="mcp")
+        assert exc.value.data["side_effect"] == "not_started"
+        assert exc.value.data["allowed_modes"] == ["compact", "raw"]
+
+
+def test_action_compact_response_keeps_file_pointer_and_drops_raw_payload() -> None:
+    specs = {spec.name: spec for spec in action_operation_specs()}
+    payload = {
+        "project_id": 1,
+        "data": {
+            "action_call": {
+                "id": 9,
+                "status": "success",
+                "plugin_slug": "seo",
+                "action_key": "keyword.research",
+                "provider_key": "dataforseo",
+                "operation": "keyword.research",
+                "credential_ref": "cred_dataforseo",
+            },
+            "output_json": {
+                "output_mode": "file",
+                "file": {
+                    "path": "/tmp/action-output.json",
+                    "absolute_path": "/tmp/action-output.json",
+                    "uri": "/generated-assets/action-outputs/project-1/action-output.json",
+                    "content_type": "application/json",
+                    "schema_version": "stackos.action-output.v1",
+                    "schema_ref": "stackos.action-output.v1",
+                    "schema_operation": "schema.get",
+                    "semantic_name": "dataforseo-keyword",
+                    "bytes": 1200,
+                    "sha256": "abc",
+                    "response_summary": {"keys": ["tasks"]},
+                },
+                "summary": {
+                    "provider_key": "dataforseo",
+                    "raw_payload": "this should not appear",
+                },
+            },
+            "metadata_json": {"large": "hidden"},
+            "cost_cents": 50,
+            "dry_run": False,
+            "credential_ref": "cred_dataforseo",
+        },
+    }
+
+    compact = shape_operation_response(
+        specs["action.execute"],
+        payload,
+        response_mode="compact",
+    )
+
+    assert compact["data"]["action_call_id"] == 9
+    assert compact["data"]["action_ref"] == "seo.keyword.research"
+    assert compact["data"]["output"]["path"] == "/tmp/action-output.json"
+    assert compact["data"]["output"]["schema_version"] == "stackos.action-output.v1"
+    assert compact["data"]["output"]["schema_ref"] == "stackos.action-output.v1"
+    assert compact["data"]["output"]["schema_operation"] == "schema.get"
+    assert "artifact_id" not in compact["data"]["output"]
+    assert "read" not in compact["data"]["output"]
+    assert "metadata_json" not in str(compact)
+    assert "this should not appear" not in str(compact)
 
 
 def test_non_side_effect_default_response_mode_uses_policy_default() -> None:
@@ -250,6 +323,81 @@ def test_operation_list_compact_keeps_agent_decision_fields() -> None:
         }
     ]
     assert compact["groups"] == [{"category": "communications", "count": 1}]
+
+
+def test_plain_object_compact_summarizes_schemas_without_full_body() -> None:
+    spec = _spec("operation.describe", mutating=False)
+    payload = {
+        "name": "demo.tool",
+        "category": "demo",
+        "summary": "Demo tool.",
+        "read_only": True,
+        "mutating": False,
+        "purpose": "Inspect a demo tool.",
+        "input_schema": {
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "x" * 1000,
+                }
+            },
+            "$defs": {"Nested": {"type": "object", "description": "y" * 1000}},
+        },
+        "output_schema": {
+            "type": "object",
+            "properties": {"content": {"type": "string", "description": "z" * 1000}},
+        },
+        "examples": [
+            {
+                "title": "Large example",
+                "arguments": {"query": "kittens", "raw_payload": "hidden" * 400},
+            }
+        ],
+    }
+
+    compact = shape_operation_response(spec, payload, response_mode="compact")
+
+    assert compact["operation"] == "operation.describe"
+    assert compact["data"]["input_schema"]["required"] == ["query"]
+    assert compact["data"]["input_schema"]["property_count"] == 1
+    assert compact["data"]["input_schema"]["definition_count"] == 1
+    assert compact["data"]["input_schema"]["properties"]["query"]["description"].endswith("...")
+    assert "raw_payload" not in str(compact)
+    assert "hiddenhiddenhidden" not in str(compact)
+    assert "x" * 500 not in str(compact)
+    assert "z" * 500 not in str(compact)
+
+
+def test_compact_file_read_omits_content_body() -> None:
+    spec = _spec("artifact.read", mutating=False)
+    payload = {
+        "artifact_id": 7,
+        "path": "/tmp/action-output.json",
+        "json_path": "$",
+        "content_available": True,
+        "content_type": "application/json",
+        "bytes": 5000,
+        "sha256": "abc",
+        "artifact": {
+            "id": 7,
+            "project_id": 1,
+            "kind": "action-output",
+            "uri": "/generated-assets/action-output.json",
+            "metadata_json": {"raw": "hidden"},
+        },
+        "content": "raw-content" * 500,
+    }
+
+    compact = shape_operation_response(spec, payload, response_mode="compact")
+
+    assert compact["data"]["path"] == "/tmp/action-output.json"
+    assert compact["data"]["content_available"] is True
+    assert compact["data"]["content_omitted"] is True
+    assert compact["data"]["artifact"]["uri"] == "/generated-assets/action-output.json"
+    assert "raw-content" not in str(compact)
+    assert "metadata_json" not in str(compact)
 
 
 def test_ack_is_minimal_but_preserves_retry_refs() -> None:

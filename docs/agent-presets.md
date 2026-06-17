@@ -27,14 +27,16 @@ them directly only when the host exposes them, otherwise inspect the exact names
 with `toolbox.describe` and invoke them through `toolbox.call`.
 
 Provider-action presets should prefer stable `action.list` refs plus
-`action.describe`/`action.validate` before execution. When repeated calls share
-credential, provider scope, output policy, request budget, or artifact
-namespace, use `executionContext.discover`/`executionContext.resolve` or create
-a context and pass `context_ref` to `action.run` or `action.execute`. Keep
-endpoint payload in `input_json`; keep provider scope in provider context or the
-execution context; use `executionContext.artifact.list` and
-`executionContext.artifact.read` for file-backed outputs before rerunning
-provider calls.
+`action.describe`/`action.validate` before execution. External provider action
+outputs are file-backed by default, so presets must tell agents to inspect the
+returned file paths before rerunning provider calls and to call `schema.get`
+with `schema_ref` only when they need the response-file envelope schema.
+Intentional artifact rows remain readable through `artifact.read`. When repeated
+calls share credential, provider scope, output policy, request budget, or
+artifact namespace, use `executionContext.discover`/`executionContext.resolve`
+or create a context and pass `context_ref` to `action.run` or
+`action.execute`. Keep endpoint payload in `input_json`; keep provider scope in
+provider context or the execution context.
 
 Bundled presets must not assume customer repositories contain StackOS' own
 documentation files. StackOS operating guidance comes from the installed

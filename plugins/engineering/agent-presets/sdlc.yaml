@@ -72,8 +72,10 @@ presets:
         context_ref to action.validate, action.run, or action.execute instead
         of repeating credential_ref or provider_context_json. Keep endpoint
         payload in input_json, provider scope in provider context or context_ref,
-        and inspect file-backed outputs through executionContext.artifact.*
-        before rerunning provider calls.
+        and inspect returned response-file paths before rerunning provider
+        calls. Call schema.get with schema_ref only when the response-file
+        envelope schema is needed. Use artifact.read only for intentional
+        artifact rows.
     prompt_contract:
       mission: Convert user intent into testable, project-specific behavior before technical design or implementation begins.
       responsibilities:
@@ -325,10 +327,12 @@ presets:
       - action.list
       - action.describe
       - action.validate
+      - schema.get
       - executionContext.discover
       - executionContext.resolve
       - executionContext.artifact.list
       - executionContext.artifact.read
+      - artifact.read
       - tracker.pick
       - tracker.brief
       - tracker.reopen
@@ -391,8 +395,11 @@ presets:
       - action.list
       - action.describe
       - action.validate
+      - schema.get
       - executionContext.resolve
       - executionContext.artifact.list
+      - executionContext.artifact.read
+      - artifact.read
     project_adaptation: *stackos_project_adaptation
     prompt_contract:
       mission: Confirm the plan and delivered work are correct, wired through all relevant surfaces, truthfully tracked, and safe to release.

@@ -13,7 +13,10 @@ presets:
       - agentPreset.resolveForWorkflow
       - context.query
       - resource.query
+      - schema.get
+      - artifact.read
       - artifact.create
+      - executionContext.artifact.read
       - tracker.brief
       - tracker.updateTicket
     project_adaptation: &seo_project_adaptation
@@ -55,11 +58,15 @@ presets:
     prompt_contract:
       mission: Turn keyword research intent into prioritized, evidence-backed SEO opportunities that another agent can execute or review.
       responsibilities:
+        - Lead a light interview when the request lacks seed terms, target market, pages, or competitors; ask only what materially improves research direction.
         - Gather available query, page, competitor, and historical context without assuming missing live provider data.
+        - Inspect returned provider response-file paths before spending on repeated provider calls; call schema.get with schema_ref only when the response-file envelope schema is needed.
         - Cluster opportunities by intent, page fit, difficulty, impact, and freshness.
-        - Produce a handoff that names evidence sources, gaps, and recommended next workflow steps.
+        - Produce a handoff that names evidence sources, raw data refs, gaps, and recommended next workflow steps.
       must_do:
         - Use project-specific content taxonomy and editorial constraints when clustering opportunities.
+        - Preserve raw fetched data refs and cite them in the synthesized research output.
+        - Produce a meaningful keyword list with clusters, not a token sample of one or two terms.
         - Record durable findings as resources/artifacts only when the active workflow grants it.
         - Separate hypotheses from measured data and stale memory.
       must_not_do:
@@ -69,7 +76,7 @@ presets:
       handoff_inputs:
         - Seed topic, target market, known pages, recent SEO learnings, and available data-source context.
       handoff_outputs:
-        - Keyword clusters, page/opportunity mapping, evidence refs, risks, and recommended follow-up tickets.
+        - Raw provider data refs, keyword clusters, page/opportunity mapping, evidence refs, risks, polished markdown/CSV brief when granted, and recommended follow-up tickets.
       success_criteria:
         - Opportunities are traceable to available context or clearly marked as assumptions.
         - The next agent knows what to write, refresh, validate, or reject.
@@ -77,6 +84,8 @@ presets:
       self_check:
         - Did I adapt to the site's taxonomy and data sources?
         - Did I avoid treating local memory as live ranking truth?
+        - Did I inspect existing/raw file refs before rerunning paid provider calls?
+        - Did the final output preserve enough fetched data to avoid repeating the investigation?
         - Did I leave a clear next action?
 
   - schema_version: stackos.agent-preset.v1

@@ -237,8 +237,8 @@ def test_operation_docs_are_agent_readable(api: TestClient) -> None:
     assert body["surfaces"]["rest"]["enabled"] is True
     assert body["surfaces"]["cli"]["enabled"] is True
     assert body["grant_policy"] == "run-plan-step-action-ref"
-    assert body["response_policy"]["default_mode"] == "raw"
-    assert body["response_policy"]["allowed_modes"] == ["raw"]
+    assert body["response_policy"]["default_mode"] == "compact"
+    assert body["response_policy"]["allowed_modes"] == ["compact", "raw"]
     assert "project_id" in body["input_schema"]["properties"]
     assert "response_mode" in body["input_schema"]["properties"]
     assert body["examples"][0]["arguments"]["action_ref"] == "utils.sitemap.fetch"
@@ -337,6 +337,21 @@ def test_operation_rest_call_uses_registered_action_handler(api: TestClient) -> 
     body = resp.json()
     assert body["manifest"]["action_ref"] == "core.catalog.describe"
     assert body["execution_available"] is False
+
+
+def test_operation_rest_schema_get_returns_action_output_schema(api: TestClient) -> None:
+    resp = api.post(
+        "/api/v1/operations/schema.get/call",
+        json={"arguments": {"schema_ref": "stackos.action-output.v1"}},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["schema_ref"] == "stackos.action-output.v1"
+    assert body["content_type"] == "application/schema+json"
+    assert body["schema_data"]["properties"]["schema_version"]["const"] == (
+        "stackos.action-output.v1"
+    )
 
 
 def test_operation_rest_tool_profile_resolve_returns_safe_target(
@@ -482,6 +497,7 @@ def test_operation_rest_action_execute_uses_run_plan_boundary(
                 "run_token": run_token,
                 "action_ref": "utils.sitemap.fetch",
                 "input_json": {"urls": ["https://example.com/sitemap.xml"]},
+                "response_mode": "raw",
             }
         },
     )
@@ -526,6 +542,8 @@ def test_operation_rest_mock_provider_vertical_slice(
                     "echo": {"campaign": "mock-campaign"},
                     "cost_cents": 7,
                 },
+                "output_policy_json": {"mode": "inline"},
+                "response_mode": "raw",
             }
         },
     )
@@ -578,9 +596,10 @@ def test_operation_rest_mock_provider_vertical_slice(
     )
 
 
-def test_operation_rest_action_run_mock_provider_returns_raw_output(
+def test_operation_rest_action_run_mock_provider_returns_file_backed_compact_output_by_default(
     api: TestClient,
     project_id: int,
+    settings: Settings,
 ) -> None:
     credential_ref = _store_mock_credential(api, project_id, secret="mock-direct-secret")
 
@@ -606,11 +625,23 @@ def test_operation_rest_action_run_mock_provider_returns_raw_output(
     rendered = json.dumps(executed.json())
     assert body["status"] == "success"
     assert body["action_ref"] == "utils.mock.echo"
-    assert body["compact"]["message"] == "hello from direct REST action"
-    assert body["compact"]["status"] == "success"
+    assert body["output"]["output_mode"] == "file"
+    assert body["output"]["schema_version"] == "stackos.action-output.v1"
+    assert body["output"]["schema_ref"] == "stackos.action-output.v1"
+    assert body["output"]["schema_operation"] == "schema.get"
+    assert "artifact_id" not in body["output"]
+    assert "read" not in body["output"]
     assert body["cost_cents"] == 5
-    assert body["action_call"]["provider_key"] == "mock-provider"
-    assert body["output_json"]["message"] == "hello from direct REST action"
+    assert body["provider_key"] == "mock-provider"
+    saved_path = Path(body["output"]["path"])
+    assert saved_path.exists()
+    assert str(saved_path).startswith(str(settings.generated_assets_dir))
+    saved = json.loads(saved_path.read_text(encoding="utf-8"))
+    assert saved["response"]["output_json"]["message"] == "hello from direct REST action"
+    assert saved["response"]["output_json"]["leak_check"] == {
+        "authorization": "[redacted]",
+        "api_key": "[redacted]",
+    }
     assert "mock-direct-secret" not in rendered
 
 
@@ -649,6 +680,7 @@ def test_operation_rest_action_run_uses_execution_context_ref(
                     "cost_cents": 4,
                 },
                 "idempotency_key": "rest-direct-mock-context-1",
+                "response_mode": "raw",
             }
         },
     )
@@ -707,22 +739,58 @@ def test_operation_rest_action_run_with_context_ref_returns_file_backed_compact_
     assert executed.status_code == 200, executed.text
     body = executed.json()["data"]
     rendered = json.dumps(executed.json())
-    assert body["compact"]["output_mode"] == "file"
-    assert body["compact"]["artifact_id"] == body["output_json"]["file"]["artifact_id"]
-    assert body["compact"]["absolute_path"] == body["output_json"]["file"]["absolute_path"]
-    assert body["compact"]["read"]["operation"] == "executionContext.artifact.read"
-    assert (
-        body["metadata_json"]["file_backed_output"]["artifact_id"] == body["compact"]["artifact_id"]
-    )
-    saved_path = Path(body["compact"]["absolute_path"])
+    assert body["output"]["output_mode"] == "file"
+    assert "artifact_id" not in body["output"]
+    assert "read" not in body["output"]
+    saved_path = Path(body["output"]["path"])
     assert saved_path.exists()
     assert str(saved_path).startswith(str(settings.generated_assets_dir))
     saved = json.loads(saved_path.read_text(encoding="utf-8"))
-    assert saved["leak_check"] == {
+    assert saved["response"]["output_json"]["leak_check"] == {
         "authorization": "[redacted]",
         "api_key": "[redacted]",
     }
     assert "mock-context-secret" not in rendered
+
+
+def test_operation_rest_artifact_read_reads_explicit_generated_asset_artifact(
+    api: TestClient,
+    project_id: int,
+    settings: Settings,
+) -> None:
+    relative_path = Path("artifact-read-tests") / f"project-{project_id}-sample.json"
+    path = settings.generated_assets_dir / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"response": {"output_json": {"message": "hello artifact"}}}),
+        encoding="utf-8",
+    )
+    created = api.post(
+        f"/api/v1/projects/{project_id}/artifacts",
+        json={
+            "kind": "report",
+            "uri": f"/generated-assets/{relative_path.as_posix()}",
+            "mime_type": "application/json",
+            "metadata_json": {"sha256": "test"},
+        },
+    )
+    assert created.status_code == 201, created.text
+    artifact_id = created.json()["data"]["id"]
+
+    read = api.post(
+        "/api/v1/operations/artifact.read/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "artifact_id": artifact_id,
+                "json_path": "$.response.output_json.message",
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert read.status_code == 200, read.text
+    assert read.json()["content_available"] is True
+    assert json.loads(read.json()["content"]) == "hello artifact"
 
 
 def test_operation_rest_smtp_notification_uses_run_plan_action_execute(
@@ -767,6 +835,8 @@ def test_operation_rest_smtp_notification_uses_run_plan_action_execute(
                 "run_token": run_token,
                 "credential_ref": credential_ref,
                 "action_ref": "communications.smtp.email.send",
+                "response_mode": "raw",
+                "output_policy_json": {"mode": "inline"},
                 "input_json": {
                     "recipients": ["ops@example.test"],
                     "subject": "StackOS run complete",

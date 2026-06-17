@@ -115,6 +115,9 @@ policies:
   - key: agent_decides_scope
     kind: execution
     description: The template defines contracts; the run plan chooses exact queries, providers, and records.
+  - key: preserve_fetched_data
+    kind: evidence
+    description: If provider data was fetched, keep the returned response-file paths and cite them in synthesized outputs before considering another provider call. Use schema.get with schema_ref only when the response-file envelope schema is needed.
 approval_gates:
   - key: operator_cost_review
     description: Required when the run plan expects material provider spend.
@@ -122,7 +125,7 @@ approval_gates:
 steps:
   - id: orient
     title: Orient From History
-    purpose: Read recent research, learnings, and the current project goal.
+    purpose: Read recent research, learnings, and the current project goal; if the user did not provide seed terms or competitors, ask a small number of plain-language clarifying questions and propose initial research angles.
     input_refs:
       - goal
       - seed_terms
@@ -134,23 +137,29 @@ steps:
       - agent_decides_scope
   - id: collect_evidence
     title: Collect Evidence
-    purpose: Execute only the provider calls the run plan grants and the agent still needs.
+    purpose: Execute only the provider calls the run plan grants and the agent still needs; preserve returned response-file paths, use schema.get with schema_ref only when needed, and inspect files before rerunning paid research.
     action_refs:
       - keyword_research
       - serp_analysis
       - competitor_keywords
     policy_refs:
       - no_secret_exposure
+      - preserve_fetched_data
+    output_refs:
+      - raw_provider_data_refs
     approval_refs:
       - operator_cost_review
     depends_on:
       - orient
   - id: store_opportunities
     title: Store Opportunities
-    purpose: Persist the selected opportunities and evidence as SEO resources.
+    purpose: Persist a useful list of keyword opportunities, not just one or two terms, with clusters, metrics, source refs, and a polished brief/CSV when the run grants artifact writes.
     resource_refs:
       - opportunities
       - serp_snapshots
+    output_refs:
+      - opportunity_summary
+      - synthesized_keyword_research
     depends_on:
       - collect_evidence
   - id: capture_learning
@@ -163,6 +172,15 @@ steps:
 outputs:
   - key: opportunity_summary
     name: Opportunity Summary
+    description: Reviewed opportunity set with clusters, metrics, evidence refs, assumptions, and recommended next steps.
+    type: object
+  - key: raw_provider_data_refs
+    name: Raw Provider Data Refs
+    description: Response-file paths for preserved provider request/response envelopes, usually schema stackos.action-output.v1, to avoid paid roundtrips.
+    type: array
+  - key: synthesized_keyword_research
+    name: Synthesized Keyword Research
+    description: Polished research output, normally markdown plus optional CSV-style table, with ranked keyword clusters and raw-data refs.
     type: object
 learning_hooks:
   - key: research_reuse

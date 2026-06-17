@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Any
+from typing import Any, cast
 
 from stackos.agent_responses import (
     compact_tracker_snapshot,
@@ -21,6 +21,10 @@ _MODE_ALIASES: dict[str, ResponseMode] = {
     "ack": "ack",
 }
 
+_MAX_COMPACT_LIST_ITEMS = 25
+_MAX_COMPACT_STRING_CHARS = 800
+_MAX_SCHEMA_DESCRIPTION_CHARS = 240
+
 _REF_FIELD_SUFFIXES = ("_id", "_ids", "_key", "_keys", "_ref", "_refs", "_token")
 _URL_FIELD_SUFFIXES = ("_url", "_urls")
 _SCALAR_KEEP_FIELDS = frozenset(
@@ -30,6 +34,16 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "key",
         "title",
         "name",
+        "description",
+        "domain",
+        "version",
+        "schema_version",
+        "schema_ref",
+        "schema_operation",
+        "role",
+        "label",
+        "agent_type",
+        "skill_type",
         "ok",
         "valid",
         "status",
@@ -44,6 +58,17 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "driver",
         "error",
         "count",
+        "bytes",
+        "sha256",
+        "path",
+        "uri",
+        "json_path",
+        "max_bytes",
+        "content_available",
+        "content_truncated",
+        "content_type",
+        "mime_type",
+        "size_bytes",
         "hidden_count",
         "created_count",
         "updated_count",
@@ -76,6 +101,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "action_call_id",
         "message_ref",
         "message",
+        "read_instructions",
         "operation",
         "thread_ref",
         "target_ref",
@@ -105,16 +131,21 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "project_was_created",
         "read_only",
         "ready",
+        "mutating",
         "executable",
         "visible_by_default",
         "hidden_reason",
         "external_provider",
         "requires_integration",
+        "requires_credential",
+        "allows_credential",
         "exposure_state",
         "risk_level",
         "auth_type",
+        "auth_method_key",
         "credential_state",
         "budget_state",
+        "budget_kind",
         "remaining_usd",
         "secret_policy",
         "severity",
@@ -135,12 +166,25 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "normalized_repo_name",
         "position",
         "project_scoped_tools_usable",
+        "profile_complete",
         "purpose",
         "repairable",
         "repo_fingerprint",
         "runtime",
         "thread_id",
         "workspace_binding_id",
+        "workspace_bound",
+        "call_via",
+        "base_url",
+        "display_name",
+        "provider_account_id",
+        "profile_key",
+        "setup_required",
+        "connector_registered",
+        "execution_available",
+        "payload_format",
+        "interactive",
+        "content_omitted",
     }
 )
 _LIST_KEEP_FIELDS = frozenset(
@@ -148,34 +192,122 @@ _LIST_KEEP_FIELDS = frozenset(
         "allowed_tools",
         "action_refs_json",
         "actions",
+        "agent_requirements",
+        "applies_to_steps",
+        "applies_to_workflows",
+        "approval_gates",
+        "approval_refs",
         "attachment_refs",
+        "auth_methods",
+        "auth_requirements",
+        "capability_requirements",
         "changed_fields",
+        "commands",
         "consistency_issues",
+        "connections",
+        "context_requirements",
+        "context_refs",
         "context_refs_json",
         "default_input_keys",
         "dependency_keys",
+        "depends_on",
         "depends_on_json",
         "errors",
+        "examples",
         "file_refs",
+        "fields",
         "guidance",
+        "handoff_inputs",
+        "handoff_outputs",
+        "handoff_notes",
+        "input_refs",
         "input_refs_json",
+        "inputs",
+        "learning_hooks",
         "message_refs",
+        "mention_patterns",
         "missing",
+        "must_do",
+        "must_not_do",
         "issues",
         "next_operations",
+        "output_refs",
         "output_refs_json",
+        "outputs",
+        "policies",
+        "providers",
+        "prerequisites",
+        "profile_missing",
+        "prompt_assembly_order",
         "policy_refs_json",
         "provider_results",
         "recommended_tools",
+        "required_context_refs",
         "required_input_keys",
+        "required_outputs",
+        "resource_refs",
         "resource_refs_json",
+        "responsibilities",
+        "returns",
+        "scopes",
         "selected_context_keys",
+        "self_check",
+        "setup_guidance",
+        "skill_requirements",
+        "skill_preset_requirements",
+        "steps",
+        "success_criteria",
         "success_criteria_json",
         "template_override_keys",
         "ticket_keys",
         "warnings",
+        "when_not_to_use",
+        "when_to_use",
+        "workflow_roles",
     }
 )
+_MAPPING_KEEP_FIELDS = frozenset(
+    {
+        "access",
+        "access_policy",
+        "account",
+        "artifact",
+        "availability",
+        "credential",
+        "execution_context",
+        "handoff_policy",
+        "identity",
+        "manifest",
+        "next_action",
+        "next_step",
+        "operating_contract",
+        "preset",
+        "project_adaptation",
+        "prompt_contract",
+        "provider",
+        "provider_setup",
+        "response_policy",
+        "send_policy",
+        "setup_state",
+        "spec",
+        "surfaces",
+        "tool_profile",
+        "trigger",
+        "trigger_policy",
+        "ui_health",
+    }
+)
+_SCHEMA_FIELD_NAMES = frozenset(
+    {
+        "input_schema",
+        "input_schema_json",
+        "output_schema",
+        "output_schema_json",
+        "schema",
+        "schema_json",
+    }
+)
+_CONTENT_OMIT_FIELDS = frozenset({"content"})
 _VERBATIM_KEEP_FIELDS = frozenset(
     {
         "action_execution_guidance",
@@ -183,15 +315,10 @@ _VERBATIM_KEEP_FIELDS = frozenset(
         "candidate_projects",
         "content_model_json",
         "extension",
-        "fields",
-        "next_step",
         "project",
         "exposure",
         "provenance",
-        "next_action",
         "setup",
-        "setup_state",
-        "ui_health",
         "ui_urls",
     }
 )
@@ -290,7 +417,19 @@ def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, 
             out["rev"] = rev
         return out
     if "data" not in payload:
-        return copy.deepcopy(payload)
+        compact_data = _compact_data(spec.name, payload)
+        out = _base_payload(spec, payload)
+        out["data"] = compact_data
+        project_id = compact_data.get("project_id")
+        if out.get("project_id") is None and isinstance(project_id, int):
+            out["project_id"] = project_id
+        warnings = _warnings(payload)
+        if warnings:
+            out["warnings"] = warnings
+        rev = compact_data.get("rev")
+        if isinstance(rev, int):
+            out["rev"] = rev
+        return out
     compact_data = _compact_data(spec.name, data)
     out = _base_payload(spec, payload)
     out["data"] = compact_data
@@ -407,6 +546,8 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name in {"action.run", "action.execute"}:
+        return _compact_action_execution(data)
     if operation_name == "tracker.get":
         return compact_tracker_snapshot(data)
     if operation_name.startswith("tracker."):
@@ -416,6 +557,62 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if operation_name.startswith("workflowExtension."):
         return _compact_workflow_extension(data)
     return _compact_mapping(data)
+
+
+def _compact_action_execution(data: dict[str, Any]) -> dict[str, Any]:
+    call_value = data.get("action_call")
+    call = cast(dict[str, Any], call_value) if isinstance(call_value, dict) else {}
+    compact_value = data.get("compact")
+    compact_hint = cast(dict[str, Any], compact_value) if isinstance(compact_value, dict) else {}
+    output_value = data.get("output_json")
+    output_json = cast(dict[str, Any], output_value) if isinstance(output_value, dict) else {}
+    file_value = output_json.get("file")
+    file_pointer = cast(dict[str, Any], file_value) if isinstance(file_value, dict) else {}
+    summary_value = output_json.get("summary")
+    summary = cast(dict[str, Any], summary_value) if isinstance(summary_value, dict) else {}
+
+    action_ref = data.get("action_ref")
+    if action_ref is None and call:
+        plugin_slug = call.get("plugin_slug")
+        action_key = call.get("action_key")
+        if isinstance(plugin_slug, str) and isinstance(action_key, str):
+            action_ref = f"{plugin_slug}.{action_key}"
+
+    out: dict[str, Any] = {
+        "status": data.get("status") or call.get("status"),
+        "action_ref": action_ref,
+        "action_call_id": data.get("action_call_id") or call.get("id"),
+        "provider_key": data.get("provider_key") or call.get("provider_key"),
+        "operation": data.get("operation") or call.get("operation"),
+        "credential_ref": data.get("credential_ref") or call.get("credential_ref"),
+        "cost_cents": data.get("cost_cents"),
+        "dry_run": data.get("dry_run"),
+        "replayed": data.get("replayed"),
+    }
+    if file_pointer:
+        out["output"] = {
+            key: file_pointer.get(key)
+            for key in (
+                "output_mode",
+                "path",
+                "content_type",
+                "schema_version",
+                "schema_ref",
+                "schema_operation",
+                "semantic_name",
+                "bytes",
+                "sha256",
+            )
+            if file_pointer.get(key) is not None
+        }
+        out["output"]["output_mode"] = "file"
+    elif compact_hint:
+        out["output"] = copy.deepcopy(compact_hint)
+    else:
+        out["output"] = _compact_mapping(output_json) if output_json else {}
+    if summary:
+        out["summary"] = _compact_mapping(summary)
+    return {key: value for key, value in out.items() if value is not None}
 
 
 def _compact_tracker_mutation(data: dict[str, Any]) -> dict[str, Any]:
@@ -500,11 +697,115 @@ def _compact_workflow_extension(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _safe_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _compact_text(value: Any, *, limit: int = _MAX_COMPACT_STRING_CHARS) -> Any:
+    if isinstance(value, str) and len(value) > limit:
+        return f"{value[:limit]}..."
+    return value
+
+
+def _compact_schema(value: Any, *, include_properties: bool = True) -> dict[str, Any]:
+    schema = _safe_dict(value)
+    if not schema:
+        return {}
+    out: dict[str, Any] = {
+        key: schema.get(key)
+        for key in ("title", "type", "description")
+        if schema.get(key) is not None
+    }
+    if isinstance(out.get("description"), str):
+        out["description"] = _compact_text(
+            out["description"],
+            limit=_MAX_SCHEMA_DESCRIPTION_CHARS,
+        )
+    required = schema.get("required")
+    if isinstance(required, list):
+        out["required"] = [str(item) for item in required if isinstance(item, str)]
+    properties = schema.get("properties")
+    if include_properties and isinstance(properties, dict):
+        names = [str(key) for key in properties]
+        out["property_count"] = len(names)
+        out["properties"] = {
+            key: _compact_schema_property(properties.get(key))
+            for key in names[:_MAX_COMPACT_LIST_ITEMS]
+        }
+        if len(names) > _MAX_COMPACT_LIST_ITEMS:
+            out["properties_truncated"] = True
+    elif isinstance(properties, dict):
+        out["property_count"] = len(properties)
+        out["property_names"] = [str(key) for key in list(properties)[:_MAX_COMPACT_LIST_ITEMS]]
+        if len(properties) > _MAX_COMPACT_LIST_ITEMS:
+            out["properties_truncated"] = True
+    defs = schema.get("$defs")
+    if isinstance(defs, dict):
+        out["definition_count"] = len(defs)
+    return {key: value for key, value in out.items() if value not in (None, {}, [])}
+
+
+def _compact_schema_property(value: Any) -> dict[str, Any]:
+    prop = _safe_dict(value)
+    out: dict[str, Any] = {
+        key: prop.get(key)
+        for key in ("type", "format", "title")
+        if prop.get(key) is not None
+    }
+    description = prop.get("description")
+    if isinstance(description, str):
+        out["description"] = _compact_text(description, limit=_MAX_SCHEMA_DESCRIPTION_CHARS)
+    enum = prop.get("enum")
+    if isinstance(enum, list):
+        out["enum"] = enum[:_MAX_COMPACT_LIST_ITEMS]
+        out["enum_count"] = len(enum)
+        if len(enum) > _MAX_COMPACT_LIST_ITEMS:
+            out["enum_truncated"] = True
+    default = prop.get("default")
+    if isinstance(default, str | int | float | bool) or default is None:
+        out["default"] = _compact_text(default)
+    items = _safe_dict(prop.get("items"))
+    if items:
+        out["items"] = {
+            key: items.get(key)
+            for key in ("type", "format", "title")
+            if items.get(key) is not None
+        }
+    union_types = _schema_union_types(prop)
+    if union_types:
+        out["any_of_types"] = union_types
+    return {key: value for key, value in out.items() if value is not None}
+
+
+def _schema_union_types(prop: dict[str, Any]) -> list[str]:
+    raw = prop.get("anyOf") or prop.get("oneOf")
+    if not isinstance(raw, list):
+        return []
+    types: list[str] = []
+    for item in raw:
+        option = _safe_dict(item)
+        option_type = option.get("type")
+        if isinstance(option_type, str):
+            types.append(option_type)
+        elif isinstance(option.get("$ref"), str):
+            types.append("ref")
+    return types
+
+
 def _compact_mapping(value: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, item in value.items():
+        if key in _CONTENT_OMIT_FIELDS:
+            out[f"{key}_omitted"] = True
+            continue
+        if key in _SCHEMA_FIELD_NAMES:
+            out[key] = _compact_schema(item) if isinstance(item, dict) else _compact_value(item)
+            continue
         if key in _VERBATIM_KEEP_FIELDS:
             out[key] = copy.deepcopy(item)
+            continue
+        if key in _MAPPING_KEEP_FIELDS and isinstance(item, dict):
+            out[key] = _compact_mapping(item)
             continue
         if (
             key in _SCALAR_KEEP_FIELDS
@@ -515,9 +816,13 @@ def _compact_mapping(value: dict[str, Any]) -> dict[str, Any]:
             continue
         if key in _LIST_KEEP_FIELDS:
             out[key] = _compact_value(item)
+            if isinstance(item, list):
+                out[f"{key}_count"] = len(item)
+                if len(item) > _MAX_COMPACT_LIST_ITEMS:
+                    out[f"{key}_truncated"] = True
             continue
         if key in {"errors", "warnings"}:
-            out[key] = item
+            out[key] = _compact_value(item)
     return out
 
 
@@ -525,8 +830,8 @@ def _compact_value(value: Any) -> Any:
     if isinstance(value, dict):
         return _compact_mapping(value)
     if isinstance(value, list):
-        return [_compact_value(item) for item in value]
-    return value
+        return [_compact_value(item) for item in value[:_MAX_COMPACT_LIST_ITEMS]]
+    return _compact_text(value)
 
 
 def _ids_and_refs(value: dict[str, Any]) -> dict[str, Any]:

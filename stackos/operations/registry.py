@@ -140,6 +140,7 @@ def build_operation_registry() -> OperationRegistry:
         resources,
         run_plans,
         runs,
+        schemas,
         skill_presets,
         system,
         tool_profiles,
@@ -175,6 +176,8 @@ def build_operation_registry() -> OperationRegistry:
     for spec in execution_contexts.operation_specs():
         registry.register(spec)
     for spec in cost.operation_specs():
+        registry.register(spec)
+    for spec in schemas.operation_specs():
         registry.register(spec)
     for spec in agent_presets.operation_specs():
         registry.register(spec)

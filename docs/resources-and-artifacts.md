@@ -91,20 +91,37 @@ tokens, API keys, passwords, authorization headers, and credentials.
 
 ## File-Backed Action Outputs
 
-Execution contexts can set `output_policy_json` for provider actions:
+External provider actions executed through `action.run` or `action.execute`
+write sanitized request+response envelopes to generated-assets files by default.
+Execution contexts or one-off action calls can still set `output_policy_json`:
 
 - `{"mode": "inline"}` keeps the sanitized action output inline.
 - `{"mode": "file_if_large", "max_inline_bytes": 16000}` writes oversized
   sanitized JSON outputs to the generated-assets directory.
 - `{"mode": "always_file"}` always writes the sanitized JSON output to a file.
+- Add `path: "/absolute/project/or/workspace/path"` when the agent wants the
+  response file written under a specific directory. The path must be absolute,
+  and StackOS generates the filename.
 
-When a file-backed output is used, `action.run` and `action.execute` return a
-compact pointer with an absolute path, `/generated-assets/...` URI, byte size,
-SHA-256 checksum, content type, semantic artifact name, top-level JSON shape,
-and `executionContext.artifact.read` hints. StackOS creates an `artifact` row
-and registers it under the `context_ref`, so resumed agents can list prior
-outputs with `executionContext.artifact.list` and read bounded JSON content or
-simple JSON paths with `executionContext.artifact.read`.
+The file uses `schema_version: stackos.action-output.v1` and includes sanitized
+project/run/action metadata, request `input_json`, provider context, connector
+`output_json`, connector metadata, cost, and duration. `action.run` and
+`action.execute` return a compact pointer with the filesystem path, byte size,
+SHA-256 checksum, content type, semantic name, `schema_ref`, and
+`schema_operation`. Read the file only when the agent needs the full
+request/response envelope. If the agent needs the envelope schema, call
+`schema.get` with the returned `schema_ref`; do not depend on StackOS source
+file paths.
+
+These default response files are not artifacts or resources. Agents should read
+them through the returned filesystem path when needed. Use `artifact.read` only
+for intentional artifact rows created by `artifact.create` or connector actions
+that deliberately return artifact ids.
+
+`artifact.read` follows the same response-mode contract as other operations:
+compact mode returns metadata and omits the content body; pass
+`response_mode=raw` with a narrow `json_path`/`max_bytes` when the artifact
+content should enter the agent context.
 
 ## Plugin Ownership
 
