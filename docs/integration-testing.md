@@ -55,9 +55,12 @@ Supported `scenario` values:
 - `timeout`
 
 Failure scenarios still go through the connector path and should produce
-redacted failed action-call audit rows. They are useful for validating agent and
-operator behavior around retries, rate limits, credential failure, and provider
-errors without live API accounts.
+redacted failed action-call audit rows. Provider HTTP failures use
+`ActionConnectorError`, so the operation error envelope and audit
+`response_json` preserve safe fields such as `provider_status_code`,
+`provider_error.code`, `provider_error.message`, and retry metadata. They are
+useful for validating agent and operator behavior around retries, rate limits,
+credential failure, and provider errors without live API accounts.
 
 ## Entrypoint Parity
 

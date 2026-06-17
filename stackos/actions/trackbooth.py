@@ -19,6 +19,7 @@ import httpx
 from sqlmodel import col, select
 
 from stackos.actions.connectors import (
+    ActionConnectorError,
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
@@ -753,11 +754,18 @@ class TrackboothActionConnector:
                     redact_secret_text(f"Trackbooth request failed: {exc}")
                 ) from exc
         if response.status_code >= 400:
-            raise ValidationError(
-                redact_secret_text(
-                    f"Trackbooth returned {response.status_code}: {response.text[:1000]}"
-                ),
-                data={"status_code": response.status_code},
+            try:
+                provider_error: Any = response.json()
+            except ValueError:
+                provider_error = {"message": response.text[:1000]}
+            raise ActionConnectorError(
+                f"Trackbooth returned status {response.status_code}",
+                provider_status_code=response.status_code,
+                provider_error=provider_error,
+                metadata_json={
+                    "vendor": "trackbooth",
+                    "status_code": response.status_code,
+                },
             )
         try:
             body: Any = response.json()

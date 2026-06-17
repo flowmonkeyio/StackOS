@@ -1538,6 +1538,13 @@ def test_operation_rest_mock_provider_failure_records_redacted_audit(
     rendered_failure = json.dumps(failed.json())
     assert "sk-mock-failure-secret" not in rendered_failure
     assert failed.json()["data"]["connector"] == "mock-provider"
+    assert failed.json()["data"]["status"] == "failed"
+    assert failed.json()["data"]["provider_status_code"] == 429
+    assert failed.json()["data"]["provider_error"] == {
+        "code": "mock_rate_limit",
+        "message": "mock provider rate limited request",
+        "retry_after_ms": 60000,
+    }
 
     audit_resp = api.get(
         f"/api/v1/projects/{project_id}/action-calls",
@@ -1555,6 +1562,8 @@ def test_operation_rest_mock_provider_failure_records_redacted_audit(
     assert row["status"] == "failed"
     assert row["connector_key"] == "mock-provider"
     assert "rate limited" in row["error"]
+    assert row["response_json"]["provider_status_code"] == 429
+    assert row["response_json"]["provider_error"]["retry_after_ms"] == 60000
     assert "sk-mock-failure-secret" not in json.dumps(audit)
 
 

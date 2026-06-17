@@ -72,6 +72,9 @@ Before an integration delivery is signed off, verify:
   `deferred_reason`, and report the deferred/project-local availability state
 - executable actions have daemon connector docs links, sanitized error handling,
   no-secret auth resolution, audit coverage, and grant tests
+- provider HTTP failures raise `ActionConnectorError` and preserve redacted
+  `provider_status_code` and `provider_error` fields in both operation error
+  envelopes and failed action-call `response_json`
 - executable external-provider actions return compact response-file paths,
   `schema_ref`, and `schema_operation` by default and avoid dumping bulky raw
   provider payloads into MCP responses;

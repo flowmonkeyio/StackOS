@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from stackos.actions.connectors import (
+    ActionConnectorError,
     ActionConnectorRequest,
     ActionConnectorResult,
     ActionValidationIssue,
@@ -86,11 +87,28 @@ class MockProviderActionConnector:
         if scenario == "invalid_credentials":
             raise ValidationError("mock provider rejected credential authorization=Bearer bad")
         if scenario == "rate_limit":
-            raise ValidationError("mock provider rate limited request retry_after_s=60")
+            raise ActionConnectorError(
+                "mock provider rate limited request",
+                provider_status_code=429,
+                provider_error={
+                    "code": "mock_rate_limit",
+                    "message": "mock provider rate limited request",
+                    "retry_after_ms": 60000,
+                },
+                metadata_json={"vendor": "mock-provider", "scenario": scenario},
+            )
         if scenario == "timeout":
             raise TimeoutError("mock provider timeout after 30s")
         if scenario == "provider_error":
-            raise ValidationError("mock provider returned status 500")
+            raise ActionConnectorError(
+                "mock provider returned status 500",
+                provider_status_code=500,
+                provider_error={
+                    "code": "mock_provider_error",
+                    "message": "mock provider returned status 500",
+                },
+                metadata_json={"vendor": "mock-provider", "scenario": scenario},
+            )
 
         status = "partial_success" if scenario == "partial_success" else "success"
         return ActionConnectorResult(

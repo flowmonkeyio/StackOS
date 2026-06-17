@@ -628,6 +628,22 @@ def _trackbooth_api_key_generate_detail() -> dict:
     }
 
 
+def _trackbooth_account_listaccounts_detail() -> dict:
+    return {
+        "operation_id": "AccountController.listAccounts",
+        "name": "account_listaccounts",
+        "method": "GET",
+        "path": "/api/accounts",
+        "context": {
+            "title": "List accounts",
+            "category": "accounts",
+            "tags": ["accounts"],
+        },
+        "query_schema": {"type": "object", "additionalProperties": False},
+        "response_schema": {"type": "object", "additionalProperties": True},
+    }
+
+
 def _add_trackbooth_sync_responses(
     httpx_mock: HTTPXMock,
     *details: dict,
@@ -4069,8 +4085,68 @@ def test_trackbooth_permission_error_is_preserved_for_agent_repair(
             )
         )
 
-    assert "403" in excinfo.value.data["error"]
-    assert "agent_api.access" in excinfo.value.data["error"]
+    assert excinfo.value.data["status"] == "failed"
+    assert excinfo.value.data["provider_status_code"] == 403
+    assert excinfo.value.data["provider_error"]["message"] == "agent_api.access is required"
+    call = session.exec(
+        select(ActionCall).where(ActionCall.id == excinfo.value.data["action_call_id"])
+    ).one()
+    assert call.status.value == "failed"
+    assert call.response_json == {
+        "status": "failed",
+        "provider_status_code": 403,
+        "provider_error": {"message": "agent_api.access is required"},
+    }
+
+
+def test_trackbooth_rate_limit_error_preserves_provider_body_for_agent_repair(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(httpx_mock, _trackbooth_account_listaccounts_detail())
+    _sync_trackbooth_catalog(session, project_id, credential_ref)
+    httpx_mock.add_response(
+        method="GET",
+        url="https://trackbooth.local.test/api/accounts",
+        status_code=429,
+        json={
+            "code": "agent_api_concurrency_limit_exceeded",
+            "message": "Agent API concurrency limit exceeded",
+            "retry_after_ms": 29988,
+            "channel": "agent_api_key",
+            "operation_id": "AccountController.listAccounts",
+        },
+    )
+
+    with pytest.raises(ConflictError) as excinfo:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="trackbooth.api.account_listaccounts",
+                input_json={},
+                credential_ref=credential_ref,
+            )
+        )
+
+    data = excinfo.value.data
+    assert data["status"] == "failed"
+    assert data["action_ref"] == "trackbooth.api.account_listaccounts"
+    assert data["provider_status_code"] == 429
+    assert data["provider_error"] == {
+        "code": "agent_api_concurrency_limit_exceeded",
+        "message": "Agent API concurrency limit exceeded",
+        "retry_after_ms": 29988,
+        "channel": "agent_api_key",
+        "operation_id": "AccountController.listAccounts",
+    }
+    call = session.exec(select(ActionCall).where(ActionCall.id == data["action_call_id"])).one()
+    assert call.response_json == {
+        "status": "failed",
+        "provider_status_code": 429,
+        "provider_error": data["provider_error"],
+    }
 
 
 def test_action_describe_reports_project_readiness_and_provider_disabled(

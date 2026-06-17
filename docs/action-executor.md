@@ -47,6 +47,14 @@ Connectors receive plaintext secrets only inside the daemon process through
 `ResolvedCredential`. That object is not a Pydantic response model and must not
 be serialized into MCP, REST, run plans, resources, artifacts, or audit rows.
 
+When a provider returns an HTTP failure body, connectors must raise
+`ActionConnectorError` with `provider_status_code` and `provider_error` instead
+of collapsing the response into a generic validation string. The executor
+records that structured output on the failed `action_calls.response_json` row
+and surfaces the same redacted fields in the operation error envelope so CLI,
+MCP, REST, and UI clients can diagnose rate limits, auth failures, and provider
+validation errors without reading daemon logs.
+
 ## Audit
 
 Every internal execution writes an `action_calls` sidecar row with:

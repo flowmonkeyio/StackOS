@@ -15,7 +15,7 @@ from typing import Any
 
 from stackos.action_availability import build_action_availability, build_action_exposure
 from stackos.action_output_contract import ACTION_OUTPUT_SCHEMA_REF, action_output_schema_hint
-from stackos.actions.connectors import ActionConnectorRequest
+from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
 from stackos.actions.manifest import ExecutableActionManifest
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import AuthRepository, ResolvedCredential
@@ -239,6 +239,44 @@ class ActionExecutionMixin:
         started = time.perf_counter()
         try:
             result = await connector.execute(request)
+        except ActionConnectorError as exc:
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            output_json = _redact_for_audit(exc.output_json)
+            connector_metadata = _redact_for_audit(exc.metadata_json) if exc.metadata_json else {}
+            failed_metadata = {
+                **(_redact_for_audit(metadata_json) if metadata_json else {}),
+                **connector_metadata,
+            } or None
+            safe_error = redact_secret_text(exc.detail)
+            row = self._record_call(
+                project_id=project_id,
+                manifest=manifest,
+                credential=credential,
+                credential_ref=resolved_ref,
+                run_id=run_id,
+                run_plan_id=run_plan_id,
+                run_plan_step_id=run_plan_step_id,
+                idempotency_key=idempotency_key,
+                request_json=payload,
+                provider_context_json=provider_context_for_audit,
+                response_json=output_json,
+                metadata_json=failed_metadata,
+                status=ActionCallStatus.FAILED,
+                dry_run=False,
+                cost_cents=estimated_cost_cents,
+                duration_ms=duration_ms,
+                error=safe_error,
+            )
+            raise ConflictError(
+                "action connector failed",
+                data=_connector_failure_data(
+                    manifest=manifest,
+                    row_id=int(row.id),
+                    connector_key=manifest.connector_key,
+                    error=safe_error,
+                    output_json=output_json,
+                ),
+            ) from exc
         except Exception as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
             safe_error = redact_secret_text(str(exc))
@@ -263,12 +301,13 @@ class ActionExecutionMixin:
             )
             raise ConflictError(
                 "action connector failed",
-                data={
-                    "action_ref": manifest.action_ref,
-                    "action_call_id": row.id,
-                    "connector": manifest.connector_key,
-                    "error": safe_error,
-                },
+                data=_connector_failure_data(
+                    manifest=manifest,
+                    row_id=int(row.id),
+                    connector_key=manifest.connector_key,
+                    error=safe_error,
+                    output_json=None,
+                ),
             ) from exc
 
         duration_ms = int((time.perf_counter() - started) * 1000)
@@ -544,6 +583,32 @@ def _metadata_with_execution_context(
         if value not in (None, {}, [])
     }
     return base
+
+
+def _connector_failure_data(
+    *,
+    manifest: ExecutableActionManifest,
+    row_id: int,
+    connector_key: str | None,
+    error: str,
+    output_json: dict[str, Any] | None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "status": "failed",
+        "action_ref": manifest.action_ref,
+        "action_call_id": row_id,
+        "provider_key": manifest.provider_key,
+        "connector": connector_key,
+        "error": error,
+    }
+    if isinstance(output_json, dict):
+        provider_status_code = output_json.get("provider_status_code")
+        provider_error = output_json.get("provider_error")
+        if provider_status_code is not None:
+            data["provider_status_code"] = provider_status_code
+        if provider_error is not None:
+            data["provider_error"] = provider_error
+    return data
 
 
 def _effective_output_policy(

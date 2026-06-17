@@ -18,6 +18,7 @@ from stackos.actions.clay import ClayActionConnector
 from stackos.actions.connectors import (
     DEFAULT_ACTION_CONNECTORS,
     ActionConnector,
+    ActionConnectorError,
     ActionConnectorRegistry,
     ActionConnectorRequest,
     ActionConnectorResult,
@@ -116,6 +117,7 @@ __all__ = [
     "ActionCallAuditOut",
     "ActionCallOut",
     "ActionConnector",
+    "ActionConnectorError",
     "ActionConnectorRegistry",
     "ActionConnectorRequest",
     "ActionConnectorResult",

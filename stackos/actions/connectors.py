@@ -55,6 +55,48 @@ class ActionConnectorResult(BaseModel):
     cost_cents: int = 0
 
 
+class ActionConnectorError(Exception):
+    """Connector failure with structured, redaction-ready provider output.
+
+    Connectors should raise this when a provider returned a real response that
+    agents can use for diagnosis, such as HTTP 429/403/500 bodies. The executor
+    records ``output_json`` on the failed action call and surfaces the same
+    redacted provider fields in the operation error envelope.
+    """
+
+    def __init__(
+        self,
+        detail: str,
+        *,
+        provider_status_code: int | None = None,
+        provider_error: Any | None = None,
+        output_json: dict[str, Any] | None = None,
+        metadata_json: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.provider_status_code = provider_status_code
+        self.provider_error = provider_error
+        self.output_json = output_json or _provider_failure_output(
+            provider_status_code=provider_status_code,
+            provider_error=provider_error,
+        )
+        self.metadata_json = metadata_json or {}
+
+
+def _provider_failure_output(
+    *,
+    provider_status_code: int | None,
+    provider_error: Any | None,
+) -> dict[str, Any]:
+    output: dict[str, Any] = {"status": "failed"}
+    if provider_status_code is not None:
+        output["provider_status_code"] = provider_status_code
+    if provider_error is not None:
+        output["provider_error"] = provider_error
+    return output
+
+
 class ActionConnector(Protocol):
     """Small, decision-free adapter API used by the generic executor."""
 
@@ -100,6 +142,7 @@ DEFAULT_ACTION_CONNECTORS = ActionConnectorRegistry()
 __all__ = [
     "DEFAULT_ACTION_CONNECTORS",
     "ActionConnector",
+    "ActionConnectorError",
     "ActionConnectorRegistry",
     "ActionConnectorRequest",
     "ActionConnectorResult",

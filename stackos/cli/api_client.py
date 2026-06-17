@@ -55,10 +55,9 @@ def _api_request(
         raw = exc.read().decode("utf-8", errors="replace")
         try:
             payload = json.loads(raw)
-            detail = payload.get("detail") if isinstance(payload, dict) else raw
         except json.JSONDecodeError:
-            detail = raw
-        typer.echo(f"daemon API error {exc.code}: {detail}", err=True)
+            payload = raw
+        typer.echo(_format_daemon_api_error(exc.code, payload), err=True)
         raise typer.Exit(code=1) from None
     except (OSError, TimeoutError, URLError) as exc:
         typer.echo(
@@ -70,6 +69,18 @@ def _api_request(
     if not raw:
         return None
     return json.loads(raw)
+
+
+def _format_daemon_api_error(status_code: int, payload: Any) -> str:
+    if isinstance(payload, dict):
+        body = {
+            key: payload[key]
+            for key in ("detail", "code", "retryable", "data", "retry_after", "hint")
+            if key in payload and payload[key] is not None
+        }
+        if body:
+            return f"daemon API error {status_code}: {json.dumps(body, sort_keys=True)}"
+    return f"daemon API error {status_code}: {payload}"
 
 
 def _load_operation_arguments(input_path: str | None) -> dict[str, Any]:
@@ -120,6 +131,7 @@ def _merge_common_arguments(
 __all__ = [
     "_api_request",
     "_echo_json",
+    "_format_daemon_api_error",
     "_load_operation_arguments",
     "_merge_common_arguments",
     "_read_daemon_token",
