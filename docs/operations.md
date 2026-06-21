@@ -144,7 +144,7 @@ not a second registry; it renders `GET /api/v1/operations` and
 
 Browser automation is exposed as generic StackOS operations instead of
 provider-specific workflow glue. `browser.page.call` and
-`browser.context.call` mirror public Camoufox/Playwright methods through raw
+`browser.context.call` mirror public Playwright methods through raw
 method names plus `args`, `kwargs`, or named `arguments`. Calls that return
 non-page browser objects return transient `handle_ref` values; use
 `browser.handle.call` to call public methods or properties on those returned

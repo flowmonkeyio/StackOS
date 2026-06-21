@@ -40,6 +40,8 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal
 
+from stackos.browser.runtime import playwright_chromium_executable_path
+
 InstallMode = Literal["clone", "pipx"]
 """How the daemon was installed: from a checked-out git repo or via pipx."""
 
@@ -88,46 +90,38 @@ def detect_mode() -> InstallMode:
     return "clone" if _repo_root_if_clone() is not None else "pipx"
 
 
-def ensure_camoufox_browser(*, timeout_seconds: int = 180) -> tuple[bool, str]:
-    """Ensure the packaged Camoufox browser binary is fetched.
+def ensure_playwright_browser(*, timeout_seconds: int = 180) -> tuple[bool, str]:
+    """Ensure the packaged Playwright Chromium browser binary is installed.
 
     The Python dependency is declared in ``pyproject.toml``. This helper owns the
-    second Camoufox setup step (`python -m camoufox fetch`) so clone-mode and
-    package-mode installs converge on the same ready-to-run browser state.
+    second Playwright setup step (`python -m playwright install chromium`) so
+    clone-mode and package-mode installs converge on the same ready-to-run
+    browser state.
     """
-    if importlib.util.find_spec("camoufox") is None:
+    if importlib.util.find_spec("playwright") is None:
         return (
             False,
-            "Camoufox package is not importable; install/sync Python dependencies first.",
+            "Playwright package is not importable; install/sync Python dependencies first.",
         )
+    if playwright_chromium_executable_path(timeout_seconds=10):
+        return True, "Playwright Chromium browser present."
     try:
-        path_probe = subprocess.run(
-            [sys.executable, "-m", "camoufox", "path"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except Exception as exc:
-        return False, f"Camoufox path check failed: {_safe_process_error(exc)}"
-    if path_probe.returncode == 0 and path_probe.stdout.strip():
-        return True, "Camoufox browser present."
-    try:
-        fetch = subprocess.run(
-            [sys.executable, "-m", "camoufox", "fetch"],
+        install = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
             check=False,
         )
     except Exception as exc:
-        return False, f"Camoufox fetch failed: {_safe_process_error(exc)}"
-    if fetch.returncode != 0:
-        detail = (fetch.stderr or fetch.stdout).strip()
+        return False, f"Playwright Chromium install failed: {_safe_process_error(exc)}"
+    if install.returncode != 0:
+        detail = (install.stderr or install.stdout).strip()
         return False, (
-            f"Camoufox fetch failed: exit_code={fetch.returncode}; {_safe_process_output(detail)}"
+            f"Playwright Chromium install failed: exit_code={install.returncode}; "
+            f"{_safe_process_output(detail)}"
         )
-    return True, "Camoufox browser fetched."
+    return True, "Playwright Chromium browser installed."
 
 
 def _safe_process_error(exc: Exception) -> str:

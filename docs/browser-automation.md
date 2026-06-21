@@ -1,6 +1,6 @@
 # Browser Automation
 
-StackOS includes a daemon-owned Camoufox browser runtime for agent-driven web
+StackOS includes a daemon-owned Playwright Chromium browser runtime for agent-driven web
 work such as platform posting, admin UI publishing, QA, and operator-assisted
 login.
 
@@ -8,15 +8,12 @@ login.
 
 - Browser automation is a core StackOS capability, not a branding-only plugin
   action.
-- Setup installs the Python `camoufox[geoip]` package and fetches the Camoufox
-  browser binary during `make install` or `stackos install`.
-- Keep the Playwright dependency aligned with the Camoufox browser generation
-  fetched by the package-managed Camoufox tool. The current `camoufox==0.4.11`
-  fetch channel reports a Firefox 135.x-based browser, so StackOS pins
-  `playwright==1.51.0`, whose supported Firefox browser is 135.0. When the
-  Camoufox package/fetch channel moves to a newer browser line, update this pin
-  with the normal dependency resolver after validating the browser runtime. Do
-  not patch Playwright driver bundles by hand.
+- Setup installs the Python `playwright` package and installs the Playwright
+  Chromium browser binary during `make install` or `stackos install`.
+- Keep the Playwright dependency current through the normal Python dependency
+  resolver and install the matching Chromium browser with
+  `python3 -m playwright install chromium`. Do not patch Playwright driver
+  bundles by hand.
 - Profiles, sessions, pages, screenshots, and action receipts are
   project-scoped. Profile directories stay inside the daemon data directory and
   are never returned to agents.
@@ -25,13 +22,14 @@ login.
   operator log in once, and reuse that same profile key for future sessions so
   cookies and storage carry forward. A different profile key is a separate
   browser profile and will not share the authenticated session.
-- The daemon owns the browser executable, persistent-context mode, and profile
-  directory. Agent-provided launch options are passed through except those
-  daemon-owned controls.
+- The daemon owns the browser executable/channel, persistent-context mode, and
+  profile directory. Agent-provided launch options are passed through except
+  those daemon-owned controls and runtime-specific options from removed browser
+  wrappers.
 - Agents get full public browser control, in the same capability class as a
   normal Playwright/test browser session. `browser.page.call` and
   `browser.context.call` accept a method name plus raw `args`, `kwargs`, or
-  named `arguments` so agents can use the Camoufox/Playwright API directly.
+  named `arguments` so agents can use the Playwright API directly.
 - Page operations accept an optional `page_ref`. Context calls that create or
   return pages refresh the session's page refs, so agents can target new
   tabs/windows instead of being limited to the first page.
@@ -48,7 +46,7 @@ login.
   convenience methods, but it is not a restrictive allowlist. Safety lives in
   daemon ownership, project scoping, run-plan grants, and receipts rather than
   in a narrowed browser API. When a method is not listed in the manifest, use
-  the public Camoufox/Playwright page or context method name through
+  the public Playwright page or context method name through
   `browser.page.call` or `browser.context.call`.
 
 ## Agent Flow

@@ -29,7 +29,7 @@ from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.migrate import current_alembic_version, upgrade_to_head
 
-HEAD_REVISION = "0021_browser_automation"
+HEAD_REVISION = "0022_artifact_lifecycle"
 
 
 @pytest.fixture
@@ -157,90 +157,91 @@ def test_doctor_reports_stale_stackos_plugin_skill_cache(sandbox: Path) -> None:
     assert "stackos install" in skill["repair"]
 
 
-def test_ensure_camoufox_browser_reports_missing_package(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_playwright_browser_reports_missing_package(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: None)
 
-    ok, message = installer.ensure_camoufox_browser()
+    ok, message = installer.ensure_playwright_browser()
 
     assert ok is False
     assert "not importable" in message
 
 
-def test_ensure_camoufox_browser_hides_existing_browser_path(
+def test_ensure_playwright_browser_hides_existing_browser_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        _ = kwargs
-        assert args[-1] == "path"
-        return subprocess.CompletedProcess(args, 0, "/private/camoufox\n", "")
-
     monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        installer,
+        "playwright_chromium_executable_path",
+        lambda **_kwargs: "/private/playwright/chromium",
+    )
 
-    ok, message = installer.ensure_camoufox_browser()
+    ok, message = installer.ensure_playwright_browser()
 
     assert ok is True
-    assert message == "Camoufox browser present."
+    assert message == "Playwright Chromium browser present."
     assert "/private" not in message
 
 
-def test_ensure_camoufox_browser_fetches_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[str] = []
+def test_ensure_playwright_browser_installs_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
 
     def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         _ = kwargs
-        calls.append(args[-1])
-        if args[-1] == "path":
-            return subprocess.CompletedProcess(args, 1, "", "missing")
+        calls.append(args)
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer, "playwright_chromium_executable_path", lambda **_kwargs: None)
     monkeypatch.setattr(installer.subprocess, "run", fake_run)
 
-    ok, message = installer.ensure_camoufox_browser()
+    ok, message = installer.ensure_playwright_browser()
 
     assert ok is True
-    assert message == "Camoufox browser fetched."
-    assert calls == ["path", "fetch"]
+    assert message == "Playwright Chromium browser installed."
+    assert calls == [[sys.executable, "-m", "playwright", "install", "chromium"]]
 
 
-def test_ensure_camoufox_browser_reports_fetch_failure_without_raw_output(
+def test_ensure_playwright_browser_reports_install_failure_without_raw_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         _ = kwargs
-        if args[-1] == "path":
-            return subprocess.CompletedProcess(args, 1, "", "missing /private/camoufox")
-        return subprocess.CompletedProcess(args, 2, "", "failed at /private/camoufox secret-token")
+        return subprocess.CompletedProcess(
+            args,
+            2,
+            "",
+            "failed at /private/playwright secret-token",
+        )
 
     monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer, "playwright_chromium_executable_path", lambda **_kwargs: None)
     monkeypatch.setattr(installer.subprocess, "run", fake_run)
 
-    ok, message = installer.ensure_camoufox_browser()
+    ok, message = installer.ensure_playwright_browser()
 
     assert ok is False
-    assert "Camoufox fetch failed: exit_code=2" in message
+    assert "Playwright Chromium install failed: exit_code=2" in message
     assert "output_sha256=" in message
     assert "/private" not in message
     assert "secret-token" not in message
 
 
-def test_ensure_camoufox_browser_reports_fetch_timeout_without_raw_output(
+def test_ensure_playwright_browser_reports_install_timeout_without_raw_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         _ = kwargs
-        if args[-1] == "path":
-            return subprocess.CompletedProcess(args, 1, "", "missing")
         raise subprocess.TimeoutExpired(args, timeout=1, output="secret")
 
     monkeypatch.setattr(installer.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(installer, "playwright_chromium_executable_path", lambda **_kwargs: None)
     monkeypatch.setattr(installer.subprocess, "run", fake_run)
 
-    ok, message = installer.ensure_camoufox_browser()
+    ok, message = installer.ensure_playwright_browser()
 
     assert ok is False
-    assert "Camoufox fetch failed: error_type=TimeoutExpired" in message
+    assert "Playwright Chromium install failed: error_type=TimeoutExpired" in message
     assert "message_sha256=" in message
     assert "secret" not in message
 
@@ -248,12 +249,12 @@ def test_ensure_camoufox_browser_reports_fetch_timeout_without_raw_output(
 def test_doctor_browser_runtime_hides_existing_browser_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        _ = kwargs
-        return subprocess.CompletedProcess(args, 0, "/private/camoufox\n", "")
-
     monkeypatch.setattr(doctor_cli.importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(doctor_cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        doctor_cli,
+        "playwright_chromium_executable_path",
+        lambda **_kwargs: "/private/playwright/chromium",
+    )
 
     ok, details = doctor_cli._check_browser_runtime()
 

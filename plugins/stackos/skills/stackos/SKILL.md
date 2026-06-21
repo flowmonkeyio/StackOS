@@ -81,10 +81,10 @@ run token.
    the context window.
 10. For browser automation, use the direct `browser.*` tools when mounted, or
     `toolbox.call` for the same operation names before the current Codex session
-    is restarted. `browser.session.start` opens a persistent Camoufox session
+    is restarted. `browser.session.start` opens a persistent Playwright Chromium session
     (`headless=false` by default for operator login/inspection). Use
-    `browser.page.call` and `browser.context.call` for public Camoufox/
-    Playwright methods with raw args/kwargs, `browser.handle.call` for
+    `browser.page.call` and `browser.context.call` for public Playwright
+    methods with raw args/kwargs, `browser.handle.call` for
     returned locator/download/response-like object handles,
     `browser.script.run` and `browser.script.inject` for arbitrary JavaScript, and
     `browser.page.screenshot` for generated-assets evidence. Treat this as the

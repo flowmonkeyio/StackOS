@@ -25,8 +25,8 @@ install: ## Full dev install — deps + migrate + UI bundle + plugin + MCP + doc
 	$(PYTHON) -m stackos init
 	@echo "==> Running migrations"
 	$(PYTHON) -m stackos migrate
-	@echo "==> Fetching Camoufox browser runtime"
-	$(PYTHON) -m camoufox fetch
+	@echo "==> Installing Playwright Chromium browser runtime"
+	$(PYTHON) -m playwright install chromium
 	@echo "==> Verifying committed UI bundle (stackos/ui_dist/ is committed)"
 	@if [ -f stackos/ui_dist/index.html ]; then \
 	  echo "  ui_dist/index.html present"; \

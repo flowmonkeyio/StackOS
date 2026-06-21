@@ -123,11 +123,15 @@ def test_run_plan_controller_can_call_browser_step_grant_tool(
         {
             "project_id": pid,
             "run_token": token,
+            "response_mode": "raw",
         },
     )
 
-    assert out["provider"] == "camoufox"
-    assert out["executable_path"] is None
+    status = out
+    while isinstance(status.get("data"), dict) and "provider" not in status:
+        status = status["data"]
+    assert status["provider"] == "playwright"
+    assert status["executable_path"] is None
 
 
 def test_run_plan_browser_grant_rejects_cross_project_arguments(

@@ -9,13 +9,13 @@ import os
 import shutil
 import stat
 import subprocess
-import sys
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import typer
 
 from stackos import __milestone__, __version__
+from stackos.browser.runtime import playwright_chromium_executable_path
 from stackos.config import Settings, get_settings
 from stackos.install import _codex_mcp_line_is_bridge as _install_codex_mcp_line_is_bridge
 
@@ -117,38 +117,25 @@ def _check_scheduler_jobs(settings: Settings) -> tuple[bool, int]:
 
 
 def _check_browser_runtime() -> tuple[bool, dict[str, object]]:
-    """Return Camoufox package/browser-binary readiness."""
-    if importlib.util.find_spec("camoufox") is None:
+    """Return Playwright package/Chromium readiness."""
+    if importlib.util.find_spec("playwright") is None:
         return False, {
             "package_installed": False,
             "browser_downloaded": False,
             "browser_path_present": False,
-            "repair": "install/sync StackOS Python dependencies, then run `stackos install`",
+            "repair": (
+                "install/sync StackOS Python dependencies, then run `stackos install`"
+            ),
         }
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "camoufox", "path"],
-            capture_output=True,
-            text=True,
-            timeout=4,
-            check=False,
-        )
-    except Exception as exc:
-        return False, {
-            "package_installed": True,
-            "browser_downloaded": False,
-            "browser_path_present": False,
-            "error": str(exc),
-            "repair": "run `python3 -m camoufox fetch` or `stackos install`",
-        }
-    path = result.stdout.strip()
-    ok = result.returncode == 0 and bool(path)
+    path = playwright_chromium_executable_path()
+    ok = path is not None
     return ok, {
         "package_installed": True,
         "browser_downloaded": ok,
         "browser_path_present": bool(path),
-        "stderr": result.stderr.strip() or None,
-        "repair": None if ok else "run `python3 -m camoufox fetch` or `stackos install`",
+        "repair": (
+            None if ok else "run `python3 -m playwright install chromium` or `stackos install`"
+        ),
     }
 
 

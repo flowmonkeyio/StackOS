@@ -1,4 +1,4 @@
-"""Daemon-owned Camoufox browser runtime."""
+"""Daemon-owned Playwright browser runtime."""
 
 from __future__ import annotations
 
@@ -18,12 +18,33 @@ from stackos.browser.manifest import BrowserMethodSpec
 from stackos.repositories.base import ValidationError
 
 _SAFE_KEY_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
+BROWSER_PROVIDER = "playwright"
+BROWSER_ENGINE = "chromium"
+BROWSER_PROFILE_DIRNAME = f"{BROWSER_PROVIDER}-{BROWSER_ENGINE}"
+PLAYWRIGHT_INSTALL_REPAIR = (
+    "Install StackOS dependencies, then run `python3 -m playwright install chromium`."
+)
 _PROTECTED_LAUNCH_OPTION_KEYS = frozenset(
     {
+        "channel",
         "executable_path",
+        "headless",
+        "humanize",
         "persistent_context",
         "user_data_dir",
     }
+)
+
+_CHROMIUM_PATH_PROBE = (
+    "from pathlib import Path\n"
+    "from playwright.sync_api import sync_playwright\n"
+    "pw = sync_playwright().start()\n"
+    "try:\n"
+    "    raw = pw.chromium.executable_path\n"
+    "    path = Path(raw).expanduser()\n"
+    "    print(path if path.exists() else '')\n"
+    "finally:\n"
+    "    pw.stop()\n"
 )
 
 
@@ -37,7 +58,33 @@ def safe_browser_key(value: str) -> str:
 
 def browser_profile_dir(root: Path, *, project_id: int, profile_key: str) -> Path:
     """Return the daemon-private profile directory for a project profile."""
-    return root / "browser-profiles" / f"project-{project_id}" / safe_browser_key(profile_key)
+    return (
+        root
+        / "browser-profiles"
+        / BROWSER_PROFILE_DIRNAME
+        / f"project-{project_id}"
+        / safe_browser_key(profile_key)
+    )
+
+
+def playwright_chromium_executable_path(*, timeout_seconds: int = 4) -> str | None:
+    """Return the installed Playwright Chromium executable path, if present."""
+    if importlib.util.find_spec("playwright") is None:
+        return None
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _CHROMIUM_PATH_PROBE],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except Exception:
+        return None
+    candidate = result.stdout.strip()
+    if result.returncode == 0 and candidate:
+        return candidate
+    return None
 
 
 def sanitize_launch_options(raw: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -52,7 +99,8 @@ def sanitize_launch_options(raw: dict[str, Any] | None) -> dict[str, Any] | None
                 "blocked_keys": blocked,
                 "repair": (
                     "Remove daemon-owned launch options. StackOS owns the "
-                    "browser executable, persistent context mode, and profile directory."
+                    "browser executable/channel, persistent context mode, "
+                    "profile directory, and runtime-specific launch behavior."
                 ),
             },
         )
@@ -123,7 +171,7 @@ class BrowserCallResult:
 
 @dataclass
 class LiveBrowserSession:
-    """In-memory Camoufox context for a persistent profile."""
+    """In-memory Playwright context for a persistent profile."""
 
     session_ref: str
     profile_ref: str
@@ -159,37 +207,21 @@ class BrowserRuntime:
         self._sessions: dict[str, LiveBrowserSession] = {}
 
     def status(self) -> RuntimeStatus:
-        installed = importlib.util.find_spec("camoufox") is not None
+        installed = importlib.util.find_spec("playwright") is not None
         version: str | None = None
         if installed:
             try:
-                version = importlib.metadata.version("camoufox")
+                version = importlib.metadata.version("playwright")
             except importlib.metadata.PackageNotFoundError:
                 version = None
-        executable_path: str | None = None
         repair: str | None = None
-        if installed:
-            try:
-                result = subprocess.run(
-                    [sys.executable, "-m", "camoufox", "path"],
-                    capture_output=True,
-                    text=True,
-                    timeout=4,
-                    check=False,
-                )
-                candidate = result.stdout.strip()
-                if result.returncode == 0 and candidate:
-                    executable_path = candidate
-                elif result.stderr.strip():
-                    repair = result.stderr.strip()
-            except Exception as exc:
-                repair = f"{type(exc).__name__}: {exc}"
+        executable_path = playwright_chromium_executable_path() if installed else None
         if not installed:
-            repair = "Install StackOS dependencies, then run `python3 -m camoufox fetch`."
+            repair = PLAYWRIGHT_INSTALL_REPAIR
         elif executable_path is None:
-            repair = repair or "Run `python3 -m camoufox fetch` to download the browser."
+            repair = "Run `python3 -m playwright install chromium` to download Chromium."
         return RuntimeStatus(
-            provider="camoufox",
+            provider=BROWSER_PROVIDER,
             package_installed=installed,
             package_version=version,
             browser_downloaded=executable_path is not None,
@@ -209,25 +241,30 @@ class BrowserRuntime:
     ) -> LiveBrowserSession:
         if session_ref in self._sessions:
             return self._sessions[session_ref]
-        if importlib.util.find_spec("camoufox") is None:
+        if importlib.util.find_spec("playwright") is None:
             raise ValidationError(
-                "Camoufox package is not installed",
+                "Playwright package is not installed",
                 data={
-                    "provider": "camoufox",
-                    "repair": "Install StackOS dependencies, then run `python3 -m camoufox fetch`.",
+                    "provider": BROWSER_PROVIDER,
+                    "repair": PLAYWRIGHT_INSTALL_REPAIR,
                 },
             )
-        from camoufox.async_api import AsyncCamoufox
+        from playwright.async_api import async_playwright
 
         profile_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(profile_dir, 0o700)
         options = sanitize_launch_options(launch_options) or {}
-        options.setdefault("humanize", True)
-        options["persistent_context"] = True
-        options["user_data_dir"] = str(profile_dir)
-        options["headless"] = headless
-        manager = AsyncCamoufox(**options)
-        context = await manager.__aenter__()
+        manager = async_playwright()
+        playwright = await manager.__aenter__()
+        try:
+            context = await playwright.chromium.launch_persistent_context(
+                user_data_dir=str(profile_dir),
+                headless=headless,
+                **options,
+            )
+        except Exception:
+            await manager.__aexit__(None, None, None)
+            raise
         pages = list(getattr(context, "pages", []) or [])
         page = pages[0] if pages else await context.new_page()
         page_ref = f"{session_ref}:page-1"
@@ -249,6 +286,11 @@ class BrowserRuntime:
         if live is None:
             return False
         async with live.lock:
+            close = getattr(live.context, "close", None)
+            if close is not None:
+                result = close()
+                if isawaitable(result):
+                    await result
             await live.manager.__aexit__(None, None, None)
         self._sessions.pop(session_ref, None)
         return True

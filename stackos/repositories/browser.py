@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
 
+from stackos.browser.runtime import BROWSER_PROVIDER
 from stackos.db.models import (
     Artifact,
     BrowserActionReceipt,
@@ -146,6 +147,7 @@ class BrowserRepository:
                 project_id=project_id,
                 profile_key=profile_key,
                 name=name,
+                provider=BROWSER_PROVIDER,
                 profile_ref=ref,
                 allowed_origins_json=allowed_origins_json,
                 launch_options_json=launch_options_json,
@@ -154,6 +156,7 @@ class BrowserRepository:
         else:
             row = existing
             row.name = name
+            row.provider = BROWSER_PROVIDER
             row.status = "ready"
             row.profile_ref = ref
             if allowed_origins_json is not None:
@@ -214,10 +217,12 @@ class BrowserRepository:
         ).first()
         now = _utcnow()
         if row is None:
+            profile.provider = BROWSER_PROVIDER
             row = BrowserSession(
                 project_id=project_id,
                 profile_id=_required_id(profile.id),
                 session_ref=session_ref,
+                provider=BROWSER_PROVIDER,
                 status="running",
                 headless=headless,
                 page_refs_json=page_refs,
@@ -225,7 +230,9 @@ class BrowserRepository:
                 metadata_json=metadata_json,
             )
         else:
+            profile.provider = BROWSER_PROVIDER
             row.profile_id = _required_id(profile.id)
+            row.provider = BROWSER_PROVIDER
             row.status = "running"
             row.headless = headless
             row.page_refs_json = page_refs

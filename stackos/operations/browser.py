@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from stackos.browser.manifest import browser_method_manifest, get_method_spec
 from stackos.browser.runtime import (
+    BROWSER_PROVIDER,
     browser_profile_dir,
     get_browser_runtime,
     safe_browser_key,
@@ -262,7 +263,7 @@ class BrowserScreenshotInput(MCPInput):
 
 
 class BrowserMethodManifestOut(BaseModel):
-    provider: str = "camoufox"
+    provider: str = BROWSER_PROVIDER
     parity_model: str = "full-control-public-api"
     methods: list[dict[str, Any]]
     notes: list[str]
@@ -443,7 +444,7 @@ async def _browser_method_manifest(
     return BrowserMethodManifestOut(
         methods=browser_method_manifest(),
         notes=[
-            "The core policy is parity-first: public Camoufox/Playwright methods are callable.",
+            "The core policy is parity-first: public Playwright methods are callable.",
             "browser.page.call and browser.context.call accept raw method, args, and kwargs.",
             "Object results return handle_ref values that can be used with browser.handle.call.",
             "Convenience operations exist for script run/injection, snapshots, and screenshots.",
@@ -1171,7 +1172,7 @@ def operation_specs():
     return [
         operation_spec(
             name="browser.runtime.status",
-            summary="Inspect local Camoufox browser runtime readiness.",
+            summary="Inspect local Playwright browser runtime readiness.",
             input_model=BrowserRuntimeStatusInput,
             output_model=BrowserRuntimeStatusOut,
             handler=_browser_runtime_status,
@@ -1180,7 +1181,7 @@ def operation_specs():
                 "browser binary are installed."
             ),
             returns=(
-                "Camoufox package status, browser fetch status, live session refs, "
+                "Playwright package status, Chromium install status, live session refs, "
                 "and repair guidance.",
             ),
             mutating=False,
@@ -1227,7 +1228,7 @@ def operation_specs():
         ),
         operation_spec(
             name="browser.session.start",
-            summary="Start a visible or headless Camoufox browser session.",
+            summary="Start a visible or headless Playwright browser session.",
             input_model=BrowserSessionStartInput,
             output_model=WriteEnvelope[BrowserSessionOut],
             handler=_browser_session_start,

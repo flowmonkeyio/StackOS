@@ -131,7 +131,7 @@ def install(
         if result.stamped_existing_schema:
             typer.echo("==> Database schema stamped at alembic head")
         typer.echo(f"==> Database schema ready: {settings.db_path}")
-        browser_ok, browser_message = installer.ensure_camoufox_browser()
+        browser_ok, browser_message = installer.ensure_playwright_browser()
         typer.echo(f"==> Browser runtime: {browser_message}")
         if not browser_ok and "not importable" not in browser_message:
             raise typer.Exit(code=1)

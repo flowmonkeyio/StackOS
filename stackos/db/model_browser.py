@@ -11,6 +11,8 @@ from sqlmodel import Field, SQLModel
 
 from stackos.db.model_base import _utcnow
 
+BROWSER_PROVIDER = "playwright"
+
 
 class BrowserProfile(SQLModel, table=True):
     """Project-scoped persistent browser profile metadata.
@@ -31,7 +33,7 @@ class BrowserProfile(SQLModel, table=True):
     )
     profile_key: str = Field(max_length=160)
     name: str = Field(max_length=200)
-    provider: str = Field(default="camoufox", max_length=80)
+    provider: str = Field(default=BROWSER_PROVIDER, max_length=80)
     status: str = Field(default="ready", max_length=40)
     profile_ref: str = Field(max_length=220)
     allowed_origins_json: list[str] | None = Field(default=None, sa_column=Column(JSON))
@@ -59,7 +61,7 @@ class BrowserSession(SQLModel, table=True):
         sa_column=Column(ForeignKey("browser_profiles.id", ondelete="CASCADE"), nullable=False)
     )
     session_ref: str = Field(max_length=220)
-    provider: str = Field(default="camoufox", max_length=80)
+    provider: str = Field(default=BROWSER_PROVIDER, max_length=80)
     status: str = Field(default="starting", max_length=40)
     headless: bool = Field(default=False, nullable=False)
     page_refs_json: list[str] | None = Field(default=None, sa_column=Column(JSON))

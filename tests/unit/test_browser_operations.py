@@ -16,6 +16,7 @@ from stackos.browser.runtime import (
     BrowserRuntime,
     LiveBrowserSession,
     RuntimeStatus,
+    browser_profile_dir,
     get_browser_runtime,
     sanitize_launch_options,
 )
@@ -321,7 +322,7 @@ def test_browser_mcp_tools_use_operation_read_only_flags() -> None:
 def test_browser_runtime_status_is_repair_or_ready() -> None:
     status = get_browser_runtime().status()
 
-    assert status.provider == "camoufox"
+    assert status.provider == "playwright"
     assert isinstance(status.package_installed, bool)
     assert isinstance(status.browser_downloaded, bool)
     if not status.browser_downloaded:
@@ -330,11 +331,11 @@ def test_browser_runtime_status_is_repair_or_ready() -> None:
 
 def test_browser_runtime_status_redacts_paths_and_filters_sessions() -> None:
     status = RuntimeStatus(
-        provider="camoufox",
+        provider="playwright",
         package_installed=True,
-        package_version="0.4.11",
+        package_version="1.60.0",
         browser_downloaded=True,
-        executable_path="/private/stackos/camoufox",
+        executable_path="/private/stackos/playwright/chromium",
         live_session_refs=[
             "browser-session:project-1:default:default",
             "browser-session:project-2:default:default",
@@ -351,10 +352,38 @@ def test_browser_runtime_status_redacts_paths_and_filters_sessions() -> None:
 
 def test_sanitize_launch_options_rejects_daemon_owned_controls() -> None:
     with pytest.raises(ValidationError) as exc:
-        sanitize_launch_options({"user_data_dir": "/tmp/profile", "humanize": True})
+        sanitize_launch_options(
+            {
+                "channel": "chrome",
+                "headless": False,
+                "humanize": True,
+                "user_data_dir": "/tmp/profile",
+            }
+        )
 
-    assert exc.value.data["blocked_keys"] == ["user_data_dir"]
-    assert sanitize_launch_options({"humanize": False}) == {"humanize": False}
+    assert exc.value.data["blocked_keys"] == [
+        "channel",
+        "headless",
+        "humanize",
+        "user_data_dir",
+    ]
+    assert sanitize_launch_options({"locale": "en-US"}) == {"locale": "en-US"}
+
+
+def test_browser_profile_dir_is_provider_engine_scoped() -> None:
+    path = browser_profile_dir(
+        Path("/tmp/stackos"),
+        project_id=7,
+        profile_key="My Profile!",
+    )
+
+    assert path == (
+        Path("/tmp/stackos")
+        / "browser-profiles"
+        / "playwright-chromium"
+        / "project-7"
+        / "my-profile"
+    )
 
 
 def test_runtime_dynamic_page_and_context_methods_support_page_refs() -> None:
@@ -504,7 +533,7 @@ def test_browser_session_start_uses_profile_launch_options(
             BrowserProfileCreateInput(
                 project_id=project_id,
                 profile_key="profile-launch",
-                launch_options_json={"locale": "en-US", "humanize": False},
+                launch_options_json={"locale": "en-US"},
             ),
             ctx,
             _emit=None,
@@ -518,7 +547,7 @@ def test_browser_session_start_uses_profile_launch_options(
                 project_id=project_id,
                 profile_ref=profile.data.profile_ref,
                 session_key="profile-launch",
-                launch_options_json={"humanize": True},
+                launch_options_json={"timezone_id": "UTC"},
                 headless=True,
             ),
             ctx,
@@ -526,7 +555,7 @@ def test_browser_session_start_uses_profile_launch_options(
         )
     )
 
-    assert captured["launch_options"] == {"locale": "en-US", "humanize": True}
+    assert captured["launch_options"] == {"locale": "en-US", "timezone_id": "UTC"}
 
 
 def test_browser_script_run_only_passes_arg_when_supplied(monkeypatch: Any) -> None:
@@ -854,11 +883,11 @@ def test_session_list_marks_db_running_without_live_handle_stale(
     class EmptyRuntime:
         def status(self) -> RuntimeStatus:
             return RuntimeStatus(
-                provider="camoufox",
+                provider="playwright",
                 package_installed=True,
-                package_version="0.4.11",
+                package_version="1.60.0",
                 browser_downloaded=True,
-                executable_path="/private/camoufox",
+                executable_path="/private/playwright/chromium",
                 live_session_refs=[],
             )
 

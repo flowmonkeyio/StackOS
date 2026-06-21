@@ -94,7 +94,7 @@ local administrator authority, not as a normal agent credential.
 
 ## Daemon-Owned Browser Automation
 
-StackOS browser automation uses a daemon-owned Camoufox runtime. Agents can
+StackOS browser automation uses a daemon-owned Playwright Chromium runtime. Agents can
 open persistent sessions, call public page/context methods, run arbitrary page
 JavaScript, inject scripts, and capture screenshots. This is intentionally a
 full-control automation surface, similar to a normal browser automation test
@@ -117,11 +117,11 @@ the requested full-control browser surface. Persisted receipts and transport
 errors are the redacted surfaces; callers must treat raw browser outputs as
 sensitive working data.
 
-Agents may pass normal Camoufox/Playwright launch options, but StackOS rejects
-launch options that would override daemon-owned controls such as the executable
-path, persistent-context mode, or profile directory. Runtime status exposes
-readiness booleans and same-project live session refs; it does not expose local
-browser executable paths or profile paths.
+Agents may pass normal Playwright launch options, but StackOS rejects launch
+options that would override daemon-owned controls such as the executable path,
+browser channel, persistent-context mode, or profile directory. Runtime status
+exposes readiness booleans and same-project live session refs; it does not
+expose local browser executable paths or profile paths.
 
 ## UI Token Bootstrap Trade-Off
 
