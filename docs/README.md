@@ -8,6 +8,7 @@ obvious without loading every document.
 | Work | Primary Docs |
 | --- | --- |
 | Installing, starting, or repairing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md) |
+| Building the macOS desktop app or installer | [`desktop-distribution.md`](./desktop-distribution.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md), [`release-signoff.md`](./release-signoff.md) |
 | Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |
 | Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
 | Auditing agent-facing flows and release clarity | [`agent-experience-audit.md`](./agent-experience-audit.md), [`agent-operating-model.md`](./agent-operating-model.md), [`operations.md`](./operations.md) |
@@ -90,6 +91,13 @@ expectations, operation examples, or UI integration notes:
 ```bash
 uv run pytest tests/unit/test_operations_registry.py tests/unit/test_cli_ops.py -q
 pnpm --dir ui type-check
+```
+
+For macOS desktop packaging changes, run the lightweight scaffold check during
+iteration:
+
+```bash
+make desktop-doctor
 ```
 
 ## Cleanup Rule

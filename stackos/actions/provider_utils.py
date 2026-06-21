@@ -15,6 +15,8 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.artifacts import redact_secret_text, redact_secrets
+from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.base import ValidationError
 
 JsonObject = dict[str, Any]
@@ -156,6 +158,36 @@ def basic_auth(request: ActionConnectorRequest) -> httpx.BasicAuth:
     if not username or not password:
         raise ValidationError("basic credential missing username/password")
     return httpx.BasicAuth(username, password)
+
+
+def connector_error_from_integration(
+    exc: IntegrationDownError | RateLimitedError,
+    *,
+    provider: str,
+    operation: str,
+) -> ActionConnectorError:
+    """Translate integration-wrapper failures into action audit output."""
+    data = exc.data if isinstance(exc.data, dict) else {}
+    status = data.get("status")
+    try:
+        provider_status_code = int(status) if status is not None else None
+    except (TypeError, ValueError):
+        provider_status_code = None
+    provider_error = data.get("provider_error")
+    if provider_error is None:
+        provider_error = {"message": redact_secret_text(exc.detail)}
+    metadata: JsonObject = {"vendor": provider, "operation": operation}
+    if provider_status_code is not None:
+        metadata["status_code"] = provider_status_code
+    retry_after = data.get("retry_after")
+    if retry_after is not None:
+        metadata["retry_after"] = retry_after
+    return ActionConnectorError(
+        redact_secret_text(exc.detail),
+        provider_status_code=provider_status_code,
+        provider_error=redact_secrets(provider_error),
+        metadata_json=metadata,
+    )
 
 
 def config_str(

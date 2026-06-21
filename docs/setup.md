@@ -95,6 +95,25 @@ background.
 Use `stackos restart` when a daemon is already running and should reload
 settings, token rotation, or package code.
 
+## macOS Desktop App
+
+The macOS desktop app is named `stackos`. It is an Electron shell around the
+same local daemon and UI. On first launch for an app version, it runs:
+
+```bash
+stackos install --launchd
+stackos start
+```
+
+That means desktop installs converge on the same local state as package and
+clone installs: DB, `seed.bin`, `auth.token`, migrations, plugin assets,
+managed skill mirrors, MCP registrations, and daemon autostart. The desktop app
+does not store provider secrets and does not rotate `seed.bin` or `auth.token`
+on install or update.
+
+Build and release details live in
+[`desktop-distribution.md`](./desktop-distribution.md).
+
 ## Autostart
 
 On macOS, StackOS can install a launchd job for the current user:

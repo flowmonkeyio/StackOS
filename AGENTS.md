@@ -126,12 +126,15 @@ work, start here:
   successful internal writes where a minimal response can still preserve retry
   safety. Errors, validation failures, grant denials, auth/setup diagnostics,
   and provider-side partial failures must always return structured repair
-  context, regardless of requested response mode. Provider or external
-  side-effect operations such as `action.run`, `action.execute`,
-  `communication.send`, and `communication.reply` are raw-only until a
-  provider-safe compact contract exists; never hide external message ids, file
-  ids, provider request ids, idempotency status, partial success state, or retry
-  guidance after a side-effect attempt. Idempotency rows must store canonical
+  context, regardless of requested response mode. External action operations
+  such as `action.run` and `action.execute` support compact/raw response modes:
+  MCP and REST default external provider output to response files, while CLI
+  defaults to raw inline output unless an explicit output policy says otherwise.
+  Provider side-effect operations such as `communication.send` and
+  `communication.reply` remain raw-only until a provider-safe compact contract
+  exists; never hide external message ids, file ids, provider request ids,
+  idempotency status, partial success state, or retry guidance after a
+  side-effect attempt. Idempotency rows must store canonical
   raw responses first, then shape the returned payload per request so a later
   raw replay can recover full details after an earlier compact or ack response.
 - The UI should render generic StackOS objects: projects, plugins, workflow
@@ -182,16 +185,22 @@ Do not wrap redirections, logical OR, background jobs, or subshells.
 
 ## Serena MCP
 
-Use this project's dedicated Serena MCP server:
+Serena runs as a per-session stdio MCP server auto-pinned to this repository
+via `--project-from-cwd`.
 
-- Codex MCP name: `serena-content-stack`
-- URL: `http://localhost:9123/mcp`
-- launchd label: `com.oraios.serena-mcp.content-stack`
-- project: `/Users/sergeyrura/Bin/content-stack`
-- log: `~/Library/Logs/serena-mcp-content-stack.log`
+- Codex MCP name: `serena`
+- Config source: `~/.codex/config.toml`, with this repo's `.codex/config.toml`
+  adding a writable `UV_CACHE_DIR` override for sandboxed sessions
+- Project selection: automatic from the checkout Codex launched in
 
-Do not call `activate_project` on the shared/global `serena` MCP. Do not write,
-rename, edit, or delete Serena memories unless the user explicitly asks.
+Never call `activate_project` - there is no shared daemon and no global active
+project; each session is isolated to the checkout it launched in. Use
+`get_symbols_overview`, `find_symbol`, and `find_referencing_symbols` for
+navigation instead of reading whole files. The first cross-reference query in a
+session may cold-start the language server.
+
+Do not write, rename, edit, or delete Serena memories unless the user
+explicitly asks.
 
 ## StackOS MCP
 

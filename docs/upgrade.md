@@ -32,6 +32,22 @@ committed UI bundle (building only if it is missing), mirrors the Codex and
 Claude Code skills, hydrates the plugin, refreshes any existing Codex runtime
 cache copy, repairs MCP registrations, and runs `doctor`.
 
+## macOS desktop mode
+
+The `stackos` desktop app updates through a custom generic update endpoint.
+After the app bundle is updated, the next launch reruns the idempotent install
+repair step for the new app version:
+
+```bash
+stackos install --launchd
+stackos start
+```
+
+This repairs assets, migrations, MCP registration, and launchd without rotating
+`seed.bin` or `auth.token`. See
+[`desktop-distribution.md`](./desktop-distribution.md) for endpoint metadata,
+payload, signing, and release-artifact requirements.
+
 ## What happens during upgrade
 
 | Step | Behaviour |
@@ -42,6 +58,7 @@ cache copy, repairs MCP registrations, and runs `doctor`.
 | MCP registration | Codex CLI: current local `mcp-bridge` stdio registrations are a no-op; stale `stackos` entries are removed and replaced by install or `scripts/register-mcp-codex.sh`. Claude Code: atomic JSON merge with `.bak` backup; sibling servers preserved. Neither registration stores a bearer token in client config. |
 | Auth token | **Does not rotate on upgrade.** Run `stackos rotate-token --yes` or `make rotate-token` explicitly to rotate; registration refreshes saved configs. Restart any running daemon so middleware loads the new token. |
 | launchd plist | `stackos autostart install` owns plist generation for clone and package installs. If the existing plist matches the generated one, it is a no-op. If different, `--force` overwrites with a `.bak` retained. |
+| Desktop app | The Electron shell checks the custom update endpoint, installs the app update, then runs the normal install/repair path on next launch. Local DB, generated assets, seed, token, and provider credentials remain in user-local StackOS paths. |
 
 ## Breaking changes
 

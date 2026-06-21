@@ -294,6 +294,8 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass one of project_id, project_slug, or project_name.",
                 "Pass repo_fingerprint directly or let the bridge inject it.",
+                "Pass rebind_existing=true only when intentionally moving an existing "
+                "repo binding to a different project.",
             ),
             returns=("A write envelope with the workspace binding.",),
             examples=(

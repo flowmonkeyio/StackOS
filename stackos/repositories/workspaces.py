@@ -361,6 +361,7 @@ class WorkspaceRepository:
         last_known_root: str | None = None,
         framework: str | None = None,
         content_model_json: dict[str, Any] | None = None,
+        rebind_existing: bool = False,
     ) -> Envelope[WorkspaceBindingOut]:
         """Create or update a non-invasive repo binding for a project."""
         if not repo_fingerprint:
@@ -385,6 +386,17 @@ class WorkspaceRepository:
                 last_seen_at=now,
             )
         else:
+            if row.project_id != project_id and not rebind_existing:
+                raise ValidationError(
+                    "workspace is already bound to another project; "
+                    "pass rebind_existing=true to move it",
+                    data={
+                        "binding_id": row.id,
+                        "repo_fingerprint": repo_fingerprint,
+                        "current_project_id": row.project_id,
+                        "requested_project_id": project_id,
+                    },
+                )
             row.project_id = project_id
             if git_remote_url is not None:
                 row.git_remote_url = git_remote_url

@@ -330,7 +330,12 @@ def test_operation_rest_run_plan_update_approves_gate(
 def test_operation_rest_call_uses_registered_action_handler(api: TestClient) -> None:
     resp = api.post(
         "/api/v1/operations/action.describe/call",
-        json={"arguments": {"action_ref": "core.catalog.describe"}},
+        json={
+            "arguments": {
+                "action_ref": "core.catalog.describe",
+                "response_mode": "raw",
+            }
+        },
     )
 
     assert resp.status_code == 200
@@ -367,6 +372,7 @@ def test_operation_rest_tool_profile_resolve_returns_safe_target(
                 "project_id": project_id,
                 "provider_key": "smtp",
                 "auth_profile_key": "primary",
+                "response_mode": "raw",
             }
         },
     )
@@ -643,6 +649,45 @@ def test_operation_rest_action_run_mock_provider_returns_file_backed_compact_out
         "api_key": "[redacted]",
     }
     assert "mock-direct-secret" not in rendered
+
+
+def test_operation_cli_surface_action_run_mock_provider_returns_raw_inline_output(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    credential_ref = _store_mock_credential(api, project_id, secret="mock-cli-secret")
+
+    executed = api.post(
+        "/api/v1/operations/action.run/call",
+        headers={"X-StackOS-Client-Surface": "cli"},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "action_ref": "utils.mock.echo",
+                "credential_ref": credential_ref,
+                "input_json": {
+                    "message": "hello from cli surface action",
+                    "echo": {"source": "cli"},
+                    "cost_cents": 6,
+                },
+                "idempotency_key": "cli-surface-direct-mock-1",
+            }
+        },
+    )
+
+    assert executed.status_code == 200, executed.text
+    body = executed.json()["data"]
+    rendered = json.dumps(executed.json())
+    assert body["status"] == "success"
+    assert body["action_call"]["provider_key"] == "mock-provider"
+    assert body["output_json"]["message"] == "hello from cli surface action"
+    assert body["output_json"]["leak_check"] == {
+        "authorization": "[redacted]",
+        "api_key": "[redacted]",
+    }
+    assert "output_mode" not in body["output_json"]
+    assert body["cost_cents"] == 6
+    assert "mock-cli-secret" not in rendered
 
 
 def test_operation_rest_action_run_uses_execution_context_ref(
@@ -1248,7 +1293,13 @@ def test_operation_rest_telegram_profile_setup_to_ingress_slice(
 
     fetched = api.post(
         "/api/v1/operations/communicationProfile.get/call",
-        json={"arguments": {"project_id": project_id, "key": "support-bot"}},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support-bot",
+                "response_mode": "raw",
+            }
+        },
     )
     assert fetched.status_code == 200, fetched.text
     assert fetched.json()["key"] == "support-bot"
@@ -1407,7 +1458,7 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
 
     routes = api.post(
         "/api/v1/operations/ingressEndpoint.routes/call",
-        json={"arguments": {"project_id": project_id}},
+        json={"arguments": {"project_id": project_id, "response_mode": "raw"}},
     )
     assert routes.status_code == 200, routes.text
     urls = {route["provider_key"]: route["ingress_url"] for route in routes.json()["routes"]}
@@ -1427,7 +1478,13 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
 
     fetched_profile = api.post(
         "/api/v1/operations/communicationProfile.get/call",
-        json={"arguments": {"project_id": project_id, "key": "support"}},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support",
+                "response_mode": "raw",
+            }
+        },
     )
     assert fetched_profile.status_code == 200, fetched_profile.text
     assert fetched_profile.json()["provider_facets"]["slack-bot"]["ingress_url"].endswith(
@@ -1436,7 +1493,13 @@ def test_operation_rest_ingress_endpoint_syncs_provider_routes(
 
     fetched_bot = api.post(
         "/api/v1/operations/communicationProfile.get/call",
-        json={"arguments": {"project_id": project_id, "key": "support-bot"}},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "support-bot",
+                "response_mode": "raw",
+            }
+        },
     )
     assert fetched_bot.status_code == 200, fetched_bot.text
     telegram_facet = fetched_bot.json()["provider_facets"]["telegram-bot"]

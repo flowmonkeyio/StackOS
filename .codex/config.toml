@@ -28,3 +28,11 @@ config_file = "agents/sdlc-delivery.toml"
 
 [agents.sdlc_delivery_reviewer]
 config_file = "agents/sdlc-delivery-reviewer.toml"
+
+# Repo-local override keeps Serena's language-server cache inside a writable
+# sandbox path while preserving per-session stdio + --project-from-cwd.
+[mcp_servers.serena]
+command = "/Users/sergeyrura/.local/bin/serena"
+args = ["start-mcp-server", "--transport", "stdio", "--context", "agent", "--project-from-cwd", "--enable-web-dashboard", "false"]
+env = { UV_CACHE_DIR = "/Users/sergeyrura/.local/share/tpf/uv-cache" }
+startup_timeout_sec = 30.0

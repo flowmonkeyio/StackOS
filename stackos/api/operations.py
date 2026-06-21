@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -55,16 +55,23 @@ async def describe_operation(operation_name: str) -> OperationDescribeOut:
 async def call_operation(
     operation_name: str,
     payload: OperationCallIn,
+    client_surface: str | None = Header(default=None, alias="X-StackOS-Client-Surface"),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> JSONResponse:
     """Call one REST-enabled operation through the shared dispatcher."""
     registry = build_operation_registry()
+    normalized_client_surface = (
+        client_surface.strip().lower() if isinstance(client_surface, str) else None
+    )
+    if normalized_client_surface not in {"cli"}:
+        normalized_client_surface = None
     result = await OperationDispatcher(registry).dispatch(
         operation_name,
         payload.arguments,
         session=session,
         surface="rest",
+        client_surface=normalized_client_surface,
         settings=settings,
     )
     return JSONResponse(content=jsonable_encoder(result.payload))

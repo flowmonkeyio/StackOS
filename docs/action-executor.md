@@ -66,12 +66,13 @@ Every internal execution writes an `action_calls` sidecar row with:
 - status, dry-run flag, duration, cost, error, and idempotency key
 
 `action.run` and `action.execute` return compact action-call metadata by
-default when the operation policy allows it. External provider actions write the
-sanitized request/response envelope to a response file and return the file
-path, schema version, `schema_ref`, `schema_operation`, byte size, content type,
-checksum, and semantic name. Agents fetch the schema through `schema.get` only
-when they need the envelope contract; compact action responses do not expose
-StackOS source paths or inline schema bodies.
+default for MCP/REST when the operation policy allows it. External provider
+actions write the sanitized request/response envelope to a response file and
+return the file path, schema version, `schema_ref`, `schema_operation`, byte
+size, content type, checksum, and semantic name. CLI calls default to raw inline
+output unless an explicit output policy says otherwise. Agents fetch the schema
+through `schema.get` only when they need the envelope contract; compact action
+responses do not expose StackOS source paths or inline schema bodies.
 Internal database identifiers such as `credential_id`, `action_id`, and replay-only
 `idempotency_key` stay in storage and are not returned to agents. For write
 actions, callers may pass `idempotency_key` or the more agent-friendly
@@ -189,12 +190,14 @@ Direct one-action execution operation:
 `action.run` is direct execution for one explicit action. Non-read actions
 require `confirm_direct=true` and `intent_summary`; callers may pass
 `intent_id` or `idempotency_key` for stable retries. External provider action
-output is file-backed by default: the response returns compact action-call,
-file path, checksum, byte size, content type, semantic name, `schema_ref`, and
-`schema_operation`, while the sanitized request+response envelope is stored as
-a plain response file. Call `schema.get` with `schema_ref` if the agent needs
-the file envelope schema. It is not a substitute for workflow memory, approval
-gates, artifacts, learnings, experiments, or decisions.
+output is file-backed by default for MCP and REST calls: the response returns
+compact action-call, file path, checksum, byte size, content type, semantic
+name, `schema_ref`, and `schema_operation`, while the sanitized
+request+response envelope is stored as a plain response file. CLI calls default
+to raw inline output unless an explicit output policy says otherwise. Call
+`schema.get` with `schema_ref` if the agent needs the file envelope schema. It
+is not a substitute for workflow memory, approval gates, artifacts, learnings,
+experiments, or decisions.
 
 Action inputs are split into endpoint payload and provider execution context.
 `input_json` is the action-specific body/query/path contract. Optional
@@ -252,6 +255,18 @@ cover the migrated clean path for:
 - `dataforseo`: `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract`
 - `serper`: `seo.serper.search`
 - `ahrefs`: `seo.competitor.keywords`, `seo.backlink.research`
+- `google-search-console`: `seo.search-console.sites.list`,
+  `seo.search-console.search-analytics.query`,
+  `seo.search-console.sitemaps.list`, `seo.search-console.url.inspect`
+- `google-analytics`: `seo.ga4.account_summaries.list`,
+  `seo.ga4.properties.metadata.get`, `seo.ga4.properties.run_report`, and
+  `seo.ga4.properties.run_realtime_report`
+- `google-tag-manager`: `seo.google-tag-manager.accounts.list`,
+  `seo.google-tag-manager.containers.list`,
+  `seo.google-tag-manager.container.snippet.get`,
+  `seo.google-tag-manager.workspaces.list`,
+  `seo.google-tag-manager.workspace.tags.list`, and
+  `seo.google-tag-manager.workspace.triggers.list`
 - `wordpress`: `publishing.wordpress.post.create`
 - `ghost`: `publishing.ghost.post.create`
 - `branding`: `branding.evidence.capture`,

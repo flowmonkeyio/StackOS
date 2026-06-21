@@ -28,9 +28,11 @@ with `toolbox.describe` and invoke them through `toolbox.call`.
 
 Provider-action presets should prefer stable `action.list` refs plus
 `action.describe`/`action.validate` before execution. External provider action
-outputs are file-backed by default, so presets must tell agents to inspect the
-returned file paths before rerunning provider calls and to call `schema.get`
-with `schema_ref` only when they need the response-file envelope schema.
+outputs are file-backed by default for MCP and REST calls, so presets must tell
+agents to inspect the returned file paths before rerunning provider calls and
+to call `schema.get` with `schema_ref` only when they need the response-file
+envelope schema. CLI calls default to raw inline output unless an explicit
+output policy says otherwise.
 Intentional artifact rows remain readable through `artifact.read`. When repeated
 calls share credential, provider scope, output policy, request budget, or
 artifact namespace, use `executionContext.discover`/`executionContext.resolve`

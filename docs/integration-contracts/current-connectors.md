@@ -5,8 +5,9 @@ Audit date: 2026-06-10
 Scope: executable connector contracts for OpenAI Images, xAI Imagine, Reve,
 Google Gemini Image, Google Veo, Ideogram, BytePlus Seedream/Seedance,
 Alibaba Wan, Kling, Firecrawl, Jina Reader, Reddit, DataForSEO, Serper.dev,
-Ahrefs, WordPress, Ghost, sitemap, Trackbooth, generic HTTP, and the internal
-Branding evidence connector, plus
+Ahrefs, Google Search Console, Google Analytics 4, Google Tag Manager,
+WordPress, Ghost, sitemap, Trackbooth, generic HTTP, and the internal Branding
+evidence connector, plus
 connection-only setup providers that intentionally do not expose actions yet.
 This file is an
 integration-point audit only. It does not change manifests, tests, or runtime
@@ -37,6 +38,9 @@ Important consequence: provider docs should shape action schemas and connector c
 | DataForSEO | [Live SERP advanced](https://docs.dataforseo.com/v3/serp-se-type-live-advanced/), [Google Ads search volume live](https://docs.dataforseo.com/v3/keywords_data-google_ads-search_volume-live/), [DataForSEO Labs Google domain intersection](https://docs.dataforseo.com/v3/dataforseo_labs-google-domain_intersection-live/), [DataForSEO Labs Google keywords for site](https://docs.dataforseo.com/v3/dataforseo_labs-google-keywords_for_site-live/), [user data probe](https://docs.dataforseo.com/v3/appendix-user-data/) | DataForSEO examples use API login/password Basic auth | Endpoint pages document task arrays, per-minute limits, and `tasks[].cost`; [errors appendix](https://docs.dataforseo.com/v3/appendix-errors/) |
 | Serper.dev | [Serper.dev Google Search API product/docs entrypoint](https://serper.dev/) | The public product page verifies the Google Search API and response shape; the exact endpoint/header contract comes from provider dashboard/playground examples rather than a stable public docs URL | Response examples include result blocks and provider credit metadata when available; StackOS bounds `num` and `page` inputs |
 | Ahrefs | [API v3 introduction](https://docs.ahrefs.com/en/api/docs/introduction), [API keys](https://docs.ahrefs.com/en/api/docs/api-keys-creation-and-management), [limits consumption](https://docs.ahrefs.com/en/api/docs/limits-consumption), [subscription limits/usage](https://docs.ahrefs.com/en/api/reference/subscription-info/get-limits-and-usage), [Site Explorer](https://docs.ahrefs.com/en/api/reference/site-explorer), [organic keywords](https://docs.ahrefs.com/en/api/reference/site-explorer/get-organic-keywords), [all backlinks](https://docs.ahrefs.com/en/api/reference/site-explorer/get-all-backlinks) | API keys page | API v3 introduction, pricing API row limits, limits consumption, and free subscription-info endpoint |
+| Google Search Console | [authorization/scopes](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing), [sites.list](https://developers.google.com/webmaster-tools/v1/sites/list), [searchAnalytics.query](https://developers.google.com/webmaster-tools/v1/searchanalytics/query), [sitemaps.list](https://developers.google.com/webmaster-tools/v1/sitemaps/list), [urlInspection.index.inspect](https://developers.google.com/webmaster-tools/v1/urlInspection.index/inspect) | Google OAuth with `webmasters.readonly` for this first pass | Search Analytics uses `startRow`/`rowLimit` and returns top rows; URL Inspection is indexed-version only with provider-enforced quotas |
+| Google Analytics 4 | [Data API overview](https://developers.google.com/analytics/devguides/reporting/data/v1), [runReport](https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/runReport), [getMetadata](https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/getMetadata), [runRealtimeReport](https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/runRealtimeReport), [account summaries](https://developers.google.com/analytics/devguides/config/admin/v1/rest/v1beta/accountSummaries/list) | Google OAuth with `analytics.readonly` for this first pass | Google account summaries use `pageToken`; StackOS exposes public `page_cursor`/`next_page_cursor`. Report quotas are request-complexity based and `propertyQuota` is returned as redaction-safe `quota` output |
+| Google Tag Manager | [API v2 overview](https://developers.google.com/tag-platform/tag-manager/api/v2), [authorization/scopes](https://developers.google.com/tag-platform/tag-manager/api/v2/authorization), [accounts.list](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/list), [containers.list](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/list), [containers.snippet](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/snippet), [workspaces.list](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/list), [tags.list](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/tags/list), [triggers.list](https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/triggers/list) | Google OAuth with `tagmanager.readonly` for this first pass | Google list operations return `nextPageToken`; StackOS exposes public `page_cursor`/`next_page_cursor`. Wrapper defaults to conservative QPS because GTM daily/QPS quotas are low |
 | OpenRouter | [authentication](https://openrouter.ai/docs/api/reference/authentication), [models](https://openrouter.ai/docs/api/api-reference/models/get-models) | OpenRouter requests use a bearer token and optional attribution headers | The normal setup probe uses the read-only models endpoint; no text-generation action is exposed yet |
 | WordPress | [REST API authentication](https://developer.wordpress.org/rest-api/using-the-rest-api/authentication/), [Posts endpoint](https://developer.wordpress.org/rest-api/reference/posts/), [Application Passwords](https://developer.wordpress.org/rest-api/reference/application-passwords/) | Authentication and Application Passwords pages | [Pagination](https://developer.wordpress.org/rest-api/using-the-rest-api/pagination/), [global parameters](https://developer.wordpress.org/rest-api/using-the-rest-api/global-parameters/) |
 | Ghost | [Admin API overview](https://docs.ghost.org/admin-api/), [Admin posts overview](https://docs.ghost.org/admin-api/posts/overview), [creating a post](https://docs.ghost.org/admin-api/posts/creating-a-post), [uploading an image](https://docs.ghost.org/admin-api/images/uploading-an-image) | Admin API token authentication/JWT section | Admin API overview covers JSON shape, pagination, parameters, filtering, and errors |
@@ -65,6 +69,9 @@ Important consequence: provider docs should shape action schemas and connector c
 | `dataforseo` | `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract` | `stackos/actions/dataforseo.py`, `stackos/integrations/dataforseo.py:25` | `plugins/seo/plugin.yaml:20`, `plugins/seo/plugin.yaml:36`, `plugins/seo/plugin.yaml:66`, `plugins/seo/plugin.yaml:94` | Basic auth: `login` in credential config and password in encrypted payload. |
 | `serper` | `seo.serper.search` | `stackos/actions/serper.py`, `stackos/integrations/serper.py` | `plugins/seo/plugin.yaml` | API key payload sent through the provider header; provider credit metadata is surfaced when present. |
 | `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `stackos/actions/ahrefs.py`, `stackos/integrations/ahrefs.py:22` | `plugins/seo/plugin.yaml:31`, `plugins/seo/plugin.yaml:120`, `plugins/seo/plugin.yaml:148` | Bearer API key payload; requires eligible paid plan/API units. Connector reads the free subscription-info endpoint first, enforces documented row caps (Lite 100, Standard 250, Advanced 500, Enterprise action-bounded at 1000), and surfaces Ahrefs API-unit headers in metadata. |
+| `google-search-console` | `seo.search-console.sites.list`, `seo.search-console.search-analytics.query`, `seo.search-console.sitemaps.list`, `seo.search-console.url.inspect` | `stackos/actions/google_search_console.py`, `stackos/integrations/google_search_console.py` | `plugins/seo/plugin.yaml` | Google OAuth payload supports access token or client refresh token; first pass uses `webmasters.readonly`, returns sanitized site/search/sitemap/inspection data, and does not create legacy `gsc*` tools or metric tables. |
+| `google-analytics` | `seo.ga4.account_summaries.list`, `seo.ga4.properties.metadata.get`, `seo.ga4.properties.run_report`, `seo.ga4.properties.run_realtime_report` | `stackos/actions/google_analytics.py`, `stackos/integrations/google_analytics.py` | `plugins/seo/plugin.yaml` | Google OAuth payload supports access token or client refresh token; first pass uses `analytics.readonly`, resolves safe `property_ref` values from credential config, maps `page_cursor` to provider `pageToken`, and exposes returned report quota as safe `quota` output. |
+| `google-tag-manager` | `seo.google-tag-manager.accounts.list`, `seo.google-tag-manager.containers.list`, `seo.google-tag-manager.container.snippet.get`, `seo.google-tag-manager.workspaces.list`, `seo.google-tag-manager.workspace.tags.list`, `seo.google-tag-manager.workspace.triggers.list` | `stackos/actions/google_tag_manager.py`, `stackos/integrations/google_tag_manager.py` | `plugins/seo/plugin.yaml` | Google OAuth payload supports access token or client refresh token; first pass uses `tagmanager.readonly`, builds only API-relative account/container/workspace paths, and defers edit/publish/user-management scopes. |
 | `wordpress` | `publishing.wordpress.post.create` | `stackos/actions/wordpress.py`, `stackos/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
 | `ghost` | `publishing.ghost.post.create` | `stackos/actions/ghost.py`, `stackos/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
 | `branding` | `branding.evidence.capture`, `branding.evidence.sanitize-mark` | `stackos/actions/branding.py` | `plugins/branding/plugin.yaml` | Internal resource connector; no provider credentials. Capture writes raw evidence only, and public clearance is a separate sanitize-mark action with reviewer, reason, and decision ref. |
@@ -439,6 +446,38 @@ Recommended corrections:
 
 - Add an API-unit budget policy before re-enabling StackOS budget gates for Ahrefs.
 - Keep wrapper method docs, manifest plan-cap copy, and API-unit header capture synced with Ahrefs API documentation.
+
+### Google SEO Measurement
+
+Current: the SEO plugin exposes read-only Google Search Console, GA4, and
+Google Tag Manager actions through provider-specific connectors and daemon-held
+OAuth credentials. Search Console covers site inventory, search analytics,
+sitemaps, and indexed-version URL inspection. GA4 covers account summaries,
+metadata, standard reports, and realtime reports. Tag Manager covers account,
+container, snippet, workspace, tag, and trigger inventory.
+
+Gaps/mismatches:
+
+- Interactive OAuth start/callback is not part of this delivery. Operators
+  store an access token or OAuth refresh-token payload through Connections.
+- Google write/admin scopes are intentionally not exposed: Search Console
+  write, Analytics edit/Measurement Protocol ingestion, Tag Manager edit,
+  publish, version, and user/account-management scopes all require separate
+  contracts.
+- Search Console Search Analytics is top-row reporting, not guaranteed full
+  export. URL Inspection returns Google's indexed version, not a live test.
+- No legacy `gsc`, `gscOauth`, `gsc_metrics`, or `gsc_metrics_daily` surfaces
+  are resurrected. SEO measurement summaries should use
+  `search-performance-snapshot` resources or explicit future import contracts.
+
+Recommended corrections:
+
+- Add workflow template `action_refs` only when a specific SEO workflow needs
+  these reads; run-plan `action.execute` grants must name exact action refs.
+- Add service-account auth only as a deliberate new auth method with signing
+  tests and dependency review.
+- Keep endpoint docs and scope copy synced with official Google API docs before
+  expanding any write/publish/admin surface.
 
 ### WordPress
 

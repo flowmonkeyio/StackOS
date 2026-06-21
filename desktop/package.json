@@ -1,0 +1,85 @@
+{
+  "name": "stackos-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "macOS desktop shell for the local StackOS daemon and UI.",
+  "main": "src/main.js",
+  "type": "commonjs",
+  "license": "MIT",
+  "author": "StackOS contributors",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check scripts/build-mac.mjs && node scripts/doctor.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "payload": "bash scripts/build-stackos-payload.sh",
+    "pack": "electron-builder --dir --mac",
+    "dist": "node scripts/build-mac.mjs",
+    "dist:mac": "node scripts/build-mac.mjs"
+  },
+  "dependencies": {
+    "electron-updater": ">=6 <8"
+  },
+  "devDependencies": {
+    "electron": ">=30 <40",
+    "electron-builder": ">=24 <28"
+  },
+  "build": {
+    "appId": "io.stackos.desktop",
+    "productName": "stackos",
+    "asar": true,
+    "artifactName": "stackos-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "update-config.example.json"
+    ],
+    "extraResources": [
+      {
+        "from": "payload/stackos",
+        "to": "stackos",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  },
+  "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
+}

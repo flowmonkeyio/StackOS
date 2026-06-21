@@ -129,14 +129,28 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert all(action.provider_key != "openrouter" for action in utils.actions)
 
     seo = repo.catalog(plugin_slug="seo").plugins[0]
-    assert {cap.key for cap in seo.capabilities} >= {"seo-content", "seo-research"}
-    assert {provider.key for provider in seo.providers} >= {"dataforseo", "serper", "ahrefs"}
+    assert {cap.key for cap in seo.capabilities} >= {
+        "seo-content",
+        "seo-research",
+        "seo-measurement",
+    }
+    assert {provider.key for provider in seo.providers} >= {
+        "dataforseo",
+        "serper",
+        "ahrefs",
+        "google-search-console",
+        "google-analytics",
+        "google-tag-manager",
+    }
     assert {action.key for action in seo.actions} >= {
         "keyword.research",
         "serp.analyze",
         "paa.extract",
         "serper.search",
         "competitor.keywords",
+        "search-console.search-analytics.query",
+        "ga4.properties.run_report",
+        "google-tag-manager.workspaces.list",
     }
     seo_actions = {action.key: action for action in seo.actions}
     assert seo_actions["keyword.research"].config_json["connector"] == "dataforseo"
@@ -147,6 +161,15 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert seo_actions["serper.search"].operation == "search"
     assert seo_actions["competitor.keywords"].config_json["connector"] == "ahrefs"
     assert seo_actions["backlink.research"].config_json["connector"] == "ahrefs"
+    assert seo_actions["search-console.sites.list"].config_json["connector"] == (
+        "google-search-console"
+    )
+    assert seo_actions["ga4.properties.metadata.get"].config_json["connector"] == (
+        "google-analytics"
+    )
+    assert seo_actions["google-tag-manager.container.snippet.get"].config_json["connector"] == (
+        "google-tag-manager"
+    )
     assert {resource.key for resource in seo.resources} >= {
         "keyword-opportunity",
         "content-piece",

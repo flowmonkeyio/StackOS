@@ -60,7 +60,12 @@ def _patch_cli_to_test_client(
         body: dict[str, Any] | None = None,
         **_kwargs: object,
     ) -> Any:
-        response = api.request(method, path, json=body)
+        response = api.request(
+            method,
+            path,
+            json=body,
+            headers={"X-StackOS-Client-Surface": "cli"},
+        )
         assert response.status_code < 400, response.text
         return response.json() if response.content else None
 

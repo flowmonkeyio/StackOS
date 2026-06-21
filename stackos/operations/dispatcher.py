@@ -48,10 +48,12 @@ class OperationDispatcher:
         *,
         session: Session,
         surface: str,
+        client_surface: str | None = None,
         settings: Settings | None = None,
     ) -> OperationDispatchResult:
         spec = self._registry.get(name, surface=surface)
-        response_mode = resolve_response_mode(spec, arguments, surface=surface)
+        response_surface = client_surface or surface
+        response_mode = resolve_response_mode(spec, arguments, surface=response_surface)
         try:
             parsed = spec.input_model.model_validate(arguments or {})
         except PydanticValidationError as exc:
@@ -62,6 +64,7 @@ class OperationDispatcher:
 
         ctx = build_context(arguments, session)
         ctx.extras["surface"] = surface
+        ctx.extras["client_surface"] = response_surface
         if settings is not None:
             ctx.extras["settings"] = settings
         with bind_context(ctx):

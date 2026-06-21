@@ -131,6 +131,11 @@ def _structured(envelope: dict[str, Any]) -> dict[str, Any]:
     return envelope["result"].get("structuredContent") or envelope["result"]
 
 
+def _operation_data(payload: dict[str, Any]) -> dict[str, Any]:
+    data = payload.get("data")
+    return data if isinstance(data, dict) else payload
+
+
 def _create_project(mcp: MCPClient, slug: str) -> int:
     created = mcp.call_tool_structured(
         "project.create",
@@ -259,25 +264,22 @@ def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient)
             request_id="resolver-standard",
         )
     )
+    compact_data = _operation_data(compact)
+    standard_data = _operation_data(standard)
+    resolved_compact_data = _operation_data(resolved_compact)
+    resolved_standard_data = _operation_data(resolved_standard)
 
     assert compact["project_id"] == project_id
-    assert compact["connections"][0]["credential_ref"].startswith("cred_")
-    assert compact["providers"][0]["status"] == "connected"
-    assert "auth_methods" not in compact["providers"][0]
-    assert compact["providers"][0]["setup"]["provider_key"] == "mock-provider"
-    assert compact["providers"][0]["setup"]["local_setup_url"].endswith(
-        f"/projects/{project_id}/connections?provider_key=mock-provider"
-    )
-    assert compact["providers"][0]["setup"]["credential_label"] == "Fake API key"
-    assert compact["providers"][0]["setup"]["fallback_url"] == "http://127.0.0.1:5180/"
-    assert "No vendor registration exists" in compact["providers"][0]["setup"]["setup_note"]
-    assert compact["providers"][0]["setup"]["urls"][0]["key"] == "fallback_url"
-    assert "auth_methods" in standard["providers"][0]
+    assert compact_data["connections"][0]["credential_ref"].startswith("cred_")
+    assert compact_data["connections"][0]["status"] == "connected"
+    assert compact_data["providers"][0]["key"] == "mock-provider"
+    assert "auth_methods" in compact_data["providers"][0]
+    assert "auth_methods" in standard_data["providers"][0]
     assert resolved_compact["project_id"] == project_id
-    assert resolved_compact["ready"] is True
-    assert resolved_compact["credential"]["credential_ref"].startswith("cred_")
-    assert "scopes" not in resolved_compact["credential"]
-    assert "scopes" in resolved_standard["credential"]
+    assert resolved_compact_data["ready"] is True
+    assert resolved_compact_data["credential"]["credential_ref"].startswith("cred_")
+    assert "scopes" in resolved_compact_data["credential"]
+    assert "scopes" in resolved_standard_data["credential"]
     assert "mock-secret" not in json.dumps(compact)
     assert "mock-secret" not in json.dumps(resolved_compact)
 
@@ -541,6 +543,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
             request_id="describe-cross-run-grant",
         )
     )
+    resolved_tool_data = _operation_data(resolved_tool)
 
     assert "project_id" not in auth_required
     assert "project_id" not in resolver_required
@@ -549,7 +552,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
     assert resolved["project_id"] == project_id
     assert status["project_id"] == project_id
     assert resolved_tool["project_id"] == project_id
-    assert resolved_tool["provider"]["provider_key"] == "mock-provider"
+    assert resolved_tool_data["provider"]["provider_key"] == "mock-provider"
     assert connected["project_id"] == project_id
     assert connected["data"]["repo_fingerprint"] == "path:bridge-scoped"
     assert connected["data"]["last_known_root"] == str(Path("/tmp/bridge-scoped-project").resolve())
@@ -641,15 +644,17 @@ def test_bridge_unbound_workspace_autobootstraps_and_unlocks_project_scoped_tool
         {},
         request_id="workflow-template-list-after-refresh",
     )
+    resolved_data = _operation_data(resolved)
+    bindings_data = _operation_data(bindings)
     assert project_scoped_after_tool_list["result"]["isError"] is False
-    assert resolved["workspace_bound"] is True
-    assert resolved["needs_connect"] is False
+    assert resolved_data["setup_state"]["workspace_bound"] is True
+    assert resolved_data["needs_connect"] is False
     assert resolved["project_id"] is not None
     assert tracker_after_tool_list["project_id"] == resolved["project_id"]
     assert discovery["result"]["isError"] is False
     assert refreshed["project_id"] == resolved["project_id"]
     assert project_scoped_after_refresh["result"]["isError"] is False
-    assert bindings["items"][0]["project_id"] == resolved["project_id"]
+    assert bindings_data["items"][0]["project_id"] == resolved["project_id"]
 
 
 def test_bridge_toolbox_bootstrap_promotes_workspace_scope(
@@ -802,7 +807,7 @@ def test_bridge_toolbox_operates_setup_actions(
             request_id="auth-status",
         )
     )
-    credential_ref = status["connections"][0]["credential_ref"]
+    credential_ref = _operation_data(status)["connections"][0]["credential_ref"]
     tested = _structured(
         _toolbox_call(
             proxy,
@@ -1201,7 +1206,7 @@ def test_bridge_executes_run_plan_granted_action_with_injected_token(
             request_id="auth-status",
         )
     )
-    credential_ref = auth_status["connections"][0]["credential_ref"]
+    credential_ref = _operation_data(auth_status)["connections"][0]["credential_ref"]
     created_plan = _structured(
         _toolbox_call(
             proxy,

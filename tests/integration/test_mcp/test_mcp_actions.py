@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+from pathlib import Path
 
 from pytest_httpx import HTTPXMock
 
@@ -288,6 +289,13 @@ def test_integration_list_summarizes_hidden_external_actions(
     assert row["connected"] is False
     assert row["hidden_action_count"] >= 1
     assert row["next_action"]["tool"] == "auth.status"
+    assert row["next_action"]["reason"] == (
+        "Connect provider 'openai-images' before its required actions appear."
+    )
+    assert row["next_action"]["arguments"] == {
+        "project_id": project_id,
+        "provider_key": "openai-images",
+    }
     assert row["next_action"]["ui_url"].endswith(
         f"/projects/{project_id}/connections?provider_key=openai-images"
     )
@@ -573,7 +581,7 @@ def _create_mock_credential(
     response.raise_for_status()
     status = mcp.call_tool_structured(
         "auth.status",
-        {"project_id": project_id, "provider_key": "mock-provider"},
+        {"project_id": project_id, "provider_key": "mock-provider", "response_mode": "raw"},
     )
     return status["connections"][0]["credential_ref"]
 
@@ -1107,7 +1115,7 @@ def test_action_execute_mock_provider_vertical_slice_through_mcp(
     assert "mock-mcp-secret" not in json.dumps(audit)
 
 
-def test_action_run_direct_mock_provider_returns_raw_output(
+def test_action_run_direct_mock_provider_returns_file_pointer_by_default(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -1135,12 +1143,11 @@ def test_action_run_direct_mock_provider_returns_raw_output(
     assert data["action_ref"] == "utils.mock.echo"
     assert data["provider_key"] == "mock-provider"
     assert data["operation"] == "echo"
-    assert data["compact"]["message"].startswith("hello direct action")
-    assert len(data["compact"]["message"]) <= 503
-    assert data["compact"]["status"] == "success"
+    assert data["output"]["output_mode"] == "file"
+    assert data["output"]["schema_ref"] == "stackos.action-output.v1"
     assert data["cost_cents"] == 3
-    assert data["action_call"]["provider_key"] == "mock-provider"
-    assert data["output_json"]["message"].startswith("hello direct action")
+    saved = json.loads(Path(data["output"]["path"]).read_text(encoding="utf-8"))
+    assert saved["response"]["output_json"]["message"].startswith("hello direct action")
     assert "direct-secret" not in rendered
 
 
@@ -1158,7 +1165,9 @@ def test_action_run_verbose_includes_redacted_full_payload(
             "action_ref": "utils.mock.echo",
             "credential_ref": credential_ref,
             "input_json": {"message": "hello verbose"},
+            "output_policy_json": {"mode": "inline"},
             "verbose": True,
+            "response_mode": "raw",
         },
     )
 

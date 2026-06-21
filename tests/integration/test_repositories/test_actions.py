@@ -1204,6 +1204,36 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
         "seo.serper.search": ("serper", True, "unknown"),
         "seo.competitor.keywords": ("ahrefs", True, "unknown"),
         "seo.backlink.research": ("ahrefs", True, "unknown"),
+        "seo.search-console.sites.list": ("google-search-console", True, "unknown"),
+        "seo.search-console.search-analytics.query": (
+            "google-search-console",
+            True,
+            "unknown",
+        ),
+        "seo.search-console.sitemaps.list": ("google-search-console", True, "unknown"),
+        "seo.search-console.url.inspect": ("google-search-console", True, "unknown"),
+        "seo.ga4.account_summaries.list": ("google-analytics", True, "unknown"),
+        "seo.ga4.properties.metadata.get": ("google-analytics", True, "unknown"),
+        "seo.ga4.properties.run_report": ("google-analytics", True, "unknown"),
+        "seo.ga4.properties.run_realtime_report": ("google-analytics", True, "unknown"),
+        "seo.google-tag-manager.accounts.list": ("google-tag-manager", True, "unknown"),
+        "seo.google-tag-manager.containers.list": ("google-tag-manager", True, "unknown"),
+        "seo.google-tag-manager.container.snippet.get": (
+            "google-tag-manager",
+            True,
+            "unknown",
+        ),
+        "seo.google-tag-manager.workspaces.list": ("google-tag-manager", True, "unknown"),
+        "seo.google-tag-manager.workspace.tags.list": (
+            "google-tag-manager",
+            True,
+            "unknown",
+        ),
+        "seo.google-tag-manager.workspace.triggers.list": (
+            "google-tag-manager",
+            True,
+            "unknown",
+        ),
         "publishing.wordpress.post.create": ("wordpress", True, "unknown"),
         "publishing.ghost.post.create": ("ghost", True, "unknown"),
     }
@@ -5376,6 +5406,462 @@ def test_serper_action_validation_bounds_provider_inputs(
     assert validation.valid is False
     assert any(issue.path == "$.num" and issue.code == "range" for issue in validation.issues)
     assert any(issue.path == "$.page" and issue.code == "range" for issue in validation.issues)
+
+
+def test_google_search_console_search_analytics_action_maps_google_contract(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-search-console",
+        secret_payload=json.dumps({"access_token": "gsc-token"}).encode("utf-8"),
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-search-console")
+    httpx_mock.add_response(
+        method="POST",
+        url=(
+            "https://www.googleapis.com/webmasters/v3/sites/"
+            "https%3A%2F%2Fexample.com%2F/searchAnalytics/query"
+        ),
+        json={"rows": [{"keys": ["query"], "clicks": 3, "impressions": 9}]},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="seo.search-console.search-analytics.query",
+            input_json={
+                "site_url": "https://example.com/",
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-07",
+                "dimensions": ["query"],
+                "row_limit": 1,
+                "start_row": 10,
+                "data_state": "final",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    request = httpx_mock.get_requests()[0]
+    request_body = json.loads(request.content.decode("utf-8"))
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert request.headers["Authorization"] == "Bearer gsc-token"
+    assert request_body == {
+        "startDate": "2026-06-01",
+        "endDate": "2026-06-07",
+        "dimensions": ["query"],
+        "rowLimit": 1,
+        "startRow": 10,
+        "dataState": "final",
+    }
+    assert out.output_json["next_start_row"] == 11
+    assert out.action_call.provider_key == "google-search-console"
+    assert out.action_call.connector_key == "google-search-console"
+    assert "gsc-token" not in rendered
+
+
+def test_google_search_console_provider_error_is_preserved_for_agent_repair(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-search-console",
+        secret_payload=json.dumps({"access_token": "gsc-token"}).encode("utf-8"),
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-search-console")
+    httpx_mock.add_response(
+        method="GET",
+        url="https://www.googleapis.com/webmasters/v3/sites",
+        status_code=403,
+        json={
+            "error": {
+                "code": 403,
+                "message": "Request had insufficient authentication scopes.",
+                "status": "PERMISSION_DENIED",
+            }
+        },
+    )
+
+    with pytest.raises(ConflictError) as excinfo:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="seo.search-console.sites.list",
+                input_json={},
+                credential_ref=credential_ref,
+            )
+        )
+
+    data = excinfo.value.data
+    assert data["status"] == "failed"
+    assert data["action_ref"] == "seo.search-console.sites.list"
+    assert data["provider_status_code"] == 403
+    assert data["provider_error"]["error"]["status"] == "PERMISSION_DENIED"
+    call = session.exec(select(ActionCall).where(ActionCall.id == data["action_call_id"])).one()
+    assert call.status.value == "failed"
+    assert call.response_json == {
+        "status": "failed",
+        "provider_status_code": 403,
+        "provider_error": data["provider_error"],
+    }
+
+
+def test_google_search_console_refresh_token_error_is_preserved_for_agent_repair(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-search-console",
+        secret_payload=json.dumps(
+            {
+                "client_id": "client-id",
+                "client_secret": "client-secret",
+                "refresh_token": "refresh-secret",
+            }
+        ).encode("utf-8"),
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-search-console")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://oauth2.googleapis.com/token",
+        status_code=400,
+        json={
+            "error": "invalid_grant",
+            "error_description": "Token has been expired or revoked.",
+        },
+    )
+
+    with pytest.raises(ConflictError) as excinfo:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="seo.search-console.sites.list",
+                input_json={},
+                credential_ref=credential_ref,
+            )
+        )
+
+    data = excinfo.value.data
+    assert data["status"] == "failed"
+    assert data["provider_status_code"] == 400
+    assert data["provider_error"] == {
+        "error": "invalid_grant",
+        "error_description": "Token has been expired or revoked.",
+    }
+    rendered = json.dumps(data)
+    assert "client-secret" not in rendered
+    assert "refresh-secret" not in rendered
+    call = session.exec(select(ActionCall).where(ActionCall.id == data["action_call_id"])).one()
+    assert call.response_json == {
+        "status": "failed",
+        "provider_status_code": 400,
+        "provider_error": data["provider_error"],
+    }
+
+
+def test_google_search_console_validation_rejects_malformed_google_requests(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-search-console",
+        secret_payload=json.dumps({"access_token": "gsc-token"}).encode("utf-8"),
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-search-console")
+    repo = ActionRepository(session)
+
+    search_validation = repo.validate(
+        project_id=project_id,
+        action_ref="seo.search-console.search-analytics.query",
+        input_json={
+            "site_url": "sc-domain:   ",
+            "start_date": "2026-06-10",
+            "end_date": "2026-06-01",
+            "dimensions": ["query", "query", "bad"],
+            "dimension_filter_groups": [
+                {
+                    "groupType": "or",
+                    "filters": [
+                        {
+                            "dimension": "date",
+                            "operator": "startsWith",
+                            "expression": "",
+                        },
+                        {
+                            "dimension": "query",
+                            "operator": "contains",
+                            "expression": "x" * 4097,
+                        },
+                    ],
+                }
+            ],
+        },
+        credential_ref=credential_ref,
+    )
+
+    sitemap_validation = repo.validate(
+        project_id=project_id,
+        action_ref="seo.search-console.sitemaps.list",
+        input_json={
+            "site_url": "sc-domain:   ",
+            "sitemap_index": "not-a-url",
+        },
+        credential_ref=credential_ref,
+    )
+
+    search_paths = {issue.path for issue in search_validation.issues}
+    assert search_validation.valid is False
+    assert "$.site_url" in search_paths
+    assert "$.end_date" in search_paths
+    assert "$.dimensions[1]" in search_paths
+    assert "$.dimensions[2]" in search_paths
+    assert "$.dimension_filter_groups[0].groupType" in search_paths
+    assert "$.dimension_filter_groups[0].filters[0].dimension" in search_paths
+    assert "$.dimension_filter_groups[0].filters[0].operator" in search_paths
+    assert "$.dimension_filter_groups[0].filters[0].expression" in search_paths
+    assert "$.dimension_filter_groups[0].filters[1].expression" in search_paths
+    sitemap_paths = {issue.path for issue in sitemap_validation.issues}
+    assert sitemap_validation.valid is False
+    assert "$.site_url" in sitemap_paths
+    assert "$.sitemap_index" in sitemap_paths
+
+
+def test_google_search_console_validation_keeps_legacy_gsc_surfaces_out(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-search-console",
+        secret_payload=json.dumps({"access_token": "gsc-token"}).encode("utf-8"),
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-search-console")
+    repo = ActionRepository(session)
+
+    validation = repo.validate(
+        project_id=project_id,
+        action_ref="seo.search-console.url.inspect",
+        input_json={
+            "site_url": "https://example.com/",
+            "inspection_url": "https://other.example/page",
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(issue.path == "$.inspection_url" for issue in validation.issues)
+    with pytest.raises(NotFoundError):
+        repo.describe(action_ref="seo.gscOauth.start")
+
+
+def test_google_analytics_run_report_action_maps_property_ref_and_body(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-analytics",
+        secret_payload=json.dumps({"access_token": "ga-token"}).encode("utf-8"),
+        config_json={"property_refs": {"main": "1234"}},
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-analytics")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://analyticsdata.googleapis.com/v1beta/properties/1234:runReport",
+        json={
+            "dimensionHeaders": [{"name": "pagePath"}],
+            "metricHeaders": [{"name": "sessions"}],
+            "rows": [{"dimensionValues": [{"value": "/"}], "metricValues": [{"value": "7"}]}],
+            "propertyQuota": {"tokensPerDay": {"remaining": 990}},
+        },
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="seo.ga4.properties.run_report",
+            input_json={
+                "property_ref": "main",
+                "request": {
+                    "dateRanges": [{"startDate": "7daysAgo", "endDate": "yesterday"}],
+                    "dimensions": [{"name": "pagePath"}],
+                    "metrics": [{"name": "sessions"}],
+                    "limit": "100",
+                    "returnPropertyQuota": True,
+                },
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    request = httpx_mock.get_requests()[0]
+    request_body = json.loads(request.content.decode("utf-8"))
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert request.headers["Authorization"] == "Bearer ga-token"
+    assert request_body["dateRanges"] == [{"startDate": "7daysAgo", "endDate": "yesterday"}]
+    assert request_body["metrics"] == [{"name": "sessions"}]
+    assert "property" not in request_body
+    assert "propertyQuota" not in out.output_json
+    assert out.output_json["quota"]["units_per_day"]["remaining"] == 990
+    assert out.action_call.connector_key == "google-analytics"
+    assert "ga-token" not in rendered
+
+
+def test_google_analytics_account_summaries_action_maps_cursor_without_secret_key(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-analytics",
+        secret_payload=json.dumps({"access_token": "ga-token"}).encode("utf-8"),
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-analytics")
+    httpx_mock.add_response(
+        method="GET",
+        url=(
+            "https://analyticsadmin.googleapis.com/v1beta/accountSummaries?"
+            "pageSize=2&pageToken=cursor-1"
+        ),
+        json={
+            "accountSummaries": [{"name": "accountSummaries/1"}],
+            "nextPageToken": "cursor-2",
+        },
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="seo.ga4.account_summaries.list",
+            input_json={"page_size": 2, "page_cursor": "cursor-1"},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert out.output_json["accountSummaries"][0]["name"] == "accountSummaries/1"
+    assert out.output_json["next_page_cursor"] == "cursor-2"
+    assert "nextPageToken" not in out.output_json
+    assert "ga-token" not in rendered
+
+
+def test_google_analytics_report_validation_rejects_nested_property_and_bad_limit(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-analytics",
+        secret_payload=json.dumps({"access_token": "ga-token"}).encode("utf-8"),
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-analytics")
+
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="seo.ga4.properties.run_report",
+        input_json={
+            "property_ref": "1234",
+            "request": {
+                "property": "properties/9999",
+                "dateRanges": [{"startDate": "2026-06-01", "endDate": "2026-06-07"}],
+                "metrics": [{"name": "sessions"}],
+                "limit": "250001",
+            },
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(issue.path == "$.request.property" for issue in validation.issues)
+    assert any(
+        issue.path == "$.request.limit" and issue.code == "range" for issue in validation.issues
+    )
+
+
+def test_google_tag_manager_workspace_tags_action_resolves_safe_refs(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-tag-manager",
+        secret_payload=json.dumps({"access_token": "gtm-token"}).encode("utf-8"),
+        config_json={
+            "account_refs": {"main": "111"},
+            "container_refs": {"web": "GTM-ABC"},
+            "workspace_refs": {"live": "7"},
+        },
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-tag-manager")
+    httpx_mock.add_response(
+        method="GET",
+        url=(
+            "https://tagmanager.googleapis.com/tagmanager/v2/"
+            "accounts/111/containers/GTM-ABC/workspaces/7/tags?pageToken=next"
+        ),
+        json={"tag": [{"name": "GA4 config"}], "nextPageToken": "after"},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="seo.google-tag-manager.workspace.tags.list",
+            input_json={
+                "account_ref": "main",
+                "container_ref": "web",
+                "workspace_ref": "live",
+                "page_cursor": "next",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    request = httpx_mock.get_requests()[0]
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert request.headers["Authorization"] == "Bearer gtm-token"
+    assert out.output_json["tag"][0]["name"] == "GA4 config"
+    assert out.output_json["next_page_cursor"] == "after"
+    assert "nextPageToken" not in out.output_json
+    assert out.action_call.connector_key == "google-tag-manager"
+    assert "gtm-token" not in rendered
+
+
+def test_google_tag_manager_validation_bounds_refs_and_page_cursors(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-tag-manager",
+        secret_payload=json.dumps({"access_token": "gtm-token"}).encode("utf-8"),
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-tag-manager")
+
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="seo.google-tag-manager.workspace.triggers.list",
+        input_json={
+            "account_ref": "111",
+            "container_ref": "GTM-ABC",
+            "workspace_ref": "7",
+            "page_cursor": 123,
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(issue.path == "$.page_cursor" for issue in validation.issues)
 
 
 def test_wordpress_post_create_action_uses_daemon_side_site_config(

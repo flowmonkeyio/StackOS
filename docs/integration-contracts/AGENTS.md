@@ -34,12 +34,14 @@ is the local gate for provider-specific contract work.
   in run plans.
 - Resources store durable records and provenance; connectors normalize external
   responses into safe JSON and action-call audit rows.
-- External provider action outputs are file-backed by default when invoked
-  through `action.run` or `action.execute`. Connectors should return sanitized
-  JSON and summaries. The compact response carries `schema_ref` plus
-  `schema_operation=schema.get` for the shared response-file envelope; do not
-  invent connector-specific schema paths or raw-file write paths unless the
-  provider contract explicitly requires a separate generated asset.
+- External provider action outputs are file-backed by default for MCP and REST
+  calls through `action.run` or `action.execute`; CLI calls default to raw
+  inline output unless an explicit output policy says otherwise. Connectors
+  should return sanitized JSON and summaries. MCP/REST compact responses carry
+  `schema_ref` plus `schema_operation=schema.get` for the shared response-file
+  envelope; do not invent connector-specific schema paths or raw-file write
+  paths unless the provider contract explicitly requires a separate generated
+  asset.
 
 ## Review Shape
 

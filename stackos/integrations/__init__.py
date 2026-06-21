@@ -22,8 +22,11 @@ from stackos.integrations.byteplus_ark import BytePlusArkIntegration
 from stackos.integrations.dataforseo import DataForSeoIntegration
 from stackos.integrations.firecrawl import FirecrawlIntegration
 from stackos.integrations.ghost import GhostIntegration
+from stackos.integrations.google_analytics import GoogleAnalyticsIntegration
 from stackos.integrations.google_gemini_image import GoogleGeminiImageIntegration
 from stackos.integrations.google_paa import GooglePaaIntegration
+from stackos.integrations.google_search_console import GoogleSearchConsoleIntegration
+from stackos.integrations.google_tag_manager import GoogleTagManagerIntegration
 from stackos.integrations.google_veo import GoogleVeoIntegration
 from stackos.integrations.ideogram_images import IdeogramImagesIntegration
 from stackos.integrations.imap import ImapIntegration
@@ -63,6 +66,9 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "google-paa": GooglePaaIntegration,
     "jina": JinaReaderIntegration,
     "ahrefs": AhrefsIntegration,
+    "google-search-console": GoogleSearchConsoleIntegration,
+    "google-analytics": GoogleAnalyticsIntegration,
+    "google-tag-manager": GoogleTagManagerIntegration,
     "wordpress": WordPressIntegration,
     "ghost": GhostIntegration,
     "telegram-bot": TelegramBotIntegration,
@@ -93,8 +99,11 @@ __all__ = [
     "DataForSeoIntegration",
     "FirecrawlIntegration",
     "GhostIntegration",
+    "GoogleAnalyticsIntegration",
     "GoogleGeminiImageIntegration",
     "GooglePaaIntegration",
+    "GoogleSearchConsoleIntegration",
+    "GoogleTagManagerIntegration",
     "GoogleVeoIntegration",
     "IdeogramImagesIntegration",
     "ImapIntegration",

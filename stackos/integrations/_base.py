@@ -257,7 +257,13 @@ class BaseIntegration:
                 if attempt >= max_retries:
                     raise RateLimitedError(
                         f"{self.vendor}.{op} 429 after {max_retries} retries",
-                        data={"vendor": self.vendor, "op": op, "retry_after": retry_after},
+                        data={
+                            "vendor": self.vendor,
+                            "op": op,
+                            "status": response.status_code,
+                            "retry_after": retry_after,
+                            "provider_error": self._provider_error(response),
+                        },
                     )
                 wait = retry_after or backoff_base * (2**attempt)
                 _log.warning(
@@ -275,7 +281,12 @@ class BaseIntegration:
                     raise IntegrationDownError(
                         f"{self.vendor}.{op} status {response.status_code} "
                         f"after {max_retries} retries",
-                        data={"vendor": self.vendor, "op": op, "status": response.status_code},
+                        data={
+                            "vendor": self.vendor,
+                            "op": op,
+                            "status": response.status_code,
+                            "provider_error": self._provider_error(response),
+                        },
                     )
                 _log.warning(
                     "integration.5xx",
@@ -294,6 +305,7 @@ class BaseIntegration:
                     "vendor": self.vendor,
                     "op": op,
                     "status": response.status_code,
+                    "provider_error": self._provider_error(response),
                 },
             )
 
@@ -314,6 +326,14 @@ class BaseIntegration:
             return float(header)
         except ValueError:
             return None
+
+    @classmethod
+    def _provider_error(cls, response: httpx.Response) -> Any:
+        try:
+            body: Any = response.json()
+        except ValueError:
+            body = {"message": response.text[:500]}
+        return cls._truncate(body)
 
     async def call(
         self,

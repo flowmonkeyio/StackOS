@@ -23,7 +23,7 @@ Project context to read or account for:
 
 Local investigation rules:
 - Use `rg` or `rg --files` first for searches. Prefix shell commands with `TPF_LLM_TOOL=codex tpf` except commands excluded by `AGENTS.md`.
-- Use the dedicated `serena-content-stack` MCP server if symbolic code navigation is useful. Do not use the shared/global Serena server for this repo.
+- Use the `serena` MCP server if symbolic code navigation is useful. It is launched per session with `--project-from-cwd`, so never call `activate_project`.
 - Treat docs as guidance and code/operation contracts as stronger evidence when they disagree.
 
 StackOS operating rules:

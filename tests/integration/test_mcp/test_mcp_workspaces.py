@@ -10,7 +10,7 @@ def test_workspace_resolve_unknown_requests_connect(
 ) -> None:
     resolved = mcp_client.call_tool_structured(
         "workspace.resolve",
-        {"repo_fingerprint": "git:unknown"},
+        {"repo_fingerprint": "git:unknown", "response_mode": "raw"},
     )
 
     assert resolved["needs_connect"] is True
@@ -104,6 +104,57 @@ def test_workspace_connect_list_and_start_session(
     assert started["data"]["ui_health"]["daemon_reached"] is True
 
 
+def test_workspace_connect_requires_rebind_flag_to_move_existing_binding(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    second_project = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "second-test-project",
+            "name": "Second Test Project",
+            "domain": "second.example",
+            "locale": "en-US",
+        },
+    )
+    first_project_id = seeded_project["data"]["id"]
+    second_project_id = second_project["data"]["id"]
+    connected = mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "project_id": first_project_id,
+            "repo_fingerprint": "git:rebind-guard",
+            "git_remote_url": "git@github.com:org/rebind-guard.git",
+        },
+    )
+
+    failed = mcp_client.call_tool_error(
+        "workspace.connect",
+        {
+            "project_id": second_project_id,
+            "repo_fingerprint": "git:rebind-guard",
+        },
+    )
+
+    assert failed["code"] == -32602
+    assert failed["data"]["binding_id"] == connected["data"]["id"]
+    assert failed["data"]["repo_fingerprint"] == "git:rebind-guard"
+    assert failed["data"]["current_project_id"] == first_project_id
+    assert failed["data"]["requested_project_id"] == second_project_id
+    assert "rebind_existing=true" in failed["data"]["detail"]
+
+    moved = mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "project_id": second_project_id,
+            "repo_fingerprint": "git:rebind-guard",
+            "rebind_existing": True,
+        },
+    )
+
+    assert moved["project_id"] == second_project_id
+    assert moved["data"]["id"] == connected["data"]["id"]
+
+
 def test_workspace_start_session_autobootstraps_unbound_directory(
     mcp_client: MCPClient,
 ) -> None:
@@ -112,6 +163,7 @@ def test_workspace_start_session_autobootstraps_unbound_directory(
         {
             "runtime": "codex",
             "cwd": "/tmp/mcp-autobootstrap-project",
+            "response_mode": "raw",
         },
     )
     bindings_payload = mcp_client.call_tool_structured(
@@ -181,7 +233,7 @@ def test_workspace_resolves_by_current_directory_root(
 
     resolved = mcp_client.call_tool_structured(
         "workspace.resolve",
-        {"cwd": "/tmp/stackos-rooted-site/packages/site"},
+        {"cwd": "/tmp/stackos-rooted-site/packages/site", "response_mode": "raw"},
     )
     started = mcp_client.call_tool_structured(
         "workspace.startSession",

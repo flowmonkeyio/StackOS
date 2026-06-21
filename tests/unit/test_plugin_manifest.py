@@ -108,6 +108,52 @@ def test_builtin_plugin_manifests_validate() -> None:
     }
     assert publishing_actions["ghost.post.create"].config["connector"] == "ghost"
     assert publishing_actions["wordpress.post.create"].input_schema["required"] == ["post"]
+    seo = next(manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "seo")
+    seo_providers = {provider.key: provider for provider in seo.providers}
+    assert seo_providers.keys() >= {
+        "dataforseo",
+        "serper",
+        "ahrefs",
+        "google-search-console",
+        "google-analytics",
+        "google-tag-manager",
+    }
+    assert _auth_field_keys(seo_providers["google-search-console"], "oauth2_refresh_token") == [
+        "client_id",
+        "client_secret",
+        "refresh_token",
+        "default_site_url",
+    ]
+    assert _auth_field_keys(seo_providers["google-analytics"], "oauth2_refresh_token") == [
+        "client_id",
+        "client_secret",
+        "refresh_token",
+        "default_property_ref",
+    ]
+    assert _auth_field_keys(seo_providers["google-tag-manager"], "oauth2_refresh_token") == [
+        "client_id",
+        "client_secret",
+        "refresh_token",
+        "default_account_ref",
+    ]
+    seo_actions = {action.key: action for action in seo.actions}
+    assert seo_actions["search-console.search-analytics.query"].config == {
+        "schema_version": "stackos.action.v1",
+        "connector": "google-search-console",
+        "operation": "search_analytics.query",
+        "requires_credential": True,
+        "budget_kind": "google-search-console",
+        "enforce_budget": False,
+    }
+    assert seo_actions["ga4.properties.run_report"].config["connector"] == "google-analytics"
+    assert seo_actions["ga4.properties.run_report"].config["operation"] == ("properties.run_report")
+    assert seo_actions["google-tag-manager.workspaces.list"].config["connector"] == (
+        "google-tag-manager"
+    )
+    assert seo_actions["google-tag-manager.workspaces.list"].config["operation"] == (
+        "accounts.containers.workspaces.list"
+    )
+    assert "gscOauth" not in {action.key for action in seo.actions}
     utils = next(manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "utils")
     utils_providers = {provider.key: provider for provider in utils.providers}
     assert "openrouter" in utils_providers
@@ -572,7 +618,12 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 48
+    assert len(providers) == 51
+    google_seo_providers = {
+        "google-search-console",
+        "google-analytics",
+        "google-tag-manager",
+    }
     for plugin_slug, provider in providers:
         config = provider.config or {}
         setup = config.get("setup")
@@ -580,7 +631,12 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         assert setup.get("setup_note") or config.get("setup_note"), (
             f"{plugin_slug}:{provider.key} missing setup note"
         )
-        assert setup.get("verified_at") == "2026-06-11"
+        expected_verified_at = (
+            "2026-06-17"
+            if plugin_slug == "seo" and provider.key in google_seo_providers
+            else "2026-06-11"
+        )
+        assert setup.get("verified_at") == expected_verified_at
         if provider.auth_type not in {"none", "local"}:
             assert setup.get("credential_label"), (
                 f"{plugin_slug}:{provider.key} missing credential label"
@@ -1066,6 +1122,9 @@ def test_seo_plugin_yaml_facade_validates() -> None:
         "dataforseo",
         "serper",
         "ahrefs",
+        "google-search-console",
+        "google-analytics",
+        "google-tag-manager",
     }
     providers = {provider.key: provider for provider in manifest.providers}
     assert _auth_field_keys(providers["dataforseo"]) == ["login", "password"]

@@ -47,12 +47,14 @@ def test_provider_side_effect_operations_are_raw_only() -> None:
     assert exc.value.data["allowed_modes"] == ["raw"]
 
 
-def test_action_operations_default_to_compact_file_output_policy() -> None:
+def test_action_operations_use_surface_response_defaults() -> None:
     specs = {spec.name: spec for spec in action_operation_specs()}
 
     for name in ("action.run", "action.execute"):
         spec = specs[name]
         assert resolve_response_mode(spec, {}, surface="mcp") == "compact"
+        assert resolve_response_mode(spec, {}, surface="rest") == "compact"
+        assert resolve_response_mode(spec, {}, surface="cli") == "raw"
         assert resolve_response_mode(spec, {"response_mode": "raw"}, surface="mcp") == "raw"
         with pytest.raises(ValidationError) as exc:
             resolve_response_mode(spec, {"response_mode": "ack"}, surface="mcp")
@@ -123,6 +125,7 @@ def test_non_side_effect_default_response_mode_uses_policy_default() -> None:
     spec = _spec("tracker.get", mutating=False)
 
     assert resolve_response_mode(spec, {}, surface="rest") == "compact"
+    assert resolve_response_mode(spec, {}, surface="cli") == "compact"
     assert resolve_response_mode(spec, {"response_mode": "standard"}, surface="rest") == "raw"
 
 

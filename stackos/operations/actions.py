@@ -39,8 +39,9 @@ ACTION_FILE_OUTPUT_RESPONSE_POLICY = OperationResponsePolicy(
     compact_notes=(
         "Compact action responses must keep action_call_id, action_ref, provider, status, "
         "cost, file path, checksum, and warnings.",
-        "Raw provider output is stored in plain response files by default for external "
-        "provider actions.",
+        "MCP and REST calls store external provider output in plain response files by "
+        "default. CLI calls default to raw inline responses unless an explicit output "
+        "policy says otherwise.",
     ),
 )
 
@@ -187,9 +188,10 @@ class ActionExecuteInput(MCPInput):
         default=None,
         description=(
             "Optional output storage policy for this one call. Supported mode values are "
-            "inline, file_if_large, and always_file. External provider actions default to "
-            "plain file-backed output when omitted. Pass path as an absolute output "
-            "directory; StackOS generates the response filename."
+            "inline, file_if_large, and always_file. MCP and REST external provider calls "
+            "default to plain file-backed output when omitted; CLI calls default inline. "
+            "Pass path as an absolute output directory; StackOS generates the response "
+            "filename."
         ),
     )
     credential_ref: str | None = None
@@ -238,9 +240,10 @@ class ActionRunInput(MCPInput):
         default=None,
         description=(
             "Optional output storage policy for this one call. Supported mode values are "
-            "inline, file_if_large, and always_file. External provider actions default to "
-            "plain file-backed output when omitted. Pass path as an absolute output "
-            "directory; StackOS generates the response filename."
+            "inline, file_if_large, and always_file. MCP and REST external provider calls "
+            "default to plain file-backed output when omitted; CLI calls default inline. "
+            "Pass path as an absolute output directory; StackOS generates the response "
+            "filename."
         ),
     )
     credential_ref: str | None = None
@@ -543,7 +546,7 @@ async def action_execute(
         context_ref=inp.context_ref,
         provider_context_json=inp.provider_context_json,
         output_policy_json=inp.output_policy_json,
-        default_external_file_output=True,
+        default_external_file_output=_default_external_file_output(ctx),
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
         run_plan_id=plan.id,
@@ -687,7 +690,7 @@ async def action_run(
         context_ref=inp.context_ref,
         provider_context_json=inp.provider_context_json,
         output_policy_json=inp.output_policy_json,
-        default_external_file_output=True,
+        default_external_file_output=_default_external_file_output(ctx),
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
         idempotency_key=idempotency_key,
@@ -722,6 +725,10 @@ def _check_direct_action_policy(
             "direct non-read actions require confirm_direct=true and intent_summary",
             data={"risk_level": risk_level},
         )
+
+
+def _default_external_file_output(ctx: MCPContext) -> bool:
+    return ctx.extras.get("client_surface") in {"mcp", "rest"}
 
 
 def _derive_direct_idempotency_key(
@@ -1120,7 +1127,7 @@ def operation_specs() -> list[OperationSpec]:
             name="action.execute",
             summary=(
                 "Execute one action inside an explicitly granted run-plan step and return "
-                "compact file-backed output metadata by default."
+                "the caller-surface response shape."
             ),
             input_model=ActionExecuteInput,
             output_model=WriteEnvelope[ActionExecutionOut],
@@ -1147,16 +1154,16 @@ def operation_specs() -> list[OperationSpec]:
                 "The requested action_ref must match the step and mcp_tool_grants refs.",
                 "Pass context_ref when the active task/run has a reusable execution context; "
                 "pass only opaque credential_ref values for deliberate low-level overrides.",
-                "External provider action output is file-backed by default; inspect the "
-                "returned file path before rerunning the provider call. Call schema.get "
-                "with schema_ref only when the response-file envelope schema is needed.",
+                "MCP and REST calls default external provider output to a response file; "
+                "inspect the returned path before rerunning the provider call. CLI calls "
+                "default to raw inline output. Explicit output_policy_json and "
+                "execution-context policies override the surface default.",
             ),
             returns=(
                 "A WriteEnvelope containing the public ActionExecutionOut.",
                 "A redacted audit row linked to run_id, run_plan_id, and run_plan_step_id.",
-                "For external provider actions, compact file path, schema_ref, "
-                "schema_operation, and metadata for the sanitized request+response envelope "
-                "by default.",
+                "For MCP and REST external provider calls, compact file path, schema_ref, "
+                "schema_operation, and metadata for the sanitized request+response envelope.",
             ),
             examples=(
                 OperationExample(
@@ -1175,8 +1182,7 @@ def operation_specs() -> list[OperationSpec]:
         OperationSpec(
             name="action.run",
             summary=(
-                "Run one explicit action directly with compact file-backed output metadata "
-                "and audit."
+                "Run one explicit action directly with caller-surface response shaping and audit."
             ),
             input_model=ActionRunInput,
             output_model=WriteEnvelope[ActionRunOut],
@@ -1205,15 +1211,16 @@ def operation_specs() -> list[OperationSpec]:
                 "For non-read actions, pass confirm_direct=true and intent_summary; "
                 "pass intent_id or idempotency_key when stable retries matter. "
                 "If omitted, StackOS derives a request-scoped idempotency key.",
-                "External provider action output is file-backed by default; inspect the "
-                "returned file path before rerunning the provider call. Call schema.get "
-                "with schema_ref only when the response-file envelope schema is needed.",
+                "MCP and REST calls default external provider output to a response file; "
+                "inspect the returned path before rerunning the provider call. CLI calls "
+                "default to raw inline output. Explicit output_policy_json and "
+                "execution-context policies override the surface default.",
             ),
             returns=(
                 "A redacted action-call audit id linked to the project.",
-                "Compact output metadata with file path, schema_ref, schema_operation, "
-                "checksum, and summaries. Raw provider response data lives in the "
-                "file-backed envelope.",
+                "MCP and REST calls return compact output metadata with file path, "
+                "schema_ref, schema_operation, checksum, and summaries. CLI calls return "
+                "the raw redacted operation payload by default.",
             ),
             examples=(
                 OperationExample(

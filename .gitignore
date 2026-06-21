@@ -30,6 +30,17 @@ ui/dist/
 ui/.vite/
 .vite/
 
+# Electron desktop app
+desktop/node_modules/
+desktop/dist/
+desktop/out/
+desktop/.vite/
+desktop/.electron-builder.generated.json
+desktop/.update-config.generated.json
+desktop/payload-build/
+desktop/payload/*
+!desktop/payload/.gitkeep
+
 # Playwright artefacts (large + binary; CI re-generates on every run)
 ui/playwright/.pw-results/
 ui/playwright/.pw-html-report/

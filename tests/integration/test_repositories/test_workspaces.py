@@ -121,6 +121,40 @@ def test_reconnect_preserves_omitted_detected_profile_fields(session: Session) -
     assert second.data.content_model_json == {"primary_resource": "content-piece"}
 
 
+def test_connect_requires_explicit_rebind_for_existing_project_move(session: Session) -> None:
+    first_project_id = _create_project(session, slug="first-workspace-site")
+    second_project_id = _create_project(session, slug="second-workspace-site")
+    repo = WorkspaceRepository(session)
+    first = repo.connect(
+        project_id=first_project_id,
+        repo_fingerprint="git:abc123",
+        git_remote_url="git@github.com:org/site.git",
+        framework="nuxt",
+    )
+
+    with pytest.raises(ValidationError) as excinfo:
+        repo.connect(project_id=second_project_id, repo_fingerprint="git:abc123")
+
+    assert "rebind_existing=true" in str(excinfo.value)
+    assert excinfo.value.data == {
+        "binding_id": first.data.id,
+        "repo_fingerprint": "git:abc123",
+        "current_project_id": first_project_id,
+        "requested_project_id": second_project_id,
+    }
+
+    moved = repo.connect(
+        project_id=second_project_id,
+        repo_fingerprint="git:abc123",
+        rebind_existing=True,
+    )
+
+    assert moved.data.id == first.data.id
+    assert moved.data.project_id == second_project_id
+    assert moved.data.git_remote_url == "git@github.com:org/site.git"
+    assert moved.data.framework == "nuxt"
+
+
 def test_update_profile_and_start_session_attach_binding(session: Session) -> None:
     project_id = _create_project(session)
     repo = WorkspaceRepository(session)

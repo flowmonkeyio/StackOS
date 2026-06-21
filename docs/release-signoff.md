@@ -42,6 +42,7 @@ touches committed UI assets.
 | Agent request handoff | Agent requests claim, prepare run plans atomically, link, complete, release, and hide claim tokens correctly. | `uv run pytest tests/integration/test_mcp/test_mcp_agent_requests.py tests/integration/test_repositories/test_agent_requests.py -q` |
 | UI human signoff surfaces | Tracker, setup, connections, runs, resources, and operation pages render the generic objects agents act on. | `pnpm --dir ui test && pnpm --dir ui build` |
 | Setup/package smoke | Install, daemon start/doctor, MCP registration, assets, and docs match the release shape. | `make install && make doctor` |
+| macOS desktop app | Electron metadata, service bridge, update endpoint config, and desktop docs stay aligned with the installer contract. | `make desktop-doctor` |
 
 For a faster local check while iterating on action execution, run the mock
 provider and connector-contract slice directly:
@@ -83,6 +84,15 @@ changes:
 ```bash
 make install
 make doctor
+```
+
+For desktop release candidates, also build the Python payload and macOS
+artifacts after dependencies, signing, notarization, and the custom update
+endpoint are configured:
+
+```bash
+make desktop-payload
+STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" make desktop-dist
 ```
 
 `doctor` may return daemon-down during first install before `make serve`; that

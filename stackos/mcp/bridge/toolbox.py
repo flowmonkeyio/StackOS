@@ -340,12 +340,12 @@ def _bridge_tool_statuses(
             else None
         )
         if allowed_now:
-            if name in active_step_tools:
-                row["reason_code"] = "active_step_granted"
-                row["category"] = "run_plan_step"
-            elif name in _AGENT_STEP_GATED_TOOL_NAMES:
+            if name in _AGENT_STEP_GATED_TOOL_NAMES:
                 row["reason_code"] = "run_plan_controller"
                 row["category"] = "run_plan_controller"
+            elif name in active_step_tools:
+                row["reason_code"] = "active_step_granted"
+                row["category"] = "run_plan_step"
             else:
                 row["reason_code"] = "available"
                 row["category"] = "setup"

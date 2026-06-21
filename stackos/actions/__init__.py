@@ -28,7 +28,10 @@ from stackos.actions.dataforseo import DataForSeoActionConnector
 from stackos.actions.firecrawl import FirecrawlActionConnector
 from stackos.actions.ghost import GhostActionConnector
 from stackos.actions.google_ads import GoogleAdsActionConnector
+from stackos.actions.google_analytics import GoogleAnalyticsActionConnector
 from stackos.actions.google_gemini_image import GoogleGeminiImageActionConnector
+from stackos.actions.google_search_console import GoogleSearchConsoleActionConnector
+from stackos.actions.google_tag_manager import GoogleTagManagerActionConnector
 from stackos.actions.google_veo import GoogleVeoVideoActionConnector
 from stackos.actions.google_workspace import GoogleWorkspaceActionConnector
 from stackos.actions.http import HttpActionConnector
@@ -87,6 +90,9 @@ DEFAULT_ACTION_CONNECTORS.register(SitemapActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(DataForSeoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SerperActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(AhrefsActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(GoogleSearchConsoleActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(GoogleAnalyticsActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(GoogleTagManagerActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(WordPressActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GhostActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(HttpActionConnector())
@@ -139,7 +145,10 @@ __all__ = [
     "FirecrawlActionConnector",
     "GhostActionConnector",
     "GoogleAdsActionConnector",
+    "GoogleAnalyticsActionConnector",
     "GoogleGeminiImageActionConnector",
+    "GoogleSearchConsoleActionConnector",
+    "GoogleTagManagerActionConnector",
     "GoogleVeoVideoActionConnector",
     "GoogleWorkspaceActionConnector",
     "HttpActionConnector",

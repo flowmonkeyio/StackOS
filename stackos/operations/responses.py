@@ -40,6 +40,8 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "schema_version",
         "schema_ref",
         "schema_operation",
+        "tool",
+        "reason",
         "role",
         "label",
         "agent_type",
@@ -271,6 +273,7 @@ _MAPPING_KEEP_FIELDS = frozenset(
         "access",
         "access_policy",
         "account",
+        "arguments",
         "artifact",
         "availability",
         "credential",
@@ -331,13 +334,17 @@ def resolve_response_mode(
     surface: str,
 ) -> ResponseMode:
     """Resolve and validate the requested operation response mode."""
-    _ = surface  # reserved for future per-surface defaults; adapters pass it consistently.
     policy = spec.effective_response_policy
     explicit = isinstance(arguments, dict) and "response_mode" in arguments
     raw_value = arguments.get("response_mode") if explicit and isinstance(arguments, dict) else None
     mode: ResponseMode
     if raw_value is None:
-        mode = policy.default_mode
+        mode = _default_response_mode_for_surface(
+            spec.name,
+            policy.default_mode,
+            policy.allowed_modes,
+            surface,
+        )
     elif isinstance(raw_value, str):
         alias = _MODE_ALIASES.get(raw_value)
         if alias is None:
@@ -367,6 +374,21 @@ def resolve_response_mode(
             },
         )
     return mode
+
+
+def _default_response_mode_for_surface(
+    operation_name: str,
+    policy_default: ResponseMode,
+    allowed_modes: tuple[ResponseMode, ...],
+    surface: str,
+) -> ResponseMode:
+    if (
+        surface == "cli"
+        and operation_name in {"action.run", "action.execute"}
+        and "raw" in allowed_modes
+    ):
+        return "raw"
+    return policy_default
 
 
 def shape_operation_response(

@@ -10,7 +10,8 @@ UV ?= uv
 
 .PHONY: help install serve dev-ui build-ui signoff register-codex register-claude \
         install-agent-assets install-skills-codex install-skills-claude \
-        install-plugins \
+        install-plugins desktop-install desktop-dev desktop-payload \
+        desktop-dist desktop-doctor \
         install-launchd doctor test test-ui-unit test-ui-e2e migrate lint \
         format typecheck gen-types clean uninstall backup restore \
         rotate-seed rotate-token
@@ -55,6 +56,21 @@ dev-ui: ## Run Vite dev server alongside the daemon
 
 build-ui: ## Build Vue UI into stackos/ui_dist/
 	@if [ -d ui ]; then cd ui && pnpm install && pnpm build; else echo "ui/ not available in this checkout"; exit 0; fi
+
+desktop-install: ## Install Electron desktop dependencies
+	@if [ -d desktop ]; then cd desktop && pnpm install; else echo "desktop/ not available in this checkout"; exit 0; fi
+
+desktop-dev: ## Run the macOS Electron shell against the local daemon
+	@if [ -d desktop ]; then cd desktop && pnpm start; else echo "desktop/ not available in this checkout"; exit 0; fi
+
+desktop-payload: ## Build the packaged StackOS Python payload for Electron
+	@if [ -d desktop ]; then cd desktop && pnpm run payload; else echo "desktop/ not available in this checkout"; exit 0; fi
+
+desktop-dist: build-ui desktop-payload ## Build macOS app artifacts with electron-builder
+	@if [ -d desktop ]; then cd desktop && pnpm install && pnpm run dist:mac; else echo "desktop/ not available in this checkout"; exit 0; fi
+
+desktop-doctor: ## Validate desktop scaffold metadata and source syntax
+	@if [ -d desktop ]; then cd desktop && node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check scripts/build-mac.mjs && node scripts/doctor.mjs; else echo "desktop/ not available in this checkout"; exit 0; fi
 
 signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/CLI, and UI checks
 	$(UV) run pytest tests/unit \

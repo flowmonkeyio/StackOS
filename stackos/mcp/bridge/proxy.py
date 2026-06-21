@@ -291,7 +291,7 @@ class AgentBridgeProxy:
             body = _bridge_make_tool_call_payload(
                 f"stackos-bridge-plan-{run_plan_id}",
                 "runPlan.get",
-                {"run_plan_id": run_plan_id, **scope_args},
+                {"run_plan_id": run_plan_id, "response_mode": "raw", **scope_args},
             )
             try:
                 out = self.request_daemon(client, body)
@@ -308,7 +308,7 @@ class AgentBridgeProxy:
             body = _bridge_make_tool_call_payload(
                 f"stackos-bridge-run-{run_id}",
                 "run.get",
-                {"run_id": run_id, **scope_args},
+                {"run_id": run_id, "response_mode": "raw", **scope_args},
             )
             try:
                 out = self.request_daemon(client, body)
@@ -328,7 +328,7 @@ class AgentBridgeProxy:
             body = _bridge_make_tool_call_payload(
                 f"stackos-bridge-plan-for-run-{run_id}",
                 "runPlan.list",
-                {"run_id": run_id, **scope_args},
+                {"run_id": run_id, "response_mode": "raw", **scope_args},
             )
             try:
                 out = self.request_daemon(client, body)
@@ -342,7 +342,7 @@ class AgentBridgeProxy:
         body = _bridge_make_tool_call_payload(
             f"stackos-bridge-plan-{run_plan_id}",
             "runPlan.get",
-            {"run_plan_id": run_plan_id, **scope_args},
+            {"run_plan_id": run_plan_id, "response_mode": "raw", **scope_args},
         )
         try:
             out = self.request_daemon(client, body)

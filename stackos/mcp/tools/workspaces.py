@@ -99,6 +99,7 @@ class WorkspaceConnectInput(MCPInput):
                 "repo_fingerprint": "git:abc123",
                 "git_remote_url": "git@github.com:org/site.git",
                 "framework": "nuxt",
+                "rebind_existing": False,
             }
         },
     )
@@ -112,6 +113,7 @@ class WorkspaceConnectInput(MCPInput):
     last_known_root: str | None = None
     framework: str | None = None
     content_model_json: dict[str, Any] | None = None
+    rebind_existing: bool = False
 
 
 class WorkspaceBootstrapInput(MCPInput):
@@ -222,6 +224,7 @@ async def _workspace_connect(
         last_known_root=inp.last_known_root,
         framework=inp.framework,
         content_model_json=inp.content_model_json,
+        rebind_existing=inp.rebind_existing,
     )
     return WriteEnvelope[WorkspaceBindingOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id

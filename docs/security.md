@@ -220,6 +220,12 @@ state, plugin, and MCP bridge contract:
   both clone and package installs; `make install-launchd` delegates to that
   command. The plist itself does not store the auth token; the daemon reads it
   from `~/.local/state/stackos/auth.token` at startup.
+- **macOS desktop app**: the `stackos` Electron shell loads only the loopback
+  daemon UI, keeps Node.js out of a sandboxed renderer, uses a preload bridge
+  for bounded service/update commands, and opens non-StackOS links in the
+  system browser. First launch and post-update repair call the existing CLI
+  install path, so desktop distribution does not add a second credential store
+  or rotate seed/token material.
 
 The pipx + launchd path does not change the threat model: the daemon binds
 loopback only, the bearer token gates every call, and the seed encrypts

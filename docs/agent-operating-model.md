@@ -198,8 +198,9 @@ hints, while omitting file/content bodies. Pass `response_mode=raw` or
 through `action.run` and `action.execute` return compact response-file paths,
 `schema_ref`, and `schema_operation` by default; communication/browser
 side-effect operations remain raw-only until they define provider-safe compact
-contracts. This keeps simple MCP calls from
-flooding the context window while preserving the richer REST/UI contracts.
+contracts. CLI calls use the same dispatcher but default to raw inline action
+output. This keeps simple MCP calls from flooding the context window while
+preserving richer non-agent contracts.
 
 Workflow evidence follows the same boundary. Read project resources with
 `resource.query`; write reusable evidence from a started run-plan step using
@@ -271,7 +272,9 @@ idempotent:
 5. Use `toolbox.call` for `project.list`, `project.create`,
    `workspace.bootstrap`, or `workspace.connect` only when the
    operator intentionally wants to choose a specific existing project or supply
-   explicit project metadata.
+   explicit project metadata. If the current repo fingerprint is already bound
+   to a different project, `workspace.connect` rejects the move unless the
+   caller passes `rebind_existing=true`.
 
 The bridge sends a path fingerprint by default:
 `path:<sha256(workspace_root)[:24]>`. If git is unavailable, this path identity

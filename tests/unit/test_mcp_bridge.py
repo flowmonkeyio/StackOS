@@ -168,6 +168,205 @@ class _RefreshingCatalogClient:
         )
 
 
+class _RunPlanControllerRefreshClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+        del headers
+        body = json.loads(content)
+        self.calls.append(body)
+        if body["method"] == "tools/list":
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {
+                        "tools": [
+                            _tool("run.get"),
+                            _tool("runPlan.claimStep"),
+                            _tool("runPlan.get"),
+                            _tool("runPlan.list"),
+                            _tool("runPlan.recordStep"),
+                            _tool("resource.upsert"),
+                        ]
+                    },
+                }
+            )
+        tool_name = body["params"]["name"]
+        arguments = body["params"]["arguments"]
+        if tool_name == "run.get":
+            if arguments.get("response_mode") != "raw":
+                return _Response(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": body["id"],
+                        "result": {
+                            "structuredContent": {
+                                "ok": True,
+                                "operation": "run.get",
+                                "status": "running",
+                                "project_id": 2,
+                                "run_id": 78,
+                                "data": {"id": 78, "status": "running"},
+                            }
+                        },
+                    }
+                )
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {
+                        "structuredContent": {
+                            "id": 78,
+                            "project_id": 2,
+                            "status": "running",
+                            "client_session_id": "tok-controller",
+                            "metadata_json": {
+                                "skill_name": "stackos/run-plan-controller",
+                                "run_plan_id": 82,
+                            },
+                        }
+                    },
+                }
+            )
+        if tool_name == "runPlan.get":
+            assert arguments.get("response_mode") == "raw"
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {
+                        "structuredContent": {
+                            "data": {
+                                "id": 82,
+                                "run_id": 78,
+                                "status": "started",
+                                "steps": [
+                                    {
+                                        "step_id": "verify-delivery",
+                                        "status": "pending",
+                                        "allowed_tools": [],
+                                    }
+                                ],
+                            },
+                            "run_id": 78,
+                            "project_id": 2,
+                        }
+                    },
+                }
+            )
+        return _Response(
+            {
+                "jsonrpc": "2.0",
+                "id": body["id"],
+                "result": {
+                    "structuredContent": {
+                        "tool": tool_name,
+                        "arguments": arguments,
+                    }
+                },
+            }
+        )
+
+
+class _RunPlanControllerListFallbackClient(_RunPlanControllerRefreshClient):
+    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+        del headers
+        body = json.loads(content)
+        self.calls.append(body)
+        if body["method"] == "tools/list":
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {
+                        "tools": [
+                            _tool("run.get"),
+                            _tool("runPlan.claimStep"),
+                            _tool("runPlan.get"),
+                            _tool("runPlan.list"),
+                            _tool("runPlan.recordStep"),
+                            _tool("resource.upsert"),
+                        ]
+                    },
+                }
+            )
+        tool_name = body["params"]["name"]
+        arguments = body["params"]["arguments"]
+        if tool_name == "run.get":
+            assert arguments.get("response_mode") == "raw"
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {
+                        "structuredContent": {
+                            "id": 78,
+                            "project_id": 2,
+                            "status": "running",
+                            "metadata_json": {"source": "compact-resume"},
+                        }
+                    },
+                }
+            )
+        if tool_name == "runPlan.list":
+            assert arguments.get("response_mode") == "raw"
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {
+                        "structuredContent": {
+                            "data": {"items": [{"id": 82, "run_id": 78}]},
+                            "run_id": 78,
+                            "project_id": 2,
+                        }
+                    },
+                }
+            )
+        if tool_name == "runPlan.get":
+            assert arguments.get("response_mode") == "raw"
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {
+                        "structuredContent": {
+                            "data": {
+                                "id": 82,
+                                "run_id": 78,
+                                "run_token": "tok-step",
+                                "status": "started",
+                                "steps": [
+                                    {
+                                        "step_id": "verify-delivery",
+                                        "status": "running",
+                                        "allowed_tools": ["resource.upsert"],
+                                    }
+                                ],
+                            },
+                            "run_id": 78,
+                            "project_id": 2,
+                        }
+                    },
+                }
+            )
+        return _Response(
+            {
+                "jsonrpc": "2.0",
+                "id": body["id"],
+                "result": {
+                    "structuredContent": {
+                        "tool": tool_name,
+                        "arguments": arguments,
+                    }
+                },
+            }
+        )
+
+
 def test_bridge_tools_list_hides_daemon_internals() -> None:
     daemon_tools = [
         *[_tool(name) for name in _AGENT_VISIBLE_TOOL_ORDER],
@@ -1158,6 +1357,107 @@ def test_bridge_proxy_denied_run_plan_tool_returns_repair_steps() -> None:
     assert data["reason"] == "run_plan_step_grant_required"
     assert "runPlan.start" in data["repair"]["steps"][1]
     assert "run_id" in data["repair"]["retry_arguments"]
+
+
+def test_bridge_proxy_refreshes_controller_run_with_raw_internal_reads() -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    client = _RunPlanControllerRefreshClient()
+    describe_payload = {
+        "jsonrpc": "2.0",
+        "id": 105,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.describe",
+            "arguments": {
+                "run_id": 78,
+                "tool_names": ["runPlan.claimStep", "runPlan.recordStep"],
+            },
+        },
+    }
+
+    describe_response = proxy.handle(
+        client,
+        payload=describe_payload,
+        line=json.dumps(describe_payload),
+        request_id=105,
+    )
+    described = _structured(describe_response)
+
+    call_payload = {
+        "jsonrpc": "2.0",
+        "id": 106,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.call",
+            "arguments": {
+                "run_id": 78,
+                "tool_name": "runPlan.claimStep",
+                "arguments": {"run_plan_id": 82, "step_id": "verify-delivery"},
+            },
+        },
+    }
+    call_response = proxy.handle(
+        client,
+        payload=call_payload,
+        line=json.dumps(call_payload),
+        request_id=106,
+    )
+    called = _structured(call_response)
+
+    statuses = {item["name"]: item for item in described["tool_statuses"]}
+    assert described["run_plan_controller_tool_names"] == [
+        "runPlan.claimStep",
+        "runPlan.recordStep",
+    ]
+    assert statuses["runPlan.claimStep"]["allowed"] is True
+    assert statuses["runPlan.claimStep"]["reason_code"] == "run_plan_controller"
+    assert called["tool"] == "runPlan.claimStep"
+    assert called["arguments"]["run_token"] == "tok-controller"
+    internal_calls = [
+        call["params"]["arguments"]
+        for call in client.calls
+        if call["method"] == "tools/call"
+        and call["params"]["name"] in {"run.get", "runPlan.get"}
+    ]
+    assert internal_calls[0]["response_mode"] == "raw"
+    assert internal_calls[1]["response_mode"] == "raw"
+
+
+def test_bridge_proxy_refreshes_step_context_from_raw_list_fallback() -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    client = _RunPlanControllerListFallbackClient()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 107,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.describe",
+            "arguments": {
+                "run_id": 78,
+                "tool_names": ["resource.upsert"],
+            },
+        },
+    }
+
+    response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=107)
+    described = _structured(response)
+
+    statuses = {item["name"]: item for item in described["tool_statuses"]}
+    assert statuses["resource.upsert"]["allowed"] is True
+    assert statuses["resource.upsert"]["reason_code"] == "active_step_granted"
+    internal_calls = [
+        call["params"]
+        for call in client.calls
+        if call["method"] == "tools/call"
+        and call["params"]["name"]
+        in {"run.get", "runPlan.list", "runPlan.get"}
+    ]
+    assert [call["name"] for call in internal_calls] == [
+        "run.get",
+        "runPlan.list",
+        "runPlan.get",
+    ]
+    assert all(call["arguments"].get("response_mode") == "raw" for call in internal_calls)
 
 
 def test_bridge_proxy_refreshes_stale_toolbox_catalog_once() -> None:

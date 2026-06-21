@@ -79,6 +79,41 @@ SERPER_API_KEY=...
 
 ---
 
+## Google Search Console, Google Analytics 4, and Google Tag Manager
+
+Used by: SEO measurement actions for Search Console, GA4 reporting, and Google
+Tag Manager inventory. These are Google OAuth connections, not API-key
+connections.
+
+1. In Google Cloud Console, create or select a project and enable the needed
+   APIs: Search Console API, Analytics Data API, Analytics Admin API, and/or
+   Tag Manager API.
+2. Create an OAuth client and complete any consent-screen requirements for the
+   Google account that owns the Search Console properties, GA4 properties, or
+   Tag Manager containers.
+3. Store one credential profile in StackOS Connections for each provider you
+   need:
+   - Google Search Console: `google-search-console`
+   - Google Analytics 4: `google-analytics`
+   - Google Tag Manager: `google-tag-manager`
+4. Prefer the `oauth2_refresh_token` method for scheduled/server use. Store
+   `client_id`, `client_secret`, and `refresh_token` as secret fields. Use
+   `oauth2_access_token` only for short-lived manual testing.
+
+Scopes used by the first executable pass:
+
+```
+https://www.googleapis.com/auth/webmasters.readonly
+https://www.googleapis.com/auth/analytics.readonly
+https://www.googleapis.com/auth/tagmanager.readonly
+```
+
+Write/admin scopes are deliberately deferred. Do not add Tag Manager publish,
+Analytics edit, Measurement Protocol, or Search Console write access without a
+new action contract, tests, and run-plan grant review.
+
+---
+
 ## OpenRouter
 
 Used by: Utilities provider setup for future workflow-owned model access. The

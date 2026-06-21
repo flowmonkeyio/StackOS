@@ -140,6 +140,222 @@ providers:
           billing_url: directional
           docs_url: verified
           fallback_url: verified
+  - key: google-search-console
+    name: Google Search Console
+    description: Search Console site, sitemap, search analytics, and URL inspection evidence.
+    auth_type: oauth
+    auth_methods: &google_oauth_methods
+      - key: oauth2_access_token
+        label: OAuth2 access token
+        auth_type: oauth
+        payload_format: json
+        fields:
+        - key: access_token
+          label: Access Token
+          type: secret
+          secret: true
+          required: true
+        - key: default_site_url
+          label: Default Site URL
+          type: text
+          secret: false
+          required: false
+      - key: oauth2_refresh_token
+        label: OAuth2 refresh token
+        auth_type: oauth
+        payload_format: json
+        fields:
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: refresh_token
+          label: Refresh Token
+          type: secret
+          secret: true
+          required: true
+        - key: default_site_url
+          label: Default Site URL
+          type: text
+          secret: false
+          required: false
+    config:
+      scopes:
+        - https://www.googleapis.com/auth/webmasters.readonly
+      setup_note: Use Google OAuth with the read-only Search Console scope. StackOS supports a direct access token or a daemon-held OAuth client refresh-token payload; no legacy gscOauth tools or GSC metric tables are used.
+      setup:
+        credential_label: Google Search Console OAuth credential
+        setup_note: Create a Google Cloud OAuth client with Search Console API enabled, grant https://www.googleapis.com/auth/webmasters.readonly, and store either an access token or refresh-token credential in StackOS.
+        homepage_url: https://search.google.com/search-console/about
+        console_url: https://search.google.com/search-console
+        api_key_url: https://console.cloud.google.com/apis/credentials
+        docs_url: https://developers.google.com/webmaster-tools/v1/how-tos/authorizing
+        fallback_url: https://developers.google.com/webmaster-tools/v1/how-tos/authorizing
+        fallback_reason: OAuth consent and verified properties are account-specific; the official auth docs are the stable setup reference.
+        verified_at: "2026-06-17"
+        url_confidence:
+          homepage_url: verified
+          console_url: verified
+          api_key_url: directional
+          docs_url: verified
+          fallback_url: verified
+      docs:
+        - https://developers.google.com/webmaster-tools/v1/how-tos/authorizing
+        - https://developers.google.com/webmaster-tools/v1/sites/list
+        - https://developers.google.com/webmaster-tools/v1/searchanalytics/query
+        - https://developers.google.com/webmaster-tools/v1/sitemaps/list
+        - https://developers.google.com/webmaster-tools/v1/urlInspection.index/inspect
+  - key: google-analytics
+    name: Google Analytics 4
+    description: GA4 account discovery, metadata, standard reports, and realtime report reads.
+    auth_type: oauth
+    auth_methods:
+      - key: oauth2_access_token
+        label: OAuth2 access token
+        auth_type: oauth
+        payload_format: json
+        fields:
+        - key: access_token
+          label: Access Token
+          type: secret
+          secret: true
+          required: true
+        - key: default_property_ref
+          label: Default GA4 Property
+          type: text
+          secret: false
+          required: false
+      - key: oauth2_refresh_token
+        label: OAuth2 refresh token
+        auth_type: oauth
+        payload_format: json
+        fields:
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: refresh_token
+          label: Refresh Token
+          type: secret
+          secret: true
+          required: true
+        - key: default_property_ref
+          label: Default GA4 Property
+          type: text
+          secret: false
+          required: false
+    config:
+      scopes:
+        - https://www.googleapis.com/auth/analytics.readonly
+      setup_note: Use Google OAuth with the Analytics read-only scope for GA4 Admin/Data API reporting. Measurement Protocol and Analytics write/admin scopes are intentionally deferred.
+      setup:
+        credential_label: Google Analytics OAuth credential
+        setup_note: Create a Google Cloud OAuth client with Analytics Admin/Data APIs enabled, grant https://www.googleapis.com/auth/analytics.readonly, and store either an access token or refresh-token credential in StackOS.
+        homepage_url: https://marketingplatform.google.com/about/analytics/
+        console_url: https://analytics.google.com/analytics/web/
+        api_key_url: https://console.cloud.google.com/apis/credentials
+        docs_url: https://developers.google.com/analytics/devguides/reporting/data/v1
+        fallback_url: https://developers.google.com/analytics/devguides/reporting/data/v1
+        fallback_reason: OAuth consent, account access, and GA4 property ids are account-specific; the official Data API docs are the stable setup reference.
+        verified_at: "2026-06-17"
+        url_confidence:
+          homepage_url: verified
+          console_url: verified
+          api_key_url: directional
+          docs_url: verified
+          fallback_url: verified
+      docs:
+        - https://developers.google.com/analytics/devguides/reporting/data/v1
+        - https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/runReport
+        - https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/getMetadata
+        - https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/runRealtimeReport
+        - https://developers.google.com/analytics/devguides/config/admin/v1/rest/v1beta/accountSummaries/list
+  - key: google-tag-manager
+    name: Google Tag Manager
+    description: Tag Manager account, container, workspace, tag, trigger, and install snippet reads.
+    auth_type: oauth
+    auth_methods:
+      - key: oauth2_access_token
+        label: OAuth2 access token
+        auth_type: oauth
+        payload_format: json
+        fields:
+        - key: access_token
+          label: Access Token
+          type: secret
+          secret: true
+          required: true
+        - key: default_account_ref
+          label: Default Account Ref
+          type: text
+          secret: false
+          required: false
+      - key: oauth2_refresh_token
+        label: OAuth2 refresh token
+        auth_type: oauth
+        payload_format: json
+        fields:
+        - key: client_id
+          label: OAuth Client ID
+          type: secret
+          secret: true
+          required: true
+        - key: client_secret
+          label: OAuth Client Secret
+          type: secret
+          secret: true
+          required: true
+        - key: refresh_token
+          label: Refresh Token
+          type: secret
+          secret: true
+          required: true
+        - key: default_account_ref
+          label: Default Account Ref
+          type: text
+          secret: false
+          required: false
+    config:
+      scopes:
+        - https://www.googleapis.com/auth/tagmanager.readonly
+      setup_note: Use Google OAuth with the Tag Manager read-only scope. Container/workspace mutations, versioning, publish, and permission-management scopes are intentionally deferred.
+      setup:
+        credential_label: Google Tag Manager OAuth credential
+        setup_note: Create a Google Cloud OAuth client with Tag Manager API enabled, grant https://www.googleapis.com/auth/tagmanager.readonly, and store either an access token or refresh-token credential in StackOS.
+        homepage_url: https://tagmanager.google.com/
+        console_url: https://tagmanager.google.com/
+        api_key_url: https://console.cloud.google.com/apis/credentials
+        docs_url: https://developers.google.com/tag-platform/tag-manager/api/v2
+        fallback_url: https://developers.google.com/tag-platform/tag-manager/api/v2/authorization
+        fallback_reason: OAuth consent, account access, and container refs are account-specific; the official API docs are the stable setup reference.
+        verified_at: "2026-06-17"
+        url_confidence:
+          homepage_url: verified
+          console_url: verified
+          api_key_url: directional
+          docs_url: verified
+          fallback_url: verified
+      docs:
+        - https://developers.google.com/tag-platform/tag-manager/api/v2
+        - https://developers.google.com/tag-platform/tag-manager/api/v2/authorization
+        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/list
+        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/list
+        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/snippet
+        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/list
+        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/tags/list
+        - https://developers.google.com/tag-platform/tag-manager/api/v2/reference/accounts/containers/workspaces/triggers/list
 actions:
   - key: keyword.research
     name: Research Keywords
@@ -689,6 +905,446 @@ actions:
       operation: backlink.research
       requires_credential: true
       budget_kind: ahrefs
+      enforce_budget: false
+  - key: search-console.sites.list
+    name: List Search Console Sites
+    description: List verified Search Console sites and permission levels for the connected Google account.
+    provider: google-search-console
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties: {}
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-search-console
+      operation: sites.list
+      requires_credential: true
+      budget_kind: google-search-console
+      enforce_budget: false
+  - key: search-console.search-analytics.query
+    name: Query Search Console Search Analytics
+    description: Query Search Console top-row performance data for a verified URL-prefix or domain property.
+    provider: google-search-console
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - site_url
+        - start_date
+        - end_date
+      properties:
+        site_url:
+          type: string
+          description: Verified URL-prefix property ending in / or sc-domain:example.com property.
+        start_date:
+          type: string
+        end_date:
+          type: string
+        dimensions:
+          type: array
+          items:
+            type: string
+        type:
+          type: string
+          enum:
+            - web
+            - image
+            - video
+            - news
+            - discover
+            - googleNews
+        dimension_filter_groups:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        aggregation_type:
+          type: string
+          enum:
+            - auto
+            - byProperty
+            - byPage
+            - byNewsShowcasePanel
+        row_limit:
+          type: integer
+          minimum: 1
+          maximum: 25000
+        start_row:
+          type: integer
+          minimum: 0
+        data_state:
+          type: string
+          enum:
+            - final
+            - all
+            - hourly_all
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-search-console
+      operation: search_analytics.query
+      requires_credential: true
+      budget_kind: google-search-console
+      enforce_budget: false
+  - key: search-console.sitemaps.list
+    name: List Search Console Sitemaps
+    description: List sitemap metadata for a verified Search Console property.
+    provider: google-search-console
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - site_url
+      properties:
+        site_url:
+          type: string
+        sitemap_index:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-search-console
+      operation: sitemaps.list
+      requires_credential: true
+      budget_kind: google-search-console
+      enforce_budget: false
+  - key: search-console.url.inspect
+    name: Inspect Search Console URL
+    description: Read Google's indexed-version URL Inspection result for a URL under a verified property.
+    provider: google-search-console
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - site_url
+        - inspection_url
+      properties:
+        site_url:
+          type: string
+        inspection_url:
+          type: string
+        language_code:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-search-console
+      operation: url.inspect
+      requires_credential: true
+      budget_kind: google-search-console
+      enforce_budget: false
+  - key: ga4.account_summaries.list
+    name: List GA4 Account Summaries
+    description: List GA4 account and property summaries visible to the connected Google account.
+    provider: google-analytics
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 200
+        page_cursor:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-analytics
+      operation: account_summaries.list
+      requires_credential: true
+      budget_kind: google-analytics
+      enforce_budget: false
+  - key: ga4.properties.metadata.get
+    name: Get GA4 Property Metadata
+    description: Read available GA4 dimensions, metrics, and comparisons for a property.
+    provider: google-analytics
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - property_ref
+      properties:
+        property_ref:
+          type: string
+          description: Raw property id, properties/{id}, 0, or a safe ref from credential config.
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-analytics
+      operation: properties.metadata.get
+      requires_credential: true
+      budget_kind: google-analytics
+      enforce_budget: false
+  - key: ga4.properties.run_report
+    name: Run GA4 Report
+    description: Run a GA4 Data API report with a StackOS-resolved property_ref and Google-native request body.
+    provider: google-analytics
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - property_ref
+        - request
+      properties:
+        property_ref:
+          type: string
+        request:
+          type: object
+          additionalProperties: true
+          required:
+            - dateRanges
+            - metrics
+          properties:
+            dateRanges:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            metrics:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            dimensions:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            limit:
+              type: string
+            offset:
+              type: string
+            returnPropertyQuota:
+              type: boolean
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-analytics
+      operation: properties.run_report
+      requires_credential: true
+      budget_kind: google-analytics
+      enforce_budget: false
+  - key: ga4.properties.run_realtime_report
+    name: Run GA4 Realtime Report
+    description: Run a GA4 realtime report with a StackOS-resolved property_ref and Google-native request body.
+    provider: google-analytics
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - property_ref
+        - request
+      properties:
+        property_ref:
+          type: string
+        request:
+          type: object
+          additionalProperties: true
+          required:
+            - metrics
+          properties:
+            metrics:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            dimensions:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            minuteRanges:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            limit:
+              type: string
+            returnPropertyQuota:
+              type: boolean
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-analytics
+      operation: properties.run_realtime_report
+      requires_credential: true
+      budget_kind: google-analytics
+      enforce_budget: false
+  - key: google-tag-manager.accounts.list
+    name: List Google Tag Manager Accounts
+    description: List Google Tag Manager accounts visible to the connected Google account.
+    provider: google-tag-manager
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        include_google_tags:
+          type: boolean
+        page_cursor:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-tag-manager
+      operation: accounts.list
+      requires_credential: true
+      budget_kind: google-tag-manager
+      enforce_budget: false
+  - key: google-tag-manager.containers.list
+    name: List Google Tag Manager Containers
+    description: List containers for a Google Tag Manager account ref.
+    provider: google-tag-manager
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+      properties:
+        account_ref:
+          type: string
+        page_cursor:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-tag-manager
+      operation: accounts.containers.list
+      requires_credential: true
+      budget_kind: google-tag-manager
+      enforce_budget: false
+  - key: google-tag-manager.container.snippet.get
+    name: Get Google Tag Manager Container Snippet
+    description: Read the install snippet or server container config for a Google Tag Manager container.
+    provider: google-tag-manager
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - container_ref
+      properties:
+        account_ref:
+          type: string
+        container_ref:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-tag-manager
+      operation: accounts.containers.snippet
+      requires_credential: true
+      budget_kind: google-tag-manager
+      enforce_budget: false
+  - key: google-tag-manager.workspaces.list
+    name: List Google Tag Manager Workspaces
+    description: List workspaces for a Google Tag Manager container ref.
+    provider: google-tag-manager
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - container_ref
+      properties:
+        account_ref:
+          type: string
+        container_ref:
+          type: string
+        page_cursor:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-tag-manager
+      operation: accounts.containers.workspaces.list
+      requires_credential: true
+      budget_kind: google-tag-manager
+      enforce_budget: false
+  - key: google-tag-manager.workspace.tags.list
+    name: List Google Tag Manager Workspace Tags
+    description: List tags in a Google Tag Manager workspace ref.
+    provider: google-tag-manager
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - container_ref
+        - workspace_ref
+      properties:
+        account_ref:
+          type: string
+        container_ref:
+          type: string
+        workspace_ref:
+          type: string
+        page_cursor:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-tag-manager
+      operation: accounts.containers.workspaces.tags.list
+      requires_credential: true
+      budget_kind: google-tag-manager
+      enforce_budget: false
+  - key: google-tag-manager.workspace.triggers.list
+    name: List Google Tag Manager Workspace Triggers
+    description: List triggers in a Google Tag Manager workspace ref.
+    provider: google-tag-manager
+    capability: seo-measurement
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - account_ref
+        - container_ref
+        - workspace_ref
+      properties:
+        account_ref:
+          type: string
+        container_ref:
+          type: string
+        workspace_ref:
+          type: string
+        page_cursor:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: google-tag-manager
+      operation: accounts.containers.workspaces.triggers.list
+      requires_credential: true
+      budget_kind: google-tag-manager
       enforce_budget: false
 resources:
   - key: keyword-opportunity
