@@ -446,6 +446,7 @@ async def _browser_method_manifest(
         notes=[
             "The core policy is parity-first: public Playwright methods are callable.",
             "browser.page.call and browser.context.call accept raw method, args, and kwargs.",
+            "Prefer named arguments for manifest convenience methods, for example arguments.url for goto.",
             "Object results return handle_ref values that can be used with browser.handle.call.",
             "Convenience operations exist for script run/injection, snapshots, and screenshots.",
         ],
@@ -1286,7 +1287,8 @@ def operation_specs():
             handler=_browser_page_call,
             purpose=(
                 "Use this for full-control page automation. Pass the public page method name "
-                "plus raw args/kwargs or named arguments; StackOS records a receipt."
+                "plus raw args/kwargs or named arguments; StackOS records a receipt. "
+                "Prefer named arguments for manifest methods such as goto/click/fill."
             ),
             examples=(
                 OperationExample(

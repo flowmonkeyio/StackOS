@@ -28,7 +28,7 @@ Local implementation rules:
 - Use `apply_patch` for manual file edits.
 - Preserve unrelated user changes and dirty worktree state.
 - Use project patterns and shared helpers before adding abstractions.
-- Use the `serena` MCP server for symbolic edits/navigation when helpful. It is launched per session with `--project-from-cwd`, so never call `activate_project`.
+- Use the `serena` MCP server for symbolic edits/navigation when helpful. It is a repo-singleton server selected by the wrapper's `SERENA_PROJECT`; never call `activate_project`. Serena is operational code tooling only; do not use Serena memory, onboarding, or project-management tools.
 
 StackOS operating rules:
 - Call `workspace.startSession` before StackOS project work when the session is not already bound.

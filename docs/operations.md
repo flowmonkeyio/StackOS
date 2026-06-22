@@ -148,7 +148,10 @@ not a second registry; it renders `GET /api/v1/operations` and
 Browser automation is exposed as generic StackOS operations instead of
 provider-specific workflow glue. `browser.page.call` and
 `browser.context.call` mirror public Playwright methods through raw
-method names plus `args`, `kwargs`, or named `arguments`. Calls that return
+method names plus `args`, `kwargs`, or named `arguments`. Prefer named
+`arguments` for manifest-documented convenience methods, such as
+`arguments: {"url": "https://example.com"}` for `goto`, while raw `args` and
+`kwargs` remain available for direct public Playwright parity. Calls that return
 non-page browser objects return transient `handle_ref` values; use
 `browser.handle.call` to call public methods or properties on those returned
 objects. Convenience operations such as `browser.script.run`,

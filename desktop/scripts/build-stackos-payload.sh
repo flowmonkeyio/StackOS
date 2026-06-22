@@ -33,6 +33,18 @@ WHEEL_PATH="$(find "${BUILD_DIR}/dist" -name 'stackos-*.whl' -print -quit)"
 "${UV_BIN}" venv "${PAYLOAD_DIR}/.venv" --python "${PYTHON_VERSION}"
 "${UV_BIN}" pip install --python "${PAYLOAD_DIR}/.venv/bin/python" "${WHEEL_PATH}"
 
+PACKAGE_VERSION="$("${PAYLOAD_DIR}/.venv/bin/python" -c 'from importlib.metadata import version; print(version("stackos"))')"
+BUILD_ID="${STACKOS_DESKTOP_BUILD_ID:-$(date -u '+%Y%m%dT%H%M%SZ')}"
+BUILT_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+cat > "${PAYLOAD_DIR}/build-info.json" <<INFO
+{
+  "name": "stackos",
+  "version": "${PACKAGE_VERSION}",
+  "buildId": "${BUILD_ID}",
+  "builtAt": "${BUILT_AT}"
+}
+INFO
+
 cat > "${PAYLOAD_DIR}/bin/stackos" <<'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -45,4 +57,4 @@ if [[ "${STACKOS_DESKTOP_INSTALL_PLAYWRIGHT:-0}" == "1" ]]; then
   "${PAYLOAD_DIR}/.venv/bin/python" -m playwright install chromium
 fi
 
-printf 'stackos desktop payload built at %s\n' "${PAYLOAD_DIR}"
+printf 'stackos desktop payload %s (%s) built at %s\n' "${PACKAGE_VERSION}" "${BUILD_ID}" "${PAYLOAD_DIR}"

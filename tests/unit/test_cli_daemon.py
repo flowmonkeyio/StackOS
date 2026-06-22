@@ -146,6 +146,49 @@ def test_cli_restart_stops_existing_daemon_and_starts_new(
     assert events[1][0] == "spawn"
 
 
+def test_cli_stop_stops_existing_daemon(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[dict[str, object]] = []
+
+    def fake_terminate(
+        pids: list[int],
+        *,
+        timeout: float,
+        force: bool,
+    ) -> tuple[bool, str]:
+        events.append({"pids": pids, "timeout": timeout, "force": force})
+        return True, "stopped daemon pid(s): 111"
+
+    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([111], []))
+    monkeypatch.setattr(daemon_cli, "_terminate_daemon_processes", fake_terminate)
+
+    result = CliRunner().invoke(
+        app,
+        ["stop", "--timeout", "0.5"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "stop: stopped daemon pid(s): 111" in result.stdout
+    assert events == [{"pids": [111], "timeout": 0.5, "force": False}]
+
+
+def test_cli_stop_no_running_daemon_is_ok(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = sandbox
+    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([], []))
+    monkeypatch.setattr(daemon_cli, "_tcp_can_connect", lambda *_args, **_kwargs: False)
+
+    result = CliRunner().invoke(app, ["stop"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.stdout
+    assert "stop: no running daemon found" in result.stdout
+
+
 def test_cli_restart_refuses_non_stackos_listener(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,

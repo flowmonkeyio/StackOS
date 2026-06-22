@@ -652,6 +652,69 @@ def start(
 
 
 @app.command()
+def stop(
+    host: Annotated[
+        str | None,
+        typer.Option("--host", help="Daemon host; defaults to configured loopback host."),
+    ] = None,
+    port: Annotated[
+        int | None,
+        typer.Option("--port", help="Daemon port; defaults to configured daemon port."),
+    ] = None,
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", help="Seconds to wait for stop readiness."),
+    ] = 20.0,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="SIGKILL the daemon if SIGTERM does not stop it."),
+    ] = False,
+) -> None:
+    """Stop the local singleton daemon if it is running."""
+    settings = get_settings()
+    settings.ensure_dirs()
+    daemon_host = host or settings.host
+    daemon_port = port or settings.port
+
+    if not _is_loopback_host(daemon_host):
+        typer.echo(
+            f"error: --host {daemon_host!r} is not a loopback address; refusing to stop.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
+    if blocker_pids:
+        typer.echo(
+            "error: port "
+            f"{daemon_port} is held by non-StackOS process pid(s): "
+            f"{', '.join(str(pid) for pid in blocker_pids)}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if not daemon_pids:
+        if _tcp_can_connect(daemon_host, daemon_port, timeout=0.25):
+            typer.echo(
+                "error: daemon port is reachable, but no StackOS daemon PID could be identified.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        typer.echo("stop: no running daemon found")
+        return
+
+    ok, message = _terminate_daemon_processes(
+        daemon_pids,
+        timeout=timeout,
+        force=force,
+    )
+    if not ok:
+        typer.echo(f"stop: {message}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"stop: {message}")
+
+
+@app.command()
 def restart(
     host: Annotated[
         str | None,

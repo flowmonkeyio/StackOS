@@ -29,10 +29,11 @@ config_file = "agents/sdlc-delivery.toml"
 [agents.sdlc_delivery_reviewer]
 config_file = "agents/sdlc-delivery-reviewer.toml"
 
-# Repo-local override keeps Serena's language-server cache inside a writable
-# sandbox path while preserving per-session stdio + --project-from-cwd.
+# Repo-local wrapper starts and proxies to one shared Serena Streamable HTTP
+# MCP server for this checkout.
 [mcp_servers.serena]
-command = "/Users/sergeyrura/.local/bin/serena"
-args = ["start-mcp-server", "--transport", "stdio", "--context", "agent", "--project-from-cwd", "--enable-web-dashboard", "false"]
-env = { UV_CACHE_DIR = "/Users/sergeyrura/.local/share/tpf/uv-cache" }
-startup_timeout_sec = 30.0
+command = "python3"
+args = ["/Users/sergeyrura/Bin/content-stack/.mcp/serena-mcp-wrapper.py"]
+env = { SERENA_PROJECT = "/Users/sergeyrura/Bin/content-stack", SERENA_PROJECT_NAME = "content-stack", SERENA_PORT = "9133", SERENA_CONTEXT = "codex", SERENA_IDLE_TIMEOUT_SECONDS = "3600", UV_CACHE_DIR = "/Users/sergeyrura/.local/share/tpf/uv-cache" }
+startup_timeout_sec = 60.0
+tool_timeout_sec = 300.0

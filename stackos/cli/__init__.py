@@ -66,6 +66,7 @@ from .daemon_commands import (
     restart,
     serve,
     start,
+    stop,
 )
 from .doctor_commands import (
     _check_alembic_at_head,

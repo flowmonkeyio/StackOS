@@ -1,6 +1,6 @@
 # StackOS Desktop Distribution
 
-The macOS desktop app is named `stackos`. It wraps the existing local daemon
+The macOS desktop app is named `StackOS`. It wraps the existing local daemon
 and UI instead of replacing them.
 
 ## Architecture
@@ -56,21 +56,32 @@ custom endpoint.
 ## Installer Flow
 
 The macOS app is distributed as a DMG and ZIP from electron-builder. On first
-launch for an app version, the shell runs:
+launch for an app version or a newly built packaged payload, the shell runs:
 
 ```bash
-stackos install --launchd
-stackos start
+stackos install --launchd --force
+stackos restart
 ```
 
-That keeps one installer contract. `stackos install` remains idempotent and
+That keeps one installer contract. The desktop shell passes `--force` only for
+the app-managed launchd plist repair path, so replacing an older clone-mode
+plist with the packaged-app plist does not interrupt first launch. `stackos
+install` remains idempotent and
 creates or repairs local state, migrations, plugin and skill mirrors, MCP
 registration, Playwright Chromium runtime setup, and launchd autostart. It does not rotate
 `auth.token` or `seed.bin`.
 
 Generated payloads are ignored by git. `desktop/scripts/build-stackos-payload.sh`
-builds a wheel, installs it into `desktop/payload/stackos/.venv`, and writes a
-small `bin/stackos` wrapper that the packaged Electron app can run.
+builds a wheel, installs it into `desktop/payload/stackos/.venv`, writes
+`build-info.json`, and writes a small `bin/stackos` wrapper that the packaged
+Electron app can run. The app records a composite install key from its app
+version plus packaged payload build info, so replacing a locally built app with
+the same public version still reruns install/repair once.
+
+The macOS bundle icon is generated from the same source as the UI favicon:
+`ui/public/favicon.svg`. `desktop/scripts/build-icons.mjs` syncs that SVG into
+`desktop/assets/stackos-icon.svg` and generates `desktop/assets/stackos-icon.icns`
+for electron-builder.
 
 ## Update Flow
 
@@ -90,8 +101,9 @@ https://updates.example.com/stackos/macos/stackos-1.0.1-mac-arm64.zip
 https://updates.example.com/stackos/macos/stackos-1.0.1-mac-arm64.dmg
 ```
 
-After an app update, the next launch sees a new app version and reruns
-`stackos install --launchd`, then starts or restarts the daemon. Local DB,
+After an app update, the next launch sees a new app version or new packaged
+payload build id and reruns `stackos install --launchd --force`, then restarts
+the daemon so the running process uses the newly packaged code. Local DB,
 generated assets, `seed.bin`, `auth.token`, and provider credentials remain in
 the existing user-local StackOS state paths.
 
@@ -130,3 +142,8 @@ STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" make desktop-dist
 Manual release smoke should install the DMG, launch `stackos`, confirm the UI
 loads from `127.0.0.1:5180`, run Doctor from the app menu, and verify update
 metadata is reachable from the custom endpoint.
+
+For a cold-start smoke of the packaged daemon path, run `stackos stop` before
+launching the desktop app. The app should run its packaged `stackos install
+--launchd --force`, start the daemon through `stackos restart`, and then load
+the UI.

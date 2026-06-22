@@ -22,6 +22,7 @@ from typer.testing import CliRunner
 import stackos.cli.daemon_commands as daemon_cli
 import stackos.cli.doctor_commands as doctor_cli
 import stackos.cli.local_commands as local_cli
+import stackos.db.migrate as migrate_module
 import stackos.db.models  # noqa: F401  (populate SQLModel metadata)
 from stackos import install as installer
 from stackos.cli import app
@@ -501,6 +502,53 @@ def test_cli_install_rejects_multiple_only_flags(sandbox: Path) -> None:
     assert "mutually exclusive" in result.stderr if hasattr(result, "stderr") else result.output
 
 
+def test_cli_install_rejects_force_without_launchd(sandbox: Path) -> None:
+    result = CliRunner().invoke(app, ["install", "--force", "--skip-doctor"])
+
+    assert result.exit_code == 2
+    assert "only valid with --launchd" in result.stderr if hasattr(result, "stderr") else result.output
+
+
+def test_cli_install_launchd_force_overwrites_plist(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launchd_calls: list[bool] = []
+
+    monkeypatch.setattr(installer, "detect_mode", lambda: "package")
+    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(installer, "copy_skills", lambda runtime, home: (home / runtime, 1))
+    monkeypatch.setattr(installer, "copy_plugins", lambda home: (home / ".codex/plugins/stackos", 1))
+    monkeypatch.setattr(installer, "register_plugin_marketplace", lambda home: "marketplace ok")
+    monkeypatch.setattr(installer, "register_mcp_codex", lambda home, port: "codex ok")
+    monkeypatch.setattr(installer, "register_mcp_claude", lambda home, port: "claude ok")
+
+    def fake_install_launchd(
+        settings: Settings,
+        *,
+        home: Path,
+        force: bool,
+        host: str,
+        port: int,
+        log_level: str,
+    ) -> tuple[bool, str]:
+        _ = settings, home, host, port, log_level
+        launchd_calls.append(force)
+        return True, "installed launchd plist"
+
+    monkeypatch.setattr(local_cli, "_install_launchd_autostart", fake_install_launchd)
+
+    result = CliRunner().invoke(
+        app,
+        ["install", "--launchd", "--force", "--skip-doctor"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert launchd_calls == [True]
+    assert "installed launchd plist" in result.stdout
+
+
 def test_cli_init_idempotent(sandbox: Path) -> None:
     runner = CliRunner()
     first = runner.invoke(app, ["init"], catch_exceptions=False)
@@ -557,6 +605,23 @@ def test_upgrade_to_head_works_outside_repo_cwd(
 ) -> None:
     settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     monkeypatch.chdir(tmp_path)
+
+    result = upgrade_to_head(settings)
+
+    assert result.stamped_existing_schema is False
+    assert current_alembic_version(settings) == HEAD_REVISION
+
+
+def test_upgrade_to_head_works_without_alembic_ini(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    monkeypatch.setattr(
+        migrate_module,
+        "_alembic_ini_path",
+        lambda: tmp_path / "missing-alembic.ini",
+    )
 
     result = upgrade_to_head(settings)
 

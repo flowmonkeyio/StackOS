@@ -46,7 +46,7 @@ function failureHtml(title, details) {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>stackos</title>
+  <title>StackOS</title>
   <style>
     body {
       margin: 0;
@@ -92,6 +92,7 @@ async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
   const install = await service.prepareInstalledVersion({
     version: app.getVersion(),
     userDataPath: app.getPath("userData"),
+    payloadInfo: service.readPackagedBuildInfo(),
     force: forceInstall
   });
   if (!install.ok) {
@@ -114,7 +115,7 @@ function createWindow() {
     height: 860,
     minWidth: 960,
     minHeight: 640,
-    title: "stackos",
+    title: "StackOS",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -153,7 +154,7 @@ async function showCommandResult(title, result) {
 function createMenu() {
   const template = [
     {
-      label: "stackos",
+      label: "StackOS",
       submenu: [
         { role: "about" },
         { type: "separator" },
@@ -238,7 +239,8 @@ function createMenu() {
 function registerIpc() {
   ipcMain.handle("stackos:status", async () => ({
     health: await service.checkHealth(),
-    command: service.resolveStackosCommand()
+    command: service.resolveStackosCommand(),
+    payload: service.readPackagedBuildInfo()
   }));
   ipcMain.handle("stackos:install-or-repair", async () => {
     const result = await service.installOrRepair();
@@ -269,7 +271,7 @@ app.on("activate", () => {
 });
 
 app.whenReady().then(async () => {
-  app.setName("stackos");
+  app.setName("StackOS");
   updateController = createUpdateController();
   registerIpc();
   createMenu();

@@ -176,6 +176,27 @@ class FakeBrowserRuntime:
 class FakeDynamicPage:
     def __init__(self, url: str = "about:blank") -> None:
         self.url = url
+        self.calls: list[dict[str, Any]] = []
+
+    async def goto(
+        self,
+        url: str,
+        *,
+        wait_until: str | None = None,
+        timeout: int | None = None,
+        referer: str | None = None,
+    ) -> SimpleNamespace:
+        self.url = url
+        self.calls.append(
+            {
+                "method": "goto",
+                "url": url,
+                "wait_until": wait_until,
+                "timeout": timeout,
+                "referer": referer,
+            }
+        )
+        return SimpleNamespace(status=204)
 
     async def public_method(self, value: str, *, suffix: str) -> dict[str, str]:
         return {"value": value, "suffix": suffix}
@@ -415,6 +436,31 @@ def test_runtime_dynamic_page_and_context_methods_support_page_refs() -> None:
         "title": None,
     }
     assert opened.page_refs == [f"{session_ref}:page-1", f"{session_ref}:page-2"]
+
+    navigated = asyncio.run(
+        runtime.page_call(
+            session_ref=session_ref,
+            spec=get_method_spec("goto"),
+            method="goto",
+            arguments={},
+            raw_args=["https://example.test/login"],
+            raw_kwargs={"wait_until": "domcontentloaded", "timeout": 1234},
+            page_ref=f"{session_ref}:page-2",
+        )
+    )
+
+    assert navigated.status == "ok"
+    assert navigated.url == "https://example.test/login"
+    assert navigated.value == {"response_status": 204}
+    assert context.pages[1].calls == [
+        {
+            "method": "goto",
+            "url": "https://example.test/login",
+            "wait_until": "domcontentloaded",
+            "timeout": 1234,
+            "referer": None,
+        }
+    ]
 
     called = asyncio.run(
         runtime.page_call(

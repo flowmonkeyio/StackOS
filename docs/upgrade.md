@@ -36,17 +36,32 @@ cache copy, repairs MCP registrations, and runs `doctor`.
 
 The `stackos` desktop app updates through a custom generic update endpoint.
 After the app bundle is updated, the next launch reruns the idempotent install
-repair step for the new app version:
+repair step for the new app version or new packaged payload build id:
 
 ```bash
-stackos install --launchd
-stackos start
+stackos install --launchd --force
+stackos restart
 ```
 
 This repairs assets, migrations, MCP registration, and launchd without rotating
 `seed.bin` or `auth.token`. See
 [`desktop-distribution.md`](./desktop-distribution.md) for endpoint metadata,
 payload, signing, and release-artifact requirements.
+
+For local desktop upgrade testing after development changes:
+
+```bash
+make desktop-dist
+stackos stop
+open desktop/dist/stackos-1.0.0-mac-arm64.dmg
+```
+
+Replace the installed app from the DMG, then launch it. The payload build writes
+`resources/stackos/build-info.json`; if that build id changed, the app runs the
+install/repair path once and restarts the daemon even when `desktop/package.json`
+still has the same public version. For release updates, still bump
+`pyproject.toml`, `stackos/__init__.py`, and `desktop/package.json` together so
+electron-updater can advertise a new version.
 
 ## What happens during upgrade
 
@@ -58,7 +73,7 @@ payload, signing, and release-artifact requirements.
 | MCP registration | Codex CLI: current local `mcp-bridge` stdio registrations are a no-op; stale `stackos` entries are removed and replaced by install or `scripts/register-mcp-codex.sh`. Claude Code: atomic JSON merge with `.bak` backup; sibling servers preserved. Neither registration stores a bearer token in client config. |
 | Auth token | **Does not rotate on upgrade.** Run `stackos rotate-token --yes` or `make rotate-token` explicitly to rotate; registration refreshes saved configs. Restart any running daemon so middleware loads the new token. |
 | launchd plist | `stackos autostart install` owns plist generation for clone and package installs. If the existing plist matches the generated one, it is a no-op. If different, `--force` overwrites with a `.bak` retained. |
-| Desktop app | The Electron shell checks the custom update endpoint, installs the app update, then runs the normal install/repair path on next launch. Local DB, generated assets, seed, token, and provider credentials remain in user-local StackOS paths. |
+| Desktop app | The Electron shell checks the custom update endpoint, installs the app update, then runs the normal install/repair path on next launch when the app version or packaged payload build id changed. The app restarts the daemon after install/repair so the running process uses the packaged code. Local DB, generated assets, seed, token, and provider credentials remain in user-local StackOS paths. |
 
 ## Breaking changes
 

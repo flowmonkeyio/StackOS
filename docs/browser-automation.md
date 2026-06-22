@@ -29,7 +29,10 @@ login.
 - Agents get full public browser control, in the same capability class as a
   normal Playwright/test browser session. `browser.page.call` and
   `browser.context.call` accept a method name plus raw `args`, `kwargs`, or
-  named `arguments` so agents can use the Playwright API directly.
+  named `arguments` so agents can use the Playwright API directly. Prefer named
+  `arguments` for manifest-documented convenience methods such as `goto`,
+  `click`, and `fill`; for example, call `goto` with
+  `arguments: {"url": "https://example.com"}`.
 - Page operations accept an optional `page_ref`. Context calls that create or
   return pages refresh the session's page refs, so agents can target new
   tabs/windows instead of being limited to the first page.
@@ -57,7 +60,9 @@ login.
    operator may need to log in or observe posting.
 3. Use `browser.page.call` for page operations such as `goto`, `click`, `fill`,
    `press`, `set_input_files`, or any other public page method. Pass `page_ref`
-   to target a known tab/page.
+   to target a known tab/page. For manifest methods, prefer named `arguments`
+   so receipts and validation can identify fields such as `url` and `selector`
+   explicitly.
 4. Use `browser.context.call` for context operations such as `cookies`,
    `storage_state`, `grant_permissions`, `pages`, downloads, routing, or any
    other public context method.
@@ -150,7 +155,8 @@ Use this checklist after runtime or MCP wiring changes:
 
 1. Restart the StackOS daemon and run `stackos doctor`.
 2. Start a visible session with `browser.session.start`.
-3. Navigate to a simple page with `browser.page.call(method="goto")`.
+3. Navigate to a simple page with
+   `browser.page.call(method="goto", arguments={"url": "https://example.com"})`.
 4. Exercise user actions with `fill` and `click`.
 5. Run arbitrary JavaScript with `browser.script.run`.
 6. Inject JavaScript with `browser.script.inject`, navigate, and verify it ran.

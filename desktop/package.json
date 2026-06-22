@@ -9,8 +9,9 @@
   "author": "StackOS contributors",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check scripts/build-mac.mjs && node scripts/doctor.mjs",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check scripts/build-icons.mjs && node --check scripts/render-icon-electron.cjs && node --check scripts/build-mac.mjs && node scripts/doctor.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "icons": "node scripts/build-icons.mjs",
     "payload": "bash scripts/build-stackos-payload.sh",
     "pack": "electron-builder --dir --mac",
     "dist": "node scripts/build-mac.mjs",
@@ -25,7 +26,7 @@
   },
   "build": {
     "appId": "io.stackos.desktop",
-    "productName": "stackos",
+    "productName": "StackOS",
     "asar": true,
     "artifactName": "stackos-${version}-${os}-${arch}.${ext}",
     "directories": {
@@ -46,6 +47,7 @@
       }
     ],
     "mac": {
+      "icon": "assets/stackos-icon.icns",
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -80,6 +82,11 @@
         }
       ]
     }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
   },
   "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
 }

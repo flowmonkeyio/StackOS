@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "python3",
+      "args": [
+        "/Users/sergeyrura/Bin/content-stack/.mcp/serena-mcp-wrapper.py"
+      ],
+      "env": {
+        "SERENA_PROJECT": "/Users/sergeyrura/Bin/content-stack",
+        "SERENA_PROJECT_NAME": "content-stack",
+        "SERENA_PORT": "9133",
+        "SERENA_CONTEXT": "codex",
+        "SERENA_IDLE_TIMEOUT_SECONDS": "3600",
+        "UV_CACHE_DIR": "/Users/sergeyrura/.local/share/tpf/uv-cache"
+      }
+    }
+  }
+}

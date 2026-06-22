@@ -95,14 +95,20 @@ background.
 Use `stackos restart` when a daemon is already running and should reload
 settings, token rotation, or package code.
 
+Use `stackos stop` to shut down the singleton daemon without immediately
+starting it again. This is useful when testing a packaged desktop app launch and
+you want the app to prove it can start its bundled daemon path from a cold
+state.
+
 ## macOS Desktop App
 
-The macOS desktop app is named `stackos`. It is an Electron shell around the
-same local daemon and UI. On first launch for an app version, it runs:
+The macOS desktop app is named `StackOS`. It is an Electron shell around the
+same local daemon and UI. On first launch for an app version or packaged payload
+build id, it runs:
 
 ```bash
-stackos install --launchd
-stackos start
+stackos install --launchd --force
+stackos restart
 ```
 
 That means desktop installs converge on the same local state as package and

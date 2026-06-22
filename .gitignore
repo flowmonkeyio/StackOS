@@ -92,3 +92,5 @@ logs/
 *.bak
 *.tmp
 .cache/
+.pnpm-store/
+tmp/

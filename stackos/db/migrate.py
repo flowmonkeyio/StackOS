@@ -20,12 +20,16 @@ class MigrationResult:
     stamped_existing_schema: bool = False
 
 
+def _alembic_ini_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "alembic.ini"
+
+
 def alembic_config(settings: Settings) -> Config:
     """Build an Alembic config pinned to the configured SQLite database."""
     repo_root = Path(__file__).resolve().parents[2]
-    cfg_path = repo_root / "alembic.ini"
+    cfg_path = _alembic_ini_path()
     migrations_path = Path(__file__).resolve().parent / "migrations"
-    cfg = Config(str(cfg_path))
+    cfg = Config(str(cfg_path)) if cfg_path.exists() else Config()
     cfg.set_main_option("script_location", str(migrations_path))
     cfg.set_main_option("prepend_sys_path", str(repo_root))
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.db_path}")

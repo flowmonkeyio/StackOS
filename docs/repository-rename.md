@@ -15,7 +15,7 @@ operator approval.
 | Daemon/UI port | `http://127.0.0.1:5180/` | Keep. |
 | Codex plugin slug | `stackos` | Keep. |
 | MCP server name | `stackos` | Keep. |
-| Codex Serena MCP entry | `serena` | Keep. Per-session stdio uses `--project-from-cwd`, so repo renames do not require a server rename. |
+| Codex Serena MCP entry | `serena` | Keep, but update the wrapper env path/port if the checkout path changes. |
 | StackOS workspace binding | Current repo path/git fingerprint | Refresh with `workspace.connect` after any path or remote change. |
 
 ## Recommended Sequence
@@ -30,14 +30,16 @@ operator approval.
    ```
 
 4. Keep the package, CLI, plugin slug, and MCP server name as `stackos`.
-5. If the local folder is renamed, restart any Codex or Claude sessions that
-   were launched from the old checkout so their per-session Serena stdio
-   servers relaunch from the new cwd.
-6. Re-register the StackOS MCP bridge if the agent runtime stores absolute
+5. If the local folder is renamed, update `.codex/config.toml` and `.mcp.json`
+   so `SERENA_PROJECT` and the wrapper path point to the new checkout.
+6. Stop the old repo-singleton Serena process with the previous checkout's
+   wrapper, then restart any Codex or Claude sessions so they connect through
+   the new wrapper config.
+7. Re-register the StackOS MCP bridge if the agent runtime stores absolute
    paths for this checkout.
-7. Refresh the StackOS workspace binding from the renamed repository so the
+8. Refresh the StackOS workspace binding from the renamed repository so the
    bridge resolves the same project from the new path/remote fingerprint.
-8. Run setup and release signoff after the rename:
+9. Run setup and release signoff after the rename:
 
    ```bash
    make install
@@ -49,5 +51,7 @@ operator approval.
 - Do not rewrite historical commit messages.
 - Do not delete the old remote until the new remote has all refs and the
   operator has confirmed downstream integrations.
-- Do not introduce a project-scoped Serena daemon or launchd job from inside a
-  normal coding delivery; this repo uses per-session stdio MCP pinned by cwd.
+- Do not introduce a launchd job for Serena from inside a normal coding
+  delivery. This repo uses a repo-singleton Streamable HTTP Serena process
+  started on demand by `.mcp/serena-mcp-wrapper.py` and stopped after idle
+  timeout.

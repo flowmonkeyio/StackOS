@@ -83,6 +83,13 @@ def install(
         bool,
         typer.Option("--launchd", help="Also install the launchd plist (macOS)."),
     ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="Overwrite an existing differing launchd plist when --launchd is set.",
+        ),
+    ] = False,
     skip_doctor: Annotated[
         bool,
         typer.Option("--skip-doctor", help="Skip the post-install doctor check."),
@@ -107,6 +114,9 @@ def install(
             "error: --skills-only, --mcp-only, and --plugins-only are mutually exclusive.",
             err=True,
         )
+        raise typer.Exit(code=2)
+    if force and not launchd:
+        typer.echo("error: --force is only valid with --launchd.", err=True)
         raise typer.Exit(code=2)
     do_skills = skills_only or not (mcp_only or plugins_only)
     do_mcp = mcp_only or not (skills_only or plugins_only)
@@ -161,7 +171,7 @@ def install(
         ok, message = _install_launchd_autostart(
             settings,
             home=_doctor_home(),
-            force=False,
+            force=force,
             host=settings.host,
             port=settings.port,
             log_level=settings.log_level,

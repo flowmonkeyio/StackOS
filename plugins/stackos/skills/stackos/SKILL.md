@@ -84,7 +84,10 @@ run token.
     is restarted. `browser.session.start` opens a persistent Playwright Chromium session
     (`headless=false` by default for operator login/inspection). Use
     `browser.page.call` and `browser.context.call` for public Playwright
-    methods with raw args/kwargs, `browser.handle.call` for
+    methods with raw args/kwargs or named `arguments`; prefer named
+    `arguments` for manifest convenience methods such as `goto`, `click`, and
+    `fill` so receipts and validation can identify fields like `url` and
+    `selector`. Use `browser.handle.call` for
     returned locator/download/response-like object handles,
     `browser.script.run` and `browser.script.inject` for arbitrary JavaScript, and
     `browser.page.screenshot` for generated-assets evidence. Treat this as the
@@ -160,7 +163,9 @@ run token.
   visual proof or publication evidence. Stop the session with
   `browser.session.stop` when done. Treat the browser method
   manifest as guidance, not an allowlist: public page/context methods may be
-  called through the raw method/args/kwargs operations.
+  called through raw args/kwargs, while manifest convenience methods should use
+  named `arguments` when possible, for example
+  `arguments: {"url": "https://example.com"}` for `goto`.
 - Repair denied tools: read `toolbox.describe.tool_statuses`. `unknown_tool`
   means the name is wrong or removed. `local_admin_required` means operator
   setup is needed. `run_plan_step_grant_required` means create/start the run

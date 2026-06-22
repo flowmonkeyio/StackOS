@@ -48,6 +48,66 @@ _CHROMIUM_PATH_PROBE = (
 )
 
 
+def _merge_manifest_call_arguments(
+    *,
+    spec: BrowserMethodSpec | None,
+    arguments: dict[str, Any],
+    raw_args: list[Any] | None,
+    raw_kwargs: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Merge raw positional/keyword inputs into manifest argument names."""
+    merged = dict(arguments)
+    embedded_args = merged.pop("args", None)
+    embedded_kwargs = merged.pop("kwargs", None)
+    args = list(raw_args if raw_args is not None else embedded_args or [])
+    kwargs = dict(raw_kwargs if raw_kwargs is not None else embedded_kwargs or {})
+
+    if args:
+        arg_names = list(spec.allowed_arg_names if spec is not None else ())
+        if not arg_names:
+            return merged
+        if len(args) > len(arg_names):
+            raise ValidationError(
+                "too many positional browser method arguments",
+                data={
+                    "method": spec.method if spec is not None else None,
+                    "arg_count": len(args),
+                    "max_arg_count": len(arg_names),
+                    "allowed_arg_names": arg_names,
+                },
+            )
+        for name, value in zip(arg_names, args, strict=False):
+            if name in merged:
+                raise ValidationError(
+                    "browser method argument provided more than once",
+                    data={"argument": name},
+                )
+            merged[name] = value
+
+    for name, value in kwargs.items():
+        key = str(name)
+        if key in merged:
+            raise ValidationError(
+                "browser method argument provided more than once",
+                data={"argument": key},
+            )
+        merged[key] = value
+
+    return merged
+
+
+def _timeout(arguments: dict[str, Any]) -> Any:
+    return arguments.get("timeout_ms", arguments.get("timeout"))
+
+
+def _delay(arguments: dict[str, Any]) -> Any:
+    return arguments.get("delay_ms", arguments.get("delay"))
+
+
+def _click_count(arguments: dict[str, Any]) -> Any:
+    return arguments.get("click_count", arguments.get("clicks", 1))
+
+
 def safe_browser_key(value: str) -> str:
     """Normalize a profile/session key for refs and daemon-owned paths."""
     clean = _SAFE_KEY_RE.sub("-", value.strip()).strip(".-").lower()
@@ -324,12 +384,18 @@ class BrowserRuntime:
             method = method or (spec.method if spec is not None else None)
             if not method:
                 raise ValidationError("browser page method is required")
+            manifest_arguments = _merge_manifest_call_arguments(
+                spec=spec,
+                arguments=arguments,
+                raw_args=raw_args,
+                raw_kwargs=raw_kwargs,
+            )
             if method == "goto":
                 response = await page.goto(
-                    arguments["url"],
-                    wait_until=arguments.get("wait_until"),
-                    timeout=arguments.get("timeout_ms"),
-                    referer=arguments.get("referer"),
+                    manifest_arguments["url"],
+                    wait_until=manifest_arguments.get("wait_until"),
+                    timeout=_timeout(manifest_arguments),
+                    referer=manifest_arguments.get("referer"),
                 )
                 status = getattr(response, "status", None)
                 return BrowserCallResult(
@@ -342,10 +408,10 @@ class BrowserRuntime:
                 )
             if method == "click":
                 await page.click(
-                    arguments["selector"],
-                    button=arguments.get("button", "left"),
-                    click_count=arguments.get("click_count", 1),
-                    timeout=arguments.get("timeout_ms"),
+                    manifest_arguments["selector"],
+                    button=manifest_arguments.get("button", "left"),
+                    click_count=_click_count(manifest_arguments),
+                    timeout=_timeout(manifest_arguments),
                 )
                 return BrowserCallResult(
                     method=method,
@@ -356,9 +422,9 @@ class BrowserRuntime:
                 )
             if method == "fill":
                 await page.fill(
-                    arguments["selector"],
-                    arguments["value"],
-                    timeout=arguments.get("timeout_ms"),
+                    manifest_arguments["selector"],
+                    manifest_arguments["value"],
+                    timeout=_timeout(manifest_arguments),
                 )
                 return BrowserCallResult(
                     method=method,
@@ -369,10 +435,10 @@ class BrowserRuntime:
                 )
             if method == "type":
                 await page.type(
-                    arguments["selector"],
-                    arguments["text"],
-                    delay=arguments.get("delay_ms"),
-                    timeout=arguments.get("timeout_ms"),
+                    manifest_arguments["selector"],
+                    manifest_arguments["text"],
+                    delay=_delay(manifest_arguments),
+                    timeout=_timeout(manifest_arguments),
                 )
                 return BrowserCallResult(
                     method=method,
@@ -383,9 +449,9 @@ class BrowserRuntime:
                 )
             if method == "press":
                 await page.press(
-                    arguments["selector"],
-                    arguments["key"],
-                    timeout=arguments.get("timeout_ms"),
+                    manifest_arguments["selector"],
+                    manifest_arguments["key"],
+                    timeout=_timeout(manifest_arguments),
                 )
                 return BrowserCallResult(
                     method=method,
@@ -396,9 +462,9 @@ class BrowserRuntime:
                 )
             if method == "select_option":
                 value = await page.select_option(
-                    arguments["selector"],
-                    arguments["values"],
-                    timeout=arguments.get("timeout_ms"),
+                    manifest_arguments["selector"],
+                    manifest_arguments["values"],
+                    timeout=_timeout(manifest_arguments),
                 )
                 return BrowserCallResult(
                     method=method,
@@ -410,9 +476,9 @@ class BrowserRuntime:
                 )
             if method == "wait_for_selector":
                 await page.wait_for_selector(
-                    arguments["selector"],
-                    state=arguments.get("state"),
-                    timeout=arguments.get("timeout_ms"),
+                    manifest_arguments["selector"],
+                    state=manifest_arguments.get("state"),
+                    timeout=_timeout(manifest_arguments),
                 )
                 return BrowserCallResult(
                     method=method,
@@ -423,8 +489,8 @@ class BrowserRuntime:
                 )
             if method == "wait_for_load_state":
                 await page.wait_for_load_state(
-                    state=arguments.get("state"),
-                    timeout=arguments.get("timeout_ms"),
+                    state=manifest_arguments.get("state"),
+                    timeout=_timeout(manifest_arguments),
                 )
                 return BrowserCallResult(
                     method=method,
@@ -434,7 +500,7 @@ class BrowserRuntime:
                     page_refs=live.page_refs,
                 )
             if method == "wait_for_timeout":
-                await page.wait_for_timeout(arguments["timeout_ms"])
+                await page.wait_for_timeout(_timeout(manifest_arguments))
                 return BrowserCallResult(
                     method=method,
                     status="ok",
@@ -462,8 +528,8 @@ class BrowserRuntime:
                 )
             if method == "text_content":
                 value = await page.text_content(
-                    arguments["selector"],
-                    timeout=arguments.get("timeout_ms"),
+                    manifest_arguments["selector"],
+                    timeout=_timeout(manifest_arguments),
                 )
                 return BrowserCallResult(
                     method=method,
@@ -475,8 +541,8 @@ class BrowserRuntime:
                 )
             if method == "inner_text":
                 value = await page.inner_text(
-                    arguments["selector"],
-                    timeout=arguments.get("timeout_ms"),
+                    manifest_arguments["selector"],
+                    timeout=_timeout(manifest_arguments),
                 )
                 return BrowserCallResult(
                     method=method,
@@ -487,7 +553,7 @@ class BrowserRuntime:
                     value=value,
                 )
             if method == "locator_count":
-                value = await page.locator(arguments["selector"]).count()
+                value = await page.locator(manifest_arguments["selector"]).count()
                 return BrowserCallResult(
                     method=method,
                     status="ok",
@@ -497,10 +563,13 @@ class BrowserRuntime:
                     value=value,
                 )
             if method == "evaluate":
-                if "arg" in arguments:
-                    value = await page.evaluate(arguments["script"], arguments.get("arg"))
+                if "arg" in manifest_arguments:
+                    value = await page.evaluate(
+                        manifest_arguments["script"],
+                        manifest_arguments.get("arg"),
+                    )
                 else:
-                    value = await page.evaluate(arguments["script"])
+                    value = await page.evaluate(manifest_arguments["script"])
                 return BrowserCallResult(
                     method=method,
                     status="ok",
@@ -511,10 +580,10 @@ class BrowserRuntime:
                 )
             if method == "add_init_script":
                 kwargs: dict[str, Any] = {}
-                if arguments.get("script") is not None:
-                    kwargs["script"] = arguments["script"]
-                if arguments.get("path") is not None:
-                    kwargs["path"] = arguments["path"]
+                if manifest_arguments.get("script") is not None:
+                    kwargs["script"] = manifest_arguments["script"]
+                if manifest_arguments.get("path") is not None:
+                    kwargs["path"] = manifest_arguments["path"]
                 await page.add_init_script(**kwargs)
                 return BrowserCallResult(
                     method=method,

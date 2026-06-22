@@ -11,6 +11,7 @@ const DAEMON_PORT = Number.parseInt(process.env.STACKOS_DESKTOP_DAEMON_PORT || "
 const DAEMON_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/`;
 const HEALTH_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/api/v1/health`;
 const INSTALL_STATE_FILE = "install-state.json";
+const PAYLOAD_BUILD_INFO_FILE = "build-info.json";
 
 function isExecutable(filePath) {
   try {
@@ -25,11 +26,40 @@ function repoRoot() {
   return path.resolve(__dirname, "..", "..");
 }
 
-function packagedStackosPath() {
+function packagedStackosRoot() {
   if (!process.resourcesPath) {
     return null;
   }
-  return path.join(process.resourcesPath, "stackos", "bin", "stackos");
+  return path.join(process.resourcesPath, "stackos");
+}
+
+function packagedStackosPath() {
+  const root = packagedStackosRoot();
+  if (!root) {
+    return null;
+  }
+  return path.join(root, "bin", "stackos");
+}
+
+function readPackagedBuildInfo() {
+  const root = packagedStackosRoot();
+  if (!root) {
+    return null;
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(root, PAYLOAD_BUILD_INFO_FILE), "utf8"));
+    if (!raw || typeof raw !== "object") {
+      return null;
+    }
+    return {
+      name: typeof raw.name === "string" ? raw.name : "stackos",
+      version: typeof raw.version === "string" ? raw.version : null,
+      buildId: typeof raw.buildId === "string" ? raw.buildId : null,
+      builtAt: typeof raw.builtAt === "string" ? raw.builtAt : null
+    };
+  } catch (_error) {
+    return null;
+  }
 }
 
 function resolveStackosCommand() {
@@ -209,7 +239,8 @@ async function ensureDaemonReady(timeoutSeconds = 20) {
 }
 
 async function installOrRepair(timeoutSeconds = 240) {
-  const installArgs = process.platform === "darwin" ? ["install", "--launchd"] : ["install"];
+  const installArgs =
+    process.platform === "darwin" ? ["install", "--launchd", "--force"] : ["install"];
   const install = await runStackos(installArgs, {
     timeoutMs: timeoutSeconds * 1000
   });
@@ -220,10 +251,10 @@ async function installOrRepair(timeoutSeconds = 240) {
       install
     };
   }
-  const start = await startDaemon(20);
+  const start = await restartDaemon(20);
   return {
     ok: start.ok,
-    phase: start.ok ? "ready" : "start",
+    phase: start.ok ? "ready" : "restart",
     install,
     start
   };
@@ -246,13 +277,31 @@ function writeInstallState(userDataPath, state) {
   fs.writeFileSync(installStatePath(userDataPath), `${JSON.stringify(state, null, 2)}\n`);
 }
 
-async function prepareInstalledVersion({ version, userDataPath, force = false }) {
+function installKeyFor({ version, payloadInfo }) {
+  if (!payloadInfo) {
+    return version;
+  }
+  return [version, payloadInfo.version || "unknown", payloadInfo.buildId || "no-build-id"].join(":");
+}
+
+async function prepareInstalledVersion({
+  version,
+  userDataPath,
+  force = false,
+  payloadInfo = readPackagedBuildInfo()
+}) {
   const state = readInstallState(userDataPath);
-  if (!force && state.version === version && state.prepared === true) {
+  const installKey = installKeyFor({ version, payloadInfo });
+  const preparedCurrentInstall =
+    state.prepared === true &&
+    (state.installKey === installKey || (!payloadInfo && !state.installKey && state.version === version));
+  if (!force && preparedCurrentInstall) {
     return {
       ok: true,
       skipped: true,
       version,
+      installKey,
+      payloadInfo,
       state
     };
   }
@@ -261,6 +310,8 @@ async function prepareInstalledVersion({ version, userDataPath, force = false })
   if (result.ok) {
     writeInstallState(userDataPath, {
       version,
+      installKey,
+      payloadInfo,
       prepared: true,
       preparedAt: new Date().toISOString()
     });
@@ -268,7 +319,9 @@ async function prepareInstalledVersion({ version, userDataPath, force = false })
   return {
     ...result,
     skipped: false,
-    version
+    version,
+    installKey,
+    payloadInfo
   };
 }
 
@@ -290,6 +343,7 @@ module.exports = {
   ensureDaemonReady,
   installOrRepair,
   prepareInstalledVersion,
+  readPackagedBuildInfo,
   resolveStackosCommand,
   restartDaemon,
   runDoctor,

@@ -13,6 +13,21 @@ const updateUrl = process.env.STACKOS_UPDATE_URL;
 const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
 const config = { ...pkg.build };
 
+function runStep(command, args) {
+  const result = spawnSync(command, args, {
+    cwd: desktopDir,
+    stdio: "inherit",
+    shell: false
+  });
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
+}
+
 if (updateUrl) {
   fs.writeFileSync(
     generatedUpdateConfigPath,
@@ -40,14 +55,5 @@ if (updateUrl) {
   args.push("--config", generatedConfigPath);
 }
 
-const result = spawnSync(command, args, {
-  cwd: desktopDir,
-  stdio: "inherit",
-  shell: false
-});
-
-if (result.error) {
-  console.error(result.error.message);
-  process.exit(1);
-}
-process.exit(result.status ?? 1);
+runStep(process.execPath, ["scripts/build-icons.mjs"]);
+runStep(command, args);

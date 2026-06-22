@@ -185,22 +185,19 @@ Do not wrap redirections, logical OR, background jobs, or subshells.
 
 ## Serena MCP
 
-Serena runs as a per-session stdio MCP server auto-pinned to this repository
-via `--project-from-cwd`.
+Serena is a repo-singleton Streamable HTTP MCP server on `127.0.0.1:9133`, reached through `.mcp/serena-mcp-wrapper.py` from `.codex/config.toml` and `.mcp.json`. The wrapper is stdio-facing for MCP clients, starts the repo's Serena HTTP process when a client connects, shares that process across local clients/subagents, and stops it after 3600 seconds with no active requests. Do not replace this with direct HTTP-only MCP config; Serena itself will not auto-start without the wrapper.
 
 - Codex MCP name: `serena`
-- Config source: `~/.codex/config.toml`, with this repo's `.codex/config.toml`
-  adding a writable `UV_CACHE_DIR` override for sandboxed sessions
-- Project selection: automatic from the checkout Codex launched in
+- Project selection: fixed to `/Users/sergeyrura/Bin/content-stack` by the wrapper env `SERENA_PROJECT`
+- Lifecycle commands: `python3 .mcp/serena-mcp-wrapper.py --status`, `python3 .mcp/serena-mcp-wrapper.py --ensure`, `python3 .mcp/serena-mcp-wrapper.py --stop`
 
-Never call `activate_project` - there is no shared daemon and no global active
-project; each session is isolated to the checkout it launched in. Use
-`get_symbols_overview`, `find_symbol`, and `find_referencing_symbols` for
-navigation instead of reading whole files. The first cross-reference query in a
-session may cold-start the language server.
+On a fresh agent session, the first Serena interaction should be `initial_instructions` once if the MCP client did not already surface it. This confirms the active project, context, modes, languages, and operational tool surface for the session.
 
-Do not write, rename, edit, or delete Serena memories unless the user
-explicitly asks.
+Never call `activate_project`; there is no global active project to switch.
+
+Serena is operational tooling only. Use it for code navigation, symbol lookup, references, diagnostics, and precise symbol edits; do not use it for project knowledge, notes, onboarding, task tracking, or management. `.serena/project.yml` activates `no-memories` and explicitly excludes Serena's memory/onboarding tools.
+
+Use `get_symbols_overview`, `find_symbol`, and `find_referencing_symbols` for navigation instead of reading whole files. The first cross-reference query after startup may cold-start the language server.
 
 ## StackOS MCP
 
