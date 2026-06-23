@@ -112,15 +112,19 @@ Desktop / CLI
 -> tracker and audit evidence
 ```
 
-Current Phase 1 tracking:
+Current Phase 1 checkpoint:
+
+The tracker is the source of truth for live status. This table is a dated
+planning checkpoint that keeps the public roadmap aligned with the current
+sequence without turning the document into a live board.
 
 | Action item | Status | Tracker key | Notes |
 | --- | --- | --- | --- |
 | Lifecycle inventory and baseline | Done | `phase1-lifecycle-inventory` | Existing install, repair, upgrade, uninstall, desktop, and doctor foundations have been audited. |
 | Public roadmap status tracking | Done | `phase1-roadmap-statuses` | This roadmap now carries the lifecycle contract and action-item status table. |
-| Install and first-run readiness | Not started | `phase1-install-first-run` | Foundations exist; product-grade readiness, repair hints, and targeted tests still need delivery. |
-| Repair and doctor lifecycle | Not started | `phase1-repair-doctor` | Doctor and repair paths exist; output grouping, desktop UX, and agent-readable repair guidance need polish. |
-| Upgrade and desktop update lifecycle | Not started | `phase1-upgrade-update` | Upgrade docs and update plumbing exist; production channel, migration, restart, and signoff flow need polish. |
+| Local readiness and repair loop v0 | Not started | `phase1-install-first-run` | First implementation slice: install, first-run, doctor, desktop repair, and actionable repair hints as one loop. |
+| Detailed repair/doctor UX | Later | `phase1-repair-doctor` | Keep deeper doctor grouping and repair UX as hardening after the v0 loop is stable. |
+| Upgrade and desktop update lifecycle | Not started | `phase1-upgrade-update` | Upgrade docs and update plumbing exist; local/package upgrade, migration status, restart, and postflight checks need polish. |
 | Uninstall and state preservation | Not started | `phase1-uninstall-preserve` | Uninstall exists; default preservation and explicit full-cleanup behavior need product-level clarity. |
 | Minimal backup/export before risky changes | Not started | `phase1-backup-restore` | This is a real gap; start with a constrained export and explicit exclusions, then add full restore later. |
 | Public signing and managed update hardening | Later | `phase1-macos-distribution-signing` | Important before broad public distribution, but should not block the local lifecycle MVP. |
@@ -393,12 +397,20 @@ The clean framing is local-first with optional continuity.
 
 ## Sequencing
 
-### Phase 1: Polish The Local Product
+### Phase 1: Solid Local Lifecycle MVP
 
-- Finish first-run setup and repair.
-- Make install, upgrade, uninstall, doctor, backup, and restore product-grade.
-- Ship signed macOS distribution and update flow.
-- Improve desktop readiness and status surfaces.
+- Ship the local readiness and repair loop v0: install, first-run, doctor,
+  desktop repair, daemon health, local state, MCP registration, plugin assets,
+  and actionable repair hints.
+- Polish local/package upgrade: release notes or upgrade instructions,
+  migration status, daemon restart, state preservation, and postflight doctor.
+- Polish uninstall: safe default cleanup, preserved-state messaging,
+  package-mode parity, and explicit full-cleanup boundaries.
+- Add minimal export before risky lifecycle changes. Full restore, secret
+  migration, scheduled backups, and cloud continuity come later.
+- Add smoke proofs for the delivered lifecycle slices.
+- Keep signed/notarized distribution and a managed update feed as public-release
+  hardening unless broad distribution requires them immediately.
 
 ### Phase 2: Prove Agent Guidance Activation
 
