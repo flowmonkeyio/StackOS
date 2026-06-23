@@ -169,8 +169,8 @@ uninstall: ## Remove installed skills/plugins/MCP entries; preserve DB + seed
 	@echo "==> Note: ~/.local/share/stackos/ (DB) and ~/.local/state/stackos/ (seed + token) preserved."
 	@echo "==> uninstall complete"
 
-backup: ## Reserved backup command
-	@echo "Not yet implemented (backup/restore jobs)"
+backup: ## Export minimal local state backup zip (DB + seed + token)
+	$(PYTHON) -m stackos backup
 
 restore: ## Reserved restore command
 	@echo "Not yet implemented (backup/restore jobs)"

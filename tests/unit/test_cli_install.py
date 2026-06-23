@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -670,6 +672,84 @@ def test_cli_uninstall_removes_integrations_and_preserves_state(
     assert db_path.read_text(encoding="utf-8") == "db stays\n"
     assert seed_path.read_bytes() == b"seed stays"
     assert token_path.read_text(encoding="utf-8") == token_before
+
+
+def test_cli_backup_creates_private_archive_with_manifest(sandbox: Path, tmp_path: Path) -> None:
+    settings = Settings()
+    settings.ensure_dirs()
+    with sqlite3.connect(settings.db_path) as conn:
+        conn.execute("CREATE TABLE backup_probe (id INTEGER PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO backup_probe (value) VALUES ('db stays')")
+        conn.commit()
+    settings.seed_path.write_bytes(b"seed stays")
+    settings.token_path.write_text("token stays\n", encoding="utf-8")
+
+    output = tmp_path / "stackos-backup.zip"
+    result = CliRunner().invoke(
+        app,
+        ["backup", "--output", str(output)],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert output.is_file()
+    assert output.stat().st_mode & 0o777 == 0o600
+    with zipfile.ZipFile(output) as archive:
+        assert set(archive.namelist()) == {
+            "manifest.json",
+            "data/stackos.db",
+            "state/auth.token",
+            "state/seed.bin",
+        }
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["schema"] == "stackos.local-backup.v1"
+        assert manifest["restore_status"] == "manual-only; automated restore is not implemented"
+        assert [item["path"] for item in manifest["included"]] == [
+            "data/stackos.db",
+            "state/seed.bin",
+            "state/auth.token",
+        ]
+        extracted_db = tmp_path / "restored-copy.db"
+        extracted_db.write_bytes(archive.read("data/stackos.db"))
+
+    with sqlite3.connect(extracted_db) as conn:
+        value = conn.execute("SELECT value FROM backup_probe WHERE id = 1").fetchone()[0]
+    assert value == "db stays"
+
+
+def test_cli_backup_includes_staged_seed_backup(sandbox: Path, tmp_path: Path) -> None:
+    settings = Settings()
+    settings.ensure_dirs()
+    with sqlite3.connect(settings.db_path) as conn:
+        conn.execute("CREATE TABLE backup_probe (id INTEGER PRIMARY KEY)")
+        conn.commit()
+    settings.seed_path.write_bytes(b"seed stays")
+    settings.seed_path.with_suffix(settings.seed_path.suffix + ".bak").write_bytes(b"old seed")
+    settings.token_path.write_text("token stays\n", encoding="utf-8")
+
+    output = tmp_path / "stackos-backup.zip"
+    result = CliRunner().invoke(
+        app,
+        ["backup", "--output", str(output)],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    with zipfile.ZipFile(output) as archive:
+        assert "state/seed.bin.bak" in archive.namelist()
+        manifest = json.loads(archive.read("manifest.json"))
+        assert "state/seed.bin.bak" in [item["path"] for item in manifest["included"]]
+        assert archive.read("state/seed.bin.bak") == b"old seed"
+
+
+def test_cli_backup_refuses_missing_required_state(sandbox: Path) -> None:
+    output = sandbox / "backup.zip"
+
+    result = CliRunner().invoke(app, ["backup", "--output", str(output)])
+
+    assert result.exit_code == 1
+    assert "required local state is missing" in result.stderr
+    assert not output.exists()
 
 
 def test_cli_install_tolerates_daemon_down_doctor(

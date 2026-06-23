@@ -178,6 +178,19 @@ and cache entries, and Codex/Claude MCP registrations. It preserves the local
 database under `~/.local/share/stackos/` and daemon state under
 `~/.local/state/stackos/`, including `seed.bin` and `auth.token`.
 
+## Backup
+
+Before serious upgrades or machine moves, export the minimal local state needed
+for operator-guided recovery:
+
+```bash
+stackos backup --output ~/Desktop/stackos-backup.zip
+```
+
+The backup contains `stackos.db`, `seed.bin`, `auth.token`, and
+`manifest.json`, and is written with mode `0600`. Automated restore is not
+implemented yet.
+
 ## First Run In The UI
 
 After the daemon is running, use the UI in this order:

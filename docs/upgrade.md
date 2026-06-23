@@ -101,13 +101,24 @@ pipx install --force "stackos==<previous-version>"
 stackos install
 ```
 
-Automated backup/restore commands are reserved and should not be treated as
-available operator recovery yet. Before rollback or cross-machine moves, stop
-the daemon and take a manual copy of:
+Before rollback, serious upgrades, or cross-machine moves, create a local
+backup archive:
+
+```bash
+stackos backup --output ~/Desktop/stackos-backup.zip
+```
+
+The archive contains:
 
 - `~/.local/share/stackos/stackos.db`
 - `~/.local/state/stackos/seed.bin`
 - `~/.local/state/stackos/auth.token`
+- `manifest.json`
+
+The archive is written with mode `0600` because it contains the daemon auth
+token and the seed required to decrypt local credentials. Automated restore is
+not implemented yet; keep the archive private and treat restore as an
+operator-guided recovery step.
 
 ## Schema migrations
 

@@ -126,7 +126,7 @@ sequence without turning the document into a live board.
 | Detailed repair/doctor UX | Later | `phase1-repair-doctor` | Keep deeper doctor grouping and repair UX as hardening after the v0 loop is stable. |
 | Upgrade and desktop update lifecycle | Done | `phase1-upgrade-update` | Desktop install-state now has coverage for app/payload upgrade triggers, idempotent skips, forced reruns, failed first install, and failed upgrade preservation/retry behavior. |
 | Uninstall and state preservation | Done | `phase1-uninstall-preserve` | Default uninstall removes launchd, agent-client registrations, skill mirrors, plugin source/cache artifacts, and preserves DB, seed, and token; destructive full cleanup remains explicit future scope. |
-| Minimal backup/export before risky changes | Not started | `phase1-backup-restore` | This is a real gap; start with a constrained export and explicit exclusions, then add full restore later. |
+| Minimal backup/export before risky changes | Done | `phase1-backup-restore` | `stackos backup` now exports a private zip containing the DB, seed, token, and manifest. Automated restore remains future scope. |
 | Public signing and managed update hardening | Later | `phase1-macos-distribution-signing` | Important before broad public distribution, but should not block the local lifecycle MVP. |
 | Lifecycle smoke verification | Not started | `phase1-lifecycle-verification` | Start with a small proof set across install, repair, upgrade, uninstall, and export; expand only as the lifecycle grows. |
 
