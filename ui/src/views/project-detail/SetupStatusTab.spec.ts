@@ -10,10 +10,12 @@ const ORIG_FETCH = globalThis.fetch
 describe('SetupStatusTab', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    delete (window as Window & { stackosDesktop?: unknown }).stackosDesktop
   })
 
   afterEach(() => {
     globalThis.fetch = ORIG_FETCH
+    delete (window as Window & { stackosDesktop?: unknown }).stackosDesktop
     vi.restoreAllMocks()
   })
 
@@ -164,6 +166,15 @@ describe('SetupStatusTab', () => {
       return json({})
     }) as typeof fetch
 
+    const testNotification = vi.fn(async () => ({
+      ok: true,
+      deepLink: 'stackos://projects/1/tasks',
+    }))
+    Object.defineProperty(window, 'stackosDesktop', {
+      configurable: true,
+      value: { testNotification },
+    })
+
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/projects/:id/setup', component: SetupStatusTab }],
@@ -201,6 +212,11 @@ describe('SetupStatusTab', () => {
     expect(wrapper.find('button[aria-label="Open workspace profile operation"]').exists()).toBe(
       true,
     )
+    const notificationButton = wrapper.find('button[aria-label="Send desktop notification test"]')
+    expect(notificationButton.exists()).toBe(true)
+    await notificationButton.trigger('click')
+    await vi.waitFor(() => expect(testNotification).toHaveBeenCalledWith(1))
+    expect(wrapper.text()).toContain('Notification sent.')
     expect(requestedUrls).toContain('/api/v1/health')
     expect(requestedUrls).toContain('/api/v1/projects/1/auth/status')
     expect(requestedUrls).toContain('/api/v1/operations?surface=mcp')

@@ -70,9 +70,17 @@ function stackosTaskDeepLink(projectId, taskKey) {
   return `stackos://projects/${projectId}/tasks?task=${encodeURIComponent(taskKey)}`;
 }
 
+function stackosProjectTasksDeepLink(projectId) {
+  if (!Number.isSafeInteger(projectId) || projectId <= 0) {
+    return null;
+  }
+  return `stackos://projects/${projectId}/tasks`;
+}
+
 module.exports = {
   STACKOS_PROTOCOL,
   parseStackosDeepLink,
   resolveStackosDeepLink,
+  stackosProjectTasksDeepLink,
   stackosTaskDeepLink
 };

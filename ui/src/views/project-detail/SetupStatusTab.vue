@@ -81,6 +81,17 @@ interface IntegrationListSummary {
   hidden_action_count: number
 }
 
+interface DesktopNotificationResult {
+  ok: boolean
+  reason?: string
+  error?: string
+  deepLink?: string | null
+}
+
+interface StackosDesktopApi {
+  testNotification?: (projectId: number) => Promise<DesktopNotificationResult>
+}
+
 const route = useRoute()
 const router = useRouter()
 
@@ -101,6 +112,18 @@ const runPlans = ref(0)
 const agentPresets = ref<AgentPresetSummary[]>([])
 const templateDetails = ref<SchemaLoadedWorkflowTemplate[]>([])
 const workspaceBindings = ref<WorkspaceBindingSummary[]>([])
+const testingNotification = ref(false)
+const notificationTestMessage = ref<string | null>(null)
+const notificationTestTone = ref<'success' | 'danger'>('success')
+
+function desktopApi(): StackosDesktopApi | null {
+  if (typeof window === 'undefined') return null
+  return ((window as Window & { stackosDesktop?: StackosDesktopApi }).stackosDesktop ?? null)
+}
+
+const canTestDesktopNotification = computed(
+  () => typeof desktopApi()?.testNotification === 'function',
+)
 
 const enabledPlugins = computed(() =>
   plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
@@ -447,6 +470,26 @@ function go(path: string): void {
   void router.push(`/projects/${projectId.value}/${path}`)
 }
 
+async function testDesktopNotification(): Promise<void> {
+  const api = desktopApi()
+  if (!api?.testNotification || testingNotification.value) return
+
+  testingNotification.value = true
+  notificationTestMessage.value = null
+  try {
+    const result = await api.testNotification(projectId.value)
+    notificationTestTone.value = result.ok ? 'success' : 'danger'
+    notificationTestMessage.value = result.ok
+      ? 'Notification sent.'
+      : result.error || result.reason || 'Notification could not be sent.'
+  } catch (err) {
+    notificationTestTone.value = 'danger'
+    notificationTestMessage.value = formatApiError(err, 'notification could not be sent')
+  } finally {
+    testingNotification.value = false
+  }
+}
+
 // Status icon treatment per checklist state — ready, attention, open.
 const STATUS_ICONS: Record<ChecklistStatus, { icon: string; class: string }> = {
   done: { icon: 'check-circle', class: 'text-success' },
@@ -692,6 +735,34 @@ onMounted(load)
             { label: 'Scheduler', value: health?.scheduler_running ? 'running' : '-' },
           ]"
         />
+        <div
+          v-if="canTestDesktopNotification"
+          class="mt-4 border-t border-border-subtle pt-4"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm font-medium text-fg-strong">
+              Desktop notifications
+            </p>
+            <UiButton
+              size="sm"
+              variant="secondary"
+              icon-left="megaphone"
+              :loading="testingNotification"
+              aria-label="Send desktop notification test"
+              @click="testDesktopNotification"
+            >
+              Test notification
+            </UiButton>
+          </div>
+          <UiCallout
+            v-if="notificationTestMessage"
+            class="mt-3"
+            :tone="notificationTestTone"
+            density="compact"
+          >
+            {{ notificationTestMessage }}
+          </UiCallout>
+        </div>
       </UiCard>
 
       <UiCard section>

@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("stackosDesktop", {
   installOrRepair: () => ipcRenderer.invoke("stackos:install-or-repair"),
   restartService: () => ipcRenderer.invoke("stackos:restart-service"),
   runDoctor: () => ipcRenderer.invoke("stackos:doctor"),
+  testNotification: (projectId) => ipcRenderer.invoke("stackos:notifications:test", { projectId }),
   checkForUpdates: () => ipcRenderer.invoke("stackos:updates:check"),
   downloadUpdate: () => ipcRenderer.invoke("stackos:updates:download"),
   installUpdate: () => ipcRenderer.invoke("stackos:updates:install"),

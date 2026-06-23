@@ -4,7 +4,7 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } = requi
 const path = require("node:path");
 const service = require("./service");
 const { resolveStackosDeepLink } = require("./deep-links");
-const { createNotificationController } = require("./notifications");
+const { createNotificationController, showTestNotification } = require("./notifications");
 const { createUpdateController } = require("./updates");
 
 let mainWindow = null;
@@ -186,6 +186,14 @@ async function showCommandResult(title, result) {
   });
 }
 
+function sendTestNotification(projectId = null) {
+  return showTestNotification({
+    Notification,
+    openDeepLink: handleStackosDeepLink,
+    projectId
+  });
+}
+
 function createMenu() {
   const template = [
     {
@@ -223,6 +231,15 @@ function createMenu() {
           label: "Run Doctor",
           click: async () => {
             await showCommandResult("Doctor", await service.runDoctor());
+          }
+        },
+        {
+          label: "Test Notification",
+          click: async () => {
+            const result = sendTestNotification();
+            if (!result.ok) {
+              await showCommandResult("Test Notification", result);
+            }
           }
         },
         {
@@ -291,6 +308,10 @@ function registerIpc() {
   ipcMain.handle("stackos:updates:check", async () => updateController.checkForUpdates());
   ipcMain.handle("stackos:updates:download", async () => updateController.downloadUpdate());
   ipcMain.handle("stackos:updates:install", async () => updateController.quitAndInstall());
+  ipcMain.handle("stackos:notifications:test", async (_event, payload = {}) => {
+    const projectId = Number.parseInt(String(payload?.projectId || ""), 10);
+    return sendTestNotification(Number.isSafeInteger(projectId) ? projectId : null);
+  });
 }
 
 async function startNotifications() {
