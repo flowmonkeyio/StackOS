@@ -35,12 +35,13 @@ def test_task_status_update_records_timeline_event(
     project_id: int,
 ) -> None:
     repo = TrackerRepository(session)
-    repo.create_task(
+    task = repo.create_task(
         project_id=project_id,
         key="notify-task",
         title="Notify task",
         created_by="codex",
-    )
+    ).data.task
+    assert task is not None
 
     repo.update_task(
         project_id=project_id,
@@ -59,10 +60,20 @@ def test_task_status_update_records_timeline_event(
     )
 
     assert len(events) == 1
-    assert events[0].metadata_json["task_key"] == "notify-task"
-    assert events[0].metadata_json["old_status"] == "not-started"
-    assert events[0].metadata_json["new_status"] == "complete"
-    assert events[0].metadata_json["url_path"] == "/projects/1/tasks?task=notify-task"
+    event = events[0]
+    assert event.source_type == "tracker_task"
+    assert event.source_id == task.id
+    assert event.title == "Task notify-task is complete"
+    assert event.summary == "Task notify-task changed from not-started to complete."
+    assert event.tags == ["tracker", "task", "status"]
+    assert event.metadata_json["task_key"] == "notify-task"
+    assert event.metadata_json["task_title"] == "Notify task"
+    assert event.metadata_json["old_status"] == "not-started"
+    assert event.metadata_json["new_status"] == "complete"
+    assert event.metadata_json["actor"] == "codex"
+    assert event.metadata_json["reason"] == "tracker.update_task"
+    assert event.metadata_json["schema_version"] == 1
+    assert event.metadata_json["url_path"] == f"/projects/{project_id}/tasks?task=notify-task"
 
 
 def test_ticket_completion_records_ticket_and_parent_task_events(
@@ -70,19 +81,24 @@ def test_ticket_completion_records_ticket_and_parent_task_events(
     project_id: int,
 ) -> None:
     repo = TrackerRepository(session)
-    repo.create_task(project_id=project_id, key="notify-parent", title="Notify parent")
-    repo.create_ticket(
+    task = repo.create_task(
+        project_id=project_id, key="notify-parent", title="Notify parent"
+    ).data.task
+    ticket_a = repo.create_ticket(
         project_id=project_id,
         task_key="notify-parent",
         key="notify-a",
         title="Notify A",
-    )
-    repo.create_ticket(
+    ).data.ticket
+    ticket_b = repo.create_ticket(
         project_id=project_id,
         task_key="notify-parent",
         key="notify-b",
         title="Notify B",
-    )
+    ).data.ticket
+    assert task is not None
+    assert ticket_a is not None
+    assert ticket_b is not None
 
     repo.update_ticket(
         project_id=project_id,
@@ -118,10 +134,21 @@ def test_ticket_completion_records_ticket_and_parent_task_events(
         "notify-a",
         "notify-b",
     ]
+    assert [event.source_type for event in ticket_events] == [
+        "tracker_ticket",
+        "tracker_ticket",
+    ]
+    assert [event.source_id for event in ticket_events] == [ticket_a.id, ticket_b.id]
+    assert [event.run_id for event in ticket_events] == [None, None]
+    assert ticket_events[-1].tags == ["tracker", "ticket", "status"]
+    assert ticket_events[-1].metadata_json["actor"] == "codex"
+    assert ticket_events[-1].metadata_json["reason"] == "tracker.update_ticket"
     assert [event.metadata_json["new_status"] for event in task_events] == [
         "in-progress",
         "complete",
     ]
+    assert task_events[-1].source_type == "tracker_task"
+    assert task_events[-1].source_id == task.id
     assert task_events[-1].metadata_json["task_key"] == "notify-parent"
 
 
@@ -150,24 +177,74 @@ def test_non_status_patch_does_not_record_status_event(
     assert events == []
 
 
+def test_ticket_dry_run_and_same_status_do_not_record_status_event(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="notify-dry-run", title="Notify dry run")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="notify-dry-run",
+        key="dry-run-ticket",
+        title="Dry run ticket",
+    )
+
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="dry-run-ticket",
+        patch_json={"status": "complete"},
+        actor="codex",
+        dry_run=True,
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="dry-run-ticket",
+        patch_json={"status": "not-started"},
+        actor="codex",
+    )
+
+    ticket_events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TICKET_STATUS_CHANGED,
+        )
+        .items
+    )
+    task_events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TASK_STATUS_CHANGED,
+        )
+        .items
+    )
+
+    assert ticket_events == []
+    assert task_events == []
+
+
 def test_bulk_ticket_update_records_status_events(
     session: Session,
     project_id: int,
 ) -> None:
     repo = TrackerRepository(session)
     repo.create_task(project_id=project_id, key="notify-bulk", title="Notify bulk")
-    repo.create_ticket(
+    ticket_a = repo.create_ticket(
         project_id=project_id,
         task_key="notify-bulk",
         key="bulk-a",
         title="Bulk A",
-    )
-    repo.create_ticket(
+    ).data.ticket
+    ticket_b = repo.create_ticket(
         project_id=project_id,
         task_key="notify-bulk",
         key="bulk-b",
         title="Bulk B",
-    )
+    ).data.ticket
+    assert ticket_a is not None
+    assert ticket_b is not None
 
     repo.update_ticket_list(
         project_id=project_id,
@@ -198,6 +275,15 @@ def test_bulk_ticket_update_records_status_events(
     assert [event.metadata_json["ticket_key"] for event in ticket_events] == [
         "bulk-a",
         "bulk-b",
+    ]
+    assert [event.source_type for event in ticket_events] == [
+        "tracker_ticket",
+        "tracker_ticket",
+    ]
+    assert [event.source_id for event in ticket_events] == [ticket_a.id, ticket_b.id]
+    assert [event.metadata_json["reason"] for event in ticket_events] == [
+        "tracker.update_ticket_list",
+        "tracker.update_ticket_list",
     ]
     assert task_events[-1].metadata_json["new_status"] == "complete"
 

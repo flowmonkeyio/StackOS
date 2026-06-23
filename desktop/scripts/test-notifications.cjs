@@ -96,6 +96,7 @@ const eventsByProject = new Map([
   ]
 ]);
 const opened = [];
+const timelineRequests = [];
 const service = {
   authenticatedJsonGet: async (pathname) => {
     const url = new URL(pathname, "http://127.0.0.1:5180");
@@ -104,6 +105,9 @@ const service = {
     }
     const match = url.pathname.match(/^\/api\/v1\/projects\/(\d+)\/context\/timeline$/);
     assert.ok(match, `unexpected URL ${pathname}`);
+    assert.equal(url.searchParams.get("event_type"), TASK_STATUS_EVENT);
+    assert.equal(url.searchParams.get("limit"), "50");
+    timelineRequests.push(url);
     const projectId = Number.parseInt(match[1], 10);
     const after = Number.parseInt(url.searchParams.get("after") || "0", 10);
     return {
@@ -128,6 +132,7 @@ const controller = createNotificationController({
   try {
     await controller.pollOnce();
     assert.equal(FakeNotification.instances.length, 0);
+    assert.equal(timelineRequests.length, 1);
     assert.equal(readNotificationState(tmp).projectEventWatermarks["1"], 4);
 
     eventsByProject.get(1).push({
@@ -141,14 +146,34 @@ const controller = createNotificationController({
         new_status: "complete"
       }
     });
+    eventsByProject.get(1).push({
+      id: 6,
+      project_id: 1,
+      event_type: "tracker.ticket.status_changed",
+      summary: "Ticket ticket-only changed from in-progress to complete.",
+      metadata_json: {
+        ticket_key: "ticket-only",
+        new_status: "complete"
+      }
+    });
+    eventsByProject.get(1).push({
+      id: 7,
+      project_id: 1,
+      event_type: "demo.event.created",
+      summary: "Generic event completed.",
+      metadata_json: {
+        new_status: "complete"
+      }
+    });
 
     await controller.pollOnce();
+    assert.equal(timelineRequests.length, 2);
     assert.equal(FakeNotification.instances.length, 1);
     assert.equal(FakeNotification.instances[0].options.title, "Task complete: New task");
     assert.equal(FakeNotification.instances[0].shown, true);
     FakeNotification.instances[0].handlers.click();
     assert.deepEqual(opened, ["stackos://projects/1/tasks?task=new-task"]);
-    assert.equal(readNotificationState(tmp).projectEventWatermarks["1"], 5);
+    assert.equal(readNotificationState(tmp).projectEventWatermarks["1"], 7);
 
     const overlapDir = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-notifications-overlap-"));
     let resolveProjects;

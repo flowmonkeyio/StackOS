@@ -194,13 +194,17 @@ as append-only `project_events` rows:
 - `tracker.task.status_changed`
 - `tracker.ticket.status_changed`
 
-These events are emitted only after a real persisted status transition. Dry-run
-updates and non-status edits do not emit status events. Parent task status
-changes caused by ticket aggregation and workflow run-plan mirroring emit the
-same task event as direct task status updates.
+These events are emitted through the shared StackOS event emitter only after a
+real persisted status transition. Dry-run updates, same-status updates, and
+non-status edits do not emit status events. Parent task status changes caused
+by ticket aggregation and workflow run-plan mirroring emit the same task event
+as direct task status updates.
 
 Timeline metadata includes the entity key, old/new status, and tracker URL
-path. The macOS desktop app consumes this timeline for native notifications,
+path, plus event-envelope metadata such as `schema_version` and actor when
+supplied by the producer. Event rows preserve source provenance with `source_type` set to
+`tracker_task` or `tracker_ticket` and `source_id` set to the persisted tracker
+row id. The macOS desktop app consumes this timeline for native notifications,
 but the MVP only displays native notifications for completed tasks. Ticket
 status events remain available for audit, UI timelines, and future notification
 policy without creating native ticket notifications today.

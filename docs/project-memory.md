@@ -64,6 +64,14 @@ These writes require the active `run_token`, one claimed/running step, matching
 project memory before a run, but they cannot write learnings, observations, or
 decisions until execution is inside that granted run-plan boundary.
 
+Internal StackOS producers that need append-only timeline events should use the
+shared event emitter contract (`stackos.events` and
+`stackos.repositories.project_events`) instead of constructing `ProjectEvent`
+rows directly. The emitter is an internal Python boundary, not a public MCP,
+REST, or CLI operation. It validates a typed event envelope, writes to
+`project_events` through the caller's transaction, preserves source provenance,
+and applies the shared redaction rules to titles, summaries, and metadata.
+
 ## Experimentation
 
 Experiments are project-level because they often outlive one run. SEO title

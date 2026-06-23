@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote
 
-from stackos.artifacts import redact_secrets
 from stackos.db.models import ProjectEvent, TrackerItemStatus, TrackerTask, TrackerTicket
+from stackos.events import StackOSEvent, StackOSEventSource
+from stackos.repositories.project_events import StackOSEventEmitter
 
 TRACKER_TASK_STATUS_CHANGED = "tracker.task.status_changed"
 TRACKER_TICKET_STATUS_CHANGED = "tracker.ticket.status_changed"
@@ -63,19 +64,18 @@ class TrackerEventMixin:
                 "ticket_title": trigger_ticket.title,
             }
 
-        row = ProjectEvent(
-            project_id=task.project_id,
-            source_type="tracker_task",
-            source_id=task.id,
-            event_type=TRACKER_TASK_STATUS_CHANGED,
-            title=f"Task {task.key} is {new_value}",
-            summary=f"Task {task.key} changed from {old_value} to {new_value}.",
-            tags_json=["tracker", "task", "status"],
-            metadata_json=redact_secrets(metadata),
+        return StackOSEventEmitter(self._s).emit(
+            StackOSEvent(
+                project_id=task.project_id,
+                source=StackOSEventSource(type="tracker_task", id=task.id),
+                event_type=TRACKER_TASK_STATUS_CHANGED,
+                title=f"Task {task.key} is {new_value}",
+                summary=f"Task {task.key} changed from {old_value} to {new_value}.",
+                tags=["tracker", "task", "status"],
+                metadata=metadata,
+                actor=actor,
+            )
         )
-        self._s.add(row)
-        self._s.flush()
-        return row
 
     def _record_tracker_ticket_status_event(
         self,
@@ -113,20 +113,19 @@ class TrackerEventMixin:
         if source:
             metadata["source"] = source
 
-        row = ProjectEvent(
-            project_id=ticket.project_id,
-            run_id=ticket.run_id,
-            source_type="tracker_ticket",
-            source_id=ticket.id,
-            event_type=TRACKER_TICKET_STATUS_CHANGED,
-            title=f"Ticket {ticket.key} is {new_value}",
-            summary=f"Ticket {ticket.key} changed from {old_value} to {new_value}.",
-            tags_json=["tracker", "ticket", "status"],
-            metadata_json=redact_secrets(metadata),
+        return StackOSEventEmitter(self._s).emit(
+            StackOSEvent(
+                project_id=ticket.project_id,
+                run_id=ticket.run_id,
+                source=StackOSEventSource(type="tracker_ticket", id=ticket.id),
+                event_type=TRACKER_TICKET_STATUS_CHANGED,
+                title=f"Ticket {ticket.key} is {new_value}",
+                summary=f"Ticket {ticket.key} changed from {old_value} to {new_value}.",
+                tags=["tracker", "ticket", "status"],
+                metadata=metadata,
+                actor=actor,
+            )
         )
-        self._s.add(row)
-        self._s.flush()
-        return row
 
 
 __all__ = [
