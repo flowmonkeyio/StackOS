@@ -1,12 +1,16 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } = require("electron");
 const path = require("node:path");
 const service = require("./service");
+const { resolveStackosDeepLink } = require("./deep-links");
+const { createNotificationController } = require("./notifications");
 const { createUpdateController } = require("./updates");
 
 let mainWindow = null;
 let updateController = null;
+let notificationController = null;
+let pendingDeepLink = null;
 
 function escapeHtml(value) {
   return String(value || "")
@@ -39,6 +43,32 @@ function openExternalUrl(candidate) {
   } catch (_error) {
     // Ignore malformed external navigation attempts.
   }
+}
+
+function loadStackosDeepLink(candidate) {
+  const targetUrl = resolveStackosDeepLink(candidate, service.DAEMON_URL);
+  if (!targetUrl) {
+    return false;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (!app.isReady()) {
+      pendingDeepLink = candidate;
+      return true;
+    }
+    createWindow();
+  }
+  mainWindow.loadURL(targetUrl);
+  mainWindow.show();
+  mainWindow.focus();
+  return true;
+}
+
+function handleStackosDeepLink(candidate) {
+  if (!app.isReady()) {
+    pendingDeepLink = candidate;
+    return true;
+  }
+  return loadStackosDeepLink(candidate);
 }
 
 function failureHtml(title, details) {
@@ -107,6 +137,11 @@ async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
   }
 
   await mainWindow.loadURL(service.DAEMON_URL);
+  if (pendingDeepLink) {
+    const candidate = pendingDeepLink;
+    pendingDeepLink = null;
+    loadStackosDeepLink(candidate);
+  }
 }
 
 function createWindow() {
@@ -240,7 +275,8 @@ function registerIpc() {
   ipcMain.handle("stackos:status", async () => ({
     health: await service.checkHealth(),
     command: service.resolveStackosCommand(),
-    payload: service.readPackagedBuildInfo()
+    payload: service.readPackagedBuildInfo(),
+    notifications: notificationController ? notificationController.state : null
   }));
   ipcMain.handle("stackos:install-or-repair", async () => {
     const result = await service.installOrRepair();
@@ -257,6 +293,21 @@ function registerIpc() {
   ipcMain.handle("stackos:updates:install", async () => updateController.quitAndInstall());
 }
 
+async function startNotifications() {
+  if (!notificationController) {
+    return;
+  }
+  const result = await notificationController.start();
+  if (!result.ok && result.reason !== "notifications are not supported") {
+    console.warn("StackOS notifications did not start:", result.error || result.reason);
+  }
+}
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  handleStackosDeepLink(url);
+});
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
@@ -266,15 +317,35 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
-    prepareAndLoadStackOS();
+    if (pendingDeepLink) {
+      const candidate = pendingDeepLink;
+      pendingDeepLink = null;
+      loadStackosDeepLink(candidate);
+    } else {
+      prepareAndLoadStackOS();
+    }
+  }
+});
+
+app.on("before-quit", () => {
+  if (notificationController) {
+    notificationController.stop();
   }
 });
 
 app.whenReady().then(async () => {
   app.setName("StackOS");
+  app.setAsDefaultProtocolClient("stackos");
   updateController = createUpdateController();
+  notificationController = createNotificationController({
+    service,
+    Notification,
+    openDeepLink: handleStackosDeepLink,
+    userDataPath: app.getPath("userData")
+  });
   registerIpc();
   createMenu();
   createWindow();
   await prepareAndLoadStackOS();
+  await startNotifications();
 });

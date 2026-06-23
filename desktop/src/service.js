@@ -12,6 +12,9 @@ const DAEMON_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/`;
 const HEALTH_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/api/v1/health`;
 const INSTALL_STATE_FILE = "install-state.json";
 const PAYLOAD_BUILD_INFO_FILE = "build-info.json";
+const AUTH_TOKEN_PATH =
+  process.env.STACKOS_DESKTOP_AUTH_TOKEN_PATH ||
+  path.join(os.homedir(), ".local", "state", "stackos", "auth.token");
 
 function isExecutable(filePath) {
   try {
@@ -238,6 +241,66 @@ function checkHealth(timeoutMs = 1000) {
   });
 }
 
+function authTokenPath() {
+  return AUTH_TOKEN_PATH;
+}
+
+function readAuthToken() {
+  return fs.readFileSync(authTokenPath(), "utf8").trim();
+}
+
+function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
+  return new Promise((resolve, reject) => {
+    let url;
+    try {
+      url = new URL(pathname, DAEMON_URL);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    const headers = {};
+    if (auth) {
+      headers.Authorization = `Bearer ${readAuthToken()}`;
+    }
+
+    const req = http.get(url, { headers }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        body += chunk;
+      });
+      res.on("end", () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const error = new Error(`StackOS request failed with HTTP ${res.statusCode}`);
+          error.statusCode = res.statusCode;
+          error.body = trimOutput(body, 2000);
+          reject(error);
+          return;
+        }
+        if (!body.trim()) {
+          resolve(null);
+          return;
+        }
+        try {
+          resolve(JSON.parse(body));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error("StackOS request timed out"));
+    });
+    req.on("error", reject);
+  });
+}
+
+function authenticatedJsonGet(pathname, options = {}) {
+  return daemonJsonGet(pathname, { ...options, auth: true });
+}
+
 async function waitForHealth(timeoutMs = 20000) {
   const startedAt = Date.now();
   let last = await checkHealth();
@@ -406,8 +469,11 @@ function daemonLogPath() {
 module.exports = {
   DAEMON_URL,
   HEALTH_URL,
+  authenticatedJsonGet,
+  authTokenPath,
   checkHealth,
   daemonLogPath,
+  daemonJsonGet,
   ensureDaemonReady,
   installOrRepair,
   installKeyFor,
@@ -415,6 +481,7 @@ module.exports = {
   prepareInstalledVersion,
   parseDoctorPayload,
   readinessFromDoctor,
+  readAuthToken,
   readInstallState,
   readPackagedBuildInfo,
   resolveStackosCommand,

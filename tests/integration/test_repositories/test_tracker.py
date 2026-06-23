@@ -3,10 +3,15 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Session, select
 
+from stackos.context.repository import ContextRepository
 from stackos.db.models import RunPlanStep, RunPlanStepStatus, TaskTracker, TrackerItemStatus
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.tracker.events import (
+    TRACKER_TASK_STATUS_CHANGED,
+    TRACKER_TICKET_STATUS_CHANGED,
+)
 
 
 def test_tracker_reads_do_not_create_default_tracker(session: Session, project_id: int) -> None:
@@ -23,6 +28,178 @@ def test_tracker_reads_do_not_create_default_tracker(session: Session, project_i
     assert next_work.tickets == []
     row = session.exec(select(TaskTracker).where(TaskTracker.project_id == project_id)).first()
     assert row is None
+
+
+def test_task_status_update_records_timeline_event(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="notify-task",
+        title="Notify task",
+        created_by="codex",
+    )
+
+    repo.update_task(
+        project_id=project_id,
+        task_key="notify-task",
+        patch_json={"status": "complete"},
+        actor="codex",
+    )
+
+    events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TASK_STATUS_CHANGED,
+        )
+        .items
+    )
+
+    assert len(events) == 1
+    assert events[0].metadata_json["task_key"] == "notify-task"
+    assert events[0].metadata_json["old_status"] == "not-started"
+    assert events[0].metadata_json["new_status"] == "complete"
+    assert events[0].metadata_json["url_path"] == "/projects/1/tasks?task=notify-task"
+
+
+def test_ticket_completion_records_ticket_and_parent_task_events(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="notify-parent", title="Notify parent")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="notify-parent",
+        key="notify-a",
+        title="Notify A",
+    )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="notify-parent",
+        key="notify-b",
+        title="Notify B",
+    )
+
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="notify-a",
+        patch_json={"status": "complete"},
+        actor="codex",
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="notify-b",
+        patch_json={"status": "complete"},
+        actor="codex",
+    )
+
+    ticket_events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TICKET_STATUS_CHANGED,
+        )
+        .items
+    )
+    task_events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TASK_STATUS_CHANGED,
+        )
+        .items
+    )
+
+    assert [event.metadata_json["ticket_key"] for event in ticket_events] == [
+        "notify-a",
+        "notify-b",
+    ]
+    assert [event.metadata_json["new_status"] for event in task_events] == [
+        "in-progress",
+        "complete",
+    ]
+    assert task_events[-1].metadata_json["task_key"] == "notify-parent"
+
+
+def test_non_status_patch_does_not_record_status_event(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="notify-noop", title="Notify noop")
+
+    repo.update_task(
+        project_id=project_id,
+        task_key="notify-noop",
+        patch_json={"title": "Renamed task"},
+        actor="codex",
+    )
+
+    events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TASK_STATUS_CHANGED,
+        )
+        .items
+    )
+    assert events == []
+
+
+def test_bulk_ticket_update_records_status_events(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="notify-bulk", title="Notify bulk")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="notify-bulk",
+        key="bulk-a",
+        title="Bulk A",
+    )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="notify-bulk",
+        key="bulk-b",
+        title="Bulk B",
+    )
+
+    repo.update_ticket_list(
+        project_id=project_id,
+        updates_json=[
+            {"ticket_key": "bulk-a", "patch_json": {"status": "complete"}},
+            {"ticket_key": "bulk-b", "patch_json": {"status": "complete"}},
+        ],
+        actor="codex",
+    )
+
+    ticket_events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TICKET_STATUS_CHANGED,
+        )
+        .items
+    )
+    task_events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TASK_STATUS_CHANGED,
+        )
+        .items
+    )
+
+    assert [event.metadata_json["ticket_key"] for event in ticket_events] == [
+        "bulk-a",
+        "bulk-b",
+    ]
+    assert task_events[-1].metadata_json["new_status"] == "complete"
 
 
 def test_manual_task_ticket_lifecycle_and_graph(session: Session, project_id: int) -> None:

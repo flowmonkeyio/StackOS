@@ -126,10 +126,7 @@ Scaffold checks that do not require Electron dependencies:
 
 ```bash
 make desktop-doctor
-cd desktop && node --check src/main.js
-cd desktop && node --check src/preload.js
-cd desktop && node --check src/service.js
-cd desktop && node --check src/updates.js
+pnpm --dir desktop check
 ```
 
 Release checks, once dependencies and signing are configured:

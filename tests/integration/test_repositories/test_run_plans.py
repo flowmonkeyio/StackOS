@@ -24,6 +24,10 @@ from stackos.mcp.permissions import active_run_plan_step
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.tracker.events import (
+    TRACKER_TASK_STATUS_CHANGED,
+    TRACKER_TICKET_STATUS_CHANGED,
+)
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 from stackos.workflows.template_loader import WorkflowTemplateLoader
 from stackos.workflows.template_schema import WorkflowTemplateSpec
@@ -287,6 +291,29 @@ def test_approval_gate_transition_then_step_completion(
     assert completed.steps[0].result_json == {"campaign_id": "cmp_123"}
     assert run is not None
     assert run.status == RunStatus.SUCCESS
+    task_events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TASK_STATUS_CHANGED,
+        )
+        .items
+    )
+    ticket_events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TICKET_STATUS_CHANGED,
+        )
+        .items
+    )
+    assert task_events[-1].metadata_json["task_key"] == f"workflow-{plan.id}"
+    assert task_events[-1].metadata_json["new_status"] == "complete"
+    assert any(
+        event.metadata_json["ticket_key"] == workflow_step_ticket_key(plan.id, "create-campaign")
+        and event.metadata_json["new_status"] == "complete"
+        for event in ticket_events
+    )
 
 
 def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
