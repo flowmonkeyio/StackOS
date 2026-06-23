@@ -7,14 +7,12 @@ const path = require("node:path");
 const {
   parseStackosDeepLink,
   resolveStackosDeepLink,
-  stackosProjectTasksDeepLink,
   stackosTaskDeepLink
 } = require("../src/deep-links");
 const {
   TASK_STATUS_EVENT,
   createNotificationController,
   readNotificationState,
-  showTestNotification,
   shouldNotifyEvent
 } = require("../src/notifications");
 
@@ -29,12 +27,6 @@ assert.equal(
   "http://127.0.0.1:5180/projects/7/tasks?task=launch-check"
 );
 assert.equal(stackosTaskDeepLink(7, "launch-check"), "stackos://projects/7/tasks?task=launch-check");
-assert.equal(stackosProjectTasksDeepLink(7), "stackos://projects/7/tasks");
-assert.deepEqual(parseStackosDeepLink("stackos://projects/7/tasks"), {
-  projectId: 7,
-  taskKey: null,
-  path: "/projects/7/tasks"
-});
 assert.equal(parseStackosDeepLink("https://example.com/projects/7/tasks?task=x"), null);
 assert.equal(parseStackosDeepLink("stackos://projects/7/connections"), null);
 assert.equal(parseStackosDeepLink("stackos://projects/7/tasks?task=../bad"), null);
@@ -83,22 +75,6 @@ class FakeNotification {
     this.shown = true;
   }
 }
-
-const testNotificationOpened = [];
-const testResult = showTestNotification({
-  Notification: FakeNotification,
-  openDeepLink: (deepLink) => {
-    testNotificationOpened.push(deepLink);
-  },
-  projectId: 7
-});
-assert.deepEqual(testResult, { ok: true, deepLink: "stackos://projects/7/tasks" });
-assert.equal(FakeNotification.instances.length, 1);
-assert.equal(FakeNotification.instances[0].options.title, "StackOS notification test");
-assert.equal(FakeNotification.instances[0].shown, true);
-FakeNotification.instances[0].handlers.click();
-assert.deepEqual(testNotificationOpened, ["stackos://projects/7/tasks"]);
-FakeNotification.instances = [];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-notifications-"));
 const eventsByProject = new Map([

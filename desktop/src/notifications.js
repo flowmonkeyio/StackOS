@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { stackosProjectTasksDeepLink, stackosTaskDeepLink } = require("./deep-links");
+const { stackosTaskDeepLink } = require("./deep-links");
 
 const NOTIFICATION_STATE_FILE = "notification-state.json";
 const TASK_STATUS_EVENT = "tracker.task.status_changed";
@@ -66,40 +66,6 @@ function bodyForEvent(event) {
   return "A StackOS tracker task completed.";
 }
 
-function notificationSupported(Notification) {
-  return Notification && typeof Notification.isSupported === "function"
-    ? Notification.isSupported()
-    : Boolean(Notification);
-}
-
-function showDesktopNotification({ Notification, title, body, deepLink, openDeepLink }) {
-  if (!notificationSupported(Notification)) {
-    return { ok: false, reason: "notifications are not supported" };
-  }
-
-  const notification = new Notification({
-    title,
-    body,
-    silent: false
-  });
-  if (deepLink && typeof notification.on === "function") {
-    notification.on("click", () => openDeepLink(deepLink));
-  }
-  notification.show();
-  return { ok: true, deepLink: deepLink || null };
-}
-
-function showTestNotification({ Notification, openDeepLink, projectId = null }) {
-  const safeProjectId = Number.isSafeInteger(projectId) && projectId > 0 ? projectId : null;
-  return showDesktopNotification({
-    Notification,
-    title: "StackOS notification test",
-    body: "Desktop notifications are working.",
-    deepLink: safeProjectId ? stackosProjectTasksDeepLink(safeProjectId) : null,
-    openDeepLink
-  });
-}
-
 function createNotificationController({
   service,
   Notification,
@@ -109,7 +75,10 @@ function createNotificationController({
   setIntervalFn = setInterval,
   clearIntervalFn = clearInterval
 }) {
-  const supported = notificationSupported(Notification);
+  const supported =
+    Notification && typeof Notification.isSupported === "function"
+      ? Notification.isSupported()
+      : Boolean(Notification);
   const persisted = readNotificationState(userDataPath);
   const watermarks =
     persisted && typeof persisted.projectEventWatermarks === "object"
@@ -135,16 +104,16 @@ function createNotificationController({
 
   function showNotification(event) {
     const deepLink = deepLinkForEvent(event);
-    const result = showDesktopNotification({
-      Notification,
+    const notification = new Notification({
       title: titleForEvent(event),
       body: bodyForEvent(event),
-      deepLink,
-      openDeepLink
+      silent: false
     });
-    if (result.ok) {
-      state.notifiedCount += 1;
+    if (deepLink && typeof notification.on === "function") {
+      notification.on("click", () => openDeepLink(deepLink));
     }
+    notification.show();
+    state.notifiedCount += 1;
   }
 
   async function timelinePage(projectId, after) {
@@ -258,7 +227,6 @@ module.exports = {
   deepLinkForEvent,
   notificationStatePath,
   readNotificationState,
-  showTestNotification,
   shouldNotifyEvent,
   writeNotificationState
 };
