@@ -262,7 +262,22 @@ def _launchd_bootout(plist_path: Path) -> tuple[bool, str]:
         ok, message = _launchctl(["bootout", service])
         return ok, message
     # Older launchctl versions accept unload and ignore unloaded jobs.
-    return _launchctl(["unload", str(plist_path)])
+    ok, message = _launchctl(["unload", str(plist_path)])
+    if not ok and _launchd_unload_failure_is_benign(message):
+        return True, message
+    return ok, message
+
+
+def _launchd_unload_failure_is_benign(message: str) -> bool:
+    normalized = message.lower()
+    benign_markers = (
+        "not loaded",
+        "not found",
+        "no such process",
+        "could not find specified service",
+        "service is not loaded",
+    )
+    return any(marker in normalized for marker in benign_markers)
 
 
 def _launchd_bootstrap(plist_path: Path) -> tuple[bool, str]:
@@ -382,7 +397,9 @@ def _uninstall_launchd_autostart(*, home: Path) -> tuple[bool, str]:
     plist_path = _launchd_plist_path(home)
     if not plist_path.exists():
         return True, f"no launchd plist at {plist_path}; nothing to do"
-    _launchd_bootout(plist_path)
+    ok, message = _launchd_bootout(plist_path)
+    if not ok:
+        return False, f"failed to unload launchd job for {plist_path}: {message}"
     plist_path.unlink(missing_ok=True)
     return True, f"removed launchd plist {plist_path}"
 

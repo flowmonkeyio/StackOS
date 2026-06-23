@@ -140,3 +140,63 @@ def test_uninstall_when_absent(sandbox_home: Path, scripts_dir: Path, launchctl_
     result = _run(scripts_dir, sandbox_home, launchctl_stub, "--uninstall")
     assert result.returncode == 0
     assert "nothing to do" in result.stdout
+
+
+def test_uninstall_fails_when_launchctl_unload_fails(
+    sandbox_home: Path,
+    scripts_dir: Path,
+    tmp_path: Path,
+) -> None:
+    plist = sandbox_home / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_text("<plist><dict /></plist>\n", encoding="utf-8")
+
+    bin_dir = tmp_path / "stubs"
+    bin_dir.mkdir()
+    launchctl = bin_dir / "launchctl"
+    launchctl.write_text(
+        "#!/usr/bin/env bash\n"
+        "case \"$1\" in\n"
+        "  print) exit 1 ;;\n"
+        "  unload) echo unload failed >&2; exit 44 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+
+    result = _run(scripts_dir, sandbox_home, bin_dir, "--uninstall")
+
+    assert result.returncode == 1
+    assert "failed to unload launchd job" in result.stderr
+    assert "unload failed" in result.stderr
+    assert plist.exists()
+
+
+def test_uninstall_tolerates_already_unloaded_launchd_job(
+    sandbox_home: Path,
+    scripts_dir: Path,
+    tmp_path: Path,
+) -> None:
+    plist = sandbox_home / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_text("<plist><dict /></plist>\n", encoding="utf-8")
+
+    bin_dir = tmp_path / "stubs"
+    bin_dir.mkdir()
+    launchctl = bin_dir / "launchctl"
+    launchctl.write_text(
+        "#!/usr/bin/env bash\n"
+        "case \"$1\" in\n"
+        "  print) exit 1 ;;\n"
+        "  unload) echo 'Could not find specified service' >&2; exit 113 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+
+    result = _run(scripts_dir, sandbox_home, bin_dir, "--uninstall")
+
+    assert result.returncode == 0, result.stderr
+    assert not plist.exists()

@@ -142,3 +142,46 @@ def test_make_uninstall_removes_integrations_and_preserves_local_state(
     assert db_path.read_text(encoding="utf-8") == "db stays\n"
     assert seed_path.read_bytes() == b"seed stays"
     assert token_path.read_text(encoding="utf-8") == token_before
+
+
+def test_make_uninstall_fails_before_claiming_completion_on_launchd_failure(
+    sandbox_home: Path,
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    launchctl = bin_dir / "launchctl"
+    launchctl.write_text(
+        "#!/usr/bin/env bash\n"
+        "case \"$1\" in\n"
+        "  print) exit 1 ;;\n"
+        "  unload) echo unload failed >&2; exit 44 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+
+    plist = sandbox_home / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_text("<plist><dict /></plist>\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["make", "uninstall"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "HOME": str(sandbox_home),
+            "STACKOS_HOME": str(sandbox_home),
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        },
+    )
+
+    assert result.returncode != 0
+    assert "failed to unload launchd job" in result.stderr
+    assert "unload failed" in result.stderr
+    assert "uninstall complete" not in result.stdout
+    assert plist.exists()

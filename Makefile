@@ -157,7 +157,7 @@ install-launchd: ## Install launchd autostart for the daemon
 
 uninstall: ## Remove installed skills/plugins/MCP entries; preserve DB + seed
 	@echo "==> Booting out launchd job (if loaded)"
-	@bash scripts/install-launchd.sh --uninstall || true
+	@bash scripts/install-launchd.sh --uninstall
 	@echo "==> Removing skills"
 	@rm -rf "$(HOME)/.codex/skills/stackos" "$(HOME)/.claude/skills/stackos"
 	@echo "==> Removing plugins"

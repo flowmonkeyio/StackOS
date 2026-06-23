@@ -600,9 +600,19 @@ def test_cli_uninstall_removes_integrations_and_preserves_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    empty_path = tmp_path / "empty-path"
-    empty_path.mkdir()
-    monkeypatch.setenv("PATH", str(empty_path))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    launchctl = bin_dir / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  print) exit 1 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
 
     data_dir = sandbox / ".local" / "share" / "stackos"
     data_dir.mkdir(parents=True)
@@ -672,6 +682,38 @@ def test_cli_uninstall_removes_integrations_and_preserves_state(
     assert db_path.read_text(encoding="utf-8") == "db stays\n"
     assert seed_path.read_bytes() == b"seed stays"
     assert token_path.read_text(encoding="utf-8") == token_before
+
+
+def test_cli_uninstall_fails_when_launchd_unload_fails(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    launchctl = bin_dir / "launchctl"
+    launchctl.write_text(
+        "#!/usr/bin/env bash\n"
+        "case \"$1\" in\n"
+        "  print) exit 1 ;;\n"
+        "  unload) echo unload failed >&2; exit 44 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_text("<plist><dict /></plist>\n", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["uninstall"])
+
+    assert result.exit_code == 1
+    assert "launchd autostart removal failed" in result.stderr
+    assert "unload failed" in result.stderr
+    assert plist.exists()
 
 
 def test_cli_backup_creates_private_archive_with_manifest(sandbox: Path, tmp_path: Path) -> None:
