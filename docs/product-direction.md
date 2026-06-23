@@ -122,9 +122,9 @@ sequence without turning the document into a live board.
 | --- | --- | --- | --- |
 | Lifecycle inventory and baseline | Done | `phase1-lifecycle-inventory` | Existing install, repair, upgrade, uninstall, desktop, and doctor foundations have been audited. |
 | Public roadmap status tracking | Done | `phase1-roadmap-statuses` | This roadmap now carries the lifecycle contract and action-item status table. |
-| Local readiness and repair loop v0 | In progress | `phase1-install-first-run` | First implementation slice is underway: doctor now exposes provider-readiness guidance and desktop repair consumes the doctor readiness envelope. |
+| Local readiness and repair loop v0 | Done | `phase1-install-first-run` | Doctor exposes provider-readiness guidance, desktop repair consumes the readiness envelope, and launchd-aware restart/stop behavior has manual and automated coverage. |
 | Detailed repair/doctor UX | Later | `phase1-repair-doctor` | Keep deeper doctor grouping and repair UX as hardening after the v0 loop is stable. |
-| Upgrade and desktop update lifecycle | Not started | `phase1-upgrade-update` | Upgrade docs and update plumbing exist; local/package upgrade, migration status, restart, and postflight checks need polish. |
+| Upgrade and desktop update lifecycle | Done | `phase1-upgrade-update` | Desktop install-state now has coverage for app/payload upgrade triggers, idempotent skips, forced reruns, failed first install, and failed upgrade preservation/retry behavior. |
 | Uninstall and state preservation | Not started | `phase1-uninstall-preserve` | Uninstall exists; default preservation and explicit full-cleanup behavior need product-level clarity. |
 | Minimal backup/export before risky changes | Not started | `phase1-backup-restore` | This is a real gap; start with a constrained export and explicit exclusions, then add full restore later. |
 | Public signing and managed update hardening | Later | `phase1-macos-distribution-signing` | Important before broad public distribution, but should not block the local lifecycle MVP. |

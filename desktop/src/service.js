@@ -349,7 +349,8 @@ async function prepareInstalledVersion({
   version,
   userDataPath,
   force = false,
-  payloadInfo = readPackagedBuildInfo()
+  payloadInfo = readPackagedBuildInfo(),
+  installOrRepairFn = installOrRepair
 }) {
   const state = readInstallState(userDataPath);
   const installKey = installKeyFor({ version, payloadInfo });
@@ -367,7 +368,7 @@ async function prepareInstalledVersion({
     };
   }
 
-  const result = await installOrRepair();
+  const result = await installOrRepairFn();
   if (result.ok) {
     writeInstallState(userDataPath, {
       version,
@@ -409,9 +410,12 @@ module.exports = {
   daemonLogPath,
   ensureDaemonReady,
   installOrRepair,
+  installKeyFor,
+  installStatePath,
   prepareInstalledVersion,
   parseDoctorPayload,
   readinessFromDoctor,
+  readInstallState,
   readPackagedBuildInfo,
   resolveStackosCommand,
   restartDaemon,
