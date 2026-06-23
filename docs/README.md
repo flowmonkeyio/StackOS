@@ -11,6 +11,7 @@ obvious without loading every document.
 | Building the macOS desktop app or installer | [`desktop-distribution.md`](./desktop-distribution.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md), [`release-signoff.md`](./release-signoff.md) |
 | Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |
 | Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
+| Product direction or roadmap priorities | [`product-direction.md`](./product-direction.md), [`architecture.md`](./architecture.md), [`agent-experience-audit.md`](./agent-experience-audit.md) |
 | Auditing agent-facing flows and release clarity | [`agent-experience-audit.md`](./agent-experience-audit.md), [`agent-operating-model.md`](./agent-operating-model.md), [`operations.md`](./operations.md) |
 | Setting up generic agents or workflow roles | [`agent-presets.md`](./agent-presets.md), [`agent-operating-model.md`](./agent-operating-model.md), [`workflow-templates.md`](./workflow-templates.md), [`task-tracker.md`](./task-tracker.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
