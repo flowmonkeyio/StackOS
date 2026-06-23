@@ -33,7 +33,11 @@ readiness, visibility, approvals, recovery, and audit.
 The first priority is making StackOS boring to install, upgrade, repair, and
 remove. Convenience starts before the first workflow.
 
-Needed work:
+Phase 1 should cover the whole local lifecycle, but only to the depth needed
+for a dependable local product. Do the core path first; leave release-channel
+hardening and advanced recovery for later unless they block actual use.
+
+Needed work now:
 
 - One reliable macOS install path that initializes local state, installs the
   daemon, registers supported agent clients, installs plugin/skill assets,
@@ -48,9 +52,12 @@ Needed work:
 - Clean uninstall that explains what will be removed and what will be
   preserved: app bundle, launchd job, agent-client registrations, plugin
   assets, local DB, generated assets, seed, auth token, and credentials.
-- Backup/export and restore before serious upgrades.
+- Minimal backup/export before serious upgrades, with full restore treated as a
+  follow-up once the export contract is solid.
 - Doctor output written for both humans and agents, with exact repair steps.
-- Signed macOS distribution and a release-grade update channel.
+- Clear release/update expectations for local and GitHub distribution. Signed
+  macOS distribution and a release-grade update channel are later hardening
+  unless public distribution requires them immediately.
 
 Setup should not feel like developer onboarding. It should feel like a product.
 
@@ -74,21 +81,25 @@ Lifecycle contract:
 - Doctor / repair. User: click repair or let an agent follow structured repair
   guidance. Data: diagnostics group daemon, state, launchd, desktop, MCP,
   plugin, and provider checks; safe repairs call the canonical lifecycle path.
-- Upgrade / update. User: see update availability, release notes, migration
-  risk, restart expectations, and post-update health. Data: signed update
-  metadata drives the desktop flow, local state is preserved, migrations run
-  locally, and postflight doctor confirms readiness.
-- Backup / restore. User: export local state before serious upgrades or a
-  machine move, then restore with preflight validation. Data: backup scope,
-  secret handling, compatibility checks, dry-run, and rollback behavior must be
-  explicit before this is product-grade.
+- Upgrade / update. User: see update availability or upgrade instructions,
+  release notes, migration risk, restart expectations, and post-update health.
+  Data: the upgrade path preserves local state, migrations run locally, and
+  postflight doctor confirms readiness. A signed update feed is hardening, not
+  a dependency for the basic lifecycle.
+- Backup / restore. User: export enough local state before serious upgrades or
+  a machine move to avoid lock-in or silent loss. Data: the first version can
+  be a constrained export with explicit exclusions and verification. Full
+  restore, secret migration, and rollback can come after the export contract is
+  proven.
 - Uninstall. User: choose default uninstall that preserves user-owned state, or
   a separate full cleanup that is clearly destructive. Data: app/service/client
   registrations are removed while DB, seed, token, credentials, and backups are
   preserved unless the user explicitly asks for full cleanup.
-- Release / distribution. User: download a signed macOS app and receive safe
-  updates. Data: signing, notarization, update feed configuration, packaging
-  checks, rollback notes, and release evidence are part of signoff.
+- Release / distribution. User: install from the supported release path and
+  understand how updates work. Data: release docs name the current supported
+  path, packaging checks, rollback notes, and known gaps. Signing,
+  notarization, and a managed update feed are release hardening, not day-one
+  lifecycle mechanics.
 
 The data-flow invariant is:
 
@@ -111,12 +122,13 @@ Current Phase 1 tracking:
 | Repair and doctor lifecycle | Not started | `phase1-repair-doctor` | Doctor and repair paths exist; output grouping, desktop UX, and agent-readable repair guidance need polish. |
 | Upgrade and desktop update lifecycle | Not started | `phase1-upgrade-update` | Upgrade docs and update plumbing exist; production channel, migration, restart, and signoff flow need polish. |
 | Uninstall and state preservation | Not started | `phase1-uninstall-preserve` | Uninstall exists; default preservation and explicit full-cleanup behavior need product-level clarity. |
-| Backup, export, and restore | Not started | `phase1-backup-restore` | This is a real gap; current backup/restore behavior is reserved and not product-grade. |
-| Signed macOS distribution and update gates | Not started | `phase1-macos-distribution-signing` | Signing, notarization, update endpoint, and release evidence require dedicated delivery and operator-owned inputs. |
-| Lifecycle verification matrix | Not started | `phase1-lifecycle-verification` | Needs a complete automated/manual proof set across install, repair, upgrade, uninstall, backup, and release. |
+| Minimal backup/export before risky changes | Not started | `phase1-backup-restore` | This is a real gap; start with a constrained export and explicit exclusions, then add full restore later. |
+| Public signing and managed update hardening | Later | `phase1-macos-distribution-signing` | Important before broad public distribution, but should not block the local lifecycle MVP. |
+| Lifecycle smoke verification | Not started | `phase1-lifecycle-verification` | Start with a small proof set across install, repair, upgrade, uninstall, and export; expand only as the lifecycle grows. |
 
 `Not started` means the product-grade delivery ticket is open. It does not mean
-there is no existing foundation in the repository.
+there is no existing foundation in the repository. `Later` means the item is
+tracked and relevant, but it should not block the core local lifecycle.
 
 ### 2. Agent Guidance Activation And Workflow Reliability
 
