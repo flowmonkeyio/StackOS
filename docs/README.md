@@ -7,7 +7,7 @@ obvious without loading every document.
 
 | Work | Primary Docs |
 | --- | --- |
-| Installing, starting, or repairing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md) |
+| Installing, starting, repairing, or lifecycle-smoke testing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md), [`security.md`](./security.md) |
 | Building the macOS desktop app or installer | [`desktop-distribution.md`](./desktop-distribution.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md), [`release-signoff.md`](./release-signoff.md) |
 | Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |
 | Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
@@ -25,7 +25,7 @@ obvious without loading every document.
 | Changing UI | [`ui-design-system.md`](./ui-design-system.md), [`ui-component-inventory.md`](./ui-component-inventory.md) |
 | Reviewing provider contracts | [`integration-contracts/`](./integration-contracts/) |
 | Selecting or integrating image/video generation providers | [`integration-contracts/media-generation.md`](./integration-contracts/media-generation.md), [`action-executor.md`](./action-executor.md) |
-| Before-commit or release validation | [`release-signoff.md`](./release-signoff.md) |
+| Before-commit or release validation | [`release-signoff.md`](./release-signoff.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md) |
 
 ## Canonical Rules
 

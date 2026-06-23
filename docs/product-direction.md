@@ -128,7 +128,7 @@ sequence without turning the document into a live board.
 | Uninstall and state preservation | Done | `phase1-uninstall-preserve` | Default uninstall removes launchd, agent-client registrations, skill mirrors, plugin source/cache artifacts, and preserves DB, seed, and token; destructive full cleanup remains explicit future scope. |
 | Minimal backup/export before risky changes | Done | `phase1-backup-restore` | `stackos backup` now exports a private zip containing the DB, seed, token, and manifest. Automated restore remains future scope. |
 | Public signing and managed update hardening | Later | `phase1-macos-distribution-signing` | Important before broad public distribution, but should not block the local lifecycle MVP. |
-| Lifecycle smoke verification | Not started | `phase1-lifecycle-verification` | Start with a small proof set across install, repair, upgrade, uninstall, and export; expand only as the lifecycle grows. |
+| Lifecycle smoke verification | Done | `phase1-lifecycle-verification` | Public smoke checklist now covers targeted automation, temp-HOME manual smokes, lifecycle evidence, and closeout expectations. |
 
 `Not started` means the product-grade delivery ticket is open. It does not mean
 there is no existing foundation in the repository. `Later` means the item is
