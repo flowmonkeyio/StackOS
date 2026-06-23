@@ -158,6 +158,39 @@ def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict)
     assert "project_id" not in searched["tickets"][0]
 
 
+def test_tracker_status_compact_includes_project_pulse(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    mcp_client.call_tool_structured(
+        "tracker.createTask",
+        {
+            "project_id": project_id,
+            "key": "status-pulse",
+            "title": "Status pulse",
+            "created_by": "mcp-test",
+        },
+    )
+    mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {
+            "project_id": project_id,
+            "task_key": "status-pulse",
+            "key": "status-pulse-ticket",
+            "title": "Status pulse ticket",
+            "created_by": "mcp-test",
+        },
+    )
+
+    status = mcp_client.call_tool_structured("tracker.status", {"project_id": project_id})
+
+    assert status["data"]["summary"]["tasks"]["total"] == 1
+    assert status["data"]["summary"]["tasks"]["active"] == 1
+    assert status["data"]["summary"]["tickets"]["total"] == 1
+    assert status["data"]["summary"]["tickets"]["ready"] == 1
+    assert status["data"]["task_counts"]["not-started"] == 1
+
+
 def test_tracker_create_ticket_can_target_workflow_step(
     mcp_client: MCPClient,
     seeded_project: dict,

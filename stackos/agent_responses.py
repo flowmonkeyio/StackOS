@@ -65,16 +65,28 @@ def compact_tracker_brief(value: Any) -> dict[str, Any]:
 def compact_tracker_status(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
     tracker = _as_dict(data.get("tracker"))
+    task_counts = _clean(data.get("task_counts"))
+    ticket_counts = _clean(data.get("ticket_counts"))
+    ready_ticket_count = _clean(data.get("ready_ticket_count"))
+    blocked_ticket_count = _clean(data.get("blocked_ticket_count"))
+    in_progress_ticket_count = _clean(data.get("in_progress_ticket_count"))
     return _drop_empty(
         {
             "project_id": _clean(data.get("project_id") or tracker.get("project_id")),
-            "tracker_id": _clean(tracker.get("id")),
+            "tracker_id": _clean(data.get("tracker_id") or tracker.get("id")),
             "rev": _clean(data.get("rev") or tracker.get("rev")),
-            "task_counts": _clean(data.get("task_counts")),
-            "ticket_counts": _clean(data.get("ticket_counts")),
-            "ready_ticket_count": _clean(data.get("ready_ticket_count")),
-            "blocked_ticket_count": _clean(data.get("blocked_ticket_count")),
-            "in_progress_ticket_count": _clean(data.get("in_progress_ticket_count")),
+            "summary": _tracker_status_summary(
+                task_counts=task_counts,
+                ticket_counts=ticket_counts,
+                ready_ticket_count=ready_ticket_count,
+                blocked_ticket_count=blocked_ticket_count,
+                in_progress_ticket_count=in_progress_ticket_count,
+            ),
+            "task_counts": task_counts,
+            "ticket_counts": ticket_counts,
+            "ready_ticket_count": ready_ticket_count,
+            "blocked_ticket_count": blocked_ticket_count,
+            "in_progress_ticket_count": in_progress_ticket_count,
         }
     )
 
@@ -369,6 +381,64 @@ def _compact_graph_warnings(value: Any) -> list[Any]:
     workflow_warnings = [item for item in warnings if "workflow" in item.lower()]
     other_warnings = [item for item in warnings if "workflow" not in item.lower()]
     return [*workflow_warnings, *other_warnings][:8]
+
+
+def _tracker_status_summary(
+    *,
+    task_counts: Any,
+    ticket_counts: Any,
+    ready_ticket_count: Any,
+    blocked_ticket_count: Any,
+    in_progress_ticket_count: Any,
+) -> dict[str, Any]:
+    task_counts = task_counts if isinstance(task_counts, dict) else {}
+    ticket_counts = ticket_counts if isinstance(ticket_counts, dict) else {}
+    return _drop_empty(
+        {
+            "tasks": _status_count_summary(task_counts),
+            "tickets": _status_count_summary(
+                ticket_counts,
+                extra={
+                    "ready": ready_ticket_count,
+                    "blocked": blocked_ticket_count,
+                    "in_progress": in_progress_ticket_count,
+                },
+            ),
+        }
+    )
+
+
+def _status_count_summary(
+    counts: dict[str, Any],
+    *,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized = {str(key).replace("-", "_"): _int_or_zero(value) for key, value in counts.items()}
+    total = sum(normalized.values())
+    terminal = sum(
+        normalized.get(key, 0)
+        for key in ("complete", "deferred", "aborted", "failed", "skipped")
+    )
+    summary = {
+        "total": total,
+        "active": max(total - terminal, 0),
+        "done": terminal,
+        **normalized,
+    }
+    for key, value in (extra or {}).items():
+        summary[key] = _int_or_zero(value)
+    return summary
+
+
+def _int_or_zero(value: Any) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

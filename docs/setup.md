@@ -335,6 +335,12 @@ Use JSON output for automation:
 stackos doctor --json
 ```
 
+MCP `workspace.startSession` and `workspace.resolve` health fields come from
+the daemon response path and include a `check_source`. A shell-side
+`stackos doctor` can still fail when the calling environment cannot reach local
+loopback; treat that as a caller-environment diagnostic before assuming the
+daemon itself is unhealthy.
+
 The JSON envelope includes `checks.provider_readiness_available` and
 `info.provider_readiness`. Provider readiness is advisory: missing provider
 credentials do not make the local install unhealthy, but the details point

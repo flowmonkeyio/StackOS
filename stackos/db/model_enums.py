@@ -103,7 +103,13 @@ class PluginSource(enum.StrEnum):
 
 
 class TrackerItemStatus(enum.StrEnum):
-    """Persists to tracker task/ticket status columns."""
+    """Persists to tracker task/ticket status columns.
+
+    Meanings: not-started = planned but not begun; in-progress = actively
+    being worked; complete = finished successfully; deferred = valid work
+    postponed for later; aborted = stopped, cancelled, or rejected; failed =
+    attempted and unsuccessful; skipped = intentionally not executed.
+    """
 
     NOT_STARTED = "not-started"
     IN_PROGRESS = "in-progress"

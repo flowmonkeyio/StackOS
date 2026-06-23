@@ -6,9 +6,16 @@ import copy
 from typing import Any, cast
 
 from stackos.agent_responses import (
+    compact_tracker_brief,
+    compact_tracker_changed,
+    compact_tracker_history_page,
+    compact_tracker_next,
+    compact_tracker_search,
     compact_tracker_snapshot,
+    compact_tracker_status,
     compact_tracker_task,
     compact_tracker_ticket,
+    compact_tracker_verify,
 )
 from stackos.operations.spec import OperationSpec, ResponseMode
 from stackos.repositories.base import ValidationError
@@ -161,6 +168,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "auto_bootstrap",
         "claimed_by",
         "daemon_reached",
+        "check_source",
         "framework",
         "git_remote_url",
         "last_known_root",
@@ -572,6 +580,20 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return _compact_action_execution(data)
     if operation_name == "tracker.get":
         return compact_tracker_snapshot(data)
+    if operation_name == "tracker.status":
+        return compact_tracker_status(data)
+    if operation_name in {"tracker.next", "tracker.blockers"}:
+        return compact_tracker_next(data)
+    if operation_name in {"tracker.brief", "tracker.why"}:
+        return compact_tracker_brief(data)
+    if operation_name == "tracker.verify":
+        return compact_tracker_verify(data)
+    if operation_name == "tracker.history":
+        return compact_tracker_history_page(data)
+    if operation_name == "tracker.changed":
+        return compact_tracker_changed(data)
+    if operation_name == "tracker.search":
+        return compact_tracker_search(data)
     if operation_name.startswith("tracker."):
         return _compact_tracker_mutation(data)
     if operation_name.startswith("runPlan."):

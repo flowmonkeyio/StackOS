@@ -20,6 +20,7 @@ def test_workspace_resolve_unknown_requests_connect(
     assert resolved["setup_state"]["project_scoped_tools_usable"] is False
     assert resolved["ui_urls"]["projects"] == "http://127.0.0.1:5180/"
     assert resolved["ui_health"]["daemon_reached"] is True
+    assert resolved["ui_health"]["check_source"] == "mcp_daemon_response"
     assert resolved["next_step"]["recommended_tool"] == "workspace.bootstrap"
     assert [project["id"] for project in resolved["candidate_projects"]] == [
         seeded_project["data"]["id"]
@@ -102,6 +103,7 @@ def test_workspace_connect_list_and_start_session(
         started["data"]["ui_urls"]["setup"] == f"http://127.0.0.1:5180/projects/{project_id}/setup"
     )
     assert started["data"]["ui_health"]["daemon_reached"] is True
+    assert started["data"]["ui_health"]["check_source"] == "mcp_daemon_response"
 
 
 def test_workspace_connect_requires_rebind_flag_to_move_existing_binding(

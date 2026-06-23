@@ -47,6 +47,7 @@ def _ui_health() -> dict[str, Any]:
     return {
         "base_url": base,
         "daemon_reached": True,
+        "check_source": "mcp_daemon_response",
         "meaning": (
             "This MCP response came from the StackOS daemon. UI routes use the same "
             "loopback host and port unless the operator configured a different local port."
