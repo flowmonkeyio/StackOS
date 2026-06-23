@@ -87,7 +87,16 @@ from .doctor_commands import (
     _plugin_marketplace_has_stackos,
     doctor,
 )
-from .local_commands import backup, init, install, migrate, restore, rotate_seed, rotate_token
+from .local_commands import (
+    backup,
+    init,
+    install,
+    migrate,
+    restore,
+    rotate_seed,
+    rotate_token,
+    uninstall,
+)
 from .operation_commands import _operation_call
 
 # Import command modules for their Typer decorators. The imported symbols above

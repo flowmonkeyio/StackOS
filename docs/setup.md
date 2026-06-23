@@ -157,6 +157,27 @@ The clone-mode convenience target delegates to the same CLI-owned behavior:
 make install-launchd
 ```
 
+## Uninstall
+
+The default uninstall path removes local integration artifacts while preserving
+user-owned state:
+
+```bash
+stackos uninstall
+```
+
+From a clone checkout, the Makefile convenience target performs the same
+default-preserve cleanup:
+
+```bash
+make uninstall
+```
+
+It removes the launchd job, StackOS skill mirrors, StackOS Codex plugin source
+and cache entries, and Codex/Claude MCP registrations. It preserves the local
+database under `~/.local/share/stackos/` and daemon state under
+`~/.local/state/stackos/`, including `seed.bin` and `auth.token`.
+
 ## First Run In The UI
 
 After the daemon is running, use the UI in this order:

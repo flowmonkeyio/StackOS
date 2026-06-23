@@ -109,6 +109,20 @@ def test_copy_plugins_refreshes_existing_codex_cache(sandbox: Path) -> None:
     }
 
 
+def test_remove_plugins_removes_source_and_codex_cache(sandbox: Path) -> None:
+    target, _count = installer.copy_plugins(home=sandbox)
+    cache = sandbox / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos" / "0.1.0"
+    (cache / ".codex-plugin").mkdir(parents=True)
+    (cache / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+
+    removed_target, removed_cache = installer.remove_plugins(home=sandbox)
+
+    assert removed_target == target
+    assert removed_cache == sandbox / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos"
+    assert not target.exists()
+    assert not removed_cache.exists()
+
+
 def test_doctor_plugin_count_ignores_other_codex_plugins(sandbox: Path) -> None:
     stackos_manifest = sandbox / ".codex" / "plugins" / "stackos" / ".codex-plugin"
     stackos_manifest.mkdir(parents=True)
@@ -530,7 +544,11 @@ def test_cli_install_skills_only_subcommand(sandbox: Path) -> None:
     assert not (sandbox / ".codex" / "plugins" / "stackos").exists()
 
 
-def test_cli_install_default_installs_plugin_and_skill_mirrors(sandbox: Path) -> None:
+def test_cli_install_default_installs_plugin_and_skill_mirrors(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
     runner = CliRunner()
     result = runner.invoke(
         app,
@@ -575,10 +593,91 @@ def test_cli_install_preserves_seed_and_token_on_rerun(
     assert (state / "auth.token").read_text(encoding="utf-8") == token_text
 
 
+def test_cli_uninstall_removes_integrations_and_preserves_state(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    empty_path = tmp_path / "empty-path"
+    empty_path.mkdir()
+    monkeypatch.setenv("PATH", str(empty_path))
+
+    data_dir = sandbox / ".local" / "share" / "stackos"
+    data_dir.mkdir(parents=True)
+    db_path = data_dir / "stackos.db"
+    db_path.write_text("db stays\n", encoding="utf-8")
+    state_dir = sandbox / ".local" / "state" / "stackos"
+    seed_path = state_dir / "seed.bin"
+    token_path = state_dir / "auth.token"
+    seed_path.write_bytes(b"seed stays")
+    token_before = token_path.read_text(encoding="utf-8")
+
+    (sandbox / ".codex" / "skills" / "stackos").mkdir(parents=True)
+    (sandbox / ".claude" / "skills" / "stackos").mkdir(parents=True)
+    plugin_root = sandbox / ".codex" / "plugins" / "stackos"
+    (plugin_root / ".codex-plugin").mkdir(parents=True)
+    (plugin_root / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+    cache_root = sandbox / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos"
+    (cache_root / "0.1.0" / ".codex-plugin").mkdir(parents=True)
+    (cache_root / "0.1.0" / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+
+    marketplace = sandbox / ".agents" / "plugins" / "marketplace.json"
+    marketplace.parent.mkdir(parents=True)
+    marketplace.write_text(
+        json.dumps(
+            {
+                "name": "local-stackos",
+                "plugins": [
+                    {"name": "stackos", "source": {"path": "./.codex/plugins/stackos"}},
+                    {"name": "other", "source": {"path": "./other"}},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    claude_mcp = sandbox / ".claude" / "mcp.json"
+    claude_mcp.parent.mkdir(parents=True, exist_ok=True)
+    claude_mcp.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "stackos": {"transport": "stdio"},
+                    "other-server": {"transport": "stdio"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_text("<plist><dict /></plist>\n", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["uninstall"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.stdout
+    assert "Preserved database directory" in result.stdout
+    assert "Preserved daemon state directory" in result.stdout
+    assert not plist.exists()
+    assert not (sandbox / ".codex" / "skills" / "stackos").exists()
+    assert not (sandbox / ".claude" / "skills" / "stackos").exists()
+    assert not plugin_root.exists()
+    assert not cache_root.exists()
+    marketplace_payload = json.loads(marketplace.read_text(encoding="utf-8"))
+    assert [item["name"] for item in marketplace_payload["plugins"]] == ["other"]
+    claude_payload = json.loads(claude_mcp.read_text(encoding="utf-8"))
+    assert "stackos" not in claude_payload["mcpServers"]
+    assert "other-server" in claude_payload["mcpServers"]
+    assert db_path.read_text(encoding="utf-8") == "db stays\n"
+    assert seed_path.read_bytes() == b"seed stays"
+    assert token_path.read_text(encoding="utf-8") == token_before
+
+
 def test_cli_install_tolerates_daemon_down_doctor(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+
     def daemon_down_doctor(json_output: bool = False) -> None:
         _ = json_output
         raise local_cli.typer.Exit(code=1)
@@ -596,6 +695,8 @@ def test_cli_install_preserves_blocking_doctor_failures(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+
     def seed_failure_doctor(json_output: bool = False) -> None:
         _ = json_output
         raise local_cli.typer.Exit(code=8)

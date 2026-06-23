@@ -307,6 +307,17 @@ def copy_skills(
     return target, count
 
 
+def remove_skills(
+    runtime: Literal["codex", "claude"],
+    home: Path | None = None,
+) -> Path:
+    """Remove the StackOS skill mirror for one runtime."""
+    home_dir = home if home is not None else Path.home()
+    target = _runtime_target(home_dir, runtime, "skills")
+    shutil.rmtree(target, ignore_errors=True)
+    return target
+
+
 def _plugin_mcp_payload() -> dict[str, object]:
     """Return a plugin-local MCP config that does not depend on shell PATH."""
     return {
@@ -366,6 +377,16 @@ def copy_plugins(home: Path | None = None) -> tuple[Path, int]:
 
     count = sum(1 for p in target.rglob("plugin.json") if p.parent.name == ".codex-plugin")
     return target, count
+
+
+def remove_plugins(home: Path | None = None) -> tuple[Path, Path]:
+    """Remove StackOS plugin source and Codex's cached installed copy."""
+    home_dir = home if home is not None else Path.home()
+    target = home_dir / ".codex" / "plugins" / "stackos"
+    cache_root = home_dir / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos"
+    shutil.rmtree(target, ignore_errors=True)
+    shutil.rmtree(cache_root, ignore_errors=True)
+    return target, cache_root
 
 
 def register_plugin_marketplace(
@@ -612,4 +633,6 @@ __all__ = [
     "register_mcp_claude",
     "register_mcp_codex",
     "register_plugin_marketplace",
+    "remove_plugins",
+    "remove_skills",
 ]

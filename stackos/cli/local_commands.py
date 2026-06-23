@@ -11,7 +11,7 @@ import typer
 from stackos.config import get_settings
 
 from .app import app
-from .daemon_commands import _install_launchd_autostart
+from .daemon_commands import _install_launchd_autostart, _uninstall_launchd_autostart
 from .doctor_commands import doctor
 from .paths import _doctor_home
 
@@ -201,6 +201,41 @@ def install(
             elif exc.exit_code not in (0, None):
                 raise
     typer.echo("==> install complete")
+
+
+@app.command()
+def uninstall() -> None:
+    """Remove local integrations while preserving StackOS database and daemon state."""
+    from stackos import install as installer
+
+    settings = get_settings()
+    home = _doctor_home()
+
+    typer.echo("==> Removing launchd autostart")
+    ok, message = _uninstall_launchd_autostart(home=home)
+    if not ok:
+        typer.echo(f"==> launchd autostart removal failed: {message}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"==> {message}")
+
+    for runtime in ("codex", "claude"):
+        target = installer.remove_skills(runtime, home=home)
+        typer.echo(f"==> Removed StackOS {runtime} skill mirror from {target}")
+
+    plugin_target, plugin_cache = installer.remove_plugins(home=home)
+    typer.echo(f"==> Removed StackOS plugin from {plugin_target}")
+    typer.echo(f"==> Removed StackOS plugin cache from {plugin_cache}")
+    msg = installer.register_plugin_marketplace(home=home, remove=True)
+    typer.echo(f"==> {msg}")
+
+    msg = installer.register_mcp_codex(home=home, port=settings.port, remove=True)
+    typer.echo(f"==> {msg}")
+    msg = installer.register_mcp_claude(home=home, port=settings.port, remove=True)
+    typer.echo(f"==> {msg}")
+
+    typer.echo(f"==> Preserved database directory: {settings.data_dir}")
+    typer.echo(f"==> Preserved daemon state directory: {settings.state_dir}")
+    typer.echo("==> uninstall complete")
 
 
 @app.command(name="rotate-seed")

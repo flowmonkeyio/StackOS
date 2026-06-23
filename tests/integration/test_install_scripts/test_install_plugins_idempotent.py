@@ -98,6 +98,10 @@ def test_install_plugins_remove_preserves_marketplace_file(
     sandbox_home: Path, scripts_dir: Path
 ) -> None:
     _run(scripts_dir / "install-plugins.sh", sandbox_home)
+    cache_root = sandbox_home / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos"
+    cache_version = cache_root / "0.1.0"
+    (cache_version / ".codex-plugin").mkdir(parents=True)
+    (cache_version / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
 
     _run(scripts_dir / "install-plugins.sh", sandbox_home, "--remove")
 
@@ -105,4 +109,5 @@ def test_install_plugins_remove_preserves_marketplace_file(
     marketplace = sandbox_home / ".agents" / "plugins" / "marketplace.json"
     payload = json.loads(marketplace.read_text(encoding="utf-8"))
     assert not plugin_root.exists()
+    assert not cache_root.exists()
     assert all(p["name"] != "stackos" for p in payload["plugins"])
