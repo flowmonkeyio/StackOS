@@ -428,6 +428,20 @@ def _check_launchd_plist(home: Path) -> tuple[bool, dict[str, object]]:
     return target.exists(), {"target": str(target), "exists": target.exists()}
 
 
+def _manifest_credential_provider_keys() -> list[str]:
+    """Return credential-bearing provider keys from manifests without DB writes."""
+    from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
+
+    return sorted(
+        {
+            provider.key
+            for manifest in BUILTIN_PLUGIN_MANIFESTS
+            for provider in manifest.providers
+            if provider.auth_type not in {"none", "local"}
+        }
+    )
+
+
 def _check_provider_readiness(
     settings: Settings,
     db_present: bool,
@@ -454,17 +468,19 @@ def _check_provider_readiness(
     try:
         from sqlmodel import Session, col, select
 
-        from stackos.auth_providers import AuthRepository
         from stackos.db.connection import make_engine
-        from stackos.db.models import Credential
-        from stackos.repositories.plugins import PluginRepository
+        from stackos.db.models import Credential, Provider
 
         engine = make_engine(settings.db_path)
         try:
             with Session(engine) as session:
-                PluginRepository(session).sync_builtin_plugins()
-                repo = AuthRepository(session)
-                providers = repo.list_providers()
+                provider_rows = list(
+                    session.exec(
+                        select(Provider)
+                        .where(col(Provider.auth_type).not_in(["none", "local"]))
+                        .order_by(col(Provider.key).asc())
+                    ).all()
+                )
                 credentials = list(
                     session.exec(
                         select(Credential)
@@ -488,7 +504,9 @@ def _check_provider_readiness(
             "repair": "run `stackos install` or `make install` to repair local provider metadata",
         }
 
-    provider_keys = sorted(provider.key for provider in providers)
+    provider_keys = sorted(
+        {provider.key for provider in provider_rows} | set(_manifest_credential_provider_keys())
+    )
     connected_provider_keys = sorted(
         {credential.provider_key for credential in credentials if credential.status == "connected"}
     )

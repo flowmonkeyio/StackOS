@@ -282,6 +282,15 @@ def _launchd_bootstrap(plist_path: Path) -> tuple[bool, str]:
     return False, legacy_message or message
 
 
+def _loaded_launchd_plist(home: Path) -> Path | None:
+    """Return the launchd plist path when the StackOS job is currently loaded."""
+    plist_path = _launchd_plist_path(home)
+    if not plist_path.exists():
+        return None
+    loaded, _message = _launchd_loaded()
+    return plist_path if loaded else None
+
+
 def _launchd_plist_content(
     settings: Settings,
     *,
@@ -683,6 +692,15 @@ def stop(
         )
         raise typer.Exit(code=1)
 
+    launchd_plist = _loaded_launchd_plist(_doctor_home())
+    if launchd_plist is not None:
+        ok, message = _launchd_bootout(launchd_plist)
+        if not ok:
+            typer.echo(f"stop: launchd bootout failed: {message}", err=True)
+            raise typer.Exit(code=1)
+        detail = f"; {message}" if message else ""
+        typer.echo(f"stop: unloaded launchd job{detail}")
+
     daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
         typer.echo(
@@ -751,6 +769,16 @@ def restart(
         )
         raise typer.Exit(code=1)
 
+    launchd_plist = _loaded_launchd_plist(_doctor_home())
+    restart_via_launchd = launchd_plist is not None
+    if launchd_plist is not None:
+        ok, message = _launchd_bootout(launchd_plist)
+        if not ok:
+            typer.echo(f"restart: launchd bootout failed: {message}", err=True)
+            raise typer.Exit(code=1)
+        detail = f"; {message}" if message else ""
+        typer.echo(f"restart: unloaded launchd job{detail}")
+
     daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
         typer.echo(
@@ -778,7 +806,23 @@ def restart(
         )
         raise typer.Exit(code=1)
     else:
-        typer.echo("restart: no running daemon found")
+        if not restart_via_launchd:
+            typer.echo("restart: no running daemon found")
+
+    if restart_via_launchd:
+        assert launchd_plist is not None
+        ok, message = _launchd_bootstrap(launchd_plist)
+        if not ok:
+            typer.echo(f"restart: launchd bootstrap failed: {message}", err=True)
+            raise typer.Exit(code=1)
+        if not _wait_for_daemon(daemon_host, daemon_port, timeout=timeout):
+            typer.echo(
+                f"restart: launchd job loaded but daemon did not become ready; {message}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        typer.echo(f"restart: {message}; url=http://{daemon_host}:{daemon_port}")
+        return
 
     ok, message = _spawn_detached_daemon(
         settings,

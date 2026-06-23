@@ -313,6 +313,26 @@ def test_doctor_provider_readiness_reports_missing_connections(sandbox: Path) ->
     assert "auth.status" in str(details["repair"])
 
 
+def test_doctor_provider_readiness_does_not_sync_catalog(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings()
+    settings.ensure_dirs()
+    upgrade_to_head(settings)
+
+    def fail_sync(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("doctor provider readiness must stay read-only")
+
+    monkeypatch.setattr(PluginRepository, "sync_builtin_plugins", fail_sync)
+
+    ok, details = doctor_cli._check_provider_readiness(settings, db_present=True)
+
+    assert ok is True
+    assert details["providers_count"] > 0
+    assert details["status"] == "needs_connections"
+
+
 def test_doctor_provider_readiness_summarizes_connections_without_secrets(
     sandbox: Path,
 ) -> None:
