@@ -115,7 +115,8 @@ That means desktop installs converge on the same local state as package and
 clone installs: DB, `seed.bin`, `auth.token`, migrations, plugin assets,
 managed skill mirrors, MCP registrations, and daemon autostart. The desktop app
 does not store provider secrets and does not rotate `seed.bin` or `auth.token`
-on install or update.
+on install or update. After install or repair, the desktop service consumes the
+same `stackos doctor --json` readiness envelope used by the CLI.
 
 Build and release details live in
 [`desktop-distribution.md`](./desktop-distribution.md).
@@ -299,6 +300,13 @@ Use JSON output for automation:
 ```bash
 stackos doctor --json
 ```
+
+The JSON envelope includes `checks.provider_readiness_available` and
+`info.provider_readiness`. Provider readiness is advisory: missing provider
+credentials do not make the local install unhealthy, but the details point
+operators and agents to the project Connections page plus `readiness.check`,
+`auth.status`, and `auth.test`. The envelope never includes raw provider
+secrets.
 
 ## Local Paths
 

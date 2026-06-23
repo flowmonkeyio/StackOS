@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
-from sqlmodel import SQLModel
+from sqlmodel import Session, SQLModel
 from typer.testing import CliRunner
 
 import stackos.cli.daemon_commands as daemon_cli
@@ -25,10 +25,14 @@ import stackos.cli.local_commands as local_cli
 import stackos.db.migrate as migrate_module
 import stackos.db.models  # noqa: F401  (populate SQLModel metadata)
 from stackos import install as installer
+from stackos.auth_providers import AuthRepository
 from stackos.cli import app
 from stackos.config import Settings
+from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.db.connection import make_engine
 from stackos.db.migrate import current_alembic_version, upgrade_to_head
+from stackos.db.models import Project
+from stackos.repositories.plugins import PluginRepository
 
 HEAD_REVISION = "0022_artifact_lifecycle"
 
@@ -293,6 +297,67 @@ def test_doctor_exits_9_for_stale_stackos_plugin_skill_cache(sandbox: Path) -> N
     assert "stackos install" in plain_result.stdout
 
 
+def test_doctor_provider_readiness_reports_missing_connections(sandbox: Path) -> None:
+    settings = Settings()
+    settings.ensure_dirs()
+    upgrade_to_head(settings)
+
+    ok, details = doctor_cli._check_provider_readiness(settings, db_present=True)
+
+    assert ok is True
+    assert details["status"] == "needs_connections"
+    assert details["providers_count"] > 0
+    assert details["connected_count"] == 0
+    assert details["setup_required_count"] == details["providers_count"]
+    assert "connections" in str(details["connections_url"])
+    assert "auth.status" in str(details["repair"])
+
+
+def test_doctor_provider_readiness_summarizes_connections_without_secrets(
+    sandbox: Path,
+) -> None:
+    settings = Settings()
+    init_result = CliRunner().invoke(app, ["init"], catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+    configure_seed_path(settings.seed_path)
+    upgrade_to_head(settings)
+
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            PluginRepository(session).sync_builtin_plugins()
+            project = Project(
+                slug="provider-readiness",
+                name="Provider Readiness",
+                domain="example.test",
+                locale="en",
+                is_active=True,
+            )
+            session.add(project)
+            session.commit()
+            session.refresh(project)
+            assert project.id is not None
+            AuthRepository(session).store_credential(
+                project_id=project.id,
+                provider_key="firecrawl",
+                auth_method_key="api_key",
+                profile_key="primary",
+                label="Primary Firecrawl",
+                fields={"api_key": "fc-secret"},
+            )
+    finally:
+        engine.dispose()
+
+    ok, details = doctor_cli._check_provider_readiness(settings, db_present=True)
+
+    assert ok is True
+    assert details["status"] in {"partial", "ready"}
+    assert "firecrawl" in details["connected_provider_keys"]
+    rendered = json.dumps(details)
+    assert "fc-secret" not in rendered
+    assert "encrypted_payload" not in rendered
+
+
 def test_bridge_autostart_spawns_loopback_daemon(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -460,6 +525,36 @@ def test_cli_install_default_installs_plugin_and_skill_mirrors(sandbox: Path) ->
     assert current_alembic_version(Settings()) == HEAD_REVISION
 
 
+def test_cli_install_preserves_seed_and_token_on_rerun(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(installer, "copy_skills", lambda runtime, home: (home / runtime, 1))
+    monkeypatch.setattr(
+        installer,
+        "copy_plugins",
+        lambda home: (home / ".codex/plugins/stackos", 1),
+    )
+    monkeypatch.setattr(installer, "register_plugin_marketplace", lambda home: "marketplace ok")
+    monkeypatch.setattr(installer, "register_mcp_codex", lambda home, port: "codex ok")
+    monkeypatch.setattr(installer, "register_mcp_claude", lambda home, port: "claude ok")
+    monkeypatch.setattr(local_cli, "doctor", lambda json_output=False: None)
+
+    runner = CliRunner()
+    first = runner.invoke(app, ["install"], catch_exceptions=False)
+    assert first.exit_code == 0, first.stdout
+    state = sandbox / ".local" / "state" / "stackos"
+    seed_bytes = (state / "seed.bin").read_bytes()
+    token_text = (state / "auth.token").read_text(encoding="utf-8")
+
+    second = runner.invoke(app, ["install"], catch_exceptions=False)
+
+    assert second.exit_code == 0, second.stdout
+    assert (state / "seed.bin").read_bytes() == seed_bytes
+    assert (state / "auth.token").read_text(encoding="utf-8") == token_text
+
+
 def test_cli_install_tolerates_daemon_down_doctor(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -506,7 +601,8 @@ def test_cli_install_rejects_force_without_launchd(sandbox: Path) -> None:
     result = CliRunner().invoke(app, ["install", "--force", "--skip-doctor"])
 
     assert result.exit_code == 2
-    assert "only valid with --launchd" in result.stderr if hasattr(result, "stderr") else result.output
+    output = result.stderr if hasattr(result, "stderr") else result.output
+    assert "only valid with --launchd" in output
 
 
 def test_cli_install_launchd_force_overwrites_plist(
@@ -518,7 +614,11 @@ def test_cli_install_launchd_force_overwrites_plist(
     monkeypatch.setattr(installer, "detect_mode", lambda: "package")
     monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
     monkeypatch.setattr(installer, "copy_skills", lambda runtime, home: (home / runtime, 1))
-    monkeypatch.setattr(installer, "copy_plugins", lambda home: (home / ".codex/plugins/stackos", 1))
+    monkeypatch.setattr(
+        installer,
+        "copy_plugins",
+        lambda home: (home / ".codex/plugins/stackos", 1),
+    )
     monkeypatch.setattr(installer, "register_plugin_marketplace", lambda home: "marketplace ok")
     monkeypatch.setattr(installer, "register_mcp_codex", lambda home, port: "codex ok")
     monkeypatch.setattr(installer, "register_mcp_claude", lambda home, port: "claude ok")

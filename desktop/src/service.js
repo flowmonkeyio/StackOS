@@ -159,6 +159,56 @@ function runStackos(args, options = {}) {
   });
 }
 
+function parseDoctorPayload(result) {
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line.startsWith("{")) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(line);
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        typeof parsed.ok === "boolean" &&
+        typeof parsed.code === "number" &&
+        parsed.checks &&
+        typeof parsed.checks === "object"
+      ) {
+        return parsed;
+      }
+    } catch (_error) {
+      // Keep scanning for the JSON envelope.
+    }
+  }
+  return null;
+}
+
+function readinessFromDoctor(result) {
+  const parsed = result.parsed || parseDoctorPayload(result);
+  if (!parsed) {
+    return {
+      ok: false,
+      status: "doctor-unparsed",
+      code: result.exitCode,
+      repair: "run `stackos doctor --json` from a terminal"
+    };
+  }
+  const provider = parsed.info?.provider_readiness || null;
+  return {
+    ok: parsed.ok,
+    status: parsed.ok ? "ready" : "needs-repair",
+    code: parsed.code,
+    checks: parsed.checks,
+    providerReadiness: provider
+  };
+}
+
 function checkHealth(timeoutMs = 1000) {
   return new Promise((resolve) => {
     const req = http.get(HEALTH_URL, (res) => {
@@ -252,11 +302,22 @@ async function installOrRepair(timeoutSeconds = 240) {
     };
   }
   const start = await restartDaemon(20);
+  const doctor = start.ok ? await runDoctor() : null;
+  const readiness = doctor
+    ? readinessFromDoctor(doctor)
+    : {
+        ok: false,
+        status: "restart-failed",
+        code: null,
+        repair: "restart the StackOS service, then run doctor"
+      };
   return {
-    ok: start.ok,
-    phase: start.ok ? "ready" : "restart",
+    ok: start.ok && (!doctor || doctor.ok),
+    phase: start.ok ? (doctor && !doctor.ok ? "doctor" : "ready") : "restart",
     install,
-    start
+    start,
+    doctor,
+    readiness
   };
 }
 
@@ -326,9 +387,15 @@ async function prepareInstalledVersion({
 }
 
 async function runDoctor() {
-  return runStackos(["doctor", "--json"], {
+  const result = await runStackos(["doctor", "--json"], {
     timeoutMs: 60000
   });
+  const parsed = parseDoctorPayload(result);
+  return {
+    ...result,
+    parsed,
+    readiness: readinessFromDoctor({ ...result, parsed })
+  };
 }
 
 function daemonLogPath() {
@@ -343,6 +410,8 @@ module.exports = {
   ensureDaemonReady,
   installOrRepair,
   prepareInstalledVersion,
+  parseDoctorPayload,
+  readinessFromDoctor,
   readPackagedBuildInfo,
   resolveStackosCommand,
   restartDaemon,

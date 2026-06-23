@@ -9,6 +9,7 @@ import os
 import shutil
 import stat
 import subprocess
+from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -427,6 +428,100 @@ def _check_launchd_plist(home: Path) -> tuple[bool, dict[str, object]]:
     return target.exists(), {"target": str(target), "exists": target.exists()}
 
 
+def _check_provider_readiness(
+    settings: Settings,
+    db_present: bool,
+) -> tuple[bool, dict[str, object]]:
+    """Summarize safe provider credential readiness without testing secrets."""
+    connections_url = f"http://{settings.host}:{settings.port}/projects/{{project_id}}/connections"
+    repair = (
+        "open the StackOS Connections page for the project, add provider credentials, "
+        "then let agents use readiness.check, auth.status, and auth.test"
+    )
+    if not db_present:
+        return True, {
+            "status": "db_missing",
+            "providers_count": 0,
+            "configured_count": 0,
+            "connected_count": 0,
+            "setup_required_count": 0,
+            "connected_provider_keys": [],
+            "missing_provider_keys": [],
+            "connections_url": connections_url,
+            "repair": "run `stackos install` or `make install`, then start StackOS",
+        }
+
+    try:
+        from sqlmodel import Session, col, select
+
+        from stackos.auth_providers import AuthRepository
+        from stackos.db.connection import make_engine
+        from stackos.db.models import Credential
+        from stackos.repositories.plugins import PluginRepository
+
+        engine = make_engine(settings.db_path)
+        try:
+            with Session(engine) as session:
+                PluginRepository(session).sync_builtin_plugins()
+                repo = AuthRepository(session)
+                providers = repo.list_providers()
+                credentials = list(
+                    session.exec(
+                        select(Credential)
+                        .where(col(Credential.revoked_at).is_(None))
+                        .order_by(col(Credential.provider_key).asc())
+                    ).all()
+                )
+        finally:
+            engine.dispose()
+    except Exception as exc:  # pragma: no cover - defensive local diagnostics
+        return False, {
+            "status": "unavailable",
+            "error": f"{type(exc).__name__}: {exc}",
+            "providers_count": 0,
+            "configured_count": 0,
+            "connected_count": 0,
+            "setup_required_count": 0,
+            "connected_provider_keys": [],
+            "missing_provider_keys": [],
+            "connections_url": connections_url,
+            "repair": "run `stackos install` or `make install` to repair local provider metadata",
+        }
+
+    provider_keys = sorted(provider.key for provider in providers)
+    connected_provider_keys = sorted(
+        {credential.provider_key for credential in credentials if credential.status == "connected"}
+    )
+    configured_provider_keys = sorted({credential.provider_key for credential in credentials})
+    missing_provider_keys = [
+        provider_key
+        for provider_key in provider_keys
+        if provider_key not in connected_provider_keys
+    ]
+    status_counts = Counter(credential.status for credential in credentials)
+    if not provider_keys:
+        status = "no_providers"
+    elif not connected_provider_keys:
+        status = "needs_connections"
+    elif missing_provider_keys:
+        status = "partial"
+    else:
+        status = "ready"
+    return True, {
+        "status": status,
+        "providers_count": len(provider_keys),
+        "configured_count": len(configured_provider_keys),
+        "connected_count": len(connected_provider_keys),
+        "setup_required_count": len(missing_provider_keys),
+        "connected_provider_keys": connected_provider_keys,
+        "configured_provider_keys": configured_provider_keys,
+        "missing_provider_keys": missing_provider_keys,
+        "credential_status_counts": dict(sorted(status_counts.items())),
+        "connections_url": connections_url,
+        "repair": None if status == "ready" else repair,
+    }
+
+
 @app.command()
 def doctor(
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON")] = False,
@@ -471,6 +566,7 @@ def doctor(
     codex_mcp_ok, codex_mcp_info = _check_codex_mcp_registered()
     claude_mcp_ok, claude_mcp_info = _check_claude_mcp_registered(home)
     launchd_ok, launchd_info = _check_launchd_plist(home)
+    provider_readiness_ok, provider_readiness_info = _check_provider_readiness(settings, db_present)
 
     checks = {
         "daemon_up": daemon_up,
@@ -486,6 +582,7 @@ def doctor(
         "codex_mcp_registered": codex_mcp_ok,
         "claude_mcp_registered": claude_mcp_ok,
         "launchd_plist_present": launchd_ok,
+        "provider_readiness_available": provider_readiness_ok,
         **install_checks,
     }
     info = {
@@ -506,6 +603,7 @@ def doctor(
         "codex_mcp": codex_mcp_info,
         "claude_mcp": claude_mcp_info,
         "launchd": launchd_info,
+        "provider_readiness": provider_readiness_info,
     }
 
     # Compute exit code with the highest-priority failure winning so a single
@@ -553,5 +651,16 @@ def doctor(
         if not browser_ok:
             repair = browser_info.get("repair")
             typer.echo(f"  note: browser runtime is not ready — {repair}.")
+        provider_status = provider_readiness_info.get("status")
+        if not provider_readiness_ok:
+            typer.echo(
+                "  note: provider readiness could not be inspected — "
+                f"{provider_readiness_info.get('repair')}."
+            )
+        elif provider_status in {"needs_connections", "partial"}:
+            typer.echo(
+                "  note: provider credentials need setup — "
+                f"{provider_readiness_info.get('repair')}."
+            )
 
     _exit(code)

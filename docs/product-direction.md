@@ -122,7 +122,7 @@ sequence without turning the document into a live board.
 | --- | --- | --- | --- |
 | Lifecycle inventory and baseline | Done | `phase1-lifecycle-inventory` | Existing install, repair, upgrade, uninstall, desktop, and doctor foundations have been audited. |
 | Public roadmap status tracking | Done | `phase1-roadmap-statuses` | This roadmap now carries the lifecycle contract and action-item status table. |
-| Local readiness and repair loop v0 | Not started | `phase1-install-first-run` | First implementation slice: install, first-run, doctor, desktop repair, and actionable repair hints as one loop. |
+| Local readiness and repair loop v0 | In progress | `phase1-install-first-run` | First implementation slice is underway: doctor now exposes provider-readiness guidance and desktop repair consumes the doctor readiness envelope. |
 | Detailed repair/doctor UX | Later | `phase1-repair-doctor` | Keep deeper doctor grouping and repair UX as hardening after the v0 loop is stable. |
 | Upgrade and desktop update lifecycle | Not started | `phase1-upgrade-update` | Upgrade docs and update plumbing exist; local/package upgrade, migration status, restart, and postflight checks need polish. |
 | Uninstall and state preservation | Not started | `phase1-uninstall-preserve` | Uninstall exists; default preservation and explicit full-cleanup behavior need product-level clarity. |
