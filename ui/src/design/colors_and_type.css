@@ -367,6 +367,18 @@ body {
 
 .brand-gradient { background: var(--brand-gradient); }
 
+/*
+ * Brand logo mark: the matte stone tile is near-black and blends into the dark
+ * sidebar. A faint rim-light traces its squircle silhouette (drop-shadow
+ * follows the PNG alpha) so it reads as a distinct chip — subtle, matte, no
+ * glossy glow.
+ */
+.brand-mark {
+  filter:
+    drop-shadow(0 0 0.5px rgba(255, 255, 255, 0.55))
+    drop-shadow(0 0 3px rgba(255, 255, 255, 0.1));
+}
+
 .fg-default  { color: var(--color-fg-default); }
 .fg-strong   { color: var(--color-fg-strong); }
 .fg-muted    { color: var(--color-fg-muted); }

@@ -157,7 +157,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
         <img
           src="/favicon.png"
           alt=""
-          class="h-8 w-8 shrink-0 rounded-md"
+          class="brand-mark h-8 w-8 shrink-0"
           aria-hidden="true"
         >
         <div class="min-w-0">
@@ -215,7 +215,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
             <img
               src="/favicon.png"
               alt=""
-              class="h-8 w-8 shrink-0 rounded-md"
+              class="brand-mark h-8 w-8 shrink-0"
               aria-hidden="true"
             >
             <div class="min-w-0">
