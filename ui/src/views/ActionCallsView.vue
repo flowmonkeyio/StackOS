@@ -384,7 +384,6 @@ onMounted(load)
         :loading="loading"
         :next-cursor="nextCursor"
         :selected-id="detailPanelOpen ? selectedCall?.id : null"
-        max-height="calc(100vh - 24rem)"
         aria-label="Action call audit rows"
         empty-message="No action calls match these filters — calls are recorded when agents execute actions."
         interactive

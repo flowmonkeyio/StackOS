@@ -68,7 +68,6 @@ onMounted(load)
         :items="capabilities"
         :columns="capabilityColumns"
         :loading="loading"
-        max-height="22rem"
         aria-label="Capabilities"
         empty-message="No capabilities."
       >
@@ -91,7 +90,6 @@ onMounted(load)
         :items="providers"
         :columns="providerColumns"
         :loading="loading"
-        max-height="22rem"
         aria-label="Providers"
         empty-message="No providers."
       >

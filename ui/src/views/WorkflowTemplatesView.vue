@@ -111,7 +111,6 @@ onBeforeRouteUpdate((to) => {
         :columns="columns"
         :loading="loading"
         :selected-id="selectedRowId"
-        max-height="calc(100vh - 16rem)"
         aria-label="Workflow templates"
         empty-message="No workflow templates — plugins ship templates when enabled."
         interactive

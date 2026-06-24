@@ -242,7 +242,6 @@ onBeforeRouteUpdate((to) => {
         :columns="resourceColumns"
         :loading="loading"
         :selected-id="detailKind === 'resource' ? selectedResource?.id : null"
-        max-height="18rem"
         aria-label="Resource schemas"
         empty-message="No resource schemas — plugins declare schemas when they are enabled for the project."
         interactive
@@ -268,7 +267,6 @@ onBeforeRouteUpdate((to) => {
         :columns="recordColumns"
         :loading="loading"
         :selected-id="detailKind === 'record' ? selectedRecord?.id : null"
-        max-height="calc(100vh - 31rem)"
         aria-label="Resource records"
         empty-message="No records yet — agents and triggers write records through resource operations."
         interactive

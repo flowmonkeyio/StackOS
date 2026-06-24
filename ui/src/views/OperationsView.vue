@@ -182,7 +182,6 @@ onBeforeRouteUpdate((to) => {
         :columns="columns"
         :loading="loading"
         :selected-id="selected?.name"
-        max-height="calc(100vh - 16rem)"
         aria-label="StackOS operations"
         empty-message="No operations match — operations are registered by StackOS core and plugins."
         interactive

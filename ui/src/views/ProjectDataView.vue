@@ -205,7 +205,6 @@ function syncTabToUrl(tab: DataTab): void {
         :items="timelineNewest"
         :columns="timelineColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Project timeline"
         empty-message="No timeline events yet — events are recorded as agents and plugins act on the project."
       />
@@ -220,7 +219,6 @@ function syncTabToUrl(tab: DataTab): void {
         :items="learningsNewest"
         :columns="learningColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Learnings"
         empty-message="No learnings yet — agents record durable learnings as they work."
       >
@@ -239,7 +237,6 @@ function syncTabToUrl(tab: DataTab): void {
         :items="experimentsNewest"
         :columns="experimentColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Experiments"
         empty-message="No experiments yet — agents register experiments to track hypotheses."
       >
@@ -258,7 +255,6 @@ function syncTabToUrl(tab: DataTab): void {
         :items="observationsNewest"
         :columns="observationColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Observations"
         empty-message="No observations yet — observations are recorded against running experiments."
       />
@@ -273,7 +269,6 @@ function syncTabToUrl(tab: DataTab): void {
         :items="decisionsNewest"
         :columns="decisionColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Decisions"
         empty-message="No decisions yet — agents log decisions with their rationale."
       />
@@ -288,7 +283,6 @@ function syncTabToUrl(tab: DataTab): void {
         :items="snapshotsNewest"
         :columns="snapshotColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Context snapshots"
         empty-message="No snapshots yet — agents store context snapshots during runs."
       />
@@ -340,7 +334,6 @@ function syncTabToUrl(tab: DataTab): void {
         :items="metricsNewest"
         :columns="metricColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Metrics"
         empty-message="No metric snapshots yet — metrics are captured by runs and triggers."
       />

@@ -350,7 +350,6 @@ onMounted(() => {
         :loading="loading"
         :next-cursor="nextCursor"
         :selected-id="selectedRequest?.id"
-        max-height="calc(100vh - 24rem)"
         aria-label="Agent request queue"
         empty-message="No agent requests match these filters — requests are created by plugins, triggers, and agents for other agents to claim."
         interactive

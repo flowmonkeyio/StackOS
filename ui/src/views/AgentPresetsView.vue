@@ -281,7 +281,6 @@ onBeforeRouteUpdate((to) => {
         :columns="columns"
         :loading="loading"
         :selected-id="detailOpen ? selected?.preset.summary.key : null"
-        max-height="calc(100vh - 22rem)"
         aria-label="Agent presets"
         empty-message="No agent presets — presets ship with StackOS core and enabled plugins."
         interactive
