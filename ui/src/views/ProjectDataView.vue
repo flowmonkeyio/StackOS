@@ -102,10 +102,26 @@ const tabs = computed(() =>
   TAB_DEFS.map((tab) => ({ key: tab.key, label: tab.label, count: tabCounts.value[tab.key] })),
 )
 
+/** "tracker.task.status_changed" -> "Tracker · Task · Status changed". */
+function humanizeToken(value: unknown): string {
+  const raw = String(value ?? '').trim()
+  if (!raw) return '-'
+  return raw
+    .split('.')
+    .map((part) =>
+      part
+        .replace(/[_-]+/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+        .trim(),
+    )
+    .filter(Boolean)
+    .join(' · ')
+}
+
 const timelineColumns: DataTableColumn<SchemaProjectEventOut>[] = [
-  { key: 'event_type', label: 'Event' },
+  { key: 'event_type', label: 'Event', format: humanizeToken },
   { key: 'title', label: 'Title', format: (value) => String(value ?? '-') },
-  { key: 'source_type', label: 'Source' },
+  { key: 'source_type', label: 'Source', format: humanizeToken },
   { key: 'occurred_at', label: 'Occurred', format: (value) => formatDateTime(String(value)) },
 ]
 

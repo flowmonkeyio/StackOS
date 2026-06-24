@@ -309,7 +309,7 @@ onMounted(load)
           linkedLearnings.length > 0 ||
           linkedExperiments.length > 0
       "
-      class="grid items-start gap-5 xl:grid-cols-2"
+      class="space-y-5"
     >
       <UiCard
         v-if="actionCalls.length > 0"
@@ -547,8 +547,8 @@ onMounted(load)
 
     <UiAdvancedJsonPanel
       v-if="hasMetadata"
-      title="Run context"
-      summary="Raw run metadata"
+      title="Run metadata"
+      summary="Advanced"
       :data="sanitizeForDisplay(run.metadata_json)"
     />
 
