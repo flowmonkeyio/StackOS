@@ -357,3 +357,83 @@ export function preferredTelegramConnection(
 ): ConnectionRow | null {
   return identifiedTelegramConnections[0] ?? telegramConnections[0] ?? null
 }
+
+// --- Plain-language helpers for the Messaging sections ---
+
+const PROVIDER_LABELS: Record<string, string> = {
+  'telegram-bot': 'Telegram',
+  'slack-bot': 'Slack',
+  smtp: 'Email (SMTP)',
+  imap: 'Email (IMAP)',
+  'local-agent-chat': 'Local chat',
+}
+
+/** Friendly provider name (e.g. `telegram-bot` -> "Telegram"). */
+export function providerLabel(providerKey: string | null | undefined): string {
+  if (!providerKey) return 'Unknown'
+  return PROVIDER_LABELS[providerKey] ?? titleCase(providerKey.replace(/-bot$/, ''))
+}
+
+const CHANNEL_KIND_LABELS: Record<string, string> = {
+  'slack-channel': 'Slack channel',
+  'slack-private-channel': 'Slack private channel',
+  'slack-dm': 'Slack DM',
+  'slack-mpim': 'Slack group DM',
+  'telegram-private': 'Telegram DM',
+  'telegram-group': 'Telegram group',
+  'telegram-supergroup': 'Telegram group',
+  'telegram-channel': 'Telegram channel',
+  'smtp-identity': 'Email identity',
+  'imap-mailbox': 'Mailbox',
+  'local-agent-chat': 'Local chat',
+}
+
+/** Friendly channel kind (e.g. `telegram-supergroup` -> "Telegram group"). */
+export function channelKindLabel(surface: CommunicationSurface): string {
+  return CHANNEL_KIND_LABELS[surface.kind] ?? titleCase(surface.kind)
+}
+
+/** First (primary) provider a bot profile is bound to, e.g. `telegram-bot`. */
+export function profilePrimaryProvider(profile: CommunicationProfile): string {
+  return profileProviderKeys(profile)[0] ?? ''
+}
+
+export interface SensitivityMeta {
+  label: string
+  tone: 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent'
+  hint: string
+}
+
+const SENSITIVITY_META: Record<string, SensitivityMeta> = {
+  'customer-confidential': {
+    label: 'Customer-confidential',
+    tone: 'warning',
+    hint: 'Don’t share outside this channel without approval.',
+  },
+  internal: {
+    label: 'Internal',
+    tone: 'info',
+    hint: 'Internal coordination only — not customer-visible.',
+  },
+  public: {
+    label: 'Public',
+    tone: 'success',
+    hint: 'Safe to share publicly.',
+  },
+}
+
+/**
+ * Plain-language reading of a channel's `data_scope.classification` (the
+ * "sensitivity" the operator controls): a label, a badge tone, and a one-line
+ * sharing hint.
+ */
+export function sensitivityMeta(surface: CommunicationSurface): SensitivityMeta {
+  const classification = String(surface.data_scope?.classification ?? '').trim()
+  return (
+    SENSITIVITY_META[classification] ?? {
+      label: classification ? titleCase(classification) : 'Not set',
+      tone: 'neutral',
+      hint: 'No data-sharing guidance configured for this channel yet.',
+    }
+  )
+}

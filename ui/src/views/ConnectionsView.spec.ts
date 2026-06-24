@@ -99,7 +99,7 @@ describe('ConnectionsView', () => {
     await router.isReady()
 
     const wrapper = mountConnections(router)
-    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Firecrawl'))
 
@@ -228,7 +228,7 @@ describe('ConnectionsView', () => {
     await router.isReady()
 
     const wrapper = mountConnections(router)
-    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('WordPress'))
 
@@ -381,7 +381,7 @@ describe('ConnectionsView', () => {
     await router.isReady()
 
     const wrapper = mountConnections(router)
-    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() =>
       expect(wrapper.find('input[placeholder="123456:ABC..."]').exists()).toBe(true),
@@ -399,7 +399,7 @@ describe('ConnectionsView', () => {
     await clickButton(wrapper, 'Save connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Support Bot'))
 
-    await clickButton(wrapper, 'Add Telegram profile')
+    await clickButton(wrapper, 'Add bot')
     expect(wrapper.find<HTMLInputElement>('input[placeholder="@support_bot"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Telegram identity: @support_bot')
     await wrapper
@@ -699,7 +699,7 @@ describe('ConnectionsView', () => {
     await router.isReady()
 
     const wrapper = mountConnections(router)
-    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Slack Bot'))
 
@@ -858,7 +858,7 @@ describe('ConnectionsView', () => {
     await router.isReady()
 
     const wrapper = mountConnections(router)
-    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
     await vi.waitFor(() => expect(wrapper.text()).not.toContain('Loading connections...'))
     await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.find('[role="combobox"]').exists()).toBe(true))
@@ -878,7 +878,7 @@ describe('ConnectionsView', () => {
     wrapper.unmount()
   })
 
-  it('renders generic communication profiles, targets, and ingress route state', async () => {
+  it('renders bots, channels, destinations, and connectivity in plain language', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
       const catalogResponse = catalogJson(url)
@@ -1027,14 +1027,16 @@ describe('ConnectionsView', () => {
     const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('Workspace Slack Bot'))
 
-    expect(wrapper.text()).toContain('Communication setup')
-    expect(wrapper.text()).toContain('1 operators')
+    // Bots — provider-neutral identity, labelled by provider.
+    expect(wrapper.text()).toContain('Slack')
+    // Channels — surface with audience and plain-language sensitivity.
     expect(wrapper.text()).toContain('Roadmap channel')
     expect(wrapper.text()).toContain('Internal roadmap planning and critical architecture alignment.')
     expect(wrapper.text()).toContain('Internal')
+    // Destinations — named target resolving to a channel.
     expect(wrapper.text()).toContain('Slack #roadmap')
-    expect(wrapper.text()).toContain('slack-roadmap -> slack-channel:C123')
-    expect(wrapper.text()).toContain('Ingress ready')
+    expect(wrapper.text()).toContain('slack-channel:C123')
+    // Connectivity — per-bot route status, humanized.
     expect(wrapper.text()).toContain('Manual update needed')
   })
 

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+
 import type { SchemaAuthProviderOut } from '@/api'
 import {
   UiBadge,
@@ -7,8 +9,10 @@ import {
   UiCard,
   UiCountBadge,
   UiEmptyState,
+  UiFilterBar,
   UiMedallion,
   UiSectionHeader,
+  UiSegmentedControl,
   UiSkeleton,
 } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -21,12 +25,13 @@ import {
   formatAuthType,
   methodLabel,
   pluginLabel,
+  providerGroupLabel,
   serviceGroupStatus,
   serviceName,
 } from './formatters'
 import type { ConnectionRow, MessageMap, ServiceGroup } from './types'
 
-defineProps<{
+const props = defineProps<{
   loading: boolean
   serviceGroups: ServiceGroup[]
   connectionsCount: number
@@ -41,6 +46,41 @@ defineEmits<{
   (e: 'revoke-connection', connection: ConnectionRow): void
 }>()
 
+const search = ref('')
+const category = ref('all')
+
+function groupCategory(group: ServiceGroup): string {
+  return group.provider ? providerGroupLabel(group.provider) : 'Other'
+}
+
+const categoryOptions = computed(() => {
+  const categories = new Set<string>()
+  for (const group of props.serviceGroups) categories.add(groupCategory(group))
+  return [
+    { key: 'all', label: 'All' },
+    ...Array.from(categories)
+      .sort((left, right) => left.localeCompare(right))
+      .map((name) => ({ key: name, label: name })),
+  ]
+})
+
+const visibleGroups = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  return props.serviceGroups.filter((group) => {
+    if (category.value !== 'all' && groupCategory(group) !== category.value) return false
+    if (!query) return true
+    const haystack = [
+      serviceName(group),
+      group.provider?.description ?? '',
+      ...group.connections.map((connection) => connectionTitle(connection)),
+      ...group.connections.map((connection) => accountLabel(connection)),
+    ]
+      .join(' ')
+      .toLowerCase()
+    return haystack.includes(query)
+  })
+})
+
 function connectionActionKey(credentialRef: string, action: string): string {
   return `${credentialRef}:${action}`
 }
@@ -49,17 +89,31 @@ function connectionActionKey(credentialRef: string, action: string): string {
 <template>
   <section
     class="space-y-3"
-    aria-label="Connected services"
+    aria-label="Services"
   >
     <UiSectionHeader
-      title="Connected services"
-      description="Each service can have multiple named connections for different accounts, workspaces, or client profiles."
+      title="Services"
+      description="Tools and accounts your agents can use. Secrets stay on this machine — agents only ever get a safe reference."
       as="h3"
     >
       <template #actions>
         <UiCountBadge :value="connectionsCount" />
       </template>
     </UiSectionHeader>
+
+    <UiFilterBar
+      v-if="!loading && serviceGroups.length > 0"
+      v-model:search="search"
+      search-placeholder="Find a service or account…"
+      aria-label="Service filters"
+    >
+      <UiSegmentedControl
+        v-if="categoryOptions.length > 2"
+        v-model="category"
+        :options="categoryOptions"
+        label="Category"
+      />
+    </UiFilterBar>
 
     <UiCard
       v-if="loading"
@@ -74,7 +128,7 @@ function connectionActionKey(credentialRef: string, action: string): string {
 
     <UiEmptyState
       v-else-if="serviceGroups.length === 0"
-      title="No services connected."
+      title="No services connected"
       description="Add the first connection for a provider account or internal tool. The daemon stores the secret and exposes only status, labels, and credential refs."
       icon="plug"
       framed
@@ -91,14 +145,23 @@ function connectionActionKey(credentialRef: string, action: string): string {
       </template>
     </UiEmptyState>
 
+    <UiEmptyState
+      v-else-if="visibleGroups.length === 0"
+      title="No services match"
+      description="Try a different search or category."
+      icon="search"
+      framed
+    />
+
     <div
       v-else
-      class="grid gap-4"
+      class="grid grid-cols-1 gap-4"
     >
       <UiCard
-        v-for="group in serviceGroups"
+        v-for="group in visibleGroups"
         :key="group.providerKey"
         section
+        class="min-w-0"
         :aria-label="serviceName(group)"
       >
         <template #header>

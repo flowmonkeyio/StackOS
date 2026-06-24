@@ -4,7 +4,14 @@ export type ConnectionRow = SchemaCredentialConnectionOut & { id: string }
 export type AuthMethod = NonNullable<SchemaAuthProviderOut['auth_methods']>[number]
 export type AuthField = NonNullable<AuthMethod['fields']>[number]
 export type MessageTone = 'success' | 'danger' | 'info'
-export type ConnectionSection = 'services' | 'communications' | 'telegram' | 'diagnostics'
+export type ConnectionSection =
+  | 'overview'
+  | 'services'
+  | 'bots'
+  | 'channels'
+  | 'destinations'
+  | 'connectivity'
+  | 'diagnostics'
 
 export interface ServiceGroup {
   provider: SchemaAuthProviderOut | null

@@ -1,22 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { onBeforeRouteUpdate, useRoute } from 'vue-router'
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import TabBar from '@/components/TabBar.vue'
-import { UiButton, UiCallout, UiMetricCard, UiPageShell } from '@/components/ui'
+import SubNav from '@/components/SubNav.vue'
+import { UiButton, UiCallout, UiPageShell } from '@/components/ui'
 import type { SchemaAuthProviderOut } from '@/api'
 import { useConnectionForm } from '@/composables/useConnectionForm'
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import AddConnectionPanel from './connections/AddConnectionPanel.vue'
-import CommunicationSetupPanel from './connections/CommunicationSetupPanel.vue'
+import BotsPanel from './connections/BotsPanel.vue'
+import ChannelsPanel from './connections/ChannelsPanel.vue'
 import ConnectedServicesPanel from './connections/ConnectedServicesPanel.vue'
 import ConnectionDiagnosticsPanel from './connections/ConnectionDiagnosticsPanel.vue'
+import ConnectionsOverviewPanel from './connections/ConnectionsOverviewPanel.vue'
+import ConnectivityPanel from './connections/ConnectivityPanel.vue'
+import DestinationsPanel from './connections/DestinationsPanel.vue'
 import TelegramProfileSidePanel from './connections/TelegramProfileSidePanel.vue'
-import TelegramProfilesPanel from './connections/TelegramProfilesPanel.vue'
 import {
   botUsernameFromConnection,
   compareConnections,
@@ -48,12 +51,22 @@ import type {
   MessageMap,
   MessageTone,
   ServiceGroup,
-  TelegramCommandDraft,
   TelegramCommandSpec,
   TelegramProfileForm,
 } from './connections/types'
 
+const SECTION_KEYS: ConnectionSection[] = [
+  'overview',
+  'services',
+  'bots',
+  'channels',
+  'destinations',
+  'connectivity',
+  'diagnostics',
+]
+
 const route = useRoute()
+const router = useRouter()
 const catalogStore = useStackOsCatalogStore()
 const { authProviders, authStatus, enabledPlugins, loading, error } = storeToRefs(catalogStore)
 
@@ -85,7 +98,7 @@ const {
 const busyAction = ref<string | null>(null)
 const providerMessages = ref<MessageMap>({})
 const connectionMessages = ref<MessageMap>({})
-const activeSection = ref<ConnectionSection>('services')
+const activeSection = ref<ConnectionSection>('overview')
 const telegramProfilePanelOpen = ref(false)
 const telegramProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
 const communicationProfiles = ref<CommunicationProfile[]>([])
@@ -113,7 +126,7 @@ const telegramProfileForm = ref<TelegramProfileForm>({
       guidance: 'Triage the request, inspect relevant context, and reply with the next clear step.',
       enabled: true,
     },
-  ] as TelegramCommandDraft[],
+  ],
   mention_patterns: '',
   store_non_trigger_messages: true,
   origin_required: true,
@@ -187,12 +200,6 @@ const telegramConnectionOptions = computed(() =>
   })),
 )
 
-const telegramProfiles = computed(() =>
-  communicationProfiles.value.filter((profile) =>
-    Boolean(profile.provider_facets?.['telegram-bot']),
-  ),
-)
-
 const serviceGroups = computed<ServiceGroup[]>(() => {
   const grouped = new Map<string, ConnectionRow[]>()
   for (const connection of connections.value) {
@@ -213,27 +220,61 @@ const connectedServiceCount = computed(
   () => new Set(connectedConnections.value.map((connection) => connection.provider_key)).size,
 )
 
-const connectionSectionTabs = computed(() => [
-  { key: 'services', label: 'Services', count: connections.value.length },
+const overviewLoading = computed(() => loading.value || communicationSetupLoading.value)
+
+const subNavGroups = computed(() => [
   {
-    key: 'communications',
-    label: 'Communications',
-    count:
-      communicationProfiles.value.length +
-      communicationSurfaces.value.length +
-      communicationTargets.value.length +
-      (ingressStatus.value?.routes?.length ?? 0),
+    items: [
+      { key: 'overview', label: 'Overview', icon: 'gauge' },
+      { key: 'services', label: 'Services', icon: 'plug', count: connections.value.length },
+    ],
   },
-  { key: 'telegram', label: 'Telegram', count: telegramProfiles.value.length },
-  { key: 'diagnostics', label: 'Diagnostics' },
+  {
+    label: 'Messaging',
+    items: [
+      { key: 'bots', label: 'Bots', icon: 'chat', count: communicationProfiles.value.length },
+      {
+        key: 'channels',
+        label: 'Channels',
+        icon: 'megaphone',
+        count: communicationSurfaces.value.length,
+      },
+      {
+        key: 'destinations',
+        label: 'Destinations',
+        icon: 'arrow-right',
+        count: communicationTargets.value.length,
+      },
+      {
+        key: 'connectivity',
+        label: 'Connectivity',
+        icon: 'globe',
+        count: ingressStatus.value?.routes?.length ?? 0,
+      },
+    ],
+  },
+  {
+    items: [{ key: 'diagnostics', label: 'Diagnostics', icon: 'lifebuoy' }],
+  },
 ])
 
+function isConnectionSection(value: unknown): value is ConnectionSection {
+  return typeof value === 'string' && SECTION_KEYS.includes(value as ConnectionSection)
+}
+
 function setActiveSection(value: string): void {
-  activeSection.value = value as ConnectionSection
+  if (!isConnectionSection(value) || value === activeSection.value) return
+  activeSection.value = value
+  void router.replace({ query: { ...route.query, section: value } })
+}
+
+function applySectionFromQuery(value: unknown): void {
+  if (isConnectionSection(value)) activeSection.value = value
 }
 
 async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
+  applySectionFromQuery(route.query.section)
   await catalogStore.refresh(projectId.value)
   await catalogStore.refreshAuth(projectId.value)
   await loadCommunicationSetup()
@@ -661,6 +702,7 @@ async function revokeConnection(connection: ConnectionRow): Promise<void> {
 
 onMounted(load)
 onBeforeRouteUpdate((to) => {
+  applySectionFromQuery(to.query.section)
   applyProviderSelectionFromQuery(to.query.provider_key)
 })
 </script>
@@ -670,7 +712,7 @@ onBeforeRouteUpdate((to) => {
     <ProjectPageHeader
       :project-id="projectId"
       title="Connections"
-      description="Add provider accounts once, keep secrets daemon-side, and give agents only safe credential refs."
+      description="Connect the tools and messaging channels your agents use. Secrets stay on this machine — agents only get safe references."
       :breadcrumbs="[{ label: 'Connections' }]"
     >
       <template #actions>
@@ -683,14 +725,6 @@ onBeforeRouteUpdate((to) => {
           Add connection
         </UiButton>
       </template>
-      <template #tabs>
-        <TabBar
-          :tabs="connectionSectionTabs"
-          :active-key="activeSection"
-          aria-label="Connection page sections"
-          @change="setActiveSection"
-        />
-      </template>
     </ProjectPageHeader>
 
     <UiCallout
@@ -700,68 +734,119 @@ onBeforeRouteUpdate((to) => {
       {{ error }}
     </UiCallout>
 
-    <div class="grid gap-3 md:grid-cols-3">
-      <UiMetricCard
-        label="Connected services"
-        :value="connectedServiceCount"
-        density="compact"
+    <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
+      <SubNav
+        class="lg:sticky lg:top-4 lg:w-52 lg:shrink-0"
+        :groups="subNavGroups"
+        :active-key="activeSection"
+        aria-label="Connection sections"
+        @change="setActiveSection"
       />
-      <UiMetricCard
-        label="Active connections"
-        :value="activeConnections.length"
-        density="compact"
-      />
-      <UiMetricCard
-        label="Needs attention"
-        :value="attentionConnections.length"
-        density="compact"
-      />
+
+      <div class="min-w-0 flex-1">
+        <div
+          role="tabpanel"
+          aria-labelledby="cs-subnav-overview"
+          :hidden="activeSection !== 'overview'"
+        >
+          <ConnectionsOverviewPanel
+            :loading="overviewLoading"
+            :connected-service-count="connectedServiceCount"
+            :active-connections-count="activeConnections.length"
+            :attention-connections="attentionConnections"
+            :service-groups-count="serviceGroups.length"
+            :bots="communicationProfiles"
+            :channels="communicationSurfaces"
+            :destinations="communicationTargets"
+            :ingress-status="ingressStatus"
+            @navigate="setActiveSection"
+            @add-connection="openAddConnection()"
+            @add-bot="openAddTelegramProfile"
+          />
+        </div>
+
+        <div
+          role="tabpanel"
+          aria-labelledby="cs-subnav-services"
+          :hidden="activeSection !== 'services'"
+        >
+          <ConnectedServicesPanel
+            :loading="loading"
+            :service-groups="serviceGroups"
+            :connections-count="connections.length"
+            :connection-messages="connectionMessages"
+            :busy-action="busyAction"
+            :can-add-provider="canAddProvider"
+            @add-connection="openAddConnection"
+            @test-connection="testConnection"
+            @revoke-connection="revokeConnection"
+          />
+        </div>
+
+        <div
+          role="tabpanel"
+          aria-labelledby="cs-subnav-bots"
+          :hidden="activeSection !== 'bots'"
+        >
+          <BotsPanel
+            :bots="communicationProfiles"
+            :telegram-connections="telegramConnections"
+            :loading="communicationSetupLoading"
+            :message="telegramProfileMessage"
+            @add-connection="openAddConnection"
+            @add-bot="openAddTelegramProfile"
+            @edit-bot="editTelegramProfile"
+          />
+        </div>
+
+        <div
+          role="tabpanel"
+          aria-labelledby="cs-subnav-channels"
+          :hidden="activeSection !== 'channels'"
+        >
+          <ChannelsPanel
+            :channels="communicationSurfaces"
+            :loading="communicationSetupLoading"
+            :message="communicationSetupMessage"
+            @refresh="loadCommunicationSetup"
+          />
+        </div>
+
+        <div
+          role="tabpanel"
+          aria-labelledby="cs-subnav-destinations"
+          :hidden="activeSection !== 'destinations'"
+        >
+          <DestinationsPanel
+            :destinations="communicationTargets"
+            :loading="communicationSetupLoading"
+            :message="communicationSetupMessage"
+            @refresh="loadCommunicationSetup"
+          />
+        </div>
+
+        <div
+          role="tabpanel"
+          aria-labelledby="cs-subnav-connectivity"
+          :hidden="activeSection !== 'connectivity'"
+        >
+          <ConnectivityPanel
+            :ingress-status="ingressStatus"
+            :loading="communicationSetupLoading"
+            :message="communicationSetupMessage"
+            @refresh="loadCommunicationSetup"
+          />
+        </div>
+
+        <div
+          role="tabpanel"
+          aria-labelledby="cs-subnav-diagnostics"
+          :hidden="activeSection !== 'diagnostics'"
+        >
+          <ConnectionDiagnosticsPanel :auth-status="authStatus" />
+        </div>
+      </div>
     </div>
-
-    <p class="text-xs text-fg-subtle">
-      Use this page for local-admin setup and read-only inspection. Agents receive safe refs, not
-      secrets.
-    </p>
-
-    <ConnectedServicesPanel
-      v-show="activeSection === 'services'"
-      :loading="loading"
-      :service-groups="serviceGroups"
-      :connections-count="connections.length"
-      :connection-messages="connectionMessages"
-      :busy-action="busyAction"
-      :can-add-provider="canAddProvider"
-      @add-connection="openAddConnection"
-      @test-connection="testConnection"
-      @revoke-connection="revokeConnection"
-    />
-
-    <CommunicationSetupPanel
-      v-show="activeSection === 'communications'"
-      :profiles="communicationProfiles"
-      :targets="communicationTargets"
-      :surfaces="communicationSurfaces"
-      :ingress-status="ingressStatus"
-      :loading="communicationSetupLoading"
-      :message="communicationSetupMessage"
-      @refresh="loadCommunicationSetup"
-    />
-
-    <TelegramProfilesPanel
-      v-show="activeSection === 'telegram'"
-      :telegram-connections="telegramConnections"
-      :telegram-profiles="telegramProfiles"
-      :loading="communicationSetupLoading"
-      :message="telegramProfileMessage"
-      @add-connection="openAddConnection"
-      @add-profile="openAddTelegramProfile"
-      @edit-profile="editTelegramProfile"
-    />
-
-    <ConnectionDiagnosticsPanel
-      v-show="activeSection === 'diagnostics'"
-      :auth-status="authStatus"
-    />
 
     <AddConnectionPanel
       v-model="addPanelOpen"
