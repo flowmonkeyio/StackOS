@@ -15,6 +15,7 @@
 import { computed, ref } from 'vue'
 
 import UiIcon from '@/components/ui/UiIcon.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 import type { DataTableColumn, DataTableSortDir } from './types'
 
@@ -354,14 +355,14 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
       v-if="nextCursor !== null && nextCursor !== undefined"
       class="mt-3 flex justify-center"
     >
-      <button
-        type="button"
-        class="focus-ring h-8 rounded-sm border border-default bg-bg-surface px-3 text-sm font-medium text-fg-default shadow-xs transition-colors duration-fast hover:bg-bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
-        :disabled="loading"
+      <UiButton
+        variant="secondary"
+        size="sm"
+        :loading="loading"
         @click="emit('load-more')"
       >
         Load more
-      </button>
+      </UiButton>
     </div>
   </div>
 </template>

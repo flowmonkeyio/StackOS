@@ -14,6 +14,8 @@ const props = defineProps<{
   icon?: string;
   /** Compact (inline) variant — for empty table rows, inside cards. */
   size?: 'sm' | 'md' | 'lg';
+  /** Wrap in a dashed-border surface when not already inside a card. */
+  framed?: boolean;
 }>();
 
 const fallbackIcon = computed(() => (hasIcon(props.icon) ? props.icon : 'info'));
@@ -24,6 +26,7 @@ const fallbackIcon = computed(() => (hasIcon(props.icon) ? props.icon : 'info'))
     :class="[
       'ui-empty-state flex flex-col items-center text-center mx-auto',
       size === 'sm' ? 'py-6 max-w-sm gap-2' : size === 'lg' ? 'py-16 max-w-md gap-4' : 'py-10 max-w-md gap-3',
+      framed && 'w-full max-w-none rounded-lg border border-dashed border-default bg-bg-surface px-4',
     ]"
   >
     <div

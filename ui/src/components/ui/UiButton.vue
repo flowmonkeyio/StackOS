@@ -18,7 +18,7 @@ import { hasIcon } from './icons'
 import UiIcon from './UiIcon.vue'
 
 export interface UiButtonProps {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'link'
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-ghost' | 'link'
   size?: 'sm' | 'md' | 'lg'
   /** Render as <a> when set; otherwise <button>. */
   href?: string
@@ -67,6 +67,8 @@ const variantClass = computed(
         'bg-transparent text-fg-muted hover:bg-bg-sunken hover:text-fg-default active:bg-bg-sunken disabled:text-fg-disabled disabled:hover:bg-transparent',
       danger:
         'bg-danger text-fg-on-accent shadow-xs hover:bg-danger-fg active:bg-danger-fg disabled:bg-fg-disabled disabled:shadow-none',
+      'danger-ghost':
+        'bg-transparent text-danger-fg hover:bg-danger-subtle active:bg-danger-subtle disabled:text-fg-disabled disabled:hover:bg-transparent',
       link: 'bg-transparent text-fg-link hover:underline underline-offset-2 px-0 py-0 h-auto disabled:text-fg-disabled disabled:no-underline',
     })[props.variant],
 )
