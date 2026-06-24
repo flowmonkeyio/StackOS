@@ -12,11 +12,11 @@ test.describe('projects view — empty state', () => {
     await resetProjects()
   })
 
-  test('routes to the home console without creation controls', async ({ page }) => {
+  test('shows the portfolio empty state without creation controls', async ({ page }) => {
     const errors = trackConsoleErrors(page)
     await page.goto('/projects')
-    await expect(page.getByRole('heading', { name: 'StackOS' })).toBeVisible()
-    await expect(page.getByText('No project selected')).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'StackOS' })).toBeVisible()
+    await expect(page.getByText('No projects yet')).toBeVisible()
     await expect(page.getByRole('button', { name: 'New project' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Create project' })).toHaveCount(0)
 

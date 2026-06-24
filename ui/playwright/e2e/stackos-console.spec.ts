@@ -18,6 +18,9 @@ test.describe('StackOS console — generic project surfaces', () => {
     const routes = [
       // The overview is the project home — its h1 is the project name.
       { path: 'overview', heading: 'Console Project' },
+      { path: 'inbox', heading: 'Inbox' },
+      { path: 'activity', heading: 'Activity' },
+      { path: 'setup', heading: 'Setup' },
       { path: 'plugins', heading: 'Plugins' },
       { path: 'capabilities', heading: 'Capabilities' },
       { path: 'connections', heading: 'Connections' },
