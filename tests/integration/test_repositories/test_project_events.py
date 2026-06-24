@@ -87,3 +87,37 @@ def test_stackos_event_emitter_records_many_in_order(
         .items
     )
     assert [event.title for event in events] == ["First", "Second"]
+
+
+def test_timeline_descending_returns_newest_first_with_backward_cursor(
+    session: Session,
+    project_id: int,
+) -> None:
+    StackOSEventEmitter(session).emit_many(
+        [
+            StackOSEvent(
+                project_id=project_id,
+                event_type="demo.event.desc",
+                source=StackOSEventSource(type="demo", id=index),
+                title=f"Event {index}",
+            )
+            for index in range(1, 4)
+        ]
+    )
+    repo = ContextRepository(session)
+
+    first = repo.timeline(
+        project_id=project_id, event_type="demo.event.desc", limit=2, descending=True
+    )
+    assert [event.title for event in first.items] == ["Event 3", "Event 2"]
+    assert first.next_cursor is not None
+
+    older = repo.timeline(
+        project_id=project_id,
+        event_type="demo.event.desc",
+        limit=2,
+        after_id=first.next_cursor,
+        descending=True,
+    )
+    assert [event.title for event in older.items] == ["Event 1"]
+    assert older.next_cursor is None

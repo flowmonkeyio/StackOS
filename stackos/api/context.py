@@ -167,16 +167,22 @@ async def query_context(
 async def context_timeline(
     project_id: int,
     event_type: str | None = Query(default=None),
+    order: str = Query(default="asc", pattern="^(asc|desc)$"),
     page: PaginationParams = Depends(pagination_params),
     session: Session = Depends(get_session),
 ) -> PageResponse[ProjectEventOut]:
-    """Return the project event timeline."""
+    """Return the project event timeline.
+
+    `order=asc` (default) is oldest-first for forward watermark polling;
+    `order=desc` is newest-first for the activity feed.
+    """
     return page_response(
         ContextRepository(session).timeline(
             project_id=project_id,
             limit=page.limit,
             after_id=page.after,
             event_type=event_type,
+            descending=order == "desc",
         )
     )
 
