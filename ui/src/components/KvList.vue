@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // KvList — semantic <dl>/<dt>/<dd> key/value display.
 //
-// Used by ProjectDetailView's OverviewTab and other read-only summaries.
+// Used by read-only summaries (e.g. run detail) to render key/value facts.
 // Items are rendered in declaration order; the consumer may format values
 // up-front (the component just renders strings/slots).
 

@@ -4,7 +4,7 @@ import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import type { Edge, EdgeMouseEvent, NodeMouseEvent } from '@vue-flow/core'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import { UiBadge, UiButton, UiCallout, UiEmptyState, UiPageShell } from '@/components/ui'
+import { UiButton, UiCallout, UiEmptyState, UiPageShell } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
@@ -94,7 +94,6 @@ const viewOptions: Array<{ key: ViewMode; label: string; icon: string }> = [
   { key: 'tickets', label: 'Tickets', icon: 'list' },
 ]
 
-const tracker = computed(() => snapshot.value?.tracker ?? null)
 const tasks = computed(() => snapshot.value?.tasks ?? [])
 const tickets = computed(() => snapshot.value?.tickets ?? [])
 
@@ -933,9 +932,9 @@ onBeforeRouteUpdate((to) => {
   <UiPageShell class="tracker-page-shell">
     <ProjectPageHeader
       :project-id="projectId"
-      title="Tasks"
-      description="Project work tracker for workflow runs, manual agent tasks, dependencies, and verification state."
-      :breadcrumbs="[{ label: 'Tasks' }]"
+      title="Work"
+      description="What agents are building, what’s blocked, and how work gets verified."
+      :breadcrumbs="[{ label: 'Work' }]"
     >
       <template #actions>
         <UiButton
@@ -945,15 +944,6 @@ onBeforeRouteUpdate((to) => {
         >
           Refresh
         </UiButton>
-      </template>
-      <template #titleMeta>
-        <UiBadge
-          v-if="tracker"
-          tone="neutral"
-          variant="outline"
-        >
-          Rev {{ tracker.rev }}
-        </UiBadge>
       </template>
     </ProjectPageHeader>
 
