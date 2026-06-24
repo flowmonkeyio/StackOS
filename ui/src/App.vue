@@ -210,8 +210,12 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
       aria-label="Primary navigation"
     >
       <div class="flex h-full flex-col">
-        <div class="hidden px-4 pb-2 pt-4 md:block">
-          <div class="flex items-center gap-2.5">
+        <div class="hidden px-3 pb-2 pt-3 md:block">
+          <RouterLink
+            to="/"
+            class="focus-ring-sb flex items-center gap-2.5 rounded-md px-1.5 py-1.5 transition-colors duration-fast hover:bg-sb-hover"
+            aria-label="StackOS home"
+          >
             <span
               class="brand-gradient inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
               aria-hidden="true"
@@ -230,7 +234,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
                 Local runtime
               </div>
             </div>
-          </div>
+          </RouterLink>
         </div>
 
         <div class="px-3 py-3 pt-4 md:pt-3">
