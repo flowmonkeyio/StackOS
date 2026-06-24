@@ -48,8 +48,7 @@ const PAGE_COPY = {
   },
   setup: {
     title: 'Setup',
-    description:
-      'Runtime health, project enablement, connection status, templates, actions, and run readiness.',
+    description: 'Whether StackOS is ready to run agent work — and where to finish setting up.',
   },
   schedules: {
     title: 'Schedules',
