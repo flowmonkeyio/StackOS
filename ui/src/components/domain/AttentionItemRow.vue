@@ -38,7 +38,7 @@ const icon = computed(() => KIND_ICON[props.item.kind])
 </script>
 
 <template>
-  <div class="flex items-start gap-3 px-2.5 py-3">
+  <div class="flex items-start gap-3 px-4 py-3">
     <span
       :class="[
         'mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full',

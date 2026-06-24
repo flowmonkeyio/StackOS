@@ -2,9 +2,10 @@
 // InboxView — the human attention surface. Everything waiting on a person,
 // grouped and ranked: questions, blocked work, failed jobs, connection
 // problems, budget alerts. Reads the shared attention aggregator; each row
-// routes to where the action happens.
+// routes to where the action happens. First-load skeletons only; background
+// polls update in place without flicker.
 
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { AttentionItemRow, ProjectPageHeader } from '@/components/domain'
@@ -17,6 +18,7 @@ const route = useRoute()
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 
 const attention = useAttentionStore()
+const loaded = ref(false)
 
 const GROUPS: { kind: AttentionKind; label: string }[] = [
   { kind: 'question', label: 'Questions' },
@@ -37,9 +39,21 @@ async function load(): Promise<void> {
   const id = projectId.value
   if (!id || Number.isNaN(id)) return
   await attention.refresh(id)
+  loaded.value = true
 }
 
-const { lastRunAt, running, refresh } = usePolling(load, { intervalMs: 20_000 })
+const { lastRunAt, refresh } = usePolling(load, { intervalMs: 20_000 })
+
+const manualBusy = ref(false)
+async function manualRefresh(): Promise<void> {
+  manualBusy.value = true
+  try {
+    await refresh()
+  } finally {
+    manualBusy.value = false
+  }
+}
+
 const updatedLabel = computed(() =>
   lastRunAt.value ? formatRelativeDateTime(lastRunAt.value.toISOString()) : null,
 )
@@ -65,8 +79,8 @@ const updatedLabel = computed(() =>
           variant="secondary"
           size="sm"
           icon-left="refresh"
-          :loading="running"
-          @click="refresh"
+          :loading="manualBusy"
+          @click="manualRefresh"
         >
           Refresh
         </UiButton>
@@ -74,14 +88,14 @@ const updatedLabel = computed(() =>
     </ProjectPageHeader>
 
     <div
-      v-if="attention.loading && attention.items.length === 0"
+      v-if="!loaded"
       class="space-y-3"
     >
       <UiSkeleton
         v-for="n in 4"
         :key="n"
         shape="block"
-        height="3rem"
+        height="3.5rem"
       />
     </div>
 
@@ -104,6 +118,8 @@ const updatedLabel = computed(() =>
         v-for="group in grouped"
         :key="group.kind"
         section
+        :padded="false"
+        class="overflow-hidden"
       >
         <template #header>
           <div class="flex items-center gap-2">

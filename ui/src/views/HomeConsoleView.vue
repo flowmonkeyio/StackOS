@@ -4,7 +4,8 @@
 // Answers, top to bottom: is it ready? · what needs me? · what are agents
 // doing now? · what changed recently? It reads from the derivation stores
 // (attention, readiness) and the timeline, refreshed by a visibility-aware
-// poll. Everything composes from existing primitives.
+// poll. Loading state is shown only on first paint; background polls update
+// data in place (stable keys, last-good-on-error) so nothing flickers.
 
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -42,6 +43,7 @@ const readiness = useReadinessStore()
 const runningRuns = ref<SchemaRunOut[]>([])
 const timeline = ref<SchemaPageResponseProjectEventOut['items']>([])
 const activityDegraded = ref(false)
+const loaded = ref(false)
 
 const STALE_MS = 5 * 60_000
 
@@ -52,7 +54,7 @@ async function loadRunning(id: number): Promise<void> {
     )
     runningRuns.value = newestFirst(page.items, (r) => r.started_at)
   } catch {
-    runningRuns.value = []
+    // Keep the last good list on a transient poll error — no flicker.
   }
 }
 
@@ -61,11 +63,10 @@ async function loadTimeline(id: number): Promise<void> {
     const page = await apiFetch<SchemaPageResponseProjectEventOut>(
       `/api/v1/projects/${id}/context/timeline?limit=12&order=desc`,
     )
-    timeline.value = newestFirst(page.items, (e) => e.occurred_at ?? e.created_at)
+    timeline.value = page.items
     activityDegraded.value = false
   } catch {
-    timeline.value = []
-    activityDegraded.value = true
+    if (timeline.value.length === 0) activityDegraded.value = true
   }
 }
 
@@ -78,9 +79,21 @@ async function loadAll(): Promise<void> {
     loadRunning(id),
     loadTimeline(id),
   ])
+  loaded.value = true
 }
 
-const { lastRunAt, running, refresh } = usePolling(loadAll, { intervalMs: 20_000 })
+const { lastRunAt, refresh } = usePolling(loadAll, { intervalMs: 20_000 })
+
+// Manual-refresh spinner only — background polls must not pulse the button.
+const manualBusy = ref(false)
+async function manualRefresh(): Promise<void> {
+  manualBusy.value = true
+  try {
+    await refresh()
+  } finally {
+    manualBusy.value = false
+  }
+}
 
 const updatedLabel = computed(() =>
   lastRunAt.value ? formatRelativeDateTime(lastRunAt.value.toISOString()) : null,
@@ -88,6 +101,7 @@ const updatedLabel = computed(() =>
 
 const topAttention = computed(() => attention.items.slice(0, 5))
 const moreAttention = computed(() => Math.max(0, attention.items.length - topAttention.value.length))
+const showReadiness = computed(() => readiness.checks.length > 0)
 
 function runTitle(run: SchemaRunOut): string {
   if (run.last_step) return run.last_step
@@ -126,17 +140,22 @@ function timelineLink(runId: number | null | undefined): string | null {
           variant="secondary"
           size="sm"
           icon-left="refresh"
-          :loading="running"
-          @click="refresh"
+          :loading="manualBusy"
+          @click="manualRefresh"
         >
           Refresh
         </UiButton>
       </template>
     </ProjectPageHeader>
 
-    <!-- Readiness banner -->
+    <!-- Readiness banner: stable across polls; reserve height before first load -->
+    <UiSkeleton
+      v-if="!showReadiness"
+      shape="block"
+      height="2.75rem"
+    />
     <UiCallout
-      v-if="!readiness.loading && !readiness.ready"
+      v-else-if="!readiness.ready"
       :tone="readiness.blocker ? readinessTone(readiness.blocker.state) : 'warning'"
       :title="readiness.headline"
     >
@@ -152,8 +171,8 @@ function timelineLink(runId: number | null | undefined): string | null {
       </template>
     </UiCallout>
     <div
-      v-else-if="readiness.ready"
-      class="flex items-center gap-2.5 rounded-lg border border-success-border bg-success-subtle px-3 py-2 text-sm text-success-fg"
+      v-else
+      class="flex items-center gap-2.5 rounded-lg border border-success-border bg-success-subtle px-3.5 py-2.5 text-sm text-success-fg"
     >
       <UiIcon
         name="shield-check"
@@ -167,11 +186,15 @@ function timelineLink(runId: number | null | undefined): string | null {
       >· StackOS v{{ readiness.version }}</span>
     </div>
 
-    <div class="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,1fr)]">
+    <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,1fr)]">
       <!-- Left column -->
       <div class="space-y-5">
         <!-- Needs you -->
-        <UiCard section>
+        <UiCard
+          section
+          :padded="false"
+          class="overflow-hidden"
+        >
           <template #header>
             <div class="flex items-center gap-2">
               <h2 class="t-h3 text-fg-strong">
@@ -193,23 +216,27 @@ function timelineLink(runId: number | null | undefined): string | null {
           </template>
 
           <div
-            v-if="attention.loading && attention.items.length === 0"
-            class="space-y-3 py-1"
+            v-if="!loaded"
+            class="space-y-3 px-4 py-4"
           >
             <UiSkeleton
               v-for="n in 3"
               :key="n"
               shape="block"
-              height="2.5rem"
+              height="2.75rem"
             />
           </div>
-          <UiEmptyState
+          <div
             v-else-if="attention.items.length === 0"
-            icon="check-circle"
-            title="Nothing needs you right now"
-            description="Approvals, questions, blockers, and failures will appear here."
-            size="sm"
-          />
+            class="px-4 py-6"
+          >
+            <UiEmptyState
+              icon="check-circle"
+              title="Nothing needs you right now"
+              description="Approvals, questions, blockers, and failures will appear here."
+              size="sm"
+            />
+          </div>
           <div v-else>
             <div class="divide-y divide-border-subtle">
               <AttentionItemRow
@@ -219,28 +246,31 @@ function timelineLink(runId: number | null | undefined): string | null {
               />
             </div>
             <div
-              v-if="moreAttention > 0"
-              class="px-2.5 pt-3"
+              v-if="moreAttention > 0 || attention.degraded"
+              class="flex items-center justify-between gap-2 border-t border-border-subtle px-4 py-2.5"
             >
               <UiButton
+                v-if="moreAttention > 0"
                 variant="link"
                 size="sm"
                 @click="$router.push(`${base}/inbox`)"
               >
                 {{ moreAttention }} more in your inbox
               </UiButton>
+              <span
+                v-if="attention.degraded"
+                class="text-2xs text-fg-subtle"
+              >Some signals couldn’t be loaded.</span>
             </div>
-            <p
-              v-if="attention.degraded"
-              class="px-2.5 pt-2 text-2xs text-fg-subtle"
-            >
-              Some signals couldn’t be loaded — this list may be incomplete.
-            </p>
           </div>
         </UiCard>
 
         <!-- Agents at work -->
-        <UiCard section>
+        <UiCard
+          section
+          :padded="false"
+          class="overflow-hidden"
+        >
           <template #header>
             <div class="flex items-center gap-2">
               <h2 class="t-h3 text-fg-strong">
@@ -264,13 +294,28 @@ function timelineLink(runId: number | null | undefined): string | null {
             </UiButton>
           </template>
 
-          <UiEmptyState
-            v-if="runningRuns.length === 0"
-            icon="runs"
-            title="No agents are working right now"
-            description="Live agent runs show here while they’re in progress."
-            size="sm"
-          />
+          <div
+            v-if="!loaded"
+            class="space-y-3 px-4 py-4"
+          >
+            <UiSkeleton
+              v-for="n in 2"
+              :key="n"
+              shape="block"
+              height="2.75rem"
+            />
+          </div>
+          <div
+            v-else-if="runningRuns.length === 0"
+            class="px-4 py-6"
+          >
+            <UiEmptyState
+              icon="runs"
+              title="No agents are working right now"
+              description="Live agent runs show here while they’re in progress."
+              size="sm"
+            />
+          </div>
           <ul
             v-else
             class="divide-y divide-border-subtle"
@@ -281,7 +326,7 @@ function timelineLink(runId: number | null | undefined): string | null {
             >
               <RouterLink
                 :to="`${base}/runs/${run.id}`"
-                class="focus-ring-inset group flex items-center gap-3 rounded-md px-2.5 py-3 transition-colors duration-fast hover:bg-bg-surface-alt"
+                class="focus-ring-inset group flex items-center gap-3 px-4 py-3 transition-colors duration-fast hover:bg-bg-surface-alt"
               >
                 <span
                   class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-info-subtle text-info-fg"
@@ -316,7 +361,11 @@ function timelineLink(runId: number | null | undefined): string | null {
       </div>
 
       <!-- Right column: Recent activity -->
-      <UiCard section>
+      <UiCard
+        section
+        :padded="false"
+        class="overflow-hidden"
+      >
         <template #header>
           <h2 class="t-h3 text-fg-strong">
             Recent activity
@@ -331,20 +380,39 @@ function timelineLink(runId: number | null | undefined): string | null {
           </UiButton>
         </template>
 
-        <UiCallout
-          v-if="activityDegraded"
-          tone="neutral"
-          density="compact"
+        <div
+          v-if="!loaded"
+          class="space-y-3 px-4 py-4"
         >
-          Activity is unavailable right now.
-        </UiCallout>
-        <UiEmptyState
+          <UiSkeleton
+            v-for="n in 6"
+            :key="n"
+            shape="block"
+            height="2.75rem"
+          />
+        </div>
+        <div
+          v-else-if="activityDegraded"
+          class="px-4 py-4"
+        >
+          <UiCallout
+            tone="neutral"
+            density="compact"
+          >
+            Activity is unavailable right now.
+          </UiCallout>
+        </div>
+        <div
           v-else-if="timeline.length === 0"
-          icon="list"
-          title="No activity yet"
-          description="The project’s story appears here as agents work."
-          size="sm"
-        />
+          class="px-4 py-6"
+        >
+          <UiEmptyState
+            icon="list"
+            title="No activity yet"
+            description="The project’s story appears here as agents work."
+            size="sm"
+          />
+        </div>
         <div
           v-else
           class="divide-y divide-border-subtle"

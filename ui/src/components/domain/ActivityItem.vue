@@ -50,8 +50,8 @@ const medallionClass = computed(() => MEDALLION[visual.value.tone])
     :is="to ? 'RouterLink' : 'div'"
     :to="to ?? undefined"
     :class="[
-      'activity-item group flex w-full items-start gap-3 rounded-md text-left',
-      compact ? 'px-2 py-2' : 'px-2.5 py-3',
+      'activity-item group flex w-full items-start gap-3 text-left',
+      compact ? 'px-4 py-2.5' : 'px-4 py-3',
       to
         ? 'focus-ring-inset cursor-pointer transition-colors duration-fast hover:bg-bg-surface-alt'
         : '',

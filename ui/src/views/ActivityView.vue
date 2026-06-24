@@ -2,7 +2,8 @@
 // ActivityView — the project's story: what agents have been doing, newest
 // first. A human-readable feed over the durable timeline (order=desc), with a
 // light category filter and "load more". The raw run/audit tables live in the
-// demoted Developer area, linked from here.
+// demoted Developer area, linked from here. First-load skeletons only;
+// background polls and transient errors never blank the feed.
 
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -43,6 +44,7 @@ const cursor = ref<number | null>(null)
 const hasMore = ref(false)
 const loadingMore = ref(false)
 const degraded = ref(false)
+const loaded = ref(false)
 
 function categoryOf(event: SchemaProjectEventOut): Category {
   const type = event.event_type ?? ''
@@ -90,15 +92,13 @@ async function fetchPage(after: number | null): Promise<SchemaPageResponseProjec
 
 async function load(): Promise<void> {
   const page = await fetchPage(null)
-  if (!page) {
-    events.value = []
-    cursor.value = null
-    hasMore.value = false
-    return
+  if (page) {
+    events.value = page.items
+    cursor.value = page.next_cursor ?? null
+    hasMore.value = page.next_cursor != null
   }
-  events.value = page.items
-  cursor.value = page.next_cursor ?? null
-  hasMore.value = page.next_cursor != null
+  // On a transient error after the first load we keep the current feed.
+  loaded.value = true
 }
 
 async function loadMore(): Promise<void> {
@@ -116,11 +116,21 @@ async function loadMore(): Promise<void> {
   }
 }
 
-const { lastRunAt, running, refresh } = usePolling(load, { intervalMs: 30_000 })
+const { lastRunAt, refresh } = usePolling(load, { intervalMs: 30_000 })
+
+const manualBusy = ref(false)
+async function manualRefresh(): Promise<void> {
+  manualBusy.value = true
+  try {
+    await refresh()
+  } finally {
+    manualBusy.value = false
+  }
+}
+
 const updatedLabel = computed(() =>
   lastRunAt.value ? formatRelativeDateTime(lastRunAt.value.toISOString()) : null,
 )
-const initialLoading = computed(() => running.value && events.value.length === 0)
 </script>
 
 <template>
@@ -143,8 +153,8 @@ const initialLoading = computed(() => running.value && events.value.length === 0
           variant="secondary"
           size="sm"
           icon-left="refresh"
-          :loading="running"
-          @click="refresh"
+          :loading="manualBusy"
+          @click="manualRefresh"
         >
           Refresh
         </UiButton>
@@ -168,32 +178,42 @@ const initialLoading = computed(() => running.value && events.value.length === 0
       </UiButton>
     </div>
 
-    <UiCard section>
+    <UiCard
+      section
+      :padded="false"
+      class="overflow-hidden"
+    >
       <div
-        v-if="initialLoading"
-        class="space-y-3 py-1"
+        v-if="!loaded"
+        class="space-y-3 px-4 py-4"
       >
         <UiSkeleton
-          v-for="n in 6"
+          v-for="n in 7"
           :key="n"
           shape="block"
           height="2.75rem"
         />
       </div>
 
-      <UiCallout
+      <div
         v-else-if="degraded && events.length === 0"
-        tone="neutral"
+        class="px-4 py-4"
       >
-        Activity is unavailable right now. Try refreshing.
-      </UiCallout>
+        <UiCallout tone="neutral">
+          Activity is unavailable right now. Try refreshing.
+        </UiCallout>
+      </div>
 
-      <UiEmptyState
+      <div
         v-else-if="visibleEvents.length === 0"
-        icon="list"
-        :title="filter === 'all' ? 'No activity yet' : 'Nothing in this category'"
-        description="The project’s story appears here as agents work."
-      />
+        class="px-4 py-8"
+      >
+        <UiEmptyState
+          icon="list"
+          :title="filter === 'all' ? 'No activity yet' : 'Nothing in this category'"
+          description="The project’s story appears here as agents work."
+        />
+      </div>
 
       <template v-else>
         <div class="divide-y divide-border-subtle">
@@ -206,7 +226,7 @@ const initialLoading = computed(() => running.value && events.value.length === 0
         </div>
         <div
           v-if="filter === 'all' && hasMore"
-          class="flex justify-center pt-4"
+          class="flex justify-center border-t border-border-subtle px-4 py-3"
         >
           <UiButton
             variant="secondary"
