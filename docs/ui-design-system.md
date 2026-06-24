@@ -47,10 +47,15 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 ## 4. Layout rules
 
 - Sidebar: 256px desktop rail.
-- StackOS core navigation is first: Plugins, Capabilities, Connections,
-  Workflow Templates, Runs, Project Data, and Resources. Domain-specific
-  surfaces are plugin contributions or generic resource links, not new top-level
-  product lanes.
+- Navigation is goal-oriented, not schema-shaped. **Operate** leads (Home,
+  Inbox, Work, Activity, Setup), then **Configure** (Connections, Automation,
+  Spend, Plugins), then plugin lanes, then a demoted **Developer** group holding
+  the raw audit/registry surfaces (Runs, Workflow Library, Agent Presets, Agent
+  Requests, Capabilities, Operations, Action Calls, Resources, Project Data).
+  Domain-specific surfaces are plugin contributions or generic resource links,
+  not new top-level product lanes. The root `/` is the project portfolio +
+  local system status; `/projects/:id` is the operations console (Home). See
+  [`ui-redesign-direction.md`](./ui-redesign-direction.md).
 - Top bar: 52px. Sticky. Solid `bg.surface`, no blur.
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
 - Page header: title, slug, description, and utility controls (right). Breadcrumbs optional, above title.

@@ -169,21 +169,30 @@ arguments, UI JSON, or MCP responses.
 
 ## UI Architecture
 
-The UI renders StackOS primitives:
+The desktop UI is a calm, agent-first operations console: humans observe,
+approve, troubleshoot, and own setup; agents do the work. The primary surfaces
+are goal-oriented — a project Home console (readiness, attention, live agent
+activity, recent timeline), an Inbox (what needs a human), Work (the tracker),
+Activity (the project story), and Setup (readiness + connections/automation/
+spend/plugins). The root is a project portfolio plus local system status. See
+[`ui-redesign-direction.md`](./ui-redesign-direction.md) for the direction.
 
-- project overview
+Underneath, those surfaces still render generic StackOS primitives:
+
+- project readiness and the durable event timeline
+- run / run plan detail
 - plugin catalog
 - workflow template detail
-- run plan detail
 - generic resource record pages
 - artifact preview
 - provider/auth status
 - action-call audit ledger
 - context and learning views
 
-Plugin nav points to generic renderers with plugin/resource keys. New domains
-should not require bespoke top-level pages unless a specialized editor is
-clearly justified.
+The raw audit/registry tables live in a demoted Developer area, not the
+primary lanes. Plugin nav points to generic renderers with plugin/resource
+keys. New domains should not require bespoke top-level pages unless a
+specialized editor is clearly justified.
 
 ## Delivery Invariants
 
