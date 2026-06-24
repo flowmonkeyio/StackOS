@@ -132,13 +132,17 @@ export function resolveEventVisual(
  */
 export function humanizeEvent(event: SchemaProjectEventOut): HumanEvent {
   const m = meta(event)
-  const summary = event.summary?.trim() || null
+  const type = event.event_type ?? ''
+  const isTrackerStatus =
+    type === 'tracker.task.status_changed' || type === 'tracker.ticket.status_changed'
+  // Tracker status events ship a title ("Task X is complete") AND a summary that
+  // just restates it ("Task X changed from … to complete") — drop the echo.
+  const summary = isTrackerStatus ? null : event.summary?.trim() || null
 
   if (event.title?.trim()) {
     return { title: event.title.trim(), summary }
   }
 
-  const type = event.event_type ?? ''
   if (type === 'tracker.task.status_changed' || type === 'tracker.ticket.status_changed') {
     const status = metaString(m, 'new_status')
     const noun = type === 'tracker.ticket.status_changed' ? 'Ticket' : 'Task'

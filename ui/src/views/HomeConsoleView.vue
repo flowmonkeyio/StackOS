@@ -62,7 +62,7 @@ async function loadRunning(id: number): Promise<void> {
 async function loadTimeline(id: number): Promise<void> {
   try {
     const page = await apiFetch<SchemaPageResponseProjectEventOut>(
-      `/api/v1/projects/${id}/context/timeline?limit=12&order=desc`,
+      `/api/v1/projects/${id}/context/timeline?limit=40&order=desc`,
     )
     timeline.value = page.items
     activityDegraded.value = false
@@ -103,6 +103,21 @@ const updatedLabel = computed(() =>
 const topAttention = computed(() => attention.items.slice(0, 5))
 const moreAttention = computed(() => Math.max(0, attention.items.length - topAttention.value.length))
 const showReadiness = computed(() => readiness.checks.length > 0)
+
+// Home's feed shows MILESTONES, not the per-ticket in-progress churn that
+// floods the raw timeline: drop ticket transitions and keep only task
+// completions/failures plus knowledge + run events.
+const MILESTONE_STATUSES = new Set(['complete', 'completed', 'failed', 'aborted'])
+function isMilestone(event: SchemaPageResponseProjectEventOut['items'][number]): boolean {
+  const type = event.event_type ?? ''
+  if (type === 'tracker.ticket.status_changed') return false
+  if (type === 'tracker.task.status_changed') {
+    const status = (event.metadata_json as Record<string, unknown> | null)?.new_status
+    return typeof status === 'string' ? MILESTONE_STATUSES.has(status) : true
+  }
+  return true
+}
+const recentMilestones = computed(() => timeline.value.filter(isMilestone).slice(0, 6))
 
 function runTitle(run: SchemaRunOut): string {
   if (run.last_step) return run.last_step
@@ -405,13 +420,13 @@ function timelineLink(runId: number | null | undefined): string | null {
           </UiCallout>
         </div>
         <div
-          v-else-if="timeline.length === 0"
+          v-else-if="recentMilestones.length === 0"
           class="px-4 py-6"
         >
           <UiEmptyState
             icon="list"
-            title="No activity yet"
-            description="The project’s story appears here as agents work."
+            title="No recent milestones"
+            description="Completed work, decisions, and run outcomes appear here."
             size="sm"
           />
         </div>
@@ -420,7 +435,7 @@ function timelineLink(runId: number | null | undefined): string | null {
           class="divide-y divide-border-subtle"
         >
           <ActivityItem
-            v-for="event in timeline"
+            v-for="event in recentMilestones"
             :key="event.id"
             :event="event"
             :to="timelineLink(event.run_id)"

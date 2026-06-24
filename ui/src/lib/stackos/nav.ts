@@ -91,7 +91,7 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
           icon: 'library',
         },
         { key: 'agent-presets', label: 'Agent Presets', to: `${base}/agent-presets`, icon: 'users' },
-        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests`, icon: 'forward' },
+        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests`, icon: 'queue-list' },
         { key: 'capabilities', label: 'Capabilities', to: `${base}/capabilities`, icon: 'chip' },
         { key: 'operations', label: 'Operations', to: `${base}/operations`, icon: 'terminal' },
         { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls`, icon: 'bolt' },

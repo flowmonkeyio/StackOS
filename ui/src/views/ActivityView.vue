@@ -16,6 +16,7 @@ import {
   UiEmptyState,
   UiSegmentedControl,
   UiSkeleton,
+  UiToolbar,
 } from '@/components/ui'
 import { apiFetch } from '@/lib/client'
 import { usePolling } from '@/composables/usePolling'
@@ -161,22 +162,28 @@ const updatedLabel = computed(() =>
       </template>
     </ProjectPageHeader>
 
-    <div class="flex flex-wrap items-center justify-between gap-3">
+    <UiToolbar
+      variant="sunken"
+      aria-label="Activity filters"
+      density="comfortable"
+    >
       <UiSegmentedControl
         v-model="filter"
         :options="filterOptions"
         label="Filter activity by category"
         size="sm"
       />
-      <UiButton
-        variant="ghost"
-        size="sm"
-        icon-right="external-link"
-        @click="$router.push(`${base}/runs`)"
-      >
-        Runs audit
-      </UiButton>
-    </div>
+      <template #right>
+        <UiButton
+          variant="ghost"
+          size="sm"
+          icon-right="external-link"
+          @click="$router.push(`${base}/runs`)"
+        >
+          Runs audit
+        </UiButton>
+      </template>
+    </UiToolbar>
 
     <UiCard
       section
