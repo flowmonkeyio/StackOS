@@ -130,22 +130,17 @@ onMounted(load)
 
 <template>
   <section class="space-y-5">
-    <UiSectionHeader
-      title="Cost & budget"
-      description="Read-only spend, budget caps, and vendor pacing for agent-owned integrations."
-    >
-      <template #actions>
-        <UiButton
-          size="sm"
-          variant="secondary"
-          icon-left="refresh"
-          :loading="loading"
-          @click="load"
-        >
-          Refresh
-        </UiButton>
-      </template>
-    </UiSectionHeader>
+    <div class="flex justify-end">
+      <UiButton
+        size="sm"
+        variant="secondary"
+        icon-left="refresh"
+        :loading="loading"
+        @click="load"
+      >
+        Refresh
+      </UiButton>
+    </div>
 
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <UiMetricCard

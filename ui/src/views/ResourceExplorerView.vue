@@ -17,9 +17,9 @@ import {
   UiDescriptionList,
   UiFormField,
   UiPageShell,
-  UiPanel,
   UiSectionHeader,
   UiSelect,
+  UiToolbar,
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaResourceOut, SchemaResourceRecordOut } from '@/api'
@@ -219,8 +219,12 @@ onBeforeRouteUpdate((to) => {
       {{ error }}
     </UiCallout>
 
-    <UiPanel class="p-4">
-      <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-[260px_260px_1fr]">
+    <UiToolbar
+      variant="sunken"
+      aria-label="Resource filters"
+      density="comfortable"
+    >
+      <div class="grid w-full gap-3 md:grid-cols-2 lg:grid-cols-[260px_260px_1fr]">
         <UiFormField label="Plugin">
           <UiSelect
             :model-value="pluginSlug"
@@ -250,7 +254,7 @@ onBeforeRouteUpdate((to) => {
           </span>
         </div>
       </div>
-    </UiPanel>
+    </UiToolbar>
 
     <section aria-label="Resource schemas">
       <UiSectionHeader

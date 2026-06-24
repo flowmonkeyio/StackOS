@@ -11,3 +11,12 @@ body,
 #app {
   height: 100%;
 }
+
+/*
+ * Reserve the scrollbar gutter on the main scroll region so content width is
+ * identical whether or not a page is long enough to scroll — otherwise the
+ * styled (space-taking) scrollbar shifts content ~15px between pages.
+ */
+#cs-main {
+  scrollbar-gutter: stable;
+}

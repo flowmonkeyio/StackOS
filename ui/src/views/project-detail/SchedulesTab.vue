@@ -7,7 +7,7 @@ import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { UiButton, UiCallout, UiMetricCard, UiSectionHeader } from '@/components/ui'
+import { UiButton, UiCallout, UiMetricCard } from '@/components/ui'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 import { useSchedulesStore, type ScheduledJob } from '@/stores/schedules'
 import type { DataTableColumn } from '@/components/types'
@@ -49,22 +49,17 @@ onMounted(load)
 
 <template>
   <section class="space-y-5">
-    <UiSectionHeader
-      title="Scheduled jobs"
-      description="Read-only schedule inventory for recurring agent-owned maintenance."
-    >
-      <template #actions>
-        <UiButton
-          size="sm"
-          variant="secondary"
-          icon-left="refresh"
-          :loading="loading"
-          @click="load"
-        >
-          Refresh
-        </UiButton>
-      </template>
-    </UiSectionHeader>
+    <div class="flex justify-end">
+      <UiButton
+        size="sm"
+        variant="secondary"
+        icon-left="refresh"
+        :loading="loading"
+        @click="load"
+      >
+        Refresh
+      </UiButton>
+    </div>
 
     <UiCallout
       v-if="error"

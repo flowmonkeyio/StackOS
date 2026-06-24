@@ -17,10 +17,10 @@ import {
   UiMetadataStrip,
   UiMetricCard,
   UiPageShell,
-  UiPanel,
   UiSectionHeader,
   UiSegmentedControl,
   UiSelect,
+  UiToolbar,
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import { formatApiError } from '@/lib/client'
@@ -317,43 +317,46 @@ onMounted(() => {
       />
     </div>
 
-    <UiPanel
+    <UiToolbar
+      variant="sunken"
       aria-label="Agent request filters"
-      class="p-4"
+      density="comfortable"
     >
-      <UiSegmentedControl
-        :model-value="mode"
-        :options="modeOptions"
-        label="Agent request mode"
-        @select="setMode"
-      />
-      <div class="mt-3 grid gap-3 md:grid-cols-[260px_1fr_auto]">
-        <UiFormField label="Attention">
-          <UiSelect
-            :model-value="attentionFilter"
-            :options="attentionOptions"
-            @update:model-value="setAttention"
-          />
-        </UiFormField>
-        <div class="flex items-end">
-          <UiCheckbox
-            v-model="autoSelectNewest"
-            label="Select newest on refresh"
-            description="Keeps the selected row synced to the first row after filter changes."
-          />
-        </div>
-        <div class="flex items-end justify-start md:justify-end">
-          <UiButton
-            variant="secondary"
-            size="sm"
-            icon-left="x"
-            @click="resetFilters"
-          >
-            Reset filters
-          </UiButton>
+      <div class="flex w-full flex-col gap-3">
+        <UiSegmentedControl
+          :model-value="mode"
+          :options="modeOptions"
+          label="Agent request mode"
+          @select="setMode"
+        />
+        <div class="grid gap-3 md:grid-cols-[260px_1fr_auto]">
+          <UiFormField label="Attention">
+            <UiSelect
+              :model-value="attentionFilter"
+              :options="attentionOptions"
+              @update:model-value="setAttention"
+            />
+          </UiFormField>
+          <div class="flex items-end">
+            <UiCheckbox
+              v-model="autoSelectNewest"
+              label="Select newest on refresh"
+              description="Keeps the selected row synced to the first row after filter changes."
+            />
+          </div>
+          <div class="flex items-end justify-start md:justify-end">
+            <UiButton
+              variant="secondary"
+              size="sm"
+              icon-left="close"
+              @click="resetFilters"
+            >
+              Reset filters
+            </UiButton>
+          </div>
         </div>
       </div>
-    </UiPanel>
+    </UiToolbar>
 
     <section aria-label="Agent request queue">
       <UiSectionHeader
