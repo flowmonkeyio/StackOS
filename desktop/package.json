@@ -9,7 +9,7 @@
   "author": "StackOS contributors",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check src/deep-links.js && node --check src/notifications.js && node --check scripts/build-icons.mjs && node --check scripts/render-icon-electron.cjs && node --check scripts/build-mac.mjs && node scripts/doctor.mjs && node scripts/test-service-readiness.cjs && node scripts/test-service-upgrade.cjs && node scripts/test-notifications.cjs",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check src/deep-links.js && node --check src/notifications.js && node --check scripts/build-icons.mjs && node --check scripts/build-mac.mjs && node scripts/doctor.mjs && node scripts/test-service-readiness.cjs && node scripts/test-service-upgrade.cjs && node scripts/test-notifications.cjs",
     "doctor": "node scripts/doctor.mjs",
     "icons": "node scripts/build-icons.mjs",
     "payload": "bash scripts/build-stackos-payload.sh",

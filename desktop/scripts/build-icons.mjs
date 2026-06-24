@@ -1,18 +1,32 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+// Source of truth for the app icon is the high-resolution PNG (the matte
+// stone-balance mark, with transparent rounded corners). The macOS .icns is
+// built from it with sips + iconutil — no SVG render step.
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(desktopDir, "..");
-const require = createRequire(import.meta.url);
-const sourceSvgPath = path.join(repoRoot, "ui", "public", "favicon.svg");
 const assetsDir = path.join(desktopDir, "assets");
-const iconSvgPath = path.join(assetsDir, "stackos-icon.svg");
+const sourcePngPath = path.join(assetsDir, "stackos-icon.png");
 const iconIcnsPath = path.join(assetsDir, "stackos-icon.icns");
+
+// Standard macOS iconset matrix (name, pixel size).
+const ICONSET = [
+  ["icon_16x16.png", 16],
+  ["icon_16x16@2x.png", 32],
+  ["icon_32x32.png", 32],
+  ["icon_32x32@2x.png", 64],
+  ["icon_128x128.png", 128],
+  ["icon_128x128@2x.png", 256],
+  ["icon_256x256.png", 256],
+  ["icon_256x256@2x.png", 512],
+  ["icon_512x512.png", 512],
+  ["icon_512x512@2x.png", 1024],
+];
 
 function run(command, args) {
   const result = spawnSync(command, args, {
@@ -31,13 +45,10 @@ function run(command, args) {
   return result.stdout.trim();
 }
 
-function copyFaviconSource() {
-  fs.mkdirSync(assetsDir, { recursive: true });
-  const svg = fs.readFileSync(sourceSvgPath, "utf8");
-  fs.writeFileSync(iconSvgPath, svg.endsWith("\n") ? svg : `${svg}\n`);
-}
-
 function buildIcns() {
+  if (!fs.existsSync(sourcePngPath)) {
+    throw new Error(`stackos icon: source PNG missing at ${sourcePngPath}`);
+  }
   if (process.platform !== "darwin") {
     if (!fs.existsSync(iconIcnsPath)) {
       console.warn("stackos icon: skipping .icns generation outside macOS");
@@ -49,15 +60,19 @@ function buildIcns() {
   try {
     const iconsetDir = path.join(tempDir, "stackos-icon.iconset");
     fs.mkdirSync(iconsetDir, { recursive: true });
-
-    const electronPath = require("electron");
-    run(electronPath, ["scripts/render-icon-electron.cjs", iconSvgPath, iconsetDir]);
+    for (const [name, size] of ICONSET) {
+      run("sips", [
+        "-s", "format", "png",
+        "-z", String(size), String(size),
+        sourcePngPath,
+        "--out", path.join(iconsetDir, name)
+      ]);
+    }
     run("iconutil", ["-c", "icns", "-o", iconIcnsPath, iconsetDir]);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
-copyFaviconSource();
 buildIcns();
-console.log(`stackos icon synced from ${path.relative(repoRoot, sourceSvgPath)}`);
+console.log(`stackos icon synced from ${path.relative(repoRoot, sourcePngPath)}`);

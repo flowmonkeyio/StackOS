@@ -85,13 +85,12 @@ if (!hasStackosPayload) {
 
 for (const relativePath of [
   "assets/stackos-icon.icns",
-  "assets/stackos-icon.svg",
+  "assets/stackos-icon.png",
   "src/main.js",
   "src/preload.js",
   "src/service.js",
   "src/updates.js",
   "scripts/build-icons.mjs",
-  "scripts/render-icon-electron.cjs",
   "scripts/build-stackos-payload.sh",
   "scripts/build-mac.mjs",
   "update-config.example.json"
@@ -99,11 +98,9 @@ for (const relativePath of [
   mustExist(relativePath);
 }
 
-const uiFaviconPath = path.join(desktopDir, "..", "ui", "public", "favicon.svg");
+const uiFaviconPath = path.join(desktopDir, "..", "ui", "public", "favicon.png");
 if (!fs.existsSync(uiFaviconPath)) {
-  fail("ui/public/favicon.svg is missing");
-} else if (readText("assets/stackos-icon.svg").trim() !== fs.readFileSync(uiFaviconPath, "utf8").trim()) {
-  fail("assets/stackos-icon.svg must match ui/public/favicon.svg");
+  fail("ui/public/favicon.png is missing");
 }
 
 mustContain("src/main.js", "contextIsolation: true");
@@ -116,9 +113,8 @@ mustContain("src/service.js", "--force");
 mustContain("src/service.js", "installKey");
 mustContain("src/service.js", "build-info.json");
 mustContain("src/updates.js", "provider: \"generic\"");
-mustContain("scripts/build-icons.mjs", "ui\", \"public\", \"favicon.svg");
-mustContain("scripts/build-icons.mjs", "render-icon-electron.cjs");
-mustContain("scripts/render-icon-electron.cjs", "capturePage");
+mustContain("scripts/build-icons.mjs", "stackos-icon.png");
+mustContain("scripts/build-icons.mjs", "iconutil");
 mustContain("scripts/build-stackos-payload.sh", "build-info.json");
 mustContain("scripts/build-mac.mjs", "STACKOS_UPDATE_URL");
 mustContain("scripts/build-mac.mjs", "scripts/build-icons.mjs");

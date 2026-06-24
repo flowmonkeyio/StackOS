@@ -154,40 +154,12 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
     <!-- Mobile top bar -->
     <div class="sticky top-0 z-sticky flex h-14 items-center justify-between gap-3 border-b border-sb-border bg-sb-bg px-3 md:hidden">
       <div class="flex min-w-0 items-center gap-2.5">
-        <span
-          class="brand-gradient inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
+        <img
+          src="/favicon.png"
+          alt=""
+          class="h-8 w-8 shrink-0 rounded-md"
           aria-hidden="true"
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M2 5.2 8 2l6 3.2-6 3.2L2 5.2Z"
-              fill="white"
-              fill-opacity="0.95"
-            />
-            <path
-              d="M2 8.4 8 11.6l6-3.2"
-              stroke="white"
-              stroke-opacity="0.7"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M2 11.2 8 14.4l6-3.2"
-              stroke="white"
-              stroke-opacity="0.45"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </span>
         <div class="min-w-0">
           <div class="truncate text-sm font-semibold leading-tight text-sb-strong">
             StackOS
@@ -240,40 +212,12 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
             class="focus-ring-sb flex items-center gap-2.5 rounded-md px-1.5 py-1.5 transition-colors duration-fast hover:bg-sb-hover"
             aria-label="StackOS home"
           >
-            <span
-              class="brand-gradient inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
+            <img
+              src="/favicon.png"
+              alt=""
+              class="h-8 w-8 shrink-0 rounded-md"
               aria-hidden="true"
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M2 5.2 8 2l6 3.2-6 3.2L2 5.2Z"
-                  fill="white"
-                  fill-opacity="0.95"
-                />
-                <path
-                  d="M2 8.4 8 11.6l6-3.2"
-                  stroke="white"
-                  stroke-opacity="0.7"
-                  stroke-width="1.4"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M2 11.2 8 14.4l6-3.2"
-                  stroke="white"
-                  stroke-opacity="0.45"
-                  stroke-width="1.4"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </span>
             <div class="min-w-0">
               <div class="truncate text-sm font-semibold leading-tight text-sb-strong">
                 StackOS
