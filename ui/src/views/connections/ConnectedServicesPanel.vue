@@ -16,6 +16,7 @@ import {
   UiSkeleton,
 } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
+import { resolveStatus } from '@/design/status'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 
 import {
@@ -26,7 +27,6 @@ import {
   methodLabel,
   pluginLabel,
   providerGroupLabel,
-  serviceGroupStatus,
   serviceName,
 } from './formatters'
 import type { ConnectionRow, MessageMap, ServiceGroup } from './types'
@@ -83,6 +83,39 @@ const visibleGroups = computed(() => {
 
 function connectionActionKey(credentialRef: string, action: string): string {
   return `${credentialRef}:${action}`
+}
+
+/** A connection that isn't cleanly connected needs operator attention. */
+function isAttention(connection: ConnectionRow): boolean {
+  return connectionStatusKey(connection) !== 'connected'
+}
+
+function authLabel(group: ServiceGroup, connection: ConnectionRow): string {
+  return group.provider
+    ? methodLabel(group.provider, connection.auth_method_key)
+    : formatAuthType(connection.auth_type)
+}
+
+/** Only surface the account when it adds information beyond the row title. */
+function showAccount(connection: ConnectionRow): boolean {
+  const account = accountLabel(connection)
+  return account !== '-' && account !== connectionTitle(connection)
+}
+
+const DOT_CLASS: Record<string, string> = {
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-danger',
+  info: 'bg-info',
+  neutral: 'bg-fg-subtle',
+}
+
+function statusDotClass(connection: ConnectionRow): string {
+  return DOT_CLASS[resolveStatus('connection', connectionStatusKey(connection)).tone] ?? 'bg-fg-subtle'
+}
+
+function statusLabel(connection: ConnectionRow): string {
+  return resolveStatus('connection', connectionStatusKey(connection)).label
 }
 </script>
 
@@ -155,13 +188,14 @@ function connectionActionKey(credentialRef: string, action: string): string {
 
     <div
       v-else
-      class="grid grid-cols-1 gap-4"
+      class="grid grid-cols-1 gap-3"
     >
       <UiCard
         v-for="group in visibleGroups"
         :key="group.providerKey"
         section
-        class="min-w-0"
+        :padded="false"
+        class="min-w-0 overflow-hidden"
         :aria-label="serviceName(group)"
       >
         <template #header>
@@ -169,7 +203,7 @@ function connectionActionKey(credentialRef: string, action: string): string {
             <UiMedallion
               icon="plug"
               shape="square"
-              tone="info"
+              tone="neutral"
             />
             <div class="min-w-0">
               <div class="flex min-w-0 flex-wrap items-center gap-2">
@@ -178,14 +212,10 @@ function connectionActionKey(credentialRef: string, action: string): string {
                 </h4>
                 <UiBadge
                   v-if="group.provider"
-                  tone="accent"
+                  variant="outline"
                 >
                   {{ pluginLabel(group.provider.plugin_slug) }}
                 </UiBadge>
-                <StatusBadge
-                  domain="connection"
-                  :status="serviceGroupStatus(group)"
-                />
               </div>
               <p
                 v-if="group.provider?.description"
@@ -199,7 +229,7 @@ function connectionActionKey(credentialRef: string, action: string): string {
             v-if="group.provider && canAddProvider(group.provider)"
             class="shrink-0"
             size="sm"
-            variant="secondary"
+            variant="ghost"
             icon-left="plus"
             @click="$emit('add-connection', group.provider.key)"
           >
@@ -214,73 +244,60 @@ function connectionActionKey(credentialRef: string, action: string): string {
           <li
             v-for="connection in group.connections"
             :key="connection.credential_ref"
-            class="py-3"
+            class="px-4 py-2.5"
+            :class="isAttention(connection) ? 'bg-warning-subtle' : ''"
           >
-            <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
-              <div class="min-w-0 xl:flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h5 class="truncate text-sm font-medium text-fg-strong">
+            <div class="flex items-center gap-3">
+              <span
+                role="img"
+                :aria-label="statusLabel(connection)"
+                :title="statusLabel(connection)"
+                class="h-2 w-2 shrink-0 rounded-full"
+                :class="statusDotClass(connection)"
+              ></span>
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span class="truncate text-sm font-medium text-fg-strong">
                     {{ connectionTitle(connection) }}
-                  </h5>
+                  </span>
                   <StatusBadge
+                    v-if="isAttention(connection)"
                     domain="connection"
                     :status="connectionStatusKey(connection)"
                   />
                 </div>
-                <p class="mt-0.5 truncate font-mono text-2xs text-fg-subtle">
-                  {{ connection.profile_key }}
+                <p class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-fg-muted">
+                  <span>{{ authLabel(group, connection) }}</span>
+                  <span
+                    aria-hidden="true"
+                    class="text-fg-subtle"
+                  >·</span>
+                  <span :title="formatAbsoluteDateTime(connection.last_tested_at)">
+                    {{
+                      connection.last_tested_at
+                        ? `tested ${formatRelativeDateTime(connection.last_tested_at)}`
+                        : 'never tested'
+                    }}
+                  </span>
+                  <template v-if="connection.expires_at">
+                    <span
+                      aria-hidden="true"
+                      class="text-fg-subtle"
+                    >·</span>
+                    <span :title="formatAbsoluteDateTime(connection.expires_at)">
+                      expires {{ formatRelativeDateTime(connection.expires_at) }}
+                    </span>
+                  </template>
+                  <template v-if="showAccount(connection)">
+                    <span
+                      aria-hidden="true"
+                      class="text-fg-subtle"
+                    >·</span>
+                    <span class="truncate font-mono text-2xs">{{ accountLabel(connection) }}</span>
+                  </template>
                 </p>
               </div>
-
-              <dl class="grid shrink-0 grid-cols-2 gap-x-6 gap-y-2 text-xs sm:flex sm:flex-wrap sm:items-center">
-                <div class="min-w-0">
-                  <dt class="text-fg-subtle">
-                    Account
-                  </dt>
-                  <dd class="mt-0.5 truncate text-fg-default">
-                    {{ accountLabel(connection) }}
-                  </dd>
-                </div>
-                <div class="min-w-0">
-                  <dt class="text-fg-subtle">
-                    Auth
-                  </dt>
-                  <dd class="mt-0.5 truncate text-fg-default">
-                    {{
-                      group.provider
-                        ? methodLabel(group.provider, connection.auth_method_key)
-                        : formatAuthType(connection.auth_type)
-                    }}
-                  </dd>
-                </div>
-                <div class="min-w-0">
-                  <dt class="text-fg-subtle">
-                    Last tested
-                  </dt>
-                  <dd
-                    class="mt-0.5 truncate text-fg-default"
-                    :title="formatAbsoluteDateTime(connection.last_tested_at)"
-                  >
-                    {{ formatRelativeDateTime(connection.last_tested_at) }}
-                  </dd>
-                </div>
-                <div
-                  v-if="connection.expires_at"
-                  class="min-w-0"
-                >
-                  <dt class="text-fg-subtle">
-                    Expires
-                  </dt>
-                  <dd
-                    class="mt-0.5 truncate text-fg-default"
-                    :title="formatAbsoluteDateTime(connection.expires_at)"
-                  >
-                    {{ formatRelativeDateTime(connection.expires_at) }}
-                  </dd>
-                </div>
-              </dl>
-
-              <div class="flex shrink-0 items-center gap-1.5 xl:justify-end">
+              <div class="flex shrink-0 items-center gap-1">
                 <UiButton
                   size="sm"
                   variant="secondary"
@@ -308,7 +325,7 @@ function connectionActionKey(credentialRef: string, action: string): string {
               v-if="connectionMessages[connection.credential_ref]"
               :tone="connectionMessages[connection.credential_ref].tone"
               density="compact"
-              class="mt-3"
+              class="mt-2"
             >
               {{ connectionMessages[connection.credential_ref].text }}
             </UiCallout>
