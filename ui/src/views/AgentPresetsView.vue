@@ -14,9 +14,9 @@ import {
   UiJsonBlock,
   UiMetricCard,
   UiPageShell,
-  UiSectionHeader,
   UiSegmentedControl,
   UiSkeleton,
+  UiToolbar,
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import { formatApiError } from '@/lib/client'
@@ -281,24 +281,25 @@ onBeforeRouteUpdate((to) => {
       />
     </div>
 
-    <section aria-label="Agent preset catalog">
-      <UiSectionHeader
-        title="Preset catalog"
-        as="h2"
+    <section
+      aria-label="Agent preset catalog"
+      class="space-y-4"
+    >
+      <UiToolbar
+        variant="sunken"
+        aria-label="Agent preset filters"
+        density="comfortable"
       >
-        <template #actions>
-          <UiCountBadge :value="filteredRows.length" />
-        </template>
-      </UiSectionHeader>
-
-      <div class="mb-3">
         <UiSegmentedControl
           :model-value="domainFilter"
           :options="domainOptions"
           label="Domain"
           @select="setDomain"
         />
-      </div>
+        <template #right>
+          <UiCountBadge :value="filteredRows.length" />
+        </template>
+      </UiToolbar>
 
       <DataTable
         :items="filteredRows"
