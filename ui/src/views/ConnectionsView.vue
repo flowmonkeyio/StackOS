@@ -18,6 +18,7 @@ import ConnectedServicesPanel from './connections/ConnectedServicesPanel.vue'
 import ConnectionDiagnosticsPanel from './connections/ConnectionDiagnosticsPanel.vue'
 import ConnectionsOverviewPanel from './connections/ConnectionsOverviewPanel.vue'
 import ConnectivityPanel from './connections/ConnectivityPanel.vue'
+import ConnectivitySetupPanel from './connections/ConnectivitySetupPanel.vue'
 import DestinationsPanel from './connections/DestinationsPanel.vue'
 import TelegramProfileSidePanel from './connections/TelegramProfileSidePanel.vue'
 import {
@@ -48,6 +49,7 @@ import type {
   ConnectionRow,
   ConnectionSection,
   IngressEndpointStatusOut,
+  IngressForm,
   MessageMap,
   MessageTone,
   ServiceGroup,
@@ -107,6 +109,13 @@ const communicationSurfaces = ref<CommunicationSurface[]>([])
 const ingressStatus = ref<IngressEndpointStatusOut | null>(null)
 const communicationSetupLoading = ref(false)
 const communicationSetupMessage = ref<{ tone: MessageTone; text: string } | null>(null)
+const ingressSetupOpen = ref(false)
+const ingressMessage = ref<{ tone: MessageTone; text: string } | null>(null)
+const ingressForm = ref<IngressForm>({
+  driver: 'local-tunnel',
+  public_base_url: '',
+  discovery_url: 'http://127.0.0.1:4040/api/endpoints',
+})
 const telegramProfileForm = ref<TelegramProfileForm>({
   key: 'support-bot',
   auth_profile_key: '',
@@ -314,6 +323,67 @@ async function loadCommunicationSetup(): Promise<void> {
     }
   } finally {
     communicationSetupLoading.value = false
+  }
+}
+
+function openIngressSetup(): void {
+  const endpoint = ingressStatus.value?.endpoint
+  ingressForm.value = {
+    driver: endpoint?.driver === 'public-url' ? 'public-url' : 'local-tunnel',
+    public_base_url: endpoint?.public_base_url ?? '',
+    discovery_url: ingressForm.value.discovery_url || 'http://127.0.0.1:4040/api/endpoints',
+  }
+  ingressMessage.value = null
+  ingressSetupOpen.value = true
+}
+
+async function saveIngressSetup(): Promise<void> {
+  const form = ingressForm.value
+  if (form.driver === 'public-url' && !form.public_base_url.trim()) {
+    ingressMessage.value = { tone: 'danger', text: 'A public address is required.' }
+    return
+  }
+  busyAction.value = 'ingress:configure'
+  try {
+    await callOperation('ingressEndpoint.configure', {
+      project_id: projectId.value,
+      driver: form.driver,
+      enabled: true,
+      ...(form.driver === 'public-url'
+        ? { public_base_url: form.public_base_url.trim() }
+        : {
+            driver_config: {
+              provider: 'ngrok',
+              discovery_url: form.discovery_url.trim() || 'http://127.0.0.1:4040/api/endpoints',
+            },
+          }),
+    })
+    ingressMessage.value = { tone: 'success', text: 'Connectivity configured.' }
+    ingressSetupOpen.value = false
+    await loadCommunicationSetup()
+  } catch (err) {
+    ingressMessage.value = {
+      tone: 'danger',
+      text: formatApiError(err, 'failed to configure connectivity'),
+    }
+  } finally {
+    busyAction.value = null
+  }
+}
+
+async function syncIngress(): Promise<void> {
+  busyAction.value = 'ingress:sync'
+  try {
+    await callOperation('ingressEndpoint.sync', {
+      project_id: projectId.value,
+      apply_provider_webhooks: true,
+    })
+    await loadCommunicationSetup()
+    ingressMessage.value = { tone: 'success', text: 'Synced each bot’s webhook to its provider.' }
+  } catch (err) {
+    ingressMessage.value = { tone: 'danger', text: formatApiError(err, 'failed to sync webhooks') }
+  } finally {
+    busyAction.value = null
   }
 }
 
@@ -833,8 +903,11 @@ onBeforeRouteUpdate((to) => {
           <ConnectivityPanel
             :ingress-status="ingressStatus"
             :loading="communicationSetupLoading"
-            :message="communicationSetupMessage"
+            :syncing="busyAction === 'ingress:sync'"
+            :message="ingressMessage ?? communicationSetupMessage"
             @refresh="loadCommunicationSetup"
+            @configure="openIngressSetup"
+            @sync="syncIngress"
           />
         </div>
 
@@ -887,6 +960,14 @@ onBeforeRouteUpdate((to) => {
       @save="saveTelegramProfile"
       @add-command="addCommandDraft"
       @remove-command="removeCommandDraft"
+    />
+
+    <ConnectivitySetupPanel
+      v-model="ingressSetupOpen"
+      v-model:form="ingressForm"
+      :busy-action="busyAction"
+      :message="ingressMessage"
+      @save="saveIngressSetup"
     />
   </UiPageShell>
 </template>

@@ -174,4 +174,12 @@ export interface IngressEndpointStatusOut {
   notes?: string[]
 }
 
+export type IngressDriver = 'public-url' | 'local-tunnel'
+
+export interface IngressForm {
+  driver: IngressDriver
+  public_base_url: string
+  discovery_url: string
+}
+
 export type MessageMap = Record<string, { tone: MessageTone; text: string }>

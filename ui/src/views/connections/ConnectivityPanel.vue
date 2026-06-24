@@ -19,11 +19,14 @@ import type { IngressEndpointStatusOut, MessageTone } from './types'
 const props = defineProps<{
   ingressStatus: IngressEndpointStatusOut | null
   loading: boolean
+  syncing: boolean
   message: { tone: MessageTone; text: string } | null
 }>()
 
 defineEmits<{
   (e: 'refresh'): void
+  (e: 'configure'): void
+  (e: 'sync'): void
 }>()
 
 const driverLabel = (): string => {
@@ -53,6 +56,24 @@ const driverLabel = (): string => {
         <UiButton
           size="sm"
           variant="secondary"
+          icon-left="settings"
+          @click="$emit('configure')"
+        >
+          Set up
+        </UiButton>
+        <UiButton
+          v-if="ingressStatus?.endpoint?.public_base_url"
+          size="sm"
+          variant="secondary"
+          icon-left="bolt"
+          :loading="syncing"
+          @click="$emit('sync')"
+        >
+          Sync to providers
+        </UiButton>
+        <UiButton
+          size="sm"
+          variant="ghost"
           icon-left="refresh"
           :loading="loading"
           @click="$emit('refresh')"
@@ -74,8 +95,8 @@ const driverLabel = (): string => {
       tone="info"
     >
       Inbound messaging isn’t reachable yet. Bots can still send replies, but they won’t receive new
-      messages until a public address is configured. Configuring connectivity is coming to this
-      screen — for now it’s managed through StackOS setup.
+      messages until a public address is set. Choose <strong>Set up</strong> to add one, then
+      <strong>Sync to providers</strong> to register each bot’s webhook.
     </UiCallout>
 
     <UiCard
