@@ -59,18 +59,31 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
   const base = `/projects/${projectId}`
   return [
     {
-      key: 'project-work',
-      label: 'Work',
+      key: 'operate',
+      label: 'Operate',
       items: [
-        { key: 'overview', label: 'Overview', to: `${base}/overview`, icon: 'grid' },
-        { key: 'tasks', label: 'Tasks', to: `${base}/tasks`, icon: 'tasks' },
-        { key: 'runs', label: 'Runs', to: `${base}/runs`, matchPrefix: true, icon: 'runs' },
+        { key: 'home', label: 'Home', to: base, icon: 'home' },
+        { key: 'inbox', label: 'Inbox', to: `${base}/inbox`, icon: 'inbox' },
+        { key: 'tasks', label: 'Work', to: `${base}/tasks`, matchPrefix: true, icon: 'tasks' },
+        { key: 'activity', label: 'Activity', to: `${base}/activity`, icon: 'list' },
+        { key: 'setup', label: 'Setup', to: `${base}/setup`, icon: 'settings' },
       ],
     },
     {
-      key: 'workflow-ops',
-      label: 'Workflows',
+      key: 'configure',
+      label: 'Configure',
       items: [
+        { key: 'connections', label: 'Connections', to: `${base}/connections`, icon: 'link' },
+        { key: 'schedules', label: 'Automation', to: `${base}/schedules`, icon: 'calendar' },
+        { key: 'cost-budget', label: 'Spend', to: `${base}/cost-budget`, icon: 'banknotes' },
+        { key: 'plugins', label: 'Plugins', to: `${base}/plugins`, icon: 'puzzle' },
+      ],
+    },
+    {
+      key: 'developer',
+      label: 'Developer',
+      items: [
+        { key: 'runs', label: 'Runs', to: `${base}/runs`, matchPrefix: true, icon: 'runs' },
         {
           key: 'workflow-templates',
           label: 'Workflow Library',
@@ -78,48 +91,15 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
           icon: 'library',
         },
         { key: 'agent-presets', label: 'Agent Presets', to: `${base}/agent-presets`, icon: 'users' },
-        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests`, icon: 'inbox' },
-      ],
-    },
-    {
-      key: 'project-data',
-      label: 'Knowledge',
-      items: [
-        { key: 'project-data', label: 'Project Data', to: `${base}/data`, icon: 'database' },
-        { key: 'resources', label: 'Resources', to: `${base}/resources`, icon: 'folder' },
-      ],
-    },
-    {
-      key: 'integrations',
-      label: 'Integrations',
-      items: [
-        { key: 'connections', label: 'Connections', to: `${base}/connections`, icon: 'link' },
-        { key: 'plugins', label: 'Plugins', to: `${base}/plugins`, icon: 'puzzle' },
+        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests`, icon: 'forward' },
         { key: 'capabilities', label: 'Capabilities', to: `${base}/capabilities`, icon: 'chip' },
-      ],
-    },
-    {
-      key: 'system',
-      label: 'System',
-      items: [
         { key: 'operations', label: 'Operations', to: `${base}/operations`, icon: 'terminal' },
         { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls`, icon: 'bolt' },
+        { key: 'resources', label: 'Resources', to: `${base}/resources`, icon: 'folder' },
+        { key: 'project-data', label: 'Project Data', to: `${base}/data`, icon: 'database' },
       ],
     },
   ]
-}
-
-export function setupNavSection(projectId: number): StackOsNavSection {
-  const base = `/projects/${projectId}`
-  return {
-    key: 'project-setup',
-    label: 'Project Setup',
-    items: [
-      { key: 'setup', label: 'Setup Status', to: `${base}/setup`, icon: 'wrench' },
-      { key: 'schedules', label: 'Schedules', to: `${base}/schedules`, icon: 'calendar' },
-      { key: 'cost-budget', label: 'Cost & Budget', to: `${base}/cost-budget`, icon: 'banknotes' },
-    ],
-  }
 }
 
 /** Decorative icon for a plugin-contributed nav section, by slug. */
@@ -143,15 +123,13 @@ export function projectNavSections(
   projectId: number,
   plugins: SchemaPluginOut[],
 ): StackOsNavSection[] {
-  const [workSection, workflowSection, ...supportSections] = coreNavSections(projectId)
+  const [operate, configure, developer] = coreNavSections(projectId)
   const pluginSections = pluginContributionSections(projectId, plugins)
-  return [
-    workSection,
-    workflowSection,
-    ...pluginSections,
-    ...supportSections,
-    setupNavSection(projectId),
-  ].filter((section): section is StackOsNavSection => Boolean(section?.items.length))
+  // Operate + Configure lead; plugin lanes sit between config and the demoted
+  // Developer (audit/registry) group.
+  return [operate, configure, ...pluginSections, developer].filter(
+    (section): section is StackOsNavSection => Boolean(section?.items.length),
+  )
 }
 
 export function pluginContributionSections(

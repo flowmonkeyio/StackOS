@@ -41,7 +41,7 @@ const titleText = computed(() => props.title ?? project.value?.name ?? 'Project'
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
   {
     label: project.value?.name ?? `Project ${props.projectId}`,
-    to: `/projects/${props.projectId}/overview`,
+    to: `/projects/${props.projectId}`,
   },
   ...props.breadcrumbs,
 ])
