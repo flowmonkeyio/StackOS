@@ -7,12 +7,13 @@ import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
+  UiAdvancedJsonPanel,
   UiBadge,
   UiButton,
   UiCallout,
   UiCheckbox,
+  UiCountBadge,
   UiFormField,
-  UiJsonBlock,
   UiMetadataStrip,
   UiMetricCard,
   UiPageShell,
@@ -217,16 +218,6 @@ function resetFilters(): void {
   void fetchRequests()
 }
 
-function attentionTone(status: AgentRequestAttentionStatus): 'neutral' | 'accent' | 'success' {
-  if (status === 'unread') return 'accent'
-  if (status === 'archived') return 'neutral'
-  return 'success'
-}
-
-function requestStatusKind(_status: AgentRequestStatus): 'job' {
-  return 'job'
-}
-
 function agentRequestCoreMetadata(request: AgentRequestOut) {
   const source = [request.source_provider, request.source_kind].filter(Boolean).join(' / ')
   return [
@@ -282,7 +273,19 @@ onMounted(() => {
       title="Agent requests"
       description="Generic claimable queue state for agents, scripts, triggers, and project-local tooling."
       :breadcrumbs="[{ label: 'Agent requests' }]"
-    />
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading"
+          @click="fetchRequests()"
+        >
+          Refresh
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
     <UiCallout
       v-if="error"
@@ -292,10 +295,26 @@ onMounted(() => {
     </UiCallout>
 
     <div class="grid gap-3 md:grid-cols-4">
-      <UiMetricCard label="Loaded" :value="rows.length" density="compact" />
-      <UiMetricCard label="New" :value="loadedNew" density="compact" />
-      <UiMetricCard label="Claimed" :value="loadedClaimed" density="compact" />
-      <UiMetricCard label="Unread" :value="loadedUnread" density="compact" />
+      <UiMetricCard
+        label="Loaded"
+        :value="rows.length"
+        density="compact"
+      />
+      <UiMetricCard
+        label="New"
+        :value="loadedNew"
+        density="compact"
+      />
+      <UiMetricCard
+        label="Claimed"
+        :value="loadedClaimed"
+        density="compact"
+      />
+      <UiMetricCard
+        label="Unread"
+        :value="loadedUnread"
+        density="compact"
+      />
     </div>
 
     <UiPanel
@@ -325,10 +344,12 @@ onMounted(() => {
         </div>
         <div class="flex items-end justify-start md:justify-end">
           <UiButton
-            icon-left="rotate-ccw"
+            variant="secondary"
+            size="sm"
+            icon-left="x"
             @click="resetFilters"
           >
-            Reset
+            Reset filters
           </UiButton>
         </div>
       </div>
@@ -337,11 +358,17 @@ onMounted(() => {
     <section aria-label="Agent request queue">
       <UiSectionHeader
         title="Queue"
-        as="h3"
+        as="h2"
       >
         <template #actions>
-          <UiBadge>{{ totalEstimate }} total</UiBadge>
-          <UiBadge>{{ loadedTerminal }} terminal loaded</UiBadge>
+          <span class="inline-flex items-center gap-1.5 text-xs text-fg-muted">
+            <UiCountBadge :value="totalEstimate" />
+            total
+          </span>
+          <span class="inline-flex items-center gap-1.5 text-xs text-fg-muted">
+            <UiCountBadge :value="loadedTerminal" />
+            terminal loaded
+          </span>
         </template>
       </UiSectionHeader>
       <DataTable
@@ -358,7 +385,9 @@ onMounted(() => {
       >
         <template #cell:title="{ row }">
           <div class="max-w-xl">
-            <p class="truncate font-medium text-fg-strong">{{ row.title }}</p>
+            <p class="truncate font-medium text-fg-strong">
+              {{ row.title }}
+            </p>
             <p
               v-if="row.body_preview"
               class="mt-1 line-clamp-2 text-xs text-fg-muted"
@@ -369,25 +398,27 @@ onMounted(() => {
         </template>
         <template #cell:status="{ value }">
           <StatusBadge
+            domain="agentRequest"
             :status="String(value)"
-            :kind="requestStatusKind(String(value) as AgentRequestStatus)"
-            :small="true"
+            small
           />
         </template>
         <template #cell:attention_status="{ value }">
-          <UiBadge :tone="attentionTone(value as AgentRequestAttentionStatus)">
-            {{ value }}
-          </UiBadge>
+          <StatusBadge
+            domain="attention"
+            :status="String(value)"
+            small
+          />
         </template>
         <template #cell:source_provider="{ row }">
           <span class="flex flex-wrap gap-1">
-            <UiBadge v-if="row.source_provider">{{ row.source_provider }}</UiBadge>
             <UiBadge
-              v-if="row.source_kind"
-              tone="accent"
+              v-if="row.source_provider"
+              variant="outline"
             >
-              {{ row.source_kind }}
+              {{ row.source_provider }}
             </UiBadge>
+            <UiBadge v-if="row.source_kind">{{ row.source_kind }}</UiBadge>
             <span
               v-if="!row.source_provider && !row.source_kind"
               class="text-fg-muted"
@@ -421,13 +452,15 @@ onMounted(() => {
               Request #{{ selectedRequest.id }}
             </h2>
             <StatusBadge
+              domain="agentRequest"
               :status="selectedRequest.status"
-              :kind="requestStatusKind(selectedRequest.status)"
-              :small="true"
+              small
             />
-            <UiBadge :tone="attentionTone(selectedRequest.attention_status)">
-              {{ selectedRequest.attention_status }}
-            </UiBadge>
+            <StatusBadge
+              domain="attention"
+              :status="selectedRequest.attention_status"
+              small
+            />
           </div>
           <p
             :id="descriptionId"
@@ -443,7 +476,9 @@ onMounted(() => {
         class="space-y-3"
       >
         <div>
-          <p class="text-sm font-semibold text-fg-strong">{{ selectedRequest.title }}</p>
+          <p class="text-sm font-semibold text-fg-strong">
+            {{ selectedRequest.title }}
+          </p>
           <p
             v-if="selectedRequest.body_preview"
             class="mt-1 whitespace-pre-wrap text-sm text-fg-muted"
@@ -468,12 +503,11 @@ onMounted(() => {
           />
         </details>
 
-        <UiJsonBlock
+        <UiAdvancedJsonPanel
+          title="Metadata"
+          summary="Raw request metadata"
           :data="sanitizeForDisplay(selectedRequest.metadata_json ?? {})"
-          density="compact"
           max-height="22rem"
-          wrap
-          aria-label="Agent request metadata JSON"
         />
       </div>
     </InspectableDetailDrawer>

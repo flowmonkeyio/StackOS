@@ -5,13 +5,13 @@ import { MiniMap } from '@vue-flow/minimap'
 import { VueFlow } from '@vue-flow/core'
 import type { EdgeMouseEvent, NodeMouseEvent } from '@vue-flow/core'
 
+import StatusBadge from '@/components/StatusBadge.vue'
 import { UiBadge, UiButton } from '@/components/ui'
 import { resolveStatus, type Tone } from '@/design/status'
 import type { TrackerFlowModel } from '@/lib/task-tracker/graphModel'
 import type { TrackerStatus, TrackerTicket } from '@/lib/task-tracker/types'
 
 import TicketGraphNode from './TicketGraphNode.vue'
-import TrackerStatusBadge from './TrackerStatusBadge.vue'
 import type { GraphBlockFilter } from './viewTypes'
 
 import '@vue-flow/core/dist/style.css'
@@ -179,8 +179,9 @@ function statusTone(status: TrackerStatus): Tone {
               <p class="t-overline text-fg-subtle">
                 {{ selectionLabel }}
               </p>
-              <TrackerStatusBadge
+              <StatusBadge
                 v-if="selectedTicket"
+                domain="tracker"
                 :status="selectedTicket.status"
               />
             </div>

@@ -9,7 +9,7 @@ import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { AttentionItemRow, ProjectPageHeader } from '@/components/domain'
-import { UiButton, UiCard, UiEmptyState, UiPageShell, UiSkeleton } from '@/components/ui'
+import { UiButton, UiCard, UiCountBadge, UiEmptyState, UiPageShell, UiSkeleton } from '@/components/ui'
 import { usePolling } from '@/composables/usePolling'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 import { useAttentionStore, type AttentionItem, type AttentionKind } from '@/stores/attention'
@@ -126,9 +126,7 @@ const updatedLabel = computed(() =>
             <h2 class="t-h3 text-fg-strong">
               {{ group.label }}
             </h2>
-            <span
-              class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-bg-surface-alt px-1.5 text-2xs font-semibold text-fg-muted tabular-nums"
-            >{{ group.items.length }}</span>
+            <UiCountBadge :value="group.items.length" />
           </div>
         </template>
         <div class="divide-y divide-border-subtle">

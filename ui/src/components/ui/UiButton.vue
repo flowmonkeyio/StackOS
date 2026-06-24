@@ -102,19 +102,46 @@ const sizeClass = computed(
     ]"
     @click="(ev: MouseEvent) => !isDisabled && $emit('click', ev)"
   >
-    <span v-if="loading" class="ui-button__spinner" aria-hidden="true">
-      <UiIcon name="loader" class="ui-button__icon animate-spin" />
+    <span
+      v-if="loading"
+      class="ui-button__spinner"
+      aria-hidden="true"
+    >
+      <UiIcon
+        name="loader"
+        class="ui-button__icon animate-spin"
+      />
     </span>
-    <slot v-else name="iconLeft">
-      <UiIcon v-if="hasIcon(iconLeft)" :name="iconLeft" class="ui-button__icon" />
+    <slot
+      v-else
+      name="iconLeft"
+    >
+      <UiIcon
+        v-if="hasIcon(iconLeft)"
+        :name="iconLeft"
+        class="ui-button__icon"
+      />
     </slot>
-    <span v-if="!iconOnly" class="ui-button__label">
+    <span
+      v-if="!iconOnly"
+      class="ui-button__label"
+    >
       <slot />
     </span>
-    <slot v-if="!iconOnly" name="iconRight">
-      <UiIcon v-if="hasIcon(iconRight)" :name="iconRight" class="ui-button__icon" />
+    <slot
+      v-if="!iconOnly"
+      name="iconRight"
+    >
+      <UiIcon
+        v-if="hasIcon(iconRight)"
+        :name="iconRight"
+        class="ui-button__icon"
+      />
     </slot>
-    <span v-if="iconOnly && !loading" class="ui-button__icon">
+    <span
+      v-if="iconOnly && !loading"
+      class="ui-button__icon"
+    >
       <slot />
     </span>
   </component>

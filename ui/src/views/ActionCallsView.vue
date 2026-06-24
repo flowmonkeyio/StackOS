@@ -16,14 +16,15 @@ import {
   UiBadge,
   UiButton,
   UiCallout,
+  UiCountBadge,
   UiFormField,
   UiInput,
   UiMetricCard,
   UiPageShell,
-  UiPanel,
   UiSectionHeader,
   UiSegmentedControl,
   UiSelect,
+  UiToolbar,
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import { apiFetch, formatApiError } from '@/lib/client'
@@ -99,7 +100,6 @@ const columns: DataTableColumn<SchemaActionCallAuditOut>[] = [
   { key: 'id', label: 'Call', widthClass: 'w-80' },
   { key: 'status', label: 'Status', widthClass: 'w-24' },
   { key: 'provider_key', label: 'Provider', widthClass: 'w-40' },
-  { key: 'credential_ref', label: 'Credential', widthClass: 'w-44' },
   { key: 'run_id', label: 'Run', widthClass: 'w-32' },
   {
     key: 'created_at',
@@ -251,8 +251,9 @@ onMounted(load)
       <template #actions>
         <UiButton
           variant="secondary"
-          icon-left="rotate-ccw"
-          :disabled="loading"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading"
           @click="fetchCalls()"
         >
           Refresh
@@ -323,50 +324,55 @@ onMounted(load)
       </button>
     </div>
 
-    <UiPanel
+    <UiToolbar
+      variant="sunken"
       aria-label="Action call filters"
-      class="p-4"
+      density="comfortable"
     >
-      <UiSegmentedControl
-        :model-value="statusFilter"
-        :options="statusOptions"
-        label="Action call status filter"
-        @select="setStatus"
-      />
-      <div class="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-[220px_320px_160px_auto]">
-        <UiFormField label="Plugin">
-          <UiSelect
-            :model-value="pluginFilter"
-            :options="pluginOptions"
-            @update:model-value="setPlugin"
-          />
-        </UiFormField>
-        <UiFormField label="Action">
-          <UiSelect
-            :model-value="actionFilter"
-            :options="actionOptions"
-            @update:model-value="setAction"
-          />
-        </UiFormField>
-        <UiFormField label="Run id">
-          <UiInput
-            type="number"
-            min="1"
-            :model-value="runFilter"
-            @update:model-value="setRun"
-            @change="applyRunFilter"
-          />
-        </UiFormField>
-        <div class="flex items-end">
-          <UiButton
-            icon-left="rotate-ccw"
-            @click="resetFilters"
-          >
-            Reset
-          </UiButton>
+      <div class="flex w-full flex-col gap-3">
+        <UiSegmentedControl
+          :model-value="statusFilter"
+          :options="statusOptions"
+          label="Action call status filter"
+          @select="setStatus"
+        />
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-[220px_320px_160px_auto]">
+          <UiFormField label="Plugin">
+            <UiSelect
+              :model-value="pluginFilter"
+              :options="pluginOptions"
+              @update:model-value="setPlugin"
+            />
+          </UiFormField>
+          <UiFormField label="Action">
+            <UiSelect
+              :model-value="actionFilter"
+              :options="actionOptions"
+              @update:model-value="setAction"
+            />
+          </UiFormField>
+          <UiFormField label="Run">
+            <UiInput
+              type="number"
+              min="1"
+              :model-value="runFilter"
+              @update:model-value="setRun"
+              @change="applyRunFilter"
+            />
+          </UiFormField>
+          <div class="flex items-end">
+            <UiButton
+              variant="secondary"
+              size="sm"
+              icon-left="refresh"
+              @click="resetFilters"
+            >
+              Reset
+            </UiButton>
+          </div>
         </div>
       </div>
-    </UiPanel>
+    </UiToolbar>
 
     <section aria-label="Action call audit ledger">
       <UiSectionHeader
@@ -375,7 +381,7 @@ onMounted(load)
         as="h3"
       >
         <template #actions>
-          <UiBadge>{{ rows.length }}</UiBadge>
+          <UiCountBadge :value="rows.length" />
         </template>
       </UiSectionHeader>
       <DataTable
@@ -394,7 +400,9 @@ onMounted(load)
           <div class="min-w-0">
             <div class="flex min-w-0 items-center gap-2">
               <span class="font-mono text-xs text-fg-muted">#{{ row.id }}</span>
-              <UiBadge tone="accent">{{ row.plugin_slug }}</UiBadge>
+              <UiBadge tone="accent">
+                {{ row.plugin_slug }}
+              </UiBadge>
             </div>
             <div class="mt-1 truncate font-mono text-xs text-fg-default">
               {{ callTitle(row) }}
@@ -410,12 +418,13 @@ onMounted(load)
         </template>
         <template #cell:provider_key="{ row }">
           <div class="min-w-0 text-sm">
-            <div class="truncate">{{ row.provider_key ?? '-' }}</div>
-            <div class="truncate text-xs text-fg-muted">{{ row.connector_key ?? '-' }}</div>
+            <div class="truncate">
+              {{ row.provider_key ?? '-' }}
+            </div>
+            <div class="truncate text-xs text-fg-muted">
+              {{ row.connector_key ?? '-' }}
+            </div>
           </div>
-        </template>
-        <template #cell:credential_ref="{ value }">
-          <span class="block max-w-[16rem] truncate font-mono text-xs">{{ value ?? '-' }}</span>
         </template>
         <template #cell:run_id="{ row }">
           <span class="text-xs text-fg-muted">{{ runLabel(row) }}</span>

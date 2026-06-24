@@ -9,10 +9,13 @@ import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
 import ResourceViewRenderer from '@/components/renderers/ResourceViewRenderer.vue'
 import {
+  UiAdvancedJsonPanel,
   UiBadge,
+  UiButton,
   UiCallout,
+  UiCountBadge,
+  UiDescriptionList,
   UiFormField,
-  UiJsonBlock,
   UiPageShell,
   UiPanel,
   UiSectionHeader,
@@ -195,7 +198,19 @@ onBeforeRouteUpdate((to) => {
       :title="pageTitle"
       :description="pageDescription"
       :breadcrumbs="[{ label: breadcrumbLabel }]"
-    />
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading"
+          @click="loadFor()"
+        >
+          Refresh
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
     <UiCallout
       v-if="error"
@@ -220,10 +235,19 @@ onBeforeRouteUpdate((to) => {
             @update:model-value="onResource"
           />
         </UiFormField>
-        <div class="flex items-end gap-2">
-          <UiBadge>{{ resources.length }} schemas</UiBadge>
-          <UiBadge>{{ records.length }} records</UiBadge>
-          <UiBadge>{{ artifacts.length }} artifacts</UiBadge>
+        <div class="flex flex-wrap items-end gap-3 text-xs text-fg-muted">
+          <span class="inline-flex items-center gap-1.5">
+            <UiCountBadge :value="resources.length" />
+            schemas
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <UiCountBadge :value="records.length" />
+            records
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <UiCountBadge :value="artifacts.length" />
+            artifacts
+          </span>
         </div>
       </div>
     </UiPanel>
@@ -231,10 +255,10 @@ onBeforeRouteUpdate((to) => {
     <section aria-label="Resource schemas">
       <UiSectionHeader
         title="Schemas"
-        as="h3"
+        as="h2"
       >
         <template #actions>
-          <UiBadge>{{ resources.length }}</UiBadge>
+          <UiCountBadge :value="resources.length" />
         </template>
       </UiSectionHeader>
       <DataTable
@@ -248,7 +272,9 @@ onBeforeRouteUpdate((to) => {
         @row-click="openResource"
       >
         <template #cell:plugin_slug="{ value }">
-          <UiBadge tone="accent">{{ value }}</UiBadge>
+          <UiBadge variant="outline">
+            {{ value }}
+          </UiBadge>
         </template>
       </DataTable>
     </section>
@@ -256,10 +282,10 @@ onBeforeRouteUpdate((to) => {
     <section aria-label="Resource records">
       <UiSectionHeader
         title="Records"
-        as="h3"
+        as="h2"
       >
         <template #actions>
-          <UiBadge>{{ records.length }}</UiBadge>
+          <UiCountBadge :value="records.length" />
         </template>
       </UiSectionHeader>
       <DataTable
@@ -273,7 +299,9 @@ onBeforeRouteUpdate((to) => {
         @row-click="openRecord"
       >
         <template #cell:plugin_slug="{ value }">
-          <UiBadge tone="accent">{{ value }}</UiBadge>
+          <UiBadge variant="outline">
+            {{ value }}
+          </UiBadge>
         </template>
       </DataTable>
     </section>
@@ -285,10 +313,10 @@ onBeforeRouteUpdate((to) => {
     >
       <UiSectionHeader
         title="Artifacts"
-        as="h3"
+        as="h2"
       >
         <template #actions>
-          <UiBadge>{{ artifacts.length }}</UiBadge>
+          <UiCountBadge :value="artifacts.length" />
         </template>
       </UiSectionHeader>
       <div class="grid gap-3 xl:grid-cols-2">
@@ -316,79 +344,63 @@ onBeforeRouteUpdate((to) => {
         <UiSectionHeader
           title="Schema details"
           :description="selectedResource.description"
+          as="h2"
         >
           <template #actions>
-            <UiBadge tone="accent">{{ selectedResource.plugin_slug }}</UiBadge>
-            <UiBadge>{{ selectedResource.key }}</UiBadge>
+            <UiBadge variant="outline">
+              {{ selectedResource.plugin_slug }}
+            </UiBadge>
+            <UiBadge variant="outline">
+              {{ selectedResource.key }}
+            </UiBadge>
           </template>
         </UiSectionHeader>
 
-        <dl class="grid gap-3 text-sm md:grid-cols-2">
-          <div class="min-w-0">
-            <dt class="text-xs text-fg-muted">Name</dt>
-            <dd class="truncate font-medium text-fg-strong">{{ selectedResource.name }}</dd>
-          </div>
-          <div class="min-w-0">
-            <dt class="text-xs text-fg-muted">Key</dt>
-            <dd class="truncate font-mono text-xs">{{ selectedResource.key }}</dd>
-          </div>
-        </dl>
+        <UiDescriptionList
+          layout="grid"
+          :columns="2"
+          density="compact"
+          :items="[
+            { label: 'Name', value: selectedResource.name },
+            { label: 'Key', value: selectedResource.key, mono: true },
+          ]"
+          aria-label="Schema identity"
+        />
 
-        <details class="rounded-md border border-subtle bg-bg-surface">
-          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
-            Schema JSON
-          </summary>
-          <div class="border-t border-subtle p-3">
-            <UiJsonBlock
-              :data="selectedSchemaJson"
-              density="compact"
-              max-height="16rem"
-              wrap
-            />
-          </div>
-        </details>
+        <UiAdvancedJsonPanel
+          title="Schema JSON"
+          summary="Field definitions"
+          :data="selectedSchemaJson"
+          max-height="16rem"
+        />
 
-        <details class="rounded-md border border-subtle bg-bg-surface">
-          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
-            UI schema JSON
-          </summary>
-          <div class="border-t border-subtle p-3">
-            <UiJsonBlock
-              v-if="selectedUiSchemaJson !== null"
-              :data="selectedUiSchemaJson"
-              density="compact"
-              max-height="14rem"
-              wrap
-            />
-            <p
-              v-else
-              class="text-sm text-fg-muted"
-            >
-              No UI schema configured for this resource.
-            </p>
-          </div>
-        </details>
+        <UiAdvancedJsonPanel
+          v-if="selectedUiSchemaJson !== null"
+          title="UI schema JSON"
+          summary="Form/display hints"
+          :data="selectedUiSchemaJson"
+          max-height="14rem"
+        />
+        <p
+          v-else
+          class="text-sm text-fg-muted"
+        >
+          No UI schema configured for this resource.
+        </p>
 
-        <details class="rounded-md border border-subtle bg-bg-surface">
-          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
-            Config JSON
-          </summary>
-          <div class="border-t border-subtle p-3">
-            <UiJsonBlock
-              v-if="selectedConfigJson !== null"
-              :data="selectedConfigJson"
-              density="compact"
-              max-height="14rem"
-              wrap
-            />
-            <p
-              v-else
-              class="text-sm text-fg-muted"
-            >
-              No resource config configured for this resource.
-            </p>
-          </div>
-        </details>
+        <UiAdvancedJsonPanel
+          v-if="selectedConfigJson !== null"
+          title="Config JSON"
+          summary="Resource config"
+          :data="selectedConfigJson"
+          max-height="14rem"
+        />
+        <p
+          v-else
+          class="text-sm text-fg-muted"
+        >
+          No resource config configured for this resource.
+        </p>
       </div>
 
       <ResourceViewRenderer

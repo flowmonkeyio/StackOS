@@ -138,8 +138,15 @@ const placementClass = computed(
 </script>
 
 <template>
-  <div ref="root" class="ui-dropdown relative inline-block">
-    <slot name="trigger" :open="open" :toggle="onTriggerClick" />
+  <div
+    ref="root"
+    class="ui-dropdown relative inline-block"
+  >
+    <slot
+      name="trigger"
+      :open="open"
+      :toggle="onTriggerClick"
+    />
     <transition
       enter-active-class="transition duration-fast ease-enter"
       enter-from-class="opacity-0 scale-[0.98]"
@@ -152,14 +159,17 @@ const placementClass = computed(
         tabindex="-1"
         role="menu"
         :aria-label="ariaLabel"
-        @vue:mounted="onPanelMounted"
         :class="[
           'ui-dropdown__panel absolute z-dropdown min-w-[180px] p-1 rounded-lg border border-default bg-bg-surface shadow-md focus:outline-none',
           placementClass,
         ]"
         :style="{ width: typeof width === 'number' ? width + 'px' : width }"
+        @vue:mounted="onPanelMounted"
       >
-        <template v-for="(item, i) in items" :key="item.key">
+        <template
+          v-for="(item, i) in items"
+          :key="item.key"
+        >
           <div
             v-if="item.as === 'separator'"
             role="separator"
@@ -199,12 +209,21 @@ const placementClass = computed(
               v-if="$slots.icon || hasIcon(item.icon)"
               :class="['shrink-0', item.tone !== 'danger' && !item.disabled && 'text-fg-muted']"
             >
-              <slot name="icon" :item="item">
-                <UiIcon :name="item.icon" class="ui-dropdown__icon h-4 w-4" />
+              <slot
+                name="icon"
+                :item="item"
+              >
+                <UiIcon
+                  :name="item.icon"
+                  class="ui-dropdown__icon h-4 w-4"
+                />
               </slot>
             </span>
             <span class="flex-1 truncate">{{ item.label }}</span>
-            <span v-if="item.shortcut" class="text-2xs text-fg-subtle font-mono">{{
+            <span
+              v-if="item.shortcut"
+              class="text-2xs text-fg-subtle font-mono"
+            >{{
               item.shortcut
             }}</span>
           </component>

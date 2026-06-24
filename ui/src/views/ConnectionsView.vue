@@ -4,13 +4,8 @@ import { storeToRefs } from 'pinia'
 import { onBeforeRouteUpdate, useRoute } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import {
-  UiButton,
-  UiCallout,
-  UiMetricCard,
-  UiPageShell,
-  UiSegmentedControl,
-} from '@/components/ui'
+import TabBar from '@/components/TabBar.vue'
+import { UiButton, UiCallout, UiMetricCard, UiPageShell } from '@/components/ui'
 import type { SchemaAuthProviderOut } from '@/api'
 import { useConnectionForm } from '@/composables/useConnectionForm'
 import { formatApiError } from '@/lib/client'
@@ -218,23 +213,23 @@ const connectedServiceCount = computed(
   () => new Set(connectedConnections.value.map((connection) => connection.provider_key)).size,
 )
 
-const connectionSectionOptions = computed(() => [
-  { key: 'services', label: `Services ${connections.value.length}` },
+const connectionSectionTabs = computed(() => [
+  { key: 'services', label: 'Services', count: connections.value.length },
   {
     key: 'communications',
-    label: `Comms ${
+    label: 'Communications',
+    count:
       communicationProfiles.value.length +
       communicationSurfaces.value.length +
       communicationTargets.value.length +
-      (ingressStatus.value?.routes?.length ?? 0)
-    }`,
+      (ingressStatus.value?.routes?.length ?? 0),
   },
-  { key: 'telegram', label: `Telegram ${telegramProfiles.value.length}` },
+  { key: 'telegram', label: 'Telegram', count: telegramProfiles.value.length },
   { key: 'diagnostics', label: 'Diagnostics' },
 ])
 
-function setActiveSection(value: string | number): void {
-  activeSection.value = String(value) as ConnectionSection
+function setActiveSection(value: string): void {
+  activeSection.value = value as ConnectionSection
 }
 
 async function load(): Promise<void> {
@@ -681,11 +676,20 @@ onBeforeRouteUpdate((to) => {
       <template #actions>
         <UiButton
           variant="primary"
+          size="sm"
           icon-left="plus"
           @click="openAddConnection()"
         >
           Add connection
         </UiButton>
+      </template>
+      <template #tabs>
+        <TabBar
+          :tabs="connectionSectionTabs"
+          :active-key="activeSection"
+          aria-label="Connection page sections"
+          @change="setActiveSection"
+        />
       </template>
     </ProjectPageHeader>
 
@@ -714,19 +718,10 @@ onBeforeRouteUpdate((to) => {
       />
     </div>
 
-    <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-      <UiSegmentedControl
-        :model-value="activeSection"
-        :options="connectionSectionOptions"
-        label="Connection page sections"
-        size="md"
-        @select="setActiveSection"
-      />
-      <p class="text-xs text-fg-subtle">
-        Use this page for local-admin setup and read-only inspection. Agents receive safe refs,
-        not secrets.
-      </p>
-    </div>
+    <p class="text-xs text-fg-subtle">
+      Use this page for local-admin setup and read-only inspection. Agents receive safe refs, not
+      secrets.
+    </p>
 
     <ConnectedServicesPanel
       v-show="activeSection === 'services'"

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import type { SchemaContextItemOut, SchemaContextQueryOut } from '@/api'
-import { UiBadge, UiJsonBlock, UiPanel } from '@/components/ui'
+import { UiBadge, UiCard, UiCountBadge, UiJsonSection } from '@/components/ui'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 
 const props = withDefaults(defineProps<{
@@ -20,11 +20,19 @@ const sources = computed(() => props.query?.sources ?? Array.from(new Set(rows.v
 </script>
 
 <template>
-  <UiPanel :aria-label="title">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <h3 class="t-h3 text-fg-strong">
-        {{ title }}
-      </h3>
+  <UiCard
+    section
+    :padded="false"
+    class="overflow-hidden"
+    :aria-label="title"
+  >
+    <template #header>
+      <div class="flex min-w-0 items-center gap-2">
+        <h3 class="t-h3 text-fg-strong">
+          {{ title }}
+        </h3>
+        <UiCountBadge :value="rows.length" />
+      </div>
       <div
         v-if="sources.length"
         class="flex shrink-0 flex-wrap items-center justify-end gap-1.5"
@@ -37,24 +45,24 @@ const sources = computed(() => props.query?.sources ?? Array.from(new Set(rows.v
           {{ source }}
         </UiBadge>
       </div>
-    </div>
+    </template>
 
     <p
       v-if="rows.length === 0"
-      class="mt-2 text-sm text-fg-muted"
+      class="px-4 py-3 text-sm text-fg-muted"
     >
       No context rows for this query.
     </p>
     <ol
       v-else
-      class="mt-3 space-y-2"
+      class="divide-y divide-border-subtle"
     >
       <li
         v-for="item in rows"
         :key="`${item.source}-${item.id}`"
-        class="rounded-md border border-subtle bg-bg-surface p-2.5"
+        class="space-y-2 px-4 py-3"
       >
-        <div class="mb-2 flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <UiBadge tone="accent">
             {{ item.source }}
           </UiBadge>
@@ -66,13 +74,12 @@ const sources = computed(() => props.query?.sources ?? Array.from(new Set(rows.v
             {{ formatDateTime(item.occurred_at) }}
           </span>
         </div>
-        <UiJsonBlock
+        <UiJsonSection
+          title="Fields"
           :data="sanitizeForDisplay(item.fields)"
-          density="compact"
           max-height="12rem"
-          wrap
         />
       </li>
     </ol>
-  </UiPanel>
+  </UiCard>
 </template>

@@ -4,11 +4,13 @@ import {
   UiButton,
   UiCallout,
   UiCard,
+  UiCountBadge,
   UiEmptyState,
-  UiIcon,
+  UiMedallion,
   UiSectionHeader,
   UiSkeleton,
 } from '@/components/ui'
+import StatusBadge from '@/components/StatusBadge.vue'
 
 import {
   commandSummary,
@@ -44,7 +46,7 @@ defineEmits<{
       as="h3"
     >
       <template #actions>
-        <UiBadge>{{ telegramProfiles.length }}</UiBadge>
+        <UiCountBadge :value="telegramProfiles.length" />
         <UiButton
           size="sm"
           variant="secondary"
@@ -94,36 +96,31 @@ defineEmits<{
     <UiCard
       v-else-if="telegramProfiles.length > 0"
       section
+      :padded="false"
+      class="overflow-hidden"
       aria-label="Telegram profile list"
     >
       <ul class="divide-y divide-border-subtle">
         <li
           v-for="profile in telegramProfiles"
           :key="profile.profile_ref"
-          class="py-3"
+          class="px-4 py-3"
         >
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div class="flex min-w-0 items-center gap-3 lg:flex-1">
-              <span
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-accent-fg"
-                aria-hidden="true"
-              >
-                <UiIcon
-                  name="chat"
-                  class="h-[18px] w-[18px]"
-                />
-              </span>
+              <UiMedallion
+                icon="chat"
+                tone="info"
+              />
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
                   <h4 class="truncate text-sm font-medium text-fg-strong">
                     {{ profile.identity.display_name || profile.key }}
                   </h4>
-                  <UiBadge
-                    :tone="profile.enabled ? 'success' : 'warning'"
-                    :dot="profile.enabled"
-                  >
-                    {{ profile.enabled ? 'enabled' : 'disabled' }}
-                  </UiBadge>
+                  <StatusBadge
+                    domain="step"
+                    :status="profile.enabled ? 'enabled' : 'disabled'"
+                  />
                   <UiBadge>{{ telegramProfileIngressMode(profile) }}</UiBadge>
                 </div>
                 <p class="mt-0.5 truncate font-mono text-2xs text-fg-subtle">
@@ -182,7 +179,7 @@ defineEmits<{
       title="No Telegram profiles configured"
       description="Create a profile for each Telegram bot identity or access boundary. Profiles are static setup; agents still decide which work to run after a trigger arrives."
       icon="chat"
-      class="rounded-lg border border-dashed border-default bg-bg-surface px-4 py-8"
+      framed
     />
   </section>
 </template>

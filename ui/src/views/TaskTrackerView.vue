@@ -939,7 +939,9 @@ onBeforeRouteUpdate((to) => {
       <template #actions>
         <UiButton
           variant="secondary"
-          :disabled="loading"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading"
           @click="load"
         >
           Refresh

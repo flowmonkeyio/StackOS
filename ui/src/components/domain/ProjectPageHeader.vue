@@ -6,6 +6,7 @@
 import { computed, onMounted } from 'vue'
 
 import StatusBadge from '@/components/StatusBadge.vue'
+import UiBadge from '@/components/ui/UiBadge.vue'
 import UiBreadcrumbs from '@/components/ui/UiBreadcrumbs.vue'
 import UiPageHeader from '@/components/ui/UiPageHeader.vue'
 import { useProjectsStore } from '@/stores/projects'
@@ -84,9 +85,25 @@ onMounted(ensureProject)
       #meta
     >
       <template v-if="showProjectMeta && project">
-        <span class="inline-flex items-center rounded-full border border-default bg-bg-surface px-2 py-0.5 font-mono text-2xs text-fg-muted">{{ project.slug }}</span>
-        <span class="inline-flex items-center rounded-full border border-default bg-bg-surface px-2 py-0.5 text-2xs text-fg-muted">{{ project.domain }}</span>
-        <span class="inline-flex items-center rounded-full border border-default bg-bg-surface px-2 py-0.5 text-2xs text-fg-muted">{{ project.locale }}</span>
+        <UiBadge
+          variant="outline"
+          size="sm"
+          class="font-mono"
+        >
+          {{ project.slug }}
+        </UiBadge>
+        <UiBadge
+          variant="outline"
+          size="sm"
+        >
+          {{ project.domain }}
+        </UiBadge>
+        <UiBadge
+          variant="outline"
+          size="sm"
+        >
+          {{ project.locale }}
+        </UiBadge>
       </template>
       <slot name="meta" />
     </template>

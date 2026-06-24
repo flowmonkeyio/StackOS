@@ -328,7 +328,7 @@ function updateCommandEnabled(index: number, value: boolean): void {
           :key="index"
           class="grid gap-3 rounded-lg border border-subtle bg-bg-surface-alt p-3"
         >
-          <div class="grid gap-3 sm:grid-cols-[minmax(8rem,12rem)_1fr_auto] sm:items-start">
+          <div class="grid gap-3 sm:grid-cols-[minmax(8rem,12rem)_1fr_auto] sm:items-end">
             <UiFormField label="Command">
               <template #default="{ id, describedBy, invalid }">
                 <UiInput
@@ -355,17 +355,14 @@ function updateCommandEnabled(index: number, value: boolean): void {
               </template>
             </UiFormField>
 
-            <div class="pt-6">
-              <UiButton
-                size="sm"
-                variant="ghost"
-                icon-left="trash"
-                class="btn-danger-quiet"
-                @click="$emit('remove-command', index)"
-              >
-                Remove
-              </UiButton>
-            </div>
+            <UiButton
+              size="sm"
+              variant="danger-ghost"
+              icon-left="trash"
+              @click="$emit('remove-command', index)"
+            >
+              Remove
+            </UiButton>
           </div>
 
           <UiFormField label="Command guidance">
@@ -439,18 +436,3 @@ function updateCommandEnabled(index: number, value: boolean): void {
     </template>
   </UiSidePanel>
 </template>
-
-<style scoped>
-/* Destructive-quiet ghost button: danger text, danger-subtle hover tint. */
-.btn-danger-quiet {
-  color: var(--color-danger-fg);
-}
-.btn-danger-quiet:hover:not(:disabled),
-.btn-danger-quiet:active:not(:disabled) {
-  color: var(--color-danger-fg);
-  background-color: var(--color-danger-subtle);
-}
-.btn-danger-quiet:disabled {
-  color: var(--color-fg-disabled);
-}
-</style>

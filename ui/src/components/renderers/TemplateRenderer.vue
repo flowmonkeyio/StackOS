@@ -15,10 +15,13 @@ import {
   UiBadge,
   UiCallout,
   UiCard,
+  UiCountBadge,
   UiDescriptionList,
   UiIcon,
   UiJsonBlock,
+  UiMetadataStrip,
 } from '@/components/ui'
+import type { UiMetadataStripItem } from '@/components/ui/UiMetadataStrip.vue'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
 
 type TemplateStep = SchemaWorkflowTemplateSpec['steps'][number]
@@ -70,62 +73,39 @@ function requirementTone(
   return 'neutral'
 }
 
-function stepContracts(step: TemplateStep): { label: string; refs: string[] }[] {
+const templateFacts = computed<UiMetadataStripItem[]>(() => [
+  { label: 'Key', value: spec.value.key, mono: true },
+  { label: 'Domain', value: spec.value.domain ?? null },
+  {
+    label: 'Origin',
+    value: props.template.summary.origin_path ?? null,
+    mono: true,
+    title: props.template.summary.origin_path ?? undefined,
+  },
+  { label: 'Source', value: props.template.summary.source },
+  { label: 'Plugin', value: props.template.summary.plugin_slug ?? null },
+  { label: 'Version', value: spec.value.version },
+])
+
+function stepContracts(step: TemplateStep): { label: string; value: string }[] {
   return [
     { label: 'Context', refs: step.context_refs ?? [] },
     { label: 'Actions', refs: step.action_refs ?? [] },
     { label: 'Approvals', refs: step.approval_refs ?? [] },
     { label: 'Outputs', refs: step.output_refs ?? [] },
-  ].filter((group) => group.refs.length > 0)
+  ]
+    .filter((group) => group.refs.length > 0)
+    .map((group) => ({ label: group.label, value: group.refs.join(', ') }))
 }
 </script>
 
 <template>
   <div class="space-y-5">
     <!-- Key facts only — the drawer header already shows the template name and description. -->
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-subtle bg-bg-surface-alt px-3 py-2">
-      <dl
-        class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-4 gap-y-1"
-        aria-label="Template facts"
-      >
-        <div class="inline-flex min-w-0 items-baseline gap-1.5">
-          <dt class="shrink-0 text-2xs font-medium text-fg-subtle">
-            Key
-          </dt>
-          <dd class="min-w-0 truncate font-mono text-xs text-fg-default">
-            {{ spec.key }}
-          </dd>
-        </div>
-        <div class="inline-flex min-w-0 items-baseline gap-1.5">
-          <dt class="shrink-0 text-2xs font-medium text-fg-subtle">
-            Domain
-          </dt>
-          <dd class="min-w-0 truncate text-sm text-fg-default">
-            {{ spec.domain ?? '—' }}
-          </dd>
-        </div>
-        <div
-          class="inline-flex min-w-0 max-w-full items-baseline gap-1.5"
-          :title="template.summary.origin_path ?? undefined"
-        >
-          <dt class="shrink-0 text-2xs font-medium text-fg-subtle">
-            Origin
-          </dt>
-          <dd class="min-w-0 truncate font-mono text-2xs text-fg-subtle">
-            {{ template.summary.origin_path ?? '—' }}
-          </dd>
-        </div>
-      </dl>
-      <div class="ml-auto flex shrink-0 items-center gap-1.5">
-        <UiBadge tone="accent">
-          {{ template.summary.source }}
-        </UiBadge>
-        <UiBadge v-if="template.summary.plugin_slug">
-          {{ template.summary.plugin_slug }}
-        </UiBadge>
-        <UiBadge>{{ spec.version }}</UiBadge>
-      </div>
-    </div>
+    <UiMetadataStrip
+      :items="templateFacts"
+      aria-label="Template facts"
+    />
 
     <UiCard section>
       <template #header>
@@ -487,20 +467,14 @@ function stepContracts(step: TemplateStep): { label: string; refs: string[] }[] 
               />
               Contracts
             </summary>
-            <dl class="grid gap-x-4 gap-y-1.5 border-t border-subtle px-2.5 py-2 sm:grid-cols-2">
-              <div
-                v-for="group in stepContracts(step)"
-                :key="group.label"
-                class="min-w-0"
-              >
-                <dt class="text-2xs font-medium text-fg-muted">
-                  {{ group.label }}
-                </dt>
-                <dd class="break-words font-mono text-2xs text-fg-default">
-                  {{ group.refs.join(', ') }}
-                </dd>
-              </div>
-            </dl>
+            <UiDescriptionList
+              class="border-t border-subtle px-2.5 py-2"
+              layout="grid"
+              :columns="2"
+              density="compact"
+              :items="stepContracts(step).map((group) => ({ ...group, mono: true }))"
+              :aria-label="`${step.title} contracts`"
+            />
           </details>
         </li>
       </ol>
@@ -577,10 +551,12 @@ function stepContracts(step: TemplateStep): { label: string; refs: string[] }[] 
 
     <UiCard section>
       <template #header>
-        <h3 class="t-h3 text-fg-strong">
-          Context
-        </h3>
-        <UiBadge>{{ contextRequirements.length }}</UiBadge>
+        <div class="flex min-w-0 items-center gap-2">
+          <h3 class="t-h3 text-fg-strong">
+            Context
+          </h3>
+          <UiCountBadge :value="contextRequirements.length" />
+        </div>
       </template>
 
       <p

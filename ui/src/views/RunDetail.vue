@@ -5,23 +5,29 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
-import KvList from '@/components/KvList.vue'
 import RunPlanRenderer from '@/components/renderers/RunPlanRenderer.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
   UiAdvancedJsonPanel,
-  UiBadge,
+  UiCallout,
   UiCard,
+  UiCountBadge,
+  UiDescriptionList,
   UiEmptyState,
-  UiJsonBlock,
   UiSectionHeader,
+  UiSkeleton,
 } from '@/components/ui'
+import type { DLItem } from '@/components/ui/UiDescriptionList.vue'
 import { useRunsStore, type Run } from '@/stores/runs'
-import { useToastsStore } from '@/stores/toasts'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { resolveStatus } from '@/design/status'
-import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
-import { newestFirst } from '@/lib/stackos/time'
+import { sanitizeForDisplay } from '@/lib/stackos/json'
+import {
+  formatAbsoluteDateTime,
+  formatDurationBetween,
+  formatRelativeDateTime,
+  newestFirst,
+} from '@/lib/stackos/time'
 import type {
   SchemaActionCallAuditOut,
   SchemaArtifactOut,
@@ -47,7 +53,6 @@ const props = defineProps<{
 }>()
 
 const runsStore = useRunsStore()
-const toasts = useToastsStore()
 
 const run = ref<Run | null>(null)
 const children = ref<Run[]>([])
@@ -60,9 +65,11 @@ const learnings = ref<SchemaLearningOut[]>([])
 const experiments = ref<SchemaExperimentOut[]>([])
 const artifacts = ref<SchemaArtifactOut[]>([])
 const loading = ref(false)
+const error = ref<string | null>(null)
 
 async function load(): Promise<void> {
   loading.value = true
+  error.value = null
   try {
     run.value = await runsStore.get(props.runId)
     const [
@@ -114,38 +121,33 @@ async function load(): Promise<void> {
     experiments.value = newestFirst(experimentPage.items, (row) => row.created_at)
     artifacts.value = newestFirst(artifactPage.items, (row) => row.created_at)
   } catch (err) {
-    toasts.error('Failed to load run', formatApiError(err))
+    error.value = formatApiError(err)
   } finally {
     loading.value = false
   }
 }
 
-interface KvItem {
-  key: string
-  label: string
-  value: unknown
-}
-
-const summary = computed<KvItem[]>(() => {
-  if (!run.value) return []
+const summary = computed<DLItem[]>(() => {
+  const r = run.value
+  if (!r) return []
+  const duration =
+    !r.ended_at && r.status === 'running'
+      ? 'Running…'
+      : formatDurationBetween(r.started_at, r.ended_at)
   return [
-    { key: 'id', label: 'Run id', value: `#${run.value.id}` },
-    { key: 'kind', label: 'Kind', value: run.value.kind },
-    { key: 'status', label: 'Status', value: resolveStatus('run', run.value.status).label },
-    { key: 'started', label: 'Started', value: new Date(run.value.started_at).toLocaleString() },
+    { label: 'Run id', value: `#${r.id}`, mono: true },
+    { label: 'Kind', value: r.kind },
+    { label: 'Status', value: resolveStatus('run', r.status).label },
+    { label: 'Started', value: formatAbsoluteDateTime(r.started_at) },
+    { label: 'Ended', value: r.ended_at ? formatAbsoluteDateTime(r.ended_at) : null },
+    { label: 'Duration', value: duration },
     {
-      key: 'ended',
-      label: 'Ended',
-      value: run.value.ended_at ? new Date(run.value.ended_at).toLocaleString() : '—',
+      label: 'Parent run',
+      value: r.parent_run_id !== null ? `#${r.parent_run_id}` : null,
+      mono: r.parent_run_id !== null,
     },
-    { key: 'duration', label: 'Duration', value: durationOf(run.value) },
-    {
-      key: 'parent',
-      label: 'Parent',
-      value: run.value.parent_run_id !== null ? `#${run.value.parent_run_id}` : '—',
-    },
-    { key: 'last_step', label: 'Last step', value: run.value.last_step ?? '—' },
-    { key: 'error', label: 'Error', value: run.value.error ?? '—' },
+    { label: 'Last step', value: r.last_step ?? null },
+    { label: 'Error', value: r.error ?? null },
   ]
 })
 
@@ -193,13 +195,6 @@ async function fetchRunPlans(): Promise<SchemaRunPlanOut[]> {
   )
 }
 
-function durationOf(r: Run): string {
-  if (!r.ended_at) return r.status === 'running' ? 'running…' : '—'
-  const ms = new Date(r.ended_at).getTime() - new Date(r.started_at).getTime()
-  const s = Math.round(ms / 1000)
-  return s < 60 ? `${s}s` : `${Math.round(s / 60)}m`
-}
-
 function valueLinksRun(value: unknown, runId: number): boolean {
   if (Array.isArray(value)) return value.some((item) => valueLinksRun(item, runId))
   if (typeof value !== 'object' || value === null) return value === runId
@@ -219,12 +214,41 @@ onMounted(load)
 </script>
 
 <template>
-  <UiEmptyState
+  <div
     v-if="loading && !run"
-    :title="`Loading run #${runId}`"
-    description="Fetching run metadata, run plans, children, and linked project data."
-    size="md"
-  />
+    class="space-y-5"
+    aria-busy="true"
+  >
+    <UiCard section>
+      <template #header>
+        <h2 class="t-h3 text-fg-strong">
+          Summary
+        </h2>
+      </template>
+      <div class="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+        <UiSkeleton
+          v-for="i in 8"
+          :key="i"
+          shape="line"
+        />
+      </div>
+    </UiCard>
+    <UiSkeleton
+      shape="block"
+      height="6rem"
+    />
+    <UiSkeleton
+      shape="block"
+      height="6rem"
+    />
+  </div>
+  <UiCallout
+    v-else-if="error"
+    tone="danger"
+    title="Failed to load run"
+  >
+    {{ error }}
+  </UiCallout>
   <UiEmptyState
     v-else-if="!run"
     title="Run not found"
@@ -245,9 +269,11 @@ onMounted(load)
           kind="run"
         />
       </template>
-      <KvList
+      <UiDescriptionList
+        layout="grid"
+        :columns="2"
         :items="summary"
-        :two-column="true"
+        aria-label="Run summary"
       />
     </UiCard>
 
@@ -257,7 +283,7 @@ onMounted(load)
     >
       <UiSectionHeader title="Run plans">
         <template #actions>
-          <UiBadge>{{ runPlans.length }}</UiBadge>
+          <UiCountBadge :value="runPlans.length" />
         </template>
       </UiSectionHeader>
       <p
@@ -288,33 +314,38 @@ onMounted(load)
       <UiCard
         v-if="actionCalls.length > 0"
         section
+        :padded="false"
+        class="overflow-hidden"
       >
         <template #header>
           <h2 class="t-h3 text-fg-strong">
             Action calls
           </h2>
-          <UiBadge>{{ actionCalls.length }}</UiBadge>
+          <UiCountBadge :value="actionCalls.length" />
         </template>
-        <ul class="space-y-2">
+        <ul class="divide-y divide-border-subtle">
           <li
             v-for="call in actionCalls"
             :key="call.id"
-            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
+            class="px-4 py-3"
           >
-            <div class="mb-2 flex flex-wrap items-center gap-2">
-              <span class="font-mono text-2xs text-fg-subtle">#{{ call.id }}</span>
-              <span class="text-sm font-medium text-fg-default">{{ call.plugin_slug }}.{{ call.action_key }}</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-medium text-fg-default">
+                {{ call.plugin_slug }}.{{ call.action_key }}
+              </span>
               <StatusBadge
                 :status="call.status"
                 kind="job"
                 :small="true"
               />
+              <span class="font-mono text-2xs text-fg-subtle">#{{ call.id }}</span>
             </div>
-            <UiJsonBlock
+            <UiAdvancedJsonPanel
+              class="mt-2"
+              title="Request & response"
+              summary="raw payload"
               :data="sanitizeForDisplay({ request: call.request_json, response: call.response_json })"
-              density="compact"
               max-height="12rem"
-              wrap
             />
           </li>
         </ul>
@@ -323,30 +354,35 @@ onMounted(load)
       <UiCard
         v-if="contextSnapshots.length > 0"
         section
+        :padded="false"
+        class="overflow-hidden"
       >
         <template #header>
           <h2 class="t-h3 text-fg-strong">
             Context snapshots
           </h2>
-          <UiBadge>{{ contextSnapshots.length }}</UiBadge>
+          <UiCountBadge :value="contextSnapshots.length" />
         </template>
-        <ul class="space-y-2">
+        <ul class="divide-y divide-border-subtle">
           <li
             v-for="snapshot in contextSnapshots"
             :key="snapshot.id"
-            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
+            class="px-4 py-3"
           >
-            <div class="mb-2 flex items-center justify-between gap-2">
+            <div class="flex items-center justify-between gap-2">
               <span class="min-w-0 truncate text-sm font-medium text-fg-default">
                 {{ snapshot.name ?? `Snapshot #${snapshot.id}` }}
               </span>
-              <span class="shrink-0 text-2xs text-fg-subtle">{{ formatDateTime(snapshot.created_at) }}</span>
+              <span class="shrink-0 text-2xs text-fg-subtle">
+                {{ formatRelativeDateTime(snapshot.created_at) }}
+              </span>
             </div>
-            <UiJsonBlock
+            <UiAdvancedJsonPanel
+              class="mt-2"
+              title="Snapshot data"
+              summary="raw payload"
               :data="sanitizeForDisplay(snapshot.summary_json ?? snapshot.query_json)"
-              density="compact"
               max-height="12rem"
-              wrap
             />
           </li>
         </ul>
@@ -355,29 +391,36 @@ onMounted(load)
       <UiCard
         v-if="observations.length > 0"
         section
+        :padded="false"
+        class="overflow-hidden"
       >
         <template #header>
           <h2 class="t-h3 text-fg-strong">
             Observations
           </h2>
-          <UiBadge>{{ observations.length }}</UiBadge>
+          <UiCountBadge :value="observations.length" />
         </template>
-        <ul class="space-y-2">
+        <ul class="divide-y divide-border-subtle">
           <li
             v-for="observation in observations"
             :key="observation.id"
-            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
+            class="px-4 py-3"
           >
-            <div class="mb-2 flex flex-wrap items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-medium text-fg-default">
+                Experiment #{{ observation.experiment_id }}
+              </span>
+              <span class="text-2xs text-fg-subtle">
+                {{ formatRelativeDateTime(observation.observed_at) }}
+              </span>
               <span class="font-mono text-2xs text-fg-subtle">#{{ observation.id }}</span>
-              <span class="text-sm font-medium text-fg-default">Experiment #{{ observation.experiment_id }}</span>
-              <span class="text-2xs text-fg-subtle">{{ formatDateTime(observation.observed_at) }}</span>
             </div>
-            <UiJsonBlock
+            <UiAdvancedJsonPanel
+              class="mt-2"
+              title="Observation data"
+              summary="raw payload"
               :data="sanitizeForDisplay(observation)"
-              density="compact"
               max-height="12rem"
-              wrap
             />
           </li>
         </ul>
@@ -386,20 +429,22 @@ onMounted(load)
       <UiCard
         v-if="decisions.length > 0"
         section
+        :padded="false"
+        class="overflow-hidden"
       >
         <template #header>
           <h2 class="t-h3 text-fg-strong">
             Decisions
           </h2>
-          <UiBadge>{{ decisions.length }}</UiBadge>
+          <UiCountBadge :value="decisions.length" />
         </template>
-        <ul class="space-y-2">
+        <ul class="divide-y divide-border-subtle">
           <li
             v-for="decision in decisions"
             :key="decision.id"
-            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
+            class="px-4 py-3"
           >
-            <div class="mb-1 flex items-center justify-between gap-2">
+            <div class="flex items-center justify-between gap-2">
               <span class="min-w-0 truncate text-sm font-medium text-fg-default">
                 {{ decision.title ?? `Decision #${decision.id}` }}
               </span>
@@ -409,7 +454,7 @@ onMounted(load)
                 :small="true"
               />
             </div>
-            <p class="text-sm text-fg-default">
+            <p class="mt-1 text-sm text-fg-default">
               {{ decision.decision }}
             </p>
           </li>
@@ -419,18 +464,20 @@ onMounted(load)
       <UiCard
         v-if="linkedLearnings.length > 0"
         section
+        :padded="false"
+        class="overflow-hidden"
       >
         <template #header>
           <h2 class="t-h3 text-fg-strong">
             Learnings
           </h2>
-          <UiBadge>{{ linkedLearnings.length }}</UiBadge>
+          <UiCountBadge :value="linkedLearnings.length" />
         </template>
-        <ul class="space-y-2">
+        <ul class="divide-y divide-border-subtle">
           <li
             v-for="learning in linkedLearnings"
             :key="learning.id"
-            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5 text-sm text-fg-default"
+            class="px-4 py-3 text-sm text-fg-default"
           >
             {{ learning.statement }}
           </li>
@@ -440,20 +487,22 @@ onMounted(load)
       <UiCard
         v-if="linkedExperiments.length > 0"
         section
+        :padded="false"
+        class="overflow-hidden"
       >
         <template #header>
           <h2 class="t-h3 text-fg-strong">
             Experiments
           </h2>
-          <UiBadge>{{ linkedExperiments.length }}</UiBadge>
+          <UiCountBadge :value="linkedExperiments.length" />
         </template>
-        <ul class="space-y-2">
+        <ul class="divide-y divide-border-subtle">
           <li
             v-for="experiment in linkedExperiments"
             :key="experiment.id"
-            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5 text-sm"
+            class="px-4 py-3 text-sm"
           >
-            <div class="mb-1 flex items-center justify-between gap-2">
+            <div class="flex items-center justify-between gap-2">
               <span class="min-w-0 truncate font-medium text-fg-default">
                 {{ experiment.name ?? experiment.key ?? `Experiment #${experiment.id}` }}
               </span>
@@ -463,7 +512,7 @@ onMounted(load)
                 :small="true"
               />
             </div>
-            <p class="text-fg-muted">
+            <p class="mt-1 text-fg-muted">
               {{ experiment.hypothesis }}
             </p>
           </li>
@@ -476,7 +525,7 @@ onMounted(load)
         <h2 class="t-h3 text-fg-strong">
           Artifacts
         </h2>
-        <UiBadge>{{ linkedArtifacts.length }}</UiBadge>
+        <UiCountBadge :value="linkedArtifacts.length" />
       </template>
       <p
         v-if="linkedArtifacts.length === 0"
@@ -498,32 +547,36 @@ onMounted(load)
 
     <UiAdvancedJsonPanel
       v-if="hasMetadata"
-      title="Advanced metadata"
-      summary="Raw run context"
+      title="Run context"
+      summary="Raw run metadata"
       :data="sanitizeForDisplay(run.metadata_json)"
     />
 
-    <UiCard section>
+    <UiCard
+      section
+      :padded="false"
+      class="overflow-hidden"
+    >
       <template #header>
         <h2 class="t-h3 text-fg-strong">
           Child runs
         </h2>
-        <UiBadge>{{ children.length }}</UiBadge>
+        <UiCountBadge :value="children.length" />
       </template>
       <p
         v-if="children.length === 0"
-        class="text-sm text-fg-muted"
+        class="px-4 py-3 text-sm text-fg-muted"
       >
         No child runs for this run.
       </p>
       <ul
         v-else
-        class="space-y-1.5 text-sm"
+        class="divide-y divide-border-subtle text-sm"
       >
         <li
           v-for="c in children"
           :key="c.id"
-          class="flex items-center justify-between gap-3 rounded-md border border-subtle bg-bg-surface-alt px-2.5 py-2"
+          class="flex items-center justify-between gap-3 px-4 py-3"
         >
           <RouterLink
             :to="`/projects/${projectId}/runs/${c.id}`"

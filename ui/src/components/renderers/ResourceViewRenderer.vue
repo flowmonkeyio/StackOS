@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import type { SchemaResourceOut, SchemaResourceRecordOut } from '@/api'
-import { UiAdvancedJsonPanel, UiBadge, UiDescriptionList, UiJsonBlock, UiPanel } from '@/components/ui'
+import { UiAdvancedJsonPanel, UiBadge, UiCard, UiDescriptionList, UiJsonSection } from '@/components/ui'
 import type { DLItem } from '@/components/ui/UiDescriptionList.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 
@@ -27,6 +27,7 @@ const resourceKey = computed(() => {
   if (isRecordView.value) return props.record?.resource_key ?? null
   return props.resource?.key ?? null
 })
+const schemaTitle = computed(() => (isRecordView.value ? 'Data' : 'Schema'))
 const schema = computed(() => {
   if (isRecordView.value) return sanitizeForDisplay(props.record?.data_json)
   return sanitizeForDisplay(props.resource?.schema_json)
@@ -48,8 +49,11 @@ const recordFacts = computed<DLItem[]>(() => {
 </script>
 
 <template>
-  <UiPanel :aria-label="`${title} resource`">
-    <div class="flex flex-wrap items-start justify-between gap-2">
+  <UiCard
+    section
+    :aria-label="`${title} resource`"
+  >
+    <template #header>
       <div class="min-w-0">
         <h3
           class="t-h3 truncate text-fg-strong"
@@ -75,32 +79,30 @@ const recordFacts = computed<DLItem[]>(() => {
           {{ resourceKey }}
         </UiBadge>
       </div>
+    </template>
+
+    <div class="space-y-3">
+      <UiDescriptionList
+        v-if="record"
+        layout="grid"
+        :columns="4"
+        :items="recordFacts"
+        aria-label="Record facts"
+      />
+
+      <UiJsonSection
+        :title="schemaTitle"
+        :data="schema"
+        max-height="18rem"
+      />
+
+      <UiAdvancedJsonPanel
+        v-if="metadata"
+        title="Metadata"
+        summary="Raw JSON"
+        :data="metadata"
+        max-height="14rem"
+      />
     </div>
-
-    <UiDescriptionList
-      v-if="record"
-      class="mt-3"
-      layout="grid"
-      :columns="4"
-      :items="recordFacts"
-      aria-label="Record facts"
-    />
-
-    <UiJsonBlock
-      class="mt-3"
-      :data="schema"
-      density="compact"
-      max-height="18rem"
-      wrap
-    />
-
-    <UiAdvancedJsonPanel
-      v-if="metadata"
-      class="mt-3"
-      title="Metadata"
-      summary="Raw JSON"
-      :data="metadata"
-      max-height="14rem"
-    />
-  </UiPanel>
+  </UiCard>
 </template>

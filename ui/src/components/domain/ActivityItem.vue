@@ -13,7 +13,7 @@ import { computed } from 'vue'
 
 import UiBadge from '@/components/ui/UiBadge.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
-import type { Tone } from '@/design/status'
+import UiMedallion from '@/components/ui/UiMedallion.vue'
 import { eventActor, humanizeEvent, resolveEventVisual } from '@/lib/stackos/events'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 import type { SchemaProjectEventOut } from '@/api'
@@ -29,20 +29,11 @@ const props = withDefaults(
   { to: null, compact: false },
 )
 
-const MEDALLION: Record<Tone, string> = {
-  neutral: 'bg-bg-surface-alt text-fg-muted',
-  info: 'bg-info-subtle text-info-fg',
-  success: 'bg-success-subtle text-success-fg',
-  warning: 'bg-warning-subtle text-warning-fg',
-  danger: 'bg-danger-subtle text-danger-fg',
-}
-
 const visual = computed(() => resolveEventVisual(props.event))
 const human = computed(() => humanizeEvent(props.event))
 const actor = computed(() => eventActor(props.event))
 const when = computed(() => props.event.occurred_at ?? props.event.created_at ?? null)
 const tags = computed(() => (props.event.tags ?? []).slice(0, 3))
-const medallionClass = computed(() => MEDALLION[visual.value.tone])
 </script>
 
 <template>
@@ -57,18 +48,11 @@ const medallionClass = computed(() => MEDALLION[visual.value.tone])
         : '',
     ]"
   >
-    <span
-      :class="[
-        'mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
-        medallionClass,
-      ]"
-      aria-hidden="true"
-    >
-      <UiIcon
-        :name="visual.icon"
-        class="h-4 w-4"
-      />
-    </span>
+    <UiMedallion
+      :icon="visual.icon"
+      :tone="visual.tone"
+      class="mt-0.5"
+    />
 
     <div class="min-w-0 flex-1">
       <div class="flex items-start justify-between gap-3">

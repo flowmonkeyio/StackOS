@@ -7,7 +7,14 @@ import DataTable from '@/components/DataTable.vue'
 import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import TemplateRenderer from '@/components/renderers/TemplateRenderer.vue'
-import { UiBadge, UiCallout, UiInput, UiPageShell, UiSectionHeader } from '@/components/ui'
+import {
+  UiBadge,
+  UiCallout,
+  UiCountBadge,
+  UiFilterBar,
+  UiPageShell,
+  UiSectionHeader,
+} from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaWorkflowTemplateSummaryOut } from '@/api'
 import { useWorkflowTemplatesStore } from '@/stores/workflowTemplates'
@@ -87,25 +94,23 @@ onBeforeRouteUpdate((to) => {
       {{ error }}
     </UiCallout>
 
-    <section aria-label="Workflow templates">
+    <section
+      aria-label="Workflow templates"
+      class="space-y-3"
+    >
       <UiSectionHeader
         title="Templates"
         as="h3"
       >
         <template #actions>
-          <UiInput
-            v-model="search"
-            type="search"
-            placeholder="Filter by key, name, or plugin…"
-            :block="false"
-            size="sm"
-            clearable
-            class="w-64"
-            aria-label="Filter templates"
-          />
-          <UiBadge>{{ rows.length }}</UiBadge>
+          <UiCountBadge :value="rows.length" />
         </template>
       </UiSectionHeader>
+      <UiFilterBar
+        v-model:search="search"
+        search-placeholder="Filter by key, name, or plugin…"
+        aria-label="Workflow template filters"
+      />
       <DataTable
         :items="rows"
         :columns="columns"
@@ -117,7 +122,9 @@ onBeforeRouteUpdate((to) => {
         @row-click="selectTemplate"
       >
         <template #cell:source="{ value }">
-          <UiBadge tone="accent">{{ value }}</UiBadge>
+          <UiBadge variant="outline">
+            {{ value }}
+          </UiBadge>
         </template>
       </DataTable>
     </section>

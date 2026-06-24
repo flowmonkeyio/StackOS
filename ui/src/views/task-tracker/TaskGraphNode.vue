@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import StatusBadge from '@/components/StatusBadge.vue'
 import { UiBadge } from '@/components/ui'
+import { resolveStatus, type Tone } from '@/design/status'
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
-
-import TrackerStatusBadge from './TrackerStatusBadge.vue'
 
 const props = defineProps<{
   data: TrackerVueNodeData
@@ -18,13 +18,23 @@ const initials = computed(() =>
     .join(''),
 )
 
-const statusClass = computed(() => `task-graph-node--status-${props.data.status}`)
+// Status accent strip color derives from the resolved tone token, so the
+// status→color mapping stays single-sourced in design/status.ts.
+const TONE_VAR: Record<Tone, string> = {
+  neutral: 'var(--color-neutral-default)',
+  info: 'var(--color-info-default)',
+  success: 'var(--color-success-default)',
+  warning: 'var(--color-warning-default)',
+  danger: 'var(--color-danger-default)',
+}
+
+const statusColor = computed(() => TONE_VAR[resolveStatus('tracker', props.data.status).tone])
 </script>
 
 <template>
   <div
     class="task-graph-node"
-    :class="statusClass"
+    :style="{ '--task-node-status': statusColor }"
   >
     <div class="flex items-start gap-3">
       <div class="task-graph-node__mark">
@@ -35,7 +45,10 @@ const statusClass = computed(() => `task-graph-node--status-${props.data.status}
           <p class="truncate text-sm font-semibold text-fg-strong">
             {{ data.label }}
           </p>
-          <TrackerStatusBadge :status="data.status" />
+          <StatusBadge
+            domain="tracker"
+            :status="data.status"
+          />
         </div>
         <p
           v-if="data.subtitle"
@@ -95,23 +108,6 @@ const statusClass = computed(() => `task-graph-node--status-${props.data.status}
 
 .task-graph-node:hover {
   box-shadow: var(--shadow-sm);
-}
-
-.task-graph-node--status-complete {
-  --task-node-status: var(--color-success-default);
-}
-
-.task-graph-node--status-in-progress {
-  --task-node-status: var(--color-info-default);
-}
-
-.task-graph-node--status-deferred {
-  --task-node-status: var(--color-warning-default);
-}
-
-.task-graph-node--status-aborted,
-.task-graph-node--status-failed {
-  --task-node-status: var(--color-danger-default);
 }
 
 .task-graph-node__mark {

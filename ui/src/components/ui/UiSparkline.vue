@@ -18,12 +18,12 @@ export interface SparklinePoint {
 const props = withDefaults(
   defineProps<{
     points: SparklinePoint[]
-    ariaLabel: string
+    ariaLabel?: string
     tone?: 'accent' | 'success' | 'warning' | 'danger'
     /** Rendered height in px (viewBox is fixed). */
     height?: number
   }>(),
-  { tone: 'accent', height: 60 },
+  { ariaLabel: 'Trend', tone: 'accent', height: 60 },
 )
 
 const VIEW_W = 200

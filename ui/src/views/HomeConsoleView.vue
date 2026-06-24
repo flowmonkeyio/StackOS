@@ -16,6 +16,7 @@ import {
   UiButton,
   UiCard,
   UiCallout,
+  UiCountBadge,
   UiEmptyState,
   UiIcon,
   UiPageShell,
@@ -200,10 +201,11 @@ function timelineLink(runId: number | null | undefined): string | null {
               <h2 class="t-h3 text-fg-strong">
                 Needs you
               </h2>
-              <span
+              <UiCountBadge
                 v-if="attention.total > 0"
-                class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-subtle px-1.5 text-2xs font-semibold text-danger-fg tabular-nums"
-              >{{ attention.total }}</span>
+                :value="attention.total"
+                tone="danger"
+              />
             </div>
             <UiButton
               variant="ghost"

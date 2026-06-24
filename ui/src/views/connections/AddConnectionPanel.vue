@@ -5,8 +5,8 @@ import {
   UiButton,
   UiCallout,
   UiFormField,
-  UiIcon,
   UiInput,
+  UiMedallion,
   UiSecretInput,
   UiSelect,
   UiSidePanel,
@@ -96,15 +96,11 @@ defineEmits<{
       </UiFormField>
 
       <div class="flex gap-3 rounded-lg border border-subtle bg-bg-surface-alt p-3">
-        <span
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-accent-fg"
-          aria-hidden="true"
-        >
-          <UiIcon
-            name="plug"
-            class="h-[18px] w-[18px]"
-          />
-        </span>
+        <UiMedallion
+          icon="plug"
+          shape="square"
+          tone="info"
+        />
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2">
             <h3 class="t-h3 text-fg-strong">

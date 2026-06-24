@@ -1031,11 +1031,11 @@ describe('ConnectionsView', () => {
     expect(wrapper.text()).toContain('1 operators')
     expect(wrapper.text()).toContain('Roadmap channel')
     expect(wrapper.text()).toContain('Internal roadmap planning and critical architecture alignment.')
-    expect(wrapper.text()).toContain('internal')
+    expect(wrapper.text()).toContain('Internal')
     expect(wrapper.text()).toContain('Slack #roadmap')
     expect(wrapper.text()).toContain('slack-roadmap -> slack-channel:C123')
-    expect(wrapper.text()).toContain('ingress ready')
-    expect(wrapper.text()).toContain('manual_provider_update_required')
+    expect(wrapper.text()).toContain('Ingress ready')
+    expect(wrapper.text()).toContain('Manual update needed')
   })
 
   it('does not report failed credentials as connected and keeps operator actions available', async () => {
@@ -1068,7 +1068,7 @@ describe('ConnectionsView', () => {
     const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('Firecrawl'))
 
-    expect(wrapper.text()).toContain('failed')
+    expect(wrapper.text()).toContain('Failed')
     expect(wrapper.text()).not.toContain('1 connected')
     expect(wrapper.findAll('button').map((button) => button.text().trim())).toContain('Test')
     expect(wrapper.findAll('button').map((button) => button.text().trim())).toContain('Revoke')

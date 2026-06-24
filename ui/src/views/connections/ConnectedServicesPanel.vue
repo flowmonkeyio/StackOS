@@ -5,23 +5,24 @@ import {
   UiButton,
   UiCallout,
   UiCard,
+  UiCountBadge,
   UiEmptyState,
-  UiIcon,
+  UiMedallion,
   UiSectionHeader,
   UiSkeleton,
 } from '@/components/ui'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 
 import {
   accountLabel,
+  connectionStatusKey,
   connectionTitle,
   formatAuthType,
   methodLabel,
   pluginLabel,
+  serviceGroupStatus,
   serviceName,
-  serviceStatusLabel,
-  serviceStatusTone,
-  statusTone,
 } from './formatters'
 import type { ConnectionRow, MessageMap, ServiceGroup } from './types'
 
@@ -56,7 +57,7 @@ function connectionActionKey(credentialRef: string, action: string): string {
       as="h3"
     >
       <template #actions>
-        <UiBadge>{{ connectionsCount }}</UiBadge>
+        <UiCountBadge :value="connectionsCount" />
       </template>
     </UiSectionHeader>
 
@@ -76,11 +77,12 @@ function connectionActionKey(credentialRef: string, action: string): string {
       title="No services connected."
       description="Add the first connection for a provider account or internal tool. The daemon stores the secret and exposes only status, labels, and credential refs."
       icon="plug"
-      class="rounded-lg border border-dashed border-default bg-bg-surface px-4 py-8"
+      framed
     >
       <template #actions>
         <UiButton
           variant="primary"
+          size="sm"
           icon-left="plus"
           @click="$emit('add-connection')"
         >
@@ -101,18 +103,14 @@ function connectionActionKey(credentialRef: string, action: string): string {
       >
         <template #header>
           <div class="flex min-w-0 items-center gap-3">
-            <span
-              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-accent-fg"
-              aria-hidden="true"
-            >
-              <UiIcon
-                name="plug"
-                class="h-[18px] w-[18px]"
-              />
-            </span>
+            <UiMedallion
+              icon="plug"
+              shape="square"
+              tone="info"
+            />
             <div class="min-w-0">
               <div class="flex min-w-0 flex-wrap items-center gap-2">
-                <h4 class="truncate text-sm font-semibold text-fg-strong">
+                <h4 class="t-h3 truncate text-fg-strong">
                   {{ serviceName(group) }}
                 </h4>
                 <UiBadge
@@ -121,18 +119,16 @@ function connectionActionKey(credentialRef: string, action: string): string {
                 >
                   {{ pluginLabel(group.provider.plugin_slug) }}
                 </UiBadge>
-                <UiBadge
-                  :tone="serviceStatusTone(group)"
-                  :dot="serviceStatusTone(group) === 'success'"
-                >
-                  {{ serviceStatusLabel(group) }}
-                </UiBadge>
+                <StatusBadge
+                  domain="connection"
+                  :status="serviceGroupStatus(group)"
+                />
               </div>
-              <p class="mt-0.5 truncate text-xs text-fg-subtle">
-                <span class="font-mono text-2xs">{{ group.providerKey }}</span>
-                <template v-if="group.provider?.description">
-                  · {{ group.provider.description }}
-                </template>
+              <p
+                v-if="group.provider?.description"
+                class="mt-0.5 truncate text-xs text-fg-subtle"
+              >
+                {{ group.provider.description }}
               </p>
             </div>
           </div>
@@ -163,17 +159,13 @@ function connectionActionKey(credentialRef: string, action: string): string {
                   <h5 class="truncate text-sm font-medium text-fg-strong">
                     {{ connectionTitle(connection) }}
                   </h5>
-                  <UiBadge
-                    :tone="statusTone(connection)"
-                    :dot="statusTone(connection) === 'success'"
-                  >
-                    {{ connection.status }}
-                  </UiBadge>
+                  <StatusBadge
+                    domain="connection"
+                    :status="connectionStatusKey(connection)"
+                  />
                 </div>
-                <p class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 font-mono text-2xs text-fg-subtle">
-                  <span class="truncate">{{ connection.credential_ref }}</span>
-                  <span aria-hidden="true">·</span>
-                  <span class="truncate">{{ connection.profile_key }}</span>
+                <p class="mt-0.5 truncate font-mono text-2xs text-fg-subtle">
+                  {{ connection.profile_key }}
                 </p>
               </div>
 
@@ -238,9 +230,8 @@ function connectionActionKey(credentialRef: string, action: string): string {
                 </UiButton>
                 <UiButton
                   size="sm"
-                  variant="ghost"
+                  variant="danger-ghost"
                   icon-left="trash"
-                  class="btn-danger-quiet"
                   :loading="busyAction === connectionActionKey(connection.credential_ref, 'revoke')"
                   :disabled="connection.revoked_at !== null"
                   @click="$emit('revoke-connection', connection)"
@@ -264,18 +255,3 @@ function connectionActionKey(credentialRef: string, action: string): string {
     </div>
   </section>
 </template>
-
-<style scoped>
-/* Destructive-quiet ghost button: danger text, danger-subtle hover tint. */
-.btn-danger-quiet {
-  color: var(--color-danger-fg);
-}
-.btn-danger-quiet:hover:not(:disabled),
-.btn-danger-quiet:active:not(:disabled) {
-  color: var(--color-danger-fg);
-  background-color: var(--color-danger-subtle);
-}
-.btn-danger-quiet:disabled {
-  color: var(--color-fg-disabled);
-}
-</style>

@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 import type { SchemaActionCallAuditOut, SchemaRunPlanOut } from '@/api'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
+  UiAdvancedJsonPanel,
   UiBadge,
   UiCallout,
   UiCard,
+  UiCountBadge,
   UiDescriptionList,
   UiIcon,
-  UiIconButton,
-  UiJsonBlock,
 } from '@/components/ui'
 import type { DLItem } from '@/components/ui/UiDescriptionList.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
@@ -21,8 +21,6 @@ const props = withDefaults(defineProps<{
 }>(), {
   actionCalls: () => [],
 })
-
-const expandedStep = ref<string | null>(null)
 
 const issueTone: Record<string, 'danger' | 'warning'> = {
   error: 'danger',
@@ -42,10 +40,6 @@ const planMeta = computed<DLItem[]>(() => [
 
 function callsForStep(stepPk: number): SchemaActionCallAuditOut[] {
   return props.actionCalls.filter((call) => call.run_plan_step_id === stepPk)
-}
-
-function toggleStep(stepId: string): void {
-  expandedStep.value = expandedStep.value === stepId ? null : stepId
 }
 </script>
 
@@ -109,96 +103,86 @@ function toggleStep(stepId: string): void {
       </div>
     </UiCard>
 
-    <UiCard section>
+    <UiCard
+      section
+      :padded="false"
+      class="overflow-hidden"
+    >
       <template #header>
-        <h3 class="t-h3 text-fg-strong">
-          Steps
-        </h3>
-        <UiBadge>{{ steps.length }}</UiBadge>
+        <div class="flex min-w-0 items-center gap-2">
+          <h3 class="t-h3 text-fg-strong">
+            Steps
+          </h3>
+          <UiCountBadge :value="steps.length" />
+        </div>
       </template>
 
       <p
         v-if="steps.length === 0"
-        class="text-sm text-fg-muted"
+        class="px-4 py-3 text-sm text-fg-muted"
       >
         No steps recorded for this plan.
       </p>
       <ol
         v-else
-        class="space-y-2"
+        class="divide-y divide-border-subtle"
       >
         <li
           v-for="step in steps"
           :key="step.id"
-          class="rounded-md border border-subtle bg-bg-surface-alt"
         >
-          <div class="flex items-center gap-2 px-2.5 py-2">
-            <span
-              class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-sunken text-2xs font-medium text-fg-muted"
-              aria-hidden="true"
-            >
-              {{ step.position + 1 }}
-            </span>
-            <span class="min-w-0 truncate text-sm font-medium text-fg-default">
-              {{ step.title }}
-            </span>
-            <StatusBadge
-              :status="step.status"
-              kind="job"
-              :small="true"
-            />
-            <UiBadge
-              v-if="(step.allowed_tools ?? []).length > 0"
-              tone="info"
-            >
-              {{ (step.allowed_tools ?? []).length }} tools
-            </UiBadge>
-            <span class="ml-auto shrink-0 text-2xs text-fg-subtle">
-              {{ formatDateTime(step.started_at) }}
-            </span>
-            <UiIconButton
-              size="sm"
-              variant="ghost"
-              :aria-label="expandedStep === step.step_id ? `Collapse step ${step.title}` : `Expand step ${step.title}`"
-              :aria-expanded="expandedStep === step.step_id"
-              :aria-controls="`run-plan-step-${step.id}`"
-              @click="toggleStep(step.step_id)"
+          <details class="group/step">
+            <summary
+              class="focus-ring flex cursor-pointer list-none items-center gap-2 px-4 py-3 transition-colors duration-fast [&::-webkit-details-marker]:hidden"
             >
               <UiIcon
                 name="chevron-right"
-                :class="[
-                  'h-3.5 w-3.5 transition-transform duration-fast',
-                  expandedStep === step.step_id && 'rotate-90',
-                ]"
+                class="h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform duration-fast group-open/step:rotate-90"
                 aria-hidden="true"
               />
-            </UiIconButton>
-          </div>
+              <span
+                class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-sunken text-2xs font-medium text-fg-muted"
+                aria-hidden="true"
+              >
+                {{ step.position + 1 }}
+              </span>
+              <span class="min-w-0 truncate text-sm font-medium text-fg-default">
+                {{ step.title }}
+              </span>
+              <StatusBadge
+                :status="step.status"
+                kind="job"
+                :small="true"
+              />
+              <UiBadge
+                v-if="(step.allowed_tools ?? []).length > 0"
+                tone="info"
+              >
+                {{ (step.allowed_tools ?? []).length }} tools
+              </UiBadge>
+              <span class="ml-auto shrink-0 text-2xs text-fg-subtle">
+                {{ formatDateTime(step.started_at) }}
+              </span>
+            </summary>
 
-          <div
-            v-if="expandedStep === step.step_id"
-            :id="`run-plan-step-${step.id}`"
-            class="space-y-3 border-t border-subtle p-3"
-          >
-            <UiCallout
-              v-if="step.error"
-              tone="danger"
-              density="compact"
-            >
-              {{ step.error }}
-            </UiCallout>
-            <p
-              v-if="step.purpose"
-              class="text-sm text-fg-muted"
-            >
-              {{ step.purpose }}
-            </p>
-            <div class="grid gap-3 lg:grid-cols-2">
-              <div class="min-w-0">
-                <h4 class="mb-1 text-xs font-medium text-fg-muted">
-                  Contracts
-                </h4>
-                <UiJsonBlock
+            <div class="space-y-3 border-t border-subtle px-4 py-3">
+              <UiCallout
+                v-if="step.error"
+                tone="danger"
+                density="compact"
+              >
+                {{ step.error }}
+              </UiCallout>
+              <p
+                v-if="step.purpose"
+                class="text-sm text-fg-muted"
+              >
+                {{ step.purpose }}
+              </p>
+              <div class="space-y-2">
+                <UiAdvancedJsonPanel
+                  title="Contracts"
+                  summary="Raw JSON"
                   :data="sanitizeForDisplay({
                     inputs: step.input_refs_json,
                     context: step.context_refs_json,
@@ -208,60 +192,53 @@ function toggleStep(stepId: string): void {
                     outputs: step.output_refs_json,
                     tools: step.allowed_tools ?? [],
                   })"
-                  density="compact"
                   max-height="14rem"
-                  wrap
                 />
-              </div>
-              <div class="min-w-0">
-                <h4 class="mb-1 text-xs font-medium text-fg-muted">
-                  Result
-                </h4>
-                <UiJsonBlock
+                <UiAdvancedJsonPanel
+                  title="Result"
+                  summary="Raw JSON"
                   :data="sanitizeForDisplay(step.result_json ?? step.expected_outputs_json ?? {})"
-                  density="compact"
                   max-height="14rem"
-                  wrap
                 />
               </div>
-            </div>
 
-            <div v-if="callsForStep(step.id).length > 0">
-              <h4 class="mb-1 text-xs font-medium text-fg-muted">
-                Action calls
-              </h4>
-              <ul class="space-y-3 border-l border-subtle pl-3">
-                <li
-                  v-for="call in callsForStep(step.id)"
-                  :key="call.id"
-                  class="min-w-0 space-y-2"
-                >
-                  <div class="flex flex-wrap items-center gap-2">
-                    <UiBadge tone="accent">
-                      {{ call.plugin_slug }}
-                    </UiBadge>
-                    <span class="font-mono text-2xs text-fg-subtle">{{ call.action_key }}</span>
-                    <StatusBadge
-                      :status="call.status"
-                      kind="job"
-                      :small="true"
+              <div v-if="callsForStep(step.id).length > 0">
+                <h4 class="mb-1 text-xs font-medium text-fg-muted">
+                  Action calls
+                </h4>
+                <ul class="space-y-3 border-l border-subtle pl-3">
+                  <li
+                    v-for="call in callsForStep(step.id)"
+                    :key="call.id"
+                    class="min-w-0 space-y-2"
+                  >
+                    <div class="flex flex-wrap items-center gap-2">
+                      <UiBadge tone="accent">
+                        {{ call.plugin_slug }}
+                      </UiBadge>
+                      <span class="font-mono text-2xs text-fg-subtle">{{ call.action_key }}</span>
+                      <StatusBadge
+                        :status="call.status"
+                        kind="job"
+                        :small="true"
+                      />
+                      <span class="text-2xs text-fg-subtle">{{ formatDateTime(call.created_at) }}</span>
+                    </div>
+                    <UiAdvancedJsonPanel
+                      title="Action call"
+                      summary="Raw JSON"
+                      :data="sanitizeForDisplay({
+                        request: call.request_json,
+                        response: call.response_json,
+                        metadata: call.metadata_json,
+                      })"
+                      max-height="12rem"
                     />
-                    <span class="text-2xs text-fg-subtle">{{ formatDateTime(call.created_at) }}</span>
-                  </div>
-                  <UiJsonBlock
-                    :data="sanitizeForDisplay({
-                      request: call.request_json,
-                      response: call.response_json,
-                      metadata: call.metadata_json,
-                    })"
-                    density="compact"
-                    max-height="12rem"
-                    wrap
-                  />
-                </li>
-              </ul>
+                  </li>
+                </ul>
+              </div>
             </div>
-          </div>
+          </details>
         </li>
       </ol>
     </UiCard>
@@ -272,16 +249,18 @@ function toggleStep(stepId: string): void {
         section
       >
         <template #header>
-          <h3 class="t-h3 text-fg-strong">
-            Approvals
-          </h3>
-          <UiBadge>{{ (plan.approval_requests ?? []).length }}</UiBadge>
+          <div class="flex min-w-0 items-center gap-2">
+            <h3 class="t-h3 text-fg-strong">
+              Approvals
+            </h3>
+            <UiCountBadge :value="(plan.approval_requests ?? []).length" />
+          </div>
         </template>
-        <UiJsonBlock
+        <UiAdvancedJsonPanel
+          title="Requests"
+          summary="Raw JSON"
           :data="sanitizeForDisplay(plan.approval_requests)"
-          density="compact"
           max-height="16rem"
-          wrap
         />
       </UiCard>
       <UiCard section>
@@ -290,7 +269,9 @@ function toggleStep(stepId: string): void {
             Run context
           </h3>
         </template>
-        <UiJsonBlock
+        <UiAdvancedJsonPanel
+          title="Snapshots"
+          summary="Inputs, context, grants, budget, policy"
           :data="sanitizeForDisplay({
             inputs: plan.inputs_json,
             selected_context: plan.selected_context_json,
@@ -301,9 +282,7 @@ function toggleStep(stepId: string): void {
             outputs: plan.output_contract_json,
             metadata: plan.metadata_json,
           })"
-          density="compact"
           max-height="16rem"
-          wrap
         />
       </UiCard>
     </div>

@@ -1,7 +1,6 @@
 import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
 
 import type {
-  BadgeTone,
   CommunicationProfile,
   CommunicationSurface,
   CommunicationTarget,
@@ -82,54 +81,35 @@ export function serviceName(group: ServiceGroup): string {
   return group.provider?.name ?? group.providerKey
 }
 
-export function serviceStatusTone(group: ServiceGroup): BadgeTone {
+/**
+ * Representative connection-domain status key for a whole service group, so the
+ * group header can render a single `<StatusBadge domain="connection">`. Prefers
+ * a live connected account, then surfaces hard failures, else the first row.
+ */
+export function serviceGroupStatus(group: ServiceGroup): string {
   if (
     group.connections.some(
       (connection) => connection.status === 'connected' && connection.revoked_at === null,
     )
   ) {
-    return 'success'
+    return 'connected'
   }
-  if (group.connections.some((connection) => ['failed', 'revoked'].includes(connection.status))) {
-    return 'danger'
-  }
-  return 'warning'
+  const failed = group.connections.find((connection) =>
+    ['failed', 'revoked', 'expired'].includes(connection.status),
+  )
+  if (failed) return failed.status
+  return group.connections[0]?.status ?? 'pending'
 }
 
-export function serviceStatusDotClass(group: ServiceGroup): string {
-  const tone = serviceStatusTone(group)
-  if (tone === 'success') return 'bg-success'
-  if (tone === 'danger') return 'bg-danger'
-  if (tone === 'warning') return 'bg-warning'
-  return 'bg-neutral'
-}
-
-export function serviceStatusLabel(group: ServiceGroup): string {
-  const connected = group.connections.filter(
-    (connection) => connection.status === 'connected' && connection.revoked_at === null,
-  ).length
-  if (connected > 0) return `${connected} connected`
-  const first = group.connections[0]
-  return first ? first.status : 'not connected'
+/** Status key for a single connection, mapped onto the `connection` domain. */
+export function connectionStatusKey(connection: SchemaCredentialConnectionOut): string {
+  if (connection.status === 'connected' && connection.setup_required) return 'setup-required'
+  return connection.status
 }
 
 export function connectionCountLabel(group: ServiceGroup): string {
   const count = group.connections.length
   return `${count} connection${count === 1 ? '' : 's'}`
-}
-
-export function statusTone(connection: SchemaCredentialConnectionOut): BadgeTone {
-  if (connection.status === 'connected' && !connection.setup_required) return 'success'
-  if (connection.status === 'failed' || connection.status === 'revoked') return 'danger'
-  return 'warning'
-}
-
-export function statusDotClass(connection: SchemaCredentialConnectionOut): string {
-  const tone = statusTone(connection)
-  if (tone === 'success') return 'bg-success'
-  if (tone === 'danger') return 'bg-danger'
-  if (tone === 'warning') return 'bg-warning'
-  return 'bg-neutral'
 }
 
 export function connectionTitle(connection: SchemaCredentialConnectionOut): string {
@@ -193,20 +173,40 @@ export function surfaceDataScope(surface: CommunicationSurface): string {
     : 'scope unset'
 }
 
-export function surfaceAudienceTone(surface: CommunicationSurface): BadgeTone {
-  if (surface.audience === 'internal') return 'success'
-  if (surface.audience === 'customer' || surface.audience === 'public') return 'warning'
-  if (surface.audience === 'mixed') return 'danger'
-  return 'neutral'
+const SURFACE_AUDIENCE_LABELS: Record<string, string> = {
+  internal: 'Internal',
+  customer: 'Customer',
+  public: 'Public',
+  mixed: 'Mixed',
 }
 
-export function routeStatusTone(route: IngressEndpointRoute): BadgeTone {
-  if (route.remote_status === 'remote_webhook_updated' || route.remote_status === 'ready') {
-    return 'success'
-  }
-  if (route.remote_status === 'manual_provider_update_required') return 'warning'
-  if (route.remote_status?.includes('failed')) return 'danger'
-  return 'neutral'
+/** Humanized audience label (no status.ts domain; surface audience is a descriptor, not a state). */
+export function surfaceAudienceLabel(surface: CommunicationSurface): string {
+  const audience = surface.audience?.trim()
+  if (!audience) return 'Unknown audience'
+  return SURFACE_AUDIENCE_LABELS[audience] ?? titleCase(audience)
+}
+
+const ROUTE_STATUS_LABELS: Record<string, string> = {
+  remote_webhook_updated: 'Webhook ready',
+  ready: 'Ready',
+  manual_provider_update_required: 'Manual update needed',
+}
+
+/** Humanized ingress route status label (route status is not a status.ts domain). */
+export function routeStatusLabel(route: IngressEndpointRoute): string {
+  const status = route.remote_status?.trim()
+  if (!status) return 'Local'
+  return ROUTE_STATUS_LABELS[status] ?? titleCase(status)
+}
+
+function titleCase(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 export function connectionActionKey(credentialRef: string, action: string): string {

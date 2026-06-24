@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import type { SchemaArtifactOut } from '@/api'
-import { UiBadge, UiDescriptionList, UiJsonBlock, UiPanel } from '@/components/ui'
+import { UiAdvancedJsonPanel, UiBadge, UiCard, UiDescriptionList } from '@/components/ui'
 import type { DLItem } from '@/components/ui/UiDescriptionList.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 
@@ -26,8 +26,11 @@ const facts = computed<DLItem[]>(() => [
 </script>
 
 <template>
-  <UiPanel :aria-label="`${artifact.kind} artifact`">
-    <div class="flex flex-wrap items-start justify-between gap-2">
+  <UiCard
+    section
+    :aria-label="`${artifact.kind} artifact`"
+  >
+    <template #header>
       <div class="min-w-0">
         <h3
           class="t-h3 truncate text-fg-strong"
@@ -51,39 +54,28 @@ const facts = computed<DLItem[]>(() => [
         </UiBadge>
         <UiBadge>{{ artifact.kind }}</UiBadge>
       </div>
-    </div>
+    </template>
 
-    <UiDescriptionList
-      class="mt-3"
-      layout="grid"
-      :columns="4"
-      :items="facts"
-      aria-label="Artifact facts"
-    />
+    <div class="space-y-3">
+      <UiDescriptionList
+        layout="grid"
+        :columns="4"
+        :items="facts"
+        aria-label="Artifact facts"
+      />
 
-    <div class="mt-3 grid gap-3 lg:grid-cols-2">
-      <div class="min-w-0">
-        <h4 class="mb-1 text-xs font-medium text-fg-muted">
-          Metadata
-        </h4>
-        <UiJsonBlock
-          :data="metadata ?? {}"
-          density="compact"
-          max-height="14rem"
-          wrap
-        />
-      </div>
-      <div class="min-w-0">
-        <h4 class="mb-1 text-xs font-medium text-fg-muted">
-          Provenance
-        </h4>
-        <UiJsonBlock
-          :data="provenance ?? {}"
-          density="compact"
-          max-height="14rem"
-          wrap
-        />
-      </div>
+      <UiAdvancedJsonPanel
+        title="Metadata"
+        summary="Raw JSON"
+        :data="metadata ?? {}"
+        max-height="14rem"
+      />
+      <UiAdvancedJsonPanel
+        title="Provenance"
+        summary="Raw JSON"
+        :data="provenance ?? {}"
+        max-height="14rem"
+      />
     </div>
-  </UiPanel>
+  </UiCard>
 </template>

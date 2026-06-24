@@ -96,12 +96,12 @@ const placementClass = computed(() => ({
         tabindex="-1"
         role="dialog"
         :aria-label="ariaLabel"
-        @vue:mounted="onPanelMounted"
         :class="[
           'ui-popover__panel absolute z-popover rounded-lg border border-default bg-bg-surface shadow-md p-1 focus:outline-none',
           placementClass,
         ]"
         :style="{ width: typeof width === 'number' ? width + 'px' : width }"
+        @vue:mounted="onPanelMounted"
       >
         <slot :set-open="setOpen" />
       </div>

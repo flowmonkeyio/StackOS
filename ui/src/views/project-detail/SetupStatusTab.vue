@@ -10,7 +10,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { UiButton, UiCard, UiIcon, UiScoreMeter, UiSkeleton } from '@/components/ui'
+import { UiButton, UiCard, UiIcon, UiMedallion, UiScoreMeter, UiSkeleton } from '@/components/ui'
 import { formatDurationMinutes } from '@/lib/stackos/time'
 import { readinessTone, useReadinessStore, type ReadinessState } from '@/stores/readiness'
 
@@ -247,15 +247,10 @@ const setupLinks = computed(() => [
             :to="link.to"
             class="focus-ring-inset group flex h-full items-start gap-3 bg-bg-surface px-4 py-4 transition-colors duration-fast hover:bg-bg-surface-alt"
           >
-            <span
-              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-bg-surface-alt text-fg-muted group-hover:bg-bg-surface"
-              aria-hidden="true"
-            >
-              <UiIcon
-                :name="link.icon"
-                class="h-4 w-4"
-              />
-            </span>
+            <UiMedallion
+              :icon="link.icon"
+              shape="square"
+            />
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-1.5">
                 <span class="text-sm font-medium text-fg-strong">{{ link.label }}</span>

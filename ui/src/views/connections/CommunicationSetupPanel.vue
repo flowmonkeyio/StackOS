@@ -4,17 +4,19 @@ import {
   UiButton,
   UiCallout,
   UiCard,
+  UiCountBadge,
   UiEmptyState,
   UiSectionHeader,
   UiSkeleton,
 } from '@/components/ui'
+import StatusBadge from '@/components/StatusBadge.vue'
 
 import {
   allowedOperatorRefs,
   communicationProfileTitle,
   profileProviderKeys,
-  routeStatusTone,
-  surfaceAudienceTone,
+  routeStatusLabel,
+  surfaceAudienceLabel,
   surfaceDataScope,
   surfaceIntentSummary,
   surfaceTitle,
@@ -54,12 +56,11 @@ defineEmits<{
       as="h3"
     >
       <template #actions>
-        <UiBadge
-          :tone="ingressStatus?.ready ? 'success' : 'warning'"
-          :dot="ingressStatus?.ready === true"
-        >
-          {{ ingressStatus?.ready ? 'ingress ready' : 'ingress pending' }}
-        </UiBadge>
+        <StatusBadge
+          domain="system"
+          :status="ingressStatus?.ready ? 'ok' : 'degraded'"
+          :label="ingressStatus?.ready ? 'Ingress ready' : 'Ingress pending'"
+        />
         <UiButton
           size="sm"
           variant="secondary"
@@ -101,13 +102,15 @@ defineEmits<{
     >
       <UiCard
         section
+        :padded="false"
+        class="overflow-hidden"
         aria-label="Communication profiles"
       >
         <template #header>
           <h4 class="t-h3 text-fg-strong">
             Profiles
           </h4>
-          <UiBadge>{{ profiles.length }}</UiBadge>
+          <UiCountBadge :value="profiles.length" />
         </template>
         <UiEmptyState
           v-if="profiles.length === 0"
@@ -115,23 +118,25 @@ defineEmits<{
           icon="users"
           title="No profiles configured"
           description="Profiles bind provider identities to policy. Agents and operators register them through StackOS operations."
+          class="p-4"
         />
         <ul
           v-else
-          class="max-h-[34rem] divide-y divide-border-subtle overflow-y-auto"
+          class="divide-y divide-border-subtle"
         >
           <li
             v-for="profile in profiles"
             :key="profile.profile_ref"
-            class="py-3"
+            class="px-4 py-3"
           >
             <div class="flex min-w-0 flex-wrap items-center gap-2">
               <h5 class="min-w-0 truncate text-sm font-medium text-fg-strong">
                 {{ communicationProfileTitle(profile) }}
               </h5>
-              <UiBadge :tone="profile.enabled ? 'success' : 'warning'">
-                {{ profile.enabled ? 'enabled' : 'disabled' }}
-              </UiBadge>
+              <StatusBadge
+                domain="step"
+                :status="profile.enabled ? 'enabled' : 'disabled'"
+              />
             </div>
             <p class="mt-0.5 truncate font-mono text-2xs text-fg-subtle">
               {{ profile.profile_ref }}
@@ -152,13 +157,15 @@ defineEmits<{
 
       <UiCard
         section
+        :padded="false"
+        class="overflow-hidden"
         aria-label="Communication surfaces"
       >
         <template #header>
           <h4 class="t-h3 text-fg-strong">
             Surfaces
           </h4>
-          <UiBadge>{{ surfaces.length }}</UiBadge>
+          <UiCountBadge :value="surfaces.length" />
         </template>
         <UiEmptyState
           v-if="surfaces.length === 0"
@@ -166,22 +173,23 @@ defineEmits<{
           icon="megaphone"
           title="No surfaces configured"
           description="Surfaces describe where messages can be read or sent, with audience and data scope."
+          class="p-4"
         />
         <ul
           v-else
-          class="max-h-[34rem] divide-y divide-border-subtle overflow-y-auto"
+          class="divide-y divide-border-subtle"
         >
           <li
             v-for="surface in surfaces"
             :key="surface.surface_ref"
-            class="py-3"
+            class="px-4 py-3"
           >
             <div class="flex min-w-0 flex-wrap items-center gap-2">
               <h5 class="min-w-0 truncate text-sm font-medium text-fg-strong">
                 {{ surfaceTitle(surface) }}
               </h5>
-              <UiBadge :tone="surfaceAudienceTone(surface)">
-                {{ surface.audience || 'unknown' }}
+              <UiBadge variant="outline">
+                {{ surfaceAudienceLabel(surface) }}
               </UiBadge>
               <UiBadge>{{ surfaceDataScope(surface) }}</UiBadge>
             </div>
@@ -196,9 +204,11 @@ defineEmits<{
                 {{ surface.provider_key }}
               </UiBadge>
               <UiBadge>{{ surface.kind }}</UiBadge>
-              <UiBadge :tone="surface.send_enabled ? 'success' : 'warning'">
-                {{ surface.send_enabled ? 'send enabled' : 'send disabled' }}
-              </UiBadge>
+              <StatusBadge
+                domain="step"
+                :status="surface.send_enabled ? 'enabled' : 'disabled'"
+                :label="surface.send_enabled ? 'Send enabled' : 'Send disabled'"
+              />
             </div>
           </li>
         </ul>
@@ -206,13 +216,15 @@ defineEmits<{
 
       <UiCard
         section
+        :padded="false"
+        class="overflow-hidden"
         aria-label="Named targets"
       >
         <template #header>
           <h4 class="t-h3 text-fg-strong">
             Named targets
           </h4>
-          <UiBadge>{{ targets.length }}</UiBadge>
+          <UiCountBadge :value="targets.length" />
         </template>
         <UiEmptyState
           v-if="targets.length === 0"
@@ -220,23 +232,25 @@ defineEmits<{
           icon="arrow-right"
           title="No named targets configured"
           description="Named targets are pre-approved send destinations agents can use without raw channel access."
+          class="p-4"
         />
         <ul
           v-else
-          class="max-h-[34rem] divide-y divide-border-subtle overflow-y-auto"
+          class="divide-y divide-border-subtle"
         >
           <li
             v-for="target in targets"
             :key="target.target_ref"
-            class="py-3"
+            class="px-4 py-3"
           >
             <div class="flex min-w-0 flex-wrap items-center gap-2">
               <h5 class="min-w-0 truncate text-sm font-medium text-fg-strong">
                 {{ targetTitle(target) }}
               </h5>
-              <UiBadge :tone="target.enabled ? 'success' : 'warning'">
-                {{ target.enabled ? 'enabled' : 'disabled' }}
-              </UiBadge>
+              <StatusBadge
+                domain="step"
+                :status="target.enabled ? 'enabled' : 'disabled'"
+              />
               <UiBadge>{{ targetPolicySummary(target) }}</UiBadge>
             </div>
             <p class="mt-0.5 truncate font-mono text-2xs text-fg-subtle">
@@ -257,16 +271,15 @@ defineEmits<{
           <h4 class="t-h3 text-fg-strong">
             Ingress routes
           </h4>
-          <UiBadge>{{ ingressStatus?.routes?.length ?? 0 }}</UiBadge>
+          <UiCountBadge :value="ingressStatus?.routes?.length ?? 0" />
         </template>
-        <div class="py-1">
+        <div>
           <div class="flex flex-wrap items-center gap-1.5">
-            <UiBadge
-              :tone="ingressStatus?.ready ? 'success' : 'warning'"
-              :dot="ingressStatus?.ready === true"
-            >
-              {{ ingressStatus?.endpoint?.status ?? 'not configured' }}
-            </UiBadge>
+            <StatusBadge
+              domain="system"
+              :status="ingressStatus?.ready ? 'ok' : 'degraded'"
+              :label="ingressStatus?.endpoint?.status ?? 'Not configured'"
+            />
             <UiBadge>{{ ingressStatus?.endpoint?.driver ?? 'no driver' }}</UiBadge>
           </div>
           <p class="mt-2 break-all font-mono text-2xs text-fg-subtle">
@@ -289,8 +302,8 @@ defineEmits<{
               <UiBadge tone="accent">
                 {{ route.provider_key }}
               </UiBadge>
-              <UiBadge :tone="routeStatusTone(route)">
-                {{ route.remote_status ?? 'local' }}
+              <UiBadge variant="outline">
+                {{ routeStatusLabel(route) }}
               </UiBadge>
             </div>
             <p class="mt-1 break-all font-mono text-2xs text-fg-subtle">

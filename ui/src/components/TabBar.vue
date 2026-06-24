@@ -184,7 +184,6 @@ function onGroupChange(value: string | number | null): void {
           type="button"
           role="tab"
           :aria-selected="tab.key === props.activeKey"
-          :aria-controls="`cs-tabpanel-${tab.key}`"
           :tabindex="tab.key === props.activeKey ? 0 : -1"
           :disabled="tab.disabled"
           class="focus-ring-inset inline-flex h-9 items-center justify-center gap-1.5 border-b-2 px-3 text-sm font-medium transition-colors duration-fast disabled:cursor-not-allowed disabled:text-fg-disabled"
