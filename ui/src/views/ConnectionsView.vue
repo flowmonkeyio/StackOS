@@ -32,8 +32,9 @@ import {
   providerGroupLabel,
   serviceName,
   slackFacet,
+  slackFacetFromConnection,
+  slackIdentified,
   slackProfileAuthKey,
-  slackProfileTeam,
   telegramConnectionForProfile,
   telegramFacet,
   telegramProfileAuthKey,
@@ -149,7 +150,7 @@ const telegramProfileForm = ref<TelegramProfileForm>({
 })
 const slackProfilePanelOpen = ref(false)
 const slackProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
-const slackProfileTeamLabel = ref('')
+const isNewSlackProfile = ref(false)
 const slackProfileForm = ref<SlackProfileForm>({
   key: '',
   auth_profile_key: '',
@@ -162,6 +163,14 @@ const slackProfileForm = ref<SlackProfileForm>({
   allowed_chat_refs: '',
   allowed_user_refs: '',
   mention_patterns: '',
+})
+const slackProfileTeamLabel = computed(() => {
+  const connection = slackConnections.value.find(
+    (item) => item.profile_key === slackProfileForm.value.auth_profile_key,
+  )
+  const meta = connection?.account?.metadata_json as Record<string, unknown> | undefined
+  const team = meta?.team ?? meta?.team_id
+  return typeof team === 'string' ? team : ''
 })
 
 const connections = computed<ConnectionRow[]>(() =>
@@ -529,7 +538,32 @@ function editSlackProfile(profile: CommunicationProfile): void {
     allowed_user_refs: (access.allowed_user_refs ?? []).join(', '),
     mention_patterns: (Array.isArray(rawMentions) ? (rawMentions as string[]) : []).join(', '),
   }
-  slackProfileTeamLabel.value = slackProfileTeam(profile)
+  isNewSlackProfile.value = false
+  slackProfileMessage.value = null
+  slackProfilePanelOpen.value = true
+}
+
+function openAddBot(provider: string): void {
+  if (provider === 'slack-bot') openAddSlackProfile()
+  else openAddTelegramProfile()
+}
+
+function openAddSlackProfile(): void {
+  const preferred = slackConnections.value[0]
+  slackProfileForm.value = {
+    key: 'slack-bot',
+    auth_profile_key: preferred?.profile_key ?? '',
+    identity_display_name: 'Slack Bot',
+    identity_purpose: '',
+    identity_voice: 'Clear, concise, and operational.',
+    agent_default_instructions: '',
+    agent_boundaries: '',
+    agent_escalation: '',
+    allowed_chat_refs: '',
+    allowed_user_refs: '',
+    mention_patterns: '',
+  }
+  isNewSlackProfile.value = true
   slackProfileMessage.value = null
   slackProfilePanelOpen.value = true
 }
@@ -716,6 +750,10 @@ async function saveSlackProfile(): Promise<void> {
   const displayName = form.identity_display_name.trim()
   const allowedUserRefs = parseCsv(form.allowed_user_refs)
   const allowedSurfaceRefs = parseCsv(form.allowed_chat_refs)
+  if (!key) {
+    slackProfileMessage.value = { tone: 'danger', text: 'Bot key is required.' }
+    return
+  }
   if (!displayName) {
     slackProfileMessage.value = { tone: 'danger', text: 'Bot display name is required.' }
     return
@@ -732,51 +770,69 @@ async function saveSlackProfile(): Promise<void> {
     return
   }
   const existing = communicationProfileByKey(key)
-  if (!existing) {
-    slackProfileMessage.value = { tone: 'danger', text: 'Slack bot not found; reload and retry.' }
+  const connection =
+    slackConnections.value.find((item) => item.profile_key === authProfileKey) ?? null
+  if (!existing && !slackIdentified(connection)) {
+    slackProfileMessage.value = {
+      tone: 'danger',
+      text: 'Test the Slack connection first so StackOS can fetch the workspace identity from Slack.',
+    }
     return
   }
+  const baseFacet = existing ? slackFacet(existing) : slackFacetFromConnection(connection)
+  const accessPolicy = existing
+    ? {
+        ...existing.access_policy,
+        user_mode: 'allowlist',
+        allowed_user_refs: allowedUserRefs,
+        allowed_surface_refs: allowedSurfaceRefs,
+      }
+    : {
+        dm_mode: 'all',
+        channel_mode: 'all',
+        group_mode: 'all',
+        user_mode: 'allowlist',
+        allowed_user_refs: allowedUserRefs,
+        allowed_surface_refs: allowedSurfaceRefs,
+      }
+  const triggerPolicy = existing
+    ? { ...existing.trigger_policy, mention_patterns: parseCsv(form.mention_patterns) }
+    : {
+        dm_trigger: 'always',
+        channel_trigger: 'mention_or_command',
+        mention_patterns: parseCsv(form.mention_patterns),
+        reply_to_bot_triggers: true,
+      }
   busyAction.value = 'slack-profile:save'
   try {
     await callOperation('communicationProfile.upsert', {
       project_id: projectId.value,
       key,
       identity: {
-        ...existing.identity,
+        ...(existing?.identity ?? {}),
         display_name: displayName,
         purpose: form.identity_purpose.trim(),
         voice: form.identity_voice.trim(),
       },
       provider_facets: {
-        ...existing.provider_facets,
-        'slack-bot': {
-          ...slackFacet(existing),
-          auth_profile_key: authProfileKey,
-        },
+        ...(existing?.provider_facets ?? {}),
+        'slack-bot': { ...baseFacet, auth_profile_key: authProfileKey },
       },
       agent_guidance: {
-        ...existing.agent_guidance,
+        ...(existing?.agent_guidance ?? {}),
         default_instructions: form.agent_default_instructions.trim(),
         boundaries: form.agent_boundaries.trim(),
         escalation: form.agent_escalation.trim(),
       },
-      access_policy: {
-        ...existing.access_policy,
-        user_mode: 'allowlist',
-        allowed_user_refs: allowedUserRefs,
-        allowed_surface_refs: allowedSurfaceRefs,
-      },
-      trigger_policy: {
-        ...existing.trigger_policy,
-        mention_patterns: parseCsv(form.mention_patterns),
-      },
-      visibility_policy: existing.visibility_policy ?? {},
-      context_policy: existing.context_policy ?? {},
-      response_policy: existing.response_policy ?? {},
-      send_policy: existing.send_policy ?? { mode: 'explicit-targets' },
-      handoff_policy: existing.handoff_policy ?? { mode: 'explicit-targets' },
-      approval_policy: existing.approval_policy ?? { mode: 'none' },
-      metadata_json: existing.metadata_json ?? {},
+      access_policy: accessPolicy,
+      trigger_policy: triggerPolicy,
+      visibility_policy: existing?.visibility_policy ?? {},
+      context_policy: existing?.context_policy ?? {},
+      response_policy: existing?.response_policy ?? {},
+      send_policy: existing?.send_policy ?? { mode: 'explicit-targets' },
+      handoff_policy: existing?.handoff_policy ?? { mode: 'explicit-targets' },
+      approval_policy: existing?.approval_policy ?? { mode: 'none' },
+      metadata_json: existing?.metadata_json ?? {},
     })
     slackProfileMessage.value = { tone: 'success', text: `Saved ${key}.` }
     slackProfilePanelOpen.value = false
@@ -1010,10 +1066,11 @@ onBeforeRouteUpdate((to) => {
           <BotsPanel
             :bots="communicationProfiles"
             :telegram-connections="telegramConnections"
+            :slack-connections="slackConnections"
             :loading="communicationSetupLoading"
             :message="telegramProfileMessage ?? slackProfileMessage"
             @add-connection="openAddConnection"
-            @add-bot="openAddTelegramProfile"
+            @add-bot="openAddBot"
             @edit-bot="editBot"
           />
         </div>
@@ -1114,6 +1171,7 @@ onBeforeRouteUpdate((to) => {
     <SlackBotSidePanel
       v-model="slackProfilePanelOpen"
       v-model:form="slackProfileForm"
+      :is-new="isNewSlackProfile"
       :slack-connection-options="slackConnectionOptions"
       :team-label="slackProfileTeamLabel"
       :message="slackProfileMessage"

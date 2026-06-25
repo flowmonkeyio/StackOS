@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import {
   UiBadge,
   UiButton,
   UiCallout,
   UiCard,
   UiCountBadge,
+  UiDropdownMenu,
   UiEmptyState,
   UiMedallion,
   UiSectionHeader,
@@ -24,18 +27,38 @@ import {
 } from './formatters'
 import type { CommunicationProfile, ConnectionRow, MessageTone } from './types'
 
-defineProps<{
+const props = defineProps<{
   bots: CommunicationProfile[]
   telegramConnections: ConnectionRow[]
+  slackConnections: ConnectionRow[]
   loading: boolean
   message: { tone: MessageTone; text: string } | null
 }>()
 
 defineEmits<{
   (e: 'add-connection', providerKey: string): void
-  (e: 'add-bot'): void
+  (e: 'add-bot', provider: string): void
   (e: 'edit-bot', profile: CommunicationProfile): void
 }>()
+
+const addBotItems = computed(() => [
+  {
+    key: 'telegram-bot',
+    label: 'Telegram bot',
+    icon: 'chat',
+    disabled: props.telegramConnections.length === 0,
+  },
+  {
+    key: 'slack-bot',
+    label: 'Slack bot',
+    icon: 'chat',
+    disabled: props.slackConnections.length === 0,
+  },
+])
+
+const hasMessagingConnection = computed(
+  () => props.telegramConnections.length > 0 || props.slackConnections.length > 0,
+)
 
 function isTelegram(bot: CommunicationProfile): boolean {
   return Boolean(bot.provider_facets?.['telegram-bot'])
@@ -73,24 +96,44 @@ function chatCount(bot: CommunicationProfile): number {
     >
       <template #actions>
         <UiCountBadge :value="bots.length" />
-        <UiButton
-          size="sm"
-          variant="secondary"
-          icon-left="plus"
-          :disabled="telegramConnections.length === 0"
-          @click="$emit('add-bot')"
+        <UiDropdownMenu
+          :items="addBotItems"
+          placement="bottom-end"
+          aria-label="Add a bot"
+          @select="(item) => $emit('add-bot', item.key)"
         >
-          Add bot
-        </UiButton>
+          <template #trigger="{ toggle, open }">
+            <UiButton
+              size="sm"
+              variant="secondary"
+              icon-left="plus"
+              icon-right="chevron-down"
+              :disabled="!hasMessagingConnection"
+              :aria-expanded="open"
+              data-dropdown-trigger
+              @click="toggle"
+            >
+              Add bot
+            </UiButton>
+          </template>
+        </UiDropdownMenu>
       </template>
     </UiSectionHeader>
 
     <UiCallout
-      v-if="telegramConnections.length === 0 && bots.length === 0"
+      v-if="!hasMessagingConnection && bots.length === 0"
       tone="info"
     >
-      Connect a Telegram bot first, then give it an identity and access rules here.
+      Connect a Slack or Telegram bot first, then give it an identity and access rules here.
       <template #actions>
+        <UiButton
+          size="sm"
+          variant="secondary"
+          icon-left="plus"
+          @click="$emit('add-connection', 'slack-bot')"
+        >
+          Connect Slack
+        </UiButton>
         <UiButton
           size="sm"
           variant="secondary"
@@ -223,7 +266,7 @@ function chatCount(bot: CommunicationProfile): number {
     </UiCard>
 
     <UiEmptyState
-      v-else-if="telegramConnections.length > 0"
+      v-else-if="hasMessagingConnection"
       title="No bots yet"
       description="Create a bot for each messaging identity or access boundary. Bots are static setup — agents still decide what work to run after a trigger arrives."
       icon="chat"

@@ -400,6 +400,7 @@ describe('ConnectionsView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Support Bot'))
 
     await clickButton(wrapper, 'Add bot')
+    await clickButton(wrapper, 'Telegram bot')
     expect(wrapper.find<HTMLInputElement>('input[placeholder="@support_bot"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Telegram identity: @support_bot')
     await wrapper
@@ -720,6 +721,118 @@ describe('ConnectionsView', () => {
     // Secrets never leave the connection.
     expect(JSON.stringify(saveCall)).not.toContain('xoxb')
     expect(JSON.stringify(saveCall)).not.toContain('signing')
+  })
+
+  it('creates a Slack bot from a tested connection without exposing secrets', async () => {
+    const postedBodies: unknown[] = []
+    let profiles: unknown[] = []
+
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (init?.body) postedBodies.push(JSON.parse(String(init.body)))
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
+      if (url === '/api/v1/auth/providers') {
+        return json([authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({
+          project_id: 1,
+          provider_key: null,
+          providers: [],
+          connections: [
+            authConnection({
+              revokedAt: null,
+              providerKey: 'slack-bot',
+              credentialRef: 'cred_slack',
+              authType: 'bot-token',
+              authMethodKey: 'bot-token',
+              profileKey: 'default',
+              label: 'Acme Slack',
+              account: {
+                provider_account_id: 'T123',
+                display_name: 'Acme',
+                metadata_json: { team_id: 'T123', team: 'Acme', user_id: 'U_BOT', bot_id: 'B1' },
+              },
+            }),
+          ],
+        })
+      }
+      if (url === '/api/v1/operations/communicationProfile.list/call') {
+        return json({ items: profiles, next_cursor: null, total_estimate: profiles.length })
+      }
+      if (url === '/api/v1/operations/communicationProfile.upsert/call') {
+        const args = JSON.parse(String(init?.body)).arguments
+        profiles = [
+          {
+            record_id: 9,
+            project_id: 1,
+            profile_ref: `communication-profile:${args.key}`,
+            key: args.key,
+            enabled: true,
+            identity: args.identity,
+            provider_facets: args.provider_facets,
+            agent_guidance: args.agent_guidance,
+            access_policy: args.access_policy,
+            trigger_policy: args.trigger_policy,
+            visibility_policy: {},
+            context_policy: {},
+            response_policy: {},
+            send_policy: {},
+            handoff_policy: {},
+            approval_policy: {},
+            metadata_json: {},
+          },
+        ]
+        return json({ data: profiles[0], run_id: null, project_id: 1 })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Acme Slack'))
+    await clickButton(wrapper, 'Add bot')
+    await clickButton(wrapper, 'Slack bot')
+    await wrapper.find<HTMLInputElement>('input[placeholder="ops-bot"]').setValue('ops-bot')
+    await wrapper
+      .find<HTMLInputElement>('input[placeholder="slack-user:U123"]')
+      .setValue('slack-user:U111')
+    await clickButton(wrapper, 'Save Slack bot')
+
+    const saveCall = postedBodies.find(
+      (body) =>
+        typeof body === 'object' &&
+        body !== null &&
+        'arguments' in body &&
+        (body as { arguments?: { key?: string } }).arguments?.key === 'ops-bot',
+    )
+    expect(saveCall).toBeDefined()
+    expect(saveCall).toMatchObject({
+      arguments: {
+        key: 'ops-bot',
+        identity: expect.objectContaining({ display_name: 'Slack Bot' }),
+        provider_facets: {
+          'slack-bot': expect.objectContaining({
+            auth_profile_key: 'default',
+            team_id: 'T123',
+            bot_user_id: 'U_BOT',
+          }),
+        },
+        access_policy: expect.objectContaining({
+          user_mode: 'allowlist',
+          allowed_user_refs: ['slack-user:U111'],
+        }),
+      },
+    })
+    expect(JSON.stringify(saveCall)).not.toContain('xoxb')
   })
 
   it('stores Slack bot credentials with discovery and no deferred setup fields', async () => {

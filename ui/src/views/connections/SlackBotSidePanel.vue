@@ -14,6 +14,7 @@ import type { MessageTone, SlackProfileForm } from './types'
 const props = defineProps<{
   modelValue: boolean
   form: SlackProfileForm
+  isNew: boolean
   slackConnectionOptions: Array<{ value: string; label: string }>
   teamLabel: string
   message: { tone: MessageTone; text: string } | null
@@ -54,13 +55,17 @@ function updateField(key: keyof SlackProfileForm, value: string | number | null)
         <UiFormField
           label="Bot key"
           help="Project-scoped key used by webhook paths and agent-readable setup."
+          :required="isNew"
         >
-          <template #default="{ id, describedBy }">
+          <template #default="{ id, describedBy, invalid }">
             <UiInput
               :id="id"
               :model-value="form.key"
               :aria-describedby="describedBy"
-              disabled
+              :invalid="invalid"
+              :disabled="!isNew"
+              placeholder="ops-bot"
+              @update:model-value="updateField('key', $event)"
             />
           </template>
         </UiFormField>

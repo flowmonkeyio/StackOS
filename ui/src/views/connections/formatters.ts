@@ -341,6 +341,23 @@ export function slackProfileTeam(profile: CommunicationProfile): string {
   return typeof team === 'string' ? team : ''
 }
 
+/** True once a Slack connection has been tested and its workspace identity resolved. */
+export function slackIdentified(connection: ConnectionRow | null): boolean {
+  const meta = connection?.account?.metadata_json
+  return Boolean(meta && typeof meta === 'object' && 'team_id' in meta)
+}
+
+/** Build the safe slack-bot facet identity from a tested connection's account. */
+export function slackFacetFromConnection(connection: ConnectionRow | null): Record<string, unknown> {
+  const meta = (connection?.account?.metadata_json ?? {}) as Record<string, unknown>
+  const facet: Record<string, unknown> = {}
+  if (typeof meta.team_id === 'string') facet.team_id = meta.team_id
+  if (typeof meta.team === 'string') facet.team_name = meta.team
+  if (typeof meta.user_id === 'string') facet.bot_user_id = meta.user_id
+  if (typeof meta.bot_id === 'string') facet.bot_id = meta.bot_id
+  return facet
+}
+
 export function telegramCommands(profile: CommunicationProfile): TelegramCommandSpec[] {
   const commands = profile.trigger_policy['commands']
   return Array.isArray(commands) ? (commands as TelegramCommandSpec[]) : []
