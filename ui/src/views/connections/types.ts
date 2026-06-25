@@ -38,6 +38,16 @@ export interface TelegramCommandDraft {
   enabled: boolean
 }
 
+export type BotPolicyFieldKey =
+  | 'identity_display_name'
+  | 'identity_purpose'
+  | 'identity_voice'
+  | 'agent_default_instructions'
+  | 'agent_boundaries'
+  | 'agent_escalation'
+
+export type BotPolicyFormFields = Record<BotPolicyFieldKey, string>
+
 export interface TelegramProfileForm {
   key: string
   auth_profile_key: string
