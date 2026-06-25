@@ -9,6 +9,8 @@ const {
   actionError,
   busy,
   canClick,
+  canDismiss,
+  dismissPrompt,
   percent,
   promptVisible,
   runPrimaryAction,
@@ -45,47 +47,65 @@ const iconName = computed(() => {
 
 <template>
   <Transition name="desktop-update-prompt">
-    <button
+    <div
       v-if="promptVisible"
-      type="button"
-      :disabled="busy !== null || !canClick"
-      :aria-busy="busy !== null || undefined"
-      class="focus-ring fixed inset-x-4 bottom-4 z-toast mx-auto w-[calc(100vw-2rem)] max-w-md rounded-lg border border-info-border bg-bg-surface p-3 text-left text-sm shadow-lg transition-colors duration-fast hover:border-strong hover:bg-bg-surface-alt disabled:cursor-default disabled:hover:border-info-border disabled:hover:bg-bg-surface sm:left-auto sm:right-4 sm:mx-0"
+      class="fixed inset-x-4 bottom-4 z-toast mx-auto w-[calc(100vw-2rem)] max-w-md rounded-lg border border-info-border bg-bg-surface p-2 text-left text-sm shadow-lg sm:left-auto sm:right-4 sm:mx-0"
       aria-live="polite"
-      @click="runPrimaryAction"
     >
-      <div class="flex items-start gap-3">
-        <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-info-subtle text-info-fg">
+      <div class="flex items-start gap-1">
+        <button
+          type="button"
+          :disabled="busy !== null || !canClick"
+          :aria-busy="busy !== null || undefined"
+          aria-label="Update action"
+          class="focus-ring flex min-w-0 flex-1 items-start gap-3 rounded-md p-1 text-left transition-colors duration-fast hover:bg-bg-surface-alt disabled:cursor-default disabled:hover:bg-transparent"
+          @click="runPrimaryAction"
+        >
+          <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-info-subtle text-info-fg">
+            <UiIcon
+              :name="busy || status === 'downloading' ? 'loader' : iconName"
+              :class="['h-4 w-4', (busy || status === 'downloading' || status === 'installing') && 'animate-spin']"
+              aria-hidden="true"
+            />
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block font-semibold text-fg-strong">
+              {{ promptTitle }}
+            </span>
+            <span class="mt-0.5 block text-xs text-fg-muted">
+              {{ promptDetail }}
+            </span>
+            <UiProgressBar
+              v-if="status === 'downloading'"
+              class="mt-2"
+              :value="percent"
+              tone="info"
+              size="xs"
+              aria-label="Update download progress"
+            />
+          </span>
           <UiIcon
-            :name="busy || status === 'downloading' ? 'loader' : iconName"
-            :class="['h-4 w-4', (busy || status === 'downloading' || status === 'installing') && 'animate-spin']"
+            v-if="canClick && busy === null"
+            name="arrow-right"
+            class="mt-1 h-4 w-4 shrink-0 text-fg-subtle"
             aria-hidden="true"
           />
-        </span>
-        <span class="min-w-0 flex-1">
-          <span class="block font-semibold text-fg-strong">
-            {{ promptTitle }}
-          </span>
-          <span class="mt-0.5 block text-xs text-fg-muted">
-            {{ promptDetail }}
-          </span>
-          <UiProgressBar
-            v-if="status === 'downloading'"
-            class="mt-2"
-            :value="percent"
-            tone="info"
-            size="xs"
-            aria-label="Update download progress"
+        </button>
+        <button
+          v-if="canDismiss"
+          type="button"
+          aria-label="Dismiss update prompt"
+          class="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors duration-fast hover:bg-bg-surface-alt hover:text-fg-strong"
+          @click="dismissPrompt"
+        >
+          <UiIcon
+            name="close"
+            class="h-4 w-4"
+            aria-hidden="true"
           />
-        </span>
-        <UiIcon
-          v-if="canClick && busy === null"
-          name="arrow-right"
-          class="mt-1 h-4 w-4 shrink-0 text-fg-subtle"
-          aria-hidden="true"
-        />
+        </button>
       </div>
-    </button>
+    </div>
   </Transition>
 </template>
 

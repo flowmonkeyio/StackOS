@@ -4,12 +4,14 @@ import { desktop, isDesktopShell } from '@/lib/desktop'
 import type { DesktopUpdateResult, DesktopUpdateState } from '@/lib/desktop'
 
 type UpdateAction = 'check' | 'download' | 'install'
+const DISMISSED_UPDATE_VERSION_KEY = 'stackos.desktopUpdates.dismissedVersion'
 
 export function useDesktopUpdates() {
   const isShell = ref(false)
   const updateState = ref<DesktopUpdateState | null>(null)
   const busy = ref<UpdateAction | null>(null)
   const actionError = ref<string | null>(null)
+  const dismissedVersion = ref(readDismissedVersion())
   let pollTimer: ReturnType<typeof setTimeout> | null = null
 
   const version = computed(() => updateInfoVersion(updateState.value?.updateInfo))
@@ -18,9 +20,14 @@ export function useDesktopUpdates() {
     const raw = updateState.value?.progress?.percent
     return typeof raw === 'number' ? Math.max(0, Math.min(100, Math.round(raw))) : null
   })
+  const dismissVersion = computed(() => version.value)
+  const isDismissed = computed(() => {
+    const current = dismissVersion.value
+    return Boolean(current && dismissedVersion.value === current)
+  })
 
   const promptVisible = computed(() => {
-    if (!isShell.value || !updateState.value?.enabled) return false
+    if (!isShell.value || !updateState.value?.enabled || isDismissed.value) return false
     return (
       status.value === 'available' ||
       status.value === 'downloading' ||
@@ -29,6 +36,7 @@ export function useDesktopUpdates() {
       Boolean(actionError.value)
     )
   })
+  const canDismiss = computed(() => Boolean(dismissVersion.value))
 
   const canClick = computed(
     () =>
@@ -40,6 +48,14 @@ export function useDesktopUpdates() {
   function clearPoll(): void {
     if (pollTimer) clearTimeout(pollTimer)
     pollTimer = null
+  }
+
+  function dismissPrompt(): void {
+    const current = dismissVersion.value
+    if (!current) return
+    dismissedVersion.value = current
+    writeDismissedVersion(current)
+    clearPoll()
   }
 
   function applyResult(result: DesktopUpdateResult | DesktopUpdateState | null): void {
@@ -145,11 +161,13 @@ export function useDesktopUpdates() {
     percent,
     promptVisible,
     canClick,
+    canDismiss,
     refreshState,
     runCheck,
     runDownload,
     runInstall,
     runPrimaryAction,
+    dismissPrompt,
   }
 }
 
@@ -165,4 +183,14 @@ function hasStateEnvelope(value: DesktopUpdateResult | DesktopUpdateState): valu
 
 function isUpdateState(value: unknown): value is DesktopUpdateState {
   return Boolean(value && typeof value === 'object' && typeof (value as { status?: unknown }).status === 'string')
+}
+
+function readDismissedVersion(): string | null {
+  if (typeof window === 'undefined') return null
+  return window.localStorage.getItem(DISMISSED_UPDATE_VERSION_KEY)
+}
+
+function writeDismissedVersion(version: string): void {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(DISMISSED_UPDATE_VERSION_KEY, version)
 }
