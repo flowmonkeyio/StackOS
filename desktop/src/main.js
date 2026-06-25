@@ -2,6 +2,7 @@
 
 const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs");
 const service = require("./service");
 const { resolveStackosDeepLink } = require("./deep-links");
 const { createNotificationController } = require("./notifications");
@@ -71,19 +72,52 @@ function handleStackosDeepLink(candidate) {
   return loadStackosDeepLink(candidate);
 }
 
-function loadingHtml({ phase, progress }) {
-  const boundedProgress = Math.max(5, Math.min(100, Number(progress) || 5));
+let lastLoadingProgress = 0;
+let splashLogoDataUri = null;
+
+function getSplashLogo() {
+  if (splashLogoDataUri === null) {
+    try {
+      const buffer = fs.readFileSync(path.join(__dirname, "stackos-splash.png"));
+      splashLogoDataUri = `data:image/png;base64,${buffer.toString("base64")}`;
+    } catch {
+      splashLogoDataUri = "";
+    }
+  }
+  return splashLogoDataUri;
+}
+
+function loadingHtml({ phase, progress, from = 0 }) {
+  const clamp = (value) => Math.max(0, Math.min(100, Number(value) || 0));
+  const target = Math.max(5, clamp(progress));
+  const start = Math.min(target, clamp(from));
+  const safePhase = escapeHtml(phase);
+  const logo = getSplashLogo();
   return `<!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <title>StackOS</title>
   <style>
+    :root {
+      --bg: #f7f7f8;
+      --ink: #09090b;
+      --fg: #27272a;
+      --muted: #52525b;
+      --track: #e4e4e7;
+      --brand-a: #6366f1;
+      --brand-b: #7c3aed;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f7f7f5;
-      color: #151515;
+      font-family: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--fg);
+      background:
+        radial-gradient(78% 48% at 50% 40%, rgba(99, 102, 241, 0.08), rgba(99, 102, 241, 0) 62%),
+        var(--bg);
+      -webkit-font-smoothing: antialiased;
     }
     main {
       align-items: center;
@@ -93,48 +127,93 @@ function loadingHtml({ phase, progress }) {
       padding: 32px;
     }
     .panel {
-      max-width: 420px;
       width: 100%;
+      max-width: 320px;
+      text-align: center;
+      animation: fade 280ms ease-out both;
+    }
+    .logo {
+      width: 88px;
+      height: 88px;
+      display: block;
+      margin: 0 auto 22px;
+      filter: drop-shadow(0 14px 28px rgba(16, 16, 20, 0.24)) drop-shadow(0 2px 6px rgba(16, 16, 20, 0.14));
+      animation: float 3.6s ease-in-out infinite;
     }
     .brand {
-      font-size: 28px;
-      font-weight: 700;
-      margin-bottom: 6px;
+      color: var(--ink);
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.011em;
+      margin: 0 0 6px;
     }
-    .subtitle {
-      color: #6f6a60;
+    .tagline {
+      color: var(--muted);
       font-size: 13px;
-      margin-bottom: 28px;
+      margin: 0 0 32px;
     }
     .phase {
-      color: #332f2a;
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      margin: 0 0 12px;
+      animation: fade 360ms ease-out both;
     }
     .track {
-      background: #e3dfd7;
-      border-radius: 999px;
-      height: 8px;
+      position: relative;
       overflow: hidden;
       width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--track);
     }
     .fill {
-      background: #2276b8;
-      border-radius: inherit;
       height: 100%;
-      width: ${boundedProgress}%;
+      width: ${target}%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--brand-a), var(--brand-b));
+      animation: grow 720ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+    }
+    .sweep {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 42%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+      animation: sweep 1.5s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+    @keyframes grow {
+      from { width: ${start}%; }
+      to { width: ${target}%; }
+    }
+    @keyframes sweep {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(280%); }
+    }
+    @keyframes fade {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .panel, .phase, .logo, .fill { animation: none !important; }
+      .sweep { display: none; }
     }
   </style>
 </head>
 <body>
   <main>
-    <section class="panel" aria-label="StackOS startup">
-      <div class="brand">StackOS</div>
-      <div class="subtitle">Local runtime</div>
-      <div class="phase">${escapeHtml(phase)}</div>
-      <div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${boundedProgress}">
+    <section class="panel" aria-label="StackOS is starting">
+      ${logo ? `<img class="logo" src="${logo}" alt="" aria-hidden="true">` : ""}
+      <h1 class="brand">StackOS</h1>
+      <p class="tagline">Everything runs on your computer</p>
+      <p class="phase" aria-live="polite">${safePhase}</p>
+      <div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${target}" aria-label="${safePhase}">
         <div class="fill"></div>
+        <div class="sweep" aria-hidden="true"></div>
       </div>
     </section>
   </main>
@@ -146,8 +225,11 @@ async function loadLoading(phase, progress) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
+  const target = Math.max(5, Math.min(100, Number(progress) || 5));
+  const from = target >= lastLoadingProgress ? lastLoadingProgress : 0;
+  lastLoadingProgress = target;
   await mainWindow.loadURL(
-    `data:text/html;charset=utf-8,${encodeURIComponent(loadingHtml({ phase, progress }))}`
+    `data:text/html;charset=utf-8,${encodeURIComponent(loadingHtml({ phase, progress: target, from }))}`
   );
 }
 
@@ -306,7 +388,7 @@ async function loadFailure(title, payload) {
 }
 
 async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
-  await loadLoading(forceInstall ? "Repairing local install..." : "Checking local runtime...", 20);
+  await loadLoading(forceInstall ? "Patching things up…" : "Checking your setup…", 20);
   const install = await service.prepareInstalledVersion({
     version: app.getVersion(),
     userDataPath: app.getPath("userData"),
@@ -318,14 +400,14 @@ async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
     return;
   }
 
-  await loadLoading("Starting local service...", 70);
+  await loadLoading("Powering up StackOS…", 70);
   const ready = await service.ensureDaemonReady();
   if (!ready.ok) {
     await loadFailure("StackOS service is not ready", ready);
     return;
   }
 
-  await loadLoading("Opening workspace...", 92);
+  await loadLoading("Opening your workspace…", 92);
   await mainWindow.loadURL(service.DAEMON_URL);
   if (pendingDeepLink) {
     const candidate = pendingDeepLink;
@@ -341,6 +423,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: "StackOS",
+    backgroundColor: "#f7f7f8",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -364,7 +447,7 @@ function createWindow() {
     }
   });
 
-  loadLoading("Preparing StackOS...", 10);
+  loadLoading("Getting things ready…", 10);
   return mainWindow;
 }
 

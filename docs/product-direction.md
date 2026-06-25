@@ -34,8 +34,9 @@ The first priority is making StackOS boring to install, upgrade, repair, and
 remove. Convenience starts before the first workflow.
 
 Phase 1 should cover the whole local lifecycle, but only to the depth needed
-for a dependable local product. Do the core path first; leave release-channel
-hardening and advanced recovery for later unless they block actual use.
+for a dependable local product. Do the core path first; managed desktop updates
+are now part of the public-distribution hardening path, while advanced recovery
+can still wait until the update/export contracts are proven.
 
 Needed work now:
 
@@ -47,8 +48,8 @@ Needed work now:
 - Idempotent repair from the desktop app: rerun install, repair launchd,
   refresh plugin assets, repair agent-client registration, restart daemon, and
   rerun doctor.
-- Upgrade flow with release notes, migration status, daemon restart, and
-  rollback guidance.
+- Upgrade flow with release notes, migration status, daemon restart, rollback
+  guidance, and a managed macOS desktop update channel.
 - Clean uninstall that explains what will be removed and what will be
   preserved: app bundle, launchd job, agent-client registrations, plugin
   assets, local DB, generated assets, seed, auth token, and credentials.
@@ -98,8 +99,8 @@ Lifecycle contract:
 - Release / distribution. User: install from the supported release path and
   understand how updates work. Data: release docs name the current supported
   path, packaging checks, rollback notes, and known gaps. Signing,
-  notarization, and a managed update feed are release hardening, not day-one
-  lifecycle mechanics.
+  notarization, and a managed static update feed are required before broad
+  public desktop distribution.
 
 The data-flow invariant is:
 
@@ -127,7 +128,7 @@ sequence without turning the document into a live board.
 | Upgrade and desktop update lifecycle | Done | `phase1-upgrade-update` | Desktop install-state now has coverage for app/payload upgrade triggers, idempotent skips, forced reruns, failed first install, and failed upgrade preservation/retry behavior. |
 | Uninstall and state preservation | Done | `phase1-uninstall-preserve` | Default uninstall removes launchd, agent-client registrations, skill mirrors, plugin source/cache artifacts, and preserves DB, seed, and token; destructive full cleanup remains explicit future scope. |
 | Minimal backup/export before risky changes | Done | `phase1-backup-restore` | `stackos backup` now exports a private zip containing the DB, seed, token, and manifest. Automated restore remains future scope. |
-| Public signing and managed update hardening | Later | `phase1-macos-distribution-signing` | Important before broad public distribution, but should not block the local lifecycle MVP. |
+| Public signing and managed update hardening | In progress | `workflow-128` / `managed-desktop-updates` | Static HTTPS electron-updater feed, signing/notarization, local env-based update smoke, and release signoff are being planned under the managed desktop update workflow. FTP is a future upload/deploy transport only; the app consumes HTTPS. |
 | Lifecycle smoke verification | Done | `phase1-lifecycle-verification` | Public smoke checklist now covers targeted automation, temp-HOME manual smokes, lifecycle evidence, and closeout expectations. |
 
 `Not started` means the product-grade delivery ticket is open. It does not mean
