@@ -25,6 +25,7 @@ export function useDesktopUpdates() {
       status.value === 'available' ||
       status.value === 'downloading' ||
       status.value === 'downloaded' ||
+      status.value === 'installing' ||
       Boolean(actionError.value)
     )
   })
@@ -49,7 +50,11 @@ export function useDesktopUpdates() {
 
   async function refreshState(): Promise<void> {
     applyResult(await desktop.updateState())
-    if (status.value === 'downloading') scheduleDownloadPoll()
+    if (status.value === 'error') {
+      actionError.value =
+        updateState.value?.lastError || updateState.value?.reason || 'StackOS could not complete the update.'
+    }
+    if (status.value === 'downloading' || status.value === 'installing') scheduleUpdatePoll()
   }
 
   async function runCheck(showErrors = false): Promise<void> {
@@ -75,7 +80,7 @@ export function useDesktopUpdates() {
         actionError.value = result?.reason || 'StackOS could not download the update.'
         return
       }
-      if (status.value === 'downloading') scheduleDownloadPoll()
+      if (status.value === 'downloading') scheduleUpdatePoll()
     } finally {
       busy.value = null
     }
@@ -90,7 +95,9 @@ export function useDesktopUpdates() {
       if (!result?.ok) {
         if (result?.reason === 'download the update before installing') return
         actionError.value = result?.reason || 'StackOS could not install the downloaded update.'
+        return
       }
+      if (status.value === 'installing') scheduleUpdatePoll()
     } finally {
       busy.value = null
     }
@@ -110,7 +117,7 @@ export function useDesktopUpdates() {
     }
   }
 
-  function scheduleDownloadPoll(): void {
+  function scheduleUpdatePoll(): void {
     clearPoll()
     pollTimer = setTimeout(async () => {
       await refreshState()

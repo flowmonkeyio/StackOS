@@ -19,6 +19,7 @@ const {
 const promptTitle = computed(() => {
   if (actionError.value) return 'Update needs attention'
   if (status.value === 'downloaded') return 'Update ready to install'
+  if (status.value === 'installing') return 'Installing update'
   if (status.value === 'downloading') return 'Downloading update'
   return version.value ? `StackOS ${version.value} is available` : 'StackOS update available'
 })
@@ -26,6 +27,7 @@ const promptTitle = computed(() => {
 const promptDetail = computed(() => {
   if (actionError.value) return actionError.value
   if (status.value === 'downloaded') return 'Click to install and restart StackOS.'
+  if (status.value === 'installing') return 'StackOS will restart when the update is installed.'
   if (status.value === 'downloading') {
     return percent.value === null ? 'Preparing the update.' : `${percent.value}% complete.`
   }
@@ -35,6 +37,7 @@ const promptDetail = computed(() => {
 const iconName = computed(() => {
   if (actionError.value) return 'alert-triangle'
   if (status.value === 'downloaded') return 'arrow-right'
+  if (status.value === 'installing') return 'loader'
   if (status.value === 'downloading') return 'loader'
   return 'save'
 })
@@ -55,7 +58,7 @@ const iconName = computed(() => {
         <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-info-subtle text-info-fg">
           <UiIcon
             :name="busy || status === 'downloading' ? 'loader' : iconName"
-            :class="['h-4 w-4', (busy || status === 'downloading') && 'animate-spin']"
+            :class="['h-4 w-4', (busy || status === 'downloading' || status === 'installing') && 'animate-spin']"
             aria-hidden="true"
           />
         </span>

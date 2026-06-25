@@ -7,6 +7,7 @@ describe('DesktopUpdatePrompt', () => {
   afterEach(() => {
     Reflect.deleteProperty(window, 'stackosDesktop')
     vi.restoreAllMocks()
+    vi.useRealTimers()
   })
 
   it('does not render or call desktop update APIs in a browser session', async () => {
@@ -87,5 +88,51 @@ describe('DesktopUpdatePrompt', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Update ready to install'))
     await wrapper.get('button').trigger('click')
     await vi.waitFor(() => expect(installUpdate).toHaveBeenCalledTimes(1))
+  })
+
+  it('keeps the prompt visible and surfaces delayed install errors', async () => {
+    vi.useFakeTimers()
+    const updateState = vi
+      .fn()
+      .mockResolvedValueOnce({
+        enabled: true,
+        status: 'downloaded',
+        updateInfo: { version: '1.0.1' },
+      })
+      .mockResolvedValue({
+        enabled: true,
+        status: 'error',
+        updateInfo: { version: '1.0.1' },
+        lastError: 'Code signature did not pass validation',
+      })
+    const installUpdate = vi.fn(async () => ({
+      ok: true,
+      state: {
+        enabled: true,
+        status: 'installing',
+        updateInfo: { version: '1.0.1' },
+      },
+    }))
+
+    Object.defineProperty(window, 'stackosDesktop', {
+      configurable: true,
+      value: {
+        status: vi.fn(async () => ({})),
+        updateState,
+        checkForUpdates: vi.fn(async () => ({ ok: true })),
+        downloadUpdate: vi.fn(async () => ({ ok: true })),
+        installUpdate,
+      },
+    })
+
+    const wrapper = mount(DesktopUpdatePrompt)
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Update ready to install'))
+    await wrapper.get('button').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Installing update'))
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Update needs attention'))
+    expect(wrapper.text()).toContain('Code signature did not pass validation')
   })
 })
