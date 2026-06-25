@@ -1631,8 +1631,10 @@ describe('ConnectionsView', () => {
     await clickButton(wrapper, 'Sync to providers')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('Synced 1 provider webhook.'))
-    expect(wrapper.text()).toContain('1 provider needs manual update.')
+    expect(wrapper.text()).toContain('Slack (slack-bot) needs manual webhook update.')
     expect(wrapper.text()).toContain('Webhook ready')
+    expect(wrapper.text()).toContain('Slack requires manual webhook update.')
+    expect(wrapper.text()).toContain('Copy webhook URL')
     const sync = posted.find((call) => call.url.endsWith('/operations/ingressEndpoint.sync/call'))
     expect(sync?.body).toMatchObject({
       arguments: {

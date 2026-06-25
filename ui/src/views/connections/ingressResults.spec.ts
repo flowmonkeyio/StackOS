@@ -15,7 +15,7 @@ describe('ingressResults', () => {
       ]),
     ).toEqual({
       tone: 'info',
-      text: 'Synced 1 provider webhook. 1 provider needs manual update.',
+      text: 'Synced 1 provider webhook. Slack needs manual webhook update.',
     })
   })
 

@@ -14,6 +14,7 @@ import {
   UiCallout,
   UiCard,
   UiEmptyState,
+  UiPageShell,
   UiSegmentedControl,
   UiSkeleton,
   UiToolbar,

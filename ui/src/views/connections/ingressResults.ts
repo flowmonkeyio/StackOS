@@ -5,6 +5,7 @@ import type {
   IngressProviderResult,
   MessageTone,
 } from './types'
+import { providerLabel } from './formatters'
 
 export interface IngressMessage {
   tone: MessageTone
@@ -16,6 +17,10 @@ const DRY_RUN_STATUSES = new Set(['remote_webhook_dry_run'])
 const MANUAL_STATUSES = new Set(['manual_provider_update_required'])
 const SKIPPED_STATUSES = new Set(['skipped'])
 const FAILED_STATUSES = new Set(['failed'])
+
+export function routeNeedsManualProviderUpdate(route: IngressEndpointRoute): boolean {
+  return MANUAL_STATUSES.has(route.remote_status ?? '')
+}
 
 export function endpointHasPublicAddress(endpoint: IngressEndpointOut | null | undefined): boolean {
   return Boolean(endpoint?.public_base_url?.trim()) && endpoint?.status !== 'failed'
@@ -40,7 +45,7 @@ export function summarizeProviderResults(results: IngressProviderResult[]): Ingr
     parts.push(`Synced ${counts.updated} ${plural('provider webhook', counts.updated)}.`)
   }
   if (counts.manual > 0) {
-    parts.push(`${counts.manual} ${plural('provider', counts.manual)} needs manual update.`)
+    parts.push(manualProviderSummary(results))
   }
   if (counts.dryRun > 0) {
     parts.push(`${counts.dryRun} ${plural('provider webhook', counts.dryRun)} checked in dry-run mode.`)
@@ -63,6 +68,24 @@ export function summarizeProviderResults(results: IngressProviderResult[]): Ingr
     tone: counts.failed > 0 || counts.skipped > 0 ? 'danger' : counts.manual > 0 || counts.dryRun > 0 ? 'info' : 'success',
     text: parts.join(' '),
   }
+}
+
+function manualProviderSummary(results: IngressProviderResult[]): string {
+  const manualResults = results.filter((result) => MANUAL_STATUSES.has(result.status))
+  const labels = manualResults.map(providerResultLabel)
+  if (labels.length === 0) return ''
+
+  const prefix =
+    labels.length <= 2
+      ? labels.join(' and ')
+      : `${labels.slice(0, 2).join(', ')} and ${labels.length - 2} more`
+  return `${prefix} ${labels.length === 1 ? 'needs' : 'need'} manual webhook update.`
+}
+
+function providerResultLabel(result: IngressProviderResult): string {
+  const provider = providerLabel(result.provider_key)
+  if (result.profile_key) return `${provider} (${result.profile_key})`
+  return provider
 }
 
 export function applyProviderResultsToIngressStatus(

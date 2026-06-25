@@ -14,7 +14,8 @@ import {
 import StatusBadge from '@/components/StatusBadge.vue'
 
 import { providerLabel, routeStatusLabel } from './formatters'
-import type { IngressEndpointStatusOut, MessageTone } from './types'
+import { routeNeedsManualProviderUpdate } from './ingressResults'
+import type { IngressEndpointRoute, IngressEndpointStatusOut, MessageTone } from './types'
 
 const props = defineProps<{
   ingressStatus: IngressEndpointStatusOut | null
@@ -34,6 +35,32 @@ const driverLabel = (): string => {
   if (driver === 'local-tunnel') return 'Local tunnel'
   if (driver === 'public-url') return 'Public URL'
   return driver ?? 'Not configured'
+}
+
+function routeKey(route: IngressEndpointRoute): string {
+  return `${route.provider_key}:${route.profile_key}`
+}
+
+function routeUrl(route: IngressEndpointRoute): string | null {
+  return route.ingress_url ?? route.local_url ?? null
+}
+
+function manualRouteInstruction(route: IngressEndpointRoute): string {
+  if (route.provider_key === 'slack-bot') {
+    return 'Slack cannot be updated automatically from here. Copy this webhook URL and paste it into the Slack app Event Subscriptions or Interactivity Request URL field.'
+  }
+  return `Copy this webhook URL and update ${providerLabel(route.provider_key)} in the provider console.`
+}
+
+async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
+  const url = routeUrl(route)
+  if (!url) return
+
+  try {
+    await navigator.clipboard.writeText(url)
+  } catch {
+    // Clipboard can be unavailable in some browser contexts; keep the URL visible for manual copy.
+  }
 }
 </script>
 
@@ -171,23 +198,57 @@ const driverLabel = (): string => {
           <ul class="divide-y divide-border-subtle">
             <li
               v-for="route in ingressStatus.routes"
-              :key="`${route.provider_key}:${route.profile_key}`"
+              :key="routeKey(route)"
               class="px-4 py-3"
             >
-              <div class="flex min-w-0 flex-wrap items-center gap-2">
-                <h5 class="min-w-0 truncate text-sm font-medium text-fg-strong">
-                  {{ route.profile_key }}
-                </h5>
-                <UiBadge tone="accent">
-                  {{ providerLabel(route.provider_key) }}
-                </UiBadge>
-                <UiBadge variant="outline">
-                  {{ routeStatusLabel(route) }}
-                </UiBadge>
+              <div class="flex min-w-0 flex-wrap items-center justify-between gap-3">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                  <h5 class="min-w-0 truncate text-sm font-medium text-fg-strong">
+                    {{ route.profile_key }}
+                  </h5>
+                  <UiBadge tone="accent">
+                    {{ providerLabel(route.provider_key) }}
+                  </UiBadge>
+                  <UiBadge variant="outline">
+                    {{ routeStatusLabel(route) }}
+                  </UiBadge>
+                </div>
+                <UiButton
+                  v-if="routeNeedsManualProviderUpdate(route) && routeUrl(route)"
+                  size="sm"
+                  variant="secondary"
+                  icon-left="copy"
+                  :aria-label="`Copy ${providerLabel(route.provider_key)} webhook URL`"
+                  @click="copyRouteUrl(route)"
+                >
+                  Copy webhook URL
+                </UiButton>
               </div>
               <p class="mt-1 break-all font-mono text-2xs text-fg-subtle">
-                {{ route.ingress_url ?? route.local_url ?? '—' }}
+                {{ routeUrl(route) ?? '—' }}
               </p>
+              <div
+                v-if="routeNeedsManualProviderUpdate(route)"
+                class="mt-3 rounded-md border border-subtle bg-bg-surface-alt p-3"
+              >
+                <p class="text-sm font-medium text-fg-strong">
+                  {{ providerLabel(route.provider_key) }} requires manual webhook update.
+                </p>
+                <p class="mt-1 text-xs leading-5 text-fg-muted">
+                  {{ manualRouteInstruction(route) }}
+                </p>
+              </div>
+              <ul
+                v-if="route.notes?.length"
+                class="mt-2 list-disc space-y-1 pl-5 text-xs text-fg-muted"
+              >
+                <li
+                  v-for="note in route.notes"
+                  :key="note"
+                >
+                  {{ note }}
+                </li>
+              </ul>
             </li>
           </ul>
         </UiCard>
