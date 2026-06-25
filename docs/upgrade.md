@@ -35,6 +35,9 @@ cache copy, repairs MCP registrations, and runs `doctor`.
 ## macOS desktop mode
 
 The `stackos` desktop app updates through a custom generic update endpoint.
+The endpoint is a static HTTPS website path consumed by `electron-updater`.
+Upload/deploy mechanisms such as FTP are outside the app and must not be
+packaged into the runtime.
 After the app bundle is updated, the next launch reruns the idempotent install
 repair step for the new app version or new packaged payload build id:
 
@@ -51,17 +54,22 @@ payload, signing, and release-artifact requirements.
 For local desktop upgrade testing after development changes:
 
 ```bash
-make desktop-dist
+STACKOS_UPDATE_URL="http://127.0.0.1:8765/stackos/macos" make desktop-dist
 stackos stop
 open desktop/dist/stackos-1.0.0-mac-arm64.dmg
 ```
 
-Replace the installed app from the DMG, then launch it. The payload build writes
-`resources/stackos/build-info.json`; if that build id changed, the app runs the
-install/repair path once and restarts the daemon even when `desktop/package.json`
-still has the same public version. For release updates, still bump
-`pyproject.toml`, `stackos/__init__.py`, and `desktop/package.json` together so
-electron-updater can advertise a new version.
+Serve the generated update metadata and artifacts from the matching localhost
+static path, replace the installed app from the DMG if needed, then launch the
+installed copy. Do not test managed updates while running from the mounted DMG:
+the mounted volume is read-only and Squirrel.Mac refuses to update from it.
+Unsigned local builds can validate update discovery, download, and the prompt
+only. macOS install/relaunch evidence requires a signed installed app.
+The payload build writes `resources/stackos/build-info.json`; if that build id
+changed, the app runs the install/repair path once and restarts the daemon even
+when `desktop/package.json` still has the same public version. For release
+updates, still bump `pyproject.toml`, `stackos/__init__.py`, and
+`desktop/package.json` together so electron-updater can advertise a new version.
 
 ## What happens during upgrade
 

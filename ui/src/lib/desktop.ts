@@ -33,11 +33,20 @@ export interface DesktopCommandResult {
 }
 
 export interface DesktopUpdateState {
+  enabled?: boolean
   status: string
-  progress?: number
+  reason?: string | null
+  progress?: { percent?: number; [key: string]: unknown } | null
   updateInfo?: unknown
   lastError?: string | null
+  updateUrl?: string | null
   [key: string]: unknown
+}
+
+export interface DesktopUpdateResult extends DesktopCommandResult {
+  state?: DesktopUpdateState
+  updateInfo?: unknown
+  reason?: string
 }
 
 interface DesktopBridge {
@@ -45,9 +54,9 @@ interface DesktopBridge {
   installOrRepair(): Promise<DesktopCommandResult>
   restartService(): Promise<DesktopCommandResult>
   runDoctor(): Promise<DesktopCommandResult>
-  checkForUpdates(): Promise<DesktopUpdateState>
-  downloadUpdate(): Promise<DesktopUpdateState>
-  installUpdate(): Promise<DesktopUpdateState>
+  checkForUpdates(): Promise<DesktopUpdateResult>
+  downloadUpdate(): Promise<DesktopUpdateResult>
+  installUpdate(): Promise<DesktopUpdateResult>
   updateState(): Promise<DesktopUpdateState>
 }
 

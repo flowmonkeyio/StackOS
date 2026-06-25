@@ -69,8 +69,8 @@ desktop-payload: ## Build the packaged StackOS Python payload for Electron
 desktop-dist: build-ui desktop-payload ## Build macOS app artifacts with electron-builder
 	@if [ -d desktop ]; then cd desktop && pnpm install && pnpm run dist:mac; else echo "desktop/ not available in this checkout"; exit 0; fi
 
-desktop-doctor: ## Validate desktop scaffold metadata and source syntax
-	@if [ -d desktop ]; then cd desktop && node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check scripts/build-mac.mjs && node scripts/doctor.mjs; else echo "desktop/ not available in this checkout"; exit 0; fi
+desktop-doctor: ## Validate desktop scaffold, updater contracts, and lifecycle smoke tests
+	@if [ -d desktop ]; then cd desktop && pnpm run check; else echo "desktop/ not available in this checkout"; exit 0; fi
 
 signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/CLI, and UI checks
 	$(UV) run pytest tests/unit \

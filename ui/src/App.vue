@@ -9,6 +9,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 
+import DesktopUpdatePrompt from '@/components/DesktopUpdatePrompt.vue'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -333,6 +334,8 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 
       <RouterView :key="routeViewKey" />
     </main>
+
+    <DesktopUpdatePrompt />
   </div>
 </template>
 

@@ -90,7 +90,7 @@ const STATUS_DOT: Record<string, string> = {
   neutral: 'bg-fg-subtle',
 }
 
-type SystemAction = 'restart' | 'doctor' | 'updates' | 'repair'
+type SystemAction = 'restart' | 'doctor' | 'repair'
 
 async function runSystemAction(action: SystemAction): Promise<void> {
   systemBusy.value = action
@@ -102,10 +102,6 @@ async function runSystemAction(action: SystemAction): Promise<void> {
     } else if (action === 'doctor') {
       const r = await desktop.runDoctor()
       toastResult(r?.ok ?? false, 'Doctor passed', 'Doctor found issues — see the StackOS log')
-    } else if (action === 'updates') {
-      const r = await desktop.checkForUpdates()
-      const status = r?.status ?? 'unknown'
-      toasts.info('Checked for updates', `Update status: ${status}.`)
     } else if (action === 'repair') {
       const r = await desktop.installOrRepair()
       toastResult(r?.ok ?? false, 'Install or repair complete', 'Install or repair failed')
@@ -221,15 +217,6 @@ function confirmRepair(): void {
             @click="runSystemAction('doctor')"
           >
             Run doctor
-          </UiButton>
-          <UiButton
-            variant="secondary"
-            size="sm"
-            icon-left="arrow-right"
-            :loading="systemBusy === 'updates'"
-            @click="runSystemAction('updates')"
-          >
-            Check for updates
           </UiButton>
           <UiButton
             variant="secondary"

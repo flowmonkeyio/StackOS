@@ -113,6 +113,27 @@ make desktop-payload
 STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" make desktop-dist
 ```
 
+Before public desktop distribution, record the managed-update evidence:
+
+- `latest-mac.yml`, DMG, ZIP, and generated blockmap artifacts are present in
+  the website static update directory.
+- The public update endpoint is HTTPS. FTP, if used, is only the upload/deploy
+  transport and no FTP credentials are packaged into the app.
+- Artifact URLs referenced by the update metadata are reachable and are not
+  stale behind website/CDN cache.
+- Apple signing and notarization status is recorded for each published macOS
+  artifact.
+- `pyproject.toml`, `stackos/__init__.py`, and `desktop/package.json` versions
+  are synchronized for the release.
+- A local `STACKOS_UPDATE_URL=http://127.0.0.1:<port>/...` smoke has covered
+  update discovery, download, the in-app prompt, post-update Doctor where
+  install/relaunch can run, and state preservation.
+- macOS install/relaunch signoff was performed from a signed installed app.
+  Unsigned local builds are not valid evidence for the final Squirrel.Mac
+  install/relaunch gate.
+- A bad-feed smoke has shown readable failure and no mutation of
+  `stackos.db`, `seed.bin`, `auth.token`, or provider credentials.
+
 `doctor` may return daemon-down during first install before `make serve`; that
 is expected for setup checks and should be noted in the release notes if it is
 the only failing check. Plugin or managed skill drift is not expected; a doctor

@@ -460,6 +460,103 @@ async function showCommandResult(title, result) {
   });
 }
 
+function updateVersionFrom(result) {
+  const info =
+    result && typeof result === "object"
+      ? result.updateInfo || (result.state && result.state.updateInfo)
+      : null;
+  if (!info || typeof info !== "object") {
+    return null;
+  }
+  return typeof info.version === "string" && info.version ? `v${info.version}` : null;
+}
+
+function updateFailureReason(result) {
+  if (!result || typeof result !== "object") {
+    return "StackOS could not complete the update action.";
+  }
+  return (
+    result.reason ||
+    result.lastError ||
+    (result.state && (result.state.reason || result.state.lastError)) ||
+    "StackOS could not complete the update action."
+  );
+}
+
+function updateResultCopy(action, result) {
+  const state = result && typeof result === "object" ? result.state || result : null;
+  const status = state && typeof state === "object" ? state.status : null;
+  const version = updateVersionFrom(result);
+
+  if (!result || result.ok === false) {
+    return {
+      type: "error",
+      message:
+        action === "download"
+          ? "Couldn’t download the update"
+          : action === "install"
+            ? "Update is not ready to install"
+            : "Couldn’t check for updates",
+      detail: updateFailureReason(result)
+    };
+  }
+
+  if (action === "check") {
+    if (status === "available") {
+      return {
+        type: "info",
+        message: "Update available",
+        detail: `${version || "A new StackOS version"} is available. Use the in-app update prompt or choose Updates > Download Update.`
+      };
+    }
+    if (status === "not-available") {
+      return {
+        type: "info",
+        message: "StackOS is up to date",
+        detail: "No newer desktop update is available from the configured channel."
+      };
+    }
+    if (status === "disabled") {
+      return {
+        type: "info",
+        message: "Desktop updates are disabled",
+        detail: updateFailureReason(result)
+      };
+    }
+  }
+
+  if (action === "download") {
+    if (status === "downloaded") {
+      return {
+        type: "info",
+        message: "Update ready to install",
+        detail: `${version || "The update"} is ready. Use the in-app update prompt or choose Updates > Install Downloaded Update to restart into the new app.`
+      };
+    }
+    return {
+      type: "info",
+      message: "Downloading update",
+      detail: "StackOS started downloading the desktop update."
+    };
+  }
+
+  return {
+    type: "info",
+    message: "Update action complete",
+    detail: "StackOS finished the update action."
+  };
+}
+
+async function showUpdateResult(action, result) {
+  const copy = updateResultCopy(action, result);
+  await dialog.showMessageBox(mainWindow, {
+    type: copy.type,
+    title: copy.message,
+    message: copy.message,
+    detail: copy.detail
+  });
+}
+
 function createMenu() {
   const template = [
     {
@@ -513,19 +610,22 @@ function createMenu() {
         {
           label: "Check for Updates",
           click: async () => {
-            await showCommandResult("Check for Updates", await updateController.checkForUpdates());
+            await showUpdateResult("check", await updateController.checkForUpdates());
           }
         },
         {
           label: "Download Update",
           click: async () => {
-            await showCommandResult("Download Update", await updateController.downloadUpdate());
+            await showUpdateResult("download", await updateController.downloadUpdate());
           }
         },
         {
           label: "Install Downloaded Update",
           click: () => {
-            updateController.quitAndInstall();
+            const result = updateController.quitAndInstall();
+            if (!result.ok) {
+              showUpdateResult("install", result);
+            }
           }
         }
       ]

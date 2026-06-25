@@ -196,58 +196,65 @@
 :root[data-theme="dark"],
 .theme-dark,
 .dark {
-  --color-bg-app:           #0d0d10;
-  --color-bg-surface:       #16161a;
-  --color-bg-surface-alt:   #1c1c21;
-  --color-bg-sunken:        #09090b;
+  /* Backgrounds — a real elevation ramp instead of one flat near-black band.
+     sidebar (#0b0b0e) is the darkest rail; the content canvas lifts above it,
+     cards lift above the canvas, raised surfaces above cards. Each step is
+     perceptible (~+8 in luma) so depth reads without relying on borders. */
+  --color-bg-app:           #121216;   /* content canvas */
+  --color-bg-surface:       #1a1a20;   /* cards / primary surface */
+  --color-bg-surface-alt:   #212128;   /* raised: stat cards, nested insets */
+  --color-bg-sunken:        #0e0e12;   /* wells: code, table headers, tracks */
   --color-bg-inverse:       #fafafa;
-  --color-bg-overlay:       rgba(0, 0, 0, 0.6);
+  --color-bg-overlay:       rgba(0, 0, 0, 0.66);
 
   --color-fg-default:       #d8d8dc;
   --color-fg-strong:        #fafafa;
   --color-fg-muted:         #9c9ca5;
-  --color-fg-subtle:        #84848e;
-  --color-fg-disabled:      #4b4b53;
+  --color-fg-subtle:        #8a8a94;
+  --color-fg-disabled:      #54545d;
   --color-fg-inverse:       #18181b;
   --color-fg-link:          #a5b4fc;
   --color-fg-on-accent:     #ffffff;
 
-  --color-border-default:   #26262c;
-  --color-border-strong:    #36363e;
-  --color-border-subtle:    #1e1e24;
+  /* Borders carry the seams between the lifted planes — strong enough to read. */
+  --color-border-default:   #2e2e37;
+  --color-border-strong:    #3c3c46;
+  --color-border-subtle:    #26262d;
   --color-border-focus:     #818cf8;
   --color-border-inverse:   #d4d4d8;
 
-  --color-accent-primary:        #5b5bd6;
-  --color-accent-primary-hover:  #4f46e5;
-  --color-accent-primary-active: #4338ca;
-  --color-accent-primary-subtle: rgba(99, 102, 241, 0.16);
+  /* Accent — a clean, luminous indigo (not muddy violet). Interactive states
+     brighten on dark, as they should: hover lighter, active a tactile press. */
+  --color-accent-primary:        #5b5ef0;
+  --color-accent-primary-hover:  #6f72f3;
+  --color-accent-primary-active: #4f52e0;
+  --color-accent-primary-subtle: rgba(99, 102, 241, 0.18);
   --color-accent-primary-fg:     #a5b4fc;
 
   --color-success-default: #10b981;
-  --color-success-subtle:  rgba(16, 185, 129, 0.14);
+  --color-success-subtle:  rgba(16, 185, 129, 0.16);
   --color-success-fg:      #34d399;
-  --color-success-border:  rgba(16, 185, 129, 0.35);
+  --color-success-border:  rgba(16, 185, 129, 0.38);
 
   --color-warning-default: #f59e0b;
-  --color-warning-subtle:  rgba(245, 158, 11, 0.14);
+  --color-warning-subtle:  rgba(245, 158, 11, 0.16);
   --color-warning-fg:      #fbbf24;
-  --color-warning-border:  rgba(245, 158, 11, 0.35);
+  --color-warning-border:  rgba(245, 158, 11, 0.38);
 
   --color-danger-default:  #ef4444;
-  --color-danger-subtle:   rgba(239, 68, 68, 0.14);
+  --color-danger-subtle:   rgba(239, 68, 68, 0.16);
   --color-danger-fg:       #f87171;
-  --color-danger-border:   rgba(239, 68, 68, 0.35);
+  --color-danger-border:   rgba(239, 68, 68, 0.38);
 
   --color-info-default:    #0ea5e9;
-  --color-info-subtle:     rgba(14, 165, 233, 0.14);
+  --color-info-subtle:     rgba(14, 165, 233, 0.16);
   --color-info-fg:         #38bdf8;
-  --color-info-border:     rgba(14, 165, 233, 0.35);
+  --color-info-border:     rgba(14, 165, 233, 0.38);
 
   --color-neutral-default: #9c9ca5;
-  --color-neutral-subtle:  rgba(148, 148, 160, 0.12);
+  --color-neutral-subtle:  rgba(148, 148, 160, 0.14);
   --color-neutral-fg:      #c2c2ca;
-  --color-neutral-border:  #36363e;
+  --color-neutral-border:  #3c3c46;
 
   --shadow-xs:   0 1px 2px 0 rgba(0, 0, 0, 0.4);
   --shadow-sm:   0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
@@ -256,15 +263,16 @@
   --shadow-xl:   0 8px 16px -4px rgba(0, 0, 0, 0.5), 0 32px 72px -16px rgba(0, 0, 0, 0.7);
   --shadow-inset:inset 0 1px 2px 0 rgba(0, 0, 0, 0.4);
 
-  /* Sidebar — slightly below content surface in dark theme */
-  --sb-bg:          #101014;
-  --sb-bg-elevated: #1e1e24;
-  --sb-bg-hover:    rgba(255, 255, 255, 0.05);
-  --sb-bg-active:   rgba(255, 255, 255, 0.09);
+  /* Sidebar — the darkest plane: a true rail that anchors the shell and lets
+     the brighter content stage step forward. Elevated chips match the cards. */
+  --sb-bg:          #0b0b0e;
+  --sb-bg-elevated: #1a1a20;
+  --sb-bg-hover:    rgba(255, 255, 255, 0.055);
+  --sb-bg-active:   rgba(255, 255, 255, 0.1);
   --sb-fg:          #c8c8cf;
   --sb-fg-strong:   #fafafa;
-  --sb-fg-muted:    #94949e;
-  --sb-border:      rgba(255, 255, 255, 0.07);
+  --sb-fg-muted:    #92929c;
+  --sb-border:      rgba(255, 255, 255, 0.08);
   --sb-accent:      #a5b4fc;
   --sb-ring:        #818cf8;
 }

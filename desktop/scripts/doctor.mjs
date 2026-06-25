@@ -93,6 +93,8 @@ for (const relativePath of [
   "scripts/build-icons.mjs",
   "scripts/build-stackos-payload.sh",
   "scripts/build-mac.mjs",
+  "scripts/test-updates.cjs",
+  "scripts/test-build-mac-config.cjs",
   "update-config.example.json"
 ]) {
   mustExist(relativePath);
@@ -113,10 +115,13 @@ mustContain("src/service.js", "--force");
 mustContain("src/service.js", "installKey");
 mustContain("src/service.js", "build-info.json");
 mustContain("src/updates.js", "provider: \"generic\"");
+mustContain("src/updates.js", "update endpoint must use HTTPS unless it is localhost for local testing");
 mustContain("scripts/build-icons.mjs", "stackos-icon.png");
 mustContain("scripts/build-icons.mjs", "iconutil");
 mustContain("scripts/build-stackos-payload.sh", "build-info.json");
 mustContain("scripts/build-mac.mjs", "STACKOS_UPDATE_URL");
+mustContain("scripts/build-mac.mjs", "STACKOS_DESKTOP_BUILD_DRY_RUN");
+mustContain("scripts/build-mac.mjs", "must use HTTPS unless it is localhost for local testing");
 mustContain("scripts/build-mac.mjs", "scripts/build-icons.mjs");
 mustContain("scripts/build-mac.mjs", "update-config.json");
 
