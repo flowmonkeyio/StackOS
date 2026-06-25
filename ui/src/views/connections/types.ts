@@ -10,6 +10,7 @@ export type ConnectionSection =
   | 'bots'
   | 'channels'
   | 'destinations'
+  | 'handoff-rules'
   | 'connectivity'
   | 'diagnostics'
 
@@ -138,6 +139,26 @@ export interface CommunicationTarget {
 
 export interface CommunicationTargetListOut {
   items: CommunicationTarget[]
+  next_cursor: string | number | null
+  total_estimate: number | null
+}
+
+export interface CommunicationRoute {
+  record_id: number
+  project_id: number
+  route_ref: string
+  key: string
+  enabled: boolean
+  source_surface_refs: string[]
+  target_refs: string[]
+  allowed_profile_refs: string[]
+  requires_approval: boolean
+  field_policy: Record<string, unknown>
+  metadata_json: Record<string, unknown>
+}
+
+export interface CommunicationRouteListOut {
+  items: CommunicationRoute[]
   next_cursor: string | number | null
   total_estimate: number | null
 }

@@ -20,6 +20,7 @@ import ConnectionsOverviewPanel from './connections/ConnectionsOverviewPanel.vue
 import ConnectivityPanel from './connections/ConnectivityPanel.vue'
 import ConnectivitySetupPanel from './connections/ConnectivitySetupPanel.vue'
 import DestinationsPanel from './connections/DestinationsPanel.vue'
+import HandoffRulesPanel from './connections/HandoffRulesPanel.vue'
 import SlackBotSidePanel from './connections/SlackBotSidePanel.vue'
 import TelegramProfileSidePanel from './connections/TelegramProfileSidePanel.vue'
 import {
@@ -47,6 +48,8 @@ import type {
   AuthMethod,
   CommunicationProfile,
   CommunicationProfileListOut,
+  CommunicationRoute,
+  CommunicationRouteListOut,
   CommunicationSurface,
   CommunicationSurfaceListOut,
   CommunicationTarget,
@@ -69,6 +72,7 @@ const SECTION_KEYS: ConnectionSection[] = [
   'bots',
   'channels',
   'destinations',
+  'handoff-rules',
   'connectivity',
   'diagnostics',
 ]
@@ -112,6 +116,7 @@ const telegramProfileMessage = ref<{ tone: MessageTone; text: string } | null>(n
 const communicationProfiles = ref<CommunicationProfile[]>([])
 const communicationTargets = ref<CommunicationTarget[]>([])
 const communicationSurfaces = ref<CommunicationSurface[]>([])
+const communicationRoutes = ref<CommunicationRoute[]>([])
 const ingressStatus = ref<IngressEndpointStatusOut | null>(null)
 const communicationSetupLoading = ref(false)
 const communicationSetupMessage = ref<{ tone: MessageTone; text: string } | null>(null)
@@ -296,6 +301,12 @@ const subNavGroups = computed(() => [
         count: communicationTargets.value.length,
       },
       {
+        key: 'handoff-rules',
+        label: 'Handoff rules',
+        icon: 'git-branch',
+        count: communicationRoutes.value.length,
+      },
+      {
         key: 'connectivity',
         label: 'Connectivity',
         icon: 'globe',
@@ -335,7 +346,7 @@ async function loadCommunicationSetup(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
   communicationSetupLoading.value = true
   try {
-    const [profiles, targets, surfaces, ingress] = await Promise.all([
+    const [profiles, targets, surfaces, routes, ingress] = await Promise.all([
       callOperation<CommunicationProfileListOut>('communicationProfile.list', {
         project_id: projectId.value,
         limit: 50,
@@ -348,6 +359,10 @@ async function loadCommunicationSetup(): Promise<void> {
         project_id: projectId.value,
         limit: 50,
       }),
+      callOperation<CommunicationRouteListOut>('communicationRoute.list', {
+        project_id: projectId.value,
+        limit: 50,
+      }),
       callOperation<IngressEndpointStatusOut>('ingressEndpoint.status', {
         project_id: projectId.value,
       }),
@@ -355,6 +370,7 @@ async function loadCommunicationSetup(): Promise<void> {
     communicationProfiles.value = profiles.items ?? []
     communicationTargets.value = targets.items ?? []
     communicationSurfaces.value = surfaces.items ?? []
+    communicationRoutes.value = routes.items ?? []
     ingressStatus.value = ingress ?? null
     communicationSetupMessage.value = null
   } catch (err) {
@@ -1095,6 +1111,19 @@ onBeforeRouteUpdate((to) => {
         >
           <DestinationsPanel
             :destinations="communicationTargets"
+            :loading="communicationSetupLoading"
+            :message="communicationSetupMessage"
+            @refresh="loadCommunicationSetup"
+          />
+        </div>
+
+        <div
+          role="tabpanel"
+          aria-labelledby="cs-subnav-handoff-rules"
+          :hidden="activeSection !== 'handoff-rules'"
+        >
+          <HandoffRulesPanel
+            :routes="communicationRoutes"
             :loading="communicationSetupLoading"
             :message="communicationSetupMessage"
             @refresh="loadCommunicationSetup"

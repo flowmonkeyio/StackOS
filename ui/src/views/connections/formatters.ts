@@ -2,6 +2,7 @@ import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api
 
 import type {
   CommunicationProfile,
+  CommunicationRoute,
   CommunicationSurface,
   CommunicationTarget,
   ConnectionRow,
@@ -87,11 +88,6 @@ export function connectionStatusKey(connection: SchemaCredentialConnectionOut): 
   return connection.status
 }
 
-export function connectionCountLabel(group: ServiceGroup): string {
-  const count = group.connections.length
-  return `${count} connection${count === 1 ? '' : 's'}`
-}
-
 export function connectionTitle(connection: SchemaCredentialConnectionOut): string {
   return String(connection.label || connection.account?.display_name || connection.profile_key)
 }
@@ -113,10 +109,6 @@ export function profileProviderKeys(profile: CommunicationProfile): string[] {
   return Object.keys(profile.provider_facets ?? {}).sort()
 }
 
-export function allowedOperatorRefs(profile: CommunicationProfile): string[] {
-  return profile.access_policy.allowed_user_refs ?? []
-}
-
 export function targetTitle(target: CommunicationTarget): string {
   return target.display_name || target.key
 }
@@ -134,6 +126,24 @@ export function targetPolicySummary(target: CommunicationTarget): string {
   return parts.length > 0 ? `${parts.length} guard${parts.length === 1 ? '' : 's'}` : 'unscoped'
 }
 
+export function routePurpose(route: CommunicationRoute): string {
+  const purpose = route.metadata_json?.purpose
+  return typeof purpose === 'string' && purpose.trim() ? purpose.trim() : ''
+}
+
+/** Plain-language summary of what a handoff route is allowed to carry. */
+export function routeFieldSummary(route: CommunicationRoute): string {
+  const policy = route.field_policy ?? {}
+  const parts: string[] = []
+  if (policy.forward_text === true) parts.push('Text')
+  if (policy.forward_media === true) parts.push('Media')
+  const allowed = Array.isArray(policy.allowed_fields) ? policy.allowed_fields.length : 0
+  const redact = Array.isArray(policy.redact_fields) ? policy.redact_fields.length : 0
+  if (allowed) parts.push(`${allowed} field${allowed === 1 ? '' : 's'}`)
+  if (redact) parts.push(`${redact} redacted`)
+  return parts.length > 0 ? parts.join(' · ') : 'Default fields'
+}
+
 export function surfaceTitle(surface: CommunicationSurface): string {
   return surface.display_name || surface.surface_ref
 }
@@ -144,13 +154,6 @@ export function surfaceIntentSummary(surface: CommunicationSurface): string {
   if (typeof summary === 'string' && summary.trim()) return summary
   if (typeof category === 'string' && category.trim()) return category
   return 'No intent configured'
-}
-
-export function surfaceDataScope(surface: CommunicationSurface): string {
-  const classification = surface.data_scope.classification
-  return typeof classification === 'string' && classification.trim()
-    ? classification
-    : 'scope unset'
 }
 
 const SURFACE_AUDIENCE_LABELS: Record<string, string> = {
