@@ -42,7 +42,8 @@ touches committed UI assets.
 | Agent request handoff | Agent requests claim, prepare run plans atomically, link, complete, release, and hide claim tokens correctly. | `uv run pytest tests/integration/test_mcp/test_mcp_agent_requests.py tests/integration/test_repositories/test_agent_requests.py -q` |
 | UI human signoff surfaces | Tracker, setup, connections, runs, resources, and operation pages render the generic objects agents act on. | `pnpm --dir ui test && pnpm --dir ui build` |
 | Setup/package smoke | Install, daemon start/doctor, MCP registration, assets, and docs match the release shape. | `make install && make doctor` |
-| macOS desktop app | Electron metadata, service bridge, update endpoint config, and desktop docs stay aligned with the installer contract. | `make desktop-doctor` |
+| Local daemon lifecycle | Restart ignores stale pid files and zombie/defunct children, refuses non-StackOS port blockers, and does not leave launchd booted out. | `uv run pytest tests/unit/test_cli_daemon.py -q` |
+| macOS desktop app | Electron metadata, service bridge, update endpoint config, packaged install/repair, and desktop docs stay aligned with the installer contract. | `make desktop-doctor` |
 
 For a faster local check while iterating on action execution, run the mock
 provider and connector-contract slice directly:
@@ -85,6 +86,23 @@ changes:
 make install
 make doctor
 ```
+
+For daemon lifecycle or desktop install/repair changes, also exercise the
+installed app path, not only the source checkout:
+
+```bash
+uv run pytest tests/unit/test_cli_daemon.py -q
+make desktop-doctor
+make desktop-dist
+/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos autostart status --json
+/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos restart --timeout 20
+```
+
+The restart smoke must cover a dirty local lifecycle, not just a clean boot:
+stale `daemon.pid`, launchd currently loaded, launchd currently missing, and a
+non-StackOS process occupying port `5180` are distinct states. Preserve
+`~/.local/share/stackos/stackos.db` across upgrade, repair, and uninstall unless
+the operator explicitly asks for data removal.
 
 For desktop release candidates, also build the Python payload and macOS
 artifacts after dependencies, signing, notarization, and the custom update

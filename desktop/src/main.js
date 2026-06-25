@@ -71,7 +71,87 @@ function handleStackosDeepLink(candidate) {
   return loadStackosDeepLink(candidate);
 }
 
-function failureHtml(title, details) {
+function loadingHtml({ phase, progress }) {
+  const boundedProgress = Math.max(5, Math.min(100, Number(progress) || 5));
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>StackOS</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f7f7f5;
+      color: #151515;
+    }
+    main {
+      align-items: center;
+      display: flex;
+      min-height: 100vh;
+      justify-content: center;
+      padding: 32px;
+    }
+    .panel {
+      max-width: 420px;
+      width: 100%;
+    }
+    .brand {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      color: #6f6a60;
+      font-size: 13px;
+      margin-bottom: 28px;
+    }
+    .phase {
+      color: #332f2a;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .track {
+      background: #e3dfd7;
+      border-radius: 999px;
+      height: 8px;
+      overflow: hidden;
+      width: 100%;
+    }
+    .fill {
+      background: #2276b8;
+      border-radius: inherit;
+      height: 100%;
+      width: ${boundedProgress}%;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel" aria-label="StackOS startup">
+      <div class="brand">StackOS</div>
+      <div class="subtitle">Local runtime</div>
+      <div class="phase">${escapeHtml(phase)}</div>
+      <div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${boundedProgress}">
+        <div class="fill"></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+async function loadLoading(phase, progress) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  await mainWindow.loadURL(
+    `data:text/html;charset=utf-8,${encodeURIComponent(loadingHtml({ phase, progress }))}`
+  );
+}
+
+function failureHtml(title, { summary, repair, details }) {
   return `<!doctype html>
 <html>
 <head>
@@ -94,12 +174,39 @@ function failureHtml(title, details) {
       font-weight: 650;
       margin: 0 0 16px;
     }
-    pre {
-      white-space: pre-wrap;
+    p {
+      color: #4f4a42;
+      line-height: 1.55;
+      margin: 0 0 16px;
+    }
+    .summary {
       background: #fff;
       border: 1px solid #ddd9cf;
       border-radius: 8px;
       padding: 16px;
+      margin-bottom: 16px;
+    }
+    .label {
+      color: #6f6a60;
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    details {
+      background: #fff;
+      border: 1px solid #ddd9cf;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 650;
+    }
+    pre {
+      white-space: pre-wrap;
+      margin: 16px 0 0;
       overflow: auto;
     }
   </style>
@@ -107,18 +214,99 @@ function failureHtml(title, details) {
 <body>
   <main>
     <h1>${escapeHtml(title)}</h1>
-    <pre>${escapeHtml(details)}</pre>
+    <div class="summary">
+      <div class="label">What happened</div>
+      <p>${escapeHtml(summary)}</p>
+      <div class="label">What to do</div>
+      <p>${escapeHtml(repair)}</p>
+    </div>
+    <details>
+      <summary>Technical details</summary>
+      <pre>${escapeHtml(details)}</pre>
+    </details>
   </main>
 </body>
 </html>`;
 }
 
+function payloadText(payload, key) {
+  const value = payload && typeof payload === "object" ? payload[key] : null;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function commandError(result) {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  return payloadText(result, "stderr") || payloadText(result, "error") || payloadText(result, "stdout");
+}
+
+function failureCopy(title, payload) {
+  if (!payload || typeof payload !== "object") {
+    return {
+      summary: typeof payload === "string" && payload.trim() ? payload.trim() : title,
+      repair: "Try Install or Repair from the StackOS menu. If it fails again, open the daemon log from the Service menu."
+    };
+  }
+
+  const phase = payloadText(payload, "phase");
+  const installError = commandError(payload.install);
+  const startError = commandError(payload.start);
+  const doctorError = commandError(payload.doctor);
+  const readinessRepair =
+    payload.readiness && typeof payload.readiness === "object"
+      ? payloadText(payload.readiness, "repair")
+      : null;
+
+  if (phase === "restart") {
+    return {
+      summary: startError || "StackOS installed or repaired successfully, but the local service did not restart.",
+      repair:
+        readinessRepair ||
+        "Use Service > Install or Repair once more. If the service was wedged, quit StackOS and reopen it after the repair finishes."
+    };
+  }
+  if (phase === "install") {
+    return {
+      summary: installError || "StackOS could not finish installing the local runtime.",
+      repair:
+        readinessRepair ||
+        "Make sure the app is in /Applications, then use Service > Install or Repair again."
+    };
+  }
+  if (phase === "doctor") {
+    return {
+      summary: doctorError || "StackOS started, but doctor found a setup issue.",
+      repair:
+        readinessRepair ||
+        "Open Service > Run Doctor for details, then use the Connections page to finish provider setup if needed."
+    };
+  }
+
+  return {
+    summary: startError || installError || doctorError || "StackOS could not finish preparing the local service.",
+    repair:
+      readinessRepair ||
+      "Try Service > Restart Service, then Service > Run Doctor. If it fails again, open the daemon log from the Service menu."
+  };
+}
+
 async function loadFailure(title, payload) {
   const details = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
-  await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(failureHtml(title, details))}`);
+  const copy = failureCopy(title, payload);
+  await mainWindow.loadURL(
+    `data:text/html;charset=utf-8,${encodeURIComponent(
+      failureHtml(title, {
+        summary: copy.summary,
+        repair: copy.repair,
+        details
+      })
+    )}`
+  );
 }
 
 async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
+  await loadLoading(forceInstall ? "Repairing local install..." : "Checking local runtime...", 20);
   const install = await service.prepareInstalledVersion({
     version: app.getVersion(),
     userDataPath: app.getPath("userData"),
@@ -130,12 +318,14 @@ async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
     return;
   }
 
+  await loadLoading("Starting local service...", 70);
   const ready = await service.ensureDaemonReady();
   if (!ready.ok) {
     await loadFailure("StackOS service is not ready", ready);
     return;
   }
 
+  await loadLoading("Opening workspace...", 92);
   await mainWindow.loadURL(service.DAEMON_URL);
   if (pendingDeepLink) {
     const candidate = pendingDeepLink;
@@ -174,6 +364,7 @@ function createWindow() {
     }
   });
 
+  loadLoading("Preparing StackOS...", 10);
   return mainWindow;
 }
 

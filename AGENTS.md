@@ -150,6 +150,31 @@ work, start here:
 Do not assume another live localhost port belongs to this project. For example,
 `3030` is commonly used by other local apps and is not the StackOS UI.
 
+## Install Lifecycle Rules
+
+Install, repair, upgrade, restart, uninstall, and desktop packaging are one
+product lifecycle. When changing any of them, do not stop at a unit test or a
+fresh install happy path. Verify the lifecycle state machine end to end:
+
+- install/repair writes or refreshes launchd state, starts the daemon, reaches
+  `/api/v1/health`, and then runs doctor;
+- restart handles loaded launchd jobs, missing launchd jobs, stale pid files,
+  zombie/defunct daemon children, non-StackOS port blockers, and wedged live
+  daemons without leaving launchd booted out;
+- upgrade preserves `~/.local/share/stackos/stackos.db`, state, skills,
+  plugins, MCP registrations, and existing auth references unless an explicit
+  migration says otherwise;
+- uninstall removes app/autostart/runtime wiring but preserves the project
+  database by default;
+- repair messages must be operator-readable and actionable. Do not surface raw
+  JSON as the primary desktop failure experience.
+
+Before signing off desktop or install changes, run the focused daemon CLI tests,
+the desktop doctor, a packaged install/repair smoke, and a manual app restart
+from the installed `/Applications/StackOS.app`. If a lifecycle bug is found,
+add a regression that recreates the broken state, not just the expected final
+state.
+
 ## Change Checklist
 
 When changing an execution or tool flow, update these together:

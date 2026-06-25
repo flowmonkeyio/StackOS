@@ -436,7 +436,28 @@ def _pid_is_running(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+    if _pid_is_zombie(pid):
+        return False
     return True
+
+
+def _pid_is_zombie(pid: int) -> bool:
+    ps = shutil.which("ps")
+    if not ps:
+        return False
+    try:
+        result = subprocess.run(
+            [ps, "-p", str(pid), "-o", "stat="],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    return result.stdout.strip().startswith("Z")
 
 
 def _pid_command(pid: int) -> str | None:
@@ -554,10 +575,11 @@ def _discover_daemon_processes(settings: Settings, port: int) -> tuple[list[int]
         pid_file_pid
         and pid_file_pid != os.getpid()
         and pid_file_pid not in seen_daemons
-        and _pid_is_running(pid_file_pid)
-        and _command_looks_like_daemon(_pid_command(pid_file_pid))
     ):
-        daemons.append(pid_file_pid)
+        if not _pid_is_running(pid_file_pid):
+            _remove_pid_file(settings.pid_path, pid_file_pid)
+        elif _command_looks_like_daemon(_pid_command(pid_file_pid)):
+            daemons.append(pid_file_pid)
 
     return daemons, blockers
 
@@ -605,6 +627,23 @@ def _terminate_daemon_processes(
         "daemon did not stop before timeout; re-run with `stackos restart --force` "
         "if the process is wedged."
     )
+
+
+def _abort_restart_after_launchd_bootout(launchd_plist: Path, message: str) -> None:
+    restore_ok, restore_message = _launchd_bootstrap(launchd_plist)
+    typer.echo(message, err=True)
+    if restore_ok:
+        typer.echo(
+            f"restart: restored launchd job after failed restart; {restore_message}",
+            err=True,
+        )
+    else:
+        typer.echo(
+            "restart: failed to restore launchd job after failed restart; "
+            f"{restore_message}",
+            err=True,
+        )
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -788,13 +827,6 @@ def restart(
 
     launchd_plist = _loaded_launchd_plist(_doctor_home())
     restart_via_launchd = launchd_plist is not None
-    if launchd_plist is not None:
-        ok, message = _launchd_bootout(launchd_plist)
-        if not ok:
-            typer.echo(f"restart: launchd bootout failed: {message}", err=True)
-            raise typer.Exit(code=1)
-        detail = f"; {message}" if message else ""
-        typer.echo(f"restart: unloaded launchd job{detail}")
 
     daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
@@ -806,6 +838,27 @@ def restart(
         )
         raise typer.Exit(code=1)
 
+    if launchd_plist is not None:
+        ok, message = _launchd_bootout(launchd_plist)
+        if not ok:
+            typer.echo(f"restart: launchd bootout failed: {message}", err=True)
+            raise typer.Exit(code=1)
+        detail = f"; {message}" if message else ""
+        typer.echo(f"restart: unloaded launchd job{detail}")
+        daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
+
+    if blocker_pids:
+        message = (
+            "error: port "
+            f"{daemon_port} is held by non-StackOS process pid(s): "
+            f"{', '.join(str(pid) for pid in blocker_pids)}"
+        )
+        if restart_via_launchd:
+            assert launchd_plist is not None
+            _abort_restart_after_launchd_bootout(launchd_plist, message)
+        typer.echo(message, err=True)
+        raise typer.Exit(code=1)
+
     if daemon_pids:
         ok, message = _terminate_daemon_processes(
             daemon_pids,
@@ -813,14 +866,19 @@ def restart(
             force=force,
         )
         if not ok:
-            typer.echo(f"restart: {message}", err=True)
+            error_message = f"restart: {message}"
+            if restart_via_launchd:
+                assert launchd_plist is not None
+                _abort_restart_after_launchd_bootout(launchd_plist, error_message)
+            typer.echo(error_message, err=True)
             raise typer.Exit(code=1)
         typer.echo(f"restart: {message}")
     elif _tcp_can_connect(daemon_host, daemon_port, timeout=0.25):
-        typer.echo(
-            "error: daemon port is reachable, but no StackOS daemon PID could be identified.",
-            err=True,
-        )
+        message = "error: daemon port is reachable, but no StackOS daemon PID could be identified."
+        if restart_via_launchd:
+            assert launchd_plist is not None
+            _abort_restart_after_launchd_bootout(launchd_plist, message)
+        typer.echo(message, err=True)
         raise typer.Exit(code=1)
     else:
         if not restart_via_launchd:
