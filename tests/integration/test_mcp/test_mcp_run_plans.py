@@ -104,7 +104,7 @@ def test_run_plan_create_start_and_step_with_run_token(
     project_id = seeded_project["data"]["id"]
     validation = mcp_client.call_tool_structured(
         "runPlan.validate",
-        {"run_plan_json": _plan_json()},
+        {"run_plan_json": _plan_json(), "response_mode": "raw"},
     )
     created = mcp_client.call_tool_structured(
         "runPlan.create",
@@ -478,6 +478,7 @@ def test_run_plan_context_query_grant_enforces_sources_and_fields(
             "sources": ["learnings"],
             "fields": ["statement", "evidence_json"],
             "run_token": run_token,
+            "response_mode": "raw",
         },
     )
     mcp_client.call_tool_structured(
@@ -520,6 +521,7 @@ def test_run_plan_context_query_grant_enforces_sources_and_fields(
             "sources": ["learnings"],
             "fields": ["statement", "evidence_json"],
             "run_token": run_token,
+            "response_mode": "raw",
         },
     )
 
@@ -887,7 +889,11 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
 
     structural = mcp_client.call_tool_structured(
         "runPlan.validate",
-        {"project_id": project_id, "workflow_key": "core.project-memory-review"},
+        {
+            "project_id": project_id,
+            "workflow_key": "core.project-memory-review",
+            "response_mode": "raw",
+        },
     )
     missing = mcp_client.call_tool_structured(
         "runPlan.validate",
@@ -895,6 +901,7 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
             "project_id": project_id,
             "workflow_key": "core.project-memory-review",
             "enforce_required_inputs": True,
+            "response_mode": "raw",
         },
     )
     with_inputs = mcp_client.call_tool_structured(
@@ -904,6 +911,7 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
             "workflow_key": "core.project-memory-review",
             "inputs_json": {"goal": "Review recent project memory."},
             "enforce_required_inputs": True,
+            "response_mode": "raw",
         },
     )
 
@@ -922,7 +930,11 @@ def test_run_plan_validate_marketing_template_wires_optional_provider_video_flow
 
     validation = mcp_client.call_tool_structured(
         "runPlan.validate",
-        {"project_id": project_id, "workflow_key": "marketing.campaign-production"},
+        {
+            "project_id": project_id,
+            "workflow_key": "marketing.campaign-production",
+            "response_mode": "raw",
+        },
     )
 
     assert validation["valid"] is True
@@ -980,7 +992,7 @@ def test_run_plan_validate_rejects_secrets(mcp_client: MCPClient) -> None:
 
     validation = mcp_client.call_tool_structured(
         "runPlan.validate",
-        {"run_plan_json": plan},
+        {"run_plan_json": plan, "response_mode": "raw"},
     )
 
     assert validation["valid"] is False

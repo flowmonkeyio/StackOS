@@ -77,7 +77,11 @@ def _credential_ref(
 ) -> str:
     status = mcp.call_tool_structured(
         "auth.status",
-        {"project_id": project_id, "provider_key": provider_key},
+        {
+            "project_id": project_id,
+            "provider_key": provider_key,
+            "response_mode": "raw",
+        },
     )
     for connection in status["connections"]:
         if connection["profile_key"] == profile_key:
@@ -191,7 +195,7 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
 
     routes = mcp_client.call_tool_structured(
         "ingressEndpoint.routes",
-        {"project_id": project_id},
+        {"project_id": project_id, "response_mode": "raw"},
     )
     assert routes["endpoint"]["public_base_url"] == "https://stackos.example.com"
     assert routes["endpoint"]["driver"] == "public-url"
@@ -227,7 +231,7 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
 
     profile = mcp_client.call_tool_structured(
         "communicationProfile.get",
-        {"project_id": project_id, "key": "support"},
+        {"project_id": project_id, "key": "support", "response_mode": "raw"},
     )
     assert (
         profile["provider_facets"]["slack-bot"]["ingress_url"]
@@ -236,7 +240,7 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
 
     bot = mcp_client.call_tool_structured(
         "communicationProfile.get",
-        {"project_id": project_id, "key": "support-bot"},
+        {"project_id": project_id, "key": "support-bot", "response_mode": "raw"},
     )
     telegram_facet = bot["provider_facets"]["telegram-bot"]
     assert telegram_facet["ingress_mode"] == "webhook"
@@ -260,7 +264,7 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
 
     refreshed_bot = mcp_client.call_tool_structured(
         "communicationProfile.get",
-        {"project_id": project_id, "key": "support-bot"},
+        {"project_id": project_id, "key": "support-bot", "response_mode": "raw"},
     )
     refreshed_telegram_facet = refreshed_bot["provider_facets"]["telegram-bot"]
     assert refreshed_telegram_facet["webhook_base_url"] == "https://fresh.stackos.example.com"
@@ -444,6 +448,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "profile_ref": "communication-profile:support",
             "source_surface_ref": "telegram-chat:-1001",
             "invoker_ref": "telegram-user:555",
+            "response_mode": "raw",
         },
     )
     allowed_default_actor = mcp_client.call_tool_structured(
@@ -453,6 +458,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "key": "internal-support",
             "source_surface_ref": "telegram-chat:-1001",
             "invoker_ref": "telegram-user:555",
+            "response_mode": "raw",
         },
     )
     denied = mcp_client.call_tool_structured(
@@ -463,6 +469,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "profile_ref": "communication-profile:analytics",
             "source_surface_ref": "telegram-chat:-1001",
             "invoker_ref": "telegram-user:555",
+            "response_mode": "raw",
         },
     )
     denied_invoker = mcp_client.call_tool_structured(
@@ -473,6 +480,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "profile_ref": "communication-profile:support",
             "source_surface_ref": "telegram-chat:-1001",
             "invoker_ref": "telegram-user:999",
+            "response_mode": "raw",
         },
     )
 
@@ -512,6 +520,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "profile_ref": "communication-profile:support",
             "source_surface_ref": "slack-channel:C123",
             "invoker_ref": "telegram-user:555",
+            "response_mode": "raw",
         },
     )
     assert telegram_allowed["allowed"] is True
@@ -536,6 +545,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "project_id": project_id,
             "key": "default-denied",
             "profile_ref": "communication-profile:support",
+            "response_mode": "raw",
         },
     )
     assert default_denied_resolution["allowed"] is False
@@ -564,6 +574,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "project_id": project_id,
             "key": "wrong-target-allowlist",
             "profile_ref": "communication-profile:support",
+            "response_mode": "raw",
         },
     )
     assert wrong_target_resolution["allowed"] is False
@@ -602,6 +613,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
             "thread_ref": "slack-thread:C123:1710000000.000100",
             "limit": 10,
             "fields": ["message_ref", "sender_ref", "text_preview"],
+            "response_mode": "raw",
         },
     )
 
@@ -1560,11 +1572,11 @@ def test_communication_profile_mcp_lifecycle_has_no_secret_roundtrip(
 
     fetched = mcp_client.call_tool_structured(
         "communicationProfile.get",
-        {"project_id": project_id, "key": "support-bot"},
+        {"project_id": project_id, "key": "support-bot", "response_mode": "raw"},
     )
     listed = mcp_client.call_tool_structured(
         "communicationProfile.list",
-        {"project_id": project_id},
+        {"project_id": project_id, "response_mode": "raw"},
     )
 
     assert fetched["key"] == "support-bot"
@@ -1659,6 +1671,7 @@ def test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential(
             "project_id": project_id,
             "provider_key": "telegram-bot",
             "tool_profile_key": "support-bot",
+            "response_mode": "raw",
         },
     )
 
@@ -1775,6 +1788,7 @@ def test_tool_profile_resolve_mcp_redacts_profile_sections(
             "project_id": project_id,
             "provider_key": "telegram-bot",
             "tool_profile_key": "support-bot",
+            "response_mode": "raw",
         },
     )
 
@@ -1829,6 +1843,7 @@ def test_tool_profile_resolve_mcp_resolves_generic_credential_profile(
             "project_id": project_id,
             "provider_key": "smtp",
             "auth_profile_key": "primary",
+            "response_mode": "raw",
         },
     )
 

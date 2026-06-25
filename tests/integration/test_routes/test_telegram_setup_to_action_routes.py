@@ -215,6 +215,8 @@ def test_telegram_setup_ingress_claim_link_and_reply_action(
                         "inline_keyboard": [[{"text": "Mark done", "callback_data": "done_89"}]]
                     },
                 },
+                "output_policy_json": {"mode": "inline"},
+                "response_mode": "raw",
             }
         },
     )

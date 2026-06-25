@@ -1034,7 +1034,7 @@ def test_telegram_response_policy_rejects_malformed_non_telegram_source(
     assert httpx_mock.get_requests() == []
 
 
-def test_telegram_provider_error_redacts_bot_token_url(
+def test_telegram_provider_error_does_not_expose_bot_token_url(
     session: Session,
     project_id: int,
     httpx_mock: HTTPXMock,
@@ -1063,4 +1063,5 @@ def test_telegram_provider_error_redacts_bot_token_url(
         )
 
     assert _TOKEN not in exc.value.data["error"]
-    assert "/bot[redacted]/sendMessage" in exc.value.data["error"]
+    assert "bot" not in exc.value.data["error"]
+    assert exc.value.data["error"] == "provider action returned status 401"

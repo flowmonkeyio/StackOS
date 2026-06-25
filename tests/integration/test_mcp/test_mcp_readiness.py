@@ -13,7 +13,11 @@ def test_readiness_check_reports_ready_no_auth_action(
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "action_ref": "utils.sitemap.fetch"},
+        {
+            "project_id": project_id,
+            "action_ref": "utils.sitemap.fetch",
+            "response_mode": "raw",
+        },
     )
 
     assert readiness["scope"] == "action"
@@ -55,7 +59,11 @@ def test_readiness_check_reports_scoped_action_missing_setup(
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "action_ref": "utils.image.generate"},
+        {
+            "project_id": project_id,
+            "action_ref": "utils.image.generate",
+            "response_mode": "raw",
+        },
     )
 
     assert readiness["scope"] == "action"
@@ -90,7 +98,11 @@ def test_readiness_check_keeps_engineering_workflow_usable_without_provider_nois
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "workflow_key": "engineering.tracked-delivery"},
+        {
+            "project_id": project_id,
+            "workflow_key": "engineering.tracked-delivery",
+            "response_mode": "raw",
+        },
     )
 
     assert readiness["scope"] == "workflow"
@@ -110,7 +122,11 @@ def test_readiness_check_branding_content_optional_image_repair_setup(
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "workflow_key": "branding.content-production"},
+        {
+            "project_id": project_id,
+            "workflow_key": "branding.content-production",
+            "response_mode": "raw",
+        },
     )
 
     assert readiness["scope"] == "workflow"
@@ -134,7 +150,11 @@ def test_readiness_check_deferred_branding_action_points_to_action_describe(
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "action_ref": "branding.publish.x"},
+        {
+            "project_id": project_id,
+            "action_ref": "branding.publish.x",
+            "response_mode": "raw",
+        },
     )
 
     assert readiness["scope"] == "action"
@@ -162,7 +182,11 @@ def test_readiness_check_branding_content_optional_image_setup(
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "workflow_key": "branding.content-production"},
+        {
+            "project_id": project_id,
+            "workflow_key": "branding.content-production",
+            "response_mode": "raw",
+        },
     )
 
     image_missing = [
@@ -186,7 +210,11 @@ def test_readiness_check_reports_customer_support_workflow_slack_setup(
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "workflow_key": "communications.customer-feedback-intake"},
+        {
+            "project_id": project_id,
+            "workflow_key": "communications.customer-feedback-intake",
+            "response_mode": "raw",
+        },
     )
 
     assert readiness["scope"] == "workflow"
@@ -221,7 +249,11 @@ def test_readiness_check_reports_only_selected_workflow_provider_gaps(
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "workflow_key": "seo.keyword-research"},
+        {
+            "project_id": project_id,
+            "workflow_key": "seo.keyword-research",
+            "response_mode": "raw",
+        },
     )
 
     assert readiness["scope"] == "workflow"
@@ -244,13 +276,18 @@ def test_readiness_check_resolves_cross_plugin_utility_action_contracts(
 
     gtm = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "workflow_key": "gtm.account-research"},
+        {
+            "project_id": project_id,
+            "workflow_key": "gtm.account-research",
+            "response_mode": "raw",
+        },
     )
     media = mcp_client.call_tool_structured(
         "readiness.check",
         {
             "project_id": project_id,
             "workflow_key": "media-buying.creative-variant-generation",
+            "response_mode": "raw",
         },
     )
 
@@ -273,7 +310,11 @@ def test_readiness_check_marketing_campaign_scopes_concrete_optional_video_actio
 
     readiness = mcp_client.call_tool_structured(
         "readiness.check",
-        {"project_id": project_id, "workflow_key": "marketing.campaign-production"},
+        {
+            "project_id": project_id,
+            "workflow_key": "marketing.campaign-production",
+            "response_mode": "raw",
+        },
     )
 
     refs = {item["action_ref"] for item in readiness["actions"]}
