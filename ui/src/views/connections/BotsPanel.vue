@@ -41,6 +41,11 @@ function isTelegram(bot: CommunicationProfile): boolean {
   return Boolean(bot.provider_facets?.['telegram-bot'])
 }
 
+/** Bots the browser UI can edit: Telegram or Slack profiles. */
+function isEditable(bot: CommunicationProfile): boolean {
+  return isTelegram(bot) || Boolean(bot.provider_facets?.['slack-bot'])
+}
+
 function botProviderLabel(bot: CommunicationProfile): string {
   // A bot can carry several provider facets (e.g. Telegram + Slack). The
   // editable surface today is Telegram, so prefer it for the headline label.
@@ -197,7 +202,7 @@ function chatCount(bot: CommunicationProfile): number {
 
             <div class="flex shrink-0 items-center lg:justify-end">
               <UiButton
-                v-if="isTelegram(bot)"
+                v-if="isEditable(bot)"
                 size="sm"
                 variant="secondary"
                 icon-left="settings"

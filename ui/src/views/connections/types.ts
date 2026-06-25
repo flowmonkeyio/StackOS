@@ -57,6 +57,20 @@ export interface TelegramProfileForm {
   same_thread: boolean
 }
 
+export interface SlackProfileForm {
+  key: string
+  auth_profile_key: string
+  identity_display_name: string
+  identity_purpose: string
+  identity_voice: string
+  agent_default_instructions: string
+  agent_boundaries: string
+  agent_escalation: string
+  allowed_chat_refs: string
+  allowed_user_refs: string
+  mention_patterns: string
+}
+
 export interface CommunicationProfile {
   record_id: number
   project_id: number
@@ -75,6 +89,8 @@ export interface CommunicationProfile {
     denied_user_refs?: string[]
     allowed_chat_refs?: string[]
     denied_chat_refs?: string[]
+    allowed_surface_refs?: string[]
+    denied_surface_refs?: string[]
     user_mode?: string
     dm_mode?: string
     channel_mode?: string

@@ -20,6 +20,7 @@ import ConnectionsOverviewPanel from './connections/ConnectionsOverviewPanel.vue
 import ConnectivityPanel from './connections/ConnectivityPanel.vue'
 import ConnectivitySetupPanel from './connections/ConnectivitySetupPanel.vue'
 import DestinationsPanel from './connections/DestinationsPanel.vue'
+import SlackBotSidePanel from './connections/SlackBotSidePanel.vue'
 import TelegramProfileSidePanel from './connections/TelegramProfileSidePanel.vue'
 import {
   botUsernameFromConnection,
@@ -30,6 +31,9 @@ import {
   preferredTelegramConnection,
   providerGroupLabel,
   serviceName,
+  slackFacet,
+  slackProfileAuthKey,
+  slackProfileTeam,
   telegramConnectionForProfile,
   telegramFacet,
   telegramProfileAuthKey,
@@ -53,6 +57,7 @@ import type {
   MessageMap,
   MessageTone,
   ServiceGroup,
+  SlackProfileForm,
   TelegramCommandSpec,
   TelegramProfileForm,
 } from './connections/types'
@@ -142,6 +147,22 @@ const telegramProfileForm = ref<TelegramProfileForm>({
   reply_to_source_message: true,
   same_thread: true,
 })
+const slackProfilePanelOpen = ref(false)
+const slackProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
+const slackProfileTeamLabel = ref('')
+const slackProfileForm = ref<SlackProfileForm>({
+  key: '',
+  auth_profile_key: '',
+  identity_display_name: '',
+  identity_purpose: '',
+  identity_voice: '',
+  agent_default_instructions: '',
+  agent_boundaries: '',
+  agent_escalation: '',
+  allowed_chat_refs: '',
+  allowed_user_refs: '',
+  mention_patterns: '',
+})
 
 const connections = computed<ConnectionRow[]>(() =>
   (authStatus.value?.connections ?? []).map((connection) => ({
@@ -204,6 +225,17 @@ const identifiedTelegramConnections = computed(() =>
 
 const telegramConnectionOptions = computed(() =>
   telegramConnections.value.map((connection) => ({
+    value: connection.profile_key,
+    label: `${connectionTitle(connection)} (${connection.profile_key})`,
+  })),
+)
+
+const slackConnections = computed(() =>
+  connectedConnections.value.filter((connection) => connection.provider_key === 'slack-bot'),
+)
+
+const slackConnectionOptions = computed(() =>
+  slackConnections.value.map((connection) => ({
     value: connection.profile_key,
     label: `${connectionTitle(connection)} (${connection.profile_key})`,
   })),
@@ -343,6 +375,7 @@ async function saveIngressSetup(): Promise<void> {
     ingressMessage.value = { tone: 'danger', text: 'A public address is required.' }
     return
   }
+  const discoveryUrl = form.discovery_url.trim() || 'http://127.0.0.1:4040/api/endpoints'
   busyAction.value = 'ingress:configure'
   try {
     await callOperation('ingressEndpoint.configure', {
@@ -351,13 +384,17 @@ async function saveIngressSetup(): Promise<void> {
       enabled: true,
       ...(form.driver === 'public-url'
         ? { public_base_url: form.public_base_url.trim() }
-        : {
-            driver_config: {
-              provider: 'ngrok',
-              discovery_url: form.discovery_url.trim() || 'http://127.0.0.1:4040/api/endpoints',
-            },
-          }),
+        : { driver_config: { provider: 'ngrok', discovery_url: discoveryUrl } }),
     })
+    if (form.driver === 'local-tunnel') {
+      // A local tunnel only has an address once it's discovered — configure
+      // alone leaves it pending, so run the discovery pass before reloading.
+      await callOperation('ingressEndpoint.refresh', {
+        project_id: projectId.value,
+        driver_config: { provider: 'ngrok', discovery_url: discoveryUrl },
+        sync_profiles: true,
+      })
+    }
     ingressMessage.value = { tone: 'success', text: 'Connectivity configured.' }
     ingressSetupOpen.value = false
     await loadCommunicationSetup()
@@ -465,6 +502,36 @@ function editTelegramProfile(profile: CommunicationProfile): void {
   }
   telegramProfileMessage.value = null
   telegramProfilePanelOpen.value = true
+}
+
+/** Route the Bots "Configure" action to the right provider editor. */
+function editBot(profile: CommunicationProfile): void {
+  if (profile.provider_facets?.['telegram-bot']) {
+    editTelegramProfile(profile)
+  } else if (profile.provider_facets?.['slack-bot']) {
+    editSlackProfile(profile)
+  }
+}
+
+function editSlackProfile(profile: CommunicationProfile): void {
+  const access = profile.access_policy
+  const rawMentions = profile.trigger_policy['mention_patterns']
+  slackProfileForm.value = {
+    key: profile.key,
+    auth_profile_key: slackProfileAuthKey(profile),
+    identity_display_name: String(profile.identity.display_name ?? profile.key),
+    identity_purpose: String(profile.identity.purpose ?? ''),
+    identity_voice: String(profile.identity.voice ?? ''),
+    agent_default_instructions: String(profile.agent_guidance.default_instructions ?? ''),
+    agent_boundaries: String(profile.agent_guidance.boundaries ?? ''),
+    agent_escalation: String(profile.agent_guidance.escalation ?? ''),
+    allowed_chat_refs: (access.allowed_surface_refs ?? []).join(', '),
+    allowed_user_refs: (access.allowed_user_refs ?? []).join(', '),
+    mention_patterns: (Array.isArray(rawMentions) ? (rawMentions as string[]) : []).join(', '),
+  }
+  slackProfileTeamLabel.value = slackProfileTeam(profile)
+  slackProfileMessage.value = null
+  slackProfilePanelOpen.value = true
 }
 
 function communicationProfileByKey(key: string): CommunicationProfile | null {
@@ -636,6 +703,88 @@ async function saveTelegramProfile(): Promise<void> {
     telegramProfileMessage.value = {
       tone: 'danger',
       text: formatApiError(err, 'failed to save Telegram profile'),
+    }
+  } finally {
+    busyAction.value = null
+  }
+}
+
+async function saveSlackProfile(): Promise<void> {
+  const form = slackProfileForm.value
+  const key = form.key.trim()
+  const authProfileKey = form.auth_profile_key.trim()
+  const displayName = form.identity_display_name.trim()
+  const allowedUserRefs = parseCsv(form.allowed_user_refs)
+  const allowedSurfaceRefs = parseCsv(form.allowed_chat_refs)
+  if (!displayName) {
+    slackProfileMessage.value = { tone: 'danger', text: 'Bot display name is required.' }
+    return
+  }
+  if (!authProfileKey) {
+    slackProfileMessage.value = { tone: 'danger', text: 'Choose a Slack connection.' }
+    return
+  }
+  if (allowedUserRefs.length === 0) {
+    slackProfileMessage.value = {
+      tone: 'danger',
+      text: 'Allowlisted users are required before the bot can trigger agents.',
+    }
+    return
+  }
+  const existing = communicationProfileByKey(key)
+  if (!existing) {
+    slackProfileMessage.value = { tone: 'danger', text: 'Slack bot not found; reload and retry.' }
+    return
+  }
+  busyAction.value = 'slack-profile:save'
+  try {
+    await callOperation('communicationProfile.upsert', {
+      project_id: projectId.value,
+      key,
+      identity: {
+        ...existing.identity,
+        display_name: displayName,
+        purpose: form.identity_purpose.trim(),
+        voice: form.identity_voice.trim(),
+      },
+      provider_facets: {
+        ...existing.provider_facets,
+        'slack-bot': {
+          ...slackFacet(existing),
+          auth_profile_key: authProfileKey,
+        },
+      },
+      agent_guidance: {
+        ...existing.agent_guidance,
+        default_instructions: form.agent_default_instructions.trim(),
+        boundaries: form.agent_boundaries.trim(),
+        escalation: form.agent_escalation.trim(),
+      },
+      access_policy: {
+        ...existing.access_policy,
+        user_mode: 'allowlist',
+        allowed_user_refs: allowedUserRefs,
+        allowed_surface_refs: allowedSurfaceRefs,
+      },
+      trigger_policy: {
+        ...existing.trigger_policy,
+        mention_patterns: parseCsv(form.mention_patterns),
+      },
+      visibility_policy: existing.visibility_policy ?? {},
+      context_policy: existing.context_policy ?? {},
+      response_policy: existing.response_policy ?? {},
+      send_policy: existing.send_policy ?? { mode: 'explicit-targets' },
+      handoff_policy: existing.handoff_policy ?? { mode: 'explicit-targets' },
+      approval_policy: existing.approval_policy ?? { mode: 'none' },
+      metadata_json: existing.metadata_json ?? {},
+    })
+    slackProfileMessage.value = { tone: 'success', text: `Saved ${key}.` }
+    slackProfilePanelOpen.value = false
+    await loadCommunicationSetup()
+  } catch (err) {
+    slackProfileMessage.value = {
+      tone: 'danger',
+      text: formatApiError(err, 'failed to save Slack bot'),
     }
   } finally {
     busyAction.value = null
@@ -862,10 +1011,10 @@ onBeforeRouteUpdate((to) => {
             :bots="communicationProfiles"
             :telegram-connections="telegramConnections"
             :loading="communicationSetupLoading"
-            :message="telegramProfileMessage"
+            :message="telegramProfileMessage ?? slackProfileMessage"
             @add-connection="openAddConnection"
             @add-bot="openAddTelegramProfile"
-            @edit-bot="editTelegramProfile"
+            @edit-bot="editBot"
           />
         </div>
 
@@ -960,6 +1109,16 @@ onBeforeRouteUpdate((to) => {
       @save="saveTelegramProfile"
       @add-command="addCommandDraft"
       @remove-command="removeCommandDraft"
+    />
+
+    <SlackBotSidePanel
+      v-model="slackProfilePanelOpen"
+      v-model:form="slackProfileForm"
+      :slack-connection-options="slackConnectionOptions"
+      :team-label="slackProfileTeamLabel"
+      :message="slackProfileMessage"
+      :busy-action="busyAction"
+      @save="saveSlackProfile"
     />
 
     <ConnectivitySetupPanel

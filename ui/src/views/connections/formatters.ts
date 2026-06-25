@@ -326,6 +326,21 @@ export function telegramProfileIngressMode(profile: CommunicationProfile): strin
   return telegramFacetString(profile, 'ingress_mode') || 'not configured'
 }
 
+export function slackFacet(profile: CommunicationProfile): Record<string, unknown> {
+  return profile.provider_facets?.['slack-bot'] ?? {}
+}
+
+export function slackProfileAuthKey(profile: CommunicationProfile): string {
+  const value = slackFacet(profile)['auth_profile_key']
+  return typeof value === 'string' && value ? value : 'default'
+}
+
+export function slackProfileTeam(profile: CommunicationProfile): string {
+  const facet = slackFacet(profile)
+  const team = facet['team_name'] ?? facet['team_id']
+  return typeof team === 'string' ? team : ''
+}
+
 export function telegramCommands(profile: CommunicationProfile): TelegramCommandSpec[] {
   const commands = profile.trigger_policy['commands']
   return Array.isArray(commands) ? (commands as TelegramCommandSpec[]) : []
