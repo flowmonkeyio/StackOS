@@ -81,26 +81,6 @@ export function serviceName(group: ServiceGroup): string {
   return group.provider?.name ?? group.providerKey
 }
 
-/**
- * Representative connection-domain status key for a whole service group, so the
- * group header can render a single `<StatusBadge domain="connection">`. Prefers
- * a live connected account, then surfaces hard failures, else the first row.
- */
-export function serviceGroupStatus(group: ServiceGroup): string {
-  if (
-    group.connections.some(
-      (connection) => connection.status === 'connected' && connection.revoked_at === null,
-    )
-  ) {
-    return 'connected'
-  }
-  const failed = group.connections.find((connection) =>
-    ['failed', 'revoked', 'expired'].includes(connection.status),
-  )
-  if (failed) return failed.status
-  return group.connections[0]?.status ?? 'pending'
-}
-
 /** Status key for a single connection, mapped onto the `connection` domain. */
 export function connectionStatusKey(connection: SchemaCredentialConnectionOut): string {
   if (connection.status === 'connected' && connection.setup_required) return 'setup-required'
@@ -333,12 +313,6 @@ export function slackFacet(profile: CommunicationProfile): Record<string, unknow
 export function slackProfileAuthKey(profile: CommunicationProfile): string {
   const value = slackFacet(profile)['auth_profile_key']
   return typeof value === 'string' && value ? value : 'default'
-}
-
-export function slackProfileTeam(profile: CommunicationProfile): string {
-  const facet = slackFacet(profile)
-  const team = facet['team_name'] ?? facet['team_id']
-  return typeof team === 'string' ? team : ''
 }
 
 /** True once a Slack connection has been tested and its workspace identity resolved. */

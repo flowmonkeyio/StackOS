@@ -1277,6 +1277,61 @@ describe('ConnectionsView', () => {
     expect(wrapper.text()).toContain('Manual update needed')
   })
 
+  it('configures local-tunnel connectivity and runs a discovery pass', async () => {
+    const posted: Array<{ url: string; body: Record<string, unknown> }> = []
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (init?.body) posted.push({ url, body: JSON.parse(String(init.body)) })
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
+      if (url === '/api/v1/auth/providers') {
+        return json([authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod())])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({ project_id: 1, provider_key: null, providers: [], connections: [] })
+      }
+      if (url === '/api/v1/operations/ingressEndpoint.status/call') {
+        return json({ configured: false, ready: false, endpoint: null, routes: [], notes: [] })
+      }
+      if (url === '/api/v1/operations/ingressEndpoint.configure/call') {
+        return json({ data: {}, run_id: null, project_id: 1 })
+      }
+      if (url === '/api/v1/operations/ingressEndpoint.refresh/call') {
+        return json({ data: {}, run_id: null, project_id: 1 })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
+    await clickButton(wrapper, 'Set up')
+    await clickButton(wrapper, 'Save')
+
+    // configure resolves first, then the discovery refresh — wait for both.
+    await vi.waitFor(() =>
+      expect(
+        posted.some((call) => call.url.endsWith('/operations/ingressEndpoint.refresh/call')),
+      ).toBe(true),
+    )
+    const configure = posted.find((call) =>
+      call.url.endsWith('/operations/ingressEndpoint.configure/call'),
+    )
+    expect(configure?.body).toMatchObject({
+      arguments: {
+        driver: 'local-tunnel',
+        driver_config: expect.objectContaining({ provider: 'ngrok' }),
+      },
+    })
+  })
+
   it('does not report failed credentials as connected and keeps operator actions available', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
