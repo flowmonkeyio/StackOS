@@ -55,9 +55,7 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
             encoding="utf-8"
         )
     )
-    workflow_refs = {
-        item["agent_preset_ref"] for item in workflow["agent_requirements"]
-    }
+    workflow_refs = {item["agent_preset_ref"] for item in workflow["agent_requirements"]}
     expected_refs = {preset for _config_path, preset in LOCAL_CODEX_AGENT_PRESETS.values()}
 
     assert workflow_refs == expected_refs
@@ -75,18 +73,16 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
         assert "Keep aligned with plugins/engineering/agent-presets/sdlc.yaml." in local_text
         tomllib.loads(local_text)
 
-    test_designer_text = (
-        REPO_ROOT / ".codex/agents/sdlc-test-designer.toml"
-    ).read_text(encoding="utf-8")
-    reviewer_text = (
-        REPO_ROOT / ".codex/agents/sdlc-delivery-reviewer.toml"
-    ).read_text(encoding="utf-8")
-    planning_text = (REPO_ROOT / ".codex/agents/sdlc-planning.toml").read_text(
+    test_designer_text = (REPO_ROOT / ".codex/agents/sdlc-test-designer.toml").read_text(
         encoding="utf-8"
     )
-    orchestrator_text = (
-        REPO_ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md"
-    ).read_text(encoding="utf-8")
+    reviewer_text = (REPO_ROOT / ".codex/agents/sdlc-delivery-reviewer.toml").read_text(
+        encoding="utf-8"
+    )
+    planning_text = (REPO_ROOT / ".codex/agents/sdlc-planning.toml").read_text(encoding="utf-8")
+    orchestrator_text = (REPO_ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "manual proof depth" in test_designer_text
     assert "full manual signoff" in test_designer_text
@@ -98,9 +94,7 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     assert "planned persistent `profile_key`" in reviewer_text
     assert "include_graph=true" in planning_text
     assert "detached branches" in planning_text
-    assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.1.0" in (
-        orchestrator_text
-    )
+    assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.1.0" in (orchestrator_text)
     assert "not a subagent" in orchestrator_text
     assert "Quality beats speed" in orchestrator_text
     assert "StackOS browser `profile_key`" in orchestrator_text
@@ -197,7 +191,7 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     assert "full manual signoff" in test_designer_text
     assert "production risk" in test_designer_text
     assert "stable stackos browser profile_key" in test_designer_text
-    assert "vague \"smoke test\"" in test_designer_text
+    assert 'vague "smoke test"' in test_designer_text
 
     reviewer = AgentPresetLoader().describe_preset(key="stackos.sdlc.delivery-reviewer")
     reviewer_text = " ".join(

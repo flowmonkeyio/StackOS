@@ -604,11 +604,7 @@ def test_cli_uninstall_removes_integrations_and_preserves_state(
     bin_dir.mkdir()
     launchctl = bin_dir / "launchctl"
     launchctl.write_text(
-        "#!/bin/sh\n"
-        "case \"$1\" in\n"
-        "  print) exit 1 ;;\n"
-        "  *) exit 0 ;;\n"
-        "esac\n",
+        '#!/bin/sh\ncase "$1" in\n  print) exit 1 ;;\n  *) exit 0 ;;\nesac\n',
         encoding="utf-8",
     )
     launchctl.chmod(0o755)
@@ -694,7 +690,7 @@ def test_cli_uninstall_fails_when_launchd_unload_fails(
     launchctl = bin_dir / "launchctl"
     launchctl.write_text(
         "#!/usr/bin/env bash\n"
-        "case \"$1\" in\n"
+        'case "$1" in\n'
         "  print) exit 1 ;;\n"
         "  unload) echo unload failed >&2; exit 44 ;;\n"
         "  *) exit 0 ;;\n"

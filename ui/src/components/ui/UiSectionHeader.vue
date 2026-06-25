@@ -13,8 +13,8 @@ defineProps<{
 </script>
 
 <template>
-  <div class="ui-section-header mb-3 flex items-start justify-between gap-3">
-    <div class="min-w-0">
+  <div class="ui-section-header mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div class="min-w-0 sm:flex-1">
       <component
         :is="as ?? 'h2'"
         class="t-h3 text-fg-strong"
@@ -30,7 +30,7 @@ defineProps<{
     </div>
     <div
       v-if="$slots.actions"
-      class="flex items-center gap-2 shrink-0"
+      class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end"
     >
       <slot name="actions" />
     </div>

@@ -262,9 +262,7 @@ class GoogleSearchConsoleActionConnector:
             prefix = f"$.dimension_filter_groups[{group_idx}]"
             group_type = group.get("groupType")
             if group_type is not None and group_type != "and":
-                issues.append(
-                    issue(f"{prefix}.groupType", "groupType must be 'and'", "enum")
-                )
+                issues.append(issue(f"{prefix}.groupType", "groupType must be 'and'", "enum"))
             filters = group.get("filters")
             if filters is None:
                 continue

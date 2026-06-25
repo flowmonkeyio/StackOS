@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote
 
+from sqlmodel import Session
+
 from stackos.db.models import ProjectEvent, TrackerItemStatus, TrackerTask, TrackerTicket
 from stackos.events import StackOSEvent, StackOSEventSource
 from stackos.repositories.project_events import StackOSEventEmitter
@@ -25,6 +27,8 @@ def _tracker_task_path(task: TrackerTask) -> str:
 
 class TrackerEventMixin:
     """Append tracker status changes to the project timeline."""
+
+    _s: Session
 
     def _record_tracker_task_status_event(
         self,

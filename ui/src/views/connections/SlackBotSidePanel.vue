@@ -259,7 +259,7 @@ function updateField(key: keyof SlackProfileForm, value: string | number | null)
               :model-value="form.mention_patterns"
               :aria-describedby="describedBy"
               :invalid="invalid"
-              placeholder="ops, support"
+              placeholder="ops, urgent"
               @update:model-value="updateField('mention_patterns', $event)"
             />
           </template>

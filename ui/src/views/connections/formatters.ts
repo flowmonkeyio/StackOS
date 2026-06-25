@@ -30,6 +30,11 @@ const STATUS_ORDER: Record<string, number> = {
   revoked: 4,
 }
 
+interface ConnectionStatusLike {
+  status?: string | null
+  setup_required?: boolean | null
+}
+
 const PLUGIN_LABELS: Record<string, string> = {
   gtm: 'GTM',
   'media-buying': 'Media Buying',
@@ -83,9 +88,19 @@ export function serviceName(group: ServiceGroup): string {
 }
 
 /** Status key for a single connection, mapped onto the `connection` domain. */
-export function connectionStatusKey(connection: SchemaCredentialConnectionOut): string {
+export function connectionStatusKey(connection: ConnectionStatusLike): string {
   if (connection.status === 'connected' && connection.setup_required) return 'setup-required'
-  return connection.status
+  return connection.status ?? 'pending'
+}
+
+export function connectionNeedsAttention(connection: ConnectionStatusLike): boolean {
+  return connectionStatusKey(connection) !== 'connected'
+}
+
+export function connectionAttentionTone(connection: ConnectionStatusLike): 'danger' | 'warning' {
+  return ['failed', 'expired', 'revoked'].includes(connectionStatusKey(connection))
+    ? 'danger'
+    : 'warning'
 }
 
 export function connectionTitle(connection: SchemaCredentialConnectionOut): string {
@@ -286,6 +301,22 @@ export function commandSummary(commands: TelegramCommandSpec[] | undefined): str
     .map((command) => command.command)
     .filter(Boolean)
   return values.length > 0 ? values.join(', ') : '-'
+}
+
+export function profileAudienceMeta(profile: CommunicationProfile): {
+  label: 'Chats' | 'Channels'
+  count: number
+} {
+  if (profile.provider_facets?.['slack-bot']) {
+    return {
+      label: 'Channels',
+      count: profile.access_policy.allowed_surface_refs?.length ?? 0,
+    }
+  }
+  return {
+    label: 'Chats',
+    count: profile.access_policy.allowed_chat_refs?.length ?? 0,
+  }
 }
 
 export function telegramFacet(profile: CommunicationProfile): Record<string, unknown> {

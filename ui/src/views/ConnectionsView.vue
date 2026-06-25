@@ -26,24 +26,34 @@ import TelegramProfileSidePanel from './connections/TelegramProfileSidePanel.vue
 import {
   botUsernameFromConnection,
   compareConnections,
+  connectionNeedsAttention,
+  connectionStatusKey,
   connectionTitle,
   credentialTestMessage,
   parseCsv,
   preferredTelegramConnection,
   providerGroupLabel,
   serviceName,
-  slackFacet,
-  slackFacetFromConnection,
   slackIdentified,
   slackProfileAuthKey,
   telegramConnectionForProfile,
   telegramFacet,
   telegramProfileAuthKey,
-  telegramProfileIngressMode,
   telegramProfileUsername,
   toCommandDrafts,
   toCommandSpecs,
 } from './connections/formatters'
+import {
+  applyProviderResultsToIngressStatus,
+  discoveryFailureMessage,
+  endpointHasPublicAddress,
+  summarizeProviderResults,
+} from './connections/ingressResults'
+import {
+  buildSlackProfilePayload,
+  buildTelegramProfilePayload,
+  slackProfileNeedsTestedConnection,
+} from './connections/profilePayloads'
 import type {
   AuthMethod,
   CommunicationProfile,
@@ -56,10 +66,14 @@ import type {
   CommunicationTargetListOut,
   ConnectionRow,
   ConnectionSection,
+  IngressEndpointOut,
   IngressEndpointStatusOut,
+  IngressEndpointSyncOut,
+  IngressProviderResult,
   IngressForm,
   MessageMap,
   MessageTone,
+  OperationWriteEnvelope,
   ServiceGroup,
   SlackProfileForm,
   TelegramCommandSpec,
@@ -118,6 +132,7 @@ const communicationTargets = ref<CommunicationTarget[]>([])
 const communicationSurfaces = ref<CommunicationSurface[]>([])
 const communicationRoutes = ref<CommunicationRoute[]>([])
 const ingressStatus = ref<IngressEndpointStatusOut | null>(null)
+const lastIngressProviderResults = ref<IngressProviderResult[]>([])
 const communicationSetupLoading = ref(false)
 const communicationSetupMessage = ref<{ tone: MessageTone; text: string } | null>(null)
 const ingressSetupOpen = ref(false)
@@ -128,10 +143,10 @@ const ingressForm = ref<IngressForm>({
   discovery_url: 'http://127.0.0.1:4040/api/endpoints',
 })
 const telegramProfileForm = ref<TelegramProfileForm>({
-  key: 'support-bot',
+  key: 'ops-bot',
   auth_profile_key: '',
   bot_username: '',
-  identity_display_name: 'Support Bot',
+  identity_display_name: 'Ops Bot',
   identity_purpose: '',
   identity_voice: 'Clear, concise, and operational.',
   agent_default_instructions: '',
@@ -141,8 +156,8 @@ const telegramProfileForm = ref<TelegramProfileForm>({
   allowed_user_refs: '',
   commands: [
     {
-      command: '/support',
-      description: 'Handle support requests.',
+      command: '/ops',
+      description: 'Handle approved operational requests.',
       guidance: 'Triage the request, inspect relevant context, and reply with the next clear step.',
       enabled: true,
     },
@@ -222,11 +237,11 @@ const activeConnections = computed(() =>
 )
 
 const connectedConnections = computed(() =>
-  activeConnections.value.filter((connection) => connection.status === 'connected'),
+  activeConnections.value.filter((connection) => connectionStatusKey(connection) === 'connected'),
 )
 
 const attentionConnections = computed(() =>
-  activeConnections.value.filter((connection) => connection.status !== 'connected'),
+  activeConnections.value.filter(connectionNeedsAttention),
 )
 
 const telegramConnections = computed(() =>
@@ -371,7 +386,7 @@ async function loadCommunicationSetup(): Promise<void> {
     communicationTargets.value = targets.items ?? []
     communicationSurfaces.value = surfaces.items ?? []
     communicationRoutes.value = routes.items ?? []
-    ingressStatus.value = ingress ?? null
+    ingressStatus.value = applyProviderResultsToIngressStatus(ingress ?? null, lastIngressProviderResults.value)
     communicationSetupMessage.value = null
   } catch (err) {
     communicationSetupMessage.value = {
@@ -403,7 +418,7 @@ async function saveIngressSetup(): Promise<void> {
   const discoveryUrl = form.discovery_url.trim() || 'http://127.0.0.1:4040/api/endpoints'
   busyAction.value = 'ingress:configure'
   try {
-    await callOperation('ingressEndpoint.configure', {
+    const configured = await callOperation<OperationWriteEnvelope<IngressEndpointOut>>('ingressEndpoint.configure', {
       project_id: projectId.value,
       driver: form.driver,
       enabled: true,
@@ -411,15 +426,32 @@ async function saveIngressSetup(): Promise<void> {
         ? { public_base_url: form.public_base_url.trim() }
         : { driver_config: { provider: 'ngrok', discovery_url: discoveryUrl } }),
     })
+    let endpoint = configured.data
     if (form.driver === 'local-tunnel') {
       // A local tunnel only has an address once it's discovered — configure
       // alone leaves it pending, so run the discovery pass before reloading.
-      await callOperation('ingressEndpoint.refresh', {
+      const refreshed = await callOperation<OperationWriteEnvelope<IngressEndpointSyncOut>>('ingressEndpoint.refresh', {
         project_id: projectId.value,
         driver_config: { provider: 'ngrok', discovery_url: discoveryUrl },
         sync_profiles: true,
       })
+      endpoint = refreshed.data.endpoint
     }
+    const discoveryError = discoveryFailureMessage(endpoint)
+    if (form.driver === 'local-tunnel' && discoveryError) {
+      ingressMessage.value = { tone: 'danger', text: discoveryError }
+      await loadCommunicationSetup()
+      return
+    }
+    if (form.driver === 'public-url' && !endpointHasPublicAddress(endpoint)) {
+      ingressMessage.value = {
+        tone: 'danger',
+        text: 'Connectivity was saved, but no public address is configured.',
+      }
+      await loadCommunicationSetup()
+      return
+    }
+    lastIngressProviderResults.value = []
     ingressMessage.value = { tone: 'success', text: 'Connectivity configured.' }
     ingressSetupOpen.value = false
     await loadCommunicationSetup()
@@ -436,12 +468,14 @@ async function saveIngressSetup(): Promise<void> {
 async function syncIngress(): Promise<void> {
   busyAction.value = 'ingress:sync'
   try {
-    await callOperation('ingressEndpoint.sync', {
+    const synced = await callOperation<OperationWriteEnvelope<IngressEndpointSyncOut>>('ingressEndpoint.sync', {
       project_id: projectId.value,
       apply_provider_webhooks: true,
+      dry_run_provider_webhooks: false,
     })
+    lastIngressProviderResults.value = synced.data.provider_results ?? []
     await loadCommunicationSetup()
-    ingressMessage.value = { tone: 'success', text: 'Synced each bot’s webhook to its provider.' }
+    ingressMessage.value = summarizeProviderResults(lastIngressProviderResults.value)
   } catch (err) {
     ingressMessage.value = { tone: 'danger', text: formatApiError(err, 'failed to sync webhooks') }
   } finally {
@@ -680,72 +714,27 @@ async function saveTelegramProfile(): Promise<void> {
   busyAction.value = 'telegram-profile:save'
   try {
     const existing = communicationProfileByKey(key)
-    const existingFacets = existing?.provider_facets ?? {}
-    const existingTelegramFacet = existing ? telegramFacet(existing) : {}
-    const existingIngressMode = existing ? telegramProfileIngressMode(existing) : ''
-    await callOperation('communicationProfile.upsert', {
-      project_id: projectId.value,
+    await callOperation('communicationProfile.upsert', buildTelegramProfilePayload({
+      projectId: projectId.value,
+      existing,
       key,
-      identity: {
-        ...(existing?.identity ?? {}),
-        display_name: identityDisplayName,
-        purpose: form.identity_purpose.trim(),
-        voice: form.identity_voice.trim(),
-      },
-      provider_facets: {
-        ...existingFacets,
-        'telegram-bot': {
-          ...existingTelegramFacet,
-          auth_profile_key: authProfileKey,
-          bot_username: botUsername,
-          ingress_mode:
-            existingIngressMode && existingIngressMode !== 'not configured'
-              ? existingIngressMode
-              : 'webhook',
-          allowed_updates: Array.isArray(existingTelegramFacet.allowed_updates)
-            ? existingTelegramFacet.allowed_updates
-            : ['message', 'callback_query'],
-        },
-      },
-      agent_guidance: {
-        ...(existing?.agent_guidance ?? {}),
-        default_instructions: form.agent_default_instructions.trim(),
-        boundaries: form.agent_boundaries.trim(),
-        escalation: form.agent_escalation.trim(),
-      },
-      access_policy: {
-        ...(existing?.access_policy ?? {}),
-        dm_mode: 'all',
-        group_mode: 'all',
-        user_mode: 'allowlist',
-        allowed_chat_refs: allowedChatRefs,
-        allowed_user_refs: allowedUserRefs,
-      },
-      trigger_policy: {
-        ...(existing?.trigger_policy ?? {}),
-        dm_trigger: 'always',
-        group_trigger: 'mention_or_command',
-        commands,
-        mention_patterns: parseCsv(form.mention_patterns),
-        reply_to_bot_triggers: true,
-      },
-      visibility_policy: {
-        ...(existing?.visibility_policy ?? {}),
-        store_non_trigger_messages: form.store_non_trigger_messages,
-      },
-      context_policy: existing?.context_policy ?? {},
-      response_policy: {
-        ...(existing?.response_policy ?? {}),
-        reply_in_same_chat: true,
-        origin_required: form.origin_required,
-        reply_to_source_message: form.reply_to_source_message,
-        same_thread: form.same_thread,
-      },
-      send_policy: existing?.send_policy ?? { mode: 'explicit-targets' },
-      handoff_policy: existing?.handoff_policy ?? { mode: 'explicit-targets' },
-      approval_policy: existing?.approval_policy ?? { mode: 'none' },
-      metadata_json: existing?.metadata_json ?? {},
-    })
+      authProfileKey,
+      botUsername,
+      identityDisplayName,
+      identityPurpose: form.identity_purpose.trim(),
+      identityVoice: form.identity_voice.trim(),
+      agentDefaultInstructions: form.agent_default_instructions.trim(),
+      agentBoundaries: form.agent_boundaries.trim(),
+      agentEscalation: form.agent_escalation.trim(),
+      allowedChatRefs,
+      allowedUserRefs,
+      commands,
+      mentionPatterns: parseCsv(form.mention_patterns),
+      storeNonTriggerMessages: form.store_non_trigger_messages,
+      originRequired: form.origin_required,
+      replyToSourceMessage: form.reply_to_source_message,
+      sameThread: form.same_thread,
+    }))
     telegramProfileMessage.value = { tone: 'success', text: `Saved ${key}.` }
     telegramProfilePanelOpen.value = false
     await loadCommunicationSetup()
@@ -788,68 +777,31 @@ async function saveSlackProfile(): Promise<void> {
   const existing = communicationProfileByKey(key)
   const connection =
     slackConnections.value.find((item) => item.profile_key === authProfileKey) ?? null
-  if (!existing && !slackIdentified(connection)) {
+  if (slackProfileNeedsTestedConnection(existing, authProfileKey) && !slackIdentified(connection)) {
     slackProfileMessage.value = {
       tone: 'danger',
       text: 'Test the Slack connection first so StackOS can fetch the workspace identity from Slack.',
     }
     return
   }
-  const baseFacet = existing ? slackFacet(existing) : slackFacetFromConnection(connection)
-  const accessPolicy = existing
-    ? {
-        ...existing.access_policy,
-        user_mode: 'allowlist',
-        allowed_user_refs: allowedUserRefs,
-        allowed_surface_refs: allowedSurfaceRefs,
-      }
-    : {
-        dm_mode: 'all',
-        channel_mode: 'all',
-        group_mode: 'all',
-        user_mode: 'allowlist',
-        allowed_user_refs: allowedUserRefs,
-        allowed_surface_refs: allowedSurfaceRefs,
-      }
-  const triggerPolicy = existing
-    ? { ...existing.trigger_policy, mention_patterns: parseCsv(form.mention_patterns) }
-    : {
-        dm_trigger: 'always',
-        channel_trigger: 'mention_or_command',
-        mention_patterns: parseCsv(form.mention_patterns),
-        reply_to_bot_triggers: true,
-      }
   busyAction.value = 'slack-profile:save'
   try {
-    await callOperation('communicationProfile.upsert', {
-      project_id: projectId.value,
+    await callOperation('communicationProfile.upsert', buildSlackProfilePayload({
+      projectId: projectId.value,
+      existing,
+      selectedConnection: connection,
       key,
-      identity: {
-        ...(existing?.identity ?? {}),
-        display_name: displayName,
-        purpose: form.identity_purpose.trim(),
-        voice: form.identity_voice.trim(),
-      },
-      provider_facets: {
-        ...(existing?.provider_facets ?? {}),
-        'slack-bot': { ...baseFacet, auth_profile_key: authProfileKey },
-      },
-      agent_guidance: {
-        ...(existing?.agent_guidance ?? {}),
-        default_instructions: form.agent_default_instructions.trim(),
-        boundaries: form.agent_boundaries.trim(),
-        escalation: form.agent_escalation.trim(),
-      },
-      access_policy: accessPolicy,
-      trigger_policy: triggerPolicy,
-      visibility_policy: existing?.visibility_policy ?? {},
-      context_policy: existing?.context_policy ?? {},
-      response_policy: existing?.response_policy ?? {},
-      send_policy: existing?.send_policy ?? { mode: 'explicit-targets' },
-      handoff_policy: existing?.handoff_policy ?? { mode: 'explicit-targets' },
-      approval_policy: existing?.approval_policy ?? { mode: 'none' },
-      metadata_json: existing?.metadata_json ?? {},
-    })
+      authProfileKey,
+      displayName,
+      identityPurpose: form.identity_purpose.trim(),
+      identityVoice: form.identity_voice.trim(),
+      agentDefaultInstructions: form.agent_default_instructions.trim(),
+      agentBoundaries: form.agent_boundaries.trim(),
+      agentEscalation: form.agent_escalation.trim(),
+      allowedUserRefs,
+      allowedSurfaceRefs,
+      mentionPatterns: parseCsv(form.mention_patterns),
+    }))
     slackProfileMessage.value = { tone: 'success', text: `Saved ${key}.` }
     slackProfilePanelOpen.value = false
     await loadCommunicationSetup()

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import errno
 import fcntl
 import json
 import os
@@ -42,7 +41,9 @@ STARTUP_TIMEOUT_SECONDS = int(_env("SERENA_STARTUP_TIMEOUT_SECONDS", "60"))
 HTTP_TIMEOUT_SECONDS = int(_env("SERENA_HTTP_TIMEOUT_SECONDS", "300"))
 CHECK_INTERVAL_SECONDS = max(10, min(60, IDLE_TIMEOUT_SECONDS // 4 or 10))
 
-STATE_ROOT = Path(os.environ.get("SERENA_MCP_STATE_ROOT", Path(tempfile.gettempdir()) / "serena-mcp"))
+STATE_ROOT = Path(
+    os.environ.get("SERENA_MCP_STATE_ROOT", Path(tempfile.gettempdir()) / "serena-mcp")
+)
 STATE_DIR = STATE_ROOT / f"{PROJECT_NAME}-{PORT}"
 LOCK_FILE = STATE_DIR / "lock"
 ACTIVITY_LOCK_FILE = STATE_DIR / "activity.lock"
@@ -415,13 +416,17 @@ class SerenaHttpProxy:
             return
         status, headers, body = self._post(self.initialize_request, include_session=False)
         if status < 200 or status >= 300:
-            raise RuntimeError(f"failed to initialize restarted Serena upstream: HTTP {status} {body[:500]!r}")
+            raise RuntimeError(
+                f"failed to initialize restarted Serena upstream: HTTP {status} {body[:500]!r}"
+            )
         self._response_messages(headers, body)
         self.upstream_initialized = True
         if self.initialized_notification is not None:
             status, _headers, body = self._post(self.initialized_notification)
             if status < 200 or status >= 300:
-                raise RuntimeError(f"failed to notify restarted Serena upstream: HTTP {status} {body[:500]!r}")
+                raise RuntimeError(
+                    f"failed to notify restarted Serena upstream: HTTP {status} {body[:500]!r}"
+                )
 
     def forward(self, data: bytes, payload: Any) -> list[bytes]:
         method = _message_method(payload)
@@ -487,15 +492,27 @@ def print_status() -> None:
     print(f"endpoint={ENDPOINT}")
     print(f"serena_pid={serena_pid or ''} alive={_pid_alive(serena_pid)} port_open={_port_open()}")
     print(f"watchdog_pid={watchdog_pid or ''} alive={_pid_alive(watchdog_pid)}")
-    print(f"active_requests={active_count} idle_for_seconds={idle_for} idle_timeout_seconds={IDLE_TIMEOUT_SECONDS}")
+    print(
+        f"active_requests={active_count} "
+        f"idle_for_seconds={idle_for} "
+        f"idle_timeout_seconds={IDLE_TIMEOUT_SECONDS}"
+    )
     print(f"state_dir={STATE_DIR}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Repo-local Serena MCP lifecycle wrapper")
     parser.add_argument("--ensure", action="store_true", help="start Serena if needed and exit")
-    parser.add_argument("--status", action="store_true", help="print Serena wrapper status and exit")
-    parser.add_argument("--stop", action="store_true", help="stop the managed Serena process and exit")
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="print Serena wrapper status and exit",
+    )
+    parser.add_argument(
+        "--stop",
+        action="store_true",
+        help="stop the managed Serena process and exit",
+    )
     parser.add_argument("--watchdog", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
 

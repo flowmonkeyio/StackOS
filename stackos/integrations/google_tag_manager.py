@@ -118,7 +118,8 @@ class GoogleTagManagerIntegration(BaseIntegration):
     async def test_credentials(self) -> dict[str, Any]:
         result = await self.accounts_list()
         data = result.data if isinstance(result.data, dict) else {}
-        accounts = data.get("account") if isinstance(data.get("account"), list) else []
+        accounts_raw = data.get("account")
+        accounts = accounts_raw if isinstance(accounts_raw, list) else []
         return {
             "ok": True,
             "vendor": self.vendor,

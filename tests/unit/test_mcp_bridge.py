@@ -936,13 +936,13 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "workflowTemplate.save",
     } == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert {
-            "action.execute",
-            "agentRequest.create",
-            "artifact.create",
-            "artifact.read",
-            "artifact.update",
-            "artifact.archive",
-            "artifact.supersede",
+        "action.execute",
+        "agentRequest.create",
+        "artifact.create",
+        "artifact.read",
+        "artifact.update",
+        "artifact.archive",
+        "artifact.supersede",
         "browser.context.call",
         "browser.handle.call",
         "browser.method.manifest",
@@ -959,12 +959,12 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "browser.session.status",
         "browser.session.stop",
         "communication.reply",
-            "communication.send",
-            "context.query",
-            "context.snapshot",
-            "decision.record",
-            "executionContext.artifact.read",
-            "experiment.create",
+        "communication.send",
+        "context.query",
+        "context.snapshot",
+        "decision.record",
+        "executionContext.artifact.read",
+        "experiment.create",
         "experiment.recordDecision",
         "experiment.recordObservation",
         "learning.create",
@@ -1142,11 +1142,11 @@ def test_bridge_system_grant_matches_agent_operation_surface() -> None:
     system_tools = SKILL_TOOL_GRANTS[SYSTEM_SKILL]
     assert system_tools >= _AGENT_BASE_TOOLBOX_NAMES
     direct_safe_tools = {
-            "context.query",
-            "artifact.read",
-            "executionContext.artifact.read",
-            "communication.reply",
-            "communication.send",
+        "context.query",
+        "artifact.read",
+        "executionContext.artifact.read",
+        "communication.reply",
+        "communication.send",
         *[name for name in _AGENT_RUN_PLAN_GATED_TOOL_NAMES if name.startswith("browser.")],
     }
     assert (_AGENT_RUN_PLAN_GATED_TOOL_NAMES - direct_safe_tools).isdisjoint(system_tools)
@@ -1416,8 +1416,7 @@ def test_bridge_proxy_refreshes_controller_run_with_raw_internal_reads() -> None
     internal_calls = [
         call["params"]["arguments"]
         for call in client.calls
-        if call["method"] == "tools/call"
-        and call["params"]["name"] in {"run.get", "runPlan.get"}
+        if call["method"] == "tools/call" and call["params"]["name"] in {"run.get", "runPlan.get"}
     ]
     assert internal_calls[0]["response_mode"] == "raw"
     assert internal_calls[1]["response_mode"] == "raw"
@@ -1449,8 +1448,7 @@ def test_bridge_proxy_refreshes_step_context_from_raw_list_fallback() -> None:
         call["params"]
         for call in client.calls
         if call["method"] == "tools/call"
-        and call["params"]["name"]
-        in {"run.get", "runPlan.list", "runPlan.get"}
+        and call["params"]["name"] in {"run.get", "runPlan.list", "runPlan.get"}
     ]
     assert [call["name"] for call in internal_calls] == [
         "run.get",

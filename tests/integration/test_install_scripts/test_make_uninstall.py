@@ -31,7 +31,7 @@ def _install_stubs(tmp_path: Path) -> Path:
         '  "mcp list") if [[ -f "$STATE" ]]; then '
         'echo "stackos /tmp/python -m stackos mcp-bridge"; fi ;;\n'
         '  "mcp remove") rm -f "$STATE" ;;\n'
-        '  *) exit 0 ;;\n'
+        "  *) exit 0 ;;\n"
         "esac\n",
     )
 
@@ -154,7 +154,7 @@ def test_make_uninstall_fails_before_claiming_completion_on_launchd_failure(
     launchctl = bin_dir / "launchctl"
     launchctl.write_text(
         "#!/usr/bin/env bash\n"
-        "case \"$1\" in\n"
+        'case "$1" in\n'
         "  print) exit 1 ;;\n"
         "  unload) echo unload failed >&2; exit 44 ;;\n"
         "  *) exit 0 ;;\n"

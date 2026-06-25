@@ -446,7 +446,8 @@ async def _browser_method_manifest(
         notes=[
             "The core policy is parity-first: public Playwright methods are callable.",
             "browser.page.call and browser.context.call accept raw method, args, and kwargs.",
-            "Prefer named arguments for manifest convenience methods, for example arguments.url for goto.",
+            "Prefer named arguments for manifest convenience methods, "
+            "for example arguments.url for goto.",
             "Object results return handle_ref values that can be used with browser.handle.call.",
             "Convenience operations exist for script run/injection, snapshots, and screenshots.",
         ],

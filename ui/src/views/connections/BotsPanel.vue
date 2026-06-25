@@ -18,6 +18,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import {
   commandSummary,
   communicationProfileTitle,
+  profileAudienceMeta,
   profilePrimaryProvider,
   providerLabel,
   telegramCommands,
@@ -79,9 +80,6 @@ function userCount(bot: CommunicationProfile): number {
   return bot.access_policy.allowed_user_refs?.length ?? 0
 }
 
-function chatCount(bot: CommunicationProfile): number {
-  return bot.access_policy.allowed_chat_refs?.length ?? 0
-}
 </script>
 
 <template>
@@ -216,10 +214,10 @@ function chatCount(bot: CommunicationProfile): number {
             <dl class="grid shrink-0 grid-cols-3 gap-x-6 text-xs lg:flex lg:items-center">
               <div>
                 <dt class="text-fg-subtle">
-                  Chats
+                  {{ profileAudienceMeta(bot).label }}
                 </dt>
                 <dd class="mt-0.5 font-medium tabular-nums text-fg-default">
-                  {{ chatCount(bot) }}
+                  {{ profileAudienceMeta(bot).count }}
                 </dd>
               </div>
               <div>

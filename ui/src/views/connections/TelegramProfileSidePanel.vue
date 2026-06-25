@@ -92,7 +92,7 @@ function updateCommandEnabled(index: number, value: boolean): void {
               :model-value="form.key"
               :aria-describedby="describedBy"
               :invalid="invalid"
-              placeholder="support-bot"
+              placeholder="ops-bot"
               @update:model-value="updateTextField('key', $event)"
             />
           </template>
@@ -152,7 +152,7 @@ function updateCommandEnabled(index: number, value: boolean): void {
               :model-value="form.identity_display_name"
               :aria-describedby="describedBy"
               :invalid="invalid"
-              placeholder="Support Bot"
+              placeholder="Ops Bot"
               @update:model-value="updateTextField('identity_display_name', $event)"
             />
           </template>
@@ -166,7 +166,7 @@ function updateCommandEnabled(index: number, value: boolean): void {
               :aria-describedby="describedBy"
               :invalid="invalid"
               :rows="3"
-              placeholder="Handle support requests from approved Telegram users."
+              placeholder="Handle approved operational requests from Telegram."
               @update:model-value="updateTextField('identity_purpose', $event)"
             />
           </template>
@@ -293,7 +293,7 @@ function updateCommandEnabled(index: number, value: boolean): void {
               :model-value="form.mention_patterns"
               :aria-describedby="describedBy"
               :invalid="invalid"
-              placeholder="support, ops"
+              placeholder="ops, urgent"
               @update:model-value="updateTextField('mention_patterns', $event)"
             />
           </template>
@@ -336,7 +336,7 @@ function updateCommandEnabled(index: number, value: boolean): void {
                   :model-value="command.command"
                   :aria-describedby="describedBy"
                   :invalid="invalid"
-                  placeholder="/support"
+                  placeholder="/ops"
                   @update:model-value="updateCommandText(index, 'command', $event)"
                 />
               </template>
@@ -349,7 +349,7 @@ function updateCommandEnabled(index: number, value: boolean): void {
                   :model-value="command.description"
                   :aria-describedby="describedBy"
                   :invalid="invalid"
-                  placeholder="Handle support requests"
+                  placeholder="Handle approved operational requests"
                   @update:model-value="updateCommandText(index, 'description', $event)"
                 />
               </template>

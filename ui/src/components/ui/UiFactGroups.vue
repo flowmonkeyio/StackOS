@@ -32,6 +32,7 @@ const props = withDefaults(
   }>(),
   {
     density: 'compact',
+    ariaLabel: undefined,
   },
 )
 

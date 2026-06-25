@@ -221,6 +221,15 @@ function resetFilters(): void {
   void fetchCalls()
 }
 
+function metricFilterClass(status: StatusFilter): string[] {
+  return [
+    'focus-ring rounded-lg text-left transition-shadow duration-fast',
+    statusFilter.value === status
+      ? 'outline outline-2 outline-focus outline-offset-2 shadow-sm'
+      : 'hover:shadow-sm',
+  ]
+}
+
 function callTitle(call: SchemaActionCallAuditOut): string {
   return `${call.plugin_slug}:${call.action_key}`
 }
@@ -271,7 +280,7 @@ onMounted(load)
     <div class="grid gap-3 md:grid-cols-4">
       <button
         type="button"
-        class="focus-ring rounded-lg text-left"
+        :class="metricFilterClass('all')"
         :aria-pressed="statusFilter === 'all'"
         aria-label="Show all action calls"
         @click="setStatus('all')"
@@ -284,7 +293,7 @@ onMounted(load)
       </button>
       <button
         type="button"
-        class="focus-ring rounded-lg text-left"
+        :class="metricFilterClass('success')"
         :aria-pressed="statusFilter === 'success'"
         aria-label="Filter to successful calls"
         @click="setStatus('success')"
@@ -297,7 +306,7 @@ onMounted(load)
       </button>
       <button
         type="button"
-        class="focus-ring rounded-lg text-left"
+        :class="metricFilterClass('failed')"
         :aria-pressed="statusFilter === 'failed'"
         aria-label="Filter to failed calls"
         @click="setStatus('failed')"
@@ -311,7 +320,7 @@ onMounted(load)
       </button>
       <button
         type="button"
-        class="focus-ring rounded-lg text-left"
+        :class="metricFilterClass('dry-run')"
         :aria-pressed="statusFilter === 'dry-run'"
         aria-label="Filter to dry runs"
         @click="setStatus('dry-run')"

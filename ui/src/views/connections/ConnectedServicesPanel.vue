@@ -21,6 +21,7 @@ import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/ti
 
 import {
   accountLabel,
+  connectionNeedsAttention,
   connectionStatusKey,
   connectionTitle,
   formatAuthType,
@@ -85,9 +86,8 @@ function connectionActionKey(credentialRef: string, action: string): string {
   return `${credentialRef}:${action}`
 }
 
-/** A connection that isn't cleanly connected needs operator attention. */
 function isAttention(connection: ConnectionRow): boolean {
-  return connectionStatusKey(connection) !== 'connected'
+  return connectionNeedsAttention(connection)
 }
 
 function authLabel(group: ServiceGroup, connection: ConnectionRow): string {
@@ -254,7 +254,7 @@ function statusLabel(connection: ConnectionRow): string {
                 :title="statusLabel(connection)"
                 class="h-2 w-2 shrink-0 rounded-full"
                 :class="statusDotClass(connection)"
-              ></span>
+              />
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <span class="truncate text-sm font-medium text-fg-strong">

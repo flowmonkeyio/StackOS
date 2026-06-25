@@ -156,7 +156,7 @@ def test_uninstall_fails_when_launchctl_unload_fails(
     launchctl = bin_dir / "launchctl"
     launchctl.write_text(
         "#!/usr/bin/env bash\n"
-        "case \"$1\" in\n"
+        'case "$1" in\n'
         "  print) exit 1 ;;\n"
         "  unload) echo unload failed >&2; exit 44 ;;\n"
         "  *) exit 0 ;;\n"
@@ -187,7 +187,7 @@ def test_uninstall_tolerates_already_unloaded_launchd_job(
     launchctl = bin_dir / "launchctl"
     launchctl.write_text(
         "#!/usr/bin/env bash\n"
-        "case \"$1\" in\n"
+        'case "$1" in\n'
         "  print) exit 1 ;;\n"
         "  unload) echo 'Could not find specified service' >&2; exit 113 ;;\n"
         "  *) exit 0 ;;\n"

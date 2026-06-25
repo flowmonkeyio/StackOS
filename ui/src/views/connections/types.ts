@@ -198,15 +198,50 @@ export interface IngressEndpointRoute {
   notes?: string[]
 }
 
+export interface OperationWriteEnvelope<T> {
+  data: T
+  run_id: number | null
+  project_id: number | null
+}
+
+export interface IngressEndpointOut {
+  record_id?: number
+  project_id?: number
+  endpoint_ref?: string
+  key?: string
+  driver?: string
+  enabled?: boolean
+  status?: string
+  public_base_url?: string | null
+  local_base_url?: string | null
+  driver_config?: Record<string, unknown>
+  last_refreshed_at?: string | null
+  last_synced_at?: string | null
+  metadata_json?: Record<string, unknown>
+}
+
+export interface IngressProviderResult {
+  provider_key: string
+  profile_key?: string
+  status: string
+  reason?: string
+  error?: string
+  request_url?: string
+  webhook_url?: string
+  notes?: string[]
+}
+
+export interface IngressEndpointSyncOut {
+  endpoint: IngressEndpointOut
+  routes: IngressEndpointRoute[]
+  provider_results: IngressProviderResult[]
+  updated_profile_refs: string[]
+}
+
 export interface IngressEndpointStatusOut {
   configured?: boolean
   ready?: boolean
-  endpoint?: {
-    driver?: string
-    status?: string
-    public_base_url?: string | null
-    local_base_url?: string | null
-  } | null
+  endpoint?: IngressEndpointOut | null
   routes?: IngressEndpointRoute[]
   notes?: string[]
 }

@@ -78,10 +78,11 @@ Electron app can run. The app records a composite install key from its app
 version plus packaged payload build info, so replacing a locally built app with
 the same public version still reruns install/repair once.
 
-The macOS bundle icon is generated from the same source as the UI favicon:
-`ui/public/favicon.svg`. `desktop/scripts/build-icons.mjs` syncs that SVG into
-`desktop/assets/stackos-icon.svg` and generates `desktop/assets/stackos-icon.icns`
-for electron-builder.
+The macOS bundle icon is generated from the high-resolution desktop PNG:
+`desktop/assets/stackos-icon.png`. `desktop/scripts/build-icons.mjs` builds
+`desktop/assets/stackos-icon.icns` from that PNG for electron-builder. Keep
+`ui/public/favicon.png` visually aligned with the desktop PNG; `desktop doctor`
+checks both assets are present.
 
 ## Update Flow
 

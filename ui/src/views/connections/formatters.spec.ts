@@ -3,8 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   channelKindLabel,
   commandSummary,
+  connectionAttentionTone,
+  connectionNeedsAttention,
+  connectionStatusKey,
   parseCsv,
   pluginLabel,
+  profileAudienceMeta,
   profilePrimaryProvider,
   providerLabel,
   routeFieldSummary,
@@ -73,11 +77,32 @@ describe('connections formatters', () => {
     })
   })
 
+  it('normalizes connection attention state from raw auth status', () => {
+    expect(connectionStatusKey({ status: 'connected', setup_required: true })).toBe('setup-required')
+    expect(connectionNeedsAttention({ status: 'connected', setup_required: true })).toBe(true)
+    expect(connectionNeedsAttention({ status: 'connected', setup_required: false })).toBe(false)
+    expect(connectionAttentionTone({ status: 'failed' })).toBe('danger')
+    expect(connectionAttentionTone({ status: 'pending' })).toBe('warning')
+  })
+
   it('picks the first provider facet as the primary provider', () => {
     const profile = {
       provider_facets: { 'telegram-bot': {}, 'slack-bot': {} },
     } as unknown as CommunicationProfile
     expect(profilePrimaryProvider(profile)).toBe('slack-bot') // sorted
+  })
+
+  it('uses provider-appropriate audience counts for bot cards', () => {
+    const telegram = {
+      provider_facets: { 'telegram-bot': {} },
+      access_policy: { allowed_chat_refs: ['telegram-chat:1', 'telegram-chat:2'] },
+    } as unknown as CommunicationProfile
+    const slack = {
+      provider_facets: { 'slack-bot': {} },
+      access_policy: { allowed_surface_refs: ['slack-channel:C1'] },
+    } as unknown as CommunicationProfile
+    expect(profileAudienceMeta(telegram)).toEqual({ label: 'Chats', count: 2 })
+    expect(profileAudienceMeta(slack)).toEqual({ label: 'Channels', count: 1 })
   })
 
   it('summarizes target policy guards', () => {

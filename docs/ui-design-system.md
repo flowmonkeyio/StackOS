@@ -60,6 +60,10 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
 - Page header: title, slug, description, and utility controls (right). Breadcrumbs optional, above title.
 - Tab bar separates the page header from page body. 32px tab height, 2px active underline in `accent.primary`.
+- Dense goal-oriented console pages may use `SubNav` as an in-page section
+  rail: vertical on desktop, horizontal on narrow screens, with one rendered
+  section at a time. Keep section labels task-oriented rather than
+  schema-shaped.
 - List pages: filter bar (sticky), table, pagination/footer. Bulk action bar appears on selection, takes filter bar's slot.
 - Detail pages: page header, tab bar, tab content. No nested cards.
 - Buttons in product views are limited to navigation, filtering, refresh/read, copy, and close/view affordances, plus the generic provider-auth setup controls on Connections.
@@ -74,6 +78,8 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 **UiCard.** For real things such as projects, plugins, runs, resources, and integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
 
+**UiSectionHeader.** Use for section titles inside a page, panel, or card. Keep actions in the action slot; they align right on desktop and wrap below the heading copy on narrow screens so titles and descriptions never squeeze into one-word columns.
+
 **UiDialog.** Header / body / footer. Footer right-aligned, ghost cancel + primary confirm. Trap focus. `Esc` closes unless `dirty`.
 
 **UiSidePanel.** Right edge, 480px default, 720px for editors. Same H/B/F structure as dialog.
@@ -84,7 +90,10 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 **UiCallout.** Use sparingly. One per region. `info` for context, `warning` for attention, `danger` for failure, `success` for confirmation.
 
-**UiBadge.** Status only. Never decorative. Always paired with `status.ts` mapping — never inline string compares.
+**Status and badges.** Lifecycle state uses `StatusBadge` with a domain and
+status key. `UiBadge` may be used for compact metadata chips such as provider,
+kind, scope, or count descriptors. When a `UiBadge` represents state, derive
+its tone from `resolveStatus()` rather than inline string comparisons.
 
 **Tables.** Compact density (32px row), comfortable for editor density
 (40px row). Never auto-wrap; use `truncate` + tooltip on overflow. Sticky
@@ -105,6 +114,11 @@ Action and execution-context UI should show stable `action_ref`, `context_ref`,
 artifact pointers, and action-call audit metadata. It must not offer internal
 generated inventory keys as selectable or callable actions; those are
 storage/audit implementation details.
+
+**Detail disclosure.** Use `UiDescriptionList` for compact ungrouped facts,
+`UiFactGroups` for grouped detail drawers, and `UiAdvancedJsonPanel` /
+`UiJsonSection` for raw sanitized payloads. Do not rebuild custom fact grids
+unless the primitive cannot express the layout.
 
 ## 6. Accessibility
 

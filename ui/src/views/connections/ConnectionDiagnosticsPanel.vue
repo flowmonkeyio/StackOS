@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { UiAdvancedJsonPanel, UiDescriptionList, UiSectionHeader } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
+import { connectionNeedsAttention, connectionStatusKey } from './formatters'
 
 const props = defineProps<{
   authStatus: unknown
@@ -11,6 +12,7 @@ const props = defineProps<{
 
 interface DiagnosticsConnection {
   status?: string
+  setup_required?: boolean | null
   revoked_at?: string | null
 }
 
@@ -27,11 +29,13 @@ const activeConnections = computed(() =>
 )
 
 const connectedCount = computed(
-  () => activeConnections.value.filter((connection) => connection.status === 'connected').length,
+  () =>
+    activeConnections.value.filter((connection) => connectionStatusKey(connection) === 'connected')
+      .length,
 )
 
 const attentionCount = computed(
-  () => activeConnections.value.filter((connection) => connection.status !== 'connected').length,
+  () => activeConnections.value.filter(connectionNeedsAttention).length,
 )
 
 const overallStatus = computed(() => {

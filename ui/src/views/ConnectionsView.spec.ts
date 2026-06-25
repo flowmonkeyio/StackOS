@@ -404,7 +404,7 @@ describe('ConnectionsView', () => {
     expect(wrapper.find<HTMLInputElement>('input[placeholder="@support_bot"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Telegram identity: @support_bot')
     await wrapper
-      .find<HTMLTextAreaElement>('textarea[placeholder^="Handle support"]')
+      .find<HTMLTextAreaElement>('textarea[placeholder^="Handle approved"]')
       .setValue('Handle support requests from approved Telegram users.')
     await wrapper
       .find<HTMLInputElement>('input[placeholder="telegram-chat:999"]')
@@ -414,19 +414,19 @@ describe('ConnectionsView', () => {
       .setValue('telegram-user:555')
     await clickButton(wrapper, 'Save Telegram profile')
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('support-bot'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('ops-bot'))
     const profileCalls = postedBodies.filter(
       (body) =>
         typeof body === 'object' &&
         body !== null &&
         'arguments' in body &&
-        (body as { arguments?: { key?: string } }).arguments?.key === 'support-bot',
+        (body as { arguments?: { key?: string } }).arguments?.key === 'ops-bot',
     )
     expect(profileCalls).toHaveLength(1)
     expect(profileCalls[0]).toMatchObject({
       arguments: {
         project_id: 1,
-        key: 'support-bot',
+        key: 'ops-bot',
         provider_facets: {
           'telegram-bot': expect.objectContaining({
             auth_profile_key: 'support',
@@ -434,7 +434,7 @@ describe('ConnectionsView', () => {
           }),
         },
         identity: {
-          display_name: 'Support Bot',
+          display_name: 'Ops Bot',
           purpose: 'Handle support requests from approved Telegram users.',
           voice: 'Clear, concise, and operational.',
         },
@@ -448,7 +448,7 @@ describe('ConnectionsView', () => {
         trigger_policy: {
           commands: [
             expect.objectContaining({
-              command: '/support',
+              command: '/ops',
               guidance: expect.stringContaining('Triage the request'),
             }),
           ],
@@ -721,6 +721,146 @@ describe('ConnectionsView', () => {
     // Secrets never leave the connection.
     expect(JSON.stringify(saveCall)).not.toContain('xoxb')
     expect(JSON.stringify(saveCall)).not.toContain('signing')
+  })
+
+  it('rebuilds Slack bot identity from the selected connection when editing', async () => {
+    const postedCalls: Array<{ url: string; body: Record<string, unknown> }> = []
+    const slackProfile = {
+      record_id: 2,
+      project_id: 1,
+      profile_ref: 'communication-profile:ops-slack',
+      key: 'ops-slack',
+      enabled: true,
+      identity: { display_name: 'Ops Slack Bot', purpose: 'Handle ops.', voice: 'Concise.' },
+      provider_facets: {
+        'slack-bot': {
+          auth_profile_key: 'default',
+          team_id: 'T123',
+          team_name: 'Acme',
+          bot_user_id: 'U_OLD',
+          ingress_path: '/api/v1/ingress/slack/1/ops-slack',
+        },
+      },
+      agent_guidance: {},
+      access_policy: {
+        user_mode: 'allowlist',
+        allowed_user_refs: ['slack-user:U111'],
+        allowed_surface_refs: ['slack-channel:C1'],
+      },
+      trigger_policy: { dm_trigger: 'always', mention_patterns: ['ops'] },
+      visibility_policy: {},
+      context_policy: {},
+      response_policy: {},
+      send_policy: { mode: 'explicit-targets' },
+      handoff_policy: { mode: 'explicit-targets' },
+      approval_policy: { mode: 'none' },
+      metadata_json: {},
+    }
+
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (init?.body) postedCalls.push({ url, body: JSON.parse(String(init.body)) })
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
+      if (url === '/api/v1/auth/providers') {
+        return json([authProvider('slack-bot', 'Slack Bot', 'bot-token', slackBotMethod())])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({
+          project_id: 1,
+          provider_key: null,
+          providers: [],
+          connections: [
+            authConnection({
+              revokedAt: null,
+              providerKey: 'slack-bot',
+              credentialRef: 'cred_slack_default',
+              authType: 'bot-token',
+              authMethodKey: 'bot-token',
+              profileKey: 'default',
+              label: 'Acme Slack',
+              account: {
+                provider_account_id: 'T123',
+                display_name: 'Acme',
+                metadata_json: { team_id: 'T123', team: 'Acme', user_id: 'U_OLD' },
+              },
+            }),
+            authConnection({
+              revokedAt: null,
+              providerKey: 'slack-bot',
+              credentialRef: 'cred_slack_beta',
+              authType: 'bot-token',
+              authMethodKey: 'bot-token',
+              profileKey: 'beta',
+              label: 'Beta Slack',
+              account: {
+                provider_account_id: 'T456',
+                display_name: 'Beta',
+                metadata_json: {
+                  team_id: 'T456',
+                  team: 'Beta',
+                  user_id: 'U_NEW',
+                  bot_id: 'B_NEW',
+                },
+              },
+            }),
+          ],
+        })
+      }
+      if (url === '/api/v1/operations/communicationProfile.list/call') {
+        return json({ items: [slackProfile], next_cursor: null, total_estimate: 1 })
+      }
+      if (url === '/api/v1/operations/communicationProfile.upsert/call') {
+        const body = JSON.parse(String(init?.body))
+        return json({ data: { ...slackProfile, ...body.arguments }, run_id: null, project_id: 1 })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Ops Slack Bot'))
+    await clickButton(wrapper, 'Configure')
+
+    const connectionSelect = wrapper.find('[role="combobox"]')
+    await connectionSelect.trigger('click')
+    const betaOption = wrapper
+      .findAll('[role="option"]')
+      .find((option) => option.text().includes('Beta Slack'))
+    expect(betaOption, 'Beta Slack option').toBeDefined()
+    await betaOption?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Slack workspace: Beta'))
+    await clickButton(wrapper, 'Save Slack bot')
+
+    const saveCall = postedCalls.find(
+      (call) =>
+        call.url === '/api/v1/operations/communicationProfile.upsert/call' &&
+        (call.body as { arguments?: { key?: string } }).arguments?.key === 'ops-slack',
+    )
+    expect(saveCall).toBeDefined()
+    expect(saveCall?.body).toMatchObject({
+      arguments: {
+        provider_facets: {
+          'slack-bot': {
+            auth_profile_key: 'beta',
+            team_id: 'T456',
+            team_name: 'Beta',
+            bot_user_id: 'U_NEW',
+            bot_id: 'B_NEW',
+          },
+        },
+      },
+    })
+    expect(JSON.stringify(saveCall)).not.toContain('T123')
+    expect(JSON.stringify(saveCall)).not.toContain('U_OLD')
+    expect(JSON.stringify(saveCall)).not.toContain('/api/v1/ingress/slack/1/ops-slack')
   })
 
   it('creates a Slack bot from a tested connection without exposing secrets', async () => {
@@ -1328,6 +1468,176 @@ describe('ConnectionsView', () => {
       arguments: {
         driver: 'local-tunnel',
         driver_config: expect.objectContaining({ provider: 'ngrok' }),
+      },
+    })
+  })
+
+  it('does not report local-tunnel connectivity as configured when discovery fails', async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
+      if (url === '/api/v1/auth/providers') {
+        return json([authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod())])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({ project_id: 1, provider_key: null, providers: [], connections: [] })
+      }
+      if (url === '/api/v1/operations/ingressEndpoint.status/call') {
+        return json({ configured: false, ready: false, endpoint: null, routes: [], notes: [] })
+      }
+      if (url === '/api/v1/operations/ingressEndpoint.configure/call') {
+        return json({ data: {}, run_id: null, project_id: 1 })
+      }
+      if (url === '/api/v1/operations/ingressEndpoint.refresh/call') {
+        return json({
+          data: {
+            endpoint: {
+              driver: 'local-tunnel',
+              status: 'failed',
+              public_base_url: null,
+              local_base_url: 'http://127.0.0.1:5180',
+            },
+            routes: [],
+            provider_results: [],
+            updated_profile_refs: [],
+          },
+          run_id: null,
+          project_id: 1,
+        })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected'))
+    await clickButton(wrapper, 'Set up')
+    await clickButton(wrapper, 'Save')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No public address was discovered'))
+    expect(wrapper.text()).not.toContain('Connectivity configured.')
+  })
+
+  it('applies provider webhook syncs and reports mixed provider results truthfully', async () => {
+    const posted: Array<{ url: string; body: Record<string, unknown> }> = []
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (init?.body) posted.push({ url, body: JSON.parse(String(init.body)) })
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
+      if (url === '/api/v1/auth/providers') {
+        return json([authProvider('telegram-bot', 'Telegram Bot', 'bot-token', telegramBotMethod())])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({ project_id: 1, provider_key: null, providers: [], connections: [] })
+      }
+      if (url === '/api/v1/operations/communicationProfile.list/call') {
+        return json({ items: [], next_cursor: null, total_estimate: 0 })
+      }
+      if (url === '/api/v1/operations/communicationTarget.list/call') {
+        return json({ items: [], next_cursor: null, total_estimate: 0 })
+      }
+      if (url === '/api/v1/operations/communicationSurface.list/call') {
+        return json({ items: [], next_cursor: null, total_estimate: 0 })
+      }
+      if (url === '/api/v1/operations/communicationRoute.list/call') {
+        return json({ items: [], next_cursor: null, total_estimate: 0 })
+      }
+      if (url === '/api/v1/operations/ingressEndpoint.status/call') {
+        return json({
+          configured: true,
+          ready: true,
+          endpoint: {
+            driver: 'public-url',
+            status: 'running',
+            public_base_url: 'https://stackos.example.com',
+          },
+          routes: [
+            {
+              provider_key: 'telegram-bot',
+              profile_key: 'telegram-bot',
+              ingress_url: 'https://stackos.example.com/api/v1/ingress/telegram/1/telegram-bot',
+              remote_status: 'provider_webhook_not_checked',
+            },
+            {
+              provider_key: 'slack-bot',
+              profile_key: 'slack-bot',
+              ingress_url: 'https://stackos.example.com/api/v1/ingress/slack/1/slack-bot',
+              remote_status: 'manual_provider_update_required',
+            },
+          ],
+          notes: [],
+        })
+      }
+      if (url === '/api/v1/operations/ingressEndpoint.sync/call') {
+        return json({
+          data: {
+            endpoint: {
+              driver: 'public-url',
+              status: 'running',
+              public_base_url: 'https://stackos.example.com',
+              local_base_url: 'http://127.0.0.1:5180',
+            },
+            routes: [],
+            provider_results: [
+              {
+                provider_key: 'telegram-bot',
+                profile_key: 'telegram-bot',
+                status: 'remote_webhook_updated',
+                webhook_url: 'https://stackos.example.com/api/v1/ingress/telegram/1/telegram-bot',
+              },
+              {
+                provider_key: 'slack-bot',
+                profile_key: 'slack-bot',
+                status: 'manual_provider_update_required',
+              },
+            ],
+            updated_profile_refs: ['communication-profile:telegram-bot'],
+          },
+          run_id: null,
+          project_id: 1,
+        })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections?section=connectivity')
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+    await vi.waitFor(() =>
+      expect(
+        posted.some((call) => call.url.endsWith('/operations/ingressEndpoint.status/call')),
+      ).toBe(true),
+    )
+    await vi.waitFor(() =>
+      expect(
+        wrapper.findAll('button').some((button) => button.text().trim() === 'Sync to providers'),
+      ).toBe(true),
+    )
+    await clickButton(wrapper, 'Sync to providers')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Synced 1 provider webhook.'))
+    expect(wrapper.text()).toContain('1 provider needs manual update.')
+    expect(wrapper.text()).toContain('Webhook ready')
+    const sync = posted.find((call) => call.url.endsWith('/operations/ingressEndpoint.sync/call'))
+    expect(sync?.body).toMatchObject({
+      arguments: {
+        apply_provider_webhooks: true,
+        dry_run_provider_webhooks: false,
       },
     })
   })

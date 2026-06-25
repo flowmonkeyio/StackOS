@@ -14,6 +14,7 @@ import {
   UiBadge,
   UiCallout,
   UiCountBadge,
+  UiFactGroups,
   UiFilterBar,
   UiJsonBlock,
   UiPageShell,
@@ -22,6 +23,7 @@ import {
   UiSkeleton,
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
+import type { UiFactGroup } from '@/components/ui/UiFactGroups.vue'
 import { apiFetch, formatApiError } from '@/lib/client'
 
 type SurfaceFilter = 'all' | 'mcp' | 'rest' | 'cli'
@@ -64,11 +66,34 @@ const columns: DataTableColumn<OperationRow>[] = [
 
 const selectedName = computed(() => String(route.query.operation ?? ''))
 const selectedSurfaces = computed(() => (selected.value ? enabledSurfaceNames(selected.value) : []))
+const operationFactGroups = computed<UiFactGroup[]>(() => {
+  if (!selected.value) return []
+  return [
+    {
+      title: 'When',
+      items: [{ label: 'Use cases', value: listSummary(selected.value.when_to_use), wide: true }],
+    },
+    {
+      title: 'Requires',
+      items: [
+        { label: 'Prerequisites', value: listSummary(selected.value.prerequisites), wide: true },
+      ],
+    },
+    {
+      title: 'Returns',
+      items: [{ label: 'Output', value: listSummary(selected.value.returns), wide: true }],
+    },
+  ]
+})
 
 function enabledSurfaceNames(operation: SchemaOperationSummaryOut | SchemaOperationDescribeOut): string[] {
   return Object.entries(operation.surfaces)
     .filter(([, surface]) => surface.enabled)
     .map(([name]) => name)
+}
+
+function listSummary(items: string[] | undefined): string {
+  return items?.length ? items.join(' · ') : ''
 }
 
 async function loadList(): Promise<void> {
@@ -275,47 +300,10 @@ onBeforeRouteUpdate((to) => {
           </p>
         </div>
 
-        <div class="grid gap-4 lg:grid-cols-3">
-          <section class="space-y-2 rounded-md border border-subtle bg-bg-surface p-3">
-            <h4 class="text-sm font-semibold text-fg-strong">
-              When
-            </h4>
-            <ul class="space-y-1 text-sm text-fg-muted">
-              <li
-                v-for="item in selected.when_to_use ?? []"
-                :key="item"
-              >
-                {{ item }}
-              </li>
-            </ul>
-          </section>
-          <section class="space-y-2 rounded-md border border-subtle bg-bg-surface p-3">
-            <h4 class="text-sm font-semibold text-fg-strong">
-              Requires
-            </h4>
-            <ul class="space-y-1 text-sm text-fg-muted">
-              <li
-                v-for="item in selected.prerequisites ?? []"
-                :key="item"
-              >
-                {{ item }}
-              </li>
-            </ul>
-          </section>
-          <section class="space-y-2 rounded-md border border-subtle bg-bg-surface p-3">
-            <h4 class="text-sm font-semibold text-fg-strong">
-              Returns
-            </h4>
-            <ul class="space-y-1 text-sm text-fg-muted">
-              <li
-                v-for="item in selected.returns ?? []"
-                :key="item"
-              >
-                {{ item }}
-              </li>
-            </ul>
-          </section>
-        </div>
+        <UiFactGroups
+          :groups="operationFactGroups"
+          aria-label="Operation summary facts"
+        />
 
         <section
           v-if="selected.examples?.length"

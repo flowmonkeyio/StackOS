@@ -647,6 +647,9 @@ export interface paths {
         /**
          * Context Timeline
          * @description Return the project event timeline.
+         *
+         *     `order=asc` (default) is oldest-first for forward watermark polling;
+         *     `order=desc` is newest-first for the activity feed.
          */
         get: operations["context_timeline_api_v1_projects__project_id__context_timeline_get"];
         put?: never;
@@ -1439,6 +1442,11 @@ export interface components {
             key: string;
             /** Name */
             name?: string | null;
+            /**
+             * Optional
+             * @default false
+             */
+            optional: boolean;
             /** Output Schema Json */
             output_schema_json?: {
                 [key: string]: unknown;
@@ -1462,6 +1470,7 @@ export interface components {
             };
             /** Reason */
             reason: string;
+            setup?: components["schemas"]["ProviderSetupOut"] | null;
             /** Tool */
             tool: string;
             /** Ui Url */
@@ -1666,6 +1675,12 @@ export interface components {
             resource_record_id?: number | null;
             /** Size Bytes */
             size_bytes?: number | null;
+            /**
+             * Status
+             * @default draft
+             * @enum {string}
+             */
+            status: ArtifactCreateRequestStatus;
             /** Uri */
             uri: string;
         };
@@ -1702,6 +1717,15 @@ export interface components {
             resource_record_id: number | null;
             /** Size Bytes */
             size_bytes: number | null;
+            /** Status */
+            status: string;
+            /** Superseded By Artifact Id */
+            superseded_by_artifact_id: number | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
             /** Uri */
             uri: string;
         };
@@ -3444,6 +3468,74 @@ export interface components {
             /** Plugin Slug */
             plugin_slug: string;
         };
+        /**
+         * ProviderSetupOut
+         * @description Sanitized setup guidance for connecting a provider.
+         */
+        ProviderSetupOut: {
+            /** Api Key Url */
+            api_key_url?: string | null;
+            /** Billing Url */
+            billing_url?: string | null;
+            /** Console Url */
+            console_url?: string | null;
+            /** Credential Label */
+            credential_label?: string | null;
+            /** Docs Url */
+            docs_url?: string | null;
+            /** Fallback Reason */
+            fallback_reason?: string | null;
+            /** Fallback Url */
+            fallback_url?: string | null;
+            /** Homepage Url */
+            homepage_url?: string | null;
+            /**
+             * Local Setup Label
+             * @default Connect in StackOS
+             */
+            local_setup_label: string;
+            /** Local Setup Note */
+            local_setup_note?: string | null;
+            /** Local Setup Url */
+            local_setup_url?: string | null;
+            /** Provider Key */
+            provider_key: string;
+            /** Provider Name */
+            provider_name?: string | null;
+            /** Setup Note */
+            setup_note?: string | null;
+            /** Signup Url */
+            signup_url?: string | null;
+            /** Support Url */
+            support_url?: string | null;
+            /** Url Confidence */
+            url_confidence?: {
+                [key: string]: string;
+            };
+            /** Urls */
+            urls?: components["schemas"]["ProviderSetupUrlOut"][];
+            /** Verified At */
+            verified_at?: string | null;
+        };
+        /**
+         * ProviderSetupUrlOut
+         * @description One provider setup URL with confidence for agent self-service answers.
+         */
+        ProviderSetupUrlOut: {
+            /**
+             * Confidence
+             * @default directional
+             */
+            confidence: string;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Purpose */
+            purpose: string;
+            /** Url */
+            url: string;
+        };
         /** ResourceContractSpec */
         ResourceContractSpec: {
             /** Key */
@@ -3718,6 +3810,10 @@ export interface components {
         RunPlanStatus: RunPlanStatus;
         /** RunPlanStepOut */
         RunPlanStepOut: {
+            /** Action Execution Guidance */
+            action_execution_guidance?: {
+                [key: string]: unknown;
+            };
             /** Action Payloads Json */
             action_payloads_json: {
                 [key: string]: unknown;
@@ -4672,6 +4768,8 @@ export type SchemaProjectOut = components['schemas']['ProjectOut'];
 export type SchemaProjectPluginOut = components['schemas']['ProjectPluginOut'];
 export type SchemaProjectUpdateRequest = components['schemas']['ProjectUpdateRequest'];
 export type SchemaProviderOut = components['schemas']['ProviderOut'];
+export type SchemaProviderSetupOut = components['schemas']['ProviderSetupOut'];
+export type SchemaProviderSetupUrlOut = components['schemas']['ProviderSetupUrlOut'];
 export type SchemaResourceContractSpec = components['schemas']['ResourceContractSpec'];
 export type SchemaResourceOut = components['schemas']['ResourceOut'];
 export type SchemaResourceRecordOut = components['schemas']['ResourceRecordOut'];
@@ -5186,7 +5284,9 @@ export interface operations {
     call_operation_api_v1_operations__operation_name__call_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-StackOS-Client-Surface"?: string | null;
+            };
             path: {
                 operation_name: string;
             };
@@ -5493,6 +5593,8 @@ export interface operations {
                 plugin_slug?: string | null;
                 resource_record_id?: number | null;
                 kind?: string | null;
+                status?: PathsApiV1ProjectsProject_idArtifactsGetParametersQueryStatusAnyOf0 | null;
+                include_inactive?: boolean;
                 limit?: number;
                 after?: number | null;
             };
@@ -5977,6 +6079,7 @@ export interface operations {
         parameters: {
             query?: {
                 event_type?: string | null;
+                order?: string;
                 limit?: number;
                 after?: number | null;
             };
@@ -7375,6 +7478,12 @@ export interface operations {
         };
     };
 }
+export enum PathsApiV1ProjectsProject_idArtifactsGetParametersQueryStatusAnyOf0 {
+    draft = "draft",
+    approved = "approved",
+    superseded = "superseded",
+    archived = "archived"
+}
 export enum ActionCallStatus {
     dry_run = "dry-run",
     success = "success",
@@ -7385,6 +7494,12 @@ export enum ApprovalRequestStatus {
     approved = "approved",
     rejected = "rejected",
     cancelled = "cancelled"
+}
+export enum ArtifactCreateRequestStatus {
+    draft = "draft",
+    approved = "approved",
+    superseded = "superseded",
+    archived = "archived"
 }
 export enum HealthResponseDb_status {
     ok = "ok",

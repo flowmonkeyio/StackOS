@@ -124,9 +124,7 @@ def _check_browser_runtime() -> tuple[bool, dict[str, object]]:
             "package_installed": False,
             "browser_downloaded": False,
             "browser_path_present": False,
-            "repair": (
-                "install/sync StackOS Python dependencies, then run `stackos install`"
-            ),
+            "repair": ("install/sync StackOS Python dependencies, then run `stackos install`"),
         }
     path = playwright_chromium_executable_path()
     ok = path is not None

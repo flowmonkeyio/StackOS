@@ -792,9 +792,7 @@ def _compact_schema(value: Any, *, include_properties: bool = True) -> dict[str,
 def _compact_schema_property(value: Any) -> dict[str, Any]:
     prop = _safe_dict(value)
     out: dict[str, Any] = {
-        key: prop.get(key)
-        for key in ("type", "format", "title")
-        if prop.get(key) is not None
+        key: prop.get(key) for key in ("type", "format", "title") if prop.get(key) is not None
     }
     description = prop.get("description")
     if isinstance(description, str):
@@ -811,9 +809,7 @@ def _compact_schema_property(value: Any) -> dict[str, Any]:
     items = _safe_dict(prop.get("items"))
     if items:
         out["items"] = {
-            key: items.get(key)
-            for key in ("type", "format", "title")
-            if items.get(key) is not None
+            key: items.get(key) for key in ("type", "format", "title") if items.get(key) is not None
         }
     union_types = _schema_union_types(prop)
     if union_types:

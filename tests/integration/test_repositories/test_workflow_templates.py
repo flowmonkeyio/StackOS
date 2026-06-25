@@ -149,9 +149,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     }
     assert branding_content_actions["image_generate"].action == "utils.image.generate"
     assert branding_content_actions["image_generate"].optional is True
-    assert branding_content_actions["image_generate"].approval_ref == (
-        "image_generation_approval"
-    )
+    assert branding_content_actions["image_generate"].approval_ref == ("image_generation_approval")
     assert branding_content_actions["publish_linkedin"].action == "publish.linkedin"
     assert branding_content_actions["publish_linkedin"].optional is True
     assert branding_content_actions["publish_x"].action == "publish.x"
@@ -171,8 +169,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert branding_content_steps["produce-optional-images"].approval_refs == []
     assert branding_content_steps["approve-and-record"].approval_refs == ["content_packet_approval"]
     assert branding_content_described.spec.metadata_json["artifact_grant_policy"] == "explicit"
-    assert "durable records, not a scratchpad" in (
-        branding_content_described.spec.metadata_json["artifact_lifecycle_guidance"]
+    assert (
+        "durable records, not a scratchpad"
+        in (branding_content_described.spec.metadata_json["artifact_lifecycle_guidance"])
     )
     assert (
         "action.execute:image_generate" in (branding_content_described.spec.metadata_json["grants"])
@@ -196,12 +195,8 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "artifact.archive",
         "artifact.supersede",
     }
-    assert artifact_lifecycle_tools <= branding_template_tool_grants[
-        "produce-optional-images"
-    ]
-    assert artifact_lifecycle_tools <= branding_template_tool_grants[
-        "render-channel-packets"
-    ]
+    assert artifact_lifecycle_tools <= branding_template_tool_grants["produce-optional-images"]
+    assert artifact_lifecycle_tools <= branding_template_tool_grants["render-channel-packets"]
     assert artifact_lifecycle_tools <= branding_template_tool_grants["approve-and-record"]
     assert artifact_lifecycle_tools <= branding_template_tool_grants["execute-publication"]
     assert {

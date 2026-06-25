@@ -90,12 +90,15 @@ class GoogleSearchConsoleIntegration(BaseIntegration):
     async def test_credentials(self) -> dict[str, Any]:
         result = await self.sites_list()
         data = result.data if isinstance(result.data, dict) else {}
-        entries = data.get("siteEntry") if isinstance(data.get("siteEntry"), list) else []
+        entries_raw = data.get("siteEntry")
+        entries = entries_raw if isinstance(entries_raw, list) else []
         permission_levels = sorted(
             {
-                entry.get("permissionLevel")
+                level
                 for entry in entries
-                if isinstance(entry, dict) and isinstance(entry.get("permissionLevel"), str)
+                if isinstance(entry, dict)
+                for level in [entry.get("permissionLevel")]
+                if isinstance(level, str)
             }
         )
         return {

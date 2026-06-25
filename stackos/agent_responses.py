@@ -416,8 +416,7 @@ def _status_count_summary(
     normalized = {str(key).replace("-", "_"): _int_or_zero(value) for key, value in counts.items()}
     total = sum(normalized.values())
     terminal = sum(
-        normalized.get(key, 0)
-        for key in ("complete", "deferred", "aborted", "failed", "skipped")
+        normalized.get(key, 0) for key in ("complete", "deferred", "aborted", "failed", "skipped")
     )
     summary = {
         "total": total,

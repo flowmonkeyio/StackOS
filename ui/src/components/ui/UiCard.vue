@@ -21,7 +21,10 @@ withDefaults(defineProps<{
 }>(), {
   elevated: true,
   padded: true,
+  density: 'compact',
+  variant: 'default',
   section: false,
+  ariaLabel: undefined,
 });
 </script>
 
@@ -46,7 +49,7 @@ withDefaults(defineProps<{
     </header>
     <div
       :class="[
-        'ui-card__body',
+        'ui-card__body min-w-0 flex-1',
         padded && (density === 'comfortable' ? 'p-5' : 'p-4'),
       ]"
     >

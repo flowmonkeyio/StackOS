@@ -11,7 +11,7 @@ import {
   UiSectionHeader,
   UiSkeleton,
 } from '@/components/ui'
-import { connectionTitle } from './formatters'
+import { connectionAttentionTone, connectionTitle } from './formatters'
 import type {
   CommunicationProfile,
   CommunicationSurface,
@@ -61,13 +61,13 @@ const attentionItems = computed<AttentionItem[]>(() => {
   const items: AttentionItem[] = []
 
   for (const connection of props.attentionConnections) {
-    const failed = ['failed', 'expired', 'revoked'].includes(connection.status)
+    const tone = connectionAttentionTone(connection)
     items.push({
       id: `connection:${connection.credential_ref}`,
-      tone: failed ? 'danger' : 'warning',
-      icon: failed ? 'alert-octagon' : 'alert-triangle',
+      tone,
+      icon: tone === 'danger' ? 'alert-octagon' : 'alert-triangle',
       title: `${connectionTitle(connection)} needs attention`,
-      detail: failed
+      detail: tone === 'danger'
         ? 'This connection failed its last check. Re-test it or re-enter the credential.'
         : 'Setup is incomplete for this connection. Finish or re-test it.',
       actionLabel: 'Review',

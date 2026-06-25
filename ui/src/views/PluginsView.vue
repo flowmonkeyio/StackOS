@@ -61,7 +61,7 @@ onMounted(load)
         :key="plugin.slug"
         section
         :aria-label="plugin.name"
-        class="flex flex-col"
+        class="flex h-full min-h-[12.75rem] flex-col"
       >
         <template #header>
           <div class="flex min-w-0 items-center gap-3">
@@ -87,33 +87,34 @@ onMounted(load)
           </UiBadge>
         </template>
 
-        <div class="flex flex-1 flex-col">
-          <p class="line-clamp-3 text-sm text-fg-muted">
-            {{ plugin.description }}
-          </p>
-        </div>
-        <dl class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-subtle pt-3 text-xs text-fg-muted">
-          <div class="flex items-baseline gap-1.5">
-            <dd class="font-medium tabular-nums text-fg-default">
-              {{ catalogStore.capabilitiesFor(plugin.slug).length }}
-            </dd>
-            <dt>capabilities</dt>
-          </div>
-          <div class="flex items-baseline gap-1.5">
-            <dd class="font-medium tabular-nums text-fg-default">
-              {{ catalogStore.actionsFor(plugin.slug).length }}
-            </dd>
-            <dt>actions</dt>
-          </div>
-          <div class="ml-auto flex items-baseline gap-1.5">
-            <dt class="sr-only">
-              Version
-            </dt>
-            <dd class="font-mono text-2xs text-fg-subtle">
-              v{{ plugin.version }} · {{ plugin.source }}
-            </dd>
-          </div>
-        </dl>
+        <p class="line-clamp-3 max-h-[4.5rem] text-sm leading-6 text-fg-muted">
+          {{ plugin.description }}
+        </p>
+
+        <template #footer>
+          <dl class="flex w-full min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">
+            <div class="flex items-baseline gap-1.5">
+              <dd class="font-medium tabular-nums text-fg-default">
+                {{ catalogStore.capabilitiesFor(plugin.slug).length }}
+              </dd>
+              <dt>capabilities</dt>
+            </div>
+            <div class="flex items-baseline gap-1.5">
+              <dd class="font-medium tabular-nums text-fg-default">
+                {{ catalogStore.actionsFor(plugin.slug).length }}
+              </dd>
+              <dt>actions</dt>
+            </div>
+            <div class="ml-auto flex min-w-0 items-baseline gap-1.5">
+              <dt class="sr-only">
+                Version
+              </dt>
+              <dd class="truncate font-mono text-2xs text-fg-subtle">
+                v{{ plugin.version }} · {{ plugin.source }}
+              </dd>
+            </div>
+          </dl>
+        </template>
       </UiCard>
     </div>
 
