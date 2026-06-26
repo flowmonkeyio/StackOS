@@ -12,6 +12,7 @@ export function useDesktopUpdates() {
   const busy = ref<UpdateAction | null>(null)
   const actionError = ref<string | null>(null)
   const dismissedVersion = ref(readDismissedVersion())
+  const dismissedThisSession = ref(false)
   let pollTimer: ReturnType<typeof setTimeout> | null = null
 
   const version = computed(() => updateInfoVersion(updateState.value?.updateInfo))
@@ -27,7 +28,7 @@ export function useDesktopUpdates() {
   })
 
   const promptVisible = computed(() => {
-    if (!isShell.value || !updateState.value?.enabled || isDismissed.value) return false
+    if (!isShell.value || !updateState.value?.enabled || isDismissed.value || dismissedThisSession.value) return false
     return (
       status.value === 'available' ||
       status.value === 'downloading' ||
@@ -36,7 +37,7 @@ export function useDesktopUpdates() {
       Boolean(actionError.value)
     )
   })
-  const canDismiss = computed(() => Boolean(dismissVersion.value))
+  const canDismiss = computed(() => promptVisible.value)
 
   const canClick = computed(
     () =>
@@ -52,9 +53,12 @@ export function useDesktopUpdates() {
 
   function dismissPrompt(): void {
     const current = dismissVersion.value
-    if (!current) return
-    dismissedVersion.value = current
-    writeDismissedVersion(current)
+    if (current) {
+      dismissedVersion.value = current
+      writeDismissedVersion(current)
+    } else {
+      dismissedThisSession.value = true
+    }
     clearPoll()
   }
 
