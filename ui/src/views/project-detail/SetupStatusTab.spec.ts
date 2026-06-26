@@ -28,7 +28,7 @@ describe('SetupStatusTab (calm readiness)', () => {
           daemon_uptime_s: 14,
           db_status: 'ok',
           scheduler_running: true,
-          version: '1.0.0',
+          version: '1.0.1',
           milestone: 'M10',
         })
       }
@@ -88,7 +88,7 @@ describe('SetupStatusTab (calm readiness)', () => {
     expect(wrapper.text()).toContain('Automation')
     expect(wrapper.text()).toContain('Spend')
     expect(wrapper.text()).toContain('Plugins')
-    expect(wrapper.text()).toContain('StackOS v1.0.0')
+    expect(wrapper.text()).toContain('StackOS v1.0.1')
     // No registry jargon, no raw credential refs.
     expect(wrapper.text()).not.toContain('Operation contracts')
     expect(wrapper.text()).not.toContain('cred_firecrawl')

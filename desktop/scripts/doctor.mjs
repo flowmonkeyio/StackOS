@@ -4,6 +4,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(desktopDir, "..");
 const errors = [];
 
 function fail(message) {
@@ -48,10 +49,36 @@ function readText(relativePath) {
   }
 }
 
+function readRootText(relativePath) {
+  const fullPath = path.join(repoRoot, relativePath);
+  try {
+    return fs.readFileSync(fullPath, "utf8");
+  } catch (error) {
+    fail(`${relativePath}: ${error.message}`);
+    return "";
+  }
+}
+
 const pkg = readJson("package.json");
+const pyprojectText = readRootText("pyproject.toml");
+const stackosInitText = readRootText("stackos/__init__.py");
+const pyprojectVersion = pyprojectText.match(/^version = "([^"]+)"$/m)?.[1] || null;
+const stackosVersion = stackosInitText.match(/^__version__ = "([^"]+)"$/m)?.[1] || null;
 
 if (pkg.name !== "stackos-desktop") {
   fail("package name must be stackos-desktop");
+}
+if (!/^\d+\.\d+\.\d+$/.test(pkg.version || "")) {
+  fail("package version must be semver major.minor.patch");
+}
+if (!pyprojectVersion) {
+  fail("pyproject.toml project.version is missing");
+}
+if (!stackosVersion) {
+  fail("stackos/__init__.py __version__ is missing");
+}
+if (pkg.version !== pyprojectVersion || pkg.version !== stackosVersion) {
+  fail("desktop/package.json, pyproject.toml, and stackos/__init__.py versions must match");
 }
 if (pkg.main !== "src/main.js") {
   fail("package main must be src/main.js");

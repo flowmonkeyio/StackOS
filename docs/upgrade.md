@@ -56,7 +56,7 @@ For local desktop upgrade testing after development changes:
 ```bash
 STACKOS_UPDATE_URL="http://127.0.0.1:8765/stackos/macos" make desktop-dist
 stackos stop
-open desktop/dist/stackos-1.0.0-mac-arm64.dmg
+open desktop/dist/stackos-1.0.1-mac-arm64.dmg
 ```
 
 Serve the generated update metadata and artifacts from the matching localhost
