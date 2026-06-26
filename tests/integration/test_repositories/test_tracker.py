@@ -1221,8 +1221,9 @@ def test_run_plan_lifecycle_mirrors_tracker(session: Session, project_id: int) -
     assert running_brief.workflow_handoff.run_plan_id == plan.id
     assert running_brief.workflow_handoff.run_id == started.run_id
     assert running_brief.workflow_handoff.step_id == "prepare"
-    assert "runPlan.claimStep" in running_brief.workflow_handoff.next_operations
-    assert any("Workflow ticket" in item for item in running_brief.suggested_next_actions)
+    assert "runPlan.claimStep" not in running_brief.workflow_handoff.next_operations
+    assert "runPlan.recordStep" in running_brief.workflow_handoff.next_operations
+    assert any("already running" in item.lower() for item in running_brief.suggested_next_actions)
 
     RunPlanRepository(session).record_step(
         run_plan_id=plan.id,
@@ -1267,10 +1268,11 @@ def test_terminal_workflow_mirror_brief_and_verify_do_not_suggest_execution(
 
     assert brief.ticket.status == TrackerItemStatus.ABORTED
     assert brief.workflow_handoff is not None
-    assert brief.workflow_handoff.next_operations == ["runPlan.get"]
+    assert brief.workflow_handoff.next_operations == ["runPlan.get", "tracker.reopen"]
     assert "runPlan.claimStep" not in brief.workflow_handoff.next_operations
     assert "runPlan.recordStep" not in brief.workflow_handoff.next_operations
-    assert "reopen or recover" in brief.suggested_next_actions[0]
+    assert "tracker.reopen" in brief.suggested_next_actions[0]
+    assert "runPlan.checkConsistency" in brief.suggested_next_actions[0]
 
     verify = tracker.verify(project_id=project_id, ticket_key=ticket_key)
 

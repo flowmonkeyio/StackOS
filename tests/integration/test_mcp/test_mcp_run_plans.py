@@ -887,6 +887,56 @@ def test_run_plan_create_from_template_and_list(
     assert fetched["template_snapshot_json"]["key"] == "core.project-memory-review"
 
 
+def test_run_plan_list_defaults_to_newest_first(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    oldest = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {**_plan_json(), "key": "ops.list-oldest.run"},
+        },
+    )
+    older = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {**_plan_json(), "key": "ops.list-older.run"},
+        },
+    )
+    newer = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {**_plan_json(), "key": "ops.list-newer.run"},
+        },
+    )
+
+    page = mcp_client.call_tool_structured(
+        "runPlan.list",
+        {"project_id": project_id, "limit": 2, "response_mode": "raw"},
+    )
+    next_page = mcp_client.call_tool_structured(
+        "runPlan.list",
+        {
+            "project_id": project_id,
+            "limit": 1,
+            "after_id": page["next_cursor"],
+            "response_mode": "raw",
+        },
+    )
+
+    assert [item["id"] for item in page["items"][:2]] == [
+        newer["data"]["id"],
+        older["data"]["id"],
+    ]
+    assert page["next_cursor"] == older["data"]["id"]
+    assert len(next_page["items"]) == 1
+    assert next_page["items"][0]["id"] == oldest["data"]["id"]
+
+
 def test_run_plan_validate_can_enforce_template_required_inputs(
     mcp_client: MCPClient,
     seeded_project: dict,

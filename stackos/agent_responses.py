@@ -226,6 +226,10 @@ def compact_tracker_search(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
     return _drop_empty(
         {
+            "project_id": _clean(data.get("project_id")),
+            "query": _clean(data.get("query")),
+            "task_count": _clean(data.get("task_count")),
+            "ticket_count": _clean(data.get("ticket_count")),
             "tasks": [
                 compact_tracker_task(item)
                 for item in _as_list(data.get("tasks"))

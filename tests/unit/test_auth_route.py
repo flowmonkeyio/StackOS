@@ -203,6 +203,14 @@ def test_ui_token_cannot_call_mutating_operations(client: TestClient, auth_token
     assert resp.status_code == 403
     assert "read-only operations" in resp.json()["detail"]
 
+    lifecycle_resp = client.post(
+        "/api/v1/operations/runPlan.reopen/call",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={"arguments": {"run_plan_id": 1, "reason": "UI token must not reopen workflows."}},
+    )
+    assert lifecycle_resp.status_code == 403
+    assert "read-only operations" in lifecycle_resp.json()["detail"]
+
 
 def test_ui_token_can_manage_provider_auth_setup(client: TestClient, auth_token: str) -> None:
     """The browser token can only perform narrow local-admin credential setup."""

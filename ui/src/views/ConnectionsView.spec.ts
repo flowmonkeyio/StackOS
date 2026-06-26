@@ -1386,6 +1386,16 @@ describe('ConnectionsView', () => {
               profile_key: 'workspace-slack',
               ingress_url: 'https://example.ngrok-free.app/api/v1/ingress/slack/1/workspace-slack',
               remote_status: 'manual_provider_update_required',
+              action_required: true,
+              next_action: {
+                kind: 'manual-provider-update',
+                label: 'Copy webhook URL',
+                title: 'Update Slack webhook for workspace-slack',
+                instructions:
+                  'Copy this URL into the Slack app Event Subscriptions Request URL and Interactivity Request URL fields.',
+                url: 'https://example.ngrok-free.app/api/v1/ingress/slack/1/workspace-slack',
+                provider_fields: ['Event Subscriptions Request URL', 'Interactivity Request URL'],
+              },
             },
           ],
           notes: [],
@@ -1415,6 +1425,9 @@ describe('ConnectionsView', () => {
     expect(wrapper.text()).toContain('slack-channel:C123')
     // Connectivity — per-bot route status, humanized.
     expect(wrapper.text()).toContain('Manual update needed')
+    // Overview — reachable ingress can still need an operator action for one provider route.
+    expect(wrapper.text()).toContain('Slack webhook needs manual update')
+    expect(wrapper.text()).toContain('workspace-slack needs its webhook URL copied')
   })
 
   it('configures local-tunnel connectivity and runs a discovery pass', async () => {
@@ -1642,6 +1655,80 @@ describe('ConnectionsView', () => {
         dry_run_provider_webhooks: false,
       },
     })
+  })
+
+  it('does not offer a manual provider copy action for local-only ingress routes', async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
+      if (url === '/api/v1/auth/providers') {
+        return json([])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({ project_id: 1, provider_key: null, providers: [], connections: [] })
+      }
+      if (
+        [
+          '/api/v1/operations/communicationProfile.list/call',
+          '/api/v1/operations/communicationTarget.list/call',
+          '/api/v1/operations/communicationSurface.list/call',
+          '/api/v1/operations/communicationRoute.list/call',
+        ].includes(url)
+      ) {
+        return json({ items: [], next_cursor: null, total_estimate: 0 })
+      }
+      if (url === '/api/v1/operations/ingressEndpoint.status/call') {
+        return json({
+          configured: true,
+          ready: false,
+          endpoint: {
+            driver: 'local-tunnel',
+            status: 'running',
+            public_base_url: null,
+            local_base_url: 'http://127.0.0.1:5180',
+          },
+          routes: [
+            {
+              provider_key: 'slack-bot',
+              profile_key: 'slack-bot',
+              local_url: 'http://127.0.0.1:5180/api/v1/ingress/slack/1/slack-bot',
+              remote_status: 'manual_provider_update_required',
+              action_required: true,
+              next_action: {
+                kind: 'manual-provider-update',
+                label: 'Copy webhook URL',
+                title: 'Update Slack webhook for slack-bot',
+                instructions:
+                  'Copy this URL into the Slack app Event Subscriptions Request URL and Interactivity Request URL fields.',
+                url: null,
+                provider_fields: ['Event Subscriptions Request URL', 'Interactivity Request URL'],
+              },
+            },
+          ],
+          notes: [],
+        })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections?section=connectivity')
+    await router.isReady()
+
+    const wrapper = mountConnections(router)
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Manual update needed'))
+    expect(wrapper.text()).toContain(
+      'Configure a public address before updating Slack in the provider console.',
+    )
+    expect(wrapper.findAll('button').map((button) => button.text().trim())).not.toContain(
+      'Copy webhook URL',
+    )
   })
 
   it('does not report failed credentials as connected and keeps operator actions available', async () => {

@@ -19,7 +19,7 @@ const SKIPPED_STATUSES = new Set(['skipped'])
 const FAILED_STATUSES = new Set(['failed'])
 
 export function routeNeedsManualProviderUpdate(route: IngressEndpointRoute): boolean {
-  return MANUAL_STATUSES.has(route.remote_status ?? '')
+  return route.action_required === true || MANUAL_STATUSES.has(route.remote_status ?? '')
 }
 
 export function endpointHasPublicAddress(endpoint: IngressEndpointOut | null | undefined): boolean {
@@ -104,6 +104,8 @@ export function applyProviderResultsToIngressStatus(
         ...route,
         remote_status: result.status,
         notes: result.notes ?? route.notes,
+        action_required: result.next_action ? true : route.action_required,
+        next_action: result.next_action ?? route.next_action,
       }
     }),
   }

@@ -267,8 +267,19 @@ def test_operation_registry_documents_core_operations() -> None:
     assert ingress.surfaces["mcp"].enabled is True
     assert ingress.surfaces["rest"].enabled is True
     assert ingress.surfaces["cli"].command == "ops call ingressEndpoint.configure"
+    assert ingress.mutating is True
     assert ingress.grant_policy == "direct-setup-write"
     assert any("driver_config" in item for item in ingress.prerequisites)
+
+    ingress_refresh = registry.get("ingressEndpoint.refresh").describe_out()
+    assert ingress_refresh.mutating is True
+    assert ingress_refresh.read_only is False
+    assert ingress_refresh.response_policy.allowed_modes == ["compact", "raw"]
+
+    ingress_sync = registry.get("ingressEndpoint.sync").describe_out()
+    assert ingress_sync.mutating is True
+    assert ingress_sync.read_only is False
+    assert ingress_sync.response_policy.allowed_modes == ["compact", "raw"]
 
     resolver = registry.get("toolProfile.resolve").describe_out()
     assert resolver.surfaces["mcp"].enabled is True
@@ -312,6 +323,9 @@ def test_operation_registry_documents_core_operations() -> None:
     assert run_plan_recover.surfaces["mcp"].enabled is True
     assert run_plan_recover.surfaces["rest"].enabled is True
     assert run_plan_recover.surfaces["cli"].command == "run-plans recover"
+    assert run_plan_recover.mutating is True
+    assert run_plan_recover.read_only is False
+    assert run_plan_recover.response_policy.allowed_modes == ["compact", "raw"]
     assert run_plan_recover.grant_policy == "direct-run-audit-write"
     assert any("system-recoverable" in item for item in run_plan_recover.prerequisites)
 
@@ -319,8 +333,12 @@ def test_operation_registry_documents_core_operations() -> None:
     assert run_plan_reopen.surfaces["mcp"].enabled is True
     assert run_plan_reopen.surfaces["rest"].enabled is True
     assert run_plan_reopen.surfaces["cli"].command == "run-plans reopen"
+    assert run_plan_reopen.mutating is True
+    assert run_plan_reopen.read_only is False
+    assert run_plan_reopen.response_policy.allowed_modes == ["compact", "raw"]
     assert run_plan_reopen.grant_policy == "direct-run-audit-write"
     assert any("human-readable reason" in item for item in run_plan_reopen.prerequisites)
+    assert "tracker.reopen" in run_plan_reopen.purpose
 
     tracker_next = registry.get("tracker.next").describe_out()
     assert tracker_next.surfaces["mcp"].enabled is True

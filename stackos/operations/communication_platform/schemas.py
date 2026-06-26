@@ -124,6 +124,17 @@ class IngressEndpointStatusInput(MCPInput):
     key: str = _DEFAULT_INGRESS_KEY
 
 
+class IngressRouteNextActionOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["manual-provider-update"]
+    label: str
+    title: str
+    instructions: str
+    url: str | None = None
+    provider_fields: list[str] = Field(default_factory=list)
+
+
 class IngressRouteOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -136,6 +147,8 @@ class IngressRouteOut(BaseModel):
     local_url: str | None = None
     remote_status: str = "not_checked"
     notes: list[str] = Field(default_factory=list)
+    action_required: bool = False
+    next_action: IngressRouteNextActionOut | None = None
 
 
 class IngressEndpointOut(BaseModel):

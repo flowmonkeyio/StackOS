@@ -207,11 +207,18 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
     assert route_urls["telegram-bot"] == (
         f"https://stackos.example.com/api/v1/ingress/telegram/{project_id}/support-bot"
     )
+    slack_routes = [route for route in routes["routes"] if route["provider_key"] == "slack-bot"]
+    assert len(slack_routes) == 1
+    assert slack_routes[0]["action_required"] is True
+    assert slack_routes[0]["next_action"]["kind"] == "manual-provider-update"
+    assert slack_routes[0]["next_action"]["url"] == route_urls["slack-bot"]
+    assert "Event Subscriptions Request URL" in slack_routes[0]["next_action"]["provider_fields"]
     telegram_routes = [
         route for route in routes["routes"] if route["provider_key"] == "telegram-bot"
     ]
     assert len(telegram_routes) == 1
     assert telegram_routes[0]["profile_resource_key"] == "communication-profile"
+    assert telegram_routes[0]["action_required"] is False
 
     synced = mcp_client.call_tool_structured(
         "ingressEndpoint.sync",
@@ -227,6 +234,13 @@ def test_ingress_endpoint_mcp_derives_and_syncs_provider_routes(
     }
     assert statuses[("slack-bot", "support")] == "manual_provider_update_required"
     assert statuses[("telegram-bot", "support-bot")] == "profile_updated"
+    slack_result = next(
+        result
+        for result in synced["data"]["provider_results"]
+        if result["provider_key"] == "slack-bot"
+    )
+    assert slack_result["next_action"]["url"] == route_urls["slack-bot"]
+    assert "Interactivity Request URL" in slack_result["next_action"]["provider_fields"]
     assert synced["data"]["endpoint"]["last_synced_at"]
 
     profile = mcp_client.call_tool_structured(

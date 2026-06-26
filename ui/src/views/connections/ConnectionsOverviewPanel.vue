@@ -11,7 +11,8 @@ import {
   UiSectionHeader,
   UiSkeleton,
 } from '@/components/ui'
-import { connectionAttentionTone, connectionTitle } from './formatters'
+import { connectionAttentionTone, connectionTitle, providerLabel } from './formatters'
+import { routeNeedsManualProviderUpdate } from './ingressResults'
 import type {
   CommunicationProfile,
   CommunicationSurface,
@@ -51,6 +52,9 @@ interface AttentionItem {
 
 const liveBots = computed(() => props.bots.filter((bot) => bot.enabled))
 const ingressReady = computed(() => Boolean(props.ingressStatus?.ready))
+const manualIngressRoutes = computed(() =>
+  (props.ingressStatus?.routes ?? []).filter(routeNeedsManualProviderUpdate),
+)
 
 const isEmpty = computed(
   () =>
@@ -98,6 +102,18 @@ const attentionItems = computed<AttentionItem[]>(() => {
       title: 'Inbound messaging isn’t reachable yet',
       detail: 'Set up connectivity so Slack and Telegram can deliver messages to your bots.',
       actionLabel: 'Set up connectivity',
+      section: 'connectivity',
+    })
+  }
+
+  for (const route of manualIngressRoutes.value) {
+    items.push({
+      id: `ingress-route:${route.provider_key}:${route.profile_key}`,
+      tone: 'warning',
+      icon: 'link',
+      title: `${providerLabel(route.provider_key)} webhook needs manual update`,
+      detail: `${route.profile_key} needs its webhook URL copied into the provider console.`,
+      actionLabel: 'Review route',
       section: 'connectivity',
     })
   }

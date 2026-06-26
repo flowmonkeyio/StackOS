@@ -154,8 +154,23 @@ def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict)
         "tracker.search",
         {"project_id": project_id, "query": "mcp-ticket"},
     )
+    assert searched["project_id"] == project_id
     assert [ticket["key"] for ticket in searched["data"]["tickets"]] == ["mcp-ticket"]
+    assert searched["data"]["query"] == "mcp-ticket"
+    assert searched["data"]["ticket_count"] == 1
     assert "project_id" not in searched["data"]["tickets"][0]
+
+    empty_search = mcp_client.call_tool_structured(
+        "tracker.search",
+        {"project_id": project_id, "query": "not-a-real-ticket"},
+    )
+    assert empty_search["project_id"] == project_id
+    assert empty_search["data"] == {
+        "project_id": project_id,
+        "query": "not-a-real-ticket",
+        "task_count": 0,
+        "ticket_count": 0,
+    }
 
 
 def test_tracker_status_compact_includes_project_pulse(
@@ -291,6 +306,96 @@ def test_tracker_create_ticket_can_target_workflow_step(
     }
     assert ("workflow-child-a", workflow_step_ticket_key) in dependency_pairs
     assert ("workflow-child-b", "workflow-child-a") in dependency_pairs
+
+
+def test_tracker_next_omits_tickets_under_completed_workflow_task(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _workflow_step_plan_json()},
+    )
+    run_plan_id = int(plan["data"]["id"])
+    workflow_task_key = f"workflow-{run_plan_id}"
+    workflow_step_ticket_key = f"{workflow_task_key}-deliver"
+    mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "step_id": "deliver",
+            "key": "closed-workflow-child",
+            "title": "Open child under completed workflow",
+            "dependency_keys": [workflow_step_ticket_key],
+        },
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "deliver", "run_token": run_token},
+    )
+    mcp_client.call_tool_structured(
+        "runPlan.recordStep",
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": "deliver",
+            "status": "success",
+            "run_token": run_token,
+        },
+    )
+
+    tracker = mcp_client.call_tool_structured(
+        "tracker.get",
+        {"project_id": project_id, "task_key": workflow_task_key, "response_mode": "raw"},
+    )
+    next_work = mcp_client.call_tool_structured("tracker.next", {"project_id": project_id})
+
+    assert tracker["tasks"][0]["status"] == "complete"
+    assert "closed-workflow-child" not in [
+        ticket["key"] for ticket in next_work["data"].get("tickets", [])
+    ]
+
+
+def test_tracker_brief_handoff_reflects_running_run_plan_step(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _workflow_step_plan_json()},
+    )
+    run_plan_id = int(plan["data"]["id"])
+    workflow_step_ticket_key = f"workflow-{run_plan_id}-deliver"
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+    run_token = started["data"]["run_token"]
+
+    pending_brief = mcp_client.call_tool_structured(
+        "tracker.brief",
+        {"project_id": project_id, "ticket_key": workflow_step_ticket_key},
+    )
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "deliver", "run_token": run_token},
+    )
+    running_brief = mcp_client.call_tool_structured(
+        "tracker.brief",
+        {"project_id": project_id, "ticket_key": workflow_step_ticket_key},
+    )
+
+    assert "runPlan.claimStep" in pending_brief["data"]["workflow_handoff"]["next_operations"]
+    assert "runPlan.recordStep" in running_brief["data"]["workflow_handoff"]["next_operations"]
+    assert "runPlan.claimStep" not in running_brief["data"]["workflow_handoff"]["next_operations"]
+    assert "already running" in running_brief["data"]["suggested_next_actions"][0]
 
 
 def test_tracker_verify_flags_workflow_gate_children_that_bypass_delivery(

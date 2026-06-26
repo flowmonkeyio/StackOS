@@ -34,6 +34,7 @@ from .schemas import (
     IngressEndpointStatusOut,
     IngressEndpointSyncInput,
     IngressEndpointSyncOut,
+    IngressRouteNextActionOut,
     IngressRouteOut,
 )
 from .utils import (
@@ -471,16 +472,25 @@ def _route_out(
         provider_key=provider_key,
         profile_key=profile_key,
     )
+    ingress_url = _join_base_path(endpoint.public_base_url, path)
+    next_action = _route_next_action(
+        provider_key=provider_key,
+        profile_key=profile_key,
+        remote_status=remote_status,
+        ingress_url=ingress_url,
+    )
     return IngressRouteOut(
         provider_key=provider_key,
         profile_key=profile_key,
         profile_ref=profile_ref,
         profile_resource_key=profile_resource_key,
         ingress_path=path,
-        ingress_url=_join_base_path(endpoint.public_base_url, path),
+        ingress_url=ingress_url,
         local_url=_join_base_path(endpoint.local_base_url, path),
         remote_status=remote_status,
         notes=_route_notes(endpoint=endpoint, provider_key=provider_key),
+        action_required=next_action is not None,
+        next_action=next_action,
     )
 
 
@@ -493,6 +503,40 @@ def _route_notes(*, endpoint: IngressEndpointOut, provider_key: str) -> list[str
     if provider_key == "telegram-bot":
         notes.append("Telegram setWebhook can be applied by ingressEndpoint.sync.")
     return notes
+
+
+def _route_next_action(
+    *,
+    provider_key: str,
+    profile_key: str,
+    remote_status: str,
+    ingress_url: str | None,
+) -> IngressRouteNextActionOut | None:
+    if remote_status != "manual_provider_update_required":
+        return None
+    if provider_key == "slack-bot":
+        return IngressRouteNextActionOut(
+            kind="manual-provider-update",
+            label="Copy webhook URL",
+            title=f"Update Slack webhook for {profile_key}",
+            instructions=(
+                "Copy this URL into the Slack app Event Subscriptions Request URL and "
+                "Interactivity Request URL fields."
+            ),
+            url=ingress_url,
+            provider_fields=[
+                "Event Subscriptions Request URL",
+                "Interactivity Request URL",
+            ],
+        )
+    return IngressRouteNextActionOut(
+        kind="manual-provider-update",
+        label="Copy webhook URL",
+        title=f"Update {provider_key} webhook for {profile_key}",
+        instructions="Copy this URL into the provider webhook configuration.",
+        url=ingress_url,
+        provider_fields=["Webhook URL"],
+    )
 
 
 def _provider_ingress_path(*, project_id: int, provider_key: str, profile_key: str) -> str:
@@ -552,16 +596,19 @@ async def _sync_ingress_endpoint(
                 )
             )
         elif route.provider_key == "slack-bot":
+            next_action = (
+                route.next_action.model_dump(mode="json") if route.next_action is not None else {}
+            )
             provider_results.append(
                 {
                     "provider_key": "slack-bot",
                     "profile_key": route.profile_key,
                     "status": "manual_provider_update_required",
                     "request_url": route.ingress_url,
-                    "notes": [
-                        "Set this URL as the Slack Events API Request URL and "
-                        "Interactivity Request URL."
-                    ],
+                    "next_action": next_action or None,
+                    "notes": [next_action.get("instructions")]
+                    if isinstance(next_action.get("instructions"), str)
+                    else [],
                 }
             )
     _mark_ingress_endpoint_synced(ctx.session, endpoint=endpoint, route_count=len(routes))

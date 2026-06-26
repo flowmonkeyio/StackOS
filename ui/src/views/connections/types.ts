@@ -206,6 +206,15 @@ export interface IngressEndpointRoute {
   local_url?: string
   remote_status?: string
   notes?: string[]
+  action_required?: boolean
+  next_action?: {
+    kind: 'manual-provider-update'
+    label: string
+    title: string
+    instructions: string
+    url?: string | null
+    provider_fields?: string[]
+  } | null
 }
 
 export interface OperationWriteEnvelope<T> {
@@ -239,6 +248,7 @@ export interface IngressProviderResult {
   request_url?: string
   webhook_url?: string
   notes?: string[]
+  next_action?: IngressEndpointRoute['next_action']
 }
 
 export interface IngressEndpointSyncOut {

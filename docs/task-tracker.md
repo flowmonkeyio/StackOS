@@ -73,7 +73,8 @@ Lifecycle mirroring is mechanical:
 | `runPlan.recordStep(failed)` | marks the ticket `failed` with `blocker_reason` |
 | `runPlan.recordStep(blocked)` | keeps the ticket active with `blocker_reason`; the step can be reclaimed after repair |
 | `runPlan.recover` | reopens a system-recoverable failed/aborted workflow or safely recoverable live step into the same live run-plan task |
-| `tracker.reopen` / `runPlan.reopen` | reopens normal follow-up work after closeout, revives the linked run, and mirrors the workflow task back to active state |
+| `tracker.reopen` | normal agent/operator follow-up after closeout; reopens the task or the linked run-plan/run/task mirror as one lifecycle |
+| `runPlan.reopen` | lower-level lifecycle primitive used by controller/admin paths after the canonical closed run plan has already been selected |
 | `runPlan.abort` / stale abort reconciliation | marks the workflow task and unfinished linked tickets `aborted` |
 
 Only generated workflow step mirror tickets are lifecycle-owned by run-plan

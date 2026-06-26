@@ -42,10 +42,18 @@ function routeKey(route: IngressEndpointRoute): string {
 }
 
 function routeUrl(route: IngressEndpointRoute): string | null {
-  return route.ingress_url ?? route.local_url ?? null
+  return route.next_action?.url ?? route.ingress_url ?? route.local_url ?? null
+}
+
+function routeActionUrl(route: IngressEndpointRoute): string | null {
+  return route.next_action?.url ?? route.ingress_url ?? null
 }
 
 function manualRouteInstruction(route: IngressEndpointRoute): string {
+  if (!routeActionUrl(route)) {
+    return `Configure a public address before updating ${providerLabel(route.provider_key)} in the provider console.`
+  }
+  if (route.next_action?.instructions) return route.next_action.instructions
   if (route.provider_key === 'slack-bot') {
     return 'Slack cannot be updated automatically from here. Copy this webhook URL and paste it into the Slack app Event Subscriptions or Interactivity Request URL field.'
   }
@@ -53,7 +61,7 @@ function manualRouteInstruction(route: IngressEndpointRoute): string {
 }
 
 async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
-  const url = routeUrl(route)
+  const url = routeActionUrl(route)
   if (!url) return
 
   try {
@@ -214,14 +222,14 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
                   </UiBadge>
                 </div>
                 <UiButton
-                  v-if="routeNeedsManualProviderUpdate(route) && routeUrl(route)"
+                  v-if="routeNeedsManualProviderUpdate(route) && routeActionUrl(route)"
                   size="sm"
                   variant="secondary"
                   icon-left="copy"
                   :aria-label="`Copy ${providerLabel(route.provider_key)} webhook URL`"
                   @click="copyRouteUrl(route)"
                 >
-                  Copy webhook URL
+                  {{ route.next_action?.label ?? 'Copy webhook URL' }}
                 </UiButton>
               </div>
               <p class="mt-1 break-all font-mono text-2xs text-fg-subtle">
