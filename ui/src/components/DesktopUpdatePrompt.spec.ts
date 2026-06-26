@@ -119,7 +119,7 @@ describe('DesktopUpdatePrompt', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('StackOS 1.0.2 is available'))
   })
 
-  it('dismisses an update error without a known version for the current session', async () => {
+  it('does not surface background update feed failures', async () => {
     Object.defineProperty(window, 'stackosDesktop', {
       configurable: true,
       value: {
@@ -137,10 +137,8 @@ describe('DesktopUpdatePrompt', () => {
 
     const wrapper = mount(DesktopUpdatePrompt)
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('net::ERR_CONNECTION_REFUSED'))
-    await wrapper.get('button[aria-label="Dismiss update prompt"]').trigger('click')
-
     await vi.waitFor(() => expect(wrapper.find('button[aria-label="Update action"]').exists()).toBe(false))
+    expect(wrapper.text()).not.toContain('net::ERR_CONNECTION_REFUSED')
     expect(window.localStorage.getItem('stackos.desktopUpdates.dismissedVersion')).toBeNull()
   })
 
