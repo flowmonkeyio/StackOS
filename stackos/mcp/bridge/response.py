@@ -5,14 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from stackos.agent_responses import (
-    compact_tracker_brief,
-    compact_tracker_next,
-    compact_tracker_status,
-    compact_tracker_task,
-    compact_tracker_ticket,
-    compact_tracker_verify,
-)
 from stackos.provider_setup import build_provider_setup
 
 from .catalog import _bridge_tool_accepts_field
@@ -118,14 +110,6 @@ def _bridge_compact_structured(tool_name: str, structured: dict[str, Any]) -> di
         return _bridge_compact_action_describe(structured)
     if tool_name == "catalog.describe":
         return _bridge_compact_catalog_describe(structured)
-    if tool_name == "tracker.status":
-        return _bridge_compact_tracker_status(structured)
-    if tool_name == "tracker.next":
-        return _bridge_compact_tracker_next(structured)
-    if tool_name == "tracker.brief":
-        return _bridge_compact_tracker_brief(structured)
-    if tool_name == "tracker.verify":
-        return _bridge_compact_tracker_verify(structured)
     return None
 
 
@@ -487,27 +471,3 @@ def _bridge_compact_catalog_describe(structured: dict[str, Any]) -> dict[str, An
             }
         )
     return {"plugins": plugins}
-
-
-def _bridge_compact_tracker_status(structured: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_status(structured)
-
-
-def _bridge_compact_tracker_next(structured: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_next(structured)
-
-
-def _bridge_compact_tracker_brief(structured: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_brief(structured)
-
-
-def _bridge_compact_tracker_verify(structured: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_verify(structured)
-
-
-def _bridge_compact_tracker_task(task: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_task(task)
-
-
-def _bridge_compact_tracker_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_ticket(ticket)

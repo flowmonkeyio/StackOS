@@ -16,9 +16,8 @@ make signoff
 - targeted pytest coverage for unit contracts, REST operations, CLI mock
   provider execution, REST/CLI/MCP operation parity, auth setup, Telegram
   setup-to-action flow, Slack signed-ingress/action flow, SMTP/IMAP mocked
-  connectors, MCP action and
-  communication setup execution, workflow template loading, and action/auth
-  repositories
+  connectors, MCP action, tracker, and communication setup execution, workflow
+  template loading, and action/auth/tracker repositories
 - UI unit tests
 - the UI production build into `stackos/ui_dist/`
 
@@ -36,7 +35,7 @@ touches committed UI assets.
 | Auth/profile resolution | Agents see safe credential refs/status only, never secrets, and `toolProfile.resolve` gives repair guidance. | `uv run pytest tests/integration/test_mcp/test_mcp_communications.py::test_tool_profile_resolve_telegram_profile_returns_safe_tuple tests/integration/test_repositories/test_auth_providers.py -q` |
 | Direct action execution | `action.describe/validate/run` and direct dry-runs use the same connector/auth/audit path. | `uv run pytest tests/integration/test_mcp/test_mcp_actions.py tests/integration/test_routes/test_cli_mock_provider.py -q` |
 | Workflow/run-plan execution | `runPlan.validate/create/start/claimStep/recordStep`, step grants, and non-executable warnings behave predictably. | `uv run pytest tests/unit/test_run_plan_schema.py tests/integration/test_mcp/test_mcp_run_plans.py tests/integration/test_mcp/test_mcp_tool_grants.py -q` |
-| Tracker task/ticket workflow | Bulk create/review/update, dependency previews, compact reads, history, and verification stay agent-friendly. | `uv run pytest tests/integration/test_repositories/test_tracker.py tests/unit/test_operations_registry.py -q` |
+| Tracker task/ticket workflow | Bulk create/review/update, dependency previews, compact reads, history, and verification stay agent-friendly. | `uv run pytest tests/integration/test_mcp/test_mcp_tracker.py tests/integration/test_repositories/test_tracker.py tests/unit/test_operation_responses.py tests/unit/test_operations_registry.py -q` |
 | Communication delivery | `communicationTarget.resolve`, `communication.send/reply`, dry-run effects, rich-feature rejection, local chat, and stored context field repair are clear. | `uv run pytest tests/integration/test_mcp/test_mcp_communications.py -q` |
 | Communication ingress | Slack/Telegram ingress verifies transport auth, stores normalized resources, and creates agent requests only through shared policy. | `uv run pytest tests/integration/test_routes/test_slack_ingress_routes.py tests/integration/test_routes/test_telegram_ingress_routes.py -q` |
 | Agent request handoff | Agent requests claim, prepare run plans atomically, link, complete, release, and hide claim tokens correctly. | `uv run pytest tests/integration/test_mcp/test_mcp_agent_requests.py tests/integration/test_repositories/test_agent_requests.py -q` |

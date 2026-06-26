@@ -81,8 +81,10 @@ signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/
 		tests/integration/test_mcp/test_mcp_actions.py \
 		tests/integration/test_mcp/test_mcp_readiness.py \
 		tests/integration/test_mcp/test_mcp_run_plans.py \
+		tests/integration/test_mcp/test_mcp_tracker.py \
 		tests/integration/test_mcp/test_mcp_communications.py \
 		tests/integration/test_mcp/test_mcp_agent_requests.py \
+		tests/integration/test_repositories/test_tracker.py \
 		tests/integration/test_repositories/test_actions.py \
 		tests/integration/test_repositories/test_video_provider_actions.py \
 		tests/integration/test_repositories/test_agent_requests.py \
