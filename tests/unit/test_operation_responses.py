@@ -178,6 +178,19 @@ def test_run_plan_compact_keeps_consistency_issues() -> None:
             "key": "demo.run",
             "title": "Demo",
             "status": "started",
+            "steps": [
+                {
+                    "id": 101,
+                    "step_id": "scope",
+                    "title": "Scope",
+                    "status": "running",
+                    "position": 0,
+                    "purpose": "Long reasoning guidance belongs in raw mode.",
+                    "success_criteria_json": ["Long criterion belongs in raw mode."],
+                    "action_refs_json": ["core.catalog.describe"],
+                    "allowed_tools": ["context.query"],
+                }
+            ],
             "consistency_issues": [
                 {
                     "code": "terminal-run-live-plan",
@@ -194,6 +207,19 @@ def test_run_plan_compact_keeps_consistency_issues() -> None:
     compact = shape_operation_response(spec, payload, response_mode="compact")
 
     assert compact["data"]["run_plan_id"] == 42
+    assert compact["data"]["steps"] == [
+        {
+            "id": 101,
+            "step_id": "scope",
+            "title": "Scope",
+            "status": "running",
+            "position": 0,
+            "action_refs_json": ["core.catalog.describe"],
+            "allowed_tools": ["context.query"],
+        }
+    ]
+    assert "success_criteria" not in str(compact["data"]["steps"])
+    assert "purpose" not in compact["data"]["steps"][0]
     assert compact["data"]["consistency_issues"][0]["code"] == "terminal-run-live-plan"
     assert compact["data"]["consistency_issues"][0]["run_id"] == 9
 

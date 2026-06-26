@@ -144,6 +144,17 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "branding.sanitization-reviewer",
         "branding.voice-reviewer",
     }
+    branding_step_ids = [step.id for step in branding_content_described.spec.steps]
+    branding_skill_preset = branding_content_described.spec.skill_preset_requirements[0]
+    assert branding_skill_preset.skill_preset_ref == "branding.brand-orchestrator"
+    assert branding_skill_preset.applies_to_steps == branding_step_ids
+    assert "workflowExtension.selected_context_json" in " ".join(branding_skill_preset.setup_notes)
+    assert "Level 2 project overlay" in " ".join(branding_skill_preset.setup_notes)
+    assert "branding_overlay_ref" in {item.key for item in branding_content_described.spec.inputs}
+    branding_resource_contracts = {
+        item.resource for item in branding_content_described.spec.resource_contracts
+    }
+    assert "distribution-record" in branding_resource_contracts
     branding_content_actions = {
         item.key: item for item in branding_content_described.spec.action_contracts
     }
@@ -199,6 +210,8 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert artifact_lifecycle_tools <= branding_template_tool_grants["render-channel-packets"]
     assert artifact_lifecycle_tools <= branding_template_tool_grants["approve-and-record"]
     assert artifact_lifecycle_tools <= branding_template_tool_grants["execute-publication"]
+    assert "decision.record" in branding_template_tool_grants["approve-and-record"]
+    assert "decision.record" in branding_template_tool_grants["execute-publication"]
     assert {
         "browser.runtime.status",
         "browser.method.manifest",
@@ -282,6 +295,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     }
     assert artifact_lifecycle_tools.isdisjoint(interview_tools)
     assert "distribution_record_refs" in branding_content_steps["execute-publication"].output_refs
+    assert all(step.instructions for step in branding_content_described.spec.steps)
     image_step_text = branding_content_steps["produce-optional-images"].model_dump_json()
     assert "operator-supplied images" in image_step_text
     assert "without requiring image_generation_approval" in image_step_text
@@ -449,6 +463,8 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     plan_text = plan_step.model_dump_json()
     assert "workflow task/run plan from the start" in plan_text
     assert "attachment/provenance only" in plan_text
+    assert "pass run_plan_id and step_id at creation time" in plan_text
+    assert "one root" in plan_text
     assert "tracker.updateTicket" in plan_text
     assert "bridge child tickets" in plan_text
     assert "detached branches" in plan_text
@@ -524,6 +540,23 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert all(
         "payload" not in step.model_dump_json() for step in communications_described.spec.steps
     )
+
+
+def test_builtin_workflow_preset_requirements_are_step_mapped(session: Session) -> None:
+    repo = WorkflowTemplateLoader(session)
+
+    for summary in repo.list_templates().templates:
+        described = repo.describe_template(
+            key=summary.key,
+            plugin_slug=summary.plugin_slug,
+        )
+        step_ids = {step.id for step in described.spec.steps}
+        for requirement in described.spec.agent_requirements:
+            assert requirement.applies_to_steps, requirement.agent_preset_ref
+            assert set(requirement.applies_to_steps) <= step_ids, requirement.agent_preset_ref
+        for requirement in described.spec.skill_preset_requirements:
+            assert requirement.applies_to_steps, requirement.skill_preset_ref
+            assert set(requirement.applies_to_steps) <= step_ids, requirement.skill_preset_ref
 
 
 def test_repo_templates_override_plugin_templates(session: Session, tmp_path: Path) -> None:

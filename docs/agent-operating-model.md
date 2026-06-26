@@ -186,7 +186,8 @@ tracker.createTask
 -> tracker.brief
 -> toolbox.call(action.run) or local work
 -> tracker.patch / tracker.updateTicket
--> tracker.rejectTask if the operator rejects or parks the task/run
+-> tracker.updateTask/updateTicket(status=deferred) if the operator parks resumable work
+-> tracker.rejectTask if the operator rejects or aborts the task/run
 ```
 
 Agent-facing MCP responses are compact by default for noisy internal

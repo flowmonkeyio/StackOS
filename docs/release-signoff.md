@@ -104,6 +104,14 @@ non-StackOS process occupying port `5180` are distinct states. Preserve
 `~/.local/share/stackos/stackos.db` across upgrade, repair, and uninstall unless
 the operator explicitly asks for data removal.
 
+For packaged macOS desktop signoff, include the launchd ownership handoff case:
+a StackOS daemon may already be listening on `5180` when
+`stackos install --launchd --force` refreshes the plist. The follow-up
+`stackos restart --timeout 20` must stop that existing daemon, bootstrap the
+installed launchd job, and leave `stackos autostart status --json` reporting the
+job loaded/running. A passing Doctor result is not sufficient by itself because
+Doctor can be satisfied by any healthy local daemon process.
+
 For desktop release candidates, also build the Python payload and macOS
 artifacts after dependencies, signing, notarization, and the custom update
 endpoint are configured:

@@ -10,10 +10,13 @@ from pydantic import BaseModel
 
 def compact_tracker_brief(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
+    ticket = _as_dict(data.get("ticket"))
+    task = _as_dict(data.get("task"))
     return _drop_empty(
         {
-            "ticket": compact_tracker_ticket(data.get("ticket")),
-            "task": compact_tracker_task(data.get("task")),
+            "project_id": _clean(ticket.get("project_id") or task.get("project_id")),
+            "ticket": compact_tracker_ticket(ticket),
+            "task": compact_tracker_task(task),
             "dependencies": [
                 compact_tracker_ticket(item)
                 for item in _as_list(data.get("dependencies"))

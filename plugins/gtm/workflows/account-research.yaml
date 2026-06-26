@@ -16,10 +16,18 @@ agent_requirements:
     requirement: required
     agent_preset_ref: gtm.workflow.account-research
     purpose: Produce source-backed account research, ICP fit, risks, and next workflow handoff.
+    applies_to_steps:
+      - orient
+      - collect_evidence
+      - store_research
+      - capture_learning
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review privacy, source confidence, and handoff quality when research drives external action.
+    applies_to_steps:
+      - store_research
+      - capture_learning
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

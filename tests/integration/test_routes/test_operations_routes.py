@@ -251,6 +251,38 @@ def test_operation_docs_are_agent_readable(api: TestClient) -> None:
     assert any("run_token" in item for item in run_plan_body["prerequisites"])
 
 
+def test_catalog_list_compact_responses_keep_agent_usable_items(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    workflows = api.post(
+        "/api/v1/operations/workflowTemplate.list/call",
+        json={"arguments": {"project_id": project_id, "plugin_slug": "engineering"}},
+    )
+    agents = api.post(
+        "/api/v1/operations/agentPreset.list/call",
+        json={"arguments": {"plugin_slug": "engineering"}},
+    )
+
+    assert workflows.status_code == 200, workflows.text
+    workflow_body = workflows.json()
+    assert workflow_body["data"]["templates_count"] >= 1
+    workflow_item = workflow_body["data"]["templates"][0]
+    assert workflow_item["key"]
+    assert workflow_item["name"]
+    assert workflow_item["plugin_slug"] == "engineering"
+    assert workflow_item["source"]
+
+    assert agents.status_code == 200, agents.text
+    agent_body = agents.json()
+    assert agent_body["data"]["presets_count"] >= 1
+    preset_item = agent_body["data"]["presets"][0]
+    assert preset_item["key"]
+    assert preset_item["name"]
+    assert preset_item["role"]
+    assert preset_item["agent_type"]
+
+
 def test_operation_rest_run_plan_update_approves_gate(
     api: TestClient,
     project_id: int,

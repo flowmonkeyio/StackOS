@@ -15,10 +15,17 @@ agent_requirements:
     requirement: required
     agent_preset_ref: gtm.workflow.crm-hygiene-pass
     purpose: Prepare atomic CRM hygiene changes with field-level evidence and review gates.
+    applies_to_steps:
+      - orient
+      - prepare_cleanup
+      - optional_apply_cleanup
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review duplicate handling, data-loss risk, provider writes, and security boundaries.
+    applies_to_steps:
+      - prepare_cleanup
+      - optional_apply_cleanup
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

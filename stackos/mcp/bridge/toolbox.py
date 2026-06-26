@@ -248,6 +248,19 @@ def _denied_status(
                 ),
             },
         }
+    if run_id is not None and active_step_tools and name not in active_step_tools:
+        return {
+            "reason_code": "not_granted_to_active_step",
+            "category": "not_granted",
+            "requires_active_step": True,
+            "active_step_tool_names": sorted(active_step_tools),
+            "repair": {
+                "hint": (
+                    "Use a tool granted to the running step, or move to a step "
+                    "that grants this tool."
+                ),
+            },
+        }
     if name in _AGENT_RUN_PLAN_GATED_TOOL_NAMES:
         return {
             "reason_code": "run_plan_step_grant_required",
@@ -271,19 +284,6 @@ def _denied_status(
                 "hint": (
                     "Pass run_id from runPlan.start or runPlan.get so the bridge can "
                     "refresh controller grants."
-                ),
-            },
-        }
-    if run_id is not None and active_step_tools:
-        return {
-            "reason_code": "not_granted_to_active_step",
-            "category": "not_granted",
-            "requires_active_step": True,
-            "active_step_tool_names": sorted(active_step_tools),
-            "repair": {
-                "hint": (
-                    "Use a tool granted to the running step, or move to a step "
-                    "that grants this tool."
                 ),
             },
         }

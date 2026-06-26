@@ -4,7 +4,17 @@ import pytest
 from sqlmodel import Session, select
 
 from stackos.context.repository import ContextRepository
-from stackos.db.models import RunPlanStep, RunPlanStepStatus, TaskTracker, TrackerItemStatus
+from stackos.db.models import (
+    RunPlanStep,
+    RunPlanStepStatus,
+    TaskTracker,
+    TrackerItemStatus,
+    TrackerSourceKind,
+    TrackerTask,
+    TrackerTicket,
+    TrackerTicketDependency,
+    TrackerTicketKind,
+)
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
@@ -1229,6 +1239,77 @@ def test_run_plan_lifecycle_mirrors_tracker(session: Session, project_id: int) -
     assert complete_ticket.outcome == "Prepared"
 
 
+def test_terminal_workflow_mirror_brief_and_verify_do_not_suggest_execution(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-terminal-guidance.run",
+            "title": "Tracker Workflow Terminal Guidance",
+            "steps": [{"id": "prepare", "title": "Prepare"}],
+        },
+        created_by="codex",
+    ).data
+    run_plans.start(plan.id, project_id=project_id)
+    run_plans.abort(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        reason="Operator cancelled the probe.",
+    )
+
+    tracker = TrackerRepository(session)
+    ticket_key = f"workflow-{plan.id}-prepare"
+    brief = tracker.brief(project_id=project_id, ticket_key=ticket_key)
+
+    assert brief.ticket.status == TrackerItemStatus.ABORTED
+    assert brief.workflow_handoff is not None
+    assert brief.workflow_handoff.next_operations == ["runPlan.get"]
+    assert "runPlan.claimStep" not in brief.workflow_handoff.next_operations
+    assert "runPlan.recordStep" not in brief.workflow_handoff.next_operations
+    assert "reopen or recover" in brief.suggested_next_actions[0]
+
+    verify = tracker.verify(project_id=project_id, ticket_key=ticket_key)
+
+    assert verify.ready is False
+    assert verify.checks[0]["key"] == "ticket-open-or-complete"
+    assert verify.checks[0]["passed"] is False
+    assert "do not mark it complete" in verify.suggested_next_actions[0].lower()
+
+
+def test_terminal_plain_ticket_verify_does_not_suggest_workflow_recovery(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="plain-terminal", title="Plain terminal")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="plain-terminal",
+        key="plain-terminal-ticket",
+        title="Plain terminal ticket",
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="plain-terminal-ticket",
+        patch_json={"status": "aborted"},
+        actor="codex",
+    )
+
+    brief = repo.brief(project_id=project_id, ticket_key="plain-terminal-ticket")
+    verify = repo.verify(project_id=project_id, ticket_key="plain-terminal-ticket")
+
+    assert brief.suggested_next_actions == [
+        "Ticket is aborted; reopen the ticket if work should continue."
+    ]
+    assert verify.ready is False
+    assert "workflow" not in verify.checks[0]["detail"]
+    assert "workflow" not in verify.suggested_next_actions[0]
+
+
 def test_workflow_step_ticket_status_cannot_bypass_run_plan_lifecycle(
     session: Session,
     project_id: int,
@@ -1408,9 +1489,15 @@ def test_workflow_child_ticket_can_complete_inside_running_step(
     assert completed.ticket.status == TrackerItemStatus.COMPLETE
     assert completed.ticket.lane_key == "done"
     assert snapshot.tasks[0].status == TrackerItemStatus.IN_PROGRESS
+    consistency = run_plans.check_consistency(plan.id, project_id=project_id)
+    assert not any(
+        issue.code == "tracker-complete-step-not-terminal"
+        and issue.ticket_key == "workflow-child-active-delivery"
+        for issue in consistency.issues
+    )
 
 
-def test_completed_workflow_suppresses_historical_topology_warnings(
+def test_completed_workflow_reports_historical_topology_warnings(
     session: Session,
     project_id: int,
 ) -> None:
@@ -1462,7 +1549,9 @@ def test_completed_workflow_suppresses_historical_topology_warnings(
 
     snapshot = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}")
     assert snapshot.graph is not None
-    assert snapshot.graph.warnings == []
+    assert len(snapshot.graph.warnings) == 1
+    assert "should have exactly one root workflow step ticket" in snapshot.graph.warnings[0]
+    assert "workflow-child-historical-delivery" in snapshot.graph.warnings[0]
 
     step_verify = tracker.verify(
         project_id=project_id,
@@ -1509,6 +1598,199 @@ def test_pending_workflow_step_with_bridged_open_child_does_not_warn_closeout(
 
     assert snapshot.graph is not None
     assert snapshot.graph.warnings == []
+
+
+def test_workflow_backed_task_rejects_child_ticket_without_step_attachment(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-child-attachment-guard.run",
+            "title": "Tracker Workflow Child Attachment Guard",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+        created_by="codex",
+    ).data
+    run_plans.start(plan.id, project_id=project_id)
+
+    tracker = TrackerRepository(session)
+    with pytest.raises(ValidationError) as exc_info:
+        tracker.create_ticket(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            key="loose-child",
+            title="Loose child",
+            created_by="codex",
+        )
+
+    assert "workflow-backed tracker tickets must be created under a run-plan step" in str(
+        exc_info.value
+    )
+    assert exc_info.value.data["required_fields"] == ["run_plan_id", "step_id"]
+
+
+def test_workflow_backed_task_rejects_step_from_different_run_plan(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan_a = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-step-binding-a.run",
+            "title": "Tracker Workflow Step Binding A",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+        created_by="codex",
+    ).data
+    plan_b = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-step-binding-b.run",
+            "title": "Tracker Workflow Step Binding B",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+        created_by="codex",
+    ).data
+    run_plans.start(plan_a.id, project_id=project_id)
+    run_plans.start(plan_b.id, project_id=project_id)
+    step_b = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan_b.id)).first()
+    assert step_b is not None
+    assert step_b.id is not None
+
+    with pytest.raises(ValidationError) as exc_info:
+        TrackerRepository(session).create_ticket(
+            project_id=project_id,
+            task_key=f"workflow-{plan_a.id}",
+            key="wrong-plan-step",
+            title="Wrong plan step",
+            run_plan_id=plan_a.id,
+            run_plan_step_id=step_b.id,
+            created_by="codex",
+        )
+
+    assert "belongs to a different run plan" in str(exc_info.value)
+    assert exc_info.value.data["step_run_plan_id"] == plan_b.id
+
+
+def test_workflow_backed_task_warns_when_legacy_data_has_extra_root(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-extra-root-warning.run",
+            "title": "Tracker Workflow Extra Root Warning",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+        created_by="codex",
+    ).data
+    run_plans.start(plan.id, project_id=project_id)
+
+    task = session.exec(select(TrackerTask).where(TrackerTask.key == f"workflow-{plan.id}")).first()
+    assert task is not None
+    assert task.id is not None
+    legacy = TrackerTicket(
+        tracker_id=task.tracker_id,
+        project_id=project_id,
+        task_id=task.id,
+        key="legacy-detached-root",
+        title="Legacy detached root",
+        status=TrackerItemStatus.NOT_STARTED,
+        kind=TrackerTicketKind.TICKET,
+        priority_key="p1",
+        lane_key="planning",
+        source_kind=TrackerSourceKind.MANUAL,
+    )
+    session.add(legacy)
+    session.commit()
+
+    tracker = TrackerRepository(session)
+    snapshot = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}")
+
+    assert snapshot.graph is not None
+    assert any(
+        f"Workflow-backed task workflow-{plan.id} should have exactly one root" in warning
+        and "legacy-detached-root" in warning
+        for warning in snapshot.graph.warnings
+    )
+
+
+def test_workflow_backed_task_warns_when_only_root_is_not_step_mirror(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-corrupt-root-warning.run",
+            "title": "Tracker Workflow Corrupt Root Warning",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+        created_by="codex",
+    ).data
+    run_plans.start(plan.id, project_id=project_id)
+
+    task = session.exec(select(TrackerTask).where(TrackerTask.key == f"workflow-{plan.id}")).first()
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).first()
+    mirror = session.exec(
+        select(TrackerTicket).where(TrackerTicket.key == f"workflow-{plan.id}-plan")
+    ).first()
+    assert task is not None
+    assert step is not None
+    assert mirror is not None
+    assert task.id is not None
+    assert mirror.id is not None
+    assert step.id is not None
+    corrupt_root = TrackerTicket(
+        tracker_id=task.tracker_id,
+        project_id=project_id,
+        task_id=task.id,
+        key="legacy-parentless-child",
+        title="Legacy parentless child",
+        status=TrackerItemStatus.NOT_STARTED,
+        kind=TrackerTicketKind.TICKET,
+        priority_key="p1",
+        lane_key="planning",
+        source_kind=TrackerSourceKind.MANUAL,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+    )
+    session.add(corrupt_root)
+    session.flush()
+    assert corrupt_root.id is not None
+    session.add(
+        TrackerTicketDependency(
+            tracker_id=task.tracker_id,
+            project_id=project_id,
+            ticket_id=mirror.id,
+            depends_on_ticket_id=corrupt_root.id,
+        )
+    )
+    session.commit()
+
+    snapshot = TrackerRepository(session).get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+    )
+
+    assert snapshot.graph is not None
+    assert any(
+        f"Workflow-backed task workflow-{plan.id} should have exactly one root" in warning
+        and "legacy-parentless-child" in warning
+        for warning in snapshot.graph.warnings
+    )
 
 
 def test_pending_workflow_step_with_docs_child_does_not_warn_bypass(

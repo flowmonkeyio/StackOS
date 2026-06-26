@@ -15,10 +15,19 @@ agent_requirements:
     requirement: required
     agent_preset_ref: seo.workflow.content-refresh
     purpose: Diagnose content gaps and prepare a source-backed refresh brief.
+    applies_to_steps:
+      - read_history
+      - diagnose
+      - execute_change
+      - record_outcome
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review content, SEO evidence, and any UI/publishing signoff before completion.
+    applies_to_steps:
+      - diagnose
+      - execute_change
+      - record_outcome
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

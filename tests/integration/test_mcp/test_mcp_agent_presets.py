@@ -182,6 +182,74 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     assert handoff_recommended_agent_keys == {
         "stackos.sdlc.planning",
     }
+    handoff_tool_text = " ".join(
+        handoff_required_agent_keys
+        | {
+            tool
+            for agent in handoff_resolved["required_agents"]
+            for tool in agent["preset"]["preset"]["recommended_tools"]
+        }
+    )
+    assert "action.execute" in handoff_tool_text
+
+
+def test_branding_content_production_presets_resolve_end_to_end(
+    mcp_client: MCPClient,
+) -> None:
+    resolved = mcp_client.call_tool_structured(
+        "agentPreset.resolveForWorkflow",
+        {
+            "workflow_key": "branding.content-production",
+            "plugin_slug": "branding",
+            "response_mode": "raw",
+        },
+    )
+    skill_resolved = mcp_client.call_tool_structured(
+        "skillPreset.resolveForWorkflow",
+        {
+            "workflow_key": "branding.content-production",
+            "plugin_slug": "branding",
+            "response_mode": "raw",
+        },
+    )
+
+    assert resolved["workflow"]["key"] == "branding.content-production"
+    assert resolved["unresolved_requirements"] == []
+    assert resolved["unresolved_skill_preset_requirements"] == []
+    assert skill_resolved["unresolved_skill_preset_requirements"] == []
+    required_agent_keys = {
+        agent["preset"]["summary"]["key"] for agent in resolved["required_agents"]
+    }
+    assert required_agent_keys == {
+        "branding.evidence-curator",
+        "branding.channel-strategist",
+        "branding.narrative-writer",
+        "branding.claim-auditor",
+        "branding.voice-reviewer",
+        "branding.sanitization-reviewer",
+    }
+    skill_preset = skill_resolved["required_skill_presets"][0]
+    assert skill_preset["preset"]["summary"]["key"] == "branding.brand-orchestrator"
+    assert skill_preset["applies_to_steps"] == [
+        "interview-capture",
+        "research-fact-collection",
+        "angle-and-structure",
+        "draft-canonical",
+        "editorial-review",
+        "sanitization-review",
+        "produce-optional-images",
+        "render-channel-packets",
+        "approve-and-record",
+        "execute-publication",
+    ]
+    recommended_tools = set(skill_preset["preset"]["preset"]["recommended_tools"])
+    assert {
+        "workspace.startSession",
+        "runPlan.start",
+        "readiness.check",
+        "agentPreset.resolveForWorkflow",
+        "skillPreset.resolveForWorkflow",
+    } <= recommended_tools
 
 
 def test_marketing_campaign_production_presets_resolve_end_to_end(

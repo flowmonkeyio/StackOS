@@ -3,6 +3,11 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 
+def _operation_data(response):
+    body = response.json()
+    return body.get("data", body)
+
+
 def test_tracker_operations_rest_vertical_slice(api: TestClient, project_id: int) -> None:
     created_task = api.post(
         "/api/v1/operations/tracker.createTask/call",
@@ -39,7 +44,7 @@ def test_tracker_operations_rest_vertical_slice(api: TestClient, project_id: int
         json={"arguments": {"project_id": project_id}},
     )
     assert next_work.status_code == 200, next_work.text
-    assert next_work.json()["tickets"][0]["key"] == "rest-ticket"
+    assert _operation_data(next_work)["tickets"][0]["key"] == "rest-ticket"
 
     snapshot = api.post(
         "/api/v1/operations/tracker.get/call",
@@ -52,7 +57,7 @@ def test_tracker_operations_rest_vertical_slice(api: TestClient, project_id: int
         },
     )
     assert snapshot.status_code == 200, snapshot.text
-    assert {node["id"] for node in snapshot.json()["graph"]["nodes"]} >= {
+    assert {node["id"] for node in _operation_data(snapshot)["graph"]["nodes"]} >= {
         "task:rest-tracker",
         "ticket:rest-ticket",
     }
@@ -170,9 +175,61 @@ def test_tracker_operations_rest_create_ticket_accepts_list(
         },
     )
     assert reviewed.status_code == 200, reviewed.text
-    reviewed_ticket = reviewed.json()["tickets"][0]
+    reviewed_ticket = _operation_data(reviewed)["tickets"][0]
     assert reviewed_ticket["key"] == "rest-ticket-list-ui"
     assert reviewed_ticket["dependency_keys"] == ["rest-ticket-list-docs"]
+
+
+def test_tracker_operations_rest_rejects_workflow_list_item_parent_conflict(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    created = api.post(
+        "/api/v1/operations/runPlan.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_plan_json": {
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "rest-parent-conflict-workflow.run",
+                    "title": "REST parent conflict workflow",
+                    "steps": [
+                        {"id": "scope", "title": "Scope"},
+                        {"id": "deliver", "title": "Deliver", "depends_on": ["scope"]},
+                    ],
+                },
+            }
+        },
+    )
+    assert created.status_code == 200, created.text
+    run_plan_id = created.json()["data"]["id"]
+    conflicting_arguments = {
+        "project_id": project_id,
+        "run_plan_id": run_plan_id,
+        "step_id": "deliver",
+        "tickets_json": [
+            {
+                "key": "rest-parent-conflict-child",
+                "title": "Parent conflict child",
+                "parent_ticket_key": f"workflow-{run_plan_id}-scope",
+            }
+        ],
+        "created_by": "route-test",
+    }
+
+    dry_run = api.post(
+        "/api/v1/operations/tracker.createTicket/call",
+        json={"arguments": {**conflicting_arguments, "dry_run": True}},
+    )
+    written = api.post(
+        "/api/v1/operations/tracker.createTicket/call",
+        json={"arguments": conflicting_arguments},
+    )
+
+    for response in (dry_run, written):
+        assert response.status_code == 422, response.text
+        assert "parent_ticket_key is resolved from run_plan_id and step_id" in response.text
+        assert f"workflow-{run_plan_id}-deliver" in response.text
 
 
 def test_tracker_operations_rest_reject_task_cascades_tickets(

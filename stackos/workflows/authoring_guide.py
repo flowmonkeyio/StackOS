@@ -147,7 +147,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
         ],
         complete_package_scope=[
             "Plugin manifest entries for capabilities, providers, resources, actions, "
-            "workflow templates, presets, and navigation when the workflow belongs to a domain.",
+            "and navigation when the workflow belongs to a domain. Workflow templates, "
+            "agent presets, and skill presets ship from the standard plugin directories.",
             "Resource schemas with ui_schema, record_kind, and agent_guidance for durable "
             "state the workflow reads or writes.",
             "Action contracts and connector registrations for executable provider or "
@@ -194,6 +195,11 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "Wire runtime execution explicitly: action refs, resource refs, auth/provider "
             "requirements, approval gates, run-plan grants, tracker evidence, and "
             "readiness diagnostics.",
+            "For workflow-backed tracker work, keep the run-plan step mirror tickets "
+            "as the one execution spine. Create child tickets with run_plan_id and "
+            "step_id at creation time, attach them to the relevant step ticket, and "
+            "add dependency edges so the workflow graph has exactly one root: the "
+            "first workflow step mirror.",
             "Validate mechanically with manifest/template loaders, workflowTemplate.validate, "
             "agentPreset.resolveForWorkflow, skillPreset.resolveForWorkflow, readiness.check, "
             "and runPlan.validate/create where applicable.",
@@ -243,6 +249,9 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "and provider setup URLs for affected workflows or actions.",
             "runPlan.create/runPlan.validate produce grants that match the workflow's "
             "action, resource, artifact, decision, context, and communication needs.",
+            "Workflow-backed tracker graphs have exactly one root workflow step ticket; attached "
+            "child tickets are dependency-bridged from their step and terminal child "
+            "tickets block the next step until resolved.",
             "Tracker/run-plan evidence, approval gates, and audit outputs are part of "
             "the definition of done, not after-the-fact notes.",
             "Docs route users to the canonical StackOS operation and only summarize "

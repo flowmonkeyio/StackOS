@@ -117,6 +117,12 @@ def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None
 
     assert loaded.summary.plugin_slug == "branding"
     assert loaded.preset.project_adaptation.required is True
+    assert "workspace.startSession" in loaded.preset.recommended_tools
+    assert "runPlan.start" in loaded.preset.recommended_tools
+    assert "readiness.check" in loaded.preset.recommended_tools
+    assert "agentPreset.resolveForWorkflow" in loaded.preset.recommended_tools
+    assert "skillPreset.resolveForWorkflow" in loaded.preset.recommended_tools
+    assert "workflow_agent_requirements" in loaded.preset.project_adaptation.prompt_assembly_order
     assert "stackos:stackos" in refs
     assert "Level 2 branding overlay" in refs
     assert "claims-to-evidence map" in contract_text

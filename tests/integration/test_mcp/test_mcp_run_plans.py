@@ -529,6 +529,12 @@ def test_run_plan_context_query_grant_enforces_sources_and_fields(
     assert wrong_field["code"] == -32007
     assert wrong_source["code"] == -32007
     assert missing_filters["code"] == -32007
+    assert wrong_field["data"]["accepted_argument_shapes"] == [
+        {"sources": ["learnings"], "fields": ["statement", "evidence_json"]}
+    ]
+    assert missing_filters["data"]["accepted_argument_shapes"] == [
+        {"sources": ["learnings"], "fields": ["statement", "evidence_json"]}
+    ]
     assert context["items"][0]["id"] == learning["id"]
     assert context["items"][0]["fields"]["evidence_json"] == {"refresh_token": "[redacted]"}
 

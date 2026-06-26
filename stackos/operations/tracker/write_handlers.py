@@ -134,8 +134,18 @@ def _workflow_source_json(
 
 def _workflow_ticket_json(raw: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     ticket = dict(raw)
-    if not str(ticket.get("parent_ticket_key") or "").strip():
-        ticket["parent_ticket_key"] = context["parent_ticket_key"]
+    parent_ticket_key = str(ticket.get("parent_ticket_key") or "").strip()
+    if parent_ticket_key and parent_ticket_key != context["parent_ticket_key"]:
+        raise ValidationError(
+            "parent_ticket_key is resolved from run_plan_id and step_id for each "
+            "workflow ticket list item; omit it or pass the workflow step ticket",
+            data={
+                "ticket_key": ticket.get("key"),
+                "parent_ticket_key": parent_ticket_key,
+                "resolved_parent_ticket_key": context["parent_ticket_key"],
+            },
+        )
+    ticket["parent_ticket_key"] = context["parent_ticket_key"]
     ticket["run_plan_id"] = context["run_plan_id"]
     ticket["run_plan_step_id"] = context["run_plan_step_id"]
     source_json = ticket.get("source_json") if isinstance(ticket.get("source_json"), dict) else None

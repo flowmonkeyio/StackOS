@@ -920,6 +920,12 @@ class TrackerMutationMixin:
         allow_workflow_status_from_run_plan: bool = False,
     ) -> TrackerTicket:
         now = now or _utcnow()
+        self._validate_workflow_task_ticket_binding(
+            task=task,
+            key=key,
+            run_plan_id=run_plan_id,
+            run_plan_step_id=run_plan_step_id,
+        )
         self._validate_workflow_ticket_initial_status(
             key=key,
             status=status,
@@ -975,6 +981,68 @@ class TrackerMutationMixin:
         self._s.add(row)
         self._s.flush()
         return row
+
+    def _validate_workflow_task_ticket_binding(
+        self,
+        *,
+        task: TrackerTask,
+        key: str,
+        run_plan_id: int | None,
+        run_plan_step_id: int | None,
+    ) -> None:
+        if task.source_kind != TrackerSourceKind.WORKFLOW:
+            return
+        expected_run_plan_id: int | None = None
+        if isinstance(task.source_json, dict) and isinstance(
+            task.source_json.get("run_plan_id"),
+            int,
+        ):
+            expected_run_plan_id = task.source_json["run_plan_id"]
+        if run_plan_id is None or run_plan_step_id is None:
+            raise ValidationError(
+                "workflow-backed tracker tickets must be created under a run-plan step",
+                data={
+                    "task_key": task.key,
+                    "ticket_key": key,
+                    "required_fields": ["run_plan_id", "step_id"],
+                    "reason": (
+                        "the workflow step mirror is the execution spine; child tickets "
+                        "must attach to one step at creation time"
+                    ),
+                    "next_operations": ["runPlan.get", "tracker.createTicket"],
+                },
+            )
+        if expected_run_plan_id is not None and run_plan_id != expected_run_plan_id:
+            raise ValidationError(
+                "workflow-backed tracker ticket run_plan_id must match the workflow task",
+                data={
+                    "task_key": task.key,
+                    "ticket_key": key,
+                    "expected_run_plan_id": expected_run_plan_id,
+                    "run_plan_id": run_plan_id,
+                    "next_operations": ["runPlan.get", "tracker.createTicket"],
+                },
+            )
+        binding = self._workflow_ticket_binding(
+            ticket_key=key,
+            run_plan_id=run_plan_id,
+            run_plan_step_id=run_plan_step_id,
+            action="be created",
+        )
+        if binding is None:
+            return
+        plan, _step = binding
+        if plan.project_id != task.project_id:
+            raise ValidationError(
+                "workflow-backed tracker ticket run plan must belong to the workflow task project",
+                data={
+                    "task_key": task.key,
+                    "ticket_key": key,
+                    "project_id": task.project_id,
+                    "run_plan_project_id": plan.project_id,
+                    "next_operations": ["runPlan.get", "tracker.createTicket"],
+                },
+            )
 
     def _apply_task_patch(self, task: TrackerTask, patch_json: dict[str, Any]) -> None:
         self._validate_task_patch_fields(patch_json)
@@ -1281,6 +1349,18 @@ class TrackerMutationMixin:
                     "run_plan_id": run_plan_id,
                     "run_plan_step_id": run_plan_step_id,
                     "next_operations": ["runPlan.checkConsistency"],
+                },
+            )
+        if step.run_plan_id != plan.id:
+            raise ValidationError(
+                f"workflow-backed tracker ticket cannot {action} because its run-plan step "
+                "belongs to a different run plan",
+                data={
+                    "ticket_key": ticket_key,
+                    "run_plan_id": run_plan_id,
+                    "run_plan_step_id": run_plan_step_id,
+                    "step_run_plan_id": step.run_plan_id,
+                    "next_operations": ["runPlan.get", "runPlan.checkConsistency"],
                 },
             )
         return plan, step

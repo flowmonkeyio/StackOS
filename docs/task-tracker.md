@@ -167,11 +167,10 @@ grant snapshot remain the execution boundary.
 
 For workflow-backed tickets, tracker status is not an alternate run-plan
 lifecycle. The mirrored step ticket is owned by `runPlan.claimStep` and
-`runPlan.recordStep`. Child tickets can hold scoped implementation work and
-evidence, but `in-progress`/`complete` status advances require the attached
-run-plan step and linked audit run to be running. Non-status edits such as
-evidence, metadata, references, blockers, and dependency repair remain valid
-tracker operations.
+`runPlan.recordStep`. Child tickets attached to a workflow step are
+tracker-owned implementation, verification, docs, or audit work; agents may move
+those child tickets through normal tracker statuses with evidence while keeping
+their dependency bridge to the workflow spine accurate.
 For mirrored step tickets, run-plan-owned fields such as assignment, lane,
 title, source, parentage, kind, and blocker state are also controlled by
 `runPlan.*`; use child tickets for agent-owned delivery details.
@@ -365,6 +364,12 @@ workflowTemplate.describe
 -> tracker.verify
 ```
 
+Workflow-backed task graphs should have exactly one root: the first workflow
+step mirror ticket. Create child tickets with `run_plan_id` and `step_id` from
+the start, then dependency-bridge them into the step chain. Ordinary non-workflow
+tasks may still have several independent roots when the work is genuinely
+parallel.
+
 For engineering SDLC workflow work, the mirrored tickets should preserve the
 requirements-to-release order instead of collapsing everything into one
 implementation ticket:
@@ -408,7 +413,8 @@ confirm the operator asked for task/dependency tracking without invoking a workf
 -> tracker.brief
 -> do the work
 -> tracker.updateTicket or tracker.patch
--> tracker.rejectTask when the operator rejects or parks the task
+-> tracker.updateTask/updateTicket(status=deferred) when the operator parks resumable work
+-> tracker.rejectTask when the operator rejects or aborts the task
 -> tracker.verify
 ```
 

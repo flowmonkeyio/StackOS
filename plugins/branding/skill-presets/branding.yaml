@@ -10,11 +10,17 @@ presets:
     applies_to_workflows:
       - branding.content-production
     recommended_tools:
+      - workspace.startSession
       - workflowTemplate.describe
       - workflowTemplate.validate
+      - agentPreset.resolveForWorkflow
+      - skillPreset.resolveForWorkflow
+      - readiness.check
       - runPlan.create
+      - runPlan.start
       - runPlan.claimStep
       - runPlan.recordStep
+      - runPlan.checkConsistency
       - context.query
       - resource.query
       - resource.upsert
@@ -60,6 +66,7 @@ presets:
         - generic_skill_preset
         - project_adaptation_overlay
         - workflow_skill_preset_requirements
+        - workflow_agent_requirements
         - current_tracker_or_run_plan_context
         - user_request
       required_agent_action: >-

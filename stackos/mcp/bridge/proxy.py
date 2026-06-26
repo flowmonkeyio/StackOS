@@ -446,6 +446,24 @@ class AgentBridgeProxy:
                 "toolbox.call arguments must be an object.",
                 {"tool": target_name},
             )
+        active_step_tools = self.allowed_by_run.get(run_id, set()) if run_id is not None else set()
+        if (
+            run_id is not None
+            and active_step_tools
+            and target_name in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+            and target_name not in active_step_tools
+        ):
+            return _bridge_call_error(
+                request_id,
+                -32007,
+                f"Bridge refused hidden tool {target_name!r}.",
+                _toolbox_call_denial_repair(
+                    tool_name=target_name,
+                    run_id=run_id,
+                    allowed_by_run=self.allowed_by_run,
+                    catalog=self.tool_catalog,
+                ),
+            )
         response_mode = _bridge_response_mode(target_args)
         visibility_error = self._scope_visibility_error(target_name, target_args)
         if visibility_error is not None:
@@ -533,6 +551,24 @@ def _toolbox_call_denial_repair(
     if active_step_tools:
         data["active_step_tool_names"] = active_step_tools
     grant_policy = _bridge_tool_grant_policy(catalog.get(tool_name))
+    if tool_name in _AGENT_ADMIN_GATED_TOOL_NAMES or _grant_policy_is_local_admin(grant_policy):
+        data["reason"] = "local_admin_required"
+        data["grant_policy"] = grant_policy
+        data["repair"] = {
+            "hint": (
+                "Use an explicit operator/admin setup flow; this is not available "
+                "to the normal agent toolbox."
+            )
+        }
+        return data
+    if run_id is not None and active_step_tools and tool_name not in active_step_tools:
+        data["reason"] = "not_granted_to_active_step"
+        data["repair"] = {
+            "hint": (
+                "Use a tool granted to the running step, or move to a step that grants this tool."
+            )
+        }
+        return data
     if tool_name in _AGENT_RUN_PLAN_GATED_TOOL_NAMES:
         data["reason"] = "run_plan_step_grant_required"
         data["repair"] = {
@@ -551,16 +587,6 @@ def _toolbox_call_denial_repair(
                 "run_id": "<run_id returned by runPlan.start or runPlan.claimStep>",
                 "arguments": "<original arguments>",
             },
-        }
-        return data
-    if tool_name in _AGENT_ADMIN_GATED_TOOL_NAMES or _grant_policy_is_local_admin(grant_policy):
-        data["reason"] = "local_admin_required"
-        data["grant_policy"] = grant_policy
-        data["repair"] = {
-            "hint": (
-                "Use an explicit operator/admin setup flow; this is not available "
-                "to the normal agent toolbox."
-            )
         }
         return data
     data["reason"] = "tool_not_available_in_current_bridge_scope"

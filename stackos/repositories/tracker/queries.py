@@ -300,6 +300,17 @@ class TrackerQueryMixin:
         ticket = brief.ticket
         ticket_row = self._ticket_by_key(ticket.tracker_id, ticket.key)
         checks: list[dict[str, Any]] = []
+        if (
+            ticket.status in TERMINAL_TRACKER_STATUSES
+            and ticket.status != TrackerItemStatus.COMPLETE
+        ):
+            checks.append(
+                {
+                    "key": "ticket-open-or-complete",
+                    "passed": False,
+                    "detail": self._terminal_reopen_detail(ticket),
+                }
+            )
         checks.append(
             {
                 "key": "dependencies-complete",
@@ -1008,6 +1019,8 @@ class TrackerQueryMixin:
         checks = []
         if ticket.status == TrackerItemStatus.COMPLETE:
             return ["Review dependent tickets or start the next ready item."]
+        if ticket.status in TERMINAL_TRACKER_STATUSES:
+            return [self._terminal_reopen_detail(ticket)]
         blockers = self._blocked_by_incomplete(ticket.tracker_id, ticket)
         if blockers:
             checks.append(f"Complete dependencies first: {', '.join(blockers)}.")
@@ -1044,9 +1057,23 @@ class TrackerQueryMixin:
         if not isinstance(template_key, str) or not template_key:
             template_key = None
         next_operations = ["runPlan.get"]
-        if ticket.run_id is None:
-            next_operations.append("runPlan.start")
-        next_operations.extend(["runPlan.claimStep", "toolbox.describe", "runPlan.recordStep"])
+        notes = [
+            "The tracker ticket is a navigation mirror; run-plan grants remain "
+            "authoritative for workflow execution.",
+        ]
+        if ticket.status in TERMINAL_TRACKER_STATUSES:
+            notes.append(
+                f"The mirrored workflow ticket is {ticket.status.value}; inspect the run "
+                "plan before reopening or recovering workflow execution."
+            )
+        else:
+            if ticket.run_id is None:
+                next_operations.append("runPlan.start")
+            next_operations.extend(["runPlan.claimStep", "toolbox.describe", "runPlan.recordStep"])
+            notes.append(
+                "Use the returned run_id/run_token from runPlan.start and the active "
+                "step grants from runPlan.claimStep before calling step-gated tools."
+            )
         return TrackerWorkflowHandoffOut(
             run_plan_id=run_plan_id_int,
             run_plan_step_id=ticket.run_plan_step_id,
@@ -1055,12 +1082,7 @@ class TrackerQueryMixin:
             run_plan_key=run_plan_key,
             template_key=template_key,
             next_operations=next_operations,
-            notes=[
-                "The tracker ticket is a navigation mirror; run-plan grants remain "
-                "authoritative for workflow execution.",
-                "Use the returned run_id/run_token from runPlan.start and the active "
-                "step grants from runPlan.claimStep before calling step-gated tools.",
-            ],
+            notes=notes,
         )
 
     def _suggest_next_actions_raw(
@@ -1068,10 +1090,24 @@ class TrackerQueryMixin:
         ticket: TrackerTicketOut,
         checks: list[dict[str, Any]],
     ) -> list[str]:
+        if ticket.status == TrackerItemStatus.COMPLETE:
+            return ["Ticket is already complete. Review dependent tickets or audit evidence."]
+        if ticket.status in TERMINAL_TRACKER_STATUSES:
+            return [
+                f"{self._terminal_reopen_detail(ticket)} Do not mark it complete from verification."
+            ]
         failed = [item for item in checks if not item["passed"]]
         if not failed:
             return ["Ticket is verification-ready. Mark complete after final human/agent review."]
         return [str(item["detail"]) for item in failed]
+
+    def _terminal_reopen_detail(self, ticket: TrackerTicket | TrackerTicketOut) -> str:
+        if ticket.run_plan_id is not None:
+            return (
+                f"Ticket is {ticket.status.value}; reopen or recover the workflow before "
+                "claiming work or recording run-plan steps."
+            )
+        return f"Ticket is {ticket.status.value}; reopen the ticket if work should continue."
 
 
 __all__ = [

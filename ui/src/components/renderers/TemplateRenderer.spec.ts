@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 
 import {
   WorkflowAgentRequirementSpecRequirement,
+  WorkflowSkillPresetRequirementSpecRequirement,
   WorkflowSkillRequirementSpecRequirement,
   type SchemaLoadedWorkflowTemplate,
 } from '@/api'
@@ -66,6 +67,15 @@ describe('TemplateRenderer', () => {
             setup_notes: ['Load the StackOS skill before workflow execution when supported.'],
           },
         ],
+        skill_preset_requirements: [
+          {
+            skill_preset_ref: 'stackos.sdlc.delivery-orchestrator',
+            requirement: WorkflowSkillPresetRequirementSpecRequirement.required,
+            purpose: 'Coordinate the delivery lifecycle from workflow state.',
+            applies_to_steps: ['review'],
+            setup_notes: ['Adapt this workflow-specific skill preset before execution.'],
+          },
+        ],
         steps: [
           {
             id: 'review',
@@ -121,6 +131,9 @@ describe('TemplateRenderer', () => {
     expect(w.text()).toContain('Agents & skills')
     expect(w.text()).toContain('stackos.sdlc.planning')
     expect(w.text()).toContain('stackos:stackos')
+    expect(w.text()).toContain('1 presets')
+    expect(w.text()).toContain('stackos.sdlc.delivery-orchestrator')
+    expect(w.text()).toContain('Adapt this workflow-specific skill preset before execution.')
     expect(w.text()).toContain('Workflow')
     expect(w.text()).not.toContain('credential_ref')
   })

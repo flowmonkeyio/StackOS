@@ -17,7 +17,9 @@ not a second copy of the authoring path.
 A complete workflow package is more than workflow YAML. Build it as one
 contract:
 
-- plugin manifest capability/provider/resource/action/workflow/preset entries
+- plugin manifest capability/provider/resource/action/navigation entries
+- workflow templates, agent presets, and skill presets in the standard plugin
+  directories
 - resource schemas with `ui_schema`, `record_kind`, and `agent_guidance`
 - action contracts plus executable connectors, or explicit `execution_mode`
   deferral

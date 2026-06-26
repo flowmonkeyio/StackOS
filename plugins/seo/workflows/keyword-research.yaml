@@ -15,10 +15,18 @@ agent_requirements:
     requirement: required
     agent_preset_ref: seo.workflow.keyword-research
     purpose: Lead keyword discovery, clustering, evidence review, and opportunity handoff.
+    applies_to_steps:
+      - orient
+      - collect_evidence
+      - store_opportunities
+      - capture_learning
   - role: planning
     requirement: recommended
     agent_preset_ref: stackos.sdlc.planning
     purpose: Break selected opportunities into executable follow-up tickets.
+    applies_to_steps:
+      - store_opportunities
+      - capture_learning
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

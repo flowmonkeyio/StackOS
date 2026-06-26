@@ -17,10 +17,16 @@ agent_requirements:
     requirement: required
     agent_preset_ref: stackos.workflow.project-memory-review
     purpose: Review bounded project memory and produce an evidence-backed next-step recommendation.
+    applies_to_steps:
+      - clarify-goal
+      - retrieve-context
+      - propose-next-plan
   - role: planning
     requirement: recommended
     agent_preset_ref: stackos.sdlc.planning
     purpose: Convert the memory review into executable tracker tickets or a run plan when follow-up work is needed.
+    applies_to_steps:
+      - propose-next-plan
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

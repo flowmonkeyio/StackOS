@@ -82,9 +82,9 @@ export const darkTheme = {
     onAccent: '#ffffff',
   },
   border: {
-    default: '#2e2e37',
-    strong: '#3c3c46',
-    subtle: '#26262d',
+    default: '#242429',
+    strong: '#313139',
+    subtle: '#1d1d21',
     focus: '#818cf8',
     inverse: '#d4d4d8',
   },
@@ -99,7 +99,7 @@ export const darkTheme = {
   warning: { default: '#f59e0b', subtle: 'rgba(245, 158, 11, 0.16)', fg: '#fbbf24', border: 'rgba(245, 158, 11, 0.38)' },
   danger: { default: '#ef4444', subtle: 'rgba(239, 68, 68, 0.16)', fg: '#f87171', border: 'rgba(239, 68, 68, 0.38)' },
   info: { default: '#0ea5e9', subtle: 'rgba(14, 165, 233, 0.16)', fg: '#38bdf8', border: 'rgba(14, 165, 233, 0.38)' },
-  neutral: { default: '#9c9ca5', subtle: 'rgba(148, 148, 160, 0.14)', fg: '#c2c2ca', border: '#3c3c46' },
+  neutral: { default: '#9c9ca5', subtle: 'rgba(148, 148, 160, 0.14)', fg: '#c2c2ca', border: '#313139' },
   sidebar: {
     bg: '#0b0b0e',
     bgHover: 'rgba(255, 255, 255, 0.055)',

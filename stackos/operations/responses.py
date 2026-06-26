@@ -50,7 +50,13 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "tool",
         "reason",
         "role",
+        "requirement",
         "label",
+        "type",
+        "required",
+        "optional",
+        "required_when",
+        "approver",
         "agent_type",
         "skill_type",
         "ok",
@@ -120,6 +126,10 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "record_id",
         "record_key",
         "resource_key",
+        "resource",
+        "capability",
+        "auth_ref",
+        "approval_ref",
         "plugin_slug",
         "public_base_url",
         "artifact_id",
@@ -176,6 +186,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "normalized_repo_name",
         "position",
         "project_scoped_tools_usable",
+        "project_extension_enabled",
         "profile_complete",
         "purpose",
         "repairable",
@@ -202,6 +213,7 @@ _LIST_KEEP_FIELDS = frozenset(
         "allowed_tools",
         "action_refs_json",
         "actions",
+        "action_contracts",
         "agent_requirements",
         "applies_to_steps",
         "applies_to_workflows",
@@ -257,6 +269,7 @@ _LIST_KEEP_FIELDS = frozenset(
         "required_outputs",
         "resource_refs",
         "resource_refs_json",
+        "resource_contracts",
         "responsibilities",
         "returns",
         "scopes",
@@ -297,11 +310,13 @@ _MAPPING_KEEP_FIELDS = frozenset(
         "prompt_contract",
         "provider",
         "provider_setup",
+        "project_extension",
         "response_policy",
         "send_policy",
         "setup_state",
         "spec",
         "surfaces",
+        "template",
         "tool_profile",
         "trigger",
         "trigger_policy",
@@ -434,6 +449,10 @@ def _base_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
 def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:
     data = _data(payload)
     if "data" not in payload and "items" in payload:
+        if spec.name == "tracker.history":
+            out = _compact_page(spec, payload)
+            out["items"] = compact_tracker_history_page(payload).get("items", [])
+            return out
         return _compact_page(spec, payload)
     if "data" not in payload and spec.name == "tracker.get":
         compact_data = _compact_data(spec.name, payload)
@@ -598,6 +617,16 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return _compact_tracker_mutation(data)
     if operation_name.startswith("runPlan."):
         return _compact_run_plan(data)
+    if operation_name == "workflowTemplate.list":
+        return _compact_workflow_template_list(data)
+    if operation_name == "workflowTemplate.describe":
+        return _compact_workflow_template_describe(data)
+    if operation_name == "workflowTemplate.authoringGuide":
+        return _compact_workflow_authoring_guide(data)
+    if operation_name == "agentPreset.list":
+        return _compact_agent_preset_list(data)
+    if operation_name == "workflowExtension.list":
+        return _compact_workflow_extension_list(data)
     if operation_name.startswith("workflowExtension."):
         return _compact_workflow_extension(data)
     return _compact_mapping(data)
@@ -692,6 +721,37 @@ def _compact_tracker_mutation(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _compact_run_plan_step(step: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "id",
+        "step_id",
+        "title",
+        "status",
+        "position",
+        "claimed_by",
+        "run_id",
+        "claimed_at",
+        "started_at",
+        "completed_at",
+        "depends_on",
+        "depends_on_json",
+        "context_refs",
+        "context_refs_json",
+        "resource_refs",
+        "resource_refs_json",
+        "action_refs",
+        "action_refs_json",
+        "output_refs",
+        "output_refs_json",
+        "allowed_tools",
+    )
+    return {key: _compact_value(step[key]) for key in keys if step.get(key) is not None}
+
+
+def _compact_run_plan_steps(steps: list[Any]) -> list[dict[str, Any]]:
+    return [_compact_run_plan_step(step) for step in steps if isinstance(step, dict)]
+
+
 def _compact_run_plan(data: dict[str, Any]) -> dict[str, Any]:
     out = _compact_mapping(data)
     if data.get("id") is not None and data.get("key") is not None:
@@ -708,6 +768,8 @@ def _compact_run_plan(data: dict[str, Any]) -> dict[str, Any]:
                 step for step in steps if isinstance(step, dict) and step.get("status") == "running"
             ]
             out["step_count"] = len(steps)
+            out["plan"]["step_count"] = len(steps)
+            out["plan"]["steps"] = _compact_run_plan_steps(steps)
             if running:
                 out["running_step_ids"] = [step.get("step_id") for step in running]
     run = data.get("run")
@@ -716,7 +778,7 @@ def _compact_run_plan(data: dict[str, Any]) -> dict[str, Any]:
     steps = data.get("steps")
     if isinstance(steps, list):
         out["step_count"] = len(steps)
-        out["steps"] = [_compact_mapping(step) for step in steps if isinstance(step, dict)]
+        out["steps"] = _compact_run_plan_steps(steps)
     approvals = data.get("approval_requests")
     if isinstance(approvals, list):
         out["approval_requests"] = [
@@ -739,6 +801,83 @@ def _compact_workflow_extension(data: dict[str, Any]) -> dict[str, Any]:
     if isinstance(required, list):
         out["required_input_keys"] = [str(item) for item in required if isinstance(item, str)]
     return out
+
+
+def _compact_workflow_extension_list(data: dict[str, Any]) -> dict[str, Any]:
+    extensions = data.get("extensions")
+    extension_items = extensions if isinstance(extensions, list) else []
+    out = _compact_mapping(data)
+    out["extensions"] = [
+        _compact_workflow_extension(item) if isinstance(item, dict) else _compact_value(item)
+        for item in extension_items[:_MAX_COMPACT_LIST_ITEMS]
+    ]
+    out["extensions_count"] = len(extension_items)
+    if len(extension_items) > _MAX_COMPACT_LIST_ITEMS:
+        out["extensions_truncated"] = True
+    return out
+
+
+def _compact_workflow_template_list(data: dict[str, Any]) -> dict[str, Any]:
+    templates = data.get("templates")
+    template_items = templates if isinstance(templates, list) else []
+    return {
+        "templates": [
+            _compact_mapping(item) if isinstance(item, dict) else _compact_value(item)
+            for item in template_items[:_MAX_COMPACT_LIST_ITEMS]
+        ],
+        "templates_count": len(template_items),
+        "templates_truncated": len(template_items) > _MAX_COMPACT_LIST_ITEMS,
+        "include_shadowed": bool(data.get("include_shadowed")),
+    }
+
+
+def _compact_workflow_template_describe(data: dict[str, Any]) -> dict[str, Any]:
+    out = _compact_mapping(data)
+    spec = data.get("spec")
+    if isinstance(spec, dict):
+        compact_spec = out.get("spec")
+        if isinstance(compact_spec, dict) and isinstance(spec.get("metadata_json"), dict):
+            compact_spec["metadata_json"] = copy.deepcopy(spec["metadata_json"])
+    return out
+
+
+def _compact_workflow_authoring_guide(data: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "schema_version",
+        "source_of_truth_operation",
+        "title",
+        "summary",
+        "audience",
+        "principles",
+        "complete_package_scope",
+        "package_authoring_path",
+        "reasoning_gates",
+        "mechanical_gates",
+        "independent_signoff",
+        "decision_path",
+        "template_contract_fields",
+        "template_must_not_include",
+        "extension_uses",
+        "execution_path",
+        "canonical_operations",
+        "minimal_template_yaml",
+        "examples",
+    )
+    return {key: _compact_value(data[key]) for key in keys if key in data}
+
+
+def _compact_agent_preset_list(data: dict[str, Any]) -> dict[str, Any]:
+    presets = data.get("presets")
+    preset_items = presets if isinstance(presets, list) else []
+    return {
+        "presets": [
+            _compact_mapping(item) if isinstance(item, dict) else _compact_value(item)
+            for item in preset_items[:_MAX_COMPACT_LIST_ITEMS]
+        ],
+        "presets_count": len(preset_items),
+        "presets_truncated": len(preset_items) > _MAX_COMPACT_LIST_ITEMS,
+        "include_shadowed": bool(data.get("include_shadowed")),
+    }
 
 
 def _safe_dict(value: Any) -> dict[str, Any]:

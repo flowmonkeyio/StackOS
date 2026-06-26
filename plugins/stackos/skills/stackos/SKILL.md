@@ -107,6 +107,11 @@ run token.
   hints, not blockers. After inspecting the repo's stack and content model, use
   `toolbox.call` for `workspace.updateProfile` when those hints should be
   durable for future agents.
+- Read-only workspace diagnostics: call `workspace.resolve` when the agent only
+  needs to inspect whether the current repo is already bound, what project it
+  maps to, or why setup is unavailable. Do not use it as the normal start path
+  for work that will create, update, execute, or track anything; switch to
+  `workspace.startSession` before mutating project state.
 - Ongoing repo session: call `workspace.startSession`, use the workspace-bound
   project id, then call only the scoped tools needed for the current task. Do
   not request broad schemas or catalog dumps unless debugging.
@@ -242,8 +247,10 @@ run token.
   concrete state; `runPlan.start` and step grants control which tools/actions
   are available. Mirror or link tracker tickets when human-visible
   sequencing/evidence matters. For workflow-backed child tickets,
-  `run_plan_id` and `step_id` are attachment/provenance only, not lifecycle
-  ownership transfer. Use `tracker.updateTicket` for those child tickets;
+  pass `run_plan_id` and `step_id` at creation time. They are
+  attachment/provenance only, not lifecycle ownership transfer. The workflow
+  graph should have exactly one root: the first generated workflow step mirror
+  ticket. Use `tracker.updateTicket` for those child tickets;
   use `runPlan.claimStep`/`runPlan.recordStep` only for the generated workflow
   step mirror tickets. Add dependency edges into the mirrored workflow
   spine, then immediately call `tracker.get` with `run_plan_id` and
@@ -252,10 +259,10 @@ run token.
   as an execution blocker.
 - Execute a step: claim the run-plan step, follow the referenced guidance, call
   `toolbox.describe` for needed granted tools, invoke them with `toolbox.call`,
-  then `runPlan.recordStep`. For long implementation stretches between claim
-  and record, call `run.heartbeat` with the active `run_id`; claim and record
-  refresh heartbeat automatically, but an agent doing local work for several
-  minutes should keep the controller run alive explicitly.
+  then `runPlan.recordStep`. Claim and record refresh the linked audit heartbeat,
+  and the stale-run reaper preserves normal long-running workflow work. Do not add
+  periodic `run.heartbeat` calls unless a workflow explicitly asks for audit
+  liveness evidence.
 - Execute one direct action: describe/validate when useful, call
   `toolbox.call` for `readiness.check` when setup is uncertain, resolve an
   `executionContext.*` ref when the provider scope will be reused, call

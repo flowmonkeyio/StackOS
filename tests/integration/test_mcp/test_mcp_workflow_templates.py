@@ -18,6 +18,10 @@ def _template_json(key: str = "company.review") -> dict:
     }
 
 
+def _operation_data(payload: dict) -> dict:
+    return payload.get("data", payload)
+
+
 def test_workflow_template_read_tools_are_callable(
     mcp_client: MCPClient,
     tmp_path: Path,
@@ -40,38 +44,49 @@ outputs:
         encoding="utf-8",
     )
 
-    listing = mcp_client.call_tool_structured(
-        "workflowTemplate.list",
-        {"repo_root": str(tmp_path), "include_shadowed": True},
+    listing = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.list",
+            {"repo_root": str(tmp_path), "include_shadowed": True},
+        )
     )
-    described = mcp_client.call_tool_structured(
-        "workflowTemplate.describe",
-        {"key": "core.project-memory-review", "repo_root": str(tmp_path)},
+    described = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.describe",
+            {"key": "core.project-memory-review", "repo_root": str(tmp_path)},
+        )
     )
-    validation = mcp_client.call_tool_structured(
-        "workflowTemplate.validate",
-        {"template_json": _template_json()},
+    validation = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.validate",
+            {"template_json": _template_json()},
+        )
     )
-    validation_by_key = mcp_client.call_tool_structured(
-        "workflowTemplate.validate",
-        {"key": "core.project-memory-review", "repo_root": str(tmp_path)},
+    validation_by_key = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.validate",
+            {"key": "core.project-memory-review", "repo_root": str(tmp_path)},
+        )
     )
-    authoring_guide = mcp_client.call_tool_structured("workflowTemplate.authoringGuide", {})
+    authoring_guide = _operation_data(
+        mcp_client.call_tool_structured("workflowTemplate.authoringGuide", {})
+    )
 
+    listing_data = listing
     sources = {
         item["source"]
-        for item in listing["templates"]
+        for item in listing_data["templates"]
         if item["key"] == "core.project-memory-review"
     }
     assert sources == {"plugin", "repo"}
-    assert "gtm.account-research" in {item["key"] for item in listing["templates"]}
+    assert "gtm.account-research" in {item["key"] for item in listing_data["templates"]}
     assert "communications.customer-feedback-intake" in {
-        item["key"] for item in listing["templates"]
+        item["key"] for item in listing_data["templates"]
     }
-    assert "support.issue-investigation" in {item["key"] for item in listing["templates"]}
-    assert "support.delivery-task-handoff" in {item["key"] for item in listing["templates"]}
-    assert "engineering.tracked-delivery" in {item["key"] for item in listing["templates"]}
-    assert "media-buying.campaign-launch" in {item["key"] for item in listing["templates"]}
+    assert "support.issue-investigation" in {item["key"] for item in listing_data["templates"]}
+    assert "support.delivery-task-handoff" in {item["key"] for item in listing_data["templates"]}
+    assert "engineering.tracked-delivery" in {item["key"] for item in listing_data["templates"]}
+    assert "media-buying.campaign-launch" in {item["key"] for item in listing_data["templates"]}
     assert described["summary"]["source"] == "repo"
     assert described["summary"]["name"] == "Repo Project Memory Review"
     assert validation["valid"] is True
@@ -81,6 +96,8 @@ outputs:
     assert validation_by_key["template"]["name"] == "Repo Project Memory Review"
     assert authoring_guide["source_of_truth_operation"] == "workflowTemplate.authoringGuide"
     assert "Plugin manifest entries" in authoring_guide["complete_package_scope"][0]
+    assert "standard plugin directories" in authoring_guide["complete_package_scope"][0]
+    assert "workflow templates, presets" not in authoring_guide["complete_package_scope"][0]
     assert any(
         "agent presets, skill presets" in item for item in authoring_guide["package_authoring_path"]
     )
@@ -90,43 +107,58 @@ outputs:
         for item in authoring_guide["package_authoring_path"]
     )
     assert any("future memory" in item for item in authoring_guide["package_authoring_path"])
+    assert any(
+        "run_plan_id and step_id at creation time" in item
+        for item in authoring_guide["package_authoring_path"]
+    )
     assert any("private workflow chain" in item for item in authoring_guide["reasoning_gates"])
     assert any("readiness.check" in item for item in authoring_guide["mechanical_gates"])
+    assert any("exactly one root" in item for item in authoring_guide["mechanical_gates"])
     assert any("official provider docs" in item for item in authoring_guide["independent_signoff"])
     assert "workflowTemplate.validate" in {
         item["name"] for item in authoring_guide["canonical_operations"]
     }
 
-    gtm_listing = mcp_client.call_tool_structured(
-        "workflowTemplate.list",
-        {"plugin_slug": "gtm"},
+    gtm_listing = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.list",
+            {"plugin_slug": "gtm"},
+        )
     )
-    assert {item["key"] for item in gtm_listing["templates"]} >= {
+    gtm_listing_data = gtm_listing
+    assert {item["key"] for item in gtm_listing_data["templates"]} >= {
         "gtm.account-research",
         "gtm.pipeline-risk-review",
     }
-    gtm_described = mcp_client.call_tool_structured(
-        "workflowTemplate.describe",
-        {"key": "gtm.account-research", "plugin_slug": "gtm"},
+    gtm_described = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.describe",
+            {"key": "gtm.account-research", "plugin_slug": "gtm"},
+        )
     )
     assert gtm_described["spec"]["agent_requirements"][0]["agent_preset_ref"] == (
         "gtm.workflow.account-research"
     )
     assert gtm_described["spec"]["skill_requirements"][0]["skill_ref"] == "stackos:stackos"
 
-    engineering_listing = mcp_client.call_tool_structured(
-        "workflowTemplate.list",
-        {"plugin_slug": "engineering"},
+    engineering_listing = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.list",
+            {"plugin_slug": "engineering"},
+        )
     )
-    assert [item["key"] for item in engineering_listing["templates"]] == [
+    engineering_listing_data = engineering_listing
+    assert [item["key"] for item in engineering_listing_data["templates"]] == [
         "engineering.tracked-delivery",
     ]
-    intake_described = mcp_client.call_tool_structured(
-        "workflowTemplate.describe",
-        {
-            "key": "communications.customer-feedback-intake",
-            "plugin_slug": "communications",
-        },
+    intake_described = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.describe",
+            {
+                "key": "communications.customer-feedback-intake",
+                "plugin_slug": "communications",
+            },
+        )
     )
     assert intake_described["spec"]["agent_requirements"][0]["agent_preset_ref"] == (
         "communications.workflow.customer-feedback-intake"
@@ -141,17 +173,22 @@ outputs:
         "support.issue-investigation"
     )
 
-    support_listing = mcp_client.call_tool_structured(
-        "workflowTemplate.list",
-        {"plugin_slug": "support"},
+    support_listing = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.list",
+            {"plugin_slug": "support"},
+        )
     )
-    assert [item["key"] for item in support_listing["templates"]] == [
+    support_listing_data = support_listing
+    assert [item["key"] for item in support_listing_data["templates"]] == [
         "support.delivery-task-handoff",
         "support.issue-investigation",
     ]
-    support_described = mcp_client.call_tool_structured(
-        "workflowTemplate.describe",
-        {"key": "support.issue-investigation", "plugin_slug": "support"},
+    support_described = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.describe",
+            {"key": "support.issue-investigation", "plugin_slug": "support"},
+        )
     )
     support_agent_refs = {
         item["agent_preset_ref"] for item in support_described["spec"]["agent_requirements"]
@@ -178,9 +215,11 @@ outputs:
         "investigate-issue",
         "post-support-conclusion",
     ]
-    handoff_described = mcp_client.call_tool_structured(
-        "workflowTemplate.describe",
-        {"key": "support.delivery-task-handoff", "plugin_slug": "support"},
+    handoff_described = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.describe",
+            {"key": "support.delivery-task-handoff", "plugin_slug": "support"},
+        )
     )
     assert handoff_described["spec"]["metadata_json"]["next_workflow"] == (
         "engineering.tracked-delivery"
@@ -191,9 +230,11 @@ outputs:
         "post-task-handoff",
         "add-task-created-reaction",
     ]
-    engineering_described = mcp_client.call_tool_structured(
-        "workflowTemplate.describe",
-        {"key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
+    engineering_described = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.describe",
+            {"key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
+        )
     )
     assert engineering_described["spec"]["agent_requirements"][0]["agent_preset_ref"] == (
         "stackos.sdlc.requirements-flow-definer"
@@ -227,11 +268,14 @@ outputs:
     assert "workflow-backed run plan before creating tracker tickets" in engineering_text
     assert "direct tracker task and a later workflow task" in engineering_text
 
-    media_listing = mcp_client.call_tool_structured(
-        "workflowTemplate.list",
-        {"plugin_slug": "media-buying"},
+    media_listing = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.list",
+            {"plugin_slug": "media-buying"},
+        )
     )
-    assert {item["key"] for item in media_listing["templates"]} >= {
+    media_listing_data = media_listing
+    assert {item["key"] for item in media_listing_data["templates"]} >= {
         "media-buying.campaign-launch",
         "media-buying.performance-diagnosis",
     }
@@ -241,9 +285,11 @@ def test_workflow_template_validate_rejects_secrets(mcp_client: MCPClient) -> No
     template = _template_json()
     template["metadata"] = {"api_key": "value"}
 
-    validation = mcp_client.call_tool_structured(
-        "workflowTemplate.validate",
-        {"template_json": template},
+    validation = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.validate",
+            {"template_json": template},
+        )
     )
 
     assert validation["valid"] is False
@@ -253,9 +299,11 @@ def test_workflow_template_validate_rejects_secrets(mcp_client: MCPClient) -> No
 def test_workflow_template_validate_rejects_ambiguous_key_aliases(
     mcp_client: MCPClient,
 ) -> None:
-    validation = mcp_client.call_tool_structured(
-        "workflowTemplate.validate",
-        {"key": "core.project-memory-review", "workflow_key": "seo.keyword-research"},
+    validation = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.validate",
+            {"key": "core.project-memory-review", "workflow_key": "seo.keyword-research"},
+        )
     )
 
     assert validation["valid"] is False
@@ -267,98 +315,112 @@ def test_workflow_extension_tools_configure_project_overlay(
     seeded_project: dict,
 ) -> None:
     project_id = seeded_project["data"]["id"]
-    missing = mcp_client.call_tool_structured(
-        "workflowExtension.get",
-        {
-            "project_id": project_id,
-            "workflow_key": "communications.customer-feedback-intake",
-        },
+    missing = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.get",
+            {
+                "project_id": project_id,
+                "workflow_key": "communications.customer-feedback-intake",
+            },
+        )
     )
-    validation = mcp_client.call_tool_structured(
-        "workflowExtension.validate",
-        {
-            "project_id": project_id,
-            "workflow_key": "communications.customer-feedback-intake",
-            "plugin_slug": "communications",
-            "required_input_keys_json": ["feedback_summary", "communication_route_ref"],
-            "input_defaults_json": {
-                "communication_route_ref": "communication-route:support-feedback",
-                "canonical_slack_target_ref": "communication-target:support-triage",
+    validation = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.validate",
+            {
+                "project_id": project_id,
+                "workflow_key": "communications.customer-feedback-intake",
+                "plugin_slug": "communications",
+                "required_input_keys_json": ["feedback_summary", "communication_route_ref"],
+                "input_defaults_json": {
+                    "communication_route_ref": "communication-route:support-feedback",
+                    "canonical_slack_target_ref": "communication-target:support-triage",
+                },
+                "step_overrides_json": {
+                    "establish-canonical-thread": {
+                        "extra_instructions": ["Use the configured support route."]
+                    }
+                },
+                "template_overrides_json": {"description": "Project-specific support intake flow."},
+                "response_mode": "raw",
             },
-            "step_overrides_json": {
-                "establish-canonical-thread": {
-                    "extra_instructions": ["Use the configured support route."]
-                }
-            },
-            "template_overrides_json": {"description": "Project-specific support intake flow."},
-            "response_mode": "raw",
-        },
+        )
     )
-    upserted = mcp_client.call_tool_structured(
-        "workflowExtension.upsert",
-        {
-            "project_id": project_id,
-            "workflow_key": "communications.customer-feedback-intake",
-            "plugin_slug": "communications",
-            "required_input_keys_json": ["feedback_summary", "communication_route_ref"],
-            "input_defaults_json": {
-                "communication_route_ref": "communication-route:support-feedback",
-                "canonical_slack_target_ref": "communication-target:support-triage",
+    upserted = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.upsert",
+            {
+                "project_id": project_id,
+                "workflow_key": "communications.customer-feedback-intake",
+                "plugin_slug": "communications",
+                "required_input_keys_json": ["feedback_summary", "communication_route_ref"],
+                "input_defaults_json": {
+                    "communication_route_ref": "communication-route:support-feedback",
+                    "canonical_slack_target_ref": "communication-target:support-triage",
+                },
+                "selected_context_json": {
+                    "communication": {
+                        "route_ref": "communication-route:support-feedback",
+                        "target_ref": "communication-target:support-triage",
+                    }
+                },
+                "step_overrides_json": {
+                    "establish-canonical-thread": {
+                        "extra_instructions": ["Use the configured support route."]
+                    }
+                },
+                "template_overrides_json": {"description": "Project-specific support intake flow."},
+                "response_mode": "raw",
             },
-            "selected_context_json": {
-                "communication": {
-                    "route_ref": "communication-route:support-feedback",
-                    "target_ref": "communication-target:support-triage",
-                }
-            },
-            "step_overrides_json": {
-                "establish-canonical-thread": {
-                    "extra_instructions": ["Use the configured support route."]
-                }
-            },
-            "template_overrides_json": {"description": "Project-specific support intake flow."},
-            "response_mode": "raw",
-        },
+        )
     )
-    listed = mcp_client.call_tool_structured(
-        "workflowExtension.list",
-        {"project_id": project_id},
+    listed = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.list",
+            {"project_id": project_id},
+        )
     )
-    described = mcp_client.call_tool_structured(
-        "workflowTemplate.describe",
-        {
-            "project_id": project_id,
-            "key": "communications.customer-feedback-intake",
-            "plugin_slug": "communications",
-        },
+    described = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.describe",
+            {
+                "project_id": project_id,
+                "key": "communications.customer-feedback-intake",
+                "plugin_slug": "communications",
+            },
+        )
     )
 
     assert missing["extension"] is None
     assert validation["valid"] is True
-    assert upserted["data"]["workflow_key"] == "communications.customer-feedback-intake"
-    assert upserted["data"]["template_overrides_json"]["description"] == (
+    assert upserted["workflow_key"] == "communications.customer-feedback-intake"
+    assert upserted["template_overrides_json"]["description"] == (
         "Project-specific support intake flow."
     )
-    assert listed["extensions"][0]["id"] == upserted["data"]["id"]
-    assert described["project_extension"]["id"] == upserted["data"]["id"]
+    assert listed["extensions"][0]["id"] == upserted["id"]
+    assert described["project_extension"]["id"] == upserted["id"]
     assert described["spec"]["description"] == "Project-specific support intake flow."
     assert described["summary"]["project_extension_enabled"] is True
 
-    deleted = mcp_client.call_tool_structured(
-        "workflowExtension.delete",
-        {
-            "project_id": project_id,
-            "workflow_key": "communications.customer-feedback-intake",
-        },
+    deleted = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.delete",
+            {
+                "project_id": project_id,
+                "workflow_key": "communications.customer-feedback-intake",
+            },
+        )
     )
-    after_delete = mcp_client.call_tool_structured(
-        "workflowExtension.get",
-        {
-            "project_id": project_id,
-            "workflow_key": "communications.customer-feedback-intake",
-        },
+    after_delete = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.get",
+            {
+                "project_id": project_id,
+                "workflow_key": "communications.customer-feedback-intake",
+            },
+        )
     )
-    assert deleted["data"]["deleted"]["id"] == upserted["data"]["id"]
+    assert deleted["deleted"]["id"] == upserted["id"]
     assert after_delete["extension"] is None
 
 
@@ -390,13 +452,17 @@ def test_workflow_template_writes_are_registered_but_not_system_granted(
 def test_marketing_campaign_production_template_validates_and_describes(
     mcp_client: MCPClient,
 ) -> None:
-    validation = mcp_client.call_tool_structured(
-        "workflowTemplate.validate",
-        {"key": "marketing.campaign-production"},
+    validation = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.validate",
+            {"key": "marketing.campaign-production"},
+        )
     )
-    described = mcp_client.call_tool_structured(
-        "workflowTemplate.describe",
-        {"key": "marketing.campaign-production", "plugin_slug": "marketing"},
+    described = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.describe",
+            {"key": "marketing.campaign-production", "plugin_slug": "marketing"},
+        )
     )
 
     assert validation["valid"] is True

@@ -118,6 +118,10 @@ does not store provider secrets and does not rotate `seed.bin` or `auth.token`
 on install or update. After install or repair, the desktop service consumes the
 same `stackos doctor --json` readiness envelope used by the CLI.
 
+In packaged macOS mode, launchd owns the daemon after install, repair, and
+upgrade. Verify `stackos autostart status --json` as well as Doctor when
+testing desktop lifecycle changes.
+
 Build and release details live in
 [`desktop-distribution.md`](./desktop-distribution.md).
 

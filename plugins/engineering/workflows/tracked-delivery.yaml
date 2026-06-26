@@ -267,8 +267,9 @@ steps:
       - When workflow intent was explicit, create every discovery, design, delivery, verification, and closeout ticket under the workflow task/run plan from the start.
       - Use a direct tracker task only when the operator asks for task/dependency tracking without invoking a workflow.
       - Give each ticket dependencies, likely files or operation surfaces, acceptance criteria, and completion evidence expectations.
-      - For workflow-backed child tickets, treat run_plan_id and step_id as attachment/provenance only; update child ticket status/evidence with tracker.updateTicket, and reserve runPlan.claimStep/runPlan.recordStep for generated workflow step mirror tickets.
+      - "For workflow-backed child tickets, pass run_plan_id and step_id at creation time; treat them as attachment/provenance only, update child ticket status/evidence with tracker.updateTicket, and reserve runPlan.claimStep/runPlan.recordStep for generated workflow step mirror tickets."
       - Add dependency edges that bridge child tickets into the mirrored workflow step chain.
+      - "Keep the workflow graph to one root: the first generated workflow step mirror ticket. Any extra root under a workflow-backed task is detached work that must be repaired before delivery continues."
       - Make the first executable child of a workflow step depend on the workflow step ticket, and make the next workflow step depend on the terminal child tickets from the prior step.
       - Keep delivery verification, docs, signoff, and release tickets inside the delivery graph so they cannot become ready independently of the workflow spine.
       - After creating or updating workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true; review graph warnings, repair material sequencing issues, and record non-blocking cleanup instead of freezing progress.

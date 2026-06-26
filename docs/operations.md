@@ -322,13 +322,21 @@ needed.
 
 ## Registered Core Operations
 
-The current core operation registry includes:
+The live operation registry is the source of truth. Use `operation.list` and
+`operation.describe` for the current inventory, schemas, response policy, grant
+policy, examples, and enabled surfaces. The static list below is a convenience
+index for common core operations, not a replacement for registry discovery.
 
 - `action.describe`
 - `action.list`
 - `action.validate`
 - `action.run`
 - `action.execute`
+- `artifact.create`
+- `artifact.read`
+- `artifact.update`
+- `artifact.archive`
+- `artifact.supersede`
 - `agentPreset.list`
 - `agentPreset.describe`
 - `agentPreset.resolveForWorkflow`
@@ -376,6 +384,18 @@ The current core operation registry includes:
 - `communicationRoute.list`
 - `communicationRoute.upsert`
 - `communicationContext.query`
+- `context.query`
+- `context.timeline`
+- `decision.query`
+- `decision.record`
+- `executionContext.discover`
+- `executionContext.resolve`
+- `executionContext.create`
+- `executionContext.artifact.list`
+- `executionContext.artifact.read`
+- `experiment.query`
+- `learning.create`
+- `learning.query`
 - `ingressEndpoint.configure`
 - `ingressEndpoint.refresh`
 - `ingressEndpoint.routes`
@@ -401,6 +421,7 @@ The current core operation registry includes:
 - `tracker.updateTicket`
 - `tracker.patch`
 - `tracker.rejectTask`
+- `tracker.reopen`
 - `tracker.pick`
 - `tracker.release`
 - `tracker.linkRunPlan`
@@ -411,8 +432,15 @@ The current core operation registry includes:
 - `runPlan.checkConsistency`
 - `runPlan.list`
 - `runPlan.update`
+- `runPlan.recover`
+- `runPlan.reopen`
+- `runPlan.abort`
 - `runPlan.claimStep`
 - `runPlan.recordStep`
+- `resource.get`
+- `resource.query`
+- `resource.upsert`
+- `schema.get`
 - `workflowExtension.list`
 - `workflowExtension.get`
 - `workflowExtension.delete`
@@ -430,12 +458,14 @@ Tracker list workflows reuse existing tracker operations. Use
 call the same operation without dry-run to create the list, use `tracker.get`
 filters for review, and use `tracker.updateTicket` with `updates_json` for
 atomic per-ticket patches. Do not add separate list-specific tracker endpoints.
-Use `tracker.rejectTask` for operator-level rejection/parking: it accepts a
-task key or run-plan id, marks the parent task aborted/rejected, and cascades
-all child tickets to aborted with rejection evidence. For workflow-backed
-tasks, it only applies to draft/started run plans and routes through
-`runPlan.abort` first. Completed or failed workflow run plans remain canonical;
-create follow-up tracker work instead of overriding their terminal lifecycle.
+Use `tracker.rejectTask` for operator-level rejection or abort: it accepts a
+task key or run-plan id, marks the parent task aborted/rejected, and cascades all
+child tickets to aborted with rejection evidence. For resumable parked work, use
+normal tracker status updates with `deferred` instead of rejection. For
+workflow-backed tasks, rejection only applies to draft/started run plans and
+routes through `runPlan.abort` first. Completed or failed workflow run plans
+remain canonical; create follow-up tracker work instead of overriding their
+terminal lifecycle.
 `tracker.linkRunPlan` is a provenance link only and does not transfer lifecycle
 ownership from tracker to the run plan.
 

@@ -533,6 +533,27 @@ def _communication_reply_source_matches(
     return bool(candidates & allowed_sources)
 
 
+def _grant_argument_shapes(grants: list[RunPlanMcpToolGrant]) -> list[dict[str, Any]]:
+    shapes: list[dict[str, Any]] = []
+    for grant in grants:
+        shape: dict[str, Any] = {}
+        if grant.plugin_slug is not None:
+            shape["plugin_slug"] = grant.plugin_slug
+        if grant.resource_key is not None:
+            shape["resource_key"] = grant.resource_key
+        if grant.action_refs:
+            shape["action_refs"] = list(grant.action_refs)
+        if grant.targets:
+            shape["targets"] = list(grant.targets)
+        if grant.sources:
+            shape["sources"] = list(grant.sources)
+        if grant.fields:
+            shape["fields"] = list(grant.fields)
+        if shape:
+            shapes.append(shape)
+    return shapes
+
+
 def _deny_run_plan_tool(
     tool_name: str,
     *,
@@ -541,17 +562,21 @@ def _deny_run_plan_tool(
     run_plan_id: int | None = None,
     step_id: str | None = None,
     allowed: set[str] | None = None,
+    accepted_argument_shapes: list[dict[str, Any]] | None = None,
 ) -> None:
+    data: dict[str, Any] = {
+        "tool": tool_name,
+        "skill": RUN_PLAN_CONTROLLER_SKILL,
+        "run_id": run_id,
+        "run_plan_id": run_plan_id,
+        "step_id": step_id,
+        "allowed": sorted(allowed or set()),
+    }
+    if accepted_argument_shapes:
+        data["accepted_argument_shapes"] = accepted_argument_shapes
     raise ToolNotGrantedError(
         reason,
-        data={
-            "tool": tool_name,
-            "skill": RUN_PLAN_CONTROLLER_SKILL,
-            "run_id": run_id,
-            "run_plan_id": run_plan_id,
-            "step_id": step_id,
-            "allowed": sorted(allowed or set()),
-        },
+        data=data,
     )
 
 
@@ -705,6 +730,7 @@ def _check_run_plan_dynamic_grant(tool_name: str, ctx: Any, parsed_arguments: An
             run_plan_id=plan.id,
             step_id=step.step_id,
             allowed=allowed,
+            accepted_argument_shapes=_grant_argument_shapes(grants),
         )
 
 

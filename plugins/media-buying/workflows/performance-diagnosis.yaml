@@ -16,10 +16,18 @@ agent_requirements:
     requirement: required
     agent_preset_ref: media-buying.workflow.performance-diagnosis
     purpose: Diagnose performance from available evidence while naming live-data and confidence limits.
+    applies_to_steps:
+      - orient
+      - fetch_additional_metrics
+      - diagnose_drivers
+      - record_followups
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review measurement freshness, provider-contract assumptions, and any proposed risky follow-up.
+    applies_to_steps:
+      - diagnose_drivers
+      - record_followups
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

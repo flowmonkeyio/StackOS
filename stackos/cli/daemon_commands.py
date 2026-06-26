@@ -260,6 +260,10 @@ def _launchd_bootout(plist_path: Path) -> tuple[bool, str]:
         except RuntimeError as exc:
             return False, str(exc)
         ok, message = _launchctl(["bootout", service])
+        if not ok:
+            return ok, message
+        if not _wait_for_launchd_unloaded(timeout=5.0):
+            return False, "launchd job did not unload before timeout"
         return ok, message
     # Older launchctl versions accept unload and ignore unloaded jobs.
     ok, message = _launchctl(["unload", str(plist_path)])
@@ -278,6 +282,16 @@ def _launchd_unload_failure_is_benign(message: str) -> bool:
         "service is not loaded",
     )
     return any(marker in normalized for marker in benign_markers)
+
+
+def _wait_for_launchd_unloaded(*, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() <= deadline:
+        loaded, _ = _launchd_loaded()
+        if not loaded:
+            return True
+        time.sleep(0.1)
+    return False
 
 
 def _launchd_bootstrap(plist_path: Path) -> tuple[bool, str]:
@@ -304,6 +318,12 @@ def _loaded_launchd_plist(home: Path) -> Path | None:
         return None
     loaded, _message = _launchd_loaded()
     return plist_path if loaded else None
+
+
+def _installed_launchd_plist(home: Path) -> Path | None:
+    """Return the launchd plist path when launchd is the configured owner."""
+    plist_path = _launchd_plist_path(home)
+    return plist_path if plist_path.exists() else None
 
 
 def _launchd_plist_content(
@@ -436,9 +456,7 @@ def _pid_is_running(pid: int) -> bool:
         return False
     except PermissionError:
         return True
-    if _pid_is_zombie(pid):
-        return False
-    return True
+    return not _pid_is_zombie(pid)
 
 
 def _pid_is_zombie(pid: int) -> bool:
@@ -571,11 +589,7 @@ def _discover_daemon_processes(settings: Settings, port: int) -> tuple[list[int]
         else:
             blockers.append(pid)
 
-    if (
-        pid_file_pid
-        and pid_file_pid != os.getpid()
-        and pid_file_pid not in seen_daemons
-    ):
+    if pid_file_pid and pid_file_pid != os.getpid() and pid_file_pid not in seen_daemons:
         if not _pid_is_running(pid_file_pid):
             _remove_pid_file(settings.pid_path, pid_file_pid)
         elif _command_looks_like_daemon(_pid_command(pid_file_pid)):
@@ -639,8 +653,7 @@ def _abort_restart_after_launchd_bootout(launchd_plist: Path, message: str) -> N
         )
     else:
         typer.echo(
-            "restart: failed to restore launchd job after failed restart; "
-            f"{restore_message}",
+            f"restart: failed to restore launchd job after failed restart; {restore_message}",
             err=True,
         )
     raise typer.Exit(code=1)
@@ -825,8 +838,9 @@ def restart(
         )
         raise typer.Exit(code=1)
 
-    launchd_plist = _loaded_launchd_plist(_doctor_home())
+    launchd_plist = _installed_launchd_plist(_doctor_home())
     restart_via_launchd = launchd_plist is not None
+    launchd_loaded, _launchd_message = _launchd_loaded() if restart_via_launchd else (False, "")
 
     daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
@@ -838,7 +852,7 @@ def restart(
         )
         raise typer.Exit(code=1)
 
-    if launchd_plist is not None:
+    if launchd_plist is not None and launchd_loaded:
         ok, message = _launchd_bootout(launchd_plist)
         if not ok:
             typer.echo(f"restart: launchd bootout failed: {message}", err=True)

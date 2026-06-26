@@ -16,10 +16,17 @@ agent_requirements:
     requirement: required
     agent_preset_ref: communications.workflow.callback-follow-up
     purpose: Preserve callback origin context and decide reply, send, or workflow handoff safely.
+    applies_to_steps:
+      - orient
+      - acknowledge
+      - follow_up
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review callback privacy, route policy, thread behavior, and provider-contract safety.
+    applies_to_steps:
+      - acknowledge
+      - follow_up
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

@@ -16,10 +16,17 @@ agent_requirements:
     requirement: required
     agent_preset_ref: communications.workflow.rich-telegram-reply
     purpose: Validate and deliver Telegram replies with exact rich-message semantics.
+    applies_to_steps:
+      - orient
+      - compose
+      - send
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review buttons, attachments, reply/thread semantics, auth, and no-silent-degradation behavior.
+    applies_to_steps:
+      - compose
+      - send
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

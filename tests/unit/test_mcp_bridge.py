@@ -89,6 +89,11 @@ class _FakeClient:
                             _tool("resource.query"),
                             _tool("budget.set"),
                             _tool("resource.upsert"),
+                            _tool(
+                                "project.delete",
+                                operation_name="project.delete",
+                                grant_policy="local-admin-project-write",
+                            ),
                             _tool("runPlan.get"),
                         ]
                     },
@@ -457,7 +462,7 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     assert "admin_gated_tool_names" not in payload
     statuses = {item["name"]: item for item in payload["tool_statuses"]}
     assert statuses["auth.start"]["reason_code"] == "local_admin_required"
-    assert statuses["artifact.create"]["reason_code"] == "run_plan_step_grant_required"
+    assert statuses["artifact.create"]["reason_code"] == "not_granted_to_active_step"
     assert statuses["project.update"]["reason_code"] == "local_admin_required"
     assert statuses["project.update"]["grant_policy"] == "local-admin-project-write"
     assert statuses["resource.upsert"]["reason_code"] == "active_step_granted"
@@ -988,6 +993,7 @@ def test_bridge_compacts_tracker_brief_for_agent_context() -> None:
         {
             "ticket": {
                 "id": 7,
+                "project_id": 1,
                 "key": "deliver",
                 "title": "Deliver",
                 "status": "in-progress",
@@ -1009,6 +1015,7 @@ def test_bridge_compacts_tracker_brief_for_agent_context() -> None:
             },
             "task": {
                 "id": 3,
+                "project_id": 1,
                 "key": "workflow-1",
                 "title": "Workflow",
                 "status": "in-progress",
@@ -1048,6 +1055,7 @@ def test_bridge_compacts_tracker_brief_for_agent_context() -> None:
     )
 
     assert compact == {
+        "project_id": 1,
         "ticket": {
             "key": "deliver",
             "title": "Deliver",
@@ -1294,6 +1302,67 @@ def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:
     assert structured["tool"] == "resource.upsert"
     assert structured["arguments"]["run_token"] == "tok"
     assert [call["method"] for call in client.calls] == ["tools/list", "tools/call"]
+
+
+def test_bridge_proxy_denied_active_step_tool_reports_not_granted_to_step() -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.tokens_by_run[7] = "tok"
+    proxy.allowed_by_run[7] = {"action.execute"}
+    client = _FakeClient()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 100,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.call",
+            "arguments": {
+                "tool_name": "resource.upsert",
+                "run_id": 7,
+                "arguments": {
+                    "project_id": 1,
+                    "plugin_slug": "core",
+                    "resource_key": "learning",
+                    "data_json": {"body": "blocked by active step grant"},
+                },
+            },
+        },
+    }
+
+    response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=100)
+    envelope = json.loads(response)
+    data = envelope["result"]["structuredContent"]["data"]
+
+    assert envelope["result"]["isError"] is True
+    assert data["reason"] == "not_granted_to_active_step"
+    assert data["active_step_tool_names"] == ["action.execute"]
+
+
+def test_bridge_proxy_denied_admin_tool_keeps_admin_reason_with_active_step() -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.tokens_by_run[7] = "tok"
+    proxy.allowed_by_run[7] = {"resource.upsert"}
+    client = _FakeClient()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 102,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.call",
+            "arguments": {
+                "tool_name": "project.delete",
+                "run_id": 7,
+                "arguments": {"project_id": 1},
+            },
+        },
+    }
+
+    response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=102)
+    envelope = json.loads(response)
+    data = envelope["result"]["structuredContent"]["data"]
+
+    assert envelope["result"]["isError"] is True
+    assert data["reason"] == "local_admin_required"
+    assert data["active_step_tool_names"] == ["resource.upsert"]
 
 
 def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
