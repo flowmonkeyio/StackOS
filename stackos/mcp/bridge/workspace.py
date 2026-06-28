@@ -99,6 +99,51 @@ def _bridge_workspace_scoped_arguments(
         return dict(arguments), None
 
     out = dict(arguments)
+    has_host_workspace_hints = any((cwd, repo_fingerprint, git_remote_url))
+    if not has_host_workspace_hints and tool_name in {
+        "workspace.resolve",
+        "workspace.startSession",
+        "workspace.bootstrap",
+        "workspace.connect",
+    }:
+        synthetic_anchor_fields = {
+            "cwd",
+            "last_known_root",
+            "repo_fingerprint",
+            "git_remote_url",
+            "normalized_repo_name",
+        }
+        supplied = sorted(
+            field for field in synthetic_anchor_fields if arguments.get(field) is not None
+        )
+        if supplied:
+            allowed_no_hint_fields = (
+                ["workspace_alias"]
+                if tool_name in {"workspace.resolve", "workspace.startSession"}
+                else ["workspace_alias", "project_id", "project_slug", "project_name"]
+            )
+            return None, {
+                "tool": tool_name,
+                "reason": "workspace_anchor_missing_from_host",
+                "detail": (
+                    "The agent host did not provide a workspace directory, repo "
+                    "fingerprint, or git remote. Do not invent directory/repo anchors "
+                    "from a desktop/global session; bind by workspace_alias or an "
+                    "explicit project identifier instead."
+                ),
+                "supplied_fields": supplied,
+                "allowed_no_hint_fields": allowed_no_hint_fields,
+                "repair": {
+                    "existing_project": (
+                        "Use workspace.connect with project_id, project_slug, "
+                        "project_name, or an existing workspace_alias."
+                    ),
+                    "new_project": (
+                        "Use workspace.bootstrap with project_name, project_slug, "
+                        "or workspace_alias."
+                    ),
+                },
+            }
     checks: list[tuple[str, str | None, str | None]] = []
     if tool_name in {"workspace.resolve", "workspace.startSession", "workspace.bootstrap"}:
         checks.extend(

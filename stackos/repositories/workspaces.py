@@ -281,13 +281,25 @@ def _connect_required_next_step(
             "options": [
                 {
                     "tool": "workspace.connect",
-                    "when": "Reuse a known named workspace or selected existing project.",
-                    "arguments": {"workspace_alias": "<known alias>"},
+                    "when": (
+                        "Reuse a known named workspace or intentionally selected "
+                        "existing project."
+                    ),
+                    "arguments": {
+                        "workspace_alias": "<known alias>",
+                        "project_id": "<selected existing project id>",
+                    },
                 },
                 {
                     "tool": "workspace.bootstrap",
-                    "when": "Create or reuse a project from an operator-provided project name.",
-                    "arguments": {"project_name": "<business project name>"},
+                    "when": (
+                        "Create a new named desktop workspace from an "
+                        "operator-provided project name."
+                    ),
+                    "arguments": {
+                        "project_name": "<business project name>",
+                        "workspace_alias": "<business-project-alias>",
+                    },
                 },
                 {
                     "tool": "project.list",
@@ -570,7 +582,24 @@ class WorkspaceRepository:
             git_remote_url=git_remote_url,
             workspace_root=normalized_root,
         )
-        alias_source = workspace_alias or project_slug or project_name or derived_project_name
+        project_id_alias_source = None
+        if (
+            project_id is not None
+            and repo_fingerprint is None
+            and workspace_alias is None
+            and project_slug is None
+            and project_name is None
+            and derived_project_name is None
+            and normalized_root is None
+        ):
+            project_id_alias_source = ProjectRepository(self._s).get(project_id).slug
+        alias_source = (
+            workspace_alias
+            or project_slug
+            or project_name
+            or derived_project_name
+            or project_id_alias_source
+        )
         effective_fingerprint = (
             _effective_workspace_fingerprint(
                 repo_fingerprint=repo_fingerprint,
@@ -977,6 +1006,20 @@ class WorkspaceRepository:
         if source_name is None:
             raise ValidationError("project_name or project_slug is required")
         base_slug = _slugify(source_name)
+        if project_name is None and repo_name is not None:
+            existing_slug = self._s.exec(select(Project).where(Project.slug == base_slug)).first()
+            if existing_slug is not None:
+                return ProjectOut.model_validate(existing_slug), False
+            candidate_names = {repo_name, _title_from_slug(base_slug)}
+            existing_names = self._s.exec(
+                select(Project).where(col(Project.name).in_(candidate_names))
+            ).all()
+            if len(existing_names) == 1:
+                return ProjectOut.model_validate(existing_names[0]), False
+            if len(existing_names) > 1:
+                raise ValidationError(
+                    "derived repo name matches multiple projects; pass project_id or project_slug"
+                )
         slug = (
             base_slug if explicit_slug else self._unique_project_slug(base_slug, repo_fingerprint)
         )

@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from pytest_httpx import HTTPXMock
 
 from stackos.mcp.bridge import _AGENT_VISIBLE_TOOL_ORDER, AgentBridgeProxy
@@ -878,11 +879,164 @@ def test_bridge_toolbox_named_connect_promotes_workspace_scope(
     assert project_scoped_after_connect["result"]["isError"] is False
 
 
+def test_bridge_toolbox_project_connect_creates_named_workspace_scope(
+    mcp_client: MCPClient,
+) -> None:
+    project_id = _create_project(mcp_client, "bridge-selected-client")
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    connected = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "workspace.connect",
+                "arguments": {"project_id": project_id},
+            },
+            request_id="toolbox-workspace-connect-project",
+        )
+    )
+    project_scoped_after_connect = _toolbox_call(
+        proxy,
+        client,
+        "workflowTemplate.list",
+        {},
+        request_id="workflow-template-list-project-connected",
+    )
+
+    assert connected["project_id"] == project_id
+    assert connected["data"]["binding_kind"] == "named"
+    assert connected["data"]["workspace_alias"] == "bridge-selected-client"
+    assert connected["data"]["last_known_root"] is None
+    assert proxy.scoped_project_id == project_id
+    assert project_scoped_after_connect["result"]["isError"] is False
+
+
+def test_bridge_toolbox_project_bootstrap_creates_named_workspace_scope(
+    mcp_client: MCPClient,
+) -> None:
+    project_id = _create_project(mcp_client, "bridge-bootstrap-client")
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    bootstrapped = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "workspace.bootstrap",
+                "arguments": {"project_id": project_id},
+            },
+            request_id="toolbox-workspace-bootstrap-project",
+        )
+    )
+    project_scoped_after_bootstrap = _toolbox_call(
+        proxy,
+        client,
+        "workflowTemplate.list",
+        {},
+        request_id="workflow-template-list-project-bootstrapped",
+    )
+
+    assert bootstrapped["project_id"] == project_id
+    assert bootstrapped["data"]["project_was_created"] is False
+    assert bootstrapped["data"]["binding_was_created"] is True
+    assert bootstrapped["data"]["binding"]["binding_kind"] == "named"
+    assert bootstrapped["data"]["binding"]["workspace_alias"] == "bridge-bootstrap-client"
+    assert bootstrapped["data"]["binding"]["last_known_root"] is None
+    assert proxy.scoped_project_id == project_id
+    assert project_scoped_after_bootstrap["result"]["isError"] is False
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "direct"),
+    [
+        ("workspace.resolve", {"cwd": "/tmp/bridge-synthetic-anchor"}, True),
+        ("workspace.startSession", {"cwd": "/tmp/bridge-synthetic-anchor"}, True),
+        (
+            "workspace.bootstrap",
+            {
+                "cwd": "/tmp/bridge-synthetic-anchor",
+                "repo_fingerprint": "path:bridge-synthetic-anchor",
+                "project_id": "<project_id>",
+            },
+            False,
+        ),
+        (
+            "workspace.connect",
+            {
+                "last_known_root": "/tmp/bridge-synthetic-anchor",
+                "project_id": "<project_id>",
+            },
+            False,
+        ),
+    ],
+)
+def test_bridge_no_hint_workspace_tools_reject_synthetic_anchors(
+    mcp_client: MCPClient,
+    tool_name: str,
+    arguments: dict[str, Any],
+    direct: bool,
+) -> None:
+    project_id = _create_project(mcp_client, "bridge-toolbox-synthetic-anchor")
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+    resolved_arguments = {
+        key: project_id if value == "<project_id>" else value
+        for key, value in arguments.items()
+    }
+
+    rejected = (
+        _tool_call(
+            proxy,
+            client,
+            tool_name,
+            resolved_arguments,
+            request_id=f"{tool_name}-synthetic-anchor",
+        )
+        if direct
+        else _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {"tool_name": tool_name, "arguments": resolved_arguments},
+            request_id=f"toolbox-{tool_name}-synthetic-anchor",
+        )
+    )
+    envelope = rejected["result"]
+    data = envelope["structuredContent"]["data"]
+    synthetic_anchor_fields = {
+        "cwd",
+        "git_remote_url",
+        "last_known_root",
+        "normalized_repo_name",
+        "repo_fingerprint",
+    }
+
+    assert envelope["isError"] is True
+    assert envelope["structuredContent"]["code"] == -32007
+    assert data["reason"] == "workspace_anchor_missing_from_host"
+    assert data["supplied_fields"] == sorted(
+        key for key in resolved_arguments if key in synthetic_anchor_fields
+    )
+    assert proxy.scoped_project_id is None
+
+
 def test_bridge_toolbox_bootstrap_promotes_workspace_scope(
     mcp_client: MCPClient,
 ) -> None:
     project_id = _create_project(mcp_client, "bridge-toolbox-connect-later")
-    proxy, client = _bridge(mcp_client)
+    proxy, client = _scoped_bridge(
+        mcp_client,
+        cwd="/tmp/bridge-toolbox-connect-later",
+        repo_fingerprint="path:bridge-toolbox-connect-later",
+    )
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
 
@@ -894,8 +1048,6 @@ def test_bridge_toolbox_bootstrap_promotes_workspace_scope(
             {
                 "tool_name": "workspace.bootstrap",
                 "arguments": {
-                    "cwd": "/tmp/bridge-toolbox-connect-later",
-                    "repo_fingerprint": "path:bridge-toolbox-connect-later",
                     "project_slug": "bridge-toolbox-connect-later",
                 },
             },
@@ -912,7 +1064,8 @@ def test_bridge_toolbox_bootstrap_promotes_workspace_scope(
 
     assert connected["project_id"] == project_id
     assert connected["data"]["project_was_created"] is False
-    assert connected["data"]["binding_was_created"] is True
+    assert connected["data"]["binding_was_created"] is False
+    assert proxy.scoped_project_id == project_id
     assert project_scoped_after_bootstrap["result"]["isError"] is False
 
 

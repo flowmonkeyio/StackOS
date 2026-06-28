@@ -243,7 +243,10 @@ the source of truth.
 Workspace hints are also scoped. The bridge injects its current
 `cwd`, `repo_fingerprint`, `git_remote_url`, `last_known_root`, runtime, and
 session id where relevant. Calls that try to resolve or connect another
-workspace are refused by the bridge.
+workspace are refused by the bridge. If the bridge has no host-supplied
+workspace identity, caller-supplied directory/repo anchors are refused too;
+desktop/global sessions must bind by explicit `workspace_alias` or project
+identity.
 
 These workspace hints are identifiers for StackOS project binding only. They
 help the daemon inject the correct `project_id` and reject cross-project calls.
@@ -276,9 +279,12 @@ idempotent:
    setup.
 5. Use `toolbox.call` for `project.list`, `project.create`,
    `workspace.bootstrap`, or `workspace.connect` only when the operator or user
-   intent intentionally chooses a specific existing project, supplies explicit
-   project metadata, or reuses a named desktop `workspace_alias`. If the current
-   repo fingerprint or alias is already bound to a different project,
+   intent intentionally chooses project identity. For desktop/global sessions
+   with no directory identity, use `workspace.connect` to reuse a selected
+   existing project or named `workspace_alias`; use `workspace.bootstrap` to
+   create a new named workspace from explicit `project_name`, `project_slug`,
+   or `workspace_alias`. If the current repo fingerprint or alias is already
+   bound to a different project,
    `workspace.connect` rejects the move unless the caller passes
    `rebind_existing=true`.
 

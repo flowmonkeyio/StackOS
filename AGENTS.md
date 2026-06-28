@@ -122,9 +122,11 @@ work, start here:
   `Resources`, `Contents`, `MacOS`, `StackOS.app`, or `Project` must cause setup
   to ask for `project_name`, `project_slug`, or a deliberate `workspace_alias`
   instead of creating a bad project. For desktop/global hosts with no cwd/git
-  signal, reuse an existing `candidate_workspaces` alias or call
-  `workspace.bootstrap`/`workspace.connect` with an explicit alias/project
-  selected from user intent. Later display-name fixes use the explicit
+  signal, use `workspace.connect` to reuse an existing
+  `candidate_workspaces` alias or selected existing project; use
+  `workspace.bootstrap` only to create a new named workspace from explicit
+  project metadata. Caller-invented cwd/repo anchors are rejected by the
+  bridge. Later display-name fixes use the explicit
   local-admin `project.update` flow and must not move the workspace binding.
 - The agent-facing MCP bridge exposes only `workspace.startSession`,
   `workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. Project

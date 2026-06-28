@@ -88,6 +88,32 @@ def test_bootstrap_creates_project_once_for_workspace_root(session: Session) -> 
     assert [binding.id for binding in bindings] == [first.data.binding.id]
 
 
+def test_start_session_autobootstrap_reuses_existing_project_slug(session: Session) -> None:
+    existing = ProjectRepository(session).create(
+        slug="revtrix",
+        name="Revtrix",
+        domain="revtrix.example",
+        locale="en-US",
+    )
+    repo = WorkspaceRepository(session)
+
+    started = repo.start_session(
+        runtime="codex",
+        cwd="/tmp/revtrix",
+        git_remote_url="git@github.com:org/revtrix.git",
+    )
+
+    assert started.project_id == existing.data.id
+    assert started.data.project_id == existing.data.id
+    assert started.data.needs_connect is False
+    assert started.data.auto_bootstrap is True
+    assert started.data.project_was_created is False
+    assert started.data.binding_was_created is True
+    assert repo.list_bindings(project_id=existing.data.id)[0].last_known_root == str(
+        Path("/tmp/revtrix").resolve()
+    )
+
+
 @pytest.mark.parametrize("folder_name", ["Resources", "Contents", "MacOS", "Project"])
 def test_bootstrap_rejects_generic_inferred_project_name(
     session: Session,
@@ -141,6 +167,27 @@ def test_bootstrap_creates_named_workspace_without_directory(session: Session) -
     assert second.data.project_id == first.data.project_id
     assert resolved.project_id == first.data.project_id
     assert resolved.needs_connect is False
+
+
+def test_bootstrap_project_id_without_directory_creates_named_workspace(
+    session: Session,
+) -> None:
+    project_id = _create_project(session, slug="stackos-local")
+    repo = WorkspaceRepository(session)
+
+    bootstrapped = repo.bootstrap(project_id=project_id)
+    second = repo.bootstrap(project_id=project_id)
+
+    assert bootstrapped.project_id == project_id
+    assert bootstrapped.data.project_was_created is False
+    assert bootstrapped.data.binding_was_created is True
+    assert bootstrapped.data.binding.binding_kind == "named"
+    assert bootstrapped.data.binding.workspace_alias == "stackos-local"
+    assert bootstrapped.data.binding.repo_fingerprint == "workspace:stackos-local"
+    assert bootstrapped.data.binding.last_known_root is None
+    assert second.data.project_was_created is False
+    assert second.data.binding_was_created is False
+    assert second.data.binding.id == bootstrapped.data.binding.id
 
 
 def test_start_session_without_identity_lists_named_workspaces_without_autobind(

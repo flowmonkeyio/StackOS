@@ -238,8 +238,8 @@ def operation_specs() -> list[OperationSpec]:
                 "duplicates. If the workspace metadata cannot produce a reliable business "
                 "project name, ask the operator for project_name or project_slug instead of "
                 "creating a generic project. For desktop/global hosts with no reliable "
-                "directory, pass project_name, project_slug, or workspace_alias explicitly to "
-                "create/reuse a named workspace binding."
+                "directory, pass project_id, project_name, project_slug, or "
+                "workspace_alias explicitly to create/reuse a named workspace binding."
             ),
             when_to_use=(
                 "The current repo/directory is unbound and the agent should create or reuse "
@@ -254,7 +254,11 @@ def operation_specs() -> list[OperationSpec]:
                 "Project as an inferred project name.",
                 "When no cwd/repo_fingerprint/git_remote_url exists, do not use last-used "
                 "or a global default. Let the agent choose an existing named workspace or "
-                "ask for the project name, then pass workspace_alias/project_name explicitly.",
+                "ask for the project name. Use workspace.connect for existing projects and "
+                "workspace.bootstrap for new named workspaces.",
+                "The agent bridge rejects caller-invented cwd/repo anchors when the host "
+                "did not supply workspace identity; use workspace_alias/project identity "
+                "for desktop/global sessions.",
                 "Pass project_name or project_slug when the operator supplied a name or when "
                 "the directory name is generic/ambiguous.",
                 "Pass project_id/project_slug/project_name only when intentionally binding "

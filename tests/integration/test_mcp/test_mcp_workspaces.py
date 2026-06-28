@@ -58,6 +58,39 @@ def test_workspace_bootstrap_creates_project_once_for_workspace_root(
     assert second["data"]["binding"]["id"] == first["data"]["binding"]["id"]
 
 
+def test_workspace_bootstrap_project_id_without_directory_creates_named_binding(
+    mcp_client: MCPClient,
+) -> None:
+    project = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "stackos-local",
+            "name": "StackOS Local",
+            "domain": "stackos.local",
+            "locale": "en-US",
+        },
+    )
+
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {"project_id": project["data"]["id"]},
+    )
+    second = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {"project_id": project["data"]["id"]},
+    )
+
+    assert bootstrapped["project_id"] == project["data"]["id"]
+    assert bootstrapped["data"]["project_was_created"] is False
+    assert bootstrapped["data"]["binding_was_created"] is True
+    assert bootstrapped["data"]["binding"]["binding_kind"] == "named"
+    assert bootstrapped["data"]["binding"]["workspace_alias"] == "stackos-local"
+    assert bootstrapped["data"]["binding"]["last_known_root"] is None
+    assert second["data"]["project_was_created"] is False
+    assert second["data"]["binding_was_created"] is False
+    assert second["data"]["binding"]["id"] == bootstrapped["data"]["binding"]["id"]
+
+
 def test_workspace_bootstrap_rejects_generic_inferred_project_name(
     mcp_client: MCPClient,
 ) -> None:
@@ -148,6 +181,31 @@ def test_workspace_connect_named_workspace_by_alias_only_after_existing_binding(
     assert connected["data"]["id"] == bootstrapped["data"]["binding"]["id"]
     assert connected["data"]["binding_kind"] == "named"
     assert connected["data"]["workspace_alias"] == "flowmonkey"
+
+
+def test_workspace_connect_project_id_without_directory_creates_named_binding(
+    mcp_client: MCPClient,
+) -> None:
+    project = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "selected-client",
+            "name": "Selected Client",
+            "domain": "selected.example",
+            "locale": "en-US",
+        },
+    )
+
+    connected = mcp_client.call_tool_structured(
+        "workspace.connect",
+        {"project_id": project["data"]["id"]},
+    )
+
+    assert connected["project_id"] == project["data"]["id"]
+    assert connected["data"]["binding_kind"] == "named"
+    assert connected["data"]["workspace_alias"] == "selected-client"
+    assert connected["data"]["repo_fingerprint"] == "workspace:selected-client"
+    assert connected["data"]["last_known_root"] is None
 
 
 def test_workspace_start_session_rebinds_when_alias_is_explicit(
