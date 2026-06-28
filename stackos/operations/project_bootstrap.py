@@ -256,6 +256,9 @@ def operation_specs() -> list[OperationSpec]:
                 "or a global default. Let the agent choose an existing named workspace or "
                 "ask for the project name. Use workspace.connect for existing projects and "
                 "workspace.bootstrap for new named workspaces.",
+                "Do not call project.create as a substitute for desktop/global workspace "
+                "binding. A created project is not usable by the current agent session until "
+                "workspace.bootstrap or workspace.connect binds the intended workspace alias.",
                 "The agent bridge rejects caller-invented cwd/repo anchors when the host "
                 "did not supply workspace identity; use workspace_alias/project identity "
                 "for desktop/global sessions.",

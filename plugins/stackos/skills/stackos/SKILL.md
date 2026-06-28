@@ -123,7 +123,8 @@ run token.
   `workspace_alias` or selected existing project with `workspace.connect`, or
   ask for a business `project_name`/`project_slug` and call
   `workspace.bootstrap` to create a new named workspace. Do not let app/runtime
-  folder names become projects, do not invent cwd/repo anchors, and do not use
+  folder names become projects, do not invent cwd/repo anchors, do not call
+  `project.create` as a substitute for binding, and do not use
   last-used/global fallback binding.
 - Set up support/engineering/local agents: choose the workflow first. Use
   `communications.customer-feedback-intake` to normalize inbound feedback into

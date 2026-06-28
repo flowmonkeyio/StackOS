@@ -879,6 +879,107 @@ def test_bridge_toolbox_named_connect_promotes_workspace_scope(
     assert project_scoped_after_connect["result"]["isError"] is False
 
 
+def test_bridge_toolbox_scoped_named_bootstrap_does_not_inherit_current_project(
+    mcp_client: MCPClient,
+) -> None:
+    stackos_local = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {"project_name": "StackOS Local", "workspace_alias": "stackos-local"},
+    )
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    scoped = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "workspace.connect",
+                "arguments": {"workspace_alias": "stackos-local"},
+            },
+            request_id="toolbox-connect-stackos-local",
+        )
+    )
+    bootstrapped = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "workspace.bootstrap",
+                "arguments": {
+                    "project_name": "LinkedIn Weekly",
+                    "workspace_alias": "linkedin-weekly",
+                },
+            },
+            request_id="toolbox-bootstrap-linkedin-weekly",
+        )
+    )
+    resolved = mcp_client.call_tool_structured(
+        "workspace.resolve",
+        {"workspace_alias": "linkedin-weekly"},
+    )
+
+    assert scoped["project_id"] == stackos_local["project_id"]
+    assert bootstrapped["project_id"] != stackos_local["project_id"]
+    assert bootstrapped["data"]["project_was_created"] is True
+    assert bootstrapped["data"]["binding"]["workspace_alias"] == "linkedin-weekly"
+    assert bootstrapped["data"]["binding"]["project_id"] == bootstrapped["project_id"]
+    assert resolved["project_id"] == bootstrapped["project_id"]
+    assert proxy.scoped_project_id == bootstrapped["project_id"]
+
+
+def test_bridge_toolbox_scoped_new_alias_connect_requires_explicit_project_identity(
+    mcp_client: MCPClient,
+) -> None:
+    stackos_local = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {"project_name": "StackOS Local", "workspace_alias": "stackos-local"},
+    )
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    scoped = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "workspace.connect",
+                "arguments": {"workspace_alias": "stackos-local"},
+            },
+            request_id="toolbox-connect-stackos-local",
+        )
+    )
+    rejected = _tool_call(
+        proxy,
+        client,
+        "toolbox.call",
+        {
+            "tool_name": "workspace.connect",
+            "arguments": {"workspace_alias": "linkedin-weekly"},
+        },
+        request_id="toolbox-connect-new-alias",
+    )
+    resolved = mcp_client.call_tool_structured(
+        "workspace.resolve",
+        {"workspace_alias": "linkedin-weekly"},
+    )
+
+    assert scoped["project_id"] == stackos_local["project_id"]
+    assert rejected["result"]["isError"] is True
+    assert rejected["result"]["structuredContent"]["code"] == -32602
+    assert (
+        "project_id, project_slug, or project_name is required"
+        in (rejected["result"]["structuredContent"]["data"]["detail"])
+    )
+    assert resolved["project_id"] is None
+    assert proxy.scoped_project_id == stackos_local["project_id"]
+
+
 def test_bridge_toolbox_project_connect_creates_named_workspace_scope(
     mcp_client: MCPClient,
 ) -> None:
@@ -988,8 +1089,7 @@ def test_bridge_no_hint_workspace_tools_reject_synthetic_anchors(
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
     resolved_arguments = {
-        key: project_id if value == "<project_id>" else value
-        for key, value in arguments.items()
+        key: project_id if value == "<project_id>" else value for key, value in arguments.items()
     }
 
     rejected = (

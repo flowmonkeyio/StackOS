@@ -9,6 +9,17 @@ from .catalog import _bridge_tool_accepts_project_id
 from .constants import _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES
 from .protocol import _bridge_as_int
 
+_PROJECT_SCOPE_INJECTION_EXCLUDED_TOOL_NAMES = {
+    "workspace.bootstrap",
+    "workspace.connect",
+}
+_PROJECT_SCOPE_IDENTITY_ARGUMENT_NAMES = {
+    "project_id",
+    "project_slug",
+    "project_name",
+    "workspace_alias",
+}
+
 
 def _bridge_scoped_arguments(
     *,
@@ -17,7 +28,15 @@ def _bridge_scoped_arguments(
     arguments: dict[str, Any],
     scoped_project_id: int | None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    if scoped_project_id is None or not _bridge_tool_accepts_project_id(catalog, tool_name):
+    has_explicit_project_or_workspace_identity = (
+        tool_name in _PROJECT_SCOPE_INJECTION_EXCLUDED_TOOL_NAMES
+        and any(arguments.get(name) is not None for name in _PROJECT_SCOPE_IDENTITY_ARGUMENT_NAMES)
+    )
+    if (
+        scoped_project_id is None
+        or has_explicit_project_or_workspace_identity
+        or not _bridge_tool_accepts_project_id(catalog, tool_name)
+    ):
         return dict(arguments), None
     current = arguments.get("project_id")
     if current is None:

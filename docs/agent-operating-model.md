@@ -283,8 +283,10 @@ idempotent:
    with no directory identity, use `workspace.connect` to reuse a selected
    existing project or named `workspace_alias`; use `workspace.bootstrap` to
    create a new named workspace from explicit `project_name`, `project_slug`,
-   or `workspace_alias`. If the current repo fingerprint or alias is already
-   bound to a different project,
+   or `workspace_alias`. Do not call `project.create` and assume the current
+   agent session moved; bind or verify the workspace with `workspace.bootstrap`
+   or `workspace.connect` before project-scoped work. If the current repo
+   fingerprint or alias is already bound to a different project,
    `workspace.connect` rejects the move unless the caller passes
    `rebind_existing=true`.
 

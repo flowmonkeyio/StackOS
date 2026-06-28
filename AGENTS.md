@@ -125,7 +125,10 @@ work, start here:
   signal, use `workspace.connect` to reuse an existing
   `candidate_workspaces` alias or selected existing project; use
   `workspace.bootstrap` only to create a new named workspace from explicit
-  project metadata. Caller-invented cwd/repo anchors are rejected by the
+  project metadata. Do not create a project separately and assume the current
+  agent scope moved; the workspace binding must be created or verified by
+  `workspace.bootstrap` or `workspace.connect` in the same setup flow.
+  Caller-invented cwd/repo anchors are rejected by the
   bridge. Later display-name fixes use the explicit
   local-admin `project.update` flow and must not move the workspace binding.
 - The agent-facing MCP bridge exposes only `workspace.startSession`,
