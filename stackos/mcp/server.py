@@ -744,6 +744,17 @@ class MCPDispatcher:
 # Server setup + ASGI mount.
 # ---------------------------------------------------------------------------
 
+STACKOS_MCP_INSTRUCTIONS = (
+    "StackOS MCP server — local tool runtime for projects, plugins, "
+    "workflow templates, run plans, resources, actions, and audit. "
+    "Agent bridge sessions bind a workspace first, then inject the current "
+    "`project_id` into project-scoped toolbox calls; omit injected fields unless "
+    "an exact described schema asks for them. Direct daemon, REST, and CLI calls "
+    "still require explicit project scope. Mutating tools return "
+    "`{data, run_id, project_id}`; reads return bare data. Pass `run_token` from "
+    "`runPlan.start` to execute granted run-plan steps."
+)
+
 
 @asynccontextmanager
 async def _mcp_lifespan(_server: Server[Any, Any]) -> AsyncIterator[dict[str, Any]]:
@@ -769,13 +780,7 @@ def build_server(registry: ToolRegistry, dispatcher: MCPDispatcher) -> Server[An
     server = Server[Any, Any](
         name="stackos",
         version=__version__,
-        instructions=(
-            "StackOS MCP server — local tool runtime for projects, plugins, "
-            "workflow templates, run plans, resources, actions, and audit. "
-            "All project-scoped tools require explicit `project_id`. Mutating tools "
-            "return `{data, run_id, project_id}`; reads return bare data. Pass "
-            "`run_token` from `runPlan.start` to execute granted run-plan steps."
-        ),
+        instructions=STACKOS_MCP_INSTRUCTIONS,
         lifespan=_mcp_lifespan,
     )
 

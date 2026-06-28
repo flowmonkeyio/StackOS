@@ -27,7 +27,7 @@ from stackos.mcp.bridge import (
 )
 from stackos.mcp.contract import verb_is_mutating
 from stackos.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
-from stackos.mcp.server import ToolRegistry, _to_tool
+from stackos.mcp.server import STACKOS_MCP_INSTRUCTIONS, ToolRegistry, _to_tool
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.mcp.tools import register_all
 from stackos.operations.registry import build_operation_registry
@@ -61,6 +61,14 @@ def _tool(
 def _structured(response_text: str) -> dict[str, object]:
     envelope = json.loads(response_text)
     return envelope["result"]["structuredContent"]
+
+
+def test_stackos_mcp_instructions_match_bridge_project_scope_contract() -> None:
+    assert "inject the current `project_id`" in STACKOS_MCP_INSTRUCTIONS
+    assert "omit injected fields" in STACKOS_MCP_INSTRUCTIONS
+    assert "All project-scoped tools require explicit `project_id`" not in (
+        STACKOS_MCP_INSTRUCTIONS
+    )
 
 
 class _Response:
@@ -468,6 +476,43 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     assert statuses["resource.upsert"]["reason_code"] == "active_step_granted"
     assert statuses["action.execute"]["operation"]["name"] == "action.execute"
     assert statuses["missing"]["reason_code"] == "unknown_tool"
+
+
+def test_bridge_toolbox_describe_without_names_returns_discovery_recipe() -> None:
+    catalog = {
+        "operation.list": _tool("operation.list", operation_name="operation.list"),
+        "operation.describe": _tool("operation.describe", operation_name="operation.describe"),
+        "tracker.status": _tool("tracker.status", operation_name="tracker.status"),
+        "runPlan.create": _tool("runPlan.create", operation_name="runPlan.create"),
+    }
+
+    response = _bridge_toolbox_describe(
+        42,
+        catalog=catalog,
+        arguments={},
+        run_id=None,
+        allowed_by_run={},
+    )
+    payload = _structured(response)
+
+    assert payload["described_tools"] == []
+    assert "available_tool_names" not in payload
+    assert payload["discovery"]["next_calls"][0] == {
+        "tool": "toolbox.call",
+        "arguments": {
+            "tool_name": "operation.list",
+            "arguments": {
+                "surface": "mcp",
+                "mode": "grouped",
+                "response_mode": "compact",
+            },
+        },
+    }
+    assert payload["discovery"]["next_calls"][1] == {
+        "tool": "toolbox.describe",
+        "arguments": {"tool_names": ["tracker.status"]},
+    }
+    assert "inputSchema" not in json.dumps(payload)
 
 
 def test_bridge_toolbox_allows_daemon_registered_direct_operations() -> None:

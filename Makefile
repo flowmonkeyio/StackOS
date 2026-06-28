@@ -35,10 +35,12 @@ install: ## Full dev install — deps + migrate + UI bundle + plugin + MCP + doc
 	  echo "  ui_dist/ missing — running \`make build-ui\` to regenerate"; \
 	  $(MAKE) build-ui; \
 	fi
-	@echo "==> Registering bridge MCP for Codex CLI"
-	@bash scripts/register-mcp-codex.sh
-	@echo "==> Registering bridge MCP for Claude Code"
-	@bash scripts/register-mcp-claude.sh
+	@echo "==> Repairing bridge MCP registrations"
+	@if [ -x .venv/bin/python ]; then \
+	  .venv/bin/python -m stackos install --mcp-only --skip-doctor; \
+	else \
+	  $(PYTHON) -m stackos install --mcp-only --skip-doctor; \
+	fi
 	@echo "==> Installing runtime skill mirrors"
 	@bash scripts/install-codex.sh
 	@bash scripts/install-claude.sh
@@ -79,12 +81,16 @@ signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/
 		tests/integration/test_routes/test_cli_mock_provider.py \
 		tests/integration/test_routes/test_telegram_setup_to_action_routes.py \
 		tests/integration/test_mcp/test_mcp_actions.py \
+		tests/integration/test_mcp/test_mcp_bridge_agent_path.py \
 		tests/integration/test_mcp/test_mcp_readiness.py \
 		tests/integration/test_mcp/test_mcp_run_plans.py \
+		tests/integration/test_mcp/test_mcp_workspaces.py \
+		tests/integration/test_mcp/test_mcp_projects.py \
 		tests/integration/test_mcp/test_mcp_tracker.py \
 		tests/integration/test_mcp/test_mcp_communications.py \
 		tests/integration/test_mcp/test_mcp_agent_requests.py \
 		tests/integration/test_repositories/test_tracker.py \
+		tests/integration/test_repositories/test_workspaces.py \
 		tests/integration/test_repositories/test_actions.py \
 		tests/integration/test_repositories/test_video_provider_actions.py \
 		tests/integration/test_repositories/test_agent_requests.py \
@@ -125,7 +131,7 @@ gen-types: ## Regenerate ui/src/api.ts from the source OpenAPI spec
 	bash scripts/gen-types.sh
 
 doctor: ## Diagnose local install state
-	$(PYTHON) -m stackos doctor
+	@bash scripts/doctor.sh
 
 clean: ## Remove caches and build artifacts (preserves DB at ~/.local/share/stackos/)
 	rm -rf __pycache__ .ruff_cache .mypy_cache .pytest_cache build dist

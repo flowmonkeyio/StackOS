@@ -406,6 +406,33 @@ def _bridge_toolbox_describe(
         )
         if name in catalog or name in {_TOOLBOX_DESCRIBE_TOOL, _TOOLBOX_CALL_TOOL}
     ]
+    discovery = {
+        "normal_flow": (
+            "If you know exact hidden operation/tool names, pass them in tool_names. "
+            "If you need discovery, call operation.list through toolbox.call with grouped "
+            "compact output, then describe only the exact names you intend to use."
+        ),
+        "next_calls": [
+            {
+                "tool": "toolbox.call",
+                "arguments": {
+                    "tool_name": "operation.list",
+                    "arguments": {
+                        "surface": "mcp",
+                        "mode": "grouped",
+                        "response_mode": "compact",
+                    },
+                },
+            },
+            {
+                "tool": "toolbox.describe",
+                "arguments": {"tool_names": ["tracker.status"]},
+            },
+        ],
+        "diagnostics": (
+            "Use include_schemas=true only for debugging; it can return a large schema dump."
+        ),
+    }
     payload = {
         "visible_tool_names": direct_visible,
         "active_step_tool_names": active_step_tools,
@@ -431,6 +458,7 @@ def _bridge_toolbox_describe(
             run_id=run_id,
             active_step_tools=active_step_tool_set,
         ),
+        "discovery": discovery,
         "usage": (
             "Use workspace.startSession to bind the current workspace, then use "
             "toolbox.describe/toolbox.call for setup helpers, workflow tools, and active "

@@ -108,6 +108,21 @@ work, start here:
   calls. Use `workspace.resolve` for read-only diagnostics. The workspace-bound
   project is the source of truth; there is no global active project in the
   agent path.
+- Workspace identity is directory-first, not Git-first. `--workspace-root` and
+  `STACKOS_WORKSPACE_ROOT` are explicit workspace hints; Claude Code can pass a
+  real project root through `CLAUDE_PROJECT_DIR`; process cwd is only a
+  fallback hint. Git remote/top-level detection is optional enrichment and must
+  not be required for non-technical users. Claude Desktop may launch StackOS
+  from global app config with no repo context. A cwd or path fingerprint for the
+  filesystem root `/` must be treated as missing workspace context, not as a
+  project to bind or bootstrap.
+- Project identity is user/business-facing metadata. StackOS may derive it from
+  explicit workspace metadata, git remote basename, or chosen folder basename
+  only when the candidate is reliable. Generic or app-internal names such as
+  `Resources`, `Contents`, `MacOS`, `StackOS.app`, or `Project` must cause setup
+  to ask for `project_name` or `project_slug` instead of creating a bad project.
+  Later display-name fixes use the explicit local-admin `project.update` flow
+  and must not move the workspace folder binding.
 - The agent-facing MCP bridge exposes only `workspace.startSession`,
   `workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. Project
   setup, workflows, run plans, tracker, auth, resources, communications, and
@@ -168,6 +183,22 @@ fresh install happy path. Verify the lifecycle state machine end to end:
   database by default;
 - repair messages must be operator-readable and actionable. Do not surface raw
   JSON as the primary desktop failure experience.
+- Host MCP registration is one lifecycle surface owned by
+  `stackos.host_mcp`: Codex CLI, Claude Code, Claude Desktop, and Gemini CLI
+  should use the shared service/adapters, command matcher, CLI discovery, and
+  result contract. Do not add host-specific install logic that bypasses this
+  layer.
+- Saved host MCP commands must run the local stdio `mcp-bridge`, include the
+  host-specific `--runtime`, and preserve non-default StackOS host/port,
+  data-dir, and state-dir context. Stale registrations that point at an old
+  package/app path must be repaired rather than reported healthy.
+- Desktop package replacement is part of upgrade. Same-version or same-payload
+  app moves must still refresh launchd and host MCP registrations when the
+  packaged command path changes.
+- Optional agent hosts are advisory when absent or unsupported. They should not
+  block install/repair unless StackOS owns an unsafe/stale entry that requires
+  repair. Claude Desktop config writes require restarting Claude Desktop before
+  that app can see the updated MCP server.
 
 Before signing off desktop or install changes, run the focused daemon CLI tests,
 the desktop doctor, a packaged install/repair smoke, and a manual app restart

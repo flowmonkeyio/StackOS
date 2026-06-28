@@ -31,6 +31,7 @@ _MODE_ALIASES: dict[str, ResponseMode] = {
 _MAX_COMPACT_LIST_ITEMS = 25
 _MAX_COMPACT_STRING_CHARS = 800
 _MAX_SCHEMA_DESCRIPTION_CHARS = 240
+_TERMINAL_TRACKER_STATUSES = {"complete", "deferred", "aborted", "failed", "skipped"}
 
 _REF_FIELD_SUFFIXES = ("_id", "_ids", "_key", "_keys", "_ref", "_refs", "_token")
 _URL_FIELD_SUFFIXES = ("_url", "_urls")
@@ -56,6 +57,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "required",
         "optional",
         "required_when",
+        "recommended_tool",
         "approver",
         "agent_type",
         "skill_type",
@@ -111,6 +113,8 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "template_key",
         "workflow_key",
         "provider_key",
+        "project_name",
+        "project_slug",
         "action",
         "action_ref",
         "action_call_id",
@@ -186,6 +190,8 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "normalized_repo_name",
         "position",
         "project_scoped_tools_usable",
+        "project_identity_required",
+        "project_identity_guidance",
         "project_extension_enabled",
         "profile_complete",
         "purpose",
@@ -311,6 +317,7 @@ _MAPPING_KEEP_FIELDS = frozenset(
         "provider",
         "provider_setup",
         "project_extension",
+        "recommended_arguments",
         "response_policy",
         "send_policy",
         "setup_state",
@@ -556,8 +563,21 @@ def _compact_operation_list(payload: dict[str, Any]) -> dict[str, Any]:
     }
     groups = payload.get("groups")
     if isinstance(groups, list):
-        out["groups"] = [_compact_mapping(item) for item in groups if isinstance(item, dict)]
+        out["groups"] = [
+            _compact_operation_group(item) for item in groups if isinstance(item, dict)
+        ]
     return out
+
+
+def _compact_operation_group(value: dict[str, Any]) -> dict[str, Any]:
+    names = value.get("operation_names")
+    return {
+        "category": _compact_value(value.get("category")),
+        "count": _compact_value(value.get("count")),
+        "operation_names": [name for name in names if isinstance(name, str)]
+        if isinstance(names, list)
+        else [],
+    }
 
 
 def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
@@ -700,6 +720,9 @@ def _compact_tracker_mutation(data: dict[str, Any]) -> dict[str, Any]:
         out["ticket"] = compact_tracker_ticket(ticket)
         if ticket.get("key") is not None:
             out["ticket_key"] = ticket.get("key")
+    task_rollup = _compact_tracker_task_rollup(task, ticket)
+    if task_rollup:
+        out["task_rollup"] = task_rollup
     tickets = data.get("tickets")
     if isinstance(tickets, list):
         out["ticket_count"] = len([item for item in tickets if isinstance(item, dict)])
@@ -719,6 +742,32 @@ def _compact_tracker_mutation(data: dict[str, Any]) -> dict[str, Any]:
     if isinstance(tracker, dict):
         out["tracker"] = _compact_mapping(tracker)
     return out
+
+
+def _compact_tracker_task_rollup(task: Any, ticket: Any) -> dict[str, Any]:
+    if not isinstance(task, dict):
+        return {}
+    status = _compact_value(task.get("status"))
+    evidence_present = bool(task.get("completion_evidence_json"))
+    out: dict[str, Any] = {
+        "task_key": _compact_value(task.get("key")),
+        "status": status,
+        "lane_key": _compact_value(task.get("lane_key")),
+        "completion_evidence_present": evidence_present,
+    }
+    if isinstance(ticket, dict):
+        out["updated_by_ticket_key"] = _compact_value(ticket.get("key"))
+    if isinstance(status, str) and status in _TERMINAL_TRACKER_STATUSES and not evidence_present:
+        out["completion_evidence_needs_explicit_update"] = True
+        out["note"] = (
+            "Ticket terminal updates can roll up the parent task status; ticket evidence is "
+            "not copied to the task."
+        )
+    return {
+        key: value
+        for key, value in out.items()
+        if value is not None and value != "" and value != [] and value != {}
+    }
 
 
 def _compact_run_plan_step(step: dict[str, Any]) -> dict[str, Any]:

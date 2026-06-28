@@ -18,6 +18,7 @@ function cleanup(paths) {
 
 async function main() {
   const tempPaths = [];
+  const originalDesktopCli = process.env.STACKOS_DESKTOP_CLI;
   try {
     const userDataPath = makeUserDataPath();
     tempPaths.push(userDataPath);
@@ -34,6 +35,7 @@ async function main() {
     };
 
     let calls = 0;
+    let mcpRepairCalls = 0;
     const okInstall = async () => {
       calls += 1;
       return {
@@ -41,51 +43,102 @@ async function main() {
         phase: "ready"
       };
     };
+    const okMcpRepair = async () => {
+      mcpRepairCalls += 1;
+      return {
+        ok: true,
+        phase: "external-registration"
+      };
+    };
 
     const first = await service.prepareInstalledVersion({
       version: "1.0.0",
       userDataPath,
       payloadInfo: payloadA,
-      installOrRepairFn: okInstall
+      installOrRepairFn: okInstall,
+      repairMcpRegistrationsFn: okMcpRepair
     });
     assert.equal(first.ok, true);
     assert.equal(first.skipped, false);
     assert.equal(calls, 1);
-    assert.equal(service.readInstallState(userDataPath).installKey, "1.0.0:1.0.0:payload-a");
+    assert.equal(mcpRepairCalls, 0);
+    assert.equal(
+      service.readInstallState(userDataPath).installKey,
+      service.installKeyFor({ version: "1.0.0", payloadInfo: payloadA })
+    );
 
     const current = await service.prepareInstalledVersion({
       version: "1.0.0",
       userDataPath,
       payloadInfo: payloadA,
-      installOrRepairFn: okInstall
+      installOrRepairFn: okInstall,
+      repairMcpRegistrationsFn: okMcpRepair
     });
     assert.equal(current.ok, true);
     assert.equal(current.skipped, true);
     assert.equal(calls, 1);
+    assert.equal(mcpRepairCalls, 1);
+    assert.equal(current.externalRepair.ok, true);
 
     const upgradedPayload = await service.prepareInstalledVersion({
       version: "1.0.0",
       userDataPath,
       payloadInfo: payloadB,
-      installOrRepairFn: okInstall
+      installOrRepairFn: okInstall,
+      repairMcpRegistrationsFn: okMcpRepair
     });
     assert.equal(upgradedPayload.ok, true);
     assert.equal(upgradedPayload.skipped, false);
     assert.equal(calls, 2);
-    assert.equal(service.readInstallState(userDataPath).installKey, "1.0.0:1.0.0:payload-b");
+    assert.equal(mcpRepairCalls, 1);
+    assert.equal(
+      service.readInstallState(userDataPath).installKey,
+      service.installKeyFor({ version: "1.0.0", payloadInfo: payloadB })
+    );
 
     const forced = await service.prepareInstalledVersion({
       version: "1.0.0",
       userDataPath,
       payloadInfo: payloadB,
       force: true,
-      installOrRepairFn: okInstall
+      installOrRepairFn: okInstall,
+      repairMcpRegistrationsFn: okMcpRepair
     });
     assert.equal(forced.ok, true);
     assert.equal(forced.skipped, false);
     assert.equal(calls, 3);
+    assert.equal(mcpRepairCalls, 1);
 
-    assert.equal(
+    const currentWithFailedMcpRepair = await service.prepareInstalledVersion({
+      version: "1.0.0",
+      userDataPath,
+      payloadInfo: payloadB,
+      installOrRepairFn: okInstall,
+      repairMcpRegistrationsFn: async () => ({
+        ok: false,
+        phase: "external-registration",
+        stderr: "Claude unavailable"
+      })
+    });
+    assert.equal(currentWithFailedMcpRepair.ok, true);
+    assert.equal(currentWithFailedMcpRepair.skipped, true);
+    assert.equal(currentWithFailedMcpRepair.externalRepair.ok, false);
+
+    const currentWithThrownMcpRepair = await service.prepareInstalledVersion({
+      version: "1.0.0",
+      userDataPath,
+      payloadInfo: payloadB,
+      installOrRepairFn: okInstall,
+      repairMcpRegistrationsFn: async () => {
+        throw new Error("Claude repair crashed");
+      }
+    });
+    assert.equal(currentWithThrownMcpRepair.ok, true);
+    assert.equal(currentWithThrownMcpRepair.skipped, true);
+    assert.equal(currentWithThrownMcpRepair.externalRepair.ok, false);
+    assert.equal(currentWithThrownMcpRepair.externalRepair.phase, "external-registration");
+
+    assert.match(
       service.installKeyFor({
         version: "2.0.0",
         payloadInfo: {
@@ -93,8 +146,37 @@ async function main() {
           version: "2.0.0"
         }
       }),
-      "2.0.0:2.0.0:no-build-id"
+      /^2\.0\.0:2\.0\.0:no-build-id:/
     );
+
+    const movedAppUserDataPath = makeUserDataPath();
+    tempPaths.push(movedAppUserDataPath);
+    let movedInstallCalls = 0;
+    process.env.STACKOS_DESKTOP_CLI = "/tmp/StackOS-A.app/Contents/Resources/stackos/bin/stackos";
+    await service.prepareInstalledVersion({
+      version: "1.0.0",
+      userDataPath: movedAppUserDataPath,
+      payloadInfo: payloadA,
+      installOrRepairFn: async () => {
+        movedInstallCalls += 1;
+        return { ok: true, phase: "ready" };
+      },
+      repairMcpRegistrationsFn: okMcpRepair
+    });
+    process.env.STACKOS_DESKTOP_CLI = "/tmp/StackOS-B.app/Contents/Resources/stackos/bin/stackos";
+    const movedPathResult = await service.prepareInstalledVersion({
+      version: "1.0.0",
+      userDataPath: movedAppUserDataPath,
+      payloadInfo: payloadA,
+      installOrRepairFn: async () => {
+        movedInstallCalls += 1;
+        return { ok: true, phase: "ready" };
+      },
+      repairMcpRegistrationsFn: okMcpRepair
+    });
+    assert.equal(movedPathResult.skipped, false);
+    assert.equal(movedInstallCalls, 2);
+    delete process.env.STACKOS_DESKTOP_CLI;
 
     const failedUserDataPath = makeUserDataPath();
     tempPaths.push(failedUserDataPath);
@@ -106,7 +188,8 @@ async function main() {
         ok: false,
         phase: "install",
         install: { exitCode: 1 }
-      })
+      }),
+      repairMcpRegistrationsFn: okMcpRepair
     });
     assert.equal(failed.ok, false);
     assert.equal(failed.skipped, false);
@@ -118,7 +201,8 @@ async function main() {
       version: "1.0.0",
       userDataPath: failedUpgradeUserDataPath,
       payloadInfo: payloadA,
-      installOrRepairFn: okInstall
+      installOrRepairFn: okInstall,
+      repairMcpRegistrationsFn: okMcpRepair
     });
 
     let failedUpgradeCalls = 0;
@@ -133,14 +217,15 @@ async function main() {
           phase: "install",
           install: { exitCode: 1 }
         };
-      }
+      },
+      repairMcpRegistrationsFn: okMcpRepair
     });
     assert.equal(failedUpgrade.ok, false);
     assert.equal(failedUpgrade.skipped, false);
     assert.equal(failedUpgradeCalls, 1);
     assert.equal(
       service.readInstallState(failedUpgradeUserDataPath).installKey,
-      "1.0.0:1.0.0:payload-a"
+      service.installKeyFor({ version: "1.0.0", payloadInfo: payloadA })
     );
 
     const failedUpgradeRetry = await service.prepareInstalledVersion({
@@ -154,7 +239,8 @@ async function main() {
           phase: "install",
           install: { exitCode: 1 }
         };
-      }
+      },
+      repairMcpRegistrationsFn: okMcpRepair
     });
     assert.equal(failedUpgradeRetry.ok, false);
     assert.equal(failedUpgradeRetry.skipped, false);
@@ -162,6 +248,11 @@ async function main() {
 
     console.log("desktop service upgrade test ok");
   } finally {
+    if (originalDesktopCli === undefined) {
+      delete process.env.STACKOS_DESKTOP_CLI;
+    } else {
+      process.env.STACKOS_DESKTOP_CLI = originalDesktopCli;
+    }
     cleanup(tempPaths);
   }
 }

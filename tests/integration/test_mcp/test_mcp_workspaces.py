@@ -58,6 +58,56 @@ def test_workspace_bootstrap_creates_project_once_for_workspace_root(
     assert second["data"]["binding"]["id"] == first["data"]["binding"]["id"]
 
 
+def test_workspace_bootstrap_rejects_generic_inferred_project_name(
+    mcp_client: MCPClient,
+) -> None:
+    failed = mcp_client.call_tool_error(
+        "workspace.bootstrap",
+        {"cwd": "/tmp/Resources"},
+    )
+
+    assert failed["code"] == -32602
+    assert "project_name or project_slug is required" in failed["data"]["detail"]
+    assert failed["data"]["project_identity_required"] is True
+    assert failed["data"]["recommended_arguments"]["project_name"]
+
+
+def test_workspace_start_session_requests_project_name_for_generic_folder(
+    mcp_client: MCPClient,
+) -> None:
+    started = mcp_client.call_tool_structured(
+        "workspace.startSession",
+        {
+            "runtime": "claude-desktop",
+            "cwd": "/tmp/Resources",
+        },
+    )
+
+    assert started["project_id"] is None
+    assert started["data"]["project_id"] is None
+    assert started["data"]["workspace_binding_id"] is None
+    assert started["data"]["needs_connect"] is True
+    assert started["data"]["next_step"]["project_identity_required"] is True
+    assert started["data"]["next_step"]["recommended_arguments"]["project_name"]
+
+
+def test_workspace_connect_rejects_app_bundle_workspace_root(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    failed = mcp_client.call_tool_error(
+        "workspace.connect",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "repo_fingerprint": "path:app-bundle",
+            "last_known_root": "/Applications/StackOS.app/Contents/Resources",
+        },
+    )
+
+    assert failed["code"] == -32602
+    assert "usable project directory" in failed["data"]["detail"]
+
+
 def test_workspace_connect_list_and_start_session(
     mcp_client: MCPClient, seeded_project: dict
 ) -> None:

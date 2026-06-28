@@ -17,10 +17,10 @@ Public surface:
 - :func:`copy_skills` / :func:`copy_plugins` mirror assets into
   ``~/.codex/...`` or ``~/.claude/...`` with mtime-aware copy and
   ``--delete``-style cleanup of stale files.
-- :func:`register_mcp_codex` / :func:`register_mcp_claude` — Python
-  equivalents of the bash registration scripts. Used by ``stackos
-  install`` so a pipx install does not require the bash scripts to be
-  on PATH.
+- :func:`register_mcp_codex` / :func:`register_mcp_claude` — local agent
+  MCP registration helpers. Claude Code registration is owned by
+  ``stackos.claude_mcp`` so install, doctor, uninstall, and shell wrappers use
+  one contract.
 """
 
 from __future__ import annotations
@@ -468,81 +468,28 @@ def register_mcp_codex(
     remove: bool = False,
     force: bool = False,
 ) -> str:
-    """Register (or remove) the StackOS MCP server in Codex CLI.
+    """Register (or remove) the StackOS MCP server in Codex."""
+    from stackos.host_mcp import register_host, remove_host
 
-    Returns a human-readable status line; raises if ``codex`` is not on
-    PATH AND we are asked to register (a missing CLI is a no-op rather
-    than an error so ``make install`` succeeds on Claude-only machines).
-    """
     home_dir = home if home is not None else Path.home()
-    codex_bin = shutil.which("codex")
-    if codex_bin is None:
-        return "Codex CLI not on PATH — skipping MCP registration."
-
-    def _list_entries() -> list[str]:
-        try:
-            out = subprocess.run(
-                [codex_bin, "mcp", "list"],
-                capture_output=True,
-                text=True,
-                check=False,
-            ).stdout
-        except OSError:
-            return []
-        return [
-            line.strip()
-            for line in out.splitlines()
-            if line.strip().startswith(f"{MCP_SERVER_NAME} ")
-        ]
-
-    def _list_has_current_bridge() -> bool:
-        return any(_codex_mcp_line_is_bridge(line) for line in _list_entries())
-
-    def _remove_if_present(name: str) -> bool:
-        if not any(line.strip().startswith(f"{name} ") for line in _list_entries()):
-            return False
-        subprocess.run([codex_bin, "mcp", "remove", name], check=False)
-        return True
-
-    if remove:
-        removed = _remove_if_present(MCP_SERVER_NAME)
-        if removed:
-            return f"Unregistered MCP '{MCP_SERVER_NAME}' from Codex CLI"
-        return f"MCP '{MCP_SERVER_NAME}' not registered with Codex CLI; nothing to remove"
-
-    current_bridge = _list_has_current_bridge()
-    existing_entries = _list_entries()
-    if current_bridge and not force:
-        return f"MCP '{MCP_SERVER_NAME}' already registered with Codex CLI"
-
-    # Sanity-check that the auth token exists; the bridge reads it at runtime
-    # and keeps it out of the agent-visible MCP registration.
-    _read_token(home_dir)
-
-    if force or existing_entries:
-        _remove_if_present(MCP_SERVER_NAME)
-
-    subprocess.run(
-        [
-            codex_bin,
-            "mcp",
-            "add",
-            MCP_SERVER_NAME,
-            "--",
-            sys.executable,
-            "-m",
-            "stackos",
-            "mcp-bridge",
-        ],
-        check=True,
+    result = (
+        remove_host("codex", home=home_dir)
+        if remove
+        else register_host("codex", home=home_dir, force=force)
     )
-    return f"Registered MCP '{MCP_SERVER_NAME}' with Codex CLI via mcp-bridge"
+    return _host_mcp_message(result)
 
 
 def _codex_mcp_line_is_bridge(line: str) -> bool:
     """Return true when a Codex MCP list row is the local stdio bridge."""
+    from stackos.host_mcp.bridge import (
+        command_line_mentions,
+        output_row_matches_server,
+        resolve_bridge_command,
+    )
+
     normalized = line.strip()
-    if not normalized.startswith(f"{MCP_SERVER_NAME} "):
+    if not output_row_matches_server(normalized, MCP_SERVER_NAME):
         return False
     lowered = normalized.lower()
     forbidden = (
@@ -554,7 +501,7 @@ def _codex_mcp_line_is_bridge(line: str) -> bool:
     )
     if any(token in lowered for token in forbidden):
         return False
-    return "mcp-bridge" in lowered
+    return command_line_mentions(resolve_bridge_command(runtime="codex"), normalized)
 
 
 def register_mcp_claude(
@@ -564,65 +511,43 @@ def register_mcp_claude(
     target: Path | None = None,
     remove: bool = False,
 ) -> str:
-    """Atomic JSON merge for Claude Code's ``mcp.json``.
+    """Register or remove StackOS through Claude Code's MCP CLI."""
+    from stackos.host_mcp import register_host, remove_host
 
-    Mirrors the bash script line-for-line so clone-mode and pipx-mode behave
-    identically. Existing files are backed up to ``.bak``; the write itself is
-    via a temp file in the same directory + ``os.replace`` for atomicity.
-    """
     home_dir = home if home is not None else Path.home()
-    if target is None:
-        env_target = os.environ.get("STACKOS_MCP_TARGET")
-        target = Path(env_target) if env_target else home_dir / ".claude" / "mcp.json"
+    if target is not None:
+        # Retained for call-signature compatibility only. Claude Code no longer
+        # uses this legacy target as the product registration source of truth.
+        del target
+    result = (
+        remove_host("claude-code", home=home_dir)
+        if remove
+        else register_host("claude-code", home=home_dir)
+    )
+    return _host_mcp_message(result)
 
-    target.parent.mkdir(parents=True, exist_ok=True)
 
-    if target.exists():
-        shutil.copy2(target, target.with_suffix(target.suffix + ".bak"))
+def repair_mcp_hosts(*, home: Path | None = None) -> tuple[bool, list[str]]:
+    """Repair every known host MCP registration and return status lines."""
+    from stackos.host_mcp import repair_all
 
-    existing: dict[str, object] = {}
-    if target.exists():
-        text = target.read_text(encoding="utf-8").strip()
-        if text:
-            try:
-                loaded = json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"existing {target} is not valid JSON: {exc}") from exc
-            if not isinstance(loaded, dict):
-                raise ValueError(f"existing {target} is not a JSON object")
-            existing = loaded
+    aggregate = repair_all(home=home if home is not None else Path.home())
+    return aggregate.ok, aggregate.summary_lines()
 
-    servers = existing.setdefault("mcpServers", {})
-    if not isinstance(servers, dict):
-        raise ValueError(f"`mcpServers` in {target} must be an object")
 
-    if remove:
-        if MCP_SERVER_NAME in servers:
-            del servers[MCP_SERVER_NAME]
-            msg = f"Unregistered MCP '{MCP_SERVER_NAME}' from {target}"
-        else:
-            msg = f"MCP '{MCP_SERVER_NAME}' not present in {target}; nothing to remove"
-    else:
-        _read_token(home_dir)
-        servers[MCP_SERVER_NAME] = {
-            "transport": "stdio",
-            "command": sys.executable,
-            "args": ["-m", "stackos", "mcp-bridge"],
-        }
-        msg = f"Registered MCP '{MCP_SERVER_NAME}' with Claude Code -> {target}"
+def remove_mcp_hosts(*, home: Path | None = None) -> tuple[bool, list[str]]:
+    """Remove StackOS MCP entries from every known host registration surface."""
+    from stackos.host_mcp import remove_all
 
-    fd, tmp = tempfile.mkstemp(prefix=".mcp.", dir=str(target.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(existing, f, indent=2, sort_keys=True)
-            f.write("\n")
-        os.replace(tmp, target)
-    except Exception:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
+    aggregate = remove_all(home=home if home is not None else Path.home())
+    return aggregate.ok, aggregate.summary_lines()
 
-    return msg
+
+def _host_mcp_message(result: object) -> str:
+    message = getattr(result, "message", "")
+    repair = getattr(result, "repair", None)
+    ok = getattr(result, "ok", True)
+    return f"{message} {repair or ''}".strip() if not ok else str(message)
 
 
 __all__ = [
@@ -633,6 +558,8 @@ __all__ = [
     "register_mcp_claude",
     "register_mcp_codex",
     "register_plugin_marketplace",
+    "remove_mcp_hosts",
     "remove_plugins",
     "remove_skills",
+    "repair_mcp_hosts",
 ]

@@ -24,12 +24,42 @@ export interface DesktopStatus {
   [key: string]: unknown
 }
 
+export interface DesktopMcpHostStatus {
+  host_key: string
+  surface?: string
+  status?: string
+  message?: string
+  ok?: boolean
+  available?: boolean
+  advisory?: boolean
+  blocking?: boolean
+  needs_restart?: boolean
+  repair?: string | null
+  warnings?: string[]
+  [key: string]: unknown
+}
+
+export interface DesktopDoctorParsed {
+  ok: boolean
+  code: number
+  checks?: Record<string, unknown>
+  info?: {
+    mcp_hosts?: DesktopMcpHostStatus[]
+    [key: string]: unknown
+  }
+}
+
 export interface DesktopCommandResult {
   ok: boolean
   code?: number
   message?: string
   detail?: unknown
   [key: string]: unknown
+}
+
+export interface DesktopDoctorResult extends DesktopCommandResult {
+  parsed?: DesktopDoctorParsed | null
+  readiness?: unknown
 }
 
 export interface DesktopUpdateState {
@@ -53,7 +83,7 @@ interface DesktopBridge {
   status(): Promise<DesktopStatus>
   installOrRepair(): Promise<DesktopCommandResult>
   restartService(): Promise<DesktopCommandResult>
-  runDoctor(): Promise<DesktopCommandResult>
+  runDoctor(): Promise<DesktopDoctorResult>
   checkForUpdates(): Promise<DesktopUpdateResult>
   downloadUpdate(): Promise<DesktopUpdateResult>
   installUpdate(): Promise<DesktopUpdateResult>

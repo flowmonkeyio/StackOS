@@ -43,17 +43,13 @@ def codex_stub(tmp_path: Path) -> Path:
     log = tmp_path / "invocations.log"
     state = tmp_path / "registered"
     script = bin_dir / "codex"
-    list_line = (
-        '  "mcp list") if [[ -f "$STATE" ]]; then '
-        'echo "stackos /tmp/python -m stackos mcp-bridge"; fi ;;\n'
-    )
     script.write_text(
         "#!/usr/bin/env bash\n"
         f'echo "$@" >> "{log}"\n'
         f'STATE="{state}"\n'
         'case "$1 $2" in\n'
-        + list_line
-        + '  "mcp add") touch "$STATE" ;;\n'
+        + '  "mcp list") if [[ -f "$STATE" ]]; then cat "$STATE"; fi ;;\n'
+        + '  "mcp add") printf "%s " "$3" "${@:5}" > "$STATE"; printf "\\n" >> "$STATE" ;;\n'
         + '  "mcp remove") rm -f "$STATE" ;;\n'
         + '  *) echo "unknown: $@" >&2; exit 2 ;;\n'
         + "esac\n",

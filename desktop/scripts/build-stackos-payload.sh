@@ -49,6 +49,7 @@ cat > "${PAYLOAD_DIR}/bin/stackos" <<'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export STACKOS_PACKAGED_CLI="${ROOT_DIR}/bin/stackos"
 exec "${ROOT_DIR}/.venv/bin/python" -m stackos "$@"
 WRAPPER
 chmod +x "${PAYLOAD_DIR}/bin/stackos"

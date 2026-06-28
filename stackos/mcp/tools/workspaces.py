@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from stackos.config import get_settings
 from stackos.mcp.context import MCPContext
@@ -182,14 +182,19 @@ class WorkspaceStartSessionInput(MCPInput):
         extra="forbid",
         json_schema_extra={
             "example": {
-                "runtime": "codex",
                 "cwd": "/Users/me/Sites/example",
                 "repo_fingerprint": "git:abc123",
             }
         },
     )
 
-    runtime: str
+    runtime: str = Field(
+        default="agent",
+        description=(
+            "Agent host runtime. Workspace bridges inject this automatically "
+            "(for example codex or claude); direct callers may omit it."
+        ),
+    )
     cwd: str | None = None
     repo_fingerprint: str | None = None
     git_remote_url: str | None = None

@@ -56,11 +56,11 @@ list.
 ```text
 toolbox.call({
   "tool_name": "operation.list",
-  "arguments": { "surface": "mcp", "mode": "grouped" }
+  "arguments": { "surface": "mcp", "mode": "grouped", "response_mode": "compact" }
 })
 toolbox.call({
   "tool_name": "operation.describe",
-  "arguments": { "name": "communication.send", "surface": "mcp" }
+  "arguments": { "name": "communication.send", "surface": "mcp", "response_mode": "compact" }
 })
 toolbox.call({
   "tool_name": "agentPreset.resolveForWorkflow",
@@ -68,15 +68,19 @@ toolbox.call({
 })
 toolbox.call({
   "tool_name": "integration.list",
-  "arguments": { "project_id": 1 }
+  "arguments": {}
 })
 ```
 
 The discovery operations are OperationSpecs too. `operation.list` includes
 `operation.list` and `operation.describe`, and `operation.describe` can describe
 both discovery tools with the same schemas, examples, and guidance it returns
-for domain operations. Use `category`, `query`, and `mode: "grouped"` when an
-agent only needs a compact operation route instead of the full inventory.
+for domain operations. Use `surface: "mcp"`, `mode: "grouped"`, and
+`response_mode: "compact"` when an agent only needs operation names by category
+instead of the full inventory. After that, call `toolbox.describe` with exact
+`tool_names` before invoking the selected operation. In workspace-bound bridge
+sessions, omit injected fields such as `project_id`; the bridge supplies the
+current workspace scope and refuses cross-project calls.
 
 For action discovery, `action.list` answers "what can I use now?" and hides
 disconnected, deferred, project-local, missing-connector, and otherwise
@@ -458,6 +462,9 @@ Tracker list workflows reuse existing tracker operations. Use
 call the same operation without dry-run to create the list, use `tracker.get`
 filters for review, and use `tracker.updateTicket` with `updates_json` for
 atomic per-ticket patches. Do not add separate list-specific tracker endpoints.
+Terminal child-ticket updates can roll up a parent task's terminal status, but
+ticket evidence is not copied into the task; compact tracker mutation responses
+include `task_rollup` and evidence-presence flags when this matters.
 Use `tracker.rejectTask` for operator-level rejection or abort: it accepts a
 task key or run-plan id, marks the parent task aborted/rejected, and cascades all
 child tickets to aborted with rejection evidence. For resumable parked work, use

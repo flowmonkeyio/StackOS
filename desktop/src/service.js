@@ -12,9 +12,10 @@ const DAEMON_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/`;
 const HEALTH_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/api/v1/health`;
 const INSTALL_STATE_FILE = "install-state.json";
 const PAYLOAD_BUILD_INFO_FILE = "build-info.json";
+const STACKOS_STATE_DIR =
+  process.env.STACKOS_STATE_DIR || path.join(os.homedir(), ".local", "state", "stackos");
 const AUTH_TOKEN_PATH =
-  process.env.STACKOS_DESKTOP_AUTH_TOKEN_PATH ||
-  path.join(os.homedir(), ".local", "state", "stackos", "auth.token");
+  process.env.STACKOS_DESKTOP_AUTH_TOKEN_PATH || path.join(STACKOS_STATE_DIR, "auth.token");
 
 function isExecutable(filePath) {
   try {
@@ -384,6 +385,12 @@ async function installOrRepair(timeoutSeconds = 240) {
   };
 }
 
+async function repairMcpRegistrations(timeoutSeconds = 60) {
+  return runStackos(["install", "--mcp-only", "--skip-doctor"], {
+    timeoutMs: timeoutSeconds * 1000
+  });
+}
+
 function installStatePath(userDataPath) {
   return path.join(userDataPath, INSTALL_STATE_FILE);
 }
@@ -401,11 +408,18 @@ function writeInstallState(userDataPath, state) {
   fs.writeFileSync(installStatePath(userDataPath), `${JSON.stringify(state, null, 2)}\n`);
 }
 
-function installKeyFor({ version, payloadInfo }) {
+function installKeyFor({ version, payloadInfo, commandInfo = resolveStackosCommand() }) {
   if (!payloadInfo) {
-    return version;
+    return [version, commandInfo.mode, commandInfo.command, ...commandInfo.baseArgs].join(":");
   }
-  return [version, payloadInfo.version || "unknown", payloadInfo.buildId || "no-build-id"].join(":");
+  return [
+    version,
+    payloadInfo.version || "unknown",
+    payloadInfo.buildId || "no-build-id",
+    commandInfo.mode,
+    commandInfo.command,
+    ...commandInfo.baseArgs
+  ].join(":");
 }
 
 async function prepareInstalledVersion({
@@ -413,21 +427,34 @@ async function prepareInstalledVersion({
   userDataPath,
   force = false,
   payloadInfo = readPackagedBuildInfo(),
-  installOrRepairFn = installOrRepair
+  installOrRepairFn = installOrRepair,
+  repairMcpRegistrationsFn = repairMcpRegistrations
 }) {
   const state = readInstallState(userDataPath);
-  const installKey = installKeyFor({ version, payloadInfo });
+  const commandInfo = resolveStackosCommand();
+  const installKey = installKeyFor({ version, payloadInfo, commandInfo });
   const preparedCurrentInstall =
     state.prepared === true &&
     (state.installKey === installKey || (!payloadInfo && !state.installKey && state.version === version));
   if (!force && preparedCurrentInstall) {
+    let externalRepair;
+    try {
+      externalRepair = await repairMcpRegistrationsFn();
+    } catch (error) {
+      externalRepair = {
+        ok: false,
+        phase: "external-registration",
+        error: error && error.message ? error.message : String(error)
+      };
+    }
     return {
       ok: true,
       skipped: true,
       version,
       installKey,
       payloadInfo,
-      state
+      state,
+      externalRepair
     };
   }
 
@@ -484,6 +511,7 @@ module.exports = {
   readAuthToken,
   readInstallState,
   readPackagedBuildInfo,
+  repairMcpRegistrations,
   resolveStackosCommand,
   restartDaemon,
   runDoctor,

@@ -189,11 +189,11 @@ def install(
         typer.echo(f"==> {msg}")
 
     if do_mcp:
-        # Codex first; it prints its own skip-line if not on PATH.
-        msg = installer.register_mcp_codex(home=home, port=settings.port)
-        typer.echo(f"==> {msg}")
-        msg = installer.register_mcp_claude(home=home, port=settings.port)
-        typer.echo(f"==> {msg}")
+        ok, messages = installer.repair_mcp_hosts(home=home)
+        for msg in messages:
+            typer.echo(f"==> {msg}")
+        if not ok:
+            raise typer.Exit(code=1)
 
     if launchd:
         ok, message = _install_launchd_autostart(
@@ -256,10 +256,11 @@ def uninstall() -> None:
     msg = installer.register_plugin_marketplace(home=home, remove=True)
     typer.echo(f"==> {msg}")
 
-    msg = installer.register_mcp_codex(home=home, port=settings.port, remove=True)
-    typer.echo(f"==> {msg}")
-    msg = installer.register_mcp_claude(home=home, port=settings.port, remove=True)
-    typer.echo(f"==> {msg}")
+    ok, messages = installer.remove_mcp_hosts(home=home)
+    for msg in messages:
+        typer.echo(f"==> {msg}")
+    if not ok:
+        raise typer.Exit(code=1)
 
     typer.echo(f"==> Preserved database directory: {settings.data_dir}")
     typer.echo(f"==> Preserved daemon state directory: {settings.state_dir}")
@@ -389,12 +390,18 @@ def rotate_token(
         f.write("\n")
     os.replace(str(token_path) + ".new", token_path)
 
-    # Re-register to keep agent MCP clients on the stdio bridge path.
-    msg = installer.register_mcp_codex(port=settings.port, force=True)
-    typer.echo(msg)
-    msg = installer.register_mcp_claude(port=settings.port)
-    typer.echo(msg)
-    typer.echo("rotate-token: token rotated; MCP configs updated.")
+    # Reconcile host MCP clients to keep them on the stdio bridge path.
+    ok, messages = installer.repair_mcp_hosts()
+    for msg in messages:
+        typer.echo(msg)
+    if not ok:
+        typer.echo(
+            "rotate-token: token rotated; MCP host repair needs attention. "
+            "Run `stackos install --mcp-only` after restart.",
+            err=True,
+        )
+    else:
+        typer.echo("rotate-token: token rotated; MCP configs updated.")
     typer.echo("rotate-token: run `stackos restart` so the daemon loads the new token.")
 
 

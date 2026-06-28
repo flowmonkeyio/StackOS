@@ -118,6 +118,12 @@ does not store provider secrets and does not rotate `seed.bin` or `auth.token`
 on install or update. After install or repair, the desktop service consumes the
 same `stackos doctor --json` readiness envelope used by the CLI.
 
+When the app version and packaged payload are already prepared, desktop launch
+still runs a lightweight MCP registration reconciliation. This covers late
+Claude Code installs, reset MCP config, and drag-and-drop app replacement
+without reinstalling the full local runtime. Claude Code absence remains
+advisory and does not block startup.
+
 In packaged macOS mode, launchd owns the daemon after install, repair, and
 upgrade. Verify `stackos autostart status --json` as well as Doctor when
 testing desktop lifecycle changes.
@@ -226,12 +232,14 @@ strategy and passes explicit inputs.
 After install, agents can use the `stackos` plugin from a business or
 website repository without copying setup files into that repo.
 
-The bridge command is:
+The bridge command is a local stdio launcher:
 
 ```text
 python -m stackos mcp-bridge
 ```
 
+Packaged desktop installs register the bundled `stackos mcp-bridge` launcher
+instead, so Claude Code and Codex do not depend on a system Python install.
 The bridge reads the local daemon token from the state directory and forwards
 MCP traffic to the singleton daemon. If the daemon is not already listening,
 the bridge attempts a loopback-only auto-start and logs to:
@@ -239,6 +247,17 @@ the bridge attempts a loopback-only auto-start and logs to:
 ```text
 ~/.local/state/stackos/mcp-bridge-autostart.log
 ```
+
+Project context is directory-first and host-dependent. StackOS does not require
+a Git checkout to identify a workspace. The bridge accepts an explicit
+`--workspace-root` argument or `STACKOS_WORKSPACE_ROOT` environment value,
+prefers Claude Code's `CLAUDE_PROJECT_DIR` when present, and only then falls
+back to process cwd. Git remote detection is optional metadata for an existing
+directory binding. Claude Desktop uses global app config and may launch a server
+without repo context; a process cwd of `/` is treated as missing workspace
+context, not as a StackOS project. In that case the agent must connect an
+explicit project/workspace instead of silently creating or reusing a generic
+root binding.
 
 Agents should first bind the working repository to a StackOS project. After the
 binding exists, the bridge resolves and injects `project_id` from the current
@@ -412,7 +431,27 @@ or, in clone mode:
 
 ```bash
 bash scripts/register-mcp-codex.sh --force
+bash scripts/register-mcp-claude.sh --force
 ```
+
+MCP registration is repaired through the shared host lifecycle service. It
+checks Codex CLI, Claude Code, Claude Desktop, and Gemini CLI when those hosts
+are installed, registers the same local stdio bridge with a host-specific
+runtime label, and treats entries that point at an old app/package path as
+stale. Hosts installed after StackOS are picked up by rerunning
+`stackos install --mcp-only`, desktop Repair, or the next desktop launch.
+
+Claude Code registration uses `claude mcp add --scope user --transport stdio`.
+Claude Desktop registration writes
+`~/Library/Application Support/Claude/claude_desktop_config.json` and requires
+restarting Claude Desktop before the app sees the updated MCP server. Legacy
+`~/.claude/mcp.json` entries are cleaned only when they belong to StackOS; they
+are not the primary registration source. Claude Desktop does not provide a
+per-repository workspace root through that global config, so Desktop sessions
+without a real workspace hint return setup/connect guidance before project
+scoped tools can run. When StackOS or an operator chooses a default local
+workspace folder for a global desktop host, registration can pass that folder
+with `stackos mcp-bridge --workspace-root /path/to/workspace`.
 
 After token rotation or package upgrades, restart the daemon:
 

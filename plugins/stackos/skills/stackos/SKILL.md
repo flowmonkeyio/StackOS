@@ -118,6 +118,9 @@ run token.
 - Connect to a specific project: if the operator wants a known existing
   project, call `toolbox.call` for `workspace.connect` or
   `workspace.bootstrap` with that project identifier explicitly.
+- Bind desktop/global hosts to a project: if StackOS says project identity is
+  required, ask for `project_name` or `project_slug` before calling
+  `workspace.bootstrap`; do not let app/runtime folder names become projects.
 - Set up support/engineering/local agents: choose the workflow first. Use
   `communications.customer-feedback-intake` to normalize inbound feedback into
   one route-approved canonical Slack thread with media and refs preserved. Use
@@ -156,9 +159,10 @@ run token.
   changing them. Do not invent a new context-sharing mechanism or duplicate the
   workflow unless a new reusable workflow identity is needed.
 - Discover operations: if you do not know the exact operation name, call
-  `toolbox.call` for `operation.list` first, then `operation.describe` for the
-  few operations you intend to use. Keep `toolbox.describe` scoped to exact
-  tool names.
+  `toolbox.call` for `operation.list` with
+  `{"surface":"mcp","mode":"grouped","response_mode":"compact"}`, then use
+  `toolbox.describe` or `operation.describe` for the few exact operations you
+  intend to call. Keep `toolbox.describe` scoped to exact tool names.
 - Use browser automation: call `browser.runtime.status`, then
   `browser.session.start`. If the platform needs login, pause and let the
   operator complete login in the opened browser session, then continue with
@@ -206,7 +210,11 @@ run token.
   status moves the item to the done lane. Use `deferred` only for postponed
   resumable work, `aborted` for stopped/rejected/cancelled work, `failed` for
   attempted unsuccessful work, and `skipped` for intentionally not executed
-  work. `tracker.rejectTask` is an operator rejection override: it marks the
+  work. Terminal child-ticket updates can aggregate the parent task status, but
+  ticket evidence is not copied to the task; read compact `task_rollup` and
+  `completion_evidence_present` fields and patch task-level evidence explicitly
+  when task closeout evidence matters. `tracker.rejectTask` is an operator
+  rejection override: it marks the
   task and all child tickets `aborted`. For workflow-backed tasks, do not patch
   task or mirror-ticket lifecycle directly. Mirror tickets are the generated
   `workflow-{run_plan_id}-{step_id}` tickets; attached child tickets such as

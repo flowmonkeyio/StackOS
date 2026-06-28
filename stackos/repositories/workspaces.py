@@ -7,10 +7,8 @@ singleton daemon, and the daemon resolves the durable StackOS project.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,32 +17,33 @@ from sqlmodel import Session, col, select
 from stackos.db.models import AgentSession, Project, WorkspaceBinding
 from stackos.repositories.base import Envelope, NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectOut, ProjectRepository
+from stackos.workspace_identity import (
+    derive_project_name as _derive_project_name,
+)
+from stackos.workspace_identity import (
+    is_filesystem_root_fingerprint as _is_filesystem_root_fingerprint,
+)
+from stackos.workspace_identity import (
+    is_usable_workspace_root as _is_usable_workspace_root,
+)
+from stackos.workspace_identity import (
+    normalize_path as _normalize_path,
+)
+from stackos.workspace_identity import (
+    path_fingerprint as _path_fingerprint,
+)
 
 
 def _utcnow() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
 
 
-def _normalize_path(value: str | None) -> str | None:
-    if not value:
-        return None
-    try:
-        return str(Path(value).expanduser().resolve())
-    except OSError:
-        return str(Path(value).expanduser().absolute())
-
-
 def _is_same_or_child(path: str, root: str) -> bool:
+    if not _is_usable_workspace_root(root):
+        return False
     if path == root:
         return True
     return path.startswith(root.rstrip("/") + "/")
-
-
-def _path_fingerprint(path: str | None) -> str | None:
-    if not path:
-        return None
-    digest = hashlib.sha256(path.encode("utf-8")).hexdigest()[:24]
-    return f"path:{digest}"
 
 
 def _slugify(value: str, *, fallback: str = "project") -> str:
@@ -54,30 +53,6 @@ def _slugify(value: str, *, fallback: str = "project") -> str:
 
 def _title_from_slug(slug: str) -> str:
     return " ".join(part.capitalize() for part in slug.split("-") if part) or "Project"
-
-
-def _repo_name_from_remote(remote: str | None) -> str | None:
-    if not remote:
-        return None
-    trimmed = remote.rstrip("/")
-    if ":" in trimmed and "://" not in trimmed:
-        trimmed = trimmed.split(":", 1)[1]
-    if "://" in trimmed:
-        trimmed = trimmed.split("://", 1)[1]
-        parts = trimmed.split("/", 1)
-        trimmed = parts[1] if len(parts) > 1 else parts[0]
-    if trimmed.endswith(".git"):
-        trimmed = trimmed[:-4]
-    if "/" in trimmed:
-        trimmed = trimmed.rsplit("/", 1)[-1]
-    return trimmed or None
-
-
-def _repo_name_from_root(root: str | None) -> str | None:
-    if not root:
-        return None
-    name = Path(root).name
-    return name or None
 
 
 def _ui_paths(project_id: int | None) -> dict[str, str]:
@@ -178,16 +153,23 @@ def _repo_hints(
     git_remote_url: str | None,
     cwd: str | None,
 ) -> dict[str, Any]:
-    return {
+    normalized_cwd = _normalize_path(cwd)
+    hints = {
         "repo_fingerprint": repo_fingerprint,
         "git_remote_url": git_remote_url,
         "cwd": cwd,
-        "normalized_cwd": _normalize_path(cwd),
+        "normalized_cwd": normalized_cwd,
         "fingerprint_format": (
             "The StackOS bridge sends path:<sha256(workspace_root)[:24]> by default; "
             "git:<stable-repo-id> is also accepted when a host supplies it."
         ),
     }
+    if normalized_cwd and not _is_usable_workspace_root(normalized_cwd):
+        hints["workspace_hint_warning"] = (
+            "The MCP host did not provide a usable project directory; filesystem root "
+            "and app bundle paths are not treated as StackOS workspaces."
+        )
+    return hints
 
 
 def _project_candidate(project: ProjectOut) -> WorkspaceProjectCandidateOut:
@@ -214,11 +196,28 @@ def _connect_required_next_step(
         bootstrap_args["git_remote_url"] = git_remote_url
     if cwd:
         bootstrap_args["cwd"] = cwd
+    project_identity_required = (
+        _derive_project_name(
+            normalized_repo_name=None,
+            git_remote_url=git_remote_url,
+            workspace_root=_normalize_path(cwd),
+        )
+        is None
+    )
+    if project_identity_required:
+        bootstrap_args["project_name"] = "<operator-provided project name>"
     return {
         "status": "bootstrap_required",
         "recommended_tool": "workspace.bootstrap",
         "call_via": "toolbox.call",
         "recommended_arguments": bootstrap_args,
+        "project_identity_required": project_identity_required,
+        "project_identity_guidance": (
+            "Pass project_name or project_slug when StackOS cannot derive a reliable "
+            "business project name from the host-supplied workspace directory."
+            if project_identity_required
+            else "StackOS can derive a project name from the current workspace metadata."
+        ),
         "why": (
             "This workspace has no daemon-owned project binding yet. "
             "workspace.bootstrap explicitly creates or reuses one project for this "
@@ -366,10 +365,14 @@ class WorkspaceRepository:
         """Create or update a non-invasive repo binding for a project."""
         if not repo_fingerprint:
             raise ValidationError("repo_fingerprint is required")
+        if _is_filesystem_root_fingerprint(repo_fingerprint):
+            raise ValidationError("workspace root must be a usable project directory")
         if self._s.get(Project, project_id) is None:
             raise NotFoundError(f"project {project_id} not found")
 
         normalized_root = _normalize_path(last_known_root)
+        if normalized_root is not None and not _is_usable_workspace_root(normalized_root):
+            raise ValidationError("workspace root must be a usable project directory")
         row = self._s.exec(
             select(WorkspaceBinding).where(WorkspaceBinding.repo_fingerprint == repo_fingerprint)
         ).first()
@@ -435,22 +438,34 @@ class WorkspaceRepository:
     ) -> Envelope[WorkspaceBootstrapOut]:
         """Explicitly ensure a project and binding for the current workspace."""
         normalized_root = _normalize_path(last_known_root or cwd)
+        if normalized_root is not None and not _is_usable_workspace_root(normalized_root):
+            raise ValidationError("workspace root must be a usable project directory")
         effective_fingerprint = repo_fingerprint or _path_fingerprint(normalized_root)
         if not effective_fingerprint:
             raise ValidationError("repo_fingerprint or cwd/last_known_root is required")
 
-        repo_name = (
-            normalized_repo_name
-            or _repo_name_from_remote(git_remote_url)
-            or _repo_name_from_root(normalized_root)
-            or "project"
+        derived_project_name = _derive_project_name(
+            normalized_repo_name=normalized_repo_name,
+            git_remote_url=git_remote_url,
+            workspace_root=normalized_root,
         )
+        explicit_project = any((project_id is not None, project_slug, project_name))
+        if not explicit_project and derived_project_name is None:
+            raise ValidationError(
+                "project_name or project_slug is required because StackOS could not "
+                "derive a reliable project name from normalized_repo_name, "
+                "git_remote_url, or workspace directory name",
+                data={
+                    "project_identity_required": True,
+                    "recommended_arguments": {"project_name": "<operator-provided project name>"},
+                    "accepted_arguments": ["project_name", "project_slug"],
+                },
+            )
         resolution = self.resolve(
             repo_fingerprint=effective_fingerprint,
             git_remote_url=git_remote_url,
             cwd=normalized_root,
         )
-        explicit_project = any((project_id is not None, project_slug, project_name))
         project_created = False
         projects = ProjectRepository(self._s)
 
@@ -465,7 +480,7 @@ class WorkspaceRepository:
                     domain=domain,
                     niche=niche,
                     locale=locale,
-                    repo_name=repo_name,
+                    repo_name=derived_project_name,
                     repo_fingerprint=effective_fingerprint,
                     explicit_slug=project_slug is not None,
                 )
@@ -479,7 +494,7 @@ class WorkspaceRepository:
                 project_id=target_project.id,
                 repo_fingerprint=effective_fingerprint,
                 git_remote_url=git_remote_url,
-                normalized_repo_name=repo_name,
+                normalized_repo_name=derived_project_name,
                 last_known_root=normalized_root,
                 framework=framework,
                 content_model_json=content_model_json,
@@ -504,7 +519,7 @@ class WorkspaceRepository:
             domain=domain,
             niche=niche,
             locale=locale,
-            repo_name=repo_name,
+            repo_name=derived_project_name,
             repo_fingerprint=effective_fingerprint,
             explicit_slug=project_slug is not None,
         )
@@ -512,7 +527,7 @@ class WorkspaceRepository:
             project_id=target_project.id,
             repo_fingerprint=effective_fingerprint,
             git_remote_url=git_remote_url,
-            normalized_repo_name=repo_name,
+            normalized_repo_name=derived_project_name,
             last_known_root=normalized_root,
             framework=framework,
             content_model_json=content_model_json,
@@ -539,14 +554,18 @@ class WorkspaceRepository:
     ) -> WorkspaceResolutionOut:
         """Resolve a workspace by fingerprint, root directory, then git remote."""
         row: WorkspaceBinding | None = None
-        if repo_fingerprint:
+        normalized_cwd = _normalize_path(cwd)
+        usable_cwd = normalized_cwd if _is_usable_workspace_root(normalized_cwd) else None
+        effective_fingerprint = repo_fingerprint
+        if _is_filesystem_root_fingerprint(effective_fingerprint):
+            effective_fingerprint = None
+        if effective_fingerprint:
             row = self._s.exec(
                 select(WorkspaceBinding).where(
-                    WorkspaceBinding.repo_fingerprint == repo_fingerprint
+                    WorkspaceBinding.repo_fingerprint == effective_fingerprint
                 )
             ).first()
-        normalized_cwd = _normalize_path(cwd)
-        if row is None and normalized_cwd:
+        if row is None and usable_cwd:
             rows = self._s.exec(
                 select(WorkspaceBinding)
                 .where(col(WorkspaceBinding.last_known_root).is_not(None))
@@ -556,7 +575,7 @@ class WorkspaceRepository:
                 candidate
                 for candidate in rows
                 if candidate.last_known_root
-                and _is_same_or_child(normalized_cwd, candidate.last_known_root)
+                and _is_same_or_child(usable_cwd, candidate.last_known_root)
             ]
             if matching:
                 row = max(matching, key=lambda candidate: len(candidate.last_known_root or ""))
@@ -573,14 +592,14 @@ class WorkspaceRepository:
                 needs_connect=True,
                 candidate_projects=self._project_candidates(),
                 repo_hints=_repo_hints(
-                    repo_fingerprint=repo_fingerprint,
+                    repo_fingerprint=effective_fingerprint,
                     git_remote_url=git_remote_url,
                     cwd=cwd,
                 ),
                 ui_paths=_ui_paths(None),
                 setup_state=_setup_state(binding=None, needs_connect=True),
                 next_step=_connect_required_next_step(
-                    repo_fingerprint=repo_fingerprint,
+                    repo_fingerprint=effective_fingerprint,
                     git_remote_url=git_remote_url,
                     cwd=cwd,
                 ),
@@ -596,7 +615,7 @@ class WorkspaceRepository:
             project_id=row.project_id,
             needs_connect=False,
             repo_hints=_repo_hints(
-                repo_fingerprint=repo_fingerprint or row.repo_fingerprint,
+                repo_fingerprint=effective_fingerprint or row.repo_fingerprint,
                 git_remote_url=git_remote_url or row.git_remote_url,
                 cwd=cwd,
             ),
@@ -658,7 +677,21 @@ class WorkspaceRepository:
         )
         bootstrap: Envelope[WorkspaceBootstrapOut] | None = None
         normalized_cwd = _normalize_path(cwd)
-        if resolution.needs_connect and auto_bootstrap and normalized_cwd is not None:
+        has_derived_project_name = (
+            _derive_project_name(
+                normalized_repo_name=None,
+                git_remote_url=git_remote_url,
+                workspace_root=normalized_cwd,
+            )
+            is not None
+        )
+        if (
+            resolution.needs_connect
+            and auto_bootstrap
+            and normalized_cwd is not None
+            and _is_usable_workspace_root(normalized_cwd)
+            and has_derived_project_name
+        ):
             bootstrap = self.bootstrap(
                 repo_fingerprint=repo_fingerprint,
                 git_remote_url=git_remote_url,
@@ -736,7 +769,7 @@ class WorkspaceRepository:
         domain: str | None,
         niche: str | None,
         locale: str,
-        repo_name: str,
+        repo_name: str | None,
         repo_fingerprint: str,
         explicit_slug: bool,
     ) -> tuple[ProjectOut, bool]:
@@ -767,7 +800,12 @@ class WorkspaceRepository:
                     "project_name matches multiple projects; pass project_id or project_slug"
                 )
 
-        base_slug = _slugify(project_name or repo_name)
+        if project_name is None and repo_name is None:
+            raise ValidationError("project_name or project_slug is required")
+        source_name = project_name or repo_name
+        if source_name is None:
+            raise ValidationError("project_name or project_slug is required")
+        base_slug = _slugify(source_name)
         slug = (
             base_slug if explicit_slug else self._unique_project_slug(base_slug, repo_fingerprint)
         )

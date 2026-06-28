@@ -31,7 +31,9 @@ TRACKER_STATUS_DESCRIPTION = (
 TRACKER_PATCH_DESCRIPTION = (
     "Explicit tracker patch. For terminal closeout, set status plus a concise "
     "outcome when the target supports it and structured completion_evidence_json "
-    "with the reason, proof, or residual risk. Status meanings: "
+    "with the reason, proof, or residual risk. Terminal ticket updates can roll "
+    "up parent task status, but ticket evidence is not copied to the task; add "
+    "task evidence explicitly when task-level closeout evidence matters. Status meanings: "
     f"{TRACKER_STATUS_DESCRIPTION}"
 )
 

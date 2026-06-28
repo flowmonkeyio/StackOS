@@ -169,7 +169,7 @@ def operation_specs() -> list[OperationSpec]:
             examples=(
                 OperationExample(
                     title="Start current workspace session",
-                    arguments={"cwd": "/Users/me/Sites/example", "runtime": "codex"},
+                    arguments={"cwd": "/Users/me/Sites/example"},
                 ),
             ),
             mutating=True,
@@ -232,7 +232,9 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this as the normal first-run agent path after workspace.resolve reports "
                 "needs_connect=true. It is explicit and idempotent: repeat calls for the same "
                 "workspace root/fingerprint return the existing binding instead of creating "
-                "duplicates."
+                "duplicates. If the workspace metadata cannot produce a reliable business "
+                "project name, ask the operator for project_name or project_slug instead of "
+                "creating a generic project."
             ),
             when_to_use=(
                 "The current repo/directory is unbound and the agent should create or reuse "
@@ -242,6 +244,11 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "The bridge normally injects cwd, repo_fingerprint, git_remote_url, and "
                 "last_known_root.",
+                "Project identity is business/user-facing metadata. Do not use package or "
+                "runtime directory names such as Resources, Contents, MacOS, StackOS.app, or "
+                "Project as an inferred project name.",
+                "Pass project_name or project_slug when the operator supplied a name or when "
+                "the directory name is generic/ambiguous.",
                 "Pass project_id/project_slug/project_name only when intentionally binding "
                 "to a known project.",
                 "Pass rebind_existing=true only when deliberately moving an existing "
@@ -255,6 +262,14 @@ def operation_specs() -> list[OperationSpec]:
                 OperationExample(
                     title="Bootstrap current workspace",
                     arguments={"cwd": "/Users/me/Sites/example"},
+                ),
+                OperationExample(
+                    title="Bootstrap named desktop workspace",
+                    arguments={
+                        "cwd": "/Users/me/Documents/Acme Workspace",
+                        "project_name": "Acme",
+                        "project_slug": "acme",
+                    },
                 ),
                 OperationExample(
                     title="Bootstrap into known project",
@@ -285,7 +300,8 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this when the agent already knows the intended project id, slug, or "
                 "exact name. "
-                "For unbound first-run setup, workspace.bootstrap is usually simpler."
+                "For unbound first-run setup, workspace.bootstrap is usually simpler. Use "
+                "this to bind a chosen folder to a deliberately selected existing project."
             ),
             when_to_use=(
                 "The user intentionally chose an existing project.",
@@ -293,6 +309,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             prerequisites=(
                 "Pass one of project_id, project_slug, or project_name.",
+                "Do not bind app package/runtime paths as workspaces.",
                 "Pass repo_fingerprint directly or let the bridge inject it.",
                 "Pass rebind_existing=true only when intentionally moving an existing "
                 "repo binding to a different project.",

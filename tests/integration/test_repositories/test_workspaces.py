@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
 from sqlmodel import Session
 
+from stackos.db.models import WorkspaceBinding
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import WorkspaceRepository
@@ -84,6 +86,53 @@ def test_bootstrap_creates_project_once_for_workspace_root(session: Session) -> 
     assert second.data.project_id == first.data.project_id
     assert second.data.binding.id == first.data.binding.id
     assert [binding.id for binding in bindings] == [first.data.binding.id]
+
+
+@pytest.mark.parametrize("folder_name", ["Resources", "Contents", "MacOS", "Project"])
+def test_bootstrap_rejects_generic_inferred_project_name(
+    session: Session,
+    folder_name: str,
+) -> None:
+    repo = WorkspaceRepository(session)
+
+    with pytest.raises(ValidationError, match="project_name or project_slug is required"):
+        repo.bootstrap(cwd=f"/tmp/{folder_name}")
+
+    assert repo.list_bindings() == []
+
+
+def test_bootstrap_rejects_inferred_name_without_slug_content(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+
+    with pytest.raises(ValidationError, match="project_name or project_slug is required"):
+        repo.bootstrap(cwd="/tmp/---")
+
+    assert repo.list_bindings() == []
+
+
+def test_bootstrap_allows_explicit_project_name_for_generic_folder(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+
+    bootstrapped = repo.bootstrap(
+        cwd="/tmp/Resources",
+        project_name="Acme Operations",
+    )
+
+    assert bootstrapped.data.project.name == "Acme Operations"
+    assert bootstrapped.data.project.slug == "acme-operations"
+    assert bootstrapped.data.binding.last_known_root == str(Path("/tmp/Resources").resolve())
+
+
+def test_bootstrap_rejects_app_bundle_workspace_root(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+
+    with pytest.raises(ValidationError, match="usable project directory"):
+        repo.bootstrap(
+            cwd="/Applications/StackOS.app/Contents/Resources",
+            project_name="Acme Operations",
+        )
+
+    assert repo.list_bindings() == []
 
 
 def test_bootstrap_can_bind_existing_project_by_slug(session: Session) -> None:
@@ -220,6 +269,132 @@ def test_start_session_autobootstraps_workspace_root(session: Session) -> None:
     assert second.project_id == started.project_id
     assert second.data.workspace_binding_id == started.data.workspace_binding_id
     assert second.data.auto_bootstrap is False
+
+
+def test_start_session_does_not_bootstrap_filesystem_root(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+
+    started = repo.start_session(runtime="claude-desktop", cwd="/")
+
+    assert started.project_id is None
+    assert started.data.project_id is None
+    assert started.data.workspace_binding_id is None
+    assert started.data.needs_connect is True
+    assert repo.list_bindings() == []
+    assert started.data.repo_hints is not None
+    assert "workspace_hint_warning" in started.data.repo_hints
+
+
+@pytest.mark.parametrize("folder_name", ["Resources", "Contents", "MacOS", "Project"])
+def test_start_session_does_not_autobootstrap_generic_project_name(
+    session: Session,
+    folder_name: str,
+) -> None:
+    repo = WorkspaceRepository(session)
+
+    started = repo.start_session(runtime="claude-desktop", cwd=f"/tmp/{folder_name}")
+
+    assert started.project_id is None
+    assert started.data.project_id is None
+    assert started.data.workspace_binding_id is None
+    assert started.data.needs_connect is True
+    assert repo.list_bindings() == []
+    assert started.data.next_step is not None
+    assert started.data.next_step["project_identity_required"] is True
+    assert started.data.next_step["recommended_arguments"]["project_name"]
+
+
+def test_start_session_does_not_autobootstrap_name_without_slug_content(
+    session: Session,
+) -> None:
+    repo = WorkspaceRepository(session)
+
+    started = repo.start_session(runtime="claude-desktop", cwd="/tmp/---")
+
+    assert started.project_id is None
+    assert started.data.project_id is None
+    assert started.data.workspace_binding_id is None
+    assert started.data.needs_connect is True
+    assert repo.list_bindings() == []
+    assert started.data.next_step is not None
+    assert started.data.next_step["project_identity_required"] is True
+    assert started.data.next_step["recommended_arguments"]["project_name"]
+
+
+def test_start_session_does_not_bind_app_bundle_workspace_root(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+
+    started = repo.start_session(
+        runtime="claude-desktop",
+        cwd="/Applications/StackOS.app/Contents/Resources",
+    )
+
+    assert started.project_id is None
+    assert started.data.project_id is None
+    assert started.data.workspace_binding_id is None
+    assert started.data.needs_connect is True
+    assert repo.list_bindings() == []
+    assert started.data.repo_hints is not None
+    assert "workspace_hint_warning" in started.data.repo_hints
+
+
+def test_resolve_does_not_reuse_legacy_filesystem_root_binding(session: Session) -> None:
+    project_id = _create_project(session, slug="legacy-root")
+    root_fingerprint = "path:" + hashlib.sha256(b"/").hexdigest()[:24]
+    session.add(
+        WorkspaceBinding(
+            project_id=project_id,
+            repo_fingerprint=root_fingerprint,
+            normalized_repo_name="project",
+            last_known_root="/",
+        )
+    )
+    session.commit()
+    repo = WorkspaceRepository(session)
+
+    by_root = repo.resolve(cwd="/", repo_fingerprint=root_fingerprint)
+    by_child = repo.resolve(cwd="/tmp/some-real-workspace")
+
+    assert by_root.needs_connect is True
+    assert by_root.project_id is None
+    assert by_child.needs_connect is True
+    assert by_child.project_id is None
+
+
+def test_bootstrap_rejects_filesystem_root(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+
+    with pytest.raises(ValidationError, match="usable project directory"):
+        repo.bootstrap(cwd="/")
+
+
+@pytest.mark.parametrize("workspace_root", ["/", "/Applications/StackOS.app/Contents/Resources"])
+def test_connect_rejects_unusable_workspace_roots(
+    session: Session,
+    workspace_root: str,
+) -> None:
+    project_id = _create_project(session)
+    repo = WorkspaceRepository(session)
+
+    with pytest.raises(ValidationError, match="usable project directory"):
+        repo.connect(
+            project_id=project_id,
+            repo_fingerprint=f"path:unusable-{Path(workspace_root).name or 'root'}",
+            last_known_root=workspace_root,
+        )
+
+    assert repo.list_bindings() == []
+
+
+def test_connect_rejects_filesystem_root_fingerprint(session: Session) -> None:
+    project_id = _create_project(session)
+    repo = WorkspaceRepository(session)
+    root_fingerprint = "path:" + hashlib.sha256(b"/").hexdigest()[:24]
+
+    with pytest.raises(ValidationError, match="usable project directory"):
+        repo.connect(project_id=project_id, repo_fingerprint=root_fingerprint)
+
+    assert repo.list_bindings() == []
 
 
 def test_connect_validates_project_and_fingerprint(session: Session) -> None:

@@ -198,6 +198,11 @@ def test_operation_registry_documents_core_operations() -> None:
         "available StackOS operation inventory" in item for item in operation_list.when_to_use
     )
 
+    workspace_session = registry.get("workspace.startSession").describe_out()
+    runtime_schema = workspace_session.input_schema["properties"]["runtime"]
+    assert "runtime" not in workspace_session.input_schema.get("required", [])
+    assert "inject" in runtime_schema["description"]
+
     operation_describe = registry.get("operation.describe").describe_out()
     assert operation_describe.surfaces["mcp"].enabled is True
     assert operation_describe.surfaces["rest"].enabled is True

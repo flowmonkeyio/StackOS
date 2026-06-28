@@ -268,6 +268,11 @@ parallel tracker endpoints for list behavior.
    for small atomic edge changes. Use `dependency_keys` only when intentionally
    replacing the full dependency list; it cannot be combined with add/remove
    dependency fields in the same patch.
+   Terminal child-ticket updates can roll up the parent task status when the
+   task's remaining tickets are terminal. Ticket evidence is not copied to the
+   task: compact mutation responses expose `task_rollup` and
+   `completion_evidence_present` so agents can see when task-level closeout
+   evidence still needs an explicit task patch.
 5. Before a large dependency cleanup, call `tracker.updateTicket` with
    `dry_run=true` on the same `patch_json` or `updates_json`. The tracker
    returns `dependency_preview` entries with current, final, added, removed, and

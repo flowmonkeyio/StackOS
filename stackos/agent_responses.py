@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+_TERMINAL_TRACKER_STATUSES = {"complete", "deferred", "aborted", "failed", "skipped"}
+
 
 def compact_tracker_brief(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
@@ -287,6 +289,7 @@ def compact_tracker_task(value: Any) -> dict[str, Any]:
             }
         )
     )
+    _add_completion_evidence_flag(result, data)
     return result
 
 
@@ -315,6 +318,7 @@ def compact_tracker_snapshot_task(value: Any) -> dict[str, Any]:
             }
         )
     )
+    _add_completion_evidence_flag(result, data)
     return result
 
 
@@ -345,6 +349,7 @@ def compact_tracker_ticket(value: Any) -> dict[str, Any]:
     for key in ("reference_count", "link_count"):
         if result.get(key) == 0:
             result.pop(key)
+    _add_completion_evidence_flag(result, _as_dict(value))
     return result
 
 
@@ -374,7 +379,14 @@ def compact_tracker_snapshot_ticket(value: Any) -> dict[str, Any]:
     for key in ("reference_count", "link_count"):
         if result.get(key) == 0:
             result.pop(key)
+    _add_completion_evidence_flag(result, _as_dict(value))
     return result
+
+
+def _add_completion_evidence_flag(result: dict[str, Any], source: dict[str, Any]) -> None:
+    status = result.get("status")
+    if isinstance(status, str) and status in _TERMINAL_TRACKER_STATUSES:
+        result["completion_evidence_present"] = bool(source.get("completion_evidence_json"))
 
 
 def _compact_mapping(value: Any, keys: tuple[str, ...]) -> dict[str, Any]:

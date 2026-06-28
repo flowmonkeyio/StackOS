@@ -94,7 +94,7 @@ expectation visible.
 
 ```text
 agent intent
--> operation.list when the available operation names are not already clear
+-> operation.list with surface=mcp, mode=grouped, response_mode=compact when operation names are not clear
 -> operation.describe / action.list / action.describe when the contract is not already clear
 -> integration.list when project integration inventory or hidden-action counts are needed
 -> readiness.check when a selected workflow/action may need provider setup
@@ -234,9 +234,11 @@ project, then move to narrowly scoped `toolbox.describe` / `toolbox.call`
 requests. Setup, workflow, tracker, auth, and run-plan tools are reached
 through `toolbox.call`. If a repo is already bound, the bridge injects
 `project_id` and relaxes the advertised schemas so agents do not have to keep
-repeating it. If a caller explicitly passes a different `project_id`, the
-bridge refuses the call. There is no global active project in the agent path;
-the workspace-bound project is the source of truth.
+repeating it. Agents should omit injected fields in toolbox calls unless an
+exact described schema says otherwise outside the bridge path. If a caller
+explicitly passes a different `project_id`, the bridge refuses the call. There
+is no global active project in the agent path; the workspace-bound project is
+the source of truth.
 
 Workspace hints are also scoped. The bridge injects its current
 `cwd`, `repo_fingerprint`, `git_remote_url`, `last_known_root`, runtime, and
@@ -278,11 +280,19 @@ idempotent:
    caller passes `rebind_existing=true`.
 
 The bridge sends a path fingerprint by default:
-`path:<sha256(workspace_root)[:24]>`. If git is unavailable, this path identity
-is enough for a local directory. If git or a remote is added later, bootstrap can
-attach that metadata to the existing binding when the same root is seen. A
-moved non-git directory without a remote looks like a new workspace unless the
-agent intentionally reconnects or rebinds it.
+`path:<sha256(workspace_root)[:24]>`. The `workspace_root` is the directory the
+host or operator supplied, not necessarily a Git repository root. If git is
+unavailable, this path identity is enough for a local directory. If git or a
+remote is added later, bootstrap can attach that metadata to the existing
+binding when the same root is seen. A moved non-git directory without a remote
+looks like a new workspace unless the agent intentionally reconnects or rebinds
+it.
+
+The bridge only creates path fingerprints for usable workspace roots. Host app
+process cwd is a hint, not proof of project context: explicit `--workspace-root`
+or `STACKOS_WORKSPACE_ROOT` values win, Claude Code's `CLAUDE_PROJECT_DIR` is
+preferred when present, and a global desktop host launched at `/` returns
+`needs_workspace_binding` instead of binding to a generic root project.
 
 This keeps normal agents focused on the project attached to their workspace and
 still gives them a complete MCP-native path when no binding exists yet.
@@ -303,7 +313,9 @@ missing capability.
 - `not_granted_to_active_step` means the current step exists, but its grant
   snapshot does not cover the requested tool or arguments.
 - `unknown_tool` means the name is wrong or the flow was removed; call
-  `operation.list` with a narrow `query` to find the current operation name.
+  `operation.list` through `toolbox.call` with `surface: "mcp"`,
+  `mode: "grouped"`, `response_mode: "compact"`, and optionally a narrow
+  `query` to find the current operation name.
 
 When a tool is operation-backed, `toolbox.describe` includes the operation name,
 category, grant policy, and a pointer to `operation.describe`. Agents should ask

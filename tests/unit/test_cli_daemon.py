@@ -110,6 +110,88 @@ def test_wait_for_daemon_uses_health_endpoint(monkeypatch: pytest.MonkeyPatch) -
     assert calls == [("127.0.0.1", 5180, 0.25), ("127.0.0.1", 5180, 0.25)]
 
 
+def test_mcp_bridge_workspace_hints_rejects_filesystem_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STACKOS_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+
+    assert daemon_cli._mcp_bridge_workspace_hints(Path("/")) == {}
+
+
+@pytest.mark.parametrize("source", ["cwd", "explicit", "env", "claude"])
+def test_mcp_bridge_workspace_hints_rejects_app_bundle_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    app_resources = tmp_path / "StackOS.app" / "Contents" / "Resources"
+    app_resources.mkdir(parents=True)
+    safe_root = tmp_path / "safe-project"
+    safe_root.mkdir()
+    monkeypatch.delenv("STACKOS_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    cwd = app_resources if source == "cwd" else safe_root
+    explicit_root = app_resources if source == "explicit" else None
+    if source == "env":
+        monkeypatch.setenv("STACKOS_WORKSPACE_ROOT", str(app_resources))
+    if source == "claude":
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(app_resources))
+
+    hints = daemon_cli._mcp_bridge_workspace_hints(cwd, workspace_root=explicit_root)
+
+    assert hints == {}
+
+
+def test_mcp_bridge_workspace_hints_prefers_claude_project_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_dir = tmp_path / "site"
+    project_dir.mkdir()
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
+    monkeypatch.setattr(daemon_cli, "_git_output", lambda *_args: None)
+
+    hints = daemon_cli._mcp_bridge_workspace_hints(Path("/"))
+
+    assert hints["cwd"] == str(project_dir.resolve())
+    assert hints["repo_fingerprint"].startswith("path:")
+
+
+def test_mcp_bridge_workspace_hints_prefers_explicit_workspace_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    explicit_root = tmp_path / "chosen-workspace"
+    explicit_root.mkdir()
+    claude_root = tmp_path / "claude-workspace"
+    claude_root.mkdir()
+    monkeypatch.setenv("STACKOS_WORKSPACE_ROOT", str(claude_root))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(claude_root))
+    monkeypatch.setattr(daemon_cli, "_git_output", lambda *_args: None)
+
+    hints = daemon_cli._mcp_bridge_workspace_hints(
+        Path("/"),
+        workspace_root=explicit_root,
+    )
+
+    assert hints["cwd"] == str(explicit_root.resolve())
+
+
+def test_mcp_bridge_workspace_hints_uses_env_workspace_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_dir = tmp_path / "operator-selected"
+    project_dir.mkdir()
+    monkeypatch.setenv("STACKOS_WORKSPACE_ROOT", str(project_dir))
+    monkeypatch.setattr(daemon_cli, "_git_output", lambda *_args: None)
+
+    hints = daemon_cli._mcp_bridge_workspace_hints(Path("/"))
+
+    assert hints["cwd"] == str(project_dir.resolve())
+
+
 def test_launchd_bootout_waits_until_job_is_unloaded(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,

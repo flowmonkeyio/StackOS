@@ -200,6 +200,49 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "tool_names" in describe_tool["inputSchema"]["properties"]
 
 
+def test_bridge_discovers_hidden_operations_with_compact_grouped_list(
+    mcp_client: MCPClient,
+) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+
+    described = _structured(
+        _tool_call(proxy, client, "toolbox.describe", {}, request_id="describe")
+    )
+    assert described["described_tools"] == []
+    assert described["discovery"]["next_calls"][0]["arguments"] == {
+        "tool_name": "operation.list",
+        "arguments": {
+            "surface": "mcp",
+            "mode": "grouped",
+            "response_mode": "compact",
+        },
+    }
+    assert "inputSchema" not in json.dumps(described)
+
+    listed = _structured(
+        _toolbox_call(
+            proxy,
+            client,
+            "operation.list",
+            {"surface": "mcp", "mode": "grouped", "response_mode": "compact"},
+            request_id="operation-list",
+        )
+    )
+    data = _operation_data(listed)
+    groups = data["groups"]
+    names = {
+        operation_name for group in groups for operation_name in group.get("operation_names", [])
+    }
+
+    assert "operation.list" in names
+    assert "tracker.status" in names
+    assert "runPlan.create" in names
+    assert "action.execute" in names
+    assert all(group["count"] == len(group["operation_names"]) for group in groups)
+    assert "inputSchema" not in json.dumps(data)
+
+
 def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient) -> None:
     project_id = _create_project(mcp_client, "bridge-compact-project")
     mcp_client.call_tool_structured(
@@ -655,6 +698,43 @@ def test_bridge_unbound_workspace_autobootstraps_and_unlocks_project_scoped_tool
     assert refreshed["project_id"] == resolved["project_id"]
     assert project_scoped_after_refresh["result"]["isError"] is False
     assert bindings_data["items"][0]["project_id"] == resolved["project_id"]
+
+
+def test_bridge_app_bundle_cwd_does_not_autobootstrap_workspace(
+    mcp_client: MCPClient,
+) -> None:
+    proxy, client = _scoped_bridge(
+        mcp_client,
+        cwd="/Applications/StackOS.app/Contents/Resources",
+        repo_fingerprint="path:app-bundle-runtime",
+    )
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    project_scoped = _toolbox_call(
+        proxy,
+        client,
+        "workflowTemplate.list",
+        {},
+        request_id="workflow-template-list-app-bundle",
+    )
+    resolved = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "workspace.resolve",
+            {},
+            request_id="resolve-app-bundle",
+        )
+    )
+    bindings = mcp_client.call_tool_structured("workspace.listBindings", {})
+
+    assert _is_bridge_scope_error(project_scoped)
+    assert resolved["project_id"] is None
+    assert resolved["data"]["project_id"] is None
+    assert resolved["data"].get("workspace_binding_id") is None
+    assert resolved["data"]["needs_connect"] is True
+    assert bindings["items"] == []
 
 
 def test_bridge_toolbox_bootstrap_promotes_workspace_scope(

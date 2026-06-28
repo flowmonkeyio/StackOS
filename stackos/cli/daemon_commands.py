@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -17,7 +16,13 @@ from typing import Annotated
 import typer
 
 from stackos.config import Settings, get_settings
+from stackos.host_mcp.bridge import WORKSPACE_ROOT_ENV
 from stackos.mcp.bridge import AgentBridgeProxy, bridge_error
+from stackos.workspace_identity import (
+    is_usable_workspace_root,
+    normalize_path,
+    path_fingerprint,
+)
 
 from .app import app, autostart_app
 from .constants import _LAUNCHD_LABEL, _LOOPBACK_HOSTS
@@ -526,15 +531,37 @@ def _git_output(cwd: Path, args: list[str]) -> str | None:
     return value or None
 
 
-def _mcp_bridge_workspace_hints(cwd: Path) -> dict[str, str]:
-    root = _git_output(cwd, ["rev-parse", "--show-toplevel"])
-    workspace_root = Path(root).resolve() if root else cwd.resolve()
-    remote = _git_output(workspace_root, ["config", "--get", "remote.origin.url"])
-    fingerprint_source = str(workspace_root)
-    digest = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()[:24]
+def _usable_workspace_root(path: Path) -> Path | None:
+    resolved = normalize_path(path)
+    if not resolved or not is_usable_workspace_root(resolved):
+        return None
+    return Path(resolved)
+
+
+def _mcp_bridge_workspace_hints(
+    cwd: Path,
+    *,
+    workspace_root: Path | None = None,
+) -> dict[str, str]:
+    # Claude Code supplies the real project root for stdio MCP servers. Claude
+    # Desktop does not, so process cwd is only a fallback hint. The selected
+    # directory is the workspace identity; Git remote is optional metadata.
+    env_workspace_root = os.environ.get(WORKSPACE_ROOT_ENV)
+    candidate = (
+        workspace_root
+        or (Path(env_workspace_root) if env_workspace_root else None)
+        or Path(os.environ.get("CLAUDE_PROJECT_DIR") or cwd)
+    )
+    resolved_root = _usable_workspace_root(candidate)
+    if resolved_root is None:
+        return {}
+    remote = _git_output(resolved_root, ["config", "--get", "remote.origin.url"])
+    fingerprint = path_fingerprint(resolved_root)
+    if fingerprint is None:
+        return {}
     hints = {
-        "cwd": str(workspace_root),
-        "repo_fingerprint": f"path:{digest}",
+        "cwd": str(resolved_root),
+        "repo_fingerprint": fingerprint,
     }
     if remote:
         hints["git_remote_url"] = remote
@@ -1017,6 +1044,25 @@ def mcp_bridge(
         int | None,
         typer.Option("--port", help="Daemon port; defaults to configured daemon port."),
     ] = None,
+    data_dir: Annotated[
+        Path | None,
+        typer.Option("--data-dir", help="StackOS data dir for this bridge session."),
+    ] = None,
+    state_dir: Annotated[
+        Path | None,
+        typer.Option("--state-dir", help="StackOS state dir for this bridge session."),
+    ] = None,
+    runtime: Annotated[
+        str,
+        typer.Option("--runtime", help="Agent host runtime label for workspace sessions."),
+    ] = "codex",
+    workspace_root: Annotated[
+        Path | None,
+        typer.Option(
+            "--workspace-root",
+            help="Explicit directory to use as this bridge session's StackOS workspace.",
+        ),
+    ] = None,
 ) -> None:
     """Bridge plugin stdio MCP traffic to the singleton HTTP daemon.
 
@@ -1026,6 +1072,10 @@ def mcp_bridge(
     """
     import httpx
 
+    if data_dir is not None:
+        os.environ["STACKOS_DATA_DIR"] = str(data_dir)
+    if state_dir is not None:
+        os.environ["STACKOS_STATE_DIR"] = str(state_dir)
     settings = get_settings()
     settings.ensure_dirs()
     bridge_host = host or settings.host
@@ -1046,11 +1096,11 @@ def mcp_bridge(
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
     }
-    workspace_hints = _mcp_bridge_workspace_hints(Path.cwd())
+    workspace_hints = _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
     proxy = AgentBridgeProxy(
         url=url,
         headers=headers,
-        runtime="codex",
+        runtime=runtime or "codex",
         client_session_id=f"stackos-bridge:{os.getpid()}",
         **workspace_hints,
     )

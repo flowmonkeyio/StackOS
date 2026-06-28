@@ -187,7 +187,7 @@ class AgentBridgeProxy:
         if self.workspace_scope_checked:
             return
         self.workspace_scope_checked = True
-        if not any((self.cwd, self.repo_fingerprint, self.git_remote_url, self.client_session_id)):
+        if not self._has_workspace_hints():
             return
         arguments: dict[str, Any] = {"runtime": self.runtime}
         if self.cwd:
@@ -220,7 +220,7 @@ class AgentBridgeProxy:
             self.workspace_scope_error = None
 
     def _has_workspace_hints(self) -> bool:
-        return any((self.cwd, self.repo_fingerprint, self.git_remote_url, self.client_session_id))
+        return any((self.cwd, self.repo_fingerprint, self.git_remote_url))
 
     def _injected_fields(self) -> set[str]:
         fields: set[str] = set()
