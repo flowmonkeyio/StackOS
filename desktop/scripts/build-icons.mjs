@@ -49,11 +49,18 @@ function buildIcns() {
   if (!fs.existsSync(sourcePngPath)) {
     throw new Error(`stackos icon: source PNG missing at ${sourcePngPath}`);
   }
+  if (fs.existsSync(iconIcnsPath)) {
+    const sourceStat = fs.statSync(sourcePngPath);
+    const iconStat = fs.statSync(iconIcnsPath);
+    if (iconStat.size > 0 && iconStat.mtimeMs >= sourceStat.mtimeMs) {
+      return "current";
+    }
+  }
   if (process.platform !== "darwin") {
     if (!fs.existsSync(iconIcnsPath)) {
       console.warn("stackos icon: skipping .icns generation outside macOS");
     }
-    return;
+    return "skipped";
   }
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-icon-"));
@@ -69,10 +76,15 @@ function buildIcns() {
       ]);
     }
     run("iconutil", ["-c", "icns", "-o", iconIcnsPath, iconsetDir]);
+    return "synced";
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
-buildIcns();
-console.log(`stackos icon synced from ${path.relative(repoRoot, sourcePngPath)}`);
+const status = buildIcns();
+if (status === "current") {
+  console.log(`stackos icon current at ${path.relative(repoRoot, iconIcnsPath)}`);
+} else if (status === "synced") {
+  console.log(`stackos icon synced from ${path.relative(repoRoot, sourcePngPath)}`);
+}
