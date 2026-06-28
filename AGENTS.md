@@ -135,7 +135,16 @@ work, start here:
   `workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. Project
   setup, workflows, run plans, tracker, auth, resources, communications, and
   actions are called through the scoped toolbox. Use `toolbox.describe` with
-  exact `tool_names`; do not request broad schemas unless debugging.
+  exact `tool_names`; do not request broad schemas. If operation names are not
+  clear, call `operation.list` through `toolbox.call` with `mode="grouped"` and
+  `response_mode="compact"`, then describe only the exact operations needed.
+- Project workflow setup must follow the workflow contract, not tracker prose:
+  bind the workspace, describe the workflow, resolve required skill/agent
+  presets, check readiness, validate/upsert the project extension, then prove
+  the path with a run-plan create/validate smoke when resumability matters.
+  `workflowExtension.upsert` preserves omitted fields by default; use
+  `clear_fields_json` with merge for field-level clearing, or
+  `update_mode="replace"` only for reviewed full rewrites.
 - Agent-facing MCP setup/discovery responses are compact by default when the
   operation policy allows it. Use `response_mode=raw`,
   `response_mode=standard`, or `response_mode=verbose` only when full daemon

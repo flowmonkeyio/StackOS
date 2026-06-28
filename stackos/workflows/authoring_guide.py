@@ -271,13 +271,20 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
         ],
         decision_path=[
             "Choose the workflow identity: new template, project extension, or one-off run plan.",
+            "For a host project setup, call workspace.startSession first. If project "
+            "identity is required, bind or create the intended StackOS workspace through "
+            "toolbox.call for workspace.connect or workspace.bootstrap; do not rely on "
+            "a global active project or last-used fallback.",
             "Draft the reusable contract with stable key, inputs, bounded context, "
             "agent/skill requirements, action/resource contracts, policies, approval "
             "gates, ordered steps, outputs, learning hooks, and failure handling.",
             "Validate drafts with workflowTemplate.validate before saving, forking, or "
             "creating a run.",
-            "For project-specific setup on an existing workflow, validate and save a "
-            "workflow extension instead of copying the template.",
+            "For project-specific setup on an existing workflow, describe the workflow, "
+            "resolve agent/skill presets, check readiness, then validate and save a "
+            "workflow extension instead of copying the template. workflowExtension.upsert "
+            "preserves omitted fields by default; use clear_fields_json with merge for "
+            "field-level clearing or update_mode='replace' for reviewed full rewrites.",
             "Before execution, describe the effective workflow, resolve agent and skill "
             "presets, check readiness, create and validate a run plan, then execute "
             "through step-scoped grants.",
@@ -329,8 +336,16 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "success_criteria, or metadata",
             "Atomic top-level workflow field overrides such as agent_requirements, "
             "skill_requirements, skill_preset_requirements, policies, approval_gates, or steps",
+            "Setup-time context that should be merged into future run plans. Run-plan resources, "
+            "artifacts, decisions, learnings, and actions are written later only inside "
+            "a started run with explicit step grants.",
         ],
         execution_path=[
+            "workspace.startSession",
+            "toolbox.call for workspace.connect or workspace.bootstrap only when "
+            "project identity selection is required",
+            "toolbox.call for operation.list with mode=grouped and response_mode=compact "
+            "when operation names are not clear",
             "workflowTemplate.authoringGuide",
             "workflowTemplate.validate",
             "workflowTemplate.save or workflowTemplate.fork only with explicit "

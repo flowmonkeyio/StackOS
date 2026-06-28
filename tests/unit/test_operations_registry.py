@@ -194,6 +194,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "standard",
         "verbose",
     ]
+    assert operation_list.input_schema["properties"]["mode"]["default"] == "grouped"
     assert any(
         "available StackOS operation inventory" in item for item in operation_list.when_to_use
     )

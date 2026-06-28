@@ -40,8 +40,9 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
                     "include_schemas": {
                         "type": "boolean",
                         "description": (
-                            "Diagnostics only. When true and tool_names is omitted, include all "
-                            "currently allowed tool names and schemas."
+                            "Diagnostics only. When true, tool_names must contain exact tool "
+                            "names. Broad schema dumps are rejected; use operation.list grouped "
+                            "compact discovery first."
                         ),
                         "default": False,
                     },

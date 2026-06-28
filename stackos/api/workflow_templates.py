@@ -15,6 +15,7 @@ from stackos.workflows.template_loader import (
     WorkflowTemplateExtensionDeleteOut,
     WorkflowTemplateExtensionListOut,
     WorkflowTemplateExtensionOut,
+    WorkflowTemplateExtensionUpsertOut,
     WorkflowTemplateExtensionValidationOut,
     WorkflowTemplateListOut,
     WorkflowTemplateLoader,
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["workflow-templ
 class WorkflowTemplateExtensionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = True
+    enabled: bool | None = None
     input_defaults_json: dict[str, Any] | None = None
     selected_context_json: dict[str, Any] | None = None
     required_input_keys_json: list[str] | None = None
@@ -34,6 +35,8 @@ class WorkflowTemplateExtensionBody(BaseModel):
     step_overrides_json: dict[str, Any] | None = None
     template_overrides_json: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None = None
+    update_mode: str = "merge"
+    clear_fields_json: list[str] | None = None
     plugin_slug: str | None = None
     source: str | None = None
     created_by: str | None = None
@@ -112,16 +115,30 @@ async def validate_workflow_template_extension(
     session: Session = Depends(get_session),
 ) -> WorkflowTemplateExtensionValidationOut:
     """Validate a project workflow extension without saving it."""
+    provided = body.model_fields_set
     return WorkflowTemplateLoader(session).validate_extension(
         project_id=project_id,
         workflow_key=template_key,
-        input_defaults_json=body.input_defaults_json,
-        selected_context_json=body.selected_context_json,
-        required_input_keys_json=body.required_input_keys_json,
-        guardrails_json=body.guardrails_json,
-        step_overrides_json=body.step_overrides_json,
-        template_overrides_json=body.template_overrides_json,
-        metadata_json=body.metadata_json,
+        enabled=body.enabled if "enabled" in provided else None,
+        input_defaults_json=(
+            body.input_defaults_json if "input_defaults_json" in provided else None
+        ),
+        selected_context_json=(
+            body.selected_context_json if "selected_context_json" in provided else None
+        ),
+        required_input_keys_json=(
+            body.required_input_keys_json if "required_input_keys_json" in provided else None
+        ),
+        guardrails_json=body.guardrails_json if "guardrails_json" in provided else None,
+        step_overrides_json=(
+            body.step_overrides_json if "step_overrides_json" in provided else None
+        ),
+        template_overrides_json=(
+            body.template_overrides_json if "template_overrides_json" in provided else None
+        ),
+        metadata_json=body.metadata_json if "metadata_json" in provided else None,
+        update_mode=body.update_mode,
+        clear_fields_json=body.clear_fields_json,
         plugin_slug=body.plugin_slug,
         source=body.source,
     )
@@ -129,31 +146,44 @@ async def validate_workflow_template_extension(
 
 @router.put(
     "/workflow-templates/{template_key}/extension",
-    response_model=WriteEnvelope[WorkflowTemplateExtensionOut],
+    response_model=WriteEnvelope[WorkflowTemplateExtensionUpsertOut],
 )
 async def upsert_workflow_template_extension(
     project_id: int,
     template_key: str,
     body: WorkflowTemplateExtensionBody,
     session: Session = Depends(get_session),
-) -> WriteEnvelope[WorkflowTemplateExtensionOut]:
+) -> WriteEnvelope[WorkflowTemplateExtensionUpsertOut]:
     """Save project workflow configuration for one template."""
+    provided = body.model_fields_set
     env = WorkflowTemplateLoader(session).upsert_extension(
         project_id=project_id,
         workflow_key=template_key,
-        enabled=body.enabled,
-        input_defaults_json=body.input_defaults_json,
-        selected_context_json=body.selected_context_json,
-        required_input_keys_json=body.required_input_keys_json,
-        guardrails_json=body.guardrails_json,
-        step_overrides_json=body.step_overrides_json,
-        template_overrides_json=body.template_overrides_json,
-        metadata_json=body.metadata_json,
+        enabled=body.enabled if "enabled" in provided else None,
+        input_defaults_json=(
+            body.input_defaults_json if "input_defaults_json" in provided else None
+        ),
+        selected_context_json=(
+            body.selected_context_json if "selected_context_json" in provided else None
+        ),
+        required_input_keys_json=(
+            body.required_input_keys_json if "required_input_keys_json" in provided else None
+        ),
+        guardrails_json=body.guardrails_json if "guardrails_json" in provided else None,
+        step_overrides_json=(
+            body.step_overrides_json if "step_overrides_json" in provided else None
+        ),
+        template_overrides_json=(
+            body.template_overrides_json if "template_overrides_json" in provided else None
+        ),
+        metadata_json=body.metadata_json if "metadata_json" in provided else None,
+        update_mode=body.update_mode,
+        clear_fields_json=body.clear_fields_json,
         plugin_slug=body.plugin_slug,
         source=body.source,
         created_by=body.created_by,
     )
-    return WriteEnvelope[WorkflowTemplateExtensionOut](
+    return WriteEnvelope[WorkflowTemplateExtensionUpsertOut](
         data=env.data,
         project_id=env.project_id,
     )

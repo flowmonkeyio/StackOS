@@ -25,6 +25,7 @@ from stackos.mcp.bridge import (
     _bridge_forward_arguments,
     _bridge_toolbox_describe,
 )
+from stackos.mcp.bridge.catalog import _bridge_toolbox_specs
 from stackos.mcp.contract import verb_is_mutating
 from stackos.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
 from stackos.mcp.server import STACKOS_MCP_INSTRUCTIONS, ToolRegistry, _to_tool
@@ -513,6 +514,41 @@ def test_bridge_toolbox_describe_without_names_returns_discovery_recipe() -> Non
         "arguments": {"tool_names": ["tracker.status"]},
     }
     assert "inputSchema" not in json.dumps(payload)
+
+
+def test_bridge_toolbox_describe_rejects_broad_schema_dump_without_exact_names() -> None:
+    catalog = {
+        "operation.list": _tool("operation.list", operation_name="operation.list"),
+        "tracker.status": _tool("tracker.status", operation_name="tracker.status"),
+    }
+
+    response = _bridge_toolbox_describe(
+        42,
+        catalog=catalog,
+        arguments={"include_schemas": True},
+        run_id=None,
+        allowed_by_run={},
+    )
+    envelope = json.loads(response)
+    payload = envelope["result"]["structuredContent"]
+
+    assert envelope["result"]["isError"] is True
+    assert payload["described_tools"] == []
+    assert payload["error"]["code"] == "broad_schema_dump_requires_tool_names"
+    assert payload["error"]["next_actions"][0]["arguments"]["tool_name"] == "operation.list"
+    assert "available_tool_names" not in payload
+    assert "inputSchema" not in json.dumps(payload)
+
+
+def test_bridge_toolbox_describe_virtual_schema_matches_scoped_schema_contract() -> None:
+    toolbox = next(
+        tool for tool in _bridge_toolbox_specs() if tool["name"] == "toolbox.describe"
+    )
+    include_description = toolbox["inputSchema"]["properties"]["include_schemas"]["description"]
+
+    assert "tool_names must contain exact tool" in include_description
+    assert "Broad schema dumps are rejected" in include_description
+    assert "include all" not in include_description
 
 
 def test_bridge_toolbox_allows_daemon_registered_direct_operations() -> None:
@@ -1146,12 +1182,16 @@ def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
             ProgressEmitter(None, None),
         )
     )
-    listed_names = {item.name for item in listed.items}
+    listed_names = {
+        operation_name
+        for group in listed.groups
+        for operation_name in group.operation_names
+    }
+    assert listed.items == []
     assert "operation.list" in listed_names
     assert "operation.describe" in listed_names
     assert "schema.get" in listed_names
     assert "communication.send" in listed_names
-    assert all(item.surfaces["mcp"].enabled for item in listed.items)
 
     described = asyncio.run(
         describe_spec.handler(

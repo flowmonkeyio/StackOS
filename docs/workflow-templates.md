@@ -336,7 +336,10 @@ run. It can provide:
 Extensions do not duplicate or shadow the base workflow identity. They can
 bind run setup and can override any workflow template field atomically for the
 project. Use `workflowExtension.validate` before saving, then
-`workflowExtension.upsert` to persist reviewed project setup. Use
+`workflowExtension.upsert` to persist reviewed project setup. Upserts are safe
+partial updates by default: omitted fields are preserved. Use
+`clear_fields_json` to intentionally clear a field, or `update_mode="replace"`
+only for a reviewed full rewrite because omitted fields reset to defaults. Use
 `workflowExtension.get` or the Workflow Templates UI to inspect the extension;
 use `workflowExtension.delete` to remove stale or test setup entirely. Use
 `workflowTemplate.describe` to inspect the effective workflow after enabled
@@ -357,6 +360,35 @@ provide the full desired list rather than a partial fragment. Do not invent a
 new context-sharing field for agent guidance; use `selected_context_json` for
 project context and the existing workflow requirement fields for agent/skill
 contracts.
+
+## Agent Project Setup Sequence
+
+For a host project such as Claude Desktop Cowork/Code, Codex, or Gemini, setup
+is not a README recipe and not a tracker-only task. The agent should:
+
+1. Start with the direct bridge tool `workspace.startSession`.
+2. If StackOS reports that project identity is required, use `toolbox.call` for
+   `workspace.connect` or `workspace.bootstrap` with an explicit project or
+   workspace alias. Do not rely on a global active project.
+3. Discover hidden operations with `toolbox.call` for `operation.list` using
+   `mode="grouped"` and `response_mode="compact"` when exact operation names
+   are not known.
+4. Use `toolbox.call` for `workflowTemplate.describe`.
+5. Use `toolbox.call` to resolve the workflow's
+   `skill_preset_requirements` and `agent_requirements` with the matching
+   preset operations.
+6. Use `toolbox.call` for `readiness.check`.
+7. Use `toolbox.call` to validate and save project-specific defaults with
+   `workflowExtension.validate` and `workflowExtension.upsert` when the project
+   needs stable context, route refs, guardrails, or adapted preset guidance.
+8. Create host-local guidance, skills, or agents only in the host project scope
+   when that host supports them. Do not install global domain behavior.
+9. Prove the path with `runPlan.validate` or `runPlan.create` from the
+   effective workflow before claiming the setup is resumable.
+
+Use workflow extensions for setup-time context that should be applied to future
+run plans. Use run-plan-gated resources, artifacts, decisions, learnings, and
+actions only after a run exists and the active step grants those writes.
 
 New workflow authoring is available through the contract interface:
 `workflowTemplate.validate`, `workflowTemplate.save`, `workflowTemplate.fork`,

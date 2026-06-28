@@ -19,7 +19,7 @@ from stackos.workflows import (
     WorkflowTemplateExtensionDeleteOut,
     WorkflowTemplateExtensionGetOut,
     WorkflowTemplateExtensionListOut,
-    WorkflowTemplateExtensionOut,
+    WorkflowTemplateExtensionUpsertOut,
     WorkflowTemplateExtensionValidationOut,
     WorkflowTemplateListOut,
     WorkflowTemplateLoader,
@@ -168,6 +168,10 @@ class WorkflowExtensionValidateInput(MCPInput):
 
     project_id: int
     workflow_key: str
+    enabled: bool | None = Field(
+        default=None,
+        description="Optional enabled state to validate. Omit to preserve existing state.",
+    )
     input_defaults_json: dict[str, Any] | None = None
     selected_context_json: dict[str, Any] | None = None
     required_input_keys_json: list[str] | None = None
@@ -175,13 +179,31 @@ class WorkflowExtensionValidateInput(MCPInput):
     step_overrides_json: dict[str, Any] | None = None
     template_overrides_json: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None = None
+    update_mode: str = Field(
+        default="merge",
+        pattern="^(merge|replace)$",
+        description=(
+            "merge validates the effective extension after preserving omitted existing "
+            "fields; replace validates a full rewrite where omitted fields reset."
+        ),
+    )
+    clear_fields_json: list[str] | None = Field(
+        default=None,
+        description="Extension JSON fields to intentionally clear during merge validation.",
+    )
     repo_root: str | None = None
     plugin_slug: str | None = None
     source: str | None = None
 
 
 class WorkflowExtensionUpsertInput(WorkflowExtensionValidateInput):
-    enabled: bool = True
+    enabled: bool | None = Field(
+        default=None,
+        description=(
+            "Optional enabled state to save. Omit to preserve an existing extension's state; "
+            "new extensions default to enabled."
+        ),
+    )
     created_by: str | None = None
 
 
@@ -291,16 +313,30 @@ async def _extension_validate(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WorkflowTemplateExtensionValidationOut:
+    provided = inp.model_fields_set
     return WorkflowTemplateLoader(ctx.session).validate_extension(
         project_id=inp.project_id,
         workflow_key=inp.workflow_key,
-        input_defaults_json=inp.input_defaults_json,
-        selected_context_json=inp.selected_context_json,
-        required_input_keys_json=inp.required_input_keys_json,
-        guardrails_json=inp.guardrails_json,
-        step_overrides_json=inp.step_overrides_json,
-        template_overrides_json=inp.template_overrides_json,
-        metadata_json=inp.metadata_json,
+        enabled=inp.enabled if "enabled" in provided else None,
+        input_defaults_json=(
+            inp.input_defaults_json if "input_defaults_json" in provided else None
+        ),
+        selected_context_json=(
+            inp.selected_context_json if "selected_context_json" in provided else None
+        ),
+        required_input_keys_json=(
+            inp.required_input_keys_json if "required_input_keys_json" in provided else None
+        ),
+        guardrails_json=inp.guardrails_json if "guardrails_json" in provided else None,
+        step_overrides_json=(
+            inp.step_overrides_json if "step_overrides_json" in provided else None
+        ),
+        template_overrides_json=(
+            inp.template_overrides_json if "template_overrides_json" in provided else None
+        ),
+        metadata_json=inp.metadata_json if "metadata_json" in provided else None,
+        update_mode=inp.update_mode,
+        clear_fields_json=inp.clear_fields_json,
         repo_root=inp.repo_root,
         plugin_slug=inp.plugin_slug,
         source=inp.source,
@@ -311,24 +347,37 @@ async def _extension_upsert(
     inp: WorkflowExtensionUpsertInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> WriteEnvelope[WorkflowTemplateExtensionOut]:
+) -> WriteEnvelope[WorkflowTemplateExtensionUpsertOut]:
+    provided = inp.model_fields_set
     env = WorkflowTemplateLoader(ctx.session).upsert_extension(
         project_id=inp.project_id,
         workflow_key=inp.workflow_key,
-        enabled=inp.enabled,
-        input_defaults_json=inp.input_defaults_json,
-        selected_context_json=inp.selected_context_json,
-        required_input_keys_json=inp.required_input_keys_json,
-        guardrails_json=inp.guardrails_json,
-        step_overrides_json=inp.step_overrides_json,
-        template_overrides_json=inp.template_overrides_json,
-        metadata_json=inp.metadata_json,
+        enabled=inp.enabled if "enabled" in provided else None,
+        input_defaults_json=(
+            inp.input_defaults_json if "input_defaults_json" in provided else None
+        ),
+        selected_context_json=(
+            inp.selected_context_json if "selected_context_json" in provided else None
+        ),
+        required_input_keys_json=(
+            inp.required_input_keys_json if "required_input_keys_json" in provided else None
+        ),
+        guardrails_json=inp.guardrails_json if "guardrails_json" in provided else None,
+        step_overrides_json=(
+            inp.step_overrides_json if "step_overrides_json" in provided else None
+        ),
+        template_overrides_json=(
+            inp.template_overrides_json if "template_overrides_json" in provided else None
+        ),
+        metadata_json=inp.metadata_json if "metadata_json" in provided else None,
+        update_mode=inp.update_mode,
+        clear_fields_json=inp.clear_fields_json,
         repo_root=inp.repo_root,
         plugin_slug=inp.plugin_slug,
         source=inp.source,
         created_by=inp.created_by,
     )
-    return WriteEnvelope[WorkflowTemplateExtensionOut](
+    return WriteEnvelope[WorkflowTemplateExtensionUpsertOut](
         data=env.data,
         run_id=ctx.run_id,
         project_id=env.project_id,

@@ -35,7 +35,7 @@ from stackos.workflows import (
     WorkflowTemplateExtensionDeleteOut,
     WorkflowTemplateExtensionGetOut,
     WorkflowTemplateExtensionListOut,
-    WorkflowTemplateExtensionOut,
+    WorkflowTemplateExtensionUpsertOut,
     WorkflowTemplateExtensionValidationOut,
     WorkflowTemplateListOut,
     WorkflowTemplateValidationOut,
@@ -127,9 +127,10 @@ def operation_specs():
             output_model=WorkflowTemplateExtensionValidationOut,
             handler=_extension_validate,
             purpose=(
-                "Use this before saving project workflow context. It validates the base "
-                "workflow exists, atomic template overrides resolve to a valid effective "
-                "workflow, step overrides reference real steps, and no raw secrets are embedded."
+                "Use this before saving project workflow context. It validates the effective "
+                "extension after applying merge/replace semantics, verifies the base workflow "
+                "exists, ensures atomic template overrides resolve to a valid workflow, checks "
+                "step overrides reference real steps, and rejects raw secrets."
             ),
             when_to_use=("An operator or agent is drafting project-specific workflow defaults.",),
             returns=("Validation status plus model-readable errors and warnings.",),
@@ -156,16 +157,21 @@ def operation_specs():
             name="workflowExtension.upsert",
             summary="Save a project workflow extension.",
             input_model=WorkflowExtensionUpsertInput,
-            output_model=WriteEnvelope[WorkflowTemplateExtensionOut],
+            output_model=WriteEnvelope[WorkflowTemplateExtensionUpsertOut],
             handler=_extension_upsert,
             purpose=(
                 "Use this for explicit project setup when the base workflow should stay "
                 "generic but a project needs stable route refs, default inputs, selected "
-                "context, guardrails, extra step guidance, or atomic workflow-field overrides."
+                "context, guardrails, extra step guidance, or atomic workflow-field overrides. "
+                "By default this is a safe partial update: omitted fields are preserved."
             ),
             prerequisites=(
                 "The referenced workflow template must exist.",
                 "Do not include raw secrets; store only safe refs and public/contextual guidance.",
+                "Use workflowExtension.validate first for reviewed setup.",
+                "Use update_mode='replace' only for a full reviewed rewrite; it clears "
+                "omitted fields.",
+                "Use clear_fields_json to intentionally clear fields during update_mode='merge'.",
             ),
             examples=(
                 OperationExample(
@@ -188,6 +194,16 @@ def operation_specs():
                         "template_overrides_json": {
                             "description": "Support investigation tuned for this project.",
                         },
+                        "update_mode": "merge",
+                    },
+                ),
+                OperationExample(
+                    title="Clear stale guardrails without replacing context",
+                    arguments={
+                        "project_id": 1,
+                        "workflow_key": "communications.customer-feedback-intake",
+                        "clear_fields_json": ["guardrails_json"],
+                        "update_mode": "merge",
                     },
                 ),
             ),

@@ -48,8 +48,11 @@ class OperationListInput(MCPInput):
         ),
     )
     mode: OperationListMode = Field(
-        default="standard",
-        description="standard returns summaries plus groups; grouped returns only compact groups.",
+        default="grouped",
+        description=(
+            "grouped returns compact category groups and operation names; standard returns "
+            "summaries plus groups. Agents should start with grouped and describe exact names."
+        ),
     )
 
 
@@ -129,23 +132,24 @@ def operation_specs() -> list[OperationSpec]:
                 "Use mode='grouped' for compact category counts and operation names.",
             ),
             returns=(
-                "Sorted operation summaries with surface availability, mutating/read-only flags, "
-                "grant policy, and secret policy.",
-                "Category groups so agents can browse by setup, tracker, workflow, resources, "
-                "auth, actions, communications, catalog, operations, or system.",
+                "By default, compact category groups so agents can browse by setup, tracker, "
+                "workflow, resources, auth, actions, communications, catalog, operations, "
+                "or system.",
+                "With mode='standard', sorted operation summaries with surface availability, "
+                "mutating/read-only flags, grant policy, and secret policy.",
             ),
             examples=(
                 OperationExample(
-                    title="List MCP operations",
-                    arguments={"surface": "mcp"},
+                    title="Browse compact MCP operation groups",
+                    arguments={"surface": "mcp", "mode": "grouped"},
                 ),
                 OperationExample(
-                    title="List action operations only",
-                    arguments={"category": "actions"},
+                    title="List action operation summaries only",
+                    arguments={"category": "actions", "mode": "standard"},
                 ),
                 OperationExample(
-                    title="Browse compact operation groups",
-                    arguments={"mode": "grouped"},
+                    title="Search compact operation groups",
+                    arguments={"query": "workspace"},
                 ),
             ),
             mutating=False,

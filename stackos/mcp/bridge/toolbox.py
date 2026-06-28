@@ -375,10 +375,11 @@ def _bridge_toolbox_describe(
     allowed = _bridge_allowed_tool_names(run_id, allowed_by_run, catalog=catalog)
     requested_raw = arguments.get("tool_names")
     requested: list[str]
+    broad_schema_request = arguments.get("include_schemas") is True and not isinstance(
+        requested_raw, list
+    )
     if isinstance(requested_raw, list):
         requested = [name for name in requested_raw if isinstance(name, str) and name]
-    elif arguments.get("include_schemas") is True:
-        requested = sorted(name for name in allowed if name in catalog)
     else:
         requested = []
 
@@ -433,6 +434,31 @@ def _bridge_toolbox_describe(
             "Use include_schemas=true only for debugging; it can return a large schema dump."
         ),
     }
+    if broad_schema_request:
+        payload = {
+            "visible_tool_names": direct_visible,
+            "active_step_tool_names": active_step_tools,
+            "run_plan_controller_tool_names": controller_tools,
+            "step_granted_tool_names": step_granted_tools,
+            "available_tool_count": len(available_tool_names),
+            "described_tools": [],
+            "error": {
+                "code": "broad_schema_dump_requires_tool_names",
+                "message": (
+                    "toolbox.describe include_schemas=true requires exact tool_names. "
+                    "Use operation.list grouped compact discovery first, then describe only "
+                    "the exact tools you intend to call."
+                ),
+                "next_actions": discovery["next_calls"],
+            },
+            "discovery": discovery,
+            "usage": (
+                "Use workspace.startSession to bind the current workspace, then use "
+                "toolbox.describe/toolbox.call for setup helpers, workflow tools, and active "
+                "run-plan step grants. Pass run_id when working inside a run plan."
+            ),
+        }
+        return _bridge_tool_result(request_id, payload, is_error=True)
     payload = {
         "visible_tool_names": direct_visible,
         "active_step_tool_names": active_step_tools,
@@ -465,6 +491,4 @@ def _bridge_toolbox_describe(
             "run-plan step grants. Pass run_id when working inside a run plan."
         ),
     }
-    if arguments.get("include_schemas") is True and not isinstance(requested_raw, list):
-        payload["available_tool_names"] = available_tool_names
     return _bridge_tool_result(request_id, payload, is_error=False)

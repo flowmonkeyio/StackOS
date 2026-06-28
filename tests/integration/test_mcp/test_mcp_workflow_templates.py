@@ -402,6 +402,72 @@ def test_workflow_extension_tools_configure_project_overlay(
     assert described["spec"]["description"] == "Project-specific support intake flow."
     assert described["summary"]["project_extension_enabled"] is True
 
+    disabled = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.upsert",
+            {
+                "project_id": project_id,
+                "workflow_key": "communications.customer-feedback-intake",
+                "plugin_slug": "communications",
+                "enabled": False,
+                "response_mode": "compact",
+            },
+        )
+    )
+    disabled_validation = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.validate",
+            {
+                "project_id": project_id,
+                "workflow_key": "communications.customer-feedback-intake",
+                "plugin_slug": "communications",
+                "metadata_json": {"owner": "still-disabled"},
+            },
+        )
+    )
+    disabled_patched = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.upsert",
+            {
+                "project_id": project_id,
+                "workflow_key": "communications.customer-feedback-intake",
+                "plugin_slug": "communications",
+                "metadata_json": {"owner": "still-disabled"},
+                "response_mode": "compact",
+            },
+        )
+    )
+    after_disabled_patch = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.get",
+            {
+                "project_id": project_id,
+                "workflow_key": "communications.customer-feedback-intake",
+            },
+        )
+    )
+    invalid_clear = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowExtension.validate",
+            {
+                "project_id": project_id,
+                "workflow_key": "communications.customer-feedback-intake",
+                "plugin_slug": "communications",
+                "update_mode": "replace",
+                "clear_fields_json": ["guardrails_json"],
+            },
+        )
+    )
+
+    assert disabled["enabled"] is False
+    assert disabled_validation["valid"] is True
+    assert disabled_patched["enabled"] is False
+    assert "metadata_json" in disabled_patched["changed_fields"]
+    assert "enabled" in disabled_patched["preserved_fields"]
+    assert after_disabled_patch["extension"]["metadata_json"] == {"owner": "still-disabled"}
+    assert invalid_clear["valid"] is False
+    assert invalid_clear["errors"][0]["code"] == "clear_fields_requires_merge"
+
     deleted = _operation_data(
         mcp_client.call_tool_structured(
             "workflowExtension.delete",

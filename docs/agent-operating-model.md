@@ -84,6 +84,24 @@ to the host agent, not the daemon. The workflow and preset responses should
 tell the agent what roles are needed; the host-local format decides how those
 roles are materialized.
 
+Desktop project hosts such as Claude Desktop Cowork/Code should follow the
+same split. StackOS install/repair owns neutral connectivity only: daemon
+state, MCP registration, and the generic StackOS mechanics skill when the host
+uses skills. Domain workflow behavior should be project-local and
+agent-authored. The operator should open or create a real host project for the
+business work, then ask the host agent to set up that project for a named
+StackOS workflow. The agent must resolve the workflow template, skill preset,
+and agent presets, adapt them to the project, and create the host-local
+guidance, skill, or agent files that future sessions in that host project will
+load. It must not write global domain guidance, create tracker-only recipe
+tasks, or rely on a global active project.
+
+For folderless or plain chat sessions, do not invent a project-local install
+target. Bind by explicit `workspace_alias` or project identity, execute with
+the resolved workflow and presets in the current session, and ask the operator
+to move durable recurring work into a real host project when they want future
+sessions to resume reliably.
+
 When a host supports skills, workflow templates may recommend `stackos:stackos`.
 That skill teaches agents how to use StackOS MCP, operations, workflow
 templates, run plans, tracker tasks/tickets, dependencies, and evidence. The

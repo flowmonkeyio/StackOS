@@ -691,6 +691,100 @@ def test_project_workflow_extension_layers_over_base_template(
     )
 
 
+def test_project_workflow_extension_upsert_preserves_omitted_fields_by_default(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = WorkflowTemplateLoader(session)
+    saved = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        input_defaults_json={"communication_route_ref": "communication-route:support-feedback"},
+        selected_context_json={"audience": "support"},
+        guardrails_json={"private_customer_data": False},
+        metadata_json={"owner": "support"},
+        created_by="unit-test",
+    ).data
+
+    patched = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        metadata_json={"owner": "ops"},
+    ).data
+
+    assert saved.selected_context_json == {"audience": "support"}
+    assert patched.update_mode == "merge"
+    assert patched.metadata_json == {"owner": "ops"}
+    assert patched.input_defaults_json == {
+        "communication_route_ref": "communication-route:support-feedback"
+    }
+    assert patched.selected_context_json == {"audience": "support"}
+    assert patched.guardrails_json == {"private_customer_data": False}
+    assert patched.changed_fields == ["metadata_json"]
+    assert "selected_context_json" in patched.preserved_fields
+    assert patched.cleared_fields == []
+
+    cleared = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        clear_fields_json=["guardrails_json"],
+    ).data
+
+    assert cleared.guardrails_json == {}
+    assert cleared.selected_context_json == {"audience": "support"}
+    assert cleared.cleared_fields == ["guardrails_json"]
+
+    replaced = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        update_mode="replace",
+        metadata_json={"owner": "replace"},
+    ).data
+
+    assert replaced.metadata_json == {"owner": "replace"}
+    assert replaced.selected_context_json == {}
+    assert "selected_context_json" in replaced.cleared_fields
+    assert replaced.warnings[0].code == "replace_cleared_omitted_fields"
+
+    disabled = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        enabled=False,
+    ).data
+    disable_validation = repo.validate_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        metadata_json={"owner": "still-disabled"},
+    )
+    disabled_patched = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        metadata_json={"owner": "still-disabled"},
+    ).data
+
+    assert disabled.enabled is False
+    assert disable_validation.valid is True
+    assert disabled_patched.enabled is False
+
+    invalid_clear = repo.validate_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        update_mode="replace",
+        clear_fields_json=["guardrails_json"],
+    )
+
+    assert invalid_clear.valid is False
+    assert invalid_clear.errors[0].code == "clear_fields_requires_merge"
+
+
 def test_project_workflow_extension_validation_rejects_identity_change(
     session: Session,
     project_id: int,

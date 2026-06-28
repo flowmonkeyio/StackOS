@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
@@ -48,6 +49,17 @@ _TEMPLATE_OVERRIDE_ALIASES = {
     "extensions": "extensions_json",
     "ui": "ui_json",
 }
+_EXTENSION_JSON_FIELD_DEFAULTS: dict[str, Any] = {
+    "input_defaults_json": {},
+    "selected_context_json": {},
+    "required_input_keys_json": [],
+    "guardrails_json": {},
+    "step_overrides_json": {},
+    "template_overrides_json": {},
+    "metadata_json": {},
+}
+_EXTENSION_JSON_FIELDS = frozenset(_EXTENSION_JSON_FIELD_DEFAULTS)
+_EXTENSION_UPDATE_MODES = frozenset({"merge", "replace"})
 
 
 def _utcnow() -> datetime:
@@ -136,6 +148,14 @@ class WorkflowTemplateExtensionOut(BaseModel):
     created_by: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class WorkflowTemplateExtensionUpsertOut(WorkflowTemplateExtensionOut):
+    update_mode: str = "merge"
+    changed_fields: list[str] = Field(default_factory=list)
+    preserved_fields: list[str] = Field(default_factory=list)
+    cleared_fields: list[str] = Field(default_factory=list)
+    warnings: list[WorkflowTemplateIssue] = Field(default_factory=list)
 
 
 class WorkflowTemplateExtensionListOut(BaseModel):
@@ -343,11 +363,107 @@ class WorkflowTemplateLoader:
             project_id=project_id,
         )
 
+    def _extension_update_issues(
+        self,
+        *,
+        update_mode: str,
+        clear_fields_json: list[str] | None,
+    ) -> list[WorkflowTemplateIssue]:
+        issues: list[WorkflowTemplateIssue] = []
+        if update_mode not in _EXTENSION_UPDATE_MODES:
+            issues.append(
+                WorkflowTemplateIssue(
+                    path="update_mode",
+                    code="invalid_update_mode",
+                    message=(
+                        "update_mode must be one of "
+                        f"{', '.join(sorted(_EXTENSION_UPDATE_MODES))}"
+                    ),
+                )
+            )
+        if update_mode == "replace" and clear_fields_json:
+            issues.append(
+                WorkflowTemplateIssue(
+                    path="clear_fields_json",
+                    code="clear_fields_requires_merge",
+                    message="clear_fields_json is only valid with update_mode='merge'",
+                )
+            )
+        invalid_clear_fields = [
+            field
+            for field in list(dict.fromkeys(clear_fields_json or []))
+            if field not in _EXTENSION_JSON_FIELDS
+        ]
+        if invalid_clear_fields:
+            issues.append(
+                WorkflowTemplateIssue(
+                    path="clear_fields_json",
+                    code="unknown_extension_field",
+                    message=(
+                        "clear_fields_json contains unknown extension fields: "
+                        f"{', '.join(invalid_clear_fields)}"
+                    ),
+                )
+            )
+        return issues
+
+    def _extension_current_values(
+        self,
+        row: WorkflowTemplateExtension | None,
+    ) -> dict[str, Any]:
+        if row is None:
+            return {
+                "enabled": True,
+                **{
+                    field: deepcopy(default)
+                    for field, default in _EXTENSION_JSON_FIELD_DEFAULTS.items()
+                },
+            }
+        return {
+            "enabled": row.enabled,
+            "input_defaults_json": deepcopy(row.input_defaults_json or {}),
+            "selected_context_json": deepcopy(row.selected_context_json or {}),
+            "required_input_keys_json": deepcopy(row.required_input_keys_json or []),
+            "guardrails_json": deepcopy(row.guardrails_json or {}),
+            "step_overrides_json": deepcopy(row.step_overrides_json or {}),
+            "template_overrides_json": deepcopy(row.template_overrides_json or {}),
+            "metadata_json": deepcopy(row.metadata_json or {}),
+        }
+
+    def _compose_extension_update_values(
+        self,
+        *,
+        current: dict[str, Any],
+        enabled: bool | None,
+        provided_json: dict[str, Any],
+        update_mode: str,
+        clear_fields_json: list[str] | None,
+    ) -> dict[str, Any]:
+        if update_mode == "replace":
+            return {
+                "enabled": True if enabled is None else enabled,
+                **{
+                    field: deepcopy(provided_json[field])
+                    if field in provided_json
+                    else deepcopy(default)
+                    for field, default in _EXTENSION_JSON_FIELD_DEFAULTS.items()
+                },
+            }
+        desired = deepcopy(current)
+        if enabled is not None:
+            desired["enabled"] = enabled
+        for field, value in provided_json.items():
+            desired[field] = deepcopy(value)
+        for field in dict.fromkeys(clear_fields_json or []):
+            desired[field] = deepcopy(_EXTENSION_JSON_FIELD_DEFAULTS[field])
+        return desired
+
     def validate_extension(
         self,
         *,
         project_id: int,
         workflow_key: str,
+        enabled: bool | None = None,
         input_defaults_json: dict[str, Any] | None = None,
         selected_context_json: dict[str, Any] | None = None,
         required_input_keys_json: list[str] | None = None,
@@ -355,6 +471,8 @@ class WorkflowTemplateLoader:
         step_overrides_json: dict[str, Any] | None = None,
         template_overrides_json: dict[str, Any] | None = None,
         metadata_json: dict[str, Any] | None = None,
+        update_mode: str = "merge",
+        clear_fields_json: list[str] | None = None,
         repo_root: str | None = None,
         plugin_slug: str | None = None,
         source: str | None = None,
@@ -362,6 +480,12 @@ class WorkflowTemplateLoader:
         self._require_project(project_id)
         errors: list[WorkflowTemplateIssue] = []
         warnings: list[WorkflowTemplateIssue] = []
+        errors.extend(
+            self._extension_update_issues(
+                update_mode=update_mode,
+                clear_fields_json=clear_fields_json,
+            )
+        )
         if not _WORKFLOW_KEY_RE.match(workflow_key):
             errors.append(
                 WorkflowTemplateIssue(
@@ -391,14 +515,47 @@ class WorkflowTemplateLoader:
                     )
                 )
 
+        row = None
+        if not errors:
+            row = self._s.exec(
+                select(WorkflowTemplateExtension).where(
+                    WorkflowTemplateExtension.project_id == project_id,
+                    WorkflowTemplateExtension.workflow_key == workflow_key,
+                )
+            ).first()
+        provided_json = {
+            field: value
+            for field, value in {
+                "input_defaults_json": input_defaults_json,
+                "selected_context_json": selected_context_json,
+                "required_input_keys_json": required_input_keys_json,
+                "guardrails_json": guardrails_json,
+                "step_overrides_json": step_overrides_json,
+                "template_overrides_json": template_overrides_json,
+                "metadata_json": metadata_json,
+            }.items()
+            if value is not None
+        }
+        safe_update_mode = update_mode if update_mode in _EXTENSION_UPDATE_MODES else "merge"
+        safe_clear_fields = [
+            field for field in (clear_fields_json or []) if field in _EXTENSION_JSON_FIELDS
+        ]
+        desired = self._compose_extension_update_values(
+            current=self._extension_current_values(row),
+            enabled=enabled,
+            provided_json=provided_json,
+            update_mode=safe_update_mode,
+            clear_fields_json=safe_clear_fields,
+        )
+
         payloads = {
-            "input_defaults_json": input_defaults_json or {},
-            "selected_context_json": selected_context_json or {},
-            "required_input_keys_json": required_input_keys_json or [],
-            "guardrails_json": guardrails_json or {},
-            "step_overrides_json": step_overrides_json or {},
-            "template_overrides_json": template_overrides_json or {},
-            "metadata_json": metadata_json or {},
+            "input_defaults_json": desired["input_defaults_json"],
+            "selected_context_json": desired["selected_context_json"],
+            "required_input_keys_json": desired["required_input_keys_json"],
+            "guardrails_json": desired["guardrails_json"],
+            "step_overrides_json": desired["step_overrides_json"],
+            "template_overrides_json": desired["template_overrides_json"],
+            "metadata_json": desired["metadata_json"],
         }
         for label, value in payloads.items():
             paths = find_run_plan_secret_paths(value)
@@ -602,7 +759,7 @@ class WorkflowTemplateLoader:
         *,
         project_id: int,
         workflow_key: str,
-        enabled: bool = True,
+        enabled: bool | None = None,
         input_defaults_json: dict[str, Any] | None = None,
         selected_context_json: dict[str, Any] | None = None,
         required_input_keys_json: list[str] | None = None,
@@ -610,21 +767,69 @@ class WorkflowTemplateLoader:
         step_overrides_json: dict[str, Any] | None = None,
         template_overrides_json: dict[str, Any] | None = None,
         metadata_json: dict[str, Any] | None = None,
+        update_mode: str = "merge",
+        clear_fields_json: list[str] | None = None,
         repo_root: str | None = None,
         plugin_slug: str | None = None,
         source: str | None = None,
         created_by: str | None = None,
-    ) -> Envelope[WorkflowTemplateExtensionOut]:
+    ) -> Envelope[WorkflowTemplateExtensionUpsertOut]:
+        update_issues = self._extension_update_issues(
+            update_mode=update_mode,
+            clear_fields_json=clear_fields_json,
+        )
+        if update_issues:
+            raise ValidationError(
+                "workflow extension update is invalid",
+                data={
+                    "errors": [item.model_dump(mode="json") for item in update_issues],
+                    "allowed_update_modes": sorted(_EXTENSION_UPDATE_MODES),
+                    "clearable_fields": sorted(_EXTENSION_JSON_FIELDS),
+                },
+            )
+
+        now = _utcnow()
+        row = self._s.exec(
+            select(WorkflowTemplateExtension).where(
+                WorkflowTemplateExtension.project_id == project_id,
+                WorkflowTemplateExtension.workflow_key == workflow_key,
+            )
+        ).first()
+        existing = row is not None
+        current = self._extension_current_values(row)
+        provided_json = {
+            field: value
+            for field, value in {
+                "input_defaults_json": input_defaults_json,
+                "selected_context_json": selected_context_json,
+                "required_input_keys_json": required_input_keys_json,
+                "guardrails_json": guardrails_json,
+                "step_overrides_json": step_overrides_json,
+                "template_overrides_json": template_overrides_json,
+                "metadata_json": metadata_json,
+            }.items()
+            if value is not None
+        }
+        desired = self._compose_extension_update_values(
+            current=current,
+            enabled=enabled,
+            provided_json=provided_json,
+            update_mode=update_mode,
+            clear_fields_json=clear_fields_json,
+        )
+
         validation = self.validate_extension(
             project_id=project_id,
             workflow_key=workflow_key,
-            input_defaults_json=input_defaults_json,
-            selected_context_json=selected_context_json,
-            required_input_keys_json=required_input_keys_json,
-            guardrails_json=guardrails_json,
-            step_overrides_json=step_overrides_json,
-            template_overrides_json=template_overrides_json,
-            metadata_json=metadata_json,
+            enabled=desired["enabled"],
+            input_defaults_json=desired["input_defaults_json"],
+            selected_context_json=desired["selected_context_json"],
+            required_input_keys_json=desired["required_input_keys_json"],
+            guardrails_json=desired["guardrails_json"],
+            step_overrides_json=desired["step_overrides_json"],
+            template_overrides_json=desired["template_overrides_json"],
+            metadata_json=desired["metadata_json"],
+            update_mode="replace",
             repo_root=repo_root,
             plugin_slug=plugin_slug,
             source=source,
@@ -635,43 +840,77 @@ class WorkflowTemplateLoader:
                 data={"errors": [item.model_dump(mode="json") for item in validation.errors]},
             )
 
-        now = _utcnow()
-        row = self._s.exec(
-            select(WorkflowTemplateExtension).where(
-                WorkflowTemplateExtension.project_id == project_id,
-                WorkflowTemplateExtension.workflow_key == workflow_key,
-            )
-        ).first()
+        changed_fields = [
+            field
+            for field in ("enabled", *_EXTENSION_JSON_FIELDS)
+            if current.get(field) != desired.get(field)
+        ]
+        cleared_fields = [
+            field
+            for field in _EXTENSION_JSON_FIELDS
+            if current.get(field) not in (None, [], {})
+            and desired.get(field) == _EXTENSION_JSON_FIELD_DEFAULTS[field]
+        ]
+        preserved_fields = [
+            field
+            for field in ("enabled", *_EXTENSION_JSON_FIELDS)
+            if field not in changed_fields
+        ]
         if row is None:
             row = WorkflowTemplateExtension(
                 project_id=project_id,
                 workflow_key=workflow_key,
-                enabled=enabled,
-                input_defaults_json=input_defaults_json or {},
-                selected_context_json=selected_context_json or {},
-                required_input_keys_json=required_input_keys_json or [],
-                guardrails_json=guardrails_json or {},
-                step_overrides_json=step_overrides_json or {},
-                template_overrides_json=template_overrides_json or {},
-                metadata_json=metadata_json or {},
+                enabled=desired["enabled"],
+                input_defaults_json=desired["input_defaults_json"],
+                selected_context_json=desired["selected_context_json"],
+                required_input_keys_json=desired["required_input_keys_json"],
+                guardrails_json=desired["guardrails_json"],
+                step_overrides_json=desired["step_overrides_json"],
+                template_overrides_json=desired["template_overrides_json"],
+                metadata_json=desired["metadata_json"],
                 created_by=created_by,
             )
         else:
-            row.enabled = enabled
-            row.input_defaults_json = input_defaults_json or {}
-            row.selected_context_json = selected_context_json or {}
-            row.required_input_keys_json = required_input_keys_json or []
-            row.guardrails_json = guardrails_json or {}
-            row.step_overrides_json = step_overrides_json or {}
-            row.template_overrides_json = template_overrides_json or {}
-            row.metadata_json = metadata_json or {}
+            row.enabled = desired["enabled"]
+            row.input_defaults_json = desired["input_defaults_json"]
+            row.selected_context_json = desired["selected_context_json"]
+            row.required_input_keys_json = desired["required_input_keys_json"]
+            row.guardrails_json = desired["guardrails_json"]
+            row.step_overrides_json = desired["step_overrides_json"]
+            row.template_overrides_json = desired["template_overrides_json"]
+            row.metadata_json = desired["metadata_json"]
             if created_by is not None:
                 row.created_by = created_by
             row.updated_at = now
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=self._extension_out(row), project_id=project_id)
+        extension = self._extension_out(row).model_dump(mode="python")
+        extension.update(
+            {
+                "update_mode": update_mode,
+                "changed_fields": sorted(changed_fields),
+                "preserved_fields": sorted(preserved_fields),
+                "cleared_fields": sorted(cleared_fields),
+                "warnings": validation.warnings,
+            }
+        )
+        if existing and update_mode == "replace" and cleared_fields:
+            extension["warnings"] = [
+                *extension["warnings"],
+                WorkflowTemplateIssue(
+                    path="update_mode",
+                    code="replace_cleared_omitted_fields",
+                    message=(
+                        "update_mode='replace' cleared omitted workflow extension fields; "
+                        "use update_mode='merge' for partial updates."
+                    ),
+                ),
+            ]
+        return Envelope(
+            data=WorkflowTemplateExtensionUpsertOut.model_validate(extension),
+            project_id=project_id,
+        )
 
     def save_project_template(
         self,
@@ -1186,6 +1425,7 @@ __all__ = [
     "WorkflowTemplateExtensionGetOut",
     "WorkflowTemplateExtensionListOut",
     "WorkflowTemplateExtensionOut",
+    "WorkflowTemplateExtensionUpsertOut",
     "WorkflowTemplateExtensionValidationOut",
     "WorkflowTemplateListOut",
     "WorkflowTemplateLoader",
