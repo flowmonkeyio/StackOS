@@ -263,7 +263,9 @@ idempotent:
 
 1. Call `workspace.startSession` from the current repo/directory. It creates or
    reuses one project for that workspace root and stores the binding in the
-   daemon DB when no binding exists yet. It does not write files into the repo.
+   daemon DB when reliable directory identity exists. It does not write files
+   into the repo. Desktop/global hosts with no cwd/git signal stay unbound and
+   receive `candidate_workspaces`/project-selection guidance instead.
 2. Read the returned setup state carefully: `workspace_bound` or
    `project_scoped_tools_usable` means project-scoped tools can run. Missing
    `framework` or `content_model_json` means the project profile is
@@ -273,11 +275,12 @@ idempotent:
 4. Use `workspace.resolve` when the caller needs a read-only diagnostic before
    setup.
 5. Use `toolbox.call` for `project.list`, `project.create`,
-   `workspace.bootstrap`, or `workspace.connect` only when the
-   operator intentionally wants to choose a specific existing project or supply
-   explicit project metadata. If the current repo fingerprint is already bound
-   to a different project, `workspace.connect` rejects the move unless the
-   caller passes `rebind_existing=true`.
+   `workspace.bootstrap`, or `workspace.connect` only when the operator or user
+   intent intentionally chooses a specific existing project, supplies explicit
+   project metadata, or reuses a named desktop `workspace_alias`. If the current
+   repo fingerprint or alias is already bound to a different project,
+   `workspace.connect` rejects the move unless the caller passes
+   `rebind_existing=true`.
 
 The bridge sends a path fingerprint by default:
 `path:<sha256(workspace_root)[:24]>`. The `workspace_root` is the directory the

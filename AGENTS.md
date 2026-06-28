@@ -101,13 +101,13 @@ work, start here:
 - Workflow execution writes such as `resource.upsert`, `artifact.create`,
   `learning.create`, `experiment.*`, `decision.record`, and `action.execute`
   require a started run plan, one running step, and an explicit grant snapshot.
-- Normal agent sessions are scoped by the repository that launched the
-  StackOS bridge. Start with `workspace.startSession`: it creates or reuses one
-  daemon-owned project and binding for the current workspace when no binding
-  exists, then the bridge injects the resolved `project_id` into project-scoped
-  calls. Use `workspace.resolve` for read-only diagnostics. The workspace-bound
-  project is the source of truth; there is no global active project in the
-  agent path.
+- Normal agent sessions are scoped by the repository/directory identity that
+  launched the StackOS bridge. Start with `workspace.startSession`: it creates
+  or reuses one daemon-owned project and binding for the current workspace when
+  reliable identity exists, then the bridge injects the resolved `project_id`
+  into project-scoped calls. Use `workspace.resolve` for read-only diagnostics.
+  The workspace-bound project is the source of truth; there is no global active
+  project or last-used project fallback in the agent path.
 - Workspace identity is directory-first, not Git-first. `--workspace-root` and
   `STACKOS_WORKSPACE_ROOT` are explicit workspace hints; Claude Code can pass a
   real project root through `CLAUDE_PROJECT_DIR`; process cwd is only a
@@ -120,9 +120,12 @@ work, start here:
   explicit workspace metadata, git remote basename, or chosen folder basename
   only when the candidate is reliable. Generic or app-internal names such as
   `Resources`, `Contents`, `MacOS`, `StackOS.app`, or `Project` must cause setup
-  to ask for `project_name` or `project_slug` instead of creating a bad project.
-  Later display-name fixes use the explicit local-admin `project.update` flow
-  and must not move the workspace folder binding.
+  to ask for `project_name`, `project_slug`, or a deliberate `workspace_alias`
+  instead of creating a bad project. For desktop/global hosts with no cwd/git
+  signal, reuse an existing `candidate_workspaces` alias or call
+  `workspace.bootstrap`/`workspace.connect` with an explicit alias/project
+  selected from user intent. Later display-name fixes use the explicit
+  local-admin `project.update` flow and must not move the workspace binding.
 - The agent-facing MCP bridge exposes only `workspace.startSession`,
   `workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. Project
   setup, workflows, run plans, tracker, auth, resources, communications, and

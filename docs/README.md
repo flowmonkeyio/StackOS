@@ -52,11 +52,14 @@ obvious without loading every document.
   Workflow runs mirror into tasks/tickets automatically, and manual agent work
   uses `tracker.*` operations. The tracker stores state; agents decide the work.
 - Project bootstrap is MCP-native. Agents start with `workspace.startSession`;
-  when unbound, it creates or reuses one project for the current workspace root
-  and records the daemon-owned binding without writing repo files. `workspace.resolve`
-  remains the read-only diagnostic path, and `project.*` discovery is available
-  through `toolbox.call` for intentional setup while project switching and
-  deletion stay admin-only.
+  when a reliable repo/directory identity exists, it creates or reuses one
+  project for that workspace root and records the daemon-owned binding without
+  writing repo files. Desktop/global hosts with no identity stay unbound until
+  the agent explicitly chooses an existing `workspace_alias` or supplies
+  business project metadata. `workspace.resolve` remains the read-only
+  diagnostic path, and `project.*` discovery is available through
+  `toolbox.call` for intentional setup while project switching and deletion
+  stay admin-only.
 - Agent presets are generic role contracts for MCP/tool consumers. They must be
   adapted to project rules, stack, tracker workflow, references, and signoff
   before use. Workflow templates can recommend host-side skills such as

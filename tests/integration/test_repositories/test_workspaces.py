@@ -123,6 +123,100 @@ def test_bootstrap_allows_explicit_project_name_for_generic_folder(session: Sess
     assert bootstrapped.data.binding.last_known_root == str(Path("/tmp/Resources").resolve())
 
 
+def test_bootstrap_creates_named_workspace_without_directory(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+
+    first = repo.bootstrap(project_name="Flowmonkey", workspace_alias="flowmonkey")
+    second = repo.bootstrap(workspace_alias="flowmonkey")
+    resolved = repo.resolve(workspace_alias="flowmonkey")
+
+    assert first.data.project.name == "Flowmonkey"
+    assert first.data.project.slug == "flowmonkey"
+    assert first.data.binding.binding_kind == "named"
+    assert first.data.binding.workspace_alias == "flowmonkey"
+    assert first.data.binding.repo_fingerprint == "workspace:flowmonkey"
+    assert first.data.binding.last_known_root is None
+    assert second.data.project_was_created is False
+    assert second.data.binding_was_created is False
+    assert second.data.project_id == first.data.project_id
+    assert resolved.project_id == first.data.project_id
+    assert resolved.needs_connect is False
+
+
+def test_start_session_without_identity_lists_named_workspaces_without_autobind(
+    session: Session,
+) -> None:
+    repo = WorkspaceRepository(session)
+    named = repo.bootstrap(project_name="Flowmonkey", workspace_alias="flowmonkey")
+
+    started = repo.start_session(runtime="claude-desktop", auto_bootstrap=True)
+
+    assert started.project_id is None
+    assert started.data.project_id is None
+    assert started.data.workspace_binding_id is None
+    assert started.data.needs_connect is True
+    assert repo.list_bindings(project_id=named.project_id)[0].workspace_alias == "flowmonkey"
+    assert [candidate.workspace_alias for candidate in started.data.candidate_workspaces] == [
+        "flowmonkey"
+    ]
+    assert started.data.next_step is not None
+    assert started.data.next_step["status"] == "project_selection_required"
+    assert "last-used" in started.data.next_step["why"]
+
+
+def test_connect_named_workspace_reuses_alias_and_preserves_rebind_guard(
+    session: Session,
+) -> None:
+    first_project_id = _create_project(session, slug="flowmonkey")
+    second_project_id = _create_project(session, slug="other-flowmonkey")
+    repo = WorkspaceRepository(session)
+
+    connected = repo.connect(project_id=first_project_id, workspace_alias="flowmonkey")
+
+    assert connected.data.binding_kind == "named"
+    assert connected.data.workspace_alias == "flowmonkey"
+    assert connected.data.last_known_root is None
+    assert repo.resolve(workspace_alias="flowmonkey").project_id == first_project_id
+
+    with pytest.raises(ValidationError, match="rebind_existing=true") as excinfo:
+        repo.connect(project_id=second_project_id, workspace_alias="flowmonkey")
+
+    assert excinfo.value.data["current_project_id"] == first_project_id
+    assert excinfo.value.data["requested_project_id"] == second_project_id
+
+
+def test_named_workspace_fingerprint_is_canonicalized_and_validated(session: Session) -> None:
+    project_id = _create_project(session, slug="flowmonkey")
+    repo = WorkspaceRepository(session)
+
+    connected = repo.connect(project_id=project_id, repo_fingerprint="workspace:FlowMonkey")
+
+    assert connected.data.repo_fingerprint == "workspace:flowmonkey"
+    assert connected.data.workspace_alias == "flowmonkey"
+
+    with pytest.raises(ValidationError, match="usable business alias"):
+        repo.connect(project_id=project_id, repo_fingerprint="workspace:Resources")
+
+
+def test_workspace_alias_rejects_non_named_repo_fingerprint_mix(session: Session) -> None:
+    project_id = _create_project(session, slug="flowmonkey")
+    repo = WorkspaceRepository(session)
+
+    with pytest.raises(ValidationError, match="cannot be combined"):
+        repo.connect(
+            project_id=project_id,
+            repo_fingerprint="path:abc123",
+            workspace_alias="flowmonkey",
+        )
+
+    with pytest.raises(ValidationError, match="cannot be combined"):
+        repo.bootstrap(
+            project_name="Flowmonkey",
+            repo_fingerprint="git:abc123",
+            workspace_alias="flowmonkey",
+        )
+
+
 def test_bootstrap_rejects_app_bundle_workspace_root(session: Session) -> None:
     repo = WorkspaceRepository(session)
 

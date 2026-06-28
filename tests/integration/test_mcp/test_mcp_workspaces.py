@@ -91,6 +91,121 @@ def test_workspace_start_session_requests_project_name_for_generic_folder(
     assert started["data"]["next_step"]["recommended_arguments"]["project_name"]
 
 
+def test_workspace_start_session_without_identity_lists_named_workspaces_without_binding(
+    mcp_client: MCPClient,
+) -> None:
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {
+            "project_name": "Flowmonkey",
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    started = mcp_client.call_tool_structured(
+        "workspace.startSession",
+        {
+            "runtime": "claude-desktop",
+        },
+    )
+
+    assert bootstrapped["data"]["binding"]["binding_kind"] == "named"
+    assert bootstrapped["data"]["binding"]["workspace_alias"] == "flowmonkey"
+    assert bootstrapped["data"]["binding"]["last_known_root"] is None
+    assert started["project_id"] is None
+    assert started["data"]["project_id"] is None
+    assert started["data"]["workspace_binding_id"] is None
+    assert started["data"]["needs_connect"] is True
+    assert started["data"]["next_step"]["status"] == "project_selection_required"
+    assert [
+        candidate["workspace_alias"] for candidate in started["data"]["candidate_workspaces"]
+    ] == ["flowmonkey"]
+    assert started["data"]["candidate_workspaces"][0]["project_id"] == bootstrapped["project_id"]
+    assert started["data"]["candidate_workspaces"][0]["ui_urls"]["setup"] == (
+        f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/setup"
+    )
+
+
+def test_workspace_connect_named_workspace_by_alias_only_after_existing_binding(
+    mcp_client: MCPClient,
+) -> None:
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {
+            "project_name": "Flowmonkey",
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    connected = mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    assert connected["project_id"] == bootstrapped["project_id"]
+    assert connected["data"]["id"] == bootstrapped["data"]["binding"]["id"]
+    assert connected["data"]["binding_kind"] == "named"
+    assert connected["data"]["workspace_alias"] == "flowmonkey"
+
+
+def test_workspace_start_session_rebinds_when_alias_is_explicit(
+    mcp_client: MCPClient,
+) -> None:
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {
+            "project_name": "Flowmonkey",
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    started = mcp_client.call_tool_structured(
+        "workspace.startSession",
+        {
+            "runtime": "claude-desktop",
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    assert started["project_id"] == bootstrapped["project_id"]
+    assert started["data"]["project_id"] == bootstrapped["project_id"]
+    assert started["data"]["workspace_binding_id"] == bootstrapped["data"]["binding"]["id"]
+    assert started["data"]["needs_connect"] is False
+    assert started["data"]["setup_state"]["workspace_bound"] is True
+
+
+def test_workspace_connect_new_named_workspace_requires_project_identity(
+    mcp_client: MCPClient,
+) -> None:
+    failed = mcp_client.call_tool_error(
+        "workspace.connect",
+        {
+            "workspace_alias": "new-client",
+        },
+    )
+
+    assert failed["code"] == -32602
+    assert "project_id, project_slug, or project_name is required" in failed["data"]["detail"]
+
+
+def test_workspace_alias_rejects_non_named_repo_fingerprint_mix(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    failed = mcp_client.call_tool_error(
+        "workspace.connect",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "repo_fingerprint": "path:abc123",
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    assert failed["code"] == -32602
+    assert "workspace_alias cannot be combined" in failed["data"]["detail"]
+
+
 def test_workspace_connect_rejects_app_bundle_workspace_root(
     mcp_client: MCPClient,
     seeded_project: dict,

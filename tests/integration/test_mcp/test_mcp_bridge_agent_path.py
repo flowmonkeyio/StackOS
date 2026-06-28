@@ -737,6 +737,147 @@ def test_bridge_app_bundle_cwd_does_not_autobootstrap_workspace(
     assert bindings["items"] == []
 
 
+def test_bridge_no_hint_start_session_lists_named_workspace_candidates(
+    mcp_client: MCPClient,
+) -> None:
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {"project_name": "Flowmonkey", "workspace_alias": "flowmonkey"},
+    )
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    started = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "workspace.startSession",
+            {},
+            request_id="workspace-start-no-hints",
+        )
+    )
+    data = _operation_data(started)
+
+    assert started["project_id"] is None
+    assert data["setup_state"]["workspace_bound"] is False
+    assert data["needs_connect"] is True
+    assert proxy.scoped_project_id is None
+    assert data["next_step"]["status"] == "project_selection_required"
+    assert data["candidate_workspaces"] == [
+        {
+            "workspace_alias": "flowmonkey",
+            "binding_id": bootstrapped["data"]["binding"]["id"],
+            "project_id": bootstrapped["project_id"],
+            "project_slug": "flowmonkey",
+            "project_name": "Flowmonkey",
+            "ui_paths": {
+                "setup": f"/projects/{bootstrapped['project_id']}/setup",
+                "connections": f"/projects/{bootstrapped['project_id']}/connections",
+                "tasks": f"/projects/{bootstrapped['project_id']}/tasks",
+                "workflow_templates": f"/projects/{bootstrapped['project_id']}/workflow-templates",
+            },
+            "ui_urls": {
+                "setup": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/setup",
+                "connections": (
+                    f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/connections"
+                ),
+                "tasks": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/tasks",
+                "workflow_templates": (
+                    "http://127.0.0.1:5180/projects/"
+                    f"{bootstrapped['project_id']}/workflow-templates"
+                ),
+            },
+        }
+    ]
+
+
+def test_bridge_toolbox_named_bootstrap_promotes_workspace_scope(
+    mcp_client: MCPClient,
+) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    connected = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "workspace.bootstrap",
+                "arguments": {
+                    "project_name": "Flowmonkey",
+                    "workspace_alias": "flowmonkey",
+                },
+            },
+            request_id="toolbox-workspace-bootstrap-named",
+        )
+    )
+    data = _operation_data(connected)
+    project_scoped_after_bootstrap = _toolbox_call(
+        proxy,
+        client,
+        "workflowTemplate.list",
+        {},
+        request_id="workflow-template-list-named-bound",
+    )
+
+    assert connected["project_id"] is not None
+    assert data["setup_state"]["workspace_bound"] is True
+    assert data["binding"]["binding_kind"] == "named"
+    assert data["binding"]["workspace_alias"] == "flowmonkey"
+    assert proxy.scoped_project_id == connected["project_id"]
+    assert project_scoped_after_bootstrap["result"]["isError"] is False
+
+
+def test_bridge_toolbox_named_connect_promotes_workspace_scope(
+    mcp_client: MCPClient,
+) -> None:
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {"project_name": "Flowmonkey", "workspace_alias": "flowmonkey"},
+    )
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    started = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "workspace.startSession",
+            {},
+            request_id="workspace-start-for-alias-connect",
+        )
+    )
+    connected = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "workspace.connect",
+                "arguments": {"workspace_alias": "flowmonkey"},
+            },
+            request_id="toolbox-workspace-connect-named",
+        )
+    )
+    project_scoped_after_connect = _toolbox_call(
+        proxy,
+        client,
+        "workflowTemplate.list",
+        {},
+        request_id="workflow-template-list-alias-connected",
+    )
+
+    assert started["project_id"] is None
+    assert connected["project_id"] == bootstrapped["project_id"]
+    assert connected["data"]["workspace_alias"] == "flowmonkey"
+    assert proxy.scoped_project_id == bootstrapped["project_id"]
+    assert project_scoped_after_connect["result"]["isError"] is False
+
+
 def test_bridge_toolbox_bootstrap_promotes_workspace_scope(
     mcp_client: MCPClient,
 ) -> None:

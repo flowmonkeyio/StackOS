@@ -119,8 +119,11 @@ run token.
   project, call `toolbox.call` for `workspace.connect` or
   `workspace.bootstrap` with that project identifier explicitly.
 - Bind desktop/global hosts to a project: if StackOS says project identity is
-  required, ask for `project_name` or `project_slug` before calling
-  `workspace.bootstrap`; do not let app/runtime folder names become projects.
+  required, inspect `candidate_workspaces` and user intent. Reuse a known
+  `workspace_alias` with `workspace.connect`, or ask for a business
+  `project_name`/`project_slug` and call `workspace.bootstrap`. Do not let
+  app/runtime folder names become projects, and do not use last-used/global
+  fallback binding.
 - Set up support/engineering/local agents: choose the workflow first. Use
   `communications.customer-feedback-intake` to normalize inbound feedback into
   one route-approved canonical Slack thread with media and refs preserved. Use

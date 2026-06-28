@@ -149,7 +149,9 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this as the normal first call for an agent running from a repo or local "
                 "directory. It registers the session and, by default, creates or reuses one "
-                "daemon-owned project and binding for the current workspace when none exists."
+                "daemon-owned project and binding for the current workspace when none exists. "
+                "Desktop/global hosts that provide no reliable workspace identity stay unbound "
+                "and receive project-selection guidance instead of a hidden default project."
             ),
             when_to_use=(
                 "An agent starts work and needs the workspace-bound project_id.",
@@ -162,7 +164,8 @@ def operation_specs() -> list[OperationSpec]:
             ),
             returns=(
                 "A write envelope with project_id, workspace binding status, repo hints, "
-                "UI paths, and next recommended toolbox calls.",
+                "candidate named workspaces/projects, UI paths, and next recommended "
+                "toolbox calls.",
                 "If auto-bootstrap created state, project_was_created and binding_was_created "
                 "describe the side effects.",
             ),
@@ -192,7 +195,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Use this as the read-only first check. It never creates projects or bindings; "
-                "when unbound it returns model-readable bootstrap next steps."
+                "when unbound it returns model-readable bootstrap or project-selection next steps."
             ),
             when_to_use=(
                 "An agent starts in a repository and needs to know whether StackOS already "
@@ -202,7 +205,7 @@ def operation_specs() -> list[OperationSpec]:
             returns=(
                 "Existing binding and project_id when found.",
                 "When unbound: needs_connect=true, candidate projects, repo hints, UI paths, "
-                "and workspace.bootstrap guidance.",
+                "candidate named workspaces, and workspace bootstrap/connect guidance.",
             ),
             examples=(
                 OperationExample(
@@ -234,7 +237,9 @@ def operation_specs() -> list[OperationSpec]:
                 "workspace root/fingerprint return the existing binding instead of creating "
                 "duplicates. If the workspace metadata cannot produce a reliable business "
                 "project name, ask the operator for project_name or project_slug instead of "
-                "creating a generic project."
+                "creating a generic project. For desktop/global hosts with no reliable "
+                "directory, pass project_name, project_slug, or workspace_alias explicitly to "
+                "create/reuse a named workspace binding."
             ),
             when_to_use=(
                 "The current repo/directory is unbound and the agent should create or reuse "
@@ -247,6 +252,9 @@ def operation_specs() -> list[OperationSpec]:
                 "Project identity is business/user-facing metadata. Do not use package or "
                 "runtime directory names such as Resources, Contents, MacOS, StackOS.app, or "
                 "Project as an inferred project name.",
+                "When no cwd/repo_fingerprint/git_remote_url exists, do not use last-used "
+                "or a global default. Let the agent choose an existing named workspace or "
+                "ask for the project name, then pass workspace_alias/project_name explicitly.",
                 "Pass project_name or project_slug when the operator supplied a name or when "
                 "the directory name is generic/ambiguous.",
                 "Pass project_id/project_slug/project_name only when intentionally binding "
@@ -266,9 +274,9 @@ def operation_specs() -> list[OperationSpec]:
                 OperationExample(
                     title="Bootstrap named desktop workspace",
                     arguments={
-                        "cwd": "/Users/me/Documents/Acme Workspace",
                         "project_name": "Acme",
                         "project_slug": "acme",
+                        "workspace_alias": "acme",
                     },
                 ),
                 OperationExample(
@@ -301,16 +309,22 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this when the agent already knows the intended project id, slug, or "
                 "exact name. "
                 "For unbound first-run setup, workspace.bootstrap is usually simpler. Use "
-                "this to bind a chosen folder to a deliberately selected existing project."
+                "this to bind a chosen folder or named desktop workspace to a deliberately "
+                "selected existing project."
             ),
             when_to_use=(
                 "The user intentionally chose an existing project.",
                 "The agent needs to refresh binding metadata such as framework or root path.",
             ),
             prerequisites=(
-                "Pass one of project_id, project_slug, or project_name.",
+                "Pass one of project_id, project_slug, or project_name when creating a "
+                "new binding to a known project.",
+                "For a no-directory desktop/global session, pass workspace_alias to reuse an "
+                "existing named workspace. If the alias is new, also pass project_id, "
+                "project_slug, or project_name so StackOS does not guess.",
                 "Do not bind app package/runtime paths as workspaces.",
-                "Pass repo_fingerprint directly or let the bridge inject it.",
+                "Pass repo_fingerprint directly, let the bridge inject it, or pass "
+                "workspace_alias for an explicitly named no-directory binding.",
                 "Pass rebind_existing=true only when intentionally moving an existing "
                 "repo binding to a different project.",
             ),
@@ -319,6 +333,14 @@ def operation_specs() -> list[OperationSpec]:
                 OperationExample(
                     title="Connect by project slug",
                     arguments={"project_slug": "acme", "repo_fingerprint": "path:abc123"},
+                ),
+                OperationExample(
+                    title="Connect named desktop workspace",
+                    arguments={"workspace_alias": "acme", "project_slug": "acme"},
+                ),
+                OperationExample(
+                    title="Reuse existing named desktop workspace",
+                    arguments={"workspace_alias": "acme"},
                 ),
             ),
             mutating=True,

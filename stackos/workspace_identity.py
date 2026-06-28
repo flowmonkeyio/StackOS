@@ -11,6 +11,7 @@ FILESYSTEM_ROOT = str(Path("/").resolve())
 FILESYSTEM_ROOT_FINGERPRINT = (
     f"path:{hashlib.sha256(FILESYSTEM_ROOT.encode('utf-8')).hexdigest()[:24]}"
 )
+NAMED_WORKSPACE_PREFIX = "workspace:"
 
 
 def normalize_path(value: str | Path | None) -> str | None:
@@ -42,6 +43,31 @@ def path_fingerprint(path: str | Path | None) -> str | None:
 
 def is_filesystem_root_fingerprint(value: str | None) -> bool:
     return value == FILESYSTEM_ROOT_FINGERPRINT
+
+
+def normalize_workspace_alias(value: str | None) -> str | None:
+    if not value:
+        return None
+    alias = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    if not alias or alias in LOW_CONFIDENCE_PROJECT_NAMES:
+        return None
+    return alias[:80].strip("-") or None
+
+
+def named_workspace_fingerprint(alias: str | None) -> str | None:
+    normalized = normalize_workspace_alias(alias)
+    return f"{NAMED_WORKSPACE_PREFIX}{normalized}" if normalized else None
+
+
+def is_named_workspace_fingerprint(value: str | None) -> bool:
+    return bool(value and value.startswith(NAMED_WORKSPACE_PREFIX))
+
+
+def workspace_alias_from_fingerprint(value: str | None) -> str | None:
+    if value is None or not value.startswith(NAMED_WORKSPACE_PREFIX):
+        return None
+    alias = value[len(NAMED_WORKSPACE_PREFIX) :]
+    return normalize_workspace_alias(alias)
 
 
 def repo_name_from_remote(remote: str | None) -> str | None:

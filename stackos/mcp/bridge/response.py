@@ -137,6 +137,11 @@ def _bridge_compact_workspace(structured: dict[str, Any]) -> dict[str, Any]:
         compact_data["project_slug"] = project["slug"]
     if isinstance(project.get("name"), str):
         compact_data["project_name"] = project["name"]
+    for field in ("binding_kind", "workspace_alias"):
+        if isinstance(binding.get(field), str):
+            compact_data[field] = binding[field]
+        elif isinstance(data.get(field), str):
+            compact_data[field] = data[field]
     if isinstance(data.get("needs_connect"), bool):
         compact_data["needs_connect"] = data["needs_connect"]
     elif isinstance(structured.get("needs_connect"), bool):
@@ -162,6 +167,21 @@ def _bridge_compact_workspace(structured: dict[str, Any]) -> dict[str, Any]:
                 "ui_paths": item.get("ui_paths"),
             }
             for item in candidates
+            if isinstance(item, dict)
+        ]
+    workspace_candidates = data.get("candidate_workspaces", structured.get("candidate_workspaces"))
+    if isinstance(workspace_candidates, list):
+        compact_data["candidate_workspaces"] = [
+            {
+                "workspace_alias": item.get("workspace_alias"),
+                "binding_id": item.get("binding_id"),
+                "project_id": item.get("project_id"),
+                "project_slug": item.get("project_slug"),
+                "project_name": item.get("project_name"),
+                "ui_paths": item.get("ui_paths"),
+                "ui_urls": item.get("ui_urls"),
+            }
+            for item in workspace_candidates
             if isinstance(item, dict)
         ]
     for field in ("auto_bootstrap", "project_was_created", "binding_was_created"):

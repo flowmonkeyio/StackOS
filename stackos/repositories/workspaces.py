@@ -18,19 +18,31 @@ from stackos.db.models import AgentSession, Project, WorkspaceBinding
 from stackos.repositories.base import Envelope, NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectOut, ProjectRepository
 from stackos.workspace_identity import (
+    NAMED_WORKSPACE_PREFIX as _NAMED_WORKSPACE_PREFIX,
+)
+from stackos.workspace_identity import (
     derive_project_name as _derive_project_name,
 )
 from stackos.workspace_identity import (
     is_filesystem_root_fingerprint as _is_filesystem_root_fingerprint,
 )
 from stackos.workspace_identity import (
+    is_named_workspace_fingerprint as _is_named_workspace_fingerprint,
+)
+from stackos.workspace_identity import (
     is_usable_workspace_root as _is_usable_workspace_root,
+)
+from stackos.workspace_identity import (
+    named_workspace_fingerprint as _named_workspace_fingerprint,
 )
 from stackos.workspace_identity import (
     normalize_path as _normalize_path,
 )
 from stackos.workspace_identity import (
     path_fingerprint as _path_fingerprint,
+)
+from stackos.workspace_identity import (
+    workspace_alias_from_fingerprint as _workspace_alias_from_fingerprint,
 )
 
 
@@ -53,6 +65,27 @@ def _slugify(value: str, *, fallback: str = "project") -> str:
 
 def _title_from_slug(slug: str) -> str:
     return " ".join(part.capitalize() for part in slug.split("-") if part) or "Project"
+
+
+def _effective_workspace_fingerprint(
+    *,
+    repo_fingerprint: str | None,
+    workspace_alias: str | None,
+) -> str | None:
+    alias_fingerprint = _named_workspace_fingerprint(workspace_alias)
+    if repo_fingerprint and _is_named_workspace_fingerprint(repo_fingerprint):
+        repo_alias = _workspace_alias_from_fingerprint(repo_fingerprint)
+        if repo_alias is None:
+            raise ValidationError("workspace_alias must be a usable business alias")
+        canonical = _named_workspace_fingerprint(repo_alias)
+        if alias_fingerprint and alias_fingerprint != canonical:
+            raise ValidationError("repo_fingerprint workspace alias conflicts with workspace_alias")
+        return canonical
+    if repo_fingerprint and alias_fingerprint:
+        raise ValidationError(
+            "workspace_alias cannot be combined with a non-named repo_fingerprint"
+        )
+    return repo_fingerprint or alias_fingerprint
 
 
 def _ui_paths(project_id: int | None) -> dict[str, str]:
@@ -183,6 +216,24 @@ def _project_candidate(project: ProjectOut) -> WorkspaceProjectCandidateOut:
     )
 
 
+def _named_workspace_candidate(
+    *,
+    binding: WorkspaceBinding,
+    project: Project,
+) -> NamedWorkspaceCandidateOut | None:
+    alias = _workspace_alias_from_fingerprint(binding.repo_fingerprint)
+    if alias is None:
+        return None
+    return NamedWorkspaceCandidateOut(
+        workspace_alias=alias,
+        binding_id=binding.id or 0,
+        project_id=project.id or 0,
+        project_slug=project.slug,
+        project_name=project.name,
+        ui_paths=_ui_paths(project.id),
+    )
+
+
 def _connect_required_next_step(
     *,
     repo_fingerprint: str | None,
@@ -206,6 +257,44 @@ def _connect_required_next_step(
     )
     if project_identity_required:
         bootstrap_args["project_name"] = "<operator-provided project name>"
+    if project_identity_required and not any(
+        (repo_fingerprint, git_remote_url, _normalize_path(cwd))
+    ):
+        return {
+            "status": "project_selection_required",
+            "call_via": "toolbox.call",
+            "project_identity_required": True,
+            "project_identity_guidance": (
+                "The host did not provide a reliable directory, repo fingerprint, or git "
+                "remote. Choose an existing named workspace/project from user intent, or "
+                "ask for the business project name before creating one."
+            ),
+            "recommended_arguments": {
+                "workspace_alias": "<business-project-alias>",
+                "project_name": "<operator-provided project name>",
+            },
+            "why": (
+                "Desktop/global hosts can start without filesystem identity. StackOS will "
+                "not use last-used/global fallback; an agent must explicitly connect or "
+                "bootstrap the intended project."
+            ),
+            "options": [
+                {
+                    "tool": "workspace.connect",
+                    "when": "Reuse a known named workspace or selected existing project.",
+                    "arguments": {"workspace_alias": "<known alias>"},
+                },
+                {
+                    "tool": "workspace.bootstrap",
+                    "when": "Create or reuse a project from an operator-provided project name.",
+                    "arguments": {"project_name": "<business project name>"},
+                },
+                {
+                    "tool": "project.list",
+                    "when": "Inspect projects when user intent is ambiguous.",
+                },
+            ],
+        }
     return {
         "status": "bootstrap_required",
         "recommended_tool": "workspace.bootstrap",
@@ -273,6 +362,29 @@ class WorkspaceBindingOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_seen_at: datetime | None
+    binding_kind: str = "directory"
+    workspace_alias: str | None = None
+
+
+def _workspace_binding_out(row: WorkspaceBinding) -> WorkspaceBindingOut:
+    return WorkspaceBindingOut.model_validate(row).model_copy(
+        update={
+            "binding_kind": (
+                "named" if _is_named_workspace_fingerprint(row.repo_fingerprint) else "directory"
+            ),
+            "workspace_alias": _workspace_alias_from_fingerprint(row.repo_fingerprint),
+        }
+    )
+
+
+class NamedWorkspaceCandidateOut(BaseModel):
+    workspace_alias: str
+    binding_id: int
+    project_id: int
+    project_slug: str
+    project_name: str
+    ui_paths: dict[str, str]
+    ui_urls: dict[str, str] = Field(default_factory=dict)
 
 
 class AgentSessionOut(BaseModel):
@@ -293,6 +405,7 @@ class AgentSessionOut(BaseModel):
     auto_bootstrap: bool = False
     project_was_created: bool | None = None
     binding_was_created: bool | None = None
+    candidate_workspaces: list[NamedWorkspaceCandidateOut] = Field(default_factory=list)
     candidate_projects: list[WorkspaceProjectCandidateOut] = Field(default_factory=list)
     repo_hints: dict[str, Any] = Field(default_factory=dict)
     ui_paths: dict[str, str] = Field(default_factory=dict)
@@ -318,6 +431,7 @@ class WorkspaceResolutionOut(BaseModel):
     binding: WorkspaceBindingOut | None
     project_id: int | None
     needs_connect: bool
+    candidate_workspaces: list[NamedWorkspaceCandidateOut] = Field(default_factory=list)
     candidate_projects: list[WorkspaceProjectCandidateOut] = Field(default_factory=list)
     repo_hints: dict[str, Any] = Field(default_factory=dict)
     ui_paths: dict[str, str] = Field(default_factory=dict)
@@ -354,18 +468,24 @@ class WorkspaceRepository:
         self,
         *,
         project_id: int,
-        repo_fingerprint: str,
+        repo_fingerprint: str | None = None,
         git_remote_url: str | None = None,
         normalized_repo_name: str | None = None,
         last_known_root: str | None = None,
         framework: str | None = None,
         content_model_json: dict[str, Any] | None = None,
         rebind_existing: bool = False,
+        workspace_alias: str | None = None,
     ) -> Envelope[WorkspaceBindingOut]:
         """Create or update a non-invasive repo binding for a project."""
-        if not repo_fingerprint:
-            raise ValidationError("repo_fingerprint is required")
-        if _is_filesystem_root_fingerprint(repo_fingerprint):
+        effective_fingerprint = _effective_workspace_fingerprint(
+            repo_fingerprint=repo_fingerprint,
+            workspace_alias=workspace_alias,
+        )
+        if not effective_fingerprint:
+            raise ValidationError("repo_fingerprint or workspace_alias is required")
+        named_binding = _is_named_workspace_fingerprint(effective_fingerprint)
+        if _is_filesystem_root_fingerprint(effective_fingerprint):
             raise ValidationError("workspace root must be a usable project directory")
         if self._s.get(Project, project_id) is None:
             raise NotFoundError(f"project {project_id} not found")
@@ -373,16 +493,20 @@ class WorkspaceRepository:
         normalized_root = _normalize_path(last_known_root)
         if normalized_root is not None and not _is_usable_workspace_root(normalized_root):
             raise ValidationError("workspace root must be a usable project directory")
+        if named_binding:
+            normalized_root = None
         row = self._s.exec(
-            select(WorkspaceBinding).where(WorkspaceBinding.repo_fingerprint == repo_fingerprint)
+            select(WorkspaceBinding).where(
+                WorkspaceBinding.repo_fingerprint == effective_fingerprint
+            )
         ).first()
         now = _utcnow()
         if row is None:
             row = WorkspaceBinding(
                 project_id=project_id,
-                repo_fingerprint=repo_fingerprint,
+                repo_fingerprint=effective_fingerprint,
                 git_remote_url=git_remote_url,
-                normalized_repo_name=normalized_repo_name,
+                normalized_repo_name=normalized_repo_name or workspace_alias,
                 last_known_root=normalized_root,
                 framework=framework,
                 content_model_json=content_model_json,
@@ -395,7 +519,7 @@ class WorkspaceRepository:
                     "pass rebind_existing=true to move it",
                     data={
                         "binding_id": row.id,
-                        "repo_fingerprint": repo_fingerprint,
+                        "repo_fingerprint": effective_fingerprint,
                         "current_project_id": row.project_id,
                         "requested_project_id": project_id,
                     },
@@ -403,8 +527,8 @@ class WorkspaceRepository:
             row.project_id = project_id
             if git_remote_url is not None:
                 row.git_remote_url = git_remote_url
-            if normalized_repo_name is not None:
-                row.normalized_repo_name = normalized_repo_name
+            if normalized_repo_name is not None or workspace_alias is not None:
+                row.normalized_repo_name = normalized_repo_name or workspace_alias
             if last_known_root is not None:
                 row.last_known_root = normalized_root
             if framework is not None:
@@ -416,7 +540,7 @@ class WorkspaceRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=WorkspaceBindingOut.model_validate(row), project_id=row.project_id)
+        return Envelope(data=_workspace_binding_out(row), project_id=row.project_id)
 
     def bootstrap(
         self,
@@ -426,6 +550,7 @@ class WorkspaceRepository:
         normalized_repo_name: str | None = None,
         cwd: str | None = None,
         last_known_root: str | None = None,
+        workspace_alias: str | None = None,
         framework: str | None = None,
         content_model_json: dict[str, Any] | None = None,
         project_id: int | None = None,
@@ -440,17 +565,37 @@ class WorkspaceRepository:
         normalized_root = _normalize_path(last_known_root or cwd)
         if normalized_root is not None and not _is_usable_workspace_root(normalized_root):
             raise ValidationError("workspace root must be a usable project directory")
-        effective_fingerprint = repo_fingerprint or _path_fingerprint(normalized_root)
-        if not effective_fingerprint:
-            raise ValidationError("repo_fingerprint or cwd/last_known_root is required")
-
         derived_project_name = _derive_project_name(
             normalized_repo_name=normalized_repo_name,
             git_remote_url=git_remote_url,
             workspace_root=normalized_root,
         )
+        alias_source = workspace_alias or project_slug or project_name or derived_project_name
+        effective_fingerprint = (
+            _effective_workspace_fingerprint(
+                repo_fingerprint=repo_fingerprint,
+                workspace_alias=workspace_alias,
+            )
+            or _path_fingerprint(normalized_root)
+            or _effective_workspace_fingerprint(
+                repo_fingerprint=None,
+                workspace_alias=alias_source,
+            )
+        )
+        if not effective_fingerprint:
+            raise ValidationError(
+                "repo_fingerprint, cwd/last_known_root, or workspace_alias is required"
+            )
+        named_binding = _is_named_workspace_fingerprint(effective_fingerprint)
+        if named_binding:
+            normalized_root = None
+        named_alias = _workspace_alias_from_fingerprint(effective_fingerprint)
+        if derived_project_name is None and named_alias is not None:
+            derived_project_name = _title_from_slug(named_alias)
+
         explicit_project = any((project_id is not None, project_slug, project_name))
-        if not explicit_project and derived_project_name is None:
+        project_identity_available = explicit_project or derived_project_name is not None
+        if not project_identity_available:
             raise ValidationError(
                 "project_name or project_slug is required because StackOS could not "
                 "derive a reliable project name from normalized_repo_name, "
@@ -458,7 +603,7 @@ class WorkspaceRepository:
                 data={
                     "project_identity_required": True,
                     "recommended_arguments": {"project_name": "<operator-provided project name>"},
-                    "accepted_arguments": ["project_name", "project_slug"],
+                    "accepted_arguments": ["project_name", "project_slug", "workspace_alias"],
                 },
             )
         resolution = self.resolve(
@@ -494,7 +639,7 @@ class WorkspaceRepository:
                 project_id=target_project.id,
                 repo_fingerprint=effective_fingerprint,
                 git_remote_url=git_remote_url,
-                normalized_repo_name=derived_project_name,
+                normalized_repo_name=derived_project_name or named_alias,
                 last_known_root=normalized_root,
                 framework=framework,
                 content_model_json=content_model_json,
@@ -531,6 +676,7 @@ class WorkspaceRepository:
             last_known_root=normalized_root,
             framework=framework,
             content_model_json=content_model_json,
+            workspace_alias=named_alias,
         )
         return Envelope(
             data=self._bootstrap_out(
@@ -551,12 +697,16 @@ class WorkspaceRepository:
         repo_fingerprint: str | None = None,
         git_remote_url: str | None = None,
         cwd: str | None = None,
+        workspace_alias: str | None = None,
     ) -> WorkspaceResolutionOut:
         """Resolve a workspace by fingerprint, root directory, then git remote."""
         row: WorkspaceBinding | None = None
         normalized_cwd = _normalize_path(cwd)
         usable_cwd = normalized_cwd if _is_usable_workspace_root(normalized_cwd) else None
-        effective_fingerprint = repo_fingerprint
+        effective_fingerprint = _effective_workspace_fingerprint(
+            repo_fingerprint=repo_fingerprint,
+            workspace_alias=workspace_alias,
+        )
         if _is_filesystem_root_fingerprint(effective_fingerprint):
             effective_fingerprint = None
         if effective_fingerprint:
@@ -590,6 +740,7 @@ class WorkspaceRepository:
                 binding=None,
                 project_id=None,
                 needs_connect=True,
+                candidate_workspaces=self._named_workspace_candidates(),
                 candidate_projects=self._project_candidates(),
                 repo_hints=_repo_hints(
                     repo_fingerprint=effective_fingerprint,
@@ -609,7 +760,7 @@ class WorkspaceRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        out = WorkspaceBindingOut.model_validate(row)
+        out = _workspace_binding_out(row)
         return WorkspaceResolutionOut(
             binding=out,
             project_id=row.project_id,
@@ -629,7 +780,7 @@ class WorkspaceRepository:
         if project_id is not None:
             stmt = stmt.where(WorkspaceBinding.project_id == project_id)
         rows = self._s.exec(stmt.order_by(WorkspaceBinding.id.asc())).all()  # type: ignore[union-attr]
-        return [WorkspaceBindingOut.model_validate(row) for row in rows]
+        return [_workspace_binding_out(row) for row in rows]
 
     def update_profile(
         self,
@@ -656,7 +807,7 @@ class WorkspaceRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=WorkspaceBindingOut.model_validate(row), project_id=row.project_id)
+        return Envelope(data=_workspace_binding_out(row), project_id=row.project_id)
 
     def start_session(
         self,
@@ -665,6 +816,7 @@ class WorkspaceRepository:
         cwd: str | None = None,
         repo_fingerprint: str | None = None,
         git_remote_url: str | None = None,
+        workspace_alias: str | None = None,
         thread_id: str | None = None,
         client_session_id: str | None = None,
         auto_bootstrap: bool = True,
@@ -674,6 +826,7 @@ class WorkspaceRepository:
             repo_fingerprint=repo_fingerprint,
             git_remote_url=git_remote_url,
             cwd=cwd,
+            workspace_alias=workspace_alias,
         )
         bootstrap: Envelope[WorkspaceBootstrapOut] | None = None
         normalized_cwd = _normalize_path(cwd)
@@ -726,6 +879,7 @@ class WorkspaceRepository:
             out = out.model_copy(
                 update={
                     "needs_connect": True,
+                    "candidate_workspaces": resolution.candidate_workspaces,
                     "candidate_projects": resolution.candidate_projects,
                     "repo_hints": resolution.repo_hints,
                     "ui_paths": resolution.ui_paths,
@@ -759,6 +913,23 @@ class WorkspaceRepository:
     def _project_candidates(self) -> list[WorkspaceProjectCandidateOut]:
         page = ProjectRepository(self._s).list(active_only=False, limit=10)
         return [_project_candidate(project) for project in page.items]
+
+    def _named_workspace_candidates(self) -> list[NamedWorkspaceCandidateOut]:
+        rows = self._s.exec(
+            select(WorkspaceBinding)
+            .where(col(WorkspaceBinding.repo_fingerprint).like(f"{_NAMED_WORKSPACE_PREFIX}%"))
+            .order_by(col(WorkspaceBinding.updated_at).desc())
+            .limit(10)
+        ).all()
+        candidates: list[NamedWorkspaceCandidateOut] = []
+        for row in rows:
+            project = self._s.get(Project, row.project_id)
+            if project is None:
+                continue
+            candidate = _named_workspace_candidate(binding=row, project=project)
+            if candidate is not None:
+                candidates.append(candidate)
+        return candidates
 
     def _resolve_or_create_project(
         self,
@@ -880,7 +1051,7 @@ class WorkspaceRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return WorkspaceBindingOut.model_validate(row)
+        return _workspace_binding_out(row)
 
     def _bootstrap_out(
         self,
