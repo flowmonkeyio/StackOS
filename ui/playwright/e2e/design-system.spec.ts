@@ -21,7 +21,11 @@ const VIEWPORTS = [
 ] as const
 
 const ROUTES = [
+  // overview redirects to the operations console (h1 = project name).
   { path: 'overview', heading: 'Protocol Project' },
+  { path: 'inbox', heading: 'Inbox' },
+  { path: 'activity', heading: 'Activity' },
+  { path: 'setup', heading: 'Setup' },
   { path: 'runs', heading: /^Runs/ },
   { path: 'connections', heading: 'Connections' },
   { path: 'workflow-templates', heading: 'Workflow library' },
@@ -121,5 +125,30 @@ test.describe('design system — responsive + accessibility protocol', () => {
         await runAxe(page, `${route.path} @ ${width} (dark)`)
       }
     }
+  })
+
+  test('root portfolio holds the protocol across viewports + axe', async ({ page }) => {
+    test.setTimeout(120_000)
+    const errors = trackConsoleErrors(page)
+    const project = await createProject({
+      name: 'Protocol Project',
+      slug: 'protocol-project',
+      domain: 'protocol.example.com',
+      niche: 'qa',
+    })
+    // Boot auto-opens the active project, so reach the portfolio via the brand
+    // link (SPA nav, not a full reload that would redirect again).
+    await page.goto(`/projects/${project.id}`)
+    await page.getByRole('link', { name: 'StackOS home' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'StackOS' })).toBeVisible()
+
+    for (const viewport of VIEWPORTS) {
+      await page.setViewportSize(viewport)
+      await assertNoHorizontalOverflow(page)
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await runAxe(page, 'portfolio @ 1280 (light)')
+    errors.assertNone()
   })
 })

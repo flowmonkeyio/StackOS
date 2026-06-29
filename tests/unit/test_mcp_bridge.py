@@ -25,9 +25,10 @@ from stackos.mcp.bridge import (
     _bridge_forward_arguments,
     _bridge_toolbox_describe,
 )
+from stackos.mcp.bridge.catalog import _bridge_toolbox_specs
 from stackos.mcp.contract import verb_is_mutating
 from stackos.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
-from stackos.mcp.server import ToolRegistry, _to_tool
+from stackos.mcp.server import STACKOS_MCP_INSTRUCTIONS, ToolRegistry, _to_tool
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.mcp.tools import register_all
 from stackos.operations.registry import build_operation_registry
@@ -63,6 +64,14 @@ def _structured(response_text: str) -> dict[str, object]:
     return envelope["result"]["structuredContent"]
 
 
+def test_stackos_mcp_instructions_match_bridge_project_scope_contract() -> None:
+    assert "inject the current `project_id`" in STACKOS_MCP_INSTRUCTIONS
+    assert "omit injected fields" in STACKOS_MCP_INSTRUCTIONS
+    assert "All project-scoped tools require explicit `project_id`" not in (
+        STACKOS_MCP_INSTRUCTIONS
+    )
+
+
 class _Response:
     def __init__(self, payload: dict[str, Any]) -> None:
         self.text = json.dumps(payload)
@@ -89,6 +98,11 @@ class _FakeClient:
                             _tool("resource.query"),
                             _tool("budget.set"),
                             _tool("resource.upsert"),
+                            _tool(
+                                "project.delete",
+                                operation_name="project.delete",
+                                grant_policy="local-admin-project-write",
+                            ),
                             _tool("runPlan.get"),
                         ]
                     },
@@ -457,12 +471,84 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     assert "admin_gated_tool_names" not in payload
     statuses = {item["name"]: item for item in payload["tool_statuses"]}
     assert statuses["auth.start"]["reason_code"] == "local_admin_required"
-    assert statuses["artifact.create"]["reason_code"] == "run_plan_step_grant_required"
+    assert statuses["artifact.create"]["reason_code"] == "not_granted_to_active_step"
     assert statuses["project.update"]["reason_code"] == "local_admin_required"
     assert statuses["project.update"]["grant_policy"] == "local-admin-project-write"
     assert statuses["resource.upsert"]["reason_code"] == "active_step_granted"
     assert statuses["action.execute"]["operation"]["name"] == "action.execute"
     assert statuses["missing"]["reason_code"] == "unknown_tool"
+
+
+def test_bridge_toolbox_describe_without_names_returns_discovery_recipe() -> None:
+    catalog = {
+        "operation.list": _tool("operation.list", operation_name="operation.list"),
+        "operation.describe": _tool("operation.describe", operation_name="operation.describe"),
+        "tracker.status": _tool("tracker.status", operation_name="tracker.status"),
+        "runPlan.create": _tool("runPlan.create", operation_name="runPlan.create"),
+    }
+
+    response = _bridge_toolbox_describe(
+        42,
+        catalog=catalog,
+        arguments={},
+        run_id=None,
+        allowed_by_run={},
+    )
+    payload = _structured(response)
+
+    assert payload["described_tools"] == []
+    assert "available_tool_names" not in payload
+    assert payload["discovery"]["next_calls"][0] == {
+        "tool": "toolbox.call",
+        "arguments": {
+            "tool_name": "operation.list",
+            "arguments": {
+                "surface": "mcp",
+                "mode": "grouped",
+                "response_mode": "compact",
+            },
+        },
+    }
+    assert payload["discovery"]["next_calls"][1] == {
+        "tool": "toolbox.describe",
+        "arguments": {"tool_names": ["tracker.status"]},
+    }
+    assert "inputSchema" not in json.dumps(payload)
+
+
+def test_bridge_toolbox_describe_rejects_broad_schema_dump_without_exact_names() -> None:
+    catalog = {
+        "operation.list": _tool("operation.list", operation_name="operation.list"),
+        "tracker.status": _tool("tracker.status", operation_name="tracker.status"),
+    }
+
+    response = _bridge_toolbox_describe(
+        42,
+        catalog=catalog,
+        arguments={"include_schemas": True},
+        run_id=None,
+        allowed_by_run={},
+    )
+    envelope = json.loads(response)
+    payload = envelope["result"]["structuredContent"]
+
+    assert envelope["result"]["isError"] is True
+    assert payload["described_tools"] == []
+    assert payload["error"]["code"] == "broad_schema_dump_requires_tool_names"
+    assert payload["error"]["next_actions"][0]["arguments"]["tool_name"] == "operation.list"
+    assert "available_tool_names" not in payload
+    assert "inputSchema" not in json.dumps(payload)
+
+
+def test_bridge_toolbox_describe_virtual_schema_matches_scoped_schema_contract() -> None:
+    toolbox = next(
+        tool for tool in _bridge_toolbox_specs() if tool["name"] == "toolbox.describe"
+    )
+    include_description = toolbox["inputSchema"]["properties"]["include_schemas"]["description"]
+
+    assert "tool_names must contain exact tool" in include_description
+    assert "Broad schema dumps are rejected" in include_description
+    assert "include all" not in include_description
 
 
 def test_bridge_toolbox_allows_daemon_registered_direct_operations() -> None:
@@ -936,13 +1022,13 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "workflowTemplate.save",
     } == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert {
-            "action.execute",
-            "agentRequest.create",
-            "artifact.create",
-            "artifact.read",
-            "artifact.update",
-            "artifact.archive",
-            "artifact.supersede",
+        "action.execute",
+        "agentRequest.create",
+        "artifact.create",
+        "artifact.read",
+        "artifact.update",
+        "artifact.archive",
+        "artifact.supersede",
         "browser.context.call",
         "browser.handle.call",
         "browser.method.manifest",
@@ -959,12 +1045,12 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "browser.session.status",
         "browser.session.stop",
         "communication.reply",
-            "communication.send",
-            "context.query",
-            "context.snapshot",
-            "decision.record",
-            "executionContext.artifact.read",
-            "experiment.create",
+        "communication.send",
+        "context.query",
+        "context.snapshot",
+        "decision.record",
+        "executionContext.artifact.read",
+        "experiment.create",
         "experiment.recordDecision",
         "experiment.recordObservation",
         "learning.create",
@@ -982,130 +1068,9 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     assert "action.execute" not in _AGENT_BASE_TOOLBOX_NAMES
 
 
-def test_bridge_compacts_tracker_brief_for_agent_context() -> None:
-    compact = _bridge_compact_structured(
-        "tracker.brief",
-        {
-            "ticket": {
-                "id": 7,
-                "key": "deliver",
-                "title": "Deliver",
-                "status": "in-progress",
-                "task_key": "workflow-1",
-                "priority_key": "p1",
-                "lane_key": "implementation",
-                "assignee": "codex",
-                "blocked_by": [],
-                "blocker_reason": None,
-                "dependency_keys": ["prepare"],
-                "outcome": None,
-                "run_plan_id": 4,
-                "run_plan_step_id": 12,
-                "run_id": 9,
-                "agent_request_id": None,
-                "reference_count": 2,
-                "link_count": 1,
-                "context_json": {"large": "omitted"},
-            },
-            "task": {
-                "id": 3,
-                "key": "workflow-1",
-                "title": "Workflow",
-                "status": "in-progress",
-                "priority_key": "p1",
-                "lane_key": "implementation",
-                "owner": "ops",
-                "task_type": "workflow",
-                "source_kind": "workflow",
-                "source_json": {
-                    "template_key": "demo",
-                    "run_plan_key": "demo-run",
-                    "run_plan_id": 4,
-                },
-                "metadata_json": {"large": "omitted"},
-            },
-            "dependencies": [{"key": "prepare", "title": "Prepare", "status": "complete"}],
-            "dependents": [],
-            "references": [{"id": 1, "ref_type": "file", "ref": "README.md", "title": "Readme"}],
-            "links": [{"id": 2, "link_kind": "run-plan", "ref": "run-plan:4"}],
-            "workflow_handoff": {
-                "run_plan_id": 4,
-                "run_plan_step_id": 12,
-                "run_id": 9,
-                "step_id": "deliver",
-                "run_plan_key": "demo-run",
-                "template_key": "demo",
-                "next_operations": [
-                    "runPlan.get",
-                    "runPlan.claimStep",
-                    "toolbox.describe",
-                    "runPlan.recordStep",
-                ],
-                "notes": ["verbose guidance omitted from compact response"],
-            },
-            "suggested_next_actions": ["finish the work"],
-        },
-    )
-
-    assert compact == {
-        "ticket": {
-            "key": "deliver",
-            "title": "Deliver",
-            "status": "in-progress",
-            "task_key": "workflow-1",
-            "priority_key": "p1",
-            "lane_key": "implementation",
-            "assignee": "codex",
-            "dependency_keys": ["prepare"],
-            "run_plan_id": 4,
-            "run_plan_step_id": 12,
-            "run_id": 9,
-            "reference_count": 2,
-            "link_count": 1,
-        },
-        "task": {
-            "key": "workflow-1",
-            "title": "Workflow",
-            "status": "in-progress",
-            "priority_key": "p1",
-            "lane_key": "implementation",
-            "owner": "ops",
-            "task_type": "workflow",
-            "source_kind": "workflow",
-            "template_key": "demo",
-            "run_plan_key": "demo-run",
-            "run_plan_id": 4,
-        },
-        "dependencies": [
-            {
-                "key": "prepare",
-                "title": "Prepare",
-                "status": "complete",
-            }
-        ],
-        "references": [{"ref_type": "file", "ref": "README.md", "title": "Readme"}],
-        "links": [
-            {
-                "link_kind": "run-plan",
-                "ref": "run-plan:4",
-            }
-        ],
-        "workflow_handoff": {
-            "run_plan_id": 4,
-            "run_plan_step_id": 12,
-            "run_id": 9,
-            "step_id": "deliver",
-            "run_plan_key": "demo-run",
-            "template_key": "demo",
-            "next_operations": [
-                "runPlan.get",
-                "runPlan.claimStep",
-                "toolbox.describe",
-                "runPlan.recordStep",
-            ],
-        },
-        "suggested_next_actions": ["finish the work"],
-    }
+def test_bridge_leaves_tracker_compaction_to_operation_responses() -> None:
+    assert _bridge_compact_structured("tracker.status", {"tracker": {"id": 1}}) is None
+    assert _bridge_compact_structured("tracker.brief", {"ticket": {"key": "deliver"}}) is None
 
 
 def test_bridge_setup_surface_covers_core_setup_mutations() -> None:
@@ -1142,11 +1107,11 @@ def test_bridge_system_grant_matches_agent_operation_surface() -> None:
     system_tools = SKILL_TOOL_GRANTS[SYSTEM_SKILL]
     assert system_tools >= _AGENT_BASE_TOOLBOX_NAMES
     direct_safe_tools = {
-            "context.query",
-            "artifact.read",
-            "executionContext.artifact.read",
-            "communication.reply",
-            "communication.send",
+        "context.query",
+        "artifact.read",
+        "executionContext.artifact.read",
+        "communication.reply",
+        "communication.send",
         *[name for name in _AGENT_RUN_PLAN_GATED_TOOL_NAMES if name.startswith("browser.")],
     }
     assert (_AGENT_RUN_PLAN_GATED_TOOL_NAMES - direct_safe_tools).isdisjoint(system_tools)
@@ -1217,12 +1182,16 @@ def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
             ProgressEmitter(None, None),
         )
     )
-    listed_names = {item.name for item in listed.items}
+    listed_names = {
+        operation_name
+        for group in listed.groups
+        for operation_name in group.operation_names
+    }
+    assert listed.items == []
     assert "operation.list" in listed_names
     assert "operation.describe" in listed_names
     assert "schema.get" in listed_names
     assert "communication.send" in listed_names
-    assert all(item.surfaces["mcp"].enabled for item in listed.items)
 
     described = asyncio.run(
         describe_spec.handler(
@@ -1294,6 +1263,67 @@ def test_bridge_proxy_forwards_step_tool_with_cached_run_token() -> None:
     assert structured["tool"] == "resource.upsert"
     assert structured["arguments"]["run_token"] == "tok"
     assert [call["method"] for call in client.calls] == ["tools/list", "tools/call"]
+
+
+def test_bridge_proxy_denied_active_step_tool_reports_not_granted_to_step() -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.tokens_by_run[7] = "tok"
+    proxy.allowed_by_run[7] = {"action.execute"}
+    client = _FakeClient()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 100,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.call",
+            "arguments": {
+                "tool_name": "resource.upsert",
+                "run_id": 7,
+                "arguments": {
+                    "project_id": 1,
+                    "plugin_slug": "core",
+                    "resource_key": "learning",
+                    "data_json": {"body": "blocked by active step grant"},
+                },
+            },
+        },
+    }
+
+    response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=100)
+    envelope = json.loads(response)
+    data = envelope["result"]["structuredContent"]["data"]
+
+    assert envelope["result"]["isError"] is True
+    assert data["reason"] == "not_granted_to_active_step"
+    assert data["active_step_tool_names"] == ["action.execute"]
+
+
+def test_bridge_proxy_denied_admin_tool_keeps_admin_reason_with_active_step() -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.tokens_by_run[7] = "tok"
+    proxy.allowed_by_run[7] = {"resource.upsert"}
+    client = _FakeClient()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 102,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.call",
+            "arguments": {
+                "tool_name": "project.delete",
+                "run_id": 7,
+                "arguments": {"project_id": 1},
+            },
+        },
+    }
+
+    response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=102)
+    envelope = json.loads(response)
+    data = envelope["result"]["structuredContent"]["data"]
+
+    assert envelope["result"]["isError"] is True
+    assert data["reason"] == "local_admin_required"
+    assert data["active_step_tool_names"] == ["resource.upsert"]
 
 
 def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
@@ -1416,8 +1446,7 @@ def test_bridge_proxy_refreshes_controller_run_with_raw_internal_reads() -> None
     internal_calls = [
         call["params"]["arguments"]
         for call in client.calls
-        if call["method"] == "tools/call"
-        and call["params"]["name"] in {"run.get", "runPlan.get"}
+        if call["method"] == "tools/call" and call["params"]["name"] in {"run.get", "runPlan.get"}
     ]
     assert internal_calls[0]["response_mode"] == "raw"
     assert internal_calls[1]["response_mode"] == "raw"
@@ -1449,8 +1478,7 @@ def test_bridge_proxy_refreshes_step_context_from_raw_list_fallback() -> None:
         call["params"]
         for call in client.calls
         if call["method"] == "tools/call"
-        and call["params"]["name"]
-        in {"run.get", "runPlan.list", "runPlan.get"}
+        and call["params"]["name"] in {"run.get", "runPlan.list", "runPlan.get"}
     ]
     assert [call["name"] for call in internal_calls] == [
         "run.get",

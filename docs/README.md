@@ -7,10 +7,11 @@ obvious without loading every document.
 
 | Work | Primary Docs |
 | --- | --- |
-| Installing, starting, or repairing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md) |
+| Installing, starting, repairing, or lifecycle-smoke testing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md), [`security.md`](./security.md) |
 | Building the macOS desktop app or installer | [`desktop-distribution.md`](./desktop-distribution.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md), [`release-signoff.md`](./release-signoff.md) |
 | Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |
 | Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
+| Product direction or roadmap priorities | [`product-direction.md`](./product-direction.md), [`architecture.md`](./architecture.md), [`agent-experience-audit.md`](./agent-experience-audit.md) |
 | Auditing agent-facing flows and release clarity | [`agent-experience-audit.md`](./agent-experience-audit.md), [`agent-operating-model.md`](./agent-operating-model.md), [`operations.md`](./operations.md) |
 | Setting up generic agents or workflow roles | [`agent-presets.md`](./agent-presets.md), [`agent-operating-model.md`](./agent-operating-model.md), [`workflow-templates.md`](./workflow-templates.md), [`task-tracker.md`](./task-tracker.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
@@ -24,7 +25,7 @@ obvious without loading every document.
 | Changing UI | [`ui-design-system.md`](./ui-design-system.md), [`ui-component-inventory.md`](./ui-component-inventory.md) |
 | Reviewing provider contracts | [`integration-contracts/`](./integration-contracts/) |
 | Selecting or integrating image/video generation providers | [`integration-contracts/media-generation.md`](./integration-contracts/media-generation.md), [`action-executor.md`](./action-executor.md) |
-| Before-commit or release validation | [`release-signoff.md`](./release-signoff.md) |
+| Before-commit or release validation | [`release-signoff.md`](./release-signoff.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md) |
 
 ## Canonical Rules
 
@@ -51,11 +52,14 @@ obvious without loading every document.
   Workflow runs mirror into tasks/tickets automatically, and manual agent work
   uses `tracker.*` operations. The tracker stores state; agents decide the work.
 - Project bootstrap is MCP-native. Agents start with `workspace.startSession`;
-  when unbound, it creates or reuses one project for the current workspace root
-  and records the daemon-owned binding without writing repo files. `workspace.resolve`
-  remains the read-only diagnostic path, and `project.*` discovery is available
-  through `toolbox.call` for intentional setup while project switching and
-  deletion stay admin-only.
+  when a reliable repo/directory identity exists, it creates or reuses one
+  project for that workspace root and records the daemon-owned binding without
+  writing repo files. Desktop/global hosts with no identity stay unbound until
+  the agent explicitly chooses an existing `workspace_alias` or supplies
+  business project metadata. `workspace.resolve` remains the read-only
+  diagnostic path, and `project.*` discovery is available through
+  `toolbox.call` for intentional setup while project switching and deletion
+  stay admin-only.
 - Agent presets are generic role contracts for MCP/tool consumers. They must be
   adapted to project rules, stack, tracker workflow, references, and signoff
   before use. Workflow templates can recommend host-side skills such as

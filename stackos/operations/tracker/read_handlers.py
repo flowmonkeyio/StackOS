@@ -2,17 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from stackos.agent_responses import (
-    compact_tracker_brief,
-    compact_tracker_changed,
-    compact_tracker_history_page,
-    compact_tracker_next,
-    compact_tracker_search,
-    compact_tracker_status,
-    compact_tracker_verify,
-)
 from stackos.mcp.context import MCPContext
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.tracker.schemas import (
@@ -21,7 +10,6 @@ from stackos.operations.tracker.schemas import (
     TrackerHistoryInput,
     TrackerNextInput,
     TrackerProjectInput,
-    TrackerResponseMode,
     TrackerSearchInput,
     TrackerTicketInput,
 )
@@ -43,11 +31,8 @@ async def tracker_status(
     inp: TrackerProjectInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerStatusOut | dict[str, Any]:
-    status = TrackerRepository(ctx.session).status(project_id=inp.project_id)
-    if inp.response_mode == "compact":
-        return compact_tracker_status(status)
-    return status
+) -> TrackerStatusOut:
+    return TrackerRepository(ctx.session).status(project_id=inp.project_id)
 
 
 async def tracker_get(
@@ -74,64 +59,42 @@ async def tracker_next(
     inp: TrackerNextInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerNextOut | dict[str, Any]:
-    next_work = TrackerRepository(ctx.session).next(
+) -> TrackerNextOut:
+    return TrackerRepository(ctx.session).next(
         project_id=inp.project_id,
         limit=inp.limit,
         assignee=inp.assignee,
         include_blocked=inp.include_blocked,
     )
-    if inp.response_mode == "compact":
-        return compact_tracker_next(next_work)
-    return next_work
 
 
 async def tracker_blockers(
     inp: TrackerProjectInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerNextOut | dict[str, Any]:
-    blockers = TrackerRepository(ctx.session).blockers(project_id=inp.project_id)
-    if inp.response_mode == "compact":
-        return compact_tracker_next(blockers)
-    return blockers
+) -> TrackerNextOut:
+    return TrackerRepository(ctx.session).blockers(project_id=inp.project_id)
 
 
 async def tracker_brief(
     inp: TrackerTicketInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerBriefOut | dict[str, Any]:
-    return _brief_response(
-        TrackerRepository(ctx.session).brief(
-            project_id=inp.project_id,
-            ticket_key=inp.ticket_key,
-        ),
-        response_mode=inp.response_mode,
+) -> TrackerBriefOut:
+    return TrackerRepository(ctx.session).brief(
+        project_id=inp.project_id,
+        ticket_key=inp.ticket_key,
     )
-
-
-def _brief_response(
-    brief: TrackerBriefOut,
-    *,
-    response_mode: TrackerResponseMode,
-) -> TrackerBriefOut | dict[str, Any]:
-    if response_mode == "compact":
-        return compact_tracker_brief(brief)
-    return brief
 
 
 async def tracker_why(
     inp: TrackerTicketInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerBriefOut | dict[str, Any]:
-    return _brief_response(
-        TrackerRepository(ctx.session).brief(
-            project_id=inp.project_id,
-            ticket_key=inp.ticket_key,
-        ),
-        response_mode=inp.response_mode,
+) -> TrackerBriefOut:
+    return TrackerRepository(ctx.session).brief(
+        project_id=inp.project_id,
+        ticket_key=inp.ticket_key,
     )
 
 
@@ -139,13 +102,10 @@ async def tracker_execute(
     inp: TrackerTicketInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerBriefOut | dict[str, Any]:
-    return _brief_response(
-        TrackerRepository(ctx.session).brief(
-            project_id=inp.project_id,
-            ticket_key=inp.ticket_key,
-        ),
-        response_mode=inp.response_mode,
+) -> TrackerBriefOut:
+    return TrackerRepository(ctx.session).brief(
+        project_id=inp.project_id,
+        ticket_key=inp.ticket_key,
     )
 
 
@@ -153,63 +113,50 @@ async def tracker_verify(
     inp: TrackerTicketInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerVerifyOut | dict[str, Any]:
-    verification = TrackerRepository(ctx.session).verify(
+) -> TrackerVerifyOut:
+    return TrackerRepository(ctx.session).verify(
         project_id=inp.project_id,
         ticket_key=inp.ticket_key,
     )
-    if inp.response_mode == "compact":
-        return compact_tracker_verify(verification)
-    return verification
 
 
 async def tracker_history(
     inp: TrackerHistoryInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> Page[TrackerHistoryOut] | dict[str, Any]:
-    history = TrackerRepository(ctx.session).history(
+) -> Page[TrackerHistoryOut]:
+    return TrackerRepository(ctx.session).history(
         project_id=inp.project_id,
         limit=inp.limit,
         after_id=inp.after_id,
     )
-    if inp.response_mode == "compact":
-        return compact_tracker_history_page(history)
-    return history
 
 
 async def tracker_changed(
     inp: TrackerChangedInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerChangedOut | dict[str, Any]:
-    changed = TrackerRepository(ctx.session).changed(
+) -> TrackerChangedOut:
+    return TrackerRepository(ctx.session).changed(
         project_id=inp.project_id,
         since_rev=inp.since_rev,
         limit=inp.limit,
     )
-    if inp.response_mode == "compact":
-        return compact_tracker_changed(changed)
-    return changed
 
 
 async def tracker_search(
     inp: TrackerSearchInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerSearchOut | dict[str, Any]:
-    search = TrackerRepository(ctx.session).search(
+) -> TrackerSearchOut:
+    return TrackerRepository(ctx.session).search(
         project_id=inp.project_id,
         query=inp.query,
         limit=inp.limit,
     )
-    if inp.response_mode == "compact":
-        return compact_tracker_search(search)
-    return search
 
 
 __all__ = [
-    "_brief_response",
     "tracker_blockers",
     "tracker_brief",
     "tracker_changed",

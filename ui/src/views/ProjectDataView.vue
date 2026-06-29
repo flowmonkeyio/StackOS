@@ -6,7 +6,17 @@ import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
-import { UiBadge, UiCallout, UiEmptyState, UiJsonBlock, UiMetricCard, UiPageShell, UiSectionHeader, UiSegmentedControl } from '@/components/ui'
+import StatusBadge from '@/components/StatusBadge.vue'
+import TabBar from '@/components/TabBar.vue'
+import {
+  UiAdvancedJsonPanel,
+  UiButton,
+  UiCallout,
+  UiCountBadge,
+  UiEmptyState,
+  UiPageShell,
+  UiSectionHeader,
+} from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type {
   SchemaContextSnapshotOut,
@@ -63,7 +73,7 @@ const metricsNewest = computed(() =>
   newestFirst(metrics.value, (row) => row.captured_at ?? row.created_at),
 )
 
-const tabOptions = [
+const TAB_DEFS = [
   { key: 'timeline', label: 'Timeline' },
   { key: 'learnings', label: 'Learnings' },
   { key: 'experiments', label: 'Experiments' },
@@ -74,13 +84,44 @@ const tabOptions = [
   { key: 'metrics', label: 'Metrics' },
 ] satisfies Array<{ key: DataTab; label: string }>
 
-const tabKeys = new Set<DataTab>(tabOptions.map((option) => option.key))
+const tabKeys = new Set<DataTab>(TAB_DEFS.map((option) => option.key))
 const activeTab = ref<DataTab>(tabFromQuery(route.query.tab))
 
+const tabCounts = computed<Record<DataTab, number>>(() => ({
+  timeline: timeline.value.length,
+  learnings: learnings.value.length,
+  experiments: experiments.value.length,
+  observations: observations.value.length,
+  decisions: decisions.value.length,
+  snapshots: snapshots.value.length,
+  artifacts: artifacts.value.length,
+  metrics: metrics.value.length,
+}))
+
+const tabs = computed(() =>
+  TAB_DEFS.map((tab) => ({ key: tab.key, label: tab.label, count: tabCounts.value[tab.key] })),
+)
+
+/** "tracker.task.status_changed" -> "Tracker · Task · Status changed". */
+function humanizeToken(value: unknown): string {
+  const raw = String(value ?? '').trim()
+  if (!raw) return '-'
+  return raw
+    .split('.')
+    .map((part) =>
+      part
+        .replace(/[_-]+/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+        .trim(),
+    )
+    .filter(Boolean)
+    .join(' · ')
+}
+
 const timelineColumns: DataTableColumn<SchemaProjectEventOut>[] = [
-  { key: 'event_type', label: 'Event' },
+  { key: 'event_type', label: 'Event', format: humanizeToken },
   { key: 'title', label: 'Title', format: (value) => String(value ?? '-') },
-  { key: 'source_type', label: 'Source' },
+  { key: 'source_type', label: 'Source', format: humanizeToken },
   { key: 'occurred_at', label: 'Occurred', format: (value) => formatDateTime(String(value)) },
 ]
 
@@ -169,7 +210,27 @@ function syncTabToUrl(tab: DataTab): void {
       title="Project data"
       description="Context snapshots, learnings, experiments, decisions, artifacts, metrics, and timeline."
       :breadcrumbs="[{ label: 'Project data' }]"
-    />
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading"
+          @click="load"
+        >
+          Refresh
+        </UiButton>
+      </template>
+      <template #tabs>
+        <TabBar
+          :tabs="tabs"
+          :active-key="activeTab"
+          aria-label="Project data"
+          @change="setTab"
+        />
+      </template>
+    </ProjectPageHeader>
 
     <UiCallout
       v-if="error"
@@ -178,34 +239,17 @@ function syncTabToUrl(tab: DataTab): void {
       {{ error }}
     </UiCallout>
 
-    <div class="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
-      <UiMetricCard label="Events" :value="timeline.length" density="compact" />
-      <UiMetricCard label="Learnings" :value="learnings.length" density="compact" />
-      <UiMetricCard label="Experiments" :value="experiments.length" density="compact" />
-      <UiMetricCard label="Observations" :value="observations.length" density="compact" />
-      <UiMetricCard label="Decisions" :value="decisions.length" density="compact" />
-      <UiMetricCard label="Snapshots" :value="snapshots.length" density="compact" />
-      <UiMetricCard label="Artifacts" :value="artifacts.length" density="compact" />
-      <UiMetricCard label="Metrics" :value="metrics.length" density="compact" />
-    </div>
-
-    <UiSegmentedControl
-      :model-value="activeTab"
-      :options="tabOptions"
-      label="Project data"
-      @select="setTab"
-    />
-
     <section
       v-if="activeTab === 'timeline'"
+      :id="`cs-tabpanel-timeline`"
+      role="tabpanel"
+      aria-labelledby="cs-tab-timeline"
       aria-label="Project timeline"
     >
-      <UiSectionHeader title="Timeline" as="h3" />
       <DataTable
         :items="timelineNewest"
         :columns="timelineColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Project timeline"
         empty-message="No timeline events yet — events are recorded as agents and plugins act on the project."
       />
@@ -213,52 +257,63 @@ function syncTabToUrl(tab: DataTab): void {
 
     <section
       v-else-if="activeTab === 'learnings'"
+      :id="`cs-tabpanel-learnings`"
+      role="tabpanel"
+      aria-labelledby="cs-tab-learnings"
       aria-label="Learnings"
     >
-      <UiSectionHeader title="Learnings" as="h3" />
       <DataTable
         :items="learningsNewest"
         :columns="learningColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Learnings"
         empty-message="No learnings yet — agents record durable learnings as they work."
       >
         <template #cell:review_state="{ value }">
-          <UiBadge>{{ value }}</UiBadge>
+          <StatusBadge
+            domain="memory"
+            :status="String(value)"
+            small
+          />
         </template>
       </DataTable>
     </section>
 
     <section
       v-else-if="activeTab === 'experiments'"
+      :id="`cs-tabpanel-experiments`"
+      role="tabpanel"
+      aria-labelledby="cs-tab-experiments"
       aria-label="Experiments"
     >
-      <UiSectionHeader title="Experiments" as="h3" />
       <DataTable
         :items="experimentsNewest"
         :columns="experimentColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Experiments"
         empty-message="No experiments yet — agents register experiments to track hypotheses."
       >
         <template #cell:status="{ value }">
-          <UiBadge tone="info">{{ value }}</UiBadge>
+          <StatusBadge
+            domain="memory"
+            :status="String(value)"
+            small
+          />
         </template>
       </DataTable>
     </section>
 
     <section
       v-else-if="activeTab === 'observations'"
+      :id="`cs-tabpanel-observations`"
+      role="tabpanel"
+      aria-labelledby="cs-tab-observations"
       aria-label="Observations"
     >
-      <UiSectionHeader title="Observations" as="h3" />
       <DataTable
         :items="observationsNewest"
         :columns="observationColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Observations"
         empty-message="No observations yet — observations are recorded against running experiments."
       />
@@ -266,63 +321,81 @@ function syncTabToUrl(tab: DataTab): void {
 
     <section
       v-else-if="activeTab === 'decisions'"
+      :id="`cs-tabpanel-decisions`"
+      role="tabpanel"
+      aria-labelledby="cs-tab-decisions"
       aria-label="Decisions"
     >
-      <UiSectionHeader title="Decisions" as="h3" />
       <DataTable
         :items="decisionsNewest"
         :columns="decisionColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Decisions"
         empty-message="No decisions yet — agents log decisions with their rationale."
-      />
+      >
+        <template #cell:status="{ value }">
+          <StatusBadge
+            domain="memory"
+            :status="String(value)"
+            small
+          />
+        </template>
+      </DataTable>
     </section>
 
     <section
       v-else-if="activeTab === 'snapshots'"
+      :id="`cs-tabpanel-snapshots`"
+      role="tabpanel"
+      aria-labelledby="cs-tab-snapshots"
+      class="space-y-4"
       aria-label="Context snapshots"
     >
-      <UiSectionHeader title="Context snapshots" as="h3" />
       <DataTable
         :items="snapshotsNewest"
         :columns="snapshotColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Context snapshots"
         empty-message="No snapshots yet — agents store context snapshots during runs."
       />
-      <details
-        v-for="snapshot in snapshots.slice(0, 3)"
-        :key="snapshot.id"
-        class="mt-3 rounded-md border border-subtle bg-bg-surface"
+      <div
+        v-if="snapshots.length"
+        class="space-y-2"
       >
-        <summary class="cursor-pointer px-3 py-2 text-sm font-medium focus-ring">
-          {{ snapshot.name ?? `Snapshot #${snapshot.id}` }}
-        </summary>
-        <div class="border-t border-subtle p-3">
-          <UiJsonBlock
-            :data="sanitizeForDisplay(snapshot)"
-            density="compact"
-            max-height="14rem"
-            wrap
-          />
-        </div>
-      </details>
+        <UiSectionHeader
+          title="Recent snapshot payloads"
+          as="h3"
+        >
+          <template #actions>
+            <UiCountBadge :value="Math.min(snapshots.length, 3)" />
+          </template>
+        </UiSectionHeader>
+        <UiAdvancedJsonPanel
+          v-for="snapshot in snapshotsNewest.slice(0, 3)"
+          :key="snapshot.id"
+          :title="snapshot.name ?? `Snapshot #${snapshot.id}`"
+          summary="Raw snapshot"
+          :data="sanitizeForDisplay(snapshot)"
+          max-height="14rem"
+        />
+      </div>
     </section>
 
     <section
       v-else-if="activeTab === 'artifacts'"
+      :id="`cs-tabpanel-artifacts`"
+      role="tabpanel"
+      aria-labelledby="cs-tab-artifacts"
       class="space-y-3"
       aria-label="Artifacts"
     >
-      <UiSectionHeader title="Artifacts" as="h3" />
       <UiEmptyState
         v-if="artifacts.length === 0"
         title="No artifacts yet"
         description="Runs attach generated files, exports, and reports here as agents work."
         icon="archive"
         size="sm"
+        framed
       />
       <ArtifactRenderer
         v-for="artifact in artifactsNewest"
@@ -333,14 +406,15 @@ function syncTabToUrl(tab: DataTab): void {
 
     <section
       v-else
+      :id="`cs-tabpanel-metrics`"
+      role="tabpanel"
+      aria-labelledby="cs-tab-metrics"
       aria-label="Metrics"
     >
-      <UiSectionHeader title="Metrics" as="h3" />
       <DataTable
         :items="metricsNewest"
         :columns="metricColumns"
         :loading="loading"
-        max-height="calc(100vh - 22rem)"
         aria-label="Metrics"
         empty-message="No metric snapshots yet — metrics are captured by runs and triggers."
       />

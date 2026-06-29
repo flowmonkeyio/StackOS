@@ -18,12 +18,17 @@ from stackos.db.models import (
     RunPlanStepStatus,
     RunStatus,
     TrackerItemStatus,
+    TrackerTicket,
 )
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.mcp.permissions import active_run_plan_step
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.tracker.events import (
+    TRACKER_TASK_STATUS_CHANGED,
+    TRACKER_TICKET_STATUS_CHANGED,
+)
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 from stackos.workflows.template_loader import WorkflowTemplateLoader
 from stackos.workflows.template_schema import WorkflowTemplateSpec
@@ -287,6 +292,48 @@ def test_approval_gate_transition_then_step_completion(
     assert completed.steps[0].result_json == {"campaign_id": "cmp_123"}
     assert run is not None
     assert run.status == RunStatus.SUCCESS
+    task_events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TASK_STATUS_CHANGED,
+        )
+        .items
+    )
+    ticket_events = (
+        ContextRepository(session)
+        .timeline(
+            project_id=project_id,
+            event_type=TRACKER_TICKET_STATUS_CHANGED,
+        )
+        .items
+    )
+    assert task_events[-1].metadata_json["task_key"] == f"workflow-{plan.id}"
+    assert task_events[-1].metadata_json["new_status"] == "complete"
+    ticket_key = workflow_step_ticket_key(plan.id, "create-campaign")
+    mirrored_ticket = session.exec(
+        select(TrackerTicket).where(TrackerTicket.key == ticket_key)
+    ).one()
+    step_ticket_events = [
+        event for event in ticket_events if event.metadata_json["ticket_key"] == ticket_key
+    ]
+    assert [event.metadata_json["new_status"] for event in step_ticket_events] == [
+        "in-progress",
+        "complete",
+    ]
+    assert [event.run_id for event in step_ticket_events] == [
+        started.run_id,
+        started.run_id,
+    ]
+    assert [event.source_type for event in step_ticket_events] == [
+        "tracker_ticket",
+        "tracker_ticket",
+    ]
+    assert [event.source_id for event in step_ticket_events] == [
+        mirrored_ticket.id,
+        mirrored_ticket.id,
+    ]
+    assert step_ticket_events[-1].metadata_json["schema_version"] == 1
 
 
 def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(

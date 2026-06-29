@@ -13,13 +13,17 @@ import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import {
   UiBadge,
   UiCallout,
-  UiInput,
+  UiCountBadge,
+  UiFactGroups,
+  UiFilterBar,
   UiJsonBlock,
   UiPageShell,
   UiSectionHeader,
   UiSegmentedControl,
+  UiSkeleton,
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
+import type { UiFactGroup } from '@/components/ui/UiFactGroups.vue'
 import { apiFetch, formatApiError } from '@/lib/client'
 
 type SurfaceFilter = 'all' | 'mcp' | 'rest' | 'cli'
@@ -62,6 +66,25 @@ const columns: DataTableColumn<OperationRow>[] = [
 
 const selectedName = computed(() => String(route.query.operation ?? ''))
 const selectedSurfaces = computed(() => (selected.value ? enabledSurfaceNames(selected.value) : []))
+const operationFactGroups = computed<UiFactGroup[]>(() => {
+  if (!selected.value) return []
+  return [
+    {
+      title: 'When',
+      items: [{ label: 'Use cases', value: listSummary(selected.value.when_to_use), wide: true }],
+    },
+    {
+      title: 'Requires',
+      items: [
+        { label: 'Prerequisites', value: listSummary(selected.value.prerequisites), wide: true },
+      ],
+    },
+    {
+      title: 'Returns',
+      items: [{ label: 'Output', value: listSummary(selected.value.returns), wide: true }],
+    },
+  ]
+})
 
 function enabledSurfaceNames(operation: SchemaOperationSummaryOut | SchemaOperationDescribeOut): string[] {
   return Object.entries(operation.surfaces)
@@ -69,11 +92,8 @@ function enabledSurfaceNames(operation: SchemaOperationSummaryOut | SchemaOperat
     .map(([name]) => name)
 }
 
-function policyTone(policy: string): 'neutral' | 'accent' | 'success' | 'warning' | 'danger' {
-  if (policy.includes('admin')) return 'warning'
-  if (policy.includes('controller') || policy.includes('step')) return 'accent'
-  if (policy.includes('read')) return 'success'
-  return 'neutral'
+function listSummary(items: string[] | undefined): string {
+  return items?.length ? items.join(' · ') : ''
 }
 
 async function loadList(): Promise<void> {
@@ -152,37 +172,35 @@ onBeforeRouteUpdate((to) => {
       {{ error }}
     </UiCallout>
 
-    <section aria-label="Operations catalog">
+    <section
+      aria-label="Operations catalog"
+      class="space-y-3"
+    >
       <UiSectionHeader
         title="Catalog"
         as="h3"
       >
         <template #actions>
-          <UiInput
-            v-model="search"
-            type="search"
-            placeholder="Find by name or summary…"
-            :block="false"
-            size="sm"
-            clearable
-            class="w-64"
-            aria-label="Filter operations"
-          />
-          <UiSegmentedControl
-            :model-value="surfaceFilter"
-            :options="surfaceOptions"
-            label="Surface"
-            @select="setSurface"
-          />
-          <UiBadge>{{ visibleRows.length }}</UiBadge>
+          <UiCountBadge :value="visibleRows.length" />
         </template>
       </UiSectionHeader>
+      <UiFilterBar
+        v-model:search="search"
+        search-placeholder="Find by name or summary…"
+        aria-label="Operation filters"
+      >
+        <UiSegmentedControl
+          :model-value="surfaceFilter"
+          :options="surfaceOptions"
+          label="Surface"
+          @select="setSurface"
+        />
+      </UiFilterBar>
       <DataTable
         :items="visibleRows"
         :columns="columns"
         :loading="loading"
         :selected-id="selected?.name"
-        max-height="calc(100vh - 16rem)"
         aria-label="StackOS operations"
         empty-message="No operations match — operations are registered by StackOS core and plugins."
         interactive
@@ -193,14 +211,14 @@ onBeforeRouteUpdate((to) => {
             <UiBadge
               v-for="surface in enabledSurfaceNames(row)"
               :key="surface"
-              tone="accent"
+              variant="outline"
             >
               {{ surface }}
             </UiBadge>
           </span>
         </template>
         <template #cell:grant_policy="{ value }">
-          <UiBadge :tone="policyTone(String(value))">
+          <UiBadge variant="outline">
             {{ value }}
           </UiBadge>
         </template>
@@ -228,13 +246,14 @@ onBeforeRouteUpdate((to) => {
             <UiBadge
               v-if="selected"
               :tone="selected.read_only ? 'success' : 'warning'"
+              variant="outline"
             >
               {{ selected.read_only ? 'read' : 'write' }}
             </UiBadge>
             <UiBadge
               v-for="surface in selectedSurfaces"
               :key="surface"
-              tone="accent"
+              variant="outline"
             >
               {{ surface }}
             </UiBadge>
@@ -251,67 +270,57 @@ onBeforeRouteUpdate((to) => {
 
       <div
         v-if="detailLoading"
-        class="py-8 text-center text-sm text-fg-muted"
+        class="space-y-3"
+        aria-busy="true"
+        aria-label="Loading operation"
       >
-        Loading…
+        <UiSkeleton
+          width="50%"
+          :height="16"
+        />
+        <UiSkeleton
+          width="75%"
+          :height="16"
+        />
+        <UiSkeleton
+          shape="block"
+          :height="128"
+        />
       </div>
       <div
         v-else-if="selected"
         class="space-y-5"
       >
         <div class="space-y-2">
-          <p class="text-sm text-fg-muted">{{ selected.summary }}</p>
-          <p class="text-sm text-fg-default">{{ selected.purpose }}</p>
+          <p class="text-sm text-fg-muted">
+            {{ selected.summary }}
+          </p>
+          <p class="text-sm text-fg-default">
+            {{ selected.purpose }}
+          </p>
         </div>
 
-        <div class="grid gap-4 lg:grid-cols-3">
-          <section class="space-y-2 rounded-md border border-subtle bg-bg-surface p-3">
-            <h4 class="text-sm font-semibold text-fg-strong">When</h4>
-            <ul class="space-y-1 text-sm text-fg-muted">
-              <li
-                v-for="item in selected.when_to_use ?? []"
-                :key="item"
-              >
-                {{ item }}
-              </li>
-            </ul>
-          </section>
-          <section class="space-y-2 rounded-md border border-subtle bg-bg-surface p-3">
-            <h4 class="text-sm font-semibold text-fg-strong">Requires</h4>
-            <ul class="space-y-1 text-sm text-fg-muted">
-              <li
-                v-for="item in selected.prerequisites ?? []"
-                :key="item"
-              >
-                {{ item }}
-              </li>
-            </ul>
-          </section>
-          <section class="space-y-2 rounded-md border border-subtle bg-bg-surface p-3">
-            <h4 class="text-sm font-semibold text-fg-strong">Returns</h4>
-            <ul class="space-y-1 text-sm text-fg-muted">
-              <li
-                v-for="item in selected.returns ?? []"
-                :key="item"
-              >
-                {{ item }}
-              </li>
-            </ul>
-          </section>
-        </div>
+        <UiFactGroups
+          :groups="operationFactGroups"
+          aria-label="Operation summary facts"
+        />
 
         <section
           v-if="selected.examples?.length"
           class="space-y-3"
         >
-          <h4 class="text-sm font-semibold text-fg-strong">Examples</h4>
+          <h4 class="text-sm font-semibold text-fg-strong">
+            Examples
+          </h4>
           <div class="grid gap-3 md:grid-cols-2">
             <article
               v-for="example in selected.examples"
               :key="example.title"
               class="rounded-md border border-subtle bg-bg-surface p-3"
             >
-              <p class="mb-2 text-sm font-medium text-fg-strong">{{ example.title }}</p>
+              <p class="mb-2 text-sm font-medium text-fg-strong">
+                {{ example.title }}
+              </p>
               <UiJsonBlock
                 :data="example.arguments"
                 density="compact"
@@ -323,7 +332,9 @@ onBeforeRouteUpdate((to) => {
 
         <div class="grid gap-4 lg:grid-cols-2">
           <section class="space-y-2">
-            <h4 class="text-sm font-semibold text-fg-strong">Input schema</h4>
+            <h4 class="text-sm font-semibold text-fg-strong">
+              Input schema
+            </h4>
             <UiJsonBlock
               :data="selected.input_schema"
               density="compact"
@@ -331,7 +342,9 @@ onBeforeRouteUpdate((to) => {
             />
           </section>
           <section class="space-y-2">
-            <h4 class="text-sm font-semibold text-fg-strong">Output schema</h4>
+            <h4 class="text-sm font-semibold text-fg-strong">
+              Output schema
+            </h4>
             <UiJsonBlock
               :data="selected.output_schema"
               density="compact"

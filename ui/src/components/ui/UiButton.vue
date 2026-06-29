@@ -18,7 +18,7 @@ import { hasIcon } from './icons'
 import UiIcon from './UiIcon.vue'
 
 export interface UiButtonProps {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'link'
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-ghost' | 'link'
   size?: 'sm' | 'md' | 'lg'
   /** Render as <a> when set; otherwise <button>. */
   href?: string
@@ -67,6 +67,8 @@ const variantClass = computed(
         'bg-transparent text-fg-muted hover:bg-bg-sunken hover:text-fg-default active:bg-bg-sunken disabled:text-fg-disabled disabled:hover:bg-transparent',
       danger:
         'bg-danger text-fg-on-accent shadow-xs hover:bg-danger-fg active:bg-danger-fg disabled:bg-fg-disabled disabled:shadow-none',
+      'danger-ghost':
+        'bg-transparent text-danger-fg hover:bg-danger-subtle active:bg-danger-subtle disabled:text-fg-disabled disabled:hover:bg-transparent',
       link: 'bg-transparent text-fg-link hover:underline underline-offset-2 px-0 py-0 h-auto disabled:text-fg-disabled disabled:no-underline',
     })[props.variant],
 )
@@ -100,19 +102,46 @@ const sizeClass = computed(
     ]"
     @click="(ev: MouseEvent) => !isDisabled && $emit('click', ev)"
   >
-    <span v-if="loading" class="ui-button__spinner" aria-hidden="true">
-      <UiIcon name="loader" class="ui-button__icon animate-spin" />
+    <span
+      v-if="loading"
+      class="ui-button__spinner"
+      aria-hidden="true"
+    >
+      <UiIcon
+        name="loader"
+        class="ui-button__icon animate-spin"
+      />
     </span>
-    <slot v-else name="iconLeft">
-      <UiIcon v-if="hasIcon(iconLeft)" :name="iconLeft" class="ui-button__icon" />
+    <slot
+      v-else
+      name="iconLeft"
+    >
+      <UiIcon
+        v-if="hasIcon(iconLeft)"
+        :name="iconLeft"
+        class="ui-button__icon"
+      />
     </slot>
-    <span v-if="!iconOnly" class="ui-button__label">
+    <span
+      v-if="!iconOnly"
+      class="ui-button__label"
+    >
       <slot />
     </span>
-    <slot v-if="!iconOnly" name="iconRight">
-      <UiIcon v-if="hasIcon(iconRight)" :name="iconRight" class="ui-button__icon" />
+    <slot
+      v-if="!iconOnly"
+      name="iconRight"
+    >
+      <UiIcon
+        v-if="hasIcon(iconRight)"
+        :name="iconRight"
+        class="ui-button__icon"
+      />
     </slot>
-    <span v-if="iconOnly && !loading" class="ui-button__icon">
+    <span
+      v-if="iconOnly && !loading"
+      class="ui-button__icon"
+    >
       <slot />
     </span>
   </component>

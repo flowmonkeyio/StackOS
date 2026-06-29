@@ -16,10 +16,20 @@ agent_requirements:
     requirement: required
     agent_preset_ref: media-buying.workflow.creative-variant-generation
     purpose: Generate testable creative variant briefs tied to hypotheses and project creative rules.
+    applies_to_steps:
+      - orient
+      - define_candidate_set
+      - generate_or_attach_assets
+      - store_reviewed_creatives
+      - optional_external_upload
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review brand, claim, experiment, and launch-readiness risks before variants move forward.
+    applies_to_steps:
+      - define_candidate_set
+      - store_reviewed_creatives
+      - optional_external_upload
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from stackos import __version__
 from stackos.config import Settings
 
 
@@ -27,7 +28,7 @@ def test_health_returns_m0_shape(client: TestClient) -> None:
     assert body["db_status"] in {"ok", "unreachable"}
     # M8: scheduler is now live — health surfaces True.
     assert body["scheduler_running"] is True
-    assert body["version"] == "1.0.0"
+    assert body["version"] == __version__
     assert body["milestone"] == "M10"
 
 

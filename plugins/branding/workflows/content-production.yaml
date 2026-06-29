@@ -63,6 +63,20 @@ skill_preset_requirements:
   - skill_preset_ref: branding.brand-orchestrator
     requirement: required
     purpose: Coordinate the end-to-end branding content loop while preserving evidence, voice, position memory, optional image generation boundaries, and publication execution boundaries.
+    applies_to_steps:
+      - interview-capture
+      - research-fact-collection
+      - angle-and-structure
+      - draft-canonical
+      - editorial-review
+      - sanitization-review
+      - produce-optional-images
+      - render-channel-packets
+      - approve-and-record
+      - execute-publication
+    setup_notes:
+      - Resolve the Level 2 project overlay from workflowExtension.selected_context_json or configured project branding resources before execution.
+      - If sources of record, voice profile, disclosure policy, channel charters, canonical site target, or approval rules are absent, stop for project setup instead of inventing them.
 inputs:
   - key: operator_intent
     name: Operator Intent
@@ -79,6 +93,11 @@ inputs:
     type: array
     required: false
     description: Optional requested surfaces such as website, X, LinkedIn, or email.
+  - key: branding_overlay_ref
+    name: Branding Overlay Ref
+    type: string
+    required: false
+    description: Optional safe project overlay ref supplied by workflowExtension.selected_context_json or operator setup.
   - key: image_intent
     name: Image Intent
     type: string
@@ -254,6 +273,10 @@ resource_contracts:
     resource: channel
     purpose: Lightweight channel form contracts and publication mode.
     required: true
+  - key: distribution_records
+    resource: distribution-record
+    purpose: Publication attempt/result records for each channel execution path.
+    required: true
 policies:
   - key: journalist_interview_first
     kind: evidence
@@ -289,6 +312,10 @@ steps:
   - id: interview-capture
     title: Interview Capture
     purpose: Ask journalist-style questions and capture facts, surprises, tradeoffs, hypotheses, and open research questions.
+    instructions:
+      - Load the Level 2 overlay or stop for setup when project-specific voice, sources, disclosure policy, or channel rules are missing.
+      - Ask bounded journalist-style follow-up questions before treating the operator's first statement as publishable evidence.
+      - Preserve receipts that may matter later as evidence-item refs or named content-piece memory-plan entries.
     input_refs:
       - operator_intent
       - source_scope
@@ -312,6 +339,10 @@ steps:
   - id: research-fact-collection
     title: Research And Fact Collection
     purpose: Use the interview pack to collect, verify, and organize supporting facts from the right sources before angle selection.
+    instructions:
+      - Use only project-approved sources from the overlay, supplied artifacts, local context, or explicit operator direction.
+      - Classify facts, inferences, conflicts, and unsupported claims separately.
+      - Store durable evidence-items for facts that may support public claims.
     depends_on:
       - interview-capture
     input_refs:
@@ -339,6 +370,10 @@ steps:
   - id: angle-and-structure
     title: Angle And Structure
     purpose: Propose one to three piece ideas, select the structure, name target channels, and decide whether images are needed.
+    instructions:
+      - Propose a small set of angles with thesis, audience, evidence basis, follow-up potential, and risk.
+      - Select channels from requested targets and channel charters; do not fan out mechanically.
+      - Record why the selected structure, channel set, and image plan fit the evidence and operator intent.
     depends_on:
       - research-fact-collection
     input_refs:
@@ -368,6 +403,10 @@ steps:
   - id: draft-canonical
     title: Draft Canonical
     purpose: Write the canonical piece in the adapted operator voice from the selected angle and evidence pack.
+    instructions:
+      - Draft only from the selected angle, cleared evidence, brand profile, and channel-independent canonical structure.
+      - Mark position changes explicitly instead of silently contradicting prior positions.
+      - Keep iterative scratch outside durable StackOS artifacts unless the workflow intentionally preserves it.
     depends_on:
       - angle-and-structure
     context_refs:
@@ -389,6 +428,10 @@ steps:
   - id: editorial-review
     title: Editorial Review
     purpose: Run one compact review pass for factual support, prior-position consistency, voice, and channel form.
+    instructions:
+      - Review factual support, prior-position consistency, voice fit, and channel form as separate findings.
+      - Cut unsupported claims or return them as explicit questions.
+      - Attach review refs to the content-piece review log.
     depends_on:
       - draft-canonical
     context_refs:
@@ -417,6 +460,10 @@ steps:
   - id: sanitization-review
     title: Sanitization Review
     purpose: Apply disclosure policy separately and fail closed on public-use risk.
+    instructions:
+      - Apply the project disclosure policy from the Level 2 overlay.
+      - Block customer data, sensitive implementation detail, private metrics, and ambiguous exposure until repaired or explicitly waived.
+      - Record a cleared or blocked verdict before channel packets are rendered.
     depends_on:
       - editorial-review
     context_refs:
@@ -436,6 +483,10 @@ steps:
   - id: produce-optional-images
     title: Produce Optional Images
     purpose: Resolve the selected image set, generating assets only when the image plan requires provider-generated website or channel media.
+    instructions:
+      - Skip generation when no-image or operator-supplied media satisfies the plan.
+      - Before provider spend, require placement, prompt, aspect ratio, acceptance criteria, and image-generation approval.
+      - Index generated or selected image artifacts in the content-piece image refs.
     depends_on:
       - sanitization-review
     action_refs:
@@ -456,6 +507,10 @@ steps:
   - id: render-channel-packets
     title: Render Channel Publication Jobs
     purpose: Produce executable website, X, LinkedIn, and optional email publication payloads plus one channel-ready publication bundle from the canonical draft and image set.
+    instructions:
+      - Render only selected channel packets, using each channel charter and the canonical evidence map.
+      - Produce a single publication bundle with exact copy blocks, destination hints, image refs, filenames, alt text, and execution notes.
+      - Write channel packet refs and publication job metadata back to the content-piece.
     depends_on:
       - produce-optional-images
     context_refs:
@@ -482,6 +537,10 @@ steps:
   - id: approve-and-record
     title: Approve And Record
     purpose: Approve the canonical draft, channel publication jobs, publication bundle, optional image refs, follow-up hooks, and memory updates together before external publication.
+    instructions:
+      - Ask for one content packet approval covering canonical draft, image refs, channel jobs, automation plan, and memory updates.
+      - Upsert the content-piece memory index before any external publication.
+      - Record explicit decisions when positions or brand-profile rules change.
     depends_on:
       - render-channel-packets
     approval_refs:
@@ -509,6 +568,10 @@ steps:
   - id: execute-publication
     title: Execute Publication
     purpose: Publish or stage every approved channel through its selected automation path, then record distribution results.
+    instructions:
+      - Execute each approved publication job through its selected API, browser, admin UI, script, or operator-confirmed manual path.
+      - Record provider, browser, script, URL, schedule, blocked, failed, or manual confirmation evidence per channel.
+      - Upsert distribution-record resources and close out with exact refs and residual blockers.
     depends_on:
       - approve-and-record
     action_refs:
@@ -632,12 +695,14 @@ metadata:
         - artifact.update
         - artifact.archive
         - artifact.supersede
+        - decision.record
     - step_id: execute-publication
       tools:
         - artifact.create
         - artifact.update
         - artifact.archive
         - artifact.supersede
+        - decision.record
         - browser.runtime.status
         - browser.method.manifest
         - browser.profile.list

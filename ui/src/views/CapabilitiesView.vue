@@ -5,7 +5,15 @@ import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import { UiBadge, UiButton, UiCallout, UiCard, UiPageShell, UiSectionHeader } from '@/components/ui'
+import {
+  UiBadge,
+  UiButton,
+  UiCallout,
+  UiCard,
+  UiCountBadge,
+  UiPageShell,
+  UiSectionHeader,
+} from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaCapabilityOut, SchemaProviderOut } from '@/api'
 import { useStackOsCatalogStore } from '@/stores/plugins'
@@ -46,7 +54,19 @@ onMounted(load)
       title="Capabilities"
       description="Capabilities, providers, and actions exposed by the installed catalog."
       :breadcrumbs="[{ label: 'Capabilities' }]"
-    />
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading"
+          @click="load"
+        >
+          Refresh
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
     <UiCallout
       v-if="error"
@@ -56,24 +76,17 @@ onMounted(load)
     </UiCallout>
 
     <section aria-label="Capabilities">
-      <UiSectionHeader
-        title="Capabilities"
-        as="h3"
-      >
-        <template #actions>
-          <UiBadge>{{ capabilities.length }}</UiBadge>
-        </template>
-      </UiSectionHeader>
       <DataTable
         :items="capabilities"
         :columns="capabilityColumns"
         :loading="loading"
-        max-height="22rem"
         aria-label="Capabilities"
         empty-message="No capabilities."
       >
         <template #cell:plugin_slug="{ value }">
-          <UiBadge tone="accent">{{ value }}</UiBadge>
+          <UiBadge variant="outline">
+            {{ value }}
+          </UiBadge>
         </template>
       </DataTable>
     </section>
@@ -81,22 +94,23 @@ onMounted(load)
     <section aria-label="Providers">
       <UiSectionHeader
         title="Providers"
-        as="h3"
+        as="h2"
       >
         <template #actions>
-          <UiBadge>{{ providers.length }}</UiBadge>
+          <UiCountBadge :value="providers.length" />
         </template>
       </UiSectionHeader>
       <DataTable
         :items="providers"
         :columns="providerColumns"
         :loading="loading"
-        max-height="22rem"
         aria-label="Providers"
         empty-message="No providers."
       >
         <template #cell:plugin_slug="{ value }">
-          <UiBadge tone="accent">{{ value }}</UiBadge>
+          <UiBadge variant="outline">
+            {{ value }}
+          </UiBadge>
         </template>
       </DataTable>
     </section>
@@ -105,11 +119,17 @@ onMounted(load)
       <UiSectionHeader
         title="Action contracts"
         description="Detailed input/output schemas live in Operations to keep this catalog page readable."
-        as="h3"
+        as="h2"
       >
         <template #actions>
-          <UiBadge>{{ actions.length }}</UiBadge>
-          <UiButton size="sm" :href="operationsHref">Open Operations</UiButton>
+          <UiCountBadge :value="actions.length" />
+          <UiButton
+            variant="secondary"
+            size="sm"
+            :href="operationsHref"
+          >
+            Open Operations
+          </UiButton>
         </template>
       </UiSectionHeader>
       <p class="text-sm text-fg-muted">

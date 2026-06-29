@@ -103,6 +103,7 @@ presets:
       - workflowTemplate.describe
       - communicationContext.query
       - communication.reply
+      - action.execute
       - tracker.brief
       - tracker.createTask
       - tracker.createTicket

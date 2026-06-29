@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import {
   WorkflowAgentRequirementSpecRequirement,
+  WorkflowSkillPresetRequirementSpecRequirement,
   WorkflowSkillRequirementSpecRequirement,
   type SchemaLoadedWorkflowTemplate,
 } from '@/api'
@@ -18,7 +19,7 @@ const EXPECTED_WORKFLOW_STEPS = [
   { id: 'plan-tickets', title: 'Plan Tracker Tickets' },
   { id: 'design-approach', title: 'Design Approach' },
   { id: 'review-design', title: 'Review Design' },
-  { id: 'design-tests', title: 'Design Tests And Verification' },
+  { id: 'design-tests', title: 'Design Tests, TDD, And Manual Scenarios' },
   { id: 'deliver-tickets', title: 'Deliver Tickets' },
   { id: 'verify-delivery', title: 'Verify Delivery' },
   { id: 'review-delivery', title: 'Review Delivery' },
@@ -98,8 +99,9 @@ describe('WorkflowTemplatesView', () => {
     const text = document.body.textContent ?? ''
     expect(text).toContain('communication_route_ref')
     expect(text).toContain('support-triage')
-    expect(text).toContain('8 agents')
+    expect(text).toContain('7 agents')
     expect(text).toContain('1 skills')
+    expect(text).toContain('1 presets')
     expect(text).toContain('stackos.sdlc.requirements-flow-definer')
     expect(text).toContain('stackos.sdlc.codebase-explorer')
     expect(text).toContain('stackos.sdlc.planning')
@@ -107,8 +109,9 @@ describe('WorkflowTemplatesView', () => {
     expect(text).toContain('stackos.sdlc.test-designer')
     expect(text).toContain('stackos.sdlc.delivery')
     expect(text).toContain('stackos.sdlc.delivery-reviewer')
-    expect(text).toContain('stackos.sdlc.release-ops')
     expect(text).toContain('stackos:stackos')
+    expect(text).toContain('stackos.sdlc.delivery-orchestrator')
+    expect(text).toContain('workflow-specific skill presets')
     expect(text).toContain('12 steps')
     for (const step of EXPECTED_WORKFLOW_STEPS) {
       expect(text).toContain(step.id)
@@ -126,7 +129,7 @@ function engineeringWorkflow(): SchemaLoadedWorkflowTemplate {
     summary: {
       key: 'engineering.tracked-delivery',
       name: 'Engineering Tracked Delivery',
-      version: '0.2.0',
+      version: '0.2.1',
       description:
         'Reusable SDLC workflow for requirements, discovery, design, test planning, delivery, verification, review, and release through StackOS tracker state.',
       domain: 'engineering',
@@ -171,7 +174,7 @@ function engineeringWorkflow(): SchemaLoadedWorkflowTemplate {
       schema_version: 'stackos.workflow-template.v1',
       key: 'engineering.tracked-delivery',
       name: 'Engineering Tracked Delivery',
-      version: '0.2.0',
+      version: '0.2.1',
       description:
         'Reusable SDLC workflow for requirements, discovery, design, test planning, delivery, verification, review, and release through StackOS tracker state.',
       domain: 'engineering',
@@ -198,7 +201,6 @@ function engineeringWorkflow(): SchemaLoadedWorkflowTemplate {
         agent('test-designer', 'required', 'stackos.sdlc.test-designer'),
         agent('delivery', 'required', 'stackos.sdlc.delivery'),
         agent('delivery-reviewer', 'required', 'stackos.sdlc.delivery-reviewer'),
-        agent('release-ops', 'recommended', 'stackos.sdlc.release-ops'),
       ],
       skill_requirements: [
         {
@@ -207,6 +209,17 @@ function engineeringWorkflow(): SchemaLoadedWorkflowTemplate {
           purpose: 'Teach the main agent how to operate StackOS MCP and tracker state.',
           applies_to_steps: [],
           setup_notes: ['Adapt generic SDLC presets to the project before creating local agents.'],
+        },
+      ],
+      skill_preset_requirements: [
+        {
+          skill_preset_ref: 'stackos.sdlc.delivery-orchestrator',
+          requirement: WorkflowSkillPresetRequirementSpecRequirement.required,
+          purpose: 'Coordinate workflow-backed SDLC delivery.',
+          applies_to_steps: EXPECTED_WORKFLOW_STEPS.map((step) => step.id),
+          setup_notes: [
+            'Use workflow-specific skill presets as main-agent orchestration guidance, not global installed skills.',
+          ],
         },
       ],
       steps: EXPECTED_WORKFLOW_STEPS.map((step) => ({

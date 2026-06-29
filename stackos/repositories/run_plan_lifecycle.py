@@ -35,6 +35,7 @@ from stackos.repositories.run_plan_state import (
     TERMINAL_STEP_STATUSES,
 )
 from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.tracker.workflow import is_workflow_step_mirror_ticket
 
 STALE_RUN_ERROR = "daemon-restart-orphan"
 
@@ -798,6 +799,8 @@ class RunPlanLifecycleReconciler:
                 continue
             step = by_id.get(ticket.run_plan_step_id)
             if step is None:
+                continue
+            if not is_workflow_step_mirror_ticket(ticket, step):
                 continue
             if (
                 ticket.status == TrackerItemStatus.COMPLETE

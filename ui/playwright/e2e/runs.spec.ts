@@ -20,7 +20,7 @@ test.describe('runs view — list + filters + sub-route navigation', () => {
     await expect(page.getByRole('tab', { name: 'Running' })).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Success' })).toBeVisible()
     await expect(page.getByLabel('Kind')).toBeVisible()
-    await expect(page.getByLabel('Parent run id')).toBeVisible()
+    await expect(page.getByLabel('Parent run')).toBeVisible()
 
     errors.assertNone()
   })

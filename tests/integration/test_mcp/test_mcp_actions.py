@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
+from typing import Any
 
 from pytest_httpx import HTTPXMock
 
@@ -25,6 +26,28 @@ def _png_header(width: int, height: int) -> bytes:
     )
 
 
+def _call_tool_raw(
+    mcp: MCPClient,
+    name: str,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    return mcp.call_tool_structured(name, {**arguments, "response_mode": "raw"})
+
+
+def _call_action_execute_raw(
+    mcp: MCPClient,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    return mcp.call_tool_structured(
+        "action.execute",
+        {
+            **arguments,
+            "output_policy_json": {"mode": "inline"},
+            "response_mode": "raw",
+        },
+    )
+
+
 def test_action_describe_and_validate_are_read_only_discovery_tools(
     mcp_client: MCPClient,
 ) -> None:
@@ -37,13 +60,15 @@ def test_action_describe_and_validate_are_read_only_discovery_tools(
     assert "action.run" in tools
 
     listed = mcp_client.call_tool_structured("action.list", {"query": "catalog"})
-    described = mcp_client.call_tool_structured(
+    described = _call_tool_raw(
+        mcp_client,
         "action.describe",
-        {"action_ref": "core.catalog.describe"},
+        {"action_ref": "core.catalog.describe", "response_mode": "raw"},
     )
-    validation = mcp_client.call_tool_structured(
+    validation = _call_tool_raw(
+        mcp_client,
         "action.validate",
-        {"action_ref": "core.catalog.describe", "input_json": {}},
+        {"action_ref": "core.catalog.describe", "input_json": {}, "response_mode": "raw"},
     )
 
     assert listed["count"] >= 1
@@ -69,9 +94,14 @@ def test_action_describe_reports_project_availability(
     )
     assert budget_resp.status_code == 200
 
-    described = mcp_client.call_tool_structured(
+    described = _call_tool_raw(
+        mcp_client,
         "action.describe",
-        {"project_id": project_id, "action_ref": "utils.image.generate"},
+        {
+            "project_id": project_id,
+            "action_ref": "utils.image.generate",
+            "response_mode": "raw",
+        },
     )
     listed = mcp_client.call_tool_structured(
         "action.list",
@@ -349,6 +379,14 @@ def test_action_validate_rejects_raw_secret_payloads(mcp_client: MCPClient) -> N
     assert "must not contain secrets" in err["data"]["detail"]
 
 
+def _credential_ref(mcp: MCPClient, project_id: int, provider_key: str) -> str:
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": provider_key, "response_mode": "raw"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/openai-images/credentials",
@@ -356,11 +394,7 @@ def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "openai-images"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "openai-images")
 
 
 def _create_xai_credential(mcp: MCPClient, project_id: int) -> str:
@@ -370,11 +404,7 @@ def _create_xai_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "xai-imagine"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "xai-imagine")
 
 
 def _create_google_veo_credential(mcp: MCPClient, project_id: int) -> str:
@@ -384,11 +414,7 @@ def _create_google_veo_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "google-veo"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "google-veo")
 
 
 def _create_reve_credential(mcp: MCPClient, project_id: int) -> str:
@@ -398,11 +424,7 @@ def _create_reve_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "reve"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "reve")
 
 
 def _create_google_gemini_image_credential(mcp: MCPClient, project_id: int) -> str:
@@ -412,11 +434,7 @@ def _create_google_gemini_image_credential(mcp: MCPClient, project_id: int) -> s
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "google-gemini-image"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "google-gemini-image")
 
 
 def _create_ideogram_credential(mcp: MCPClient, project_id: int) -> str:
@@ -426,11 +444,7 @@ def _create_ideogram_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "ideogram"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "ideogram")
 
 
 def _create_byteplus_ark_credential(mcp: MCPClient, project_id: int) -> str:
@@ -440,11 +454,7 @@ def _create_byteplus_ark_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "byteplus-ark"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "byteplus-ark")
 
 
 def _create_alibaba_wan_credential(mcp: MCPClient, project_id: int) -> str:
@@ -454,11 +464,7 @@ def _create_alibaba_wan_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "alibaba-wan"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "alibaba-wan")
 
 
 def _create_kling_credential(mcp: MCPClient, project_id: int) -> str:
@@ -471,11 +477,7 @@ def _create_kling_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "kling"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "kling")
 
 
 def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
@@ -485,11 +487,7 @@ def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "firecrawl"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "firecrawl")
 
 
 def _create_dataforseo_credential(mcp: MCPClient, project_id: int) -> str:
@@ -502,11 +500,7 @@ def _create_dataforseo_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "dataforseo"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "dataforseo")
 
 
 def _create_serper_credential(mcp: MCPClient, project_id: int) -> str:
@@ -516,11 +510,7 @@ def _create_serper_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "serper"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "serper")
 
 
 def _create_wordpress_credential(mcp: MCPClient, project_id: int) -> str:
@@ -537,11 +527,7 @@ def _create_wordpress_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "wordpress"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "wordpress")
 
 
 def _create_ghost_credential(mcp: MCPClient, project_id: int) -> str:
@@ -558,11 +544,7 @@ def _create_ghost_credential(mcp: MCPClient, project_id: int) -> str:
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "ghost"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "ghost")
 
 
 def _create_mock_credential(
@@ -579,11 +561,7 @@ def _create_mock_credential(
         headers=mcp._headers(),
     )
     response.raise_for_status()
-    status = mcp.call_tool_structured(
-        "auth.status",
-        {"project_id": project_id, "provider_key": "mock-provider", "response_mode": "raw"},
-    )
-    return status["connections"][0]["credential_ref"]
+    return _credential_ref(mcp, project_id, "mock-provider")
 
 
 def _image_action_plan_json() -> dict:
@@ -1042,7 +1020,8 @@ def test_action_execute_mock_provider_vertical_slice_through_mcp(
 ) -> None:
     project_id = seeded_project["data"]["id"]
     credential_ref = _create_mock_credential(mcp_client, project_id)
-    described = mcp_client.call_tool_structured(
+    described = _call_tool_raw(
+        mcp_client,
         "action.describe",
         {"project_id": project_id, "action_ref": "utils.mock.echo"},
     )
@@ -1067,8 +1046,8 @@ def test_action_execute_mock_provider_vertical_slice_through_mcp(
         },
     )
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.mock.echo",
@@ -1220,6 +1199,8 @@ def test_action_run_derives_idempotency_for_confirmed_non_read(
             "credential_ref": credential_ref,
             "confirm_direct": True,
             "intent_summary": "User asked to create one post directly.",
+            "output_policy_json": {"mode": "inline"},
+            "response_mode": "raw",
         },
     )
 
@@ -1267,8 +1248,8 @@ def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(
         json={"data": [{"b64_json": base64.b64encode(b"webp").decode("ascii")}]},
     )
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.image.generate",
@@ -1304,7 +1285,7 @@ def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(
     assert artifact_rows
     artifact = mcp_client.call_tool_structured(
         "artifact.get",
-        {"artifact_id": item["artifact_id"]},
+        {"artifact_id": item["artifact_id"], "response_mode": "raw"},
     )
     assert artifact["uri"] == item["url"]
     assert artifact["plugin_slug"] == "utils"
@@ -1363,8 +1344,8 @@ def test_action_execute_xai_video_grant_returns_sanitized_artifact_refs(
         headers={"content-type": "video/mp4"},
     )
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.xai.video.generate",
@@ -1652,8 +1633,8 @@ def test_action_execute_provider_video_grants_return_sanitized_artifact_refs(
         )
         case["mock"]()
 
-        out = mcp_client.call_tool_structured(
-            "action.execute",
+        out = _call_action_execute_raw(
+            mcp_client,
             {
                 "project_id": project_id,
                 "action_ref": case["action_ref"],
@@ -1770,8 +1751,8 @@ def test_action_execute_reve_image_grant_returns_sanitized_artifact_refs(
         path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
         assert path.read_bytes() == expected_bytes
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.reve.image.generate",
@@ -1799,8 +1780,8 @@ def test_action_execute_reve_image_grant_returns_sanitized_artifact_refs(
             "credits_remaining": 952,
         },
     )
-    edit_out = mcp_client.call_tool_structured(
-        "action.execute",
+    edit_out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.reve.image.edit",
@@ -1831,8 +1812,8 @@ def test_action_execute_reve_image_grant_returns_sanitized_artifact_refs(
             "credits_remaining": 947,
         },
     )
-    remix_out = mcp_client.call_tool_structured(
-        "action.execute",
+    remix_out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.reve.image.remix",
@@ -1953,8 +1934,8 @@ def test_action_execute_google_gemini_image_grant_returns_sanitized_artifact_ref
         path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
         assert path.read_bytes() == expected_bytes
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.google.image.generate",
@@ -1991,8 +1972,8 @@ def test_action_execute_google_gemini_image_grant_returns_sanitized_artifact_ref
             ]
         },
     )
-    edit_out = mcp_client.call_tool_structured(
-        "action.execute",
+    edit_out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.google.image.edit",
@@ -2110,8 +2091,8 @@ def test_action_execute_ideogram_image_grant_returns_sanitized_artifact_refs(
         content=b"ideogram-image",
         headers={"content-type": "image/png"},
     )
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.ideogram.image.generate",
@@ -2150,8 +2131,8 @@ def test_action_execute_ideogram_image_grant_returns_sanitized_artifact_refs(
         content=b"ideogram-remix",
         headers={"content-type": "image/webp"},
     )
-    remix_out = mcp_client.call_tool_structured(
-        "action.execute",
+    remix_out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.ideogram.image.remix",
@@ -2262,8 +2243,8 @@ def test_action_execute_byteplus_seedream_image_grant_returns_sanitized_artifact
         content=b"byteplus-image",
         headers={"content-type": "image/jpeg"},
     )
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.byteplus.image.generate",
@@ -2292,8 +2273,8 @@ def test_action_execute_byteplus_seedream_image_grant_returns_sanitized_artifact
             "usage": {"generated_images": 1},
         },
     )
-    edit_out = mcp_client.call_tool_structured(
-        "action.execute",
+    edit_out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.byteplus.image.edit",
@@ -2363,8 +2344,8 @@ def test_action_execute_openai_image_edit_uses_input_reference_images(
         json={"data": [{"b64_json": base64.b64encode(b"edited-webp").decode("ascii")}]},
     )
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.image.edit",
@@ -2435,8 +2416,8 @@ def test_action_execute_firecrawl_grant_uses_generic_connector(
         json={"data": {"markdown": "# Hello"}},
     )
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.web.scrape",
@@ -2462,11 +2443,13 @@ def test_action_execute_sitemap_grant_uses_noauth_utility_connector(
     httpx_mock: HTTPXMock,
 ) -> None:
     project_id = seeded_project["data"]["id"]
-    described = mcp_client.call_tool_structured(
+    described = _call_tool_raw(
+        mcp_client,
         "action.describe",
         {"project_id": project_id, "action_ref": "utils.sitemap.fetch"},
     )
-    validation = mcp_client.call_tool_structured(
+    validation = _call_tool_raw(
+        mcp_client,
         "action.validate",
         {
             "project_id": project_id,
@@ -2508,8 +2491,8 @@ def test_action_execute_sitemap_grant_uses_noauth_utility_connector(
         ),
     )
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "utils.sitemap.fetch",
@@ -2567,11 +2550,13 @@ def test_action_execute_dataforseo_paa_grant_uses_generic_connector(
         headers={"authorization": f"Bearer {mcp_client.auth_token}"},
     )
     assert budget_resp.status_code == 200
-    described = mcp_client.call_tool_structured(
+    described = _call_tool_raw(
+        mcp_client,
         "action.describe",
         {"project_id": project_id, "action_ref": "seo.paa.extract"},
     )
-    validation = mcp_client.call_tool_structured(
+    validation = _call_tool_raw(
+        mcp_client,
         "action.validate",
         {
             "project_id": project_id,
@@ -2616,8 +2601,8 @@ def test_action_execute_dataforseo_paa_grant_uses_generic_connector(
         },
     )
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "seo.paa.extract",
@@ -2647,11 +2632,13 @@ def test_action_execute_wordpress_post_create_grant_uses_generic_connector(
 ) -> None:
     project_id = seeded_project["data"]["id"]
     credential_ref = _create_wordpress_credential(mcp_client, project_id)
-    described = mcp_client.call_tool_structured(
+    described = _call_tool_raw(
+        mcp_client,
         "action.describe",
         {"project_id": project_id, "action_ref": "publishing.wordpress.post.create"},
     )
-    validation = mcp_client.call_tool_structured(
+    validation = _call_tool_raw(
+        mcp_client,
         "action.validate",
         {
             "project_id": project_id,
@@ -2694,8 +2681,8 @@ def test_action_execute_wordpress_post_create_grant_uses_generic_connector(
         json={"id": 42, "link": "https://wp.example/hello-world/"},
     )
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "publishing.wordpress.post.create",
@@ -2734,11 +2721,13 @@ def test_action_execute_ghost_post_create_grant_uses_generic_connector(
 ) -> None:
     project_id = seeded_project["data"]["id"]
     credential_ref = _create_ghost_credential(mcp_client, project_id)
-    described = mcp_client.call_tool_structured(
+    described = _call_tool_raw(
+        mcp_client,
         "action.describe",
         {"project_id": project_id, "action_ref": "publishing.ghost.post.create"},
     )
-    validation = mcp_client.call_tool_structured(
+    validation = _call_tool_raw(
+        mcp_client,
         "action.validate",
         {
             "project_id": project_id,
@@ -2781,8 +2770,8 @@ def test_action_execute_ghost_post_create_grant_uses_generic_connector(
         json={"posts": [{"id": "post-1", "url": "https://ghost.example/hello/"}]},
     )
 
-    out = mcp_client.call_tool_structured(
-        "action.execute",
+    out = _call_action_execute_raw(
+        mcp_client,
         {
             "project_id": project_id,
             "action_ref": "publishing.ghost.post.create",

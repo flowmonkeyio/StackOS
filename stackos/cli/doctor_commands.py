@@ -5,10 +5,8 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import os
-import shutil
 import stat
-import subprocess
+from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -20,7 +18,6 @@ from stackos.config import Settings, get_settings
 from stackos.install import _codex_mcp_line_is_bridge as _install_codex_mcp_line_is_bridge
 
 from .app import _exit, app
-from .constants import _MCP_SERVER_NAME
 from .daemon_commands import _launchd_plist_path, _tcp_can_connect
 from .paths import _doctor_home
 
@@ -123,9 +120,7 @@ def _check_browser_runtime() -> tuple[bool, dict[str, object]]:
             "package_installed": False,
             "browser_downloaded": False,
             "browser_path_present": False,
-            "repair": (
-                "install/sync StackOS Python dependencies, then run `stackos install`"
-            ),
+            "repair": ("install/sync StackOS Python dependencies, then run `stackos install`"),
         }
     path = playwright_chromium_executable_path()
     ok = path is not None
@@ -354,77 +349,156 @@ def _codex_mcp_line_is_bridge(line: str) -> bool:
     return _install_codex_mcp_line_is_bridge(line)
 
 
+def _redact_secretish_mcp_text(value: str) -> str:
+    lowered = value.lower()
+    if any(
+        marker in lowered for marker in ("bearer", "authorization", "token=", "api_key", "--bearer")
+    ):
+        return "<redacted: secret-like MCP entry>"
+    return value
+
+
 def _check_codex_mcp_registered() -> tuple[bool, dict[str, object]]:
     """Best-effort read-only check for Codex MCP registration."""
-    codex = shutil.which("codex")
-    if codex is None:
-        return False, {"available": False}
-    try:
-        result = subprocess.run(
-            [codex, "mcp", "list"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-    except Exception as exc:
-        return False, {"available": True, "error": str(exc)}
-    stackos_lines = [
-        line.strip()
-        for line in result.stdout.splitlines()
-        if line.strip().startswith(_MCP_SERVER_NAME)
-    ]
-    bridge_lines = [line for line in stackos_lines if _codex_mcp_line_is_bridge(line)]
-    ok = bool(bridge_lines)
-    return ok, {
-        "available": True,
-        "returncode": result.returncode,
-        "expected_transport": "stdio",
-        "expected_command": "python -m stackos mcp-bridge",
-        "expected_server": _MCP_SERVER_NAME,
-        "entries": stackos_lines,
-        "bridge_entries": bridge_lines,
-        "status": "current" if ok else ("stale" if stackos_lines else "missing"),
-        "repair": (
-            "run `stackos install --mcp-only` or `bash scripts/register-mcp-codex.sh --force`"
-        ),
-    }
+    from stackos.host_mcp import inspect_host
+
+    result = inspect_host("codex", home=_doctor_home())
+    return result.ok and result.available, result.to_info()
 
 
 def _check_claude_mcp_registered(home: Path) -> tuple[bool, dict[str, object]]:
-    """Read the Claude MCP JSON target and look for the StackOS entry."""
-    target = Path(os.environ.get("STACKOS_MCP_TARGET") or home / ".claude" / "mcp.json")
-    if not target.exists():
-        return False, {"target": str(target), "exists": False}
-    try:
-        payload = json.loads(target.read_text(encoding="utf-8"))
-        servers = payload.get("mcpServers", {})
-        row = servers.get(_MCP_SERVER_NAME) if isinstance(servers, dict) else None
-    except Exception as exc:
-        return False, {"target": str(target), "exists": True, "error": str(exc)}
-    ok = (
-        isinstance(row, dict)
-        and row.get("transport") == "stdio"
-        and isinstance(row.get("command"), str)
-        and row.get("args") == ["-m", "stackos", "mcp-bridge"]
-        and "url" not in row
-        and "headers" not in row
-    )
-    return ok, {
-        "target": str(target),
-        "exists": True,
-        "expected_server": _MCP_SERVER_NAME,
-        "expected_transport": "stdio",
-        "expected_args": ["-m", "stackos", "mcp-bridge"],
-        "has_url": isinstance(row, dict) and "url" in row,
-        "has_headers": isinstance(row, dict) and "headers" in row,
-    }
+    """Inspect Claude Code's MCP registry through the shared Claude contract."""
+
+    from stackos.host_mcp import inspect_host
+
+    result = inspect_host("claude-code", home=home)
+    return result.ok and result.available, result.to_info()
+
+
+def _check_mcp_hosts(home: Path) -> tuple[bool, list[dict[str, object]]]:
+    """Inspect all known host MCP registrations through the shared lifecycle service."""
+    from stackos.host_mcp import inspect_all
+
+    aggregate = inspect_all(home=home)
+    return aggregate.ok, [result.to_info() for result in aggregate.results]
 
 
 def _check_launchd_plist(home: Path) -> tuple[bool, dict[str, object]]:
     """Optional launchd plist presence check; launchd itself is not required."""
     target = _launchd_plist_path(home)
     return target.exists(), {"target": str(target), "exists": target.exists()}
+
+
+def _manifest_credential_provider_keys() -> list[str]:
+    """Return credential-bearing provider keys from manifests without DB writes."""
+    from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
+
+    return sorted(
+        {
+            provider.key
+            for manifest in BUILTIN_PLUGIN_MANIFESTS
+            for provider in manifest.providers
+            if provider.auth_type not in {"none", "local"}
+        }
+    )
+
+
+def _check_provider_readiness(
+    settings: Settings,
+    db_present: bool,
+) -> tuple[bool, dict[str, object]]:
+    """Summarize safe provider credential readiness without testing secrets."""
+    connections_url = f"http://{settings.host}:{settings.port}/projects/{{project_id}}/connections"
+    repair = (
+        "open the StackOS Connections page for the project, add provider credentials, "
+        "then let agents use readiness.check, auth.status, and auth.test"
+    )
+    if not db_present:
+        return True, {
+            "status": "db_missing",
+            "providers_count": 0,
+            "configured_count": 0,
+            "connected_count": 0,
+            "setup_required_count": 0,
+            "connected_provider_keys": [],
+            "missing_provider_keys": [],
+            "connections_url": connections_url,
+            "repair": "run `stackos install` or `make install`, then start StackOS",
+        }
+
+    try:
+        from sqlmodel import Session, col, select
+
+        from stackos.db.connection import make_engine
+        from stackos.db.models import Credential, Provider
+
+        engine = make_engine(settings.db_path)
+        try:
+            with Session(engine) as session:
+                provider_rows = list(
+                    session.exec(
+                        select(Provider)
+                        .where(col(Provider.auth_type).not_in(["none", "local"]))
+                        .order_by(col(Provider.key).asc())
+                    ).all()
+                )
+                credentials = list(
+                    session.exec(
+                        select(Credential)
+                        .where(col(Credential.revoked_at).is_(None))
+                        .order_by(col(Credential.provider_key).asc())
+                    ).all()
+                )
+        finally:
+            engine.dispose()
+    except Exception as exc:  # pragma: no cover - defensive local diagnostics
+        return False, {
+            "status": "unavailable",
+            "error": f"{type(exc).__name__}: {exc}",
+            "providers_count": 0,
+            "configured_count": 0,
+            "connected_count": 0,
+            "setup_required_count": 0,
+            "connected_provider_keys": [],
+            "missing_provider_keys": [],
+            "connections_url": connections_url,
+            "repair": "run `stackos install` or `make install` to repair local provider metadata",
+        }
+
+    provider_keys = sorted(
+        {provider.key for provider in provider_rows} | set(_manifest_credential_provider_keys())
+    )
+    connected_provider_keys = sorted(
+        {credential.provider_key for credential in credentials if credential.status == "connected"}
+    )
+    configured_provider_keys = sorted({credential.provider_key for credential in credentials})
+    missing_provider_keys = [
+        provider_key
+        for provider_key in provider_keys
+        if provider_key not in connected_provider_keys
+    ]
+    status_counts = Counter(credential.status for credential in credentials)
+    if not provider_keys:
+        status = "no_providers"
+    elif not connected_provider_keys:
+        status = "needs_connections"
+    elif missing_provider_keys:
+        status = "partial"
+    else:
+        status = "ready"
+    return True, {
+        "status": status,
+        "providers_count": len(provider_keys),
+        "configured_count": len(configured_provider_keys),
+        "connected_count": len(connected_provider_keys),
+        "setup_required_count": len(missing_provider_keys),
+        "connected_provider_keys": connected_provider_keys,
+        "configured_provider_keys": configured_provider_keys,
+        "missing_provider_keys": missing_provider_keys,
+        "credential_status_counts": dict(sorted(status_counts.items())),
+        "connections_url": connections_url,
+        "repair": None if status == "ready" else repair,
+    }
 
 
 @app.command()
@@ -468,10 +542,14 @@ def doctor(
     browser_ok, browser_info = _check_browser_runtime()
     home = _doctor_home()
     install_checks, install_info = _check_installed_assets(home)
-    codex_mcp_ok, codex_mcp_info = _check_codex_mcp_registered()
-    claude_mcp_ok, claude_mcp_info = _check_claude_mcp_registered(home)
+    mcp_registration_ready, mcp_host_infos = _check_mcp_hosts(home)
+    mcp_host_by_key = {str(info["host_key"]): info for info in mcp_host_infos}
+    codex_mcp_info = mcp_host_by_key.get("codex", {"available": False})
+    claude_mcp_info = mcp_host_by_key.get("claude-code", {"available": False})
+    codex_mcp_ok = bool(codex_mcp_info.get("ok") and codex_mcp_info.get("available"))
+    claude_mcp_ok = bool(claude_mcp_info.get("ok") and claude_mcp_info.get("available"))
     launchd_ok, launchd_info = _check_launchd_plist(home)
-
+    provider_readiness_ok, provider_readiness_info = _check_provider_readiness(settings, db_present)
     checks = {
         "daemon_up": daemon_up,
         "seed_file_present": seed_mode is not None,
@@ -485,7 +563,15 @@ def doctor(
         "browser_runtime_ready": browser_ok,
         "codex_mcp_registered": codex_mcp_ok,
         "claude_mcp_registered": claude_mcp_ok,
+        "mcp_registration_ready": mcp_registration_ready,
+        **{
+            f"mcp_host_{str(info['host_key']).replace('-', '_')}_ready": bool(
+                info.get("ok") or info.get("advisory")
+            )
+            for info in mcp_host_infos
+        },
         "launchd_plist_present": launchd_ok,
+        "provider_readiness_available": provider_readiness_ok,
         **install_checks,
     }
     info = {
@@ -505,7 +591,9 @@ def doctor(
         "install_checks": install_info,
         "codex_mcp": codex_mcp_info,
         "claude_mcp": claude_mcp_info,
+        "mcp_hosts": mcp_host_infos,
         "launchd": launchd_info,
+        "provider_readiness": provider_readiness_info,
     }
 
     # Compute exit code with the highest-priority failure winning so a single
@@ -520,7 +608,7 @@ def doctor(
         code = 7
     elif not alembic_ok:
         code = 4
-    elif not all(install_checks.values()) or not browser_ok:
+    elif not all(install_checks.values()) or not browser_ok or not mcp_registration_ready:
         code = 9
     elif not daemon_up:
         code = 1
@@ -553,5 +641,26 @@ def doctor(
         if not browser_ok:
             repair = browser_info.get("repair")
             typer.echo(f"  note: browser runtime is not ready — {repair}.")
+        for host in mcp_host_infos:
+            if host.get("advisory"):
+                typer.echo(f"  note: {host.get('message')}")
+            elif not host.get("ok"):
+                typer.echo(
+                    f"  note: {host.get('host_key')} MCP registration needs repair — "
+                    f"{host.get('repair')}."
+                )
+            elif host.get("needs_restart"):
+                typer.echo(f"  note: {host.get('message')}")
+        provider_status = provider_readiness_info.get("status")
+        if not provider_readiness_ok:
+            typer.echo(
+                "  note: provider readiness could not be inspected — "
+                f"{provider_readiness_info.get('repair')}."
+            )
+        elif provider_status in {"needs_connections", "partial"}:
+            typer.echo(
+                "  note: provider credentials need setup — "
+                f"{provider_readiness_info.get('repair')}."
+            )
 
     _exit(code)

@@ -6,26 +6,34 @@ import {
   isStackOsNavItemActive,
   pluginContributionSections,
   projectNavSections,
-  setupNavSection,
 } from './nav'
 
 describe('StackOS nav contributions', () => {
-  it('orders generic project nav by operational semantics', () => {
+  it('leads with goal-oriented Operate, then Configure, then demoted Developer', () => {
     const core = coreNavSections(7)
     const labels = core.map((section) => section.label)
 
-    expect(labels).toEqual(['Work', 'Workflows', 'Knowledge', 'Integrations', 'System'])
-    expect(core[0].items.map((item) => item.label)).toEqual(['Overview', 'Tasks', 'Runs'])
-    expect(core[1].items.map((item) => item.label)).toEqual([
-      'Workflow Library',
-      'Agent Presets',
-      'Agent Requests',
+    expect(labels).toEqual(['Operate', 'Configure', 'Developer'])
+    expect(core[0].items.map((item) => item.label)).toEqual([
+      'Home',
+      'Inbox',
+      'Work',
+      'Activity',
+      'Setup',
     ])
-    expect(core[2].items.map((item) => item.label)).toEqual(['Project Data', 'Resources'])
+    // Home is the project index; Work is the tracker route.
+    expect(core[0].items[0].to).toBe('/projects/7')
+    expect(core[0].items.find((item) => item.label === 'Work')?.to).toBe('/projects/7/tasks')
+    expect(core[1].items.map((item) => item.label)).toEqual([
+      'Connections',
+      'Automation',
+      'Spend',
+      'Plugins',
+    ])
+    // The raw audit/registry surfaces are demoted into Developer.
+    expect(core[2].items.map((item) => item.to)).toContain('/projects/7/action-calls')
+    expect(core[2].items.map((item) => item.to)).toContain('/projects/7/operations')
     expect(core[2].items.map((item) => item.to)).toContain('/projects/7/resources')
-    expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
-      '/projects/7/action-calls',
-    )
   })
 
   it('loads plugin nav contributions from sanitized manifest UI metadata', () => {
@@ -60,13 +68,15 @@ describe('StackOS nav contributions', () => {
     })
   })
 
-  it('exposes project setup status before setup support pages', () => {
-    const section = setupNavSection(12)
+  it('keeps setup-owner surfaces in the Configure group', () => {
+    const core = coreNavSections(12)
+    const configure = core.find((section) => section.label === 'Configure')
 
-    expect(section.items.map((item) => item.to)).toEqual([
-      '/projects/12/setup',
+    expect(configure?.items.map((item) => item.to)).toEqual([
+      '/projects/12/connections',
       '/projects/12/schedules',
       '/projects/12/cost-budget',
+      '/projects/12/plugins',
     ])
   })
 
@@ -122,8 +132,8 @@ describe('StackOS nav contributions', () => {
 
     const sections = projectNavSections(7, [seo, communications, engineering])
 
-    expect(sections[0].label).toBe('Work')
-    expect(sections[1].label).toBe('Workflows')
+    expect(sections[0].label).toBe('Operate')
+    expect(sections[1].label).toBe('Configure')
     expect(sections[2].label).toBe('Engineering')
     expect(sections[3].label).toBe('Communications')
     expect(sections[2].items.map((item) => item.to)).toEqual([
@@ -131,6 +141,8 @@ describe('StackOS nav contributions', () => {
       '/projects/7/workflow-templates?plugin_slug=engineering',
     ])
     expect(sections.map((section) => section.label)).toContain('SEO')
+    // Developer (audit/registry) is demoted to the end.
+    expect(sections[sections.length - 1].label).toBe('Developer')
   })
 
   it('uses manifest display order for plugin tools before falling back to slug defaults', () => {

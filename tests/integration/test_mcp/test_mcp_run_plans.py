@@ -104,7 +104,7 @@ def test_run_plan_create_start_and_step_with_run_token(
     project_id = seeded_project["data"]["id"]
     validation = mcp_client.call_tool_structured(
         "runPlan.validate",
-        {"run_plan_json": _plan_json()},
+        {"run_plan_json": _plan_json(), "response_mode": "raw"},
     )
     created = mcp_client.call_tool_structured(
         "runPlan.create",
@@ -478,6 +478,7 @@ def test_run_plan_context_query_grant_enforces_sources_and_fields(
             "sources": ["learnings"],
             "fields": ["statement", "evidence_json"],
             "run_token": run_token,
+            "response_mode": "raw",
         },
     )
     mcp_client.call_tool_structured(
@@ -520,6 +521,7 @@ def test_run_plan_context_query_grant_enforces_sources_and_fields(
             "sources": ["learnings"],
             "fields": ["statement", "evidence_json"],
             "run_token": run_token,
+            "response_mode": "raw",
         },
     )
 
@@ -527,6 +529,12 @@ def test_run_plan_context_query_grant_enforces_sources_and_fields(
     assert wrong_field["code"] == -32007
     assert wrong_source["code"] == -32007
     assert missing_filters["code"] == -32007
+    assert wrong_field["data"]["accepted_argument_shapes"] == [
+        {"sources": ["learnings"], "fields": ["statement", "evidence_json"]}
+    ]
+    assert missing_filters["data"]["accepted_argument_shapes"] == [
+        {"sources": ["learnings"], "fields": ["statement", "evidence_json"]}
+    ]
     assert context["items"][0]["id"] == learning["id"]
     assert context["items"][0]["fields"]["evidence_json"] == {"refresh_token": "[redacted]"}
 
@@ -879,6 +887,56 @@ def test_run_plan_create_from_template_and_list(
     assert fetched["template_snapshot_json"]["key"] == "core.project-memory-review"
 
 
+def test_run_plan_list_defaults_to_newest_first(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    oldest = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {**_plan_json(), "key": "ops.list-oldest.run"},
+        },
+    )
+    older = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {**_plan_json(), "key": "ops.list-older.run"},
+        },
+    )
+    newer = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {**_plan_json(), "key": "ops.list-newer.run"},
+        },
+    )
+
+    page = mcp_client.call_tool_structured(
+        "runPlan.list",
+        {"project_id": project_id, "limit": 2, "response_mode": "raw"},
+    )
+    next_page = mcp_client.call_tool_structured(
+        "runPlan.list",
+        {
+            "project_id": project_id,
+            "limit": 1,
+            "after_id": page["next_cursor"],
+            "response_mode": "raw",
+        },
+    )
+
+    assert [item["id"] for item in page["items"][:2]] == [
+        newer["data"]["id"],
+        older["data"]["id"],
+    ]
+    assert page["next_cursor"] == older["data"]["id"]
+    assert len(next_page["items"]) == 1
+    assert next_page["items"][0]["id"] == oldest["data"]["id"]
+
+
 def test_run_plan_validate_can_enforce_template_required_inputs(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -887,7 +945,11 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
 
     structural = mcp_client.call_tool_structured(
         "runPlan.validate",
-        {"project_id": project_id, "workflow_key": "core.project-memory-review"},
+        {
+            "project_id": project_id,
+            "workflow_key": "core.project-memory-review",
+            "response_mode": "raw",
+        },
     )
     missing = mcp_client.call_tool_structured(
         "runPlan.validate",
@@ -895,6 +957,7 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
             "project_id": project_id,
             "workflow_key": "core.project-memory-review",
             "enforce_required_inputs": True,
+            "response_mode": "raw",
         },
     )
     with_inputs = mcp_client.call_tool_structured(
@@ -904,6 +967,7 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
             "workflow_key": "core.project-memory-review",
             "inputs_json": {"goal": "Review recent project memory."},
             "enforce_required_inputs": True,
+            "response_mode": "raw",
         },
     )
 
@@ -922,7 +986,11 @@ def test_run_plan_validate_marketing_template_wires_optional_provider_video_flow
 
     validation = mcp_client.call_tool_structured(
         "runPlan.validate",
-        {"project_id": project_id, "workflow_key": "marketing.campaign-production"},
+        {
+            "project_id": project_id,
+            "workflow_key": "marketing.campaign-production",
+            "response_mode": "raw",
+        },
     )
 
     assert validation["valid"] is True
@@ -980,7 +1048,7 @@ def test_run_plan_validate_rejects_secrets(mcp_client: MCPClient) -> None:
 
     validation = mcp_client.call_tool_structured(
         "runPlan.validate",
-        {"run_plan_json": plan},
+        {"run_plan_json": plan, "response_mode": "raw"},
     )
 
     assert validation["valid"] is False

@@ -282,7 +282,9 @@ def operation_specs() -> list[OperationSpec]:
                 "both; if only one is known, fetch tracker.brief, tracker.get, or "
                 "runPlan.get before retrying. Attachment does not add dependency edges; "
                 "pass dependency_keys or dependencies_json to bridge workflow execution "
-                "order."
+                "order. Workflow-backed tasks use the run-plan step tickets as the "
+                "single execution spine, so child tickets must attach to one step and "
+                "the graph should have exactly one root workflow step ticket."
             ),
             examples=(
                 OperationExample(

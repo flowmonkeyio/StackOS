@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { UiButton, UiFormField, UiInput, UiSegmentedControl, UiSelect } from '@/components/ui'
+import {
+  UiButton,
+  UiFormField,
+  UiInput,
+  UiSegmentedControl,
+  UiSelect,
+  UiToolbar,
+} from '@/components/ui'
 
 import type {
   StatusFilter,
@@ -57,8 +64,11 @@ const statusSelectOptions = computed(() =>
 </script>
 
 <template>
-  <div class="tracker-command-panel rounded-lg border border-default bg-bg-surface px-3 py-2.5 shadow-xs">
-    <div class="flex flex-wrap items-center gap-2">
+  <UiToolbar
+    aria-label="Task tracker controls"
+    class="tracker-command-panel !flex-col !items-stretch"
+  >
+    <div class="flex w-full flex-wrap items-center gap-2">
       <div class="min-w-0 grow basis-72">
         <UiSelect
           :model-value="activeTaskKey"
@@ -99,7 +109,7 @@ const statusSelectOptions = computed(() =>
 
     <div
       v-if="filtersExpanded"
-      class="mt-2.5 grid gap-3 border-t border-subtle pt-3 sm:grid-cols-2 xl:grid-cols-4"
+      class="grid w-full gap-3 border-t border-subtle pt-3 sm:grid-cols-2 xl:grid-cols-4"
     >
       <UiFormField label="Search">
         <UiInput
@@ -134,7 +144,7 @@ const statusSelectOptions = computed(() =>
       </UiFormField>
     </div>
 
-    <p class="tracker-command-panel__meta mt-2.5 border-t border-subtle pt-2 text-xs text-fg-muted">
+    <p class="tracker-command-panel__meta w-full border-t border-subtle pt-2 text-xs text-fg-muted">
       <span>
         <span class="font-medium tabular-nums text-fg-default">{{ taskRowsCount }}/{{ tasksCount }}</span>
         tasks
@@ -156,7 +166,7 @@ const statusSelectOptions = computed(() =>
         workflows
       </span>
     </p>
-  </div>
+  </UiToolbar>
 </template>
 
 <style scoped>

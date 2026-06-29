@@ -5,14 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from stackos.agent_responses import (
-    compact_tracker_brief,
-    compact_tracker_next,
-    compact_tracker_status,
-    compact_tracker_task,
-    compact_tracker_ticket,
-    compact_tracker_verify,
-)
 from stackos.provider_setup import build_provider_setup
 
 from .catalog import _bridge_tool_accepts_field
@@ -118,14 +110,6 @@ def _bridge_compact_structured(tool_name: str, structured: dict[str, Any]) -> di
         return _bridge_compact_action_describe(structured)
     if tool_name == "catalog.describe":
         return _bridge_compact_catalog_describe(structured)
-    if tool_name == "tracker.status":
-        return _bridge_compact_tracker_status(structured)
-    if tool_name == "tracker.next":
-        return _bridge_compact_tracker_next(structured)
-    if tool_name == "tracker.brief":
-        return _bridge_compact_tracker_brief(structured)
-    if tool_name == "tracker.verify":
-        return _bridge_compact_tracker_verify(structured)
     return None
 
 
@@ -153,6 +137,11 @@ def _bridge_compact_workspace(structured: dict[str, Any]) -> dict[str, Any]:
         compact_data["project_slug"] = project["slug"]
     if isinstance(project.get("name"), str):
         compact_data["project_name"] = project["name"]
+    for field in ("binding_kind", "workspace_alias"):
+        if isinstance(binding.get(field), str):
+            compact_data[field] = binding[field]
+        elif isinstance(data.get(field), str):
+            compact_data[field] = data[field]
     if isinstance(data.get("needs_connect"), bool):
         compact_data["needs_connect"] = data["needs_connect"]
     elif isinstance(structured.get("needs_connect"), bool):
@@ -178,6 +167,21 @@ def _bridge_compact_workspace(structured: dict[str, Any]) -> dict[str, Any]:
                 "ui_paths": item.get("ui_paths"),
             }
             for item in candidates
+            if isinstance(item, dict)
+        ]
+    workspace_candidates = data.get("candidate_workspaces", structured.get("candidate_workspaces"))
+    if isinstance(workspace_candidates, list):
+        compact_data["candidate_workspaces"] = [
+            {
+                "workspace_alias": item.get("workspace_alias"),
+                "binding_id": item.get("binding_id"),
+                "project_id": item.get("project_id"),
+                "project_slug": item.get("project_slug"),
+                "project_name": item.get("project_name"),
+                "ui_paths": item.get("ui_paths"),
+                "ui_urls": item.get("ui_urls"),
+            }
+            for item in workspace_candidates
             if isinstance(item, dict)
         ]
     for field in ("auto_bootstrap", "project_was_created", "binding_was_created"):
@@ -487,27 +491,3 @@ def _bridge_compact_catalog_describe(structured: dict[str, Any]) -> dict[str, An
             }
         )
     return {"plugins": plugins}
-
-
-def _bridge_compact_tracker_status(structured: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_status(structured)
-
-
-def _bridge_compact_tracker_next(structured: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_next(structured)
-
-
-def _bridge_compact_tracker_brief(structured: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_brief(structured)
-
-
-def _bridge_compact_tracker_verify(structured: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_verify(structured)
-
-
-def _bridge_compact_tracker_task(task: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_task(task)
-
-
-def _bridge_compact_tracker_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
-    return compact_tracker_ticket(ticket)

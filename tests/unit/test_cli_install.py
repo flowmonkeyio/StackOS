@@ -10,13 +10,15 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
 from sqlalchemy import text
-from sqlmodel import SQLModel
+from sqlmodel import Session, SQLModel
 from typer.testing import CliRunner
 
 import stackos.cli.daemon_commands as daemon_cli
@@ -24,11 +26,17 @@ import stackos.cli.doctor_commands as doctor_cli
 import stackos.cli.local_commands as local_cli
 import stackos.db.migrate as migrate_module
 import stackos.db.models  # noqa: F401  (populate SQLModel metadata)
+import stackos.host_mcp.adapters.claude_code as claude_code_adapter
+from stackos import claude_mcp
 from stackos import install as installer
+from stackos.auth_providers import AuthRepository
 from stackos.cli import app
 from stackos.config import Settings
+from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.db.connection import make_engine
 from stackos.db.migrate import current_alembic_version, upgrade_to_head
+from stackos.db.models import Project
+from stackos.repositories.plugins import PluginRepository
 
 HEAD_REVISION = "0022_artifact_lifecycle"
 
@@ -49,6 +57,112 @@ def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("STACKOS_DATA_DIR", str(home / ".local" / "share" / "stackos"))
     monkeypatch.setenv("STACKOS_STATE_DIR", str(state))
     return home
+
+
+def _write_fake_claude_cli(bin_dir: Path, state_path: Path) -> Path:
+    script = bin_dir / "claude"
+    script.write_text(
+        f"""#!{sys.executable}
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+STATE = Path({str(state_path)!r})
+
+
+def load():
+    if STATE.exists():
+        return json.loads(STATE.read_text(encoding="utf-8"))
+    return {{"servers": {{}}, "calls": []}}
+
+
+def save(data):
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    STATE.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+
+
+def main(argv):
+    data = load()
+    data.setdefault("calls", []).append(argv)
+    servers = data.setdefault("servers", {{}})
+    if argv[:1] != ["mcp"] or len(argv) < 2:
+        save(data)
+        return 2
+    command = argv[1]
+    if command == "remove":
+        scope = None
+        names = []
+        idx = 2
+        while idx < len(argv):
+            if argv[idx] in ("--scope", "-s"):
+                scope = argv[idx + 1]
+                idx += 2
+            else:
+                names.append(argv[idx])
+                idx += 1
+        row = servers.get(names[0])
+        if row is not None and (scope is None or row.get("scope") == scope):
+            del servers[names[0]]
+        save(data)
+        return 0
+    if command == "add":
+        scope = "local"
+        transport = "stdio"
+        idx = 2
+        while idx < len(argv) and argv[idx].startswith("-"):
+            if argv[idx] in ("--scope", "-s"):
+                scope = argv[idx + 1]
+                idx += 2
+            elif argv[idx] in ("--transport", "-t"):
+                transport = argv[idx + 1]
+                idx += 2
+            else:
+                idx += 1
+        name = argv[idx]
+        idx += 1
+        if idx < len(argv) and argv[idx] == "--":
+            idx += 1
+        servers[name] = {{
+            "scope": scope,
+            "type": transport,
+            "command": argv[idx] if idx < len(argv) else "",
+            "args": argv[idx + 1:],
+        }}
+        save(data)
+        return 0
+    if command == "get":
+        name = argv[2]
+        row = servers.get(name)
+        save(data)
+        if row is None:
+            print(f'No MCP server named "{{name}}".', file=sys.stderr)
+            return 1
+        print(f"{{name}}:")
+        print(f"  Scope: {{row.get('scope', 'user').title()}} config")
+        print("  Status: ✓ Connected")
+        print(f"  Type: {{row.get('type', 'stdio')}}")
+        print(f"  Command: {{row.get('command', '')}}")
+        print("  Args: " + " ".join(row.get("args", [])))
+        return 0
+    save(data)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
+""",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return script
+
+
+def _fake_claude_state(path: Path) -> dict[str, object]:
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {"servers": {}, "calls": []}
 
 
 def test_detect_mode_clone(sandbox: Path) -> None:
@@ -103,6 +217,20 @@ def test_copy_plugins_refreshes_existing_codex_cache(sandbox: Path) -> None:
         "command": sys.executable,
         "args": ["-m", "stackos", "mcp-bridge"],
     }
+
+
+def test_remove_plugins_removes_source_and_codex_cache(sandbox: Path) -> None:
+    target, _count = installer.copy_plugins(home=sandbox)
+    cache = sandbox / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos" / "0.1.0"
+    (cache / ".codex-plugin").mkdir(parents=True)
+    (cache / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+
+    removed_target, removed_cache = installer.remove_plugins(home=sandbox)
+
+    assert removed_target == target
+    assert removed_cache == sandbox / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos"
+    assert not target.exists()
+    assert not removed_cache.exists()
 
 
 def test_doctor_plugin_count_ignores_other_codex_plugins(sandbox: Path) -> None:
@@ -293,6 +421,87 @@ def test_doctor_exits_9_for_stale_stackos_plugin_skill_cache(sandbox: Path) -> N
     assert "stackos install" in plain_result.stdout
 
 
+def test_doctor_provider_readiness_reports_missing_connections(sandbox: Path) -> None:
+    settings = Settings()
+    settings.ensure_dirs()
+    upgrade_to_head(settings)
+
+    ok, details = doctor_cli._check_provider_readiness(settings, db_present=True)
+
+    assert ok is True
+    assert details["status"] == "needs_connections"
+    assert details["providers_count"] > 0
+    assert details["connected_count"] == 0
+    assert details["setup_required_count"] == details["providers_count"]
+    assert "connections" in str(details["connections_url"])
+    assert "auth.status" in str(details["repair"])
+
+
+def test_doctor_provider_readiness_does_not_sync_catalog(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings()
+    settings.ensure_dirs()
+    upgrade_to_head(settings)
+
+    def fail_sync(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("doctor provider readiness must stay read-only")
+
+    monkeypatch.setattr(PluginRepository, "sync_builtin_plugins", fail_sync)
+
+    ok, details = doctor_cli._check_provider_readiness(settings, db_present=True)
+
+    assert ok is True
+    assert details["providers_count"] > 0
+    assert details["status"] == "needs_connections"
+
+
+def test_doctor_provider_readiness_summarizes_connections_without_secrets(
+    sandbox: Path,
+) -> None:
+    settings = Settings()
+    init_result = CliRunner().invoke(app, ["init"], catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+    configure_seed_path(settings.seed_path)
+    upgrade_to_head(settings)
+
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            PluginRepository(session).sync_builtin_plugins()
+            project = Project(
+                slug="provider-readiness",
+                name="Provider Readiness",
+                domain="example.test",
+                locale="en",
+                is_active=True,
+            )
+            session.add(project)
+            session.commit()
+            session.refresh(project)
+            assert project.id is not None
+            AuthRepository(session).store_credential(
+                project_id=project.id,
+                provider_key="firecrawl",
+                auth_method_key="api_key",
+                profile_key="primary",
+                label="Primary Firecrawl",
+                fields={"api_key": "fc-secret"},
+            )
+    finally:
+        engine.dispose()
+
+    ok, details = doctor_cli._check_provider_readiness(settings, db_present=True)
+
+    assert ok is True
+    assert details["status"] in {"partial", "ready"}
+    assert "firecrawl" in details["connected_provider_keys"]
+    rendered = json.dumps(details)
+    assert "fc-secret" not in rendered
+    assert "encrypted_payload" not in rendered
+
+
 def test_bridge_autostart_spawns_loopback_daemon(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -380,44 +589,105 @@ def test_copy_skills_deletes_stale(sandbox: Path) -> None:
     assert not stale.exists()
 
 
-def test_register_mcp_claude_creates_file(sandbox: Path) -> None:
+def test_register_mcp_claude_uses_shared_contract(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     target = sandbox / ".claude" / "mcp.json"
-    msg = installer.register_mcp_claude(home=sandbox, target=target)
-    assert "Registered" in msg
-    payload = json.loads(target.read_text(encoding="utf-8"))
-    server = payload["mcpServers"]["stackos"]
-    assert server["transport"] == "stdio"
-    assert server["args"] == ["-m", "stackos", "mcp-bridge"]
-    assert "headers" not in server
-
-
-def test_register_mcp_claude_preserves_other_servers(sandbox: Path) -> None:
-    target = sandbox / ".claude" / "mcp.json"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps({"mcpServers": {"other": {"transport": "stdio", "command": "/bin/true"}}}),
-        encoding="utf-8",
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        claude_code_adapter,
+        "resolve_bridge_command",
+        lambda **_: [
+            "/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
+            "mcp-bridge",
+        ],
     )
-    installer.register_mcp_claude(home=sandbox, target=target)
-    payload = json.loads(target.read_text(encoding="utf-8"))
-    assert "other" in payload["mcpServers"]
-    assert "stackos" in payload["mcpServers"]
+
+    def fake_register(**kwargs: object) -> claude_mcp.ClaudeMcpResult:
+        captured.update(kwargs)
+        return claude_mcp.ClaudeMcpResult(
+            ok=True,
+            status="registered",
+            message="Registered MCP 'stackos' with Claude Code using user scope.",
+            scope="user",
+            transport="stdio",
+            command=list(kwargs["bridge_command"]),  # type: ignore[index]
+        )
+
+    monkeypatch.setattr(claude_mcp, "register", fake_register)
+
+    msg = installer.register_mcp_claude(home=sandbox, target=target)
+
+    assert "Registered MCP 'stackos'" in msg
+    assert captured["home"] == sandbox
+    assert captured["bridge_command"] == [
+        "/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
+        "mcp-bridge",
+    ]
+    assert not target.exists()
 
 
-def test_register_mcp_claude_remove(sandbox: Path) -> None:
+def test_register_mcp_claude_skips_when_claude_absent(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     target = sandbox / ".claude" / "mcp.json"
-    installer.register_mcp_claude(home=sandbox, target=target)
+    monkeypatch.setattr(
+        claude_mcp,
+        "register",
+        lambda **_: claude_mcp.ClaudeMcpResult(
+            ok=True,
+            status="claude_absent",
+            message="Claude Code CLI not found; skipped Claude MCP registration.",
+        ),
+    )
+
+    msg = installer.register_mcp_claude(home=sandbox, target=target)
+
+    assert "Claude Code CLI not found" in msg
+    assert not target.exists()
+
+
+def test_register_mcp_claude_remove_uses_shared_contract(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = sandbox / ".claude" / "mcp.json"
+    captured: dict[str, object] = {}
+
+    def fake_remove(**kwargs: object) -> claude_mcp.ClaudeMcpResult:
+        captured.update(kwargs)
+        return claude_mcp.ClaudeMcpResult(
+            ok=True,
+            status="removed",
+            message="Removed MCP 'stackos' from Claude Code user scope.",
+        )
+
+    monkeypatch.setattr(claude_mcp, "remove", fake_remove)
+
     msg = installer.register_mcp_claude(home=sandbox, target=target, remove=True)
-    assert "Unregistered" in msg
-    payload = json.loads(target.read_text(encoding="utf-8"))
-    assert "stackos" not in payload["mcpServers"]
+
+    assert "Removed MCP 'stackos'" in msg
+    assert captured["home"] == sandbox
+    assert not target.exists()
 
 
-def test_register_mcp_claude_atomic_no_temp_leftover(sandbox: Path) -> None:
-    target = sandbox / ".claude" / "mcp.json"
-    installer.register_mcp_claude(home=sandbox, target=target)
-    leftovers = list(target.parent.glob(".mcp.*"))
-    assert leftovers == []
+def test_register_mcp_claude_returns_repair_message_on_failure(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        claude_mcp,
+        "register",
+        lambda **_: claude_mcp.ClaudeMcpResult(
+            ok=False,
+            status="registration_failed",
+            message="Claude Code MCP registration failed.",
+            repair="Check `claude mcp add --help`, then rerun `stackos install --mcp-only`.",
+        ),
+    )
+
+    msg = installer.register_mcp_claude(home=sandbox)
+
+    assert "registration failed" in msg
+    assert "claude mcp add --help" in msg
 
 
 def test_register_mcp_codex_no_path(
@@ -445,7 +715,16 @@ def test_cli_install_skills_only_subcommand(sandbox: Path) -> None:
     assert not (sandbox / ".codex" / "plugins" / "stackos").exists()
 
 
-def test_cli_install_default_installs_plugin_and_skill_mirrors(sandbox: Path) -> None:
+def test_cli_install_default_installs_plugin_and_skill_mirrors(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(
+        installer,
+        "repair_mcp_hosts",
+        lambda home: (True, ["codex ok", "claude ok"]),
+    )
     runner = CliRunner()
     result = runner.invoke(
         app,
@@ -460,10 +739,297 @@ def test_cli_install_default_installs_plugin_and_skill_mirrors(sandbox: Path) ->
     assert current_alembic_version(Settings()) == HEAD_REVISION
 
 
+def test_cli_install_preserves_seed_and_token_on_rerun(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(
+        installer,
+        "repair_mcp_hosts",
+        lambda home: (True, ["codex ok", "claude ok"]),
+    )
+    monkeypatch.setattr(installer, "copy_skills", lambda runtime, home: (home / runtime, 1))
+    monkeypatch.setattr(
+        installer,
+        "copy_plugins",
+        lambda home: (home / ".codex/plugins/stackos", 1),
+    )
+    monkeypatch.setattr(installer, "register_plugin_marketplace", lambda home: "marketplace ok")
+    monkeypatch.setattr(
+        installer,
+        "repair_mcp_hosts",
+        lambda home: (True, ["codex ok", "claude ok"]),
+    )
+    monkeypatch.setattr(local_cli, "doctor", lambda json_output=False: None)
+
+    runner = CliRunner()
+    first = runner.invoke(app, ["install"], catch_exceptions=False)
+    assert first.exit_code == 0, first.stdout
+    state = sandbox / ".local" / "state" / "stackos"
+    seed_bytes = (state / "seed.bin").read_bytes()
+    token_text = (state / "auth.token").read_text(encoding="utf-8")
+
+    second = runner.invoke(app, ["install"], catch_exceptions=False)
+
+    assert second.exit_code == 0, second.stdout
+    assert (state / "seed.bin").read_bytes() == seed_bytes
+    assert (state / "auth.token").read_text(encoding="utf-8") == token_text
+
+
+def test_cli_install_mcp_only_registers_claude_with_fake_cli(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    state_path = tmp_path / "claude-state.json"
+    _write_fake_claude_cli(bin_dir, state_path)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+    result = CliRunner().invoke(
+        app,
+        ["install", "--mcp-only", "--skip-doctor"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    state = _fake_claude_state(state_path)
+    assert ["mcp", "remove", "stackos", "--scope", "user"] in state["calls"]
+    assert ["mcp", "add", "--scope", "user", "--transport", "stdio"] in [
+        call[:6] for call in state["calls"]
+    ]
+    assert not (sandbox / ".claude" / "mcp.json").exists()
+
+
+def test_cli_uninstall_removes_integrations_and_preserves_state(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    launchctl = bin_dir / "launchctl"
+    launchctl.write_text(
+        '#!/bin/sh\ncase "$1" in\n  print) exit 1 ;;\n  *) exit 0 ;;\nesac\n',
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+    claude_state = tmp_path / "claude-state.json"
+    _write_fake_claude_cli(bin_dir, claude_state)
+    claude_state.write_text(
+        json.dumps(
+            {
+                "servers": {
+                    "stackos": {
+                        "scope": "user",
+                        "type": "stdio",
+                        "command": "stackos",
+                        "args": ["mcp-bridge"],
+                    },
+                    "other": {"scope": "user", "type": "stdio", "command": "other", "args": []},
+                },
+                "calls": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+    data_dir = sandbox / ".local" / "share" / "stackos"
+    data_dir.mkdir(parents=True)
+    db_path = data_dir / "stackos.db"
+    db_path.write_text("db stays\n", encoding="utf-8")
+    state_dir = sandbox / ".local" / "state" / "stackos"
+    seed_path = state_dir / "seed.bin"
+    token_path = state_dir / "auth.token"
+    seed_path.write_bytes(b"seed stays")
+    token_before = token_path.read_text(encoding="utf-8")
+
+    (sandbox / ".codex" / "skills" / "stackos").mkdir(parents=True)
+    (sandbox / ".claude" / "skills" / "stackos").mkdir(parents=True)
+    plugin_root = sandbox / ".codex" / "plugins" / "stackos"
+    (plugin_root / ".codex-plugin").mkdir(parents=True)
+    (plugin_root / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+    cache_root = sandbox / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos"
+    (cache_root / "0.1.0" / ".codex-plugin").mkdir(parents=True)
+    (cache_root / "0.1.0" / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+
+    marketplace = sandbox / ".agents" / "plugins" / "marketplace.json"
+    marketplace.parent.mkdir(parents=True)
+    marketplace.write_text(
+        json.dumps(
+            {
+                "name": "local-stackos",
+                "plugins": [
+                    {"name": "stackos", "source": {"path": "./.codex/plugins/stackos"}},
+                    {"name": "other", "source": {"path": "./other"}},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    claude_mcp = sandbox / ".claude" / "mcp.json"
+    claude_mcp.parent.mkdir(parents=True, exist_ok=True)
+    claude_mcp.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "stackos": {"transport": "stdio"},
+                    "other-server": {"transport": "stdio"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_text("<plist><dict /></plist>\n", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["uninstall"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.stdout
+    assert "Preserved database directory" in result.stdout
+    assert "Preserved daemon state directory" in result.stdout
+    assert not plist.exists()
+    assert not (sandbox / ".codex" / "skills" / "stackos").exists()
+    assert not (sandbox / ".claude" / "skills" / "stackos").exists()
+    assert not plugin_root.exists()
+    assert not cache_root.exists()
+    marketplace_payload = json.loads(marketplace.read_text(encoding="utf-8"))
+    assert [item["name"] for item in marketplace_payload["plugins"]] == ["other"]
+    claude_payload = json.loads(claude_mcp.read_text(encoding="utf-8"))
+    assert "stackos" not in claude_payload["mcpServers"]
+    assert "other-server" in claude_payload["mcpServers"]
+    fake_claude_payload = _fake_claude_state(claude_state)
+    assert ["mcp", "remove", "stackos", "--scope", "user"] in fake_claude_payload["calls"]
+    assert "stackos" not in fake_claude_payload["servers"]
+    assert "other" in fake_claude_payload["servers"]
+    assert db_path.read_text(encoding="utf-8") == "db stays\n"
+    assert seed_path.read_bytes() == b"seed stays"
+    assert token_path.read_text(encoding="utf-8") == token_before
+
+
+def test_cli_uninstall_fails_when_launchd_unload_fails(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    launchctl = bin_dir / "launchctl"
+    launchctl.write_text(
+        "#!/usr/bin/env bash\n"
+        'case "$1" in\n'
+        "  print) exit 1 ;;\n"
+        "  unload) echo unload failed >&2; exit 44 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_text("<plist><dict /></plist>\n", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["uninstall"])
+
+    assert result.exit_code == 1
+    assert "launchd autostart removal failed" in result.stderr
+    assert "unload failed" in result.stderr
+    assert plist.exists()
+
+
+def test_cli_backup_creates_private_archive_with_manifest(sandbox: Path, tmp_path: Path) -> None:
+    settings = Settings()
+    settings.ensure_dirs()
+    with sqlite3.connect(settings.db_path) as conn:
+        conn.execute("CREATE TABLE backup_probe (id INTEGER PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO backup_probe (value) VALUES ('db stays')")
+        conn.commit()
+    settings.seed_path.write_bytes(b"seed stays")
+    settings.token_path.write_text("token stays\n", encoding="utf-8")
+
+    output = tmp_path / "stackos-backup.zip"
+    result = CliRunner().invoke(
+        app,
+        ["backup", "--output", str(output)],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert output.is_file()
+    assert output.stat().st_mode & 0o777 == 0o600
+    with zipfile.ZipFile(output) as archive:
+        assert set(archive.namelist()) == {
+            "manifest.json",
+            "data/stackos.db",
+            "state/auth.token",
+            "state/seed.bin",
+        }
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["schema"] == "stackos.local-backup.v1"
+        assert manifest["restore_status"] == "manual-only; automated restore is not implemented"
+        assert [item["path"] for item in manifest["included"]] == [
+            "data/stackos.db",
+            "state/seed.bin",
+            "state/auth.token",
+        ]
+        extracted_db = tmp_path / "restored-copy.db"
+        extracted_db.write_bytes(archive.read("data/stackos.db"))
+
+    with sqlite3.connect(extracted_db) as conn:
+        value = conn.execute("SELECT value FROM backup_probe WHERE id = 1").fetchone()[0]
+    assert value == "db stays"
+
+
+def test_cli_backup_includes_staged_seed_backup(sandbox: Path, tmp_path: Path) -> None:
+    settings = Settings()
+    settings.ensure_dirs()
+    with sqlite3.connect(settings.db_path) as conn:
+        conn.execute("CREATE TABLE backup_probe (id INTEGER PRIMARY KEY)")
+        conn.commit()
+    settings.seed_path.write_bytes(b"seed stays")
+    settings.seed_path.with_suffix(settings.seed_path.suffix + ".bak").write_bytes(b"old seed")
+    settings.token_path.write_text("token stays\n", encoding="utf-8")
+
+    output = tmp_path / "stackos-backup.zip"
+    result = CliRunner().invoke(
+        app,
+        ["backup", "--output", str(output)],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    with zipfile.ZipFile(output) as archive:
+        assert "state/seed.bin.bak" in archive.namelist()
+        manifest = json.loads(archive.read("manifest.json"))
+        assert "state/seed.bin.bak" in [item["path"] for item in manifest["included"]]
+        assert archive.read("state/seed.bin.bak") == b"old seed"
+
+
+def test_cli_backup_refuses_missing_required_state(sandbox: Path) -> None:
+    output = sandbox / "backup.zip"
+
+    result = CliRunner().invoke(app, ["backup", "--output", str(output)])
+
+    assert result.exit_code == 1
+    assert "required local state is missing" in result.stderr
+    assert not output.exists()
+
+
 def test_cli_install_tolerates_daemon_down_doctor(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(
+        installer,
+        "repair_mcp_hosts",
+        lambda home: (True, ["codex ok", "claude ok"]),
+    )
+
     def daemon_down_doctor(json_output: bool = False) -> None:
         _ = json_output
         raise local_cli.typer.Exit(code=1)
@@ -481,6 +1047,13 @@ def test_cli_install_preserves_blocking_doctor_failures(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+    monkeypatch.setattr(
+        installer,
+        "repair_mcp_hosts",
+        lambda home: (True, ["codex ok", "claude ok"]),
+    )
+
     def seed_failure_doctor(json_output: bool = False) -> None:
         _ = json_output
         raise local_cli.typer.Exit(code=8)
@@ -506,7 +1079,8 @@ def test_cli_install_rejects_force_without_launchd(sandbox: Path) -> None:
     result = CliRunner().invoke(app, ["install", "--force", "--skip-doctor"])
 
     assert result.exit_code == 2
-    assert "only valid with --launchd" in result.stderr if hasattr(result, "stderr") else result.output
+    output = result.stderr if hasattr(result, "stderr") else result.output
+    assert "only valid with --launchd" in output
 
 
 def test_cli_install_launchd_force_overwrites_plist(
@@ -518,10 +1092,17 @@ def test_cli_install_launchd_force_overwrites_plist(
     monkeypatch.setattr(installer, "detect_mode", lambda: "package")
     monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
     monkeypatch.setattr(installer, "copy_skills", lambda runtime, home: (home / runtime, 1))
-    monkeypatch.setattr(installer, "copy_plugins", lambda home: (home / ".codex/plugins/stackos", 1))
+    monkeypatch.setattr(
+        installer,
+        "copy_plugins",
+        lambda home: (home / ".codex/plugins/stackos", 1),
+    )
     monkeypatch.setattr(installer, "register_plugin_marketplace", lambda home: "marketplace ok")
-    monkeypatch.setattr(installer, "register_mcp_codex", lambda home, port: "codex ok")
-    monkeypatch.setattr(installer, "register_mcp_claude", lambda home, port: "claude ok")
+    monkeypatch.setattr(
+        installer,
+        "repair_mcp_hosts",
+        lambda home: (True, ["codex ok", "claude ok"]),
+    )
 
     def fake_install_launchd(
         settings: Settings,
@@ -635,6 +1216,27 @@ def test_cli_rotate_token_requires_yes(sandbox: Path) -> None:
     assert result.exit_code == 2
 
 
+def test_cli_rotate_token_reports_restart_even_when_mcp_repair_fails(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    token_path = sandbox / ".local" / "state" / "stackos" / "auth.token"
+    before = token_path.read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        installer,
+        "repair_mcp_hosts",
+        lambda: (False, ["codex: repair failed"]),
+    )
+
+    result = runner.invoke(app, ["rotate-token", "--yes"])
+
+    assert result.exit_code == 0
+    assert token_path.read_text(encoding="utf-8") != before
+    assert "token rotated; MCP host repair needs attention" in result.output
+    assert "run `stackos restart`" in result.output
+
+
 def test_cli_start_spawns_background_daemon(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -743,9 +1345,239 @@ def test_launchd_autostart_requires_force_for_different_plist(
 
 
 def test_codex_mcp_doctor_accepts_bridge_entries_only() -> None:
+    from stackos.host_mcp.bridge import resolve_bridge_command
+
+    expected = " ".join(["stackos", *resolve_bridge_command(runtime="codex")])
     assert not doctor_cli._codex_mcp_line_is_bridge("stackos stdio -")
-    assert doctor_cli._codex_mcp_line_is_bridge("stackos /path/python -m stackos mcp-bridge")
+    assert doctor_cli._codex_mcp_line_is_bridge(expected)
     assert not doctor_cli._codex_mcp_line_is_bridge("stackos http://127.0.0.1:5180/mcp")
     assert not doctor_cli._codex_mcp_line_is_bridge(
         "stackos --url http://127.0.0.1:5180/mcp --bearer-token-env-var STACKOS_TOKEN"
+    )
+
+
+def test_claude_mcp_doctor_treats_legacy_json_as_advisory(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    legacy = sandbox / ".claude" / "mcp.json"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "stackos": {
+                        "transport": "stdio",
+                        "command": "python3",
+                        "args": ["-m", "stackos", "mcp-bridge"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    empty_path = sandbox / "empty-bin"
+    empty_path.mkdir()
+    monkeypatch.setenv("PATH", str(empty_path))
+    monkeypatch.setenv("STACKOS_CLAUDE_BIN", str(sandbox / "missing-claude"))
+
+    ok, info = doctor_cli._check_claude_mcp_registered(sandbox)
+
+    assert ok is False
+    assert info["status"] == "absent"
+    assert info["available"] is False
+    assert info["advisory"] is True
+
+
+def test_claude_mcp_doctor_surfaces_stale_cli_entry(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        claude_code_adapter.claude_mcp,
+        "inspect",
+        lambda **_: claude_mcp.ClaudeMcpResult(
+            ok=False,
+            status="stale",
+            message="Claude Code has a StackOS MCP entry, but it is stale.",
+            scope="project",
+            transport="stdio",
+            command=["python3", "-m", "stackos", "mcp-bridge"],
+            repair="Run `stackos install --mcp-only` or desktop Repair.",
+        ),
+    )
+
+    ok, info = doctor_cli._check_claude_mcp_registered(sandbox)
+
+    assert ok is False
+    assert info["status"] == "registered_stale"
+    assert info["host_key"] == "claude-code"
+    assert info["repair"] == "Run `stackos install --mcp-only` or desktop Repair."
+
+
+def test_doctor_plain_output_reports_claude_absent_without_blocking(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed = sandbox / ".local" / "state" / "stackos" / "seed.bin"
+    seed.write_bytes(b"0" * 32)
+    os.chmod(seed, 0o600)
+    monkeypatch.setattr(doctor_cli, "_tcp_can_connect", lambda host, port: True)
+    monkeypatch.setattr(
+        doctor_cli, "_check_credentials_decrypt", lambda settings, db_present: (True, [])
+    )
+    monkeypatch.setattr(
+        doctor_cli, "_check_alembic_at_head", lambda settings, db_present: (True, None)
+    )
+    monkeypatch.setattr(doctor_cli, "_check_scheduler_jobs", lambda settings: (True, 4))
+    monkeypatch.setattr(doctor_cli, "_check_browser_runtime", lambda: (True, {"repair": None}))
+    monkeypatch.setattr(
+        doctor_cli,
+        "_check_installed_assets",
+        lambda home: (
+            {
+                "codex_skills_installed": True,
+                "claude_skills_installed": True,
+                "plugins_installed": True,
+                "plugin_marketplace_registered": True,
+                "stackos_plugin_skill_current": True,
+            },
+            {},
+        ),
+    )
+    monkeypatch.setattr(
+        doctor_cli,
+        "_check_mcp_hosts",
+        lambda home: (
+            True,
+            [
+                {
+                    "host_key": "codex",
+                    "surface": "shared-config",
+                    "status": "registered_current",
+                    "message": "Codex StackOS MCP registration is healthy.",
+                    "ok": True,
+                    "available": True,
+                    "advisory": False,
+                    "blocking": False,
+                    "needs_restart": False,
+                    "command": [],
+                    "config_path": None,
+                    "repair": None,
+                    "warnings": [],
+                },
+                {
+                    "host_key": "claude-code",
+                    "surface": "cli",
+                    "status": "absent",
+                    "message": "Claude Code CLI not found; skipping Claude MCP registration.",
+                    "ok": True,
+                    "available": False,
+                    "advisory": True,
+                    "blocking": False,
+                    "needs_restart": False,
+                    "command": [],
+                    "config_path": None,
+                    "repair": "Install Claude Code, then run desktop Repair.",
+                    "warnings": [],
+                },
+            ],
+        ),
+    )
+    monkeypatch.setattr(doctor_cli, "_check_launchd_plist", lambda home: (True, {}))
+    monkeypatch.setattr(
+        doctor_cli,
+        "_check_provider_readiness",
+        lambda settings, db_present: (True, {"status": "ready", "repair": None}),
+    )
+
+    result = CliRunner().invoke(app, ["doctor"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.stdout
+    assert "claude_mcp_registered: False" in result.stdout
+    assert "Claude Code CLI not found" in result.stdout
+
+
+def test_doctor_exits_9_for_stale_claude_registration(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed = sandbox / ".local" / "state" / "stackos" / "seed.bin"
+    seed.write_bytes(b"0" * 32)
+    os.chmod(seed, 0o600)
+    monkeypatch.setattr(doctor_cli, "_tcp_can_connect", lambda host, port: True)
+    monkeypatch.setattr(
+        doctor_cli, "_check_credentials_decrypt", lambda settings, db_present: (True, [])
+    )
+    monkeypatch.setattr(
+        doctor_cli, "_check_alembic_at_head", lambda settings, db_present: (True, None)
+    )
+    monkeypatch.setattr(doctor_cli, "_check_scheduler_jobs", lambda settings: (True, 4))
+    monkeypatch.setattr(doctor_cli, "_check_browser_runtime", lambda: (True, {"repair": None}))
+    monkeypatch.setattr(
+        doctor_cli,
+        "_check_installed_assets",
+        lambda home: (
+            {
+                "codex_skills_installed": True,
+                "claude_skills_installed": True,
+                "plugins_installed": True,
+                "plugin_marketplace_registered": True,
+                "stackos_plugin_skill_current": True,
+            },
+            {},
+        ),
+    )
+    monkeypatch.setattr(
+        doctor_cli,
+        "_check_mcp_hosts",
+        lambda home: (
+            False,
+            [
+                {
+                    "host_key": "codex",
+                    "surface": "shared-config",
+                    "status": "registered_current",
+                    "message": "Codex StackOS MCP registration is healthy.",
+                    "ok": True,
+                    "available": True,
+                    "advisory": False,
+                    "blocking": False,
+                    "needs_restart": False,
+                    "command": [],
+                    "config_path": None,
+                    "repair": None,
+                    "warnings": [],
+                },
+                {
+                    "host_key": "claude-code",
+                    "surface": "cli",
+                    "status": "registered_stale",
+                    "message": "Claude Code has a StackOS MCP entry, but it is stale.",
+                    "ok": False,
+                    "available": True,
+                    "advisory": False,
+                    "blocking": True,
+                    "needs_restart": False,
+                    "command": [],
+                    "config_path": None,
+                    "repair": "Run `stackos install --mcp-only` or desktop Repair.",
+                    "warnings": [],
+                },
+            ],
+        ),
+    )
+    monkeypatch.setattr(doctor_cli, "_check_launchd_plist", lambda home: (True, {}))
+    monkeypatch.setattr(
+        doctor_cli,
+        "_check_provider_readiness",
+        lambda settings, db_present: (True, {"status": "ready", "repair": None}),
+    )
+
+    result = CliRunner().invoke(app, ["doctor"], catch_exceptions=False)
+
+    assert result.exit_code == 9
+    assert "claude-code MCP registration needs repair" in result.stdout
+
+
+def test_doctor_redacts_secret_like_mcp_entries() -> None:
+    assert (
+        doctor_cli._redact_secretish_mcp_text("stackos --bearer-token-env-var STACKOS_TOKEN")
+        == "<redacted: secret-like MCP entry>"
     )

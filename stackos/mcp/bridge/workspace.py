@@ -9,6 +9,17 @@ from .catalog import _bridge_tool_accepts_project_id
 from .constants import _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES
 from .protocol import _bridge_as_int
 
+_PROJECT_SCOPE_INJECTION_EXCLUDED_TOOL_NAMES = {
+    "workspace.bootstrap",
+    "workspace.connect",
+}
+_PROJECT_SCOPE_IDENTITY_ARGUMENT_NAMES = {
+    "project_id",
+    "project_slug",
+    "project_name",
+    "workspace_alias",
+}
+
 
 def _bridge_scoped_arguments(
     *,
@@ -17,7 +28,15 @@ def _bridge_scoped_arguments(
     arguments: dict[str, Any],
     scoped_project_id: int | None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    if scoped_project_id is None or not _bridge_tool_accepts_project_id(catalog, tool_name):
+    has_explicit_project_or_workspace_identity = (
+        tool_name in _PROJECT_SCOPE_INJECTION_EXCLUDED_TOOL_NAMES
+        and any(arguments.get(name) is not None for name in _PROJECT_SCOPE_IDENTITY_ARGUMENT_NAMES)
+    )
+    if (
+        scoped_project_id is None
+        or has_explicit_project_or_workspace_identity
+        or not _bridge_tool_accepts_project_id(catalog, tool_name)
+    ):
         return dict(arguments), None
     current = arguments.get("project_id")
     if current is None:
@@ -99,6 +118,51 @@ def _bridge_workspace_scoped_arguments(
         return dict(arguments), None
 
     out = dict(arguments)
+    has_host_workspace_hints = any((cwd, repo_fingerprint, git_remote_url))
+    if not has_host_workspace_hints and tool_name in {
+        "workspace.resolve",
+        "workspace.startSession",
+        "workspace.bootstrap",
+        "workspace.connect",
+    }:
+        synthetic_anchor_fields = {
+            "cwd",
+            "last_known_root",
+            "repo_fingerprint",
+            "git_remote_url",
+            "normalized_repo_name",
+        }
+        supplied = sorted(
+            field for field in synthetic_anchor_fields if arguments.get(field) is not None
+        )
+        if supplied:
+            allowed_no_hint_fields = (
+                ["workspace_alias"]
+                if tool_name in {"workspace.resolve", "workspace.startSession"}
+                else ["workspace_alias", "project_id", "project_slug", "project_name"]
+            )
+            return None, {
+                "tool": tool_name,
+                "reason": "workspace_anchor_missing_from_host",
+                "detail": (
+                    "The agent host did not provide a workspace directory, repo "
+                    "fingerprint, or git remote. Do not invent directory/repo anchors "
+                    "from a desktop/global session; bind by workspace_alias or an "
+                    "explicit project identifier instead."
+                ),
+                "supplied_fields": supplied,
+                "allowed_no_hint_fields": allowed_no_hint_fields,
+                "repair": {
+                    "existing_project": (
+                        "Use workspace.connect with project_id, project_slug, "
+                        "project_name, or an existing workspace_alias."
+                    ),
+                    "new_project": (
+                        "Use workspace.bootstrap with project_name, project_slug, "
+                        "or workspace_alias."
+                    ),
+                },
+            }
     checks: list[tuple[str, str | None, str | None]] = []
     if tool_name in {"workspace.resolve", "workspace.startSession", "workspace.bootstrap"}:
         checks.extend(

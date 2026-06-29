@@ -7,7 +7,7 @@ import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { UiBadge, UiButton, UiCallout, UiEmptyState, UiMetricCard, UiSectionHeader } from '@/components/ui'
+import { UiButton, UiCallout, UiMetricCard } from '@/components/ui'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 import { useSchedulesStore, type ScheduledJob } from '@/stores/schedules'
 import type { DataTableColumn } from '@/components/types'
@@ -32,7 +32,7 @@ const itemsByNextRun = computed(() =>
 
 const columns: DataTableColumn<ScheduledJob>[] = [
   { key: 'kind', label: 'Kind', cellClass: 'font-medium text-fg-strong' },
-  { key: 'cron_expr', label: 'Cron', cellClass: 'font-mono text-xs' },
+  { key: 'cron_expr', label: 'Schedule', cellClass: 'font-mono text-xs' },
   { key: 'next_run_at', label: 'Next run' },
   { key: 'last_run_at', label: 'Last run' },
   { key: 'last_run_status', label: 'Last status', widthClass: 'w-28' },
@@ -49,21 +49,17 @@ onMounted(load)
 
 <template>
   <section class="space-y-5">
-    <UiSectionHeader
-      title="Scheduled jobs"
-      description="Read-only schedule inventory for recurring agent-owned maintenance."
-    >
-      <template #actions>
-        <UiButton
-          size="sm"
-          variant="secondary"
-          :disabled="loading"
-          @click="load"
-        >
-          {{ loading ? 'Refreshing...' : 'Refresh' }}
-        </UiButton>
-      </template>
-    </UiSectionHeader>
+    <div class="flex justify-end">
+      <UiButton
+        size="sm"
+        variant="secondary"
+        icon-left="refresh"
+        :loading="loading"
+        @click="load"
+      >
+        Refresh
+      </UiButton>
+    </div>
 
     <UiCallout
       v-if="error"
@@ -88,21 +84,12 @@ onMounted(load)
       />
     </div>
 
-    <UiEmptyState
-      v-if="!loading && items.length === 0"
-      title="No scheduled jobs"
-      description="Agent-owned schedules will appear here with next run, last run, and status."
-      icon="calendar"
-      class="rounded-lg border border-dashed border-default bg-bg-surface px-4 py-8"
-    />
-
     <DataTable
-      v-else
       :items="itemsByNextRun"
       :columns="columns"
       :loading="loading"
       aria-label="Scheduled jobs"
-      empty-message="No scheduled jobs yet."
+      empty-message="Agent-owned schedules will appear here with next run, last run, and status."
     >
       <template #cell:next_run_at="{ value }">
         <span :title="formatAbsoluteDateTime(value ? String(value) : null)">
@@ -124,9 +111,10 @@ onMounted(load)
         <span v-else>-</span>
       </template>
       <template #cell:enabled="{ row }">
-        <UiBadge :tone="(row as ScheduledJob).enabled ? 'success' : 'warning'">
-          {{ (row as ScheduledJob).enabled ? 'Enabled' : 'Disabled' }}
-        </UiBadge>
+        <StatusBadge
+          domain="step"
+          :status="(row as ScheduledJob).enabled ? 'enabled' : 'disabled'"
+        />
       </template>
     </DataTable>
   </section>

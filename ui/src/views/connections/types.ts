@@ -4,8 +4,15 @@ export type ConnectionRow = SchemaCredentialConnectionOut & { id: string }
 export type AuthMethod = NonNullable<SchemaAuthProviderOut['auth_methods']>[number]
 export type AuthField = NonNullable<AuthMethod['fields']>[number]
 export type MessageTone = 'success' | 'danger' | 'info'
-export type BadgeTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent'
-export type ConnectionSection = 'services' | 'communications' | 'telegram' | 'diagnostics'
+export type ConnectionSection =
+  | 'overview'
+  | 'services'
+  | 'bots'
+  | 'channels'
+  | 'destinations'
+  | 'handoff-rules'
+  | 'connectivity'
+  | 'diagnostics'
 
 export interface ServiceGroup {
   provider: SchemaAuthProviderOut | null
@@ -31,6 +38,16 @@ export interface TelegramCommandDraft {
   enabled: boolean
 }
 
+export type BotPolicyFieldKey =
+  | 'identity_display_name'
+  | 'identity_purpose'
+  | 'identity_voice'
+  | 'agent_default_instructions'
+  | 'agent_boundaries'
+  | 'agent_escalation'
+
+export type BotPolicyFormFields = Record<BotPolicyFieldKey, string>
+
 export interface TelegramProfileForm {
   key: string
   auth_profile_key: string
@@ -51,6 +68,20 @@ export interface TelegramProfileForm {
   same_thread: boolean
 }
 
+export interface SlackProfileForm {
+  key: string
+  auth_profile_key: string
+  identity_display_name: string
+  identity_purpose: string
+  identity_voice: string
+  agent_default_instructions: string
+  agent_boundaries: string
+  agent_escalation: string
+  allowed_chat_refs: string
+  allowed_user_refs: string
+  mention_patterns: string
+}
+
 export interface CommunicationProfile {
   record_id: number
   project_id: number
@@ -69,6 +100,8 @@ export interface CommunicationProfile {
     denied_user_refs?: string[]
     allowed_chat_refs?: string[]
     denied_chat_refs?: string[]
+    allowed_surface_refs?: string[]
+    denied_surface_refs?: string[]
     user_mode?: string
     dm_mode?: string
     channel_mode?: string
@@ -120,6 +153,26 @@ export interface CommunicationTargetListOut {
   total_estimate: number | null
 }
 
+export interface CommunicationRoute {
+  record_id: number
+  project_id: number
+  route_ref: string
+  key: string
+  enabled: boolean
+  source_surface_refs: string[]
+  target_refs: string[]
+  allowed_profile_refs: string[]
+  requires_approval: boolean
+  field_policy: Record<string, unknown>
+  metadata_json: Record<string, unknown>
+}
+
+export interface CommunicationRouteListOut {
+  items: CommunicationRoute[]
+  next_cursor: string | number | null
+  total_estimate: number | null
+}
+
 export interface CommunicationSurface {
   record_id: number
   project_id: number
@@ -153,19 +206,72 @@ export interface IngressEndpointRoute {
   local_url?: string
   remote_status?: string
   notes?: string[]
+  action_required?: boolean
+  next_action?: {
+    kind: 'manual-provider-update'
+    label: string
+    title: string
+    instructions: string
+    url?: string | null
+    provider_fields?: string[]
+  } | null
+}
+
+export interface OperationWriteEnvelope<T> {
+  data: T
+  run_id: number | null
+  project_id: number | null
+}
+
+export interface IngressEndpointOut {
+  record_id?: number
+  project_id?: number
+  endpoint_ref?: string
+  key?: string
+  driver?: string
+  enabled?: boolean
+  status?: string
+  public_base_url?: string | null
+  local_base_url?: string | null
+  driver_config?: Record<string, unknown>
+  last_refreshed_at?: string | null
+  last_synced_at?: string | null
+  metadata_json?: Record<string, unknown>
+}
+
+export interface IngressProviderResult {
+  provider_key: string
+  profile_key?: string
+  status: string
+  reason?: string
+  error?: string
+  request_url?: string
+  webhook_url?: string
+  notes?: string[]
+  next_action?: IngressEndpointRoute['next_action']
+}
+
+export interface IngressEndpointSyncOut {
+  endpoint: IngressEndpointOut
+  routes: IngressEndpointRoute[]
+  provider_results: IngressProviderResult[]
+  updated_profile_refs: string[]
 }
 
 export interface IngressEndpointStatusOut {
   configured?: boolean
   ready?: boolean
-  endpoint?: {
-    driver?: string
-    status?: string
-    public_base_url?: string | null
-    local_base_url?: string | null
-  } | null
+  endpoint?: IngressEndpointOut | null
   routes?: IngressEndpointRoute[]
   notes?: string[]
+}
+
+export type IngressDriver = 'public-url' | 'local-tunnel'
+
+export interface IngressForm {
+  driver: IngressDriver
+  public_base_url: string
+  discovery_url: string
 }
 
 export type MessageMap = Record<string, { tone: MessageTone; text: string }>

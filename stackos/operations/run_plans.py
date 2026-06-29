@@ -137,8 +137,10 @@ class RunPlanReopenInput(MCPInput):
         json_schema_extra={
             "example": {
                 "run_plan_id": 27,
-                "reason": "More follow-up work was found after closeout.",
-                "actor": "codex",
+                "reason": (
+                    "Admin selected this closed run plan as the canonical in-place recovery target."
+                ),
+                "actor": "stackos-admin",
             }
         },
     )
@@ -663,6 +665,7 @@ def operation_specs() -> list[OperationSpec]:
                     },
                 ),
             ),
+            mutating=True,
             grant_policy="direct-run-audit-write",
         ),
         OperationSpec(
@@ -673,15 +676,16 @@ def operation_specs() -> list[OperationSpec]:
             handler=run_plan_reopen,
             surfaces=_surfaces("runPlan.reopen", "run-plans reopen"),
             purpose=(
-                "Use this when more work is discovered after a workflow was closed and "
-                "the same run-plan audit trail should continue instead of creating a "
-                "duplicate replacement plan."
+                "Use this lower-level lifecycle operation for controller or admin recovery "
+                "when the same closed run-plan audit trail must continue in-place. Normal "
+                "agent follow-up after closeout should use tracker.reopen so StackOS owns "
+                "the tracker/run-plan mirror decision."
             ),
             when_to_use=(
-                "The operator says to continue, reopen, or add follow-up work to a "
-                "closed workflow.",
-                "A closed workflow task has open child tickets or new follow-up tickets "
-                "must be created under the same canonical run plan.",
+                "A controller is explicitly reopening a known closed run plan after "
+                "tracker.reopen or operator/admin review selected that canonical plan.",
+                "A closed workflow task has open child tickets and an admin needs to revive "
+                "the exact run-plan step rather than create a replacement plan.",
             ),
             prerequisites=(
                 "Pass run_plan_id and a human-readable reason.",
@@ -694,14 +698,18 @@ def operation_specs() -> list[OperationSpec]:
             ),
             examples=(
                 OperationExample(
-                    title="Reopen a closed workflow",
+                    title="Admin reopens a selected closed workflow",
                     arguments={
                         "run_plan_id": 27,
-                        "reason": "More UI follow-up work was found after closeout.",
-                        "actor": "codex",
+                        "reason": (
+                            "Admin selected this closed run plan as the canonical in-place "
+                            "recovery target."
+                        ),
+                        "actor": "stackos-admin",
                     },
                 ),
             ),
+            mutating=True,
             grant_policy="direct-run-audit-write",
         ),
         OperationSpec(

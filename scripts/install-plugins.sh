@@ -26,7 +26,6 @@ fi
 
 PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PLUGIN_PYTHON}" - \
     "${HOME_DIR}" "${ACTION}" "${TARGET}" "${MARKETPLACE}" <<'PYEOF'
-import shutil
 import sys
 from pathlib import Path
 
@@ -43,8 +42,9 @@ if action == "install":
     print(f"Installed {count} plugins to {installed_target}")
     print(f"Registered StackOS plugin marketplace at {marketplace}")
 else:
-    shutil.rmtree(target, ignore_errors=True)
+    target, cache_root = installer.remove_plugins(home=home)
     installer.register_plugin_marketplace(home=home, remove=True)
     print(f"Removed StackOS plugin from {target}")
+    print(f"Removed StackOS plugin cache from {cache_root}")
     print(f"Unregistered StackOS plugin marketplace entry at {marketplace}")
 PYEOF

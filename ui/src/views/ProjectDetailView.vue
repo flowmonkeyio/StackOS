@@ -19,6 +19,10 @@ const { items } = storeToRefs(projects)
 const projectId = computed<number>(() => Number.parseInt(route.params.id as string, 10))
 const project = computed(() => projects.getById(projectId.value))
 
+// The Home console (project-home) renders its own page chrome, so this shell
+// steps aside for it and only wraps the setup-group tabs.
+const isHome = computed<boolean>(() => route.name === 'project-home')
+
 const activeKey = computed<string>(() => {
   const name = String(route.name ?? '')
   const match = name.match(/^project-detail-(.+)$/)
@@ -44,8 +48,7 @@ const PAGE_COPY = {
   },
   setup: {
     title: 'Setup',
-    description:
-      'Runtime health, project enablement, connection status, templates, actions, and run readiness.',
+    description: 'Whether StackOS is ready to run agent work — and where to finish setting up.',
   },
   schedules: {
     title: 'Schedules',
@@ -83,7 +86,8 @@ onMounted(ensureLoaded)
 </script>
 
 <template>
-  <UiPageShell>
+  <RouterView v-if="isHome" />
+  <UiPageShell v-else>
     <ProjectPageHeader
       :project-id="projectId"
       :title="pageTitle"

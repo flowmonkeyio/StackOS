@@ -8,6 +8,8 @@ from typing import Any
 from sqlmodel import select
 
 from stackos.db.models import ContextIndexEntry, Decision, Experiment, Learning, ProjectEvent
+from stackos.events import StackOSEvent, StackOSEventSource
+from stackos.repositories.project_events import StackOSEventEmitter
 
 from .support import ContextRepositorySupport
 from .utils import _normalise_tags, _safe_json, _safe_text
@@ -27,20 +29,19 @@ class ContextIndexMixin(ContextRepositorySupport):
         tags: list[str] | None = None,
         metadata_json: dict[str, Any] | None = None,
     ) -> ProjectEvent:
-        row = ProjectEvent(
-            project_id=project_id,
-            run_id=run_id,
-            source_type=source_type,
-            source_id=source_id,
-            event_type=event_type,
-            title=_safe_text(title),
-            summary=_safe_text(summary),
-            tags_json=_normalise_tags(tags),
-            metadata_json=_safe_json(metadata_json) if metadata_json is not None else None,
+        return StackOSEventEmitter(self._s).emit(
+            StackOSEvent(
+                project_id=project_id,
+                run_id=run_id,
+                source=StackOSEventSource(type=source_type, id=source_id),
+                event_type=event_type,
+                title=title,
+                summary=summary,
+                tags=tags or [],
+                metadata=metadata_json or {},
+                schema_version=None,
+            )
         )
-        self._s.add(row)
-        self._s.flush()
-        return row
 
     def _upsert_index(
         self,

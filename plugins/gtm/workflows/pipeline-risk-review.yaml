@@ -15,10 +15,16 @@ agent_requirements:
     requirement: required
     agent_preset_ref: gtm.workflow.pipeline-risk-review
     purpose: Review pipeline risk, data freshness, opportunity blockers, and next actions.
+    applies_to_steps:
+      - orient
+      - fetch_metric_gaps
+      - diagnose_risks
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review CRM state assumptions, customer-data boundaries, and any mutation follow-up.
+    applies_to_steps:
+      - diagnose_risks
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

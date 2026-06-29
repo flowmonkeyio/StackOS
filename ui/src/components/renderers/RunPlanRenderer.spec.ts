@@ -13,7 +13,7 @@ import {
 import RunPlanRenderer from './RunPlanRenderer.vue'
 
 describe('RunPlanRenderer', () => {
-  it('renders run-plan steps and redacted action calls', async () => {
+  it('renders run-plan steps and redacted action calls', () => {
     const plan: SchemaRunPlanOut = {
       id: 1,
       project_id: 1,
@@ -107,7 +107,6 @@ describe('RunPlanRenderer', () => {
     ]
 
     const w = mount(RunPlanRenderer, { props: { plan, actionCalls } })
-    await w.get('button').trigger('click')
 
     expect(w.text()).toContain('Demo Run')
     expect(w.text()).toContain('action.execute')

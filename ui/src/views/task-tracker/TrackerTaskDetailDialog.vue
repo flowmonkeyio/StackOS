@@ -11,6 +11,7 @@ import {
   UiMetadataStrip,
   UiSelect,
 } from '@/components/ui'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { trackerStatus } from '@/design/status'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import type { TrackerStatus, TrackerTask } from '@/lib/task-tracker/types'
@@ -21,7 +22,6 @@ import type {
   TaskExecutionContextArtifactPageInfo,
   TaskExecutionContextPageInfo,
 } from './executionContextTypes'
-import TrackerStatusBadge from './TrackerStatusBadge.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -166,7 +166,10 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
               Overview
             </h3>
             <div class="mt-1.5 flex flex-wrap items-center gap-2">
-              <TrackerStatusBadge :status="task.status" />
+              <StatusBadge
+                domain="tracker"
+                :status="task.status"
+              />
               <UiBadge
                 v-if="workflowManaged"
                 tone="accent"

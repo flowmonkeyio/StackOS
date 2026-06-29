@@ -61,7 +61,7 @@ function projectInitials(name: string): string {
 
 async function pick(id: number): Promise<void> {
   close()
-  await router.push(`/projects/${id}/overview`)
+  await router.push(`/projects/${id}`)
 }
 
 function onClickOutside(e: MouseEvent): void {

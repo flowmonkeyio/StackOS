@@ -12,7 +12,7 @@ function makeRouter() {
     routes: [
       { path: '/', component: { template: '<div/>' } },
       { path: '/projects', component: { template: '<div/>' } },
-      { path: '/projects/:id/overview', component: { template: '<div/>' } },
+      { path: '/projects/:id', component: { template: '<div/>' } },
       { path: '/projects/:id/connections', component: { template: '<div/>' } },
     ],
   })
@@ -143,6 +143,6 @@ describe('ProjectSwitcher', () => {
     await options[1].trigger('click')
     await flushPromises()
     expect((projects as unknown as Record<string, unknown>).activate).toBeUndefined()
-    expect(pushSpy).toHaveBeenCalledWith('/projects/2/overview')
+    expect(pushSpy).toHaveBeenCalledWith('/projects/2')
   })
 })

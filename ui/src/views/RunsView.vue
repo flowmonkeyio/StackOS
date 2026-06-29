@@ -15,16 +15,16 @@ import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
-  UiBadge,
   UiButton,
   UiCallout,
+  UiCountBadge,
   UiFormField,
   UiInput,
   UiPageShell,
-  UiPanel,
   UiSectionHeader,
   UiSegmentedControl,
   UiSelect,
+  UiToolbar,
 } from '@/components/ui'
 import RunDetail from './RunDetail.vue'
 import {
@@ -68,7 +68,7 @@ const columns: DataTableColumn<Run>[] = [
   { key: 'id', label: 'ID', widthClass: 'w-20', cellClass: 'font-mono text-xs' },
   { key: 'kind', label: 'Kind' },
   { key: 'status', label: 'Status', widthClass: 'w-24' },
-  { key: 'parent_run_id', label: 'Parent', widthClass: 'w-20' },
+  { key: 'parent_run_id', label: 'Parent run', widthClass: 'w-20' },
   { key: 'started_at', label: 'Started', sortable: true },
   {
     key: 'ended_at',
@@ -164,6 +164,8 @@ onMounted(load)
       >
         <UiButton
           variant="secondary"
+          size="sm"
+          icon-left="chevron-left"
           @click="router.push(`/projects/${projectId}/runs`)"
         >
           Back to list
@@ -189,49 +191,52 @@ onMounted(load)
       v-else
       class="space-y-4"
     >
-      <UiPanel
+      <UiToolbar
+        variant="sunken"
         aria-label="Run filters"
-        class="p-4"
+        density="comfortable"
       >
-        <UiSegmentedControl
-          :model-value="filters.status ?? 'all'"
-          :options="STATUS_OPTIONS"
-          label="Run status filter"
-          @select="onStatusSelect"
-        />
+        <div class="flex w-full flex-col gap-3">
+          <UiSegmentedControl
+            :model-value="filters.status ?? 'all'"
+            :options="STATUS_OPTIONS"
+            label="Run status filter"
+            @select="onStatusSelect"
+          />
 
-        <div class="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-[240px_180px_180px_180px]">
-          <UiFormField label="Kind">
-            <UiSelect
-              :model-value="filters.kind ?? ''"
-              :options="kindOptions"
-              @update:model-value="
-                (value: string | number | null) => setKindFilter(String(value ?? ''))
-              "
-            />
-          </UiFormField>
-          <UiFormField label="Parent run id">
-            <UiInput
-              type="number"
-              min="1"
-              :model-value="filters.parent_run_id ?? ''"
-              @change="(value: string | number | null) => setParentFilter(String(value ?? ''))"
-            />
-          </UiFormField>
-          <UiFormField label="Since">
-            <UiInput
-              type="date"
-              @change="(value: string | number | null) => setSince(String(value ?? ''))"
-            />
-          </UiFormField>
-          <UiFormField label="Until">
-            <UiInput
-              type="date"
-              @change="(value: string | number | null) => setUntil(String(value ?? ''))"
-            />
-          </UiFormField>
+          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-[240px_180px_180px_180px]">
+            <UiFormField label="Kind">
+              <UiSelect
+                :model-value="filters.kind ?? ''"
+                :options="kindOptions"
+                @update:model-value="
+                  (value: string | number | null) => setKindFilter(String(value ?? ''))
+                "
+              />
+            </UiFormField>
+            <UiFormField label="Parent run">
+              <UiInput
+                type="number"
+                min="1"
+                :model-value="filters.parent_run_id ?? ''"
+                @change="(value: string | number | null) => setParentFilter(String(value ?? ''))"
+              />
+            </UiFormField>
+            <UiFormField label="Since">
+              <UiInput
+                type="date"
+                @change="(value: string | number | null) => setSince(String(value ?? ''))"
+              />
+            </UiFormField>
+            <UiFormField label="Until">
+              <UiInput
+                type="date"
+                @change="(value: string | number | null) => setUntil(String(value ?? ''))"
+              />
+            </UiFormField>
+          </div>
         </div>
-      </UiPanel>
+      </UiToolbar>
 
       <section aria-label="Run history">
         <UiSectionHeader
@@ -239,7 +244,7 @@ onMounted(load)
           as="h3"
         >
           <template #actions>
-            <UiBadge>{{ filteredItems.length }}</UiBadge>
+            <UiCountBadge :value="filteredItems.length" />
           </template>
         </UiSectionHeader>
         <DataTable
@@ -247,6 +252,7 @@ onMounted(load)
           :columns="columns"
           :loading="loading"
           :next-cursor="nextCursor"
+          :selected-id="runId"
           aria-label="Runs"
           empty-message="No runs match these filters — runs are recorded when agents execute plans, skills, and tools."
           interactive

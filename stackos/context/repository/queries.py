@@ -88,7 +88,15 @@ class ContextQueryMixin(ContextRepositorySupport):
         limit: int | None = None,
         after_id: int | None = None,
         event_type: str | None = None,
+        descending: bool = False,
     ) -> Page[ProjectEventOut]:
+        """Page the project event timeline.
+
+        Default order is ascending by id (oldest first) so the desktop
+        notification poller can follow `after_id` watermarks forward. Pass
+        ``descending=True`` for a newest-first activity feed; the `after_id`
+        cursor then walks backward (older events) one page at a time.
+        """
         self._require_project(project_id)
         n = _normalise_limit(limit)
         filters: list[Any] = [col(ProjectEvent.project_id) == project_id]
@@ -100,8 +108,11 @@ class ContextQueryMixin(ContextRepositorySupport):
         )
         stmt = select(ProjectEvent).where(*filters)
         if after_id is not None:
-            stmt = stmt.where(col(ProjectEvent.id) > after_id)
-        rows = list(self._s.exec(stmt.order_by(col(ProjectEvent.id).asc()).limit(n + 1)).all())
+            stmt = stmt.where(
+                col(ProjectEvent.id) < after_id if descending else col(ProjectEvent.id) > after_id
+            )
+        order_clause = col(ProjectEvent.id).desc() if descending else col(ProjectEvent.id).asc()
+        rows = list(self._s.exec(stmt.order_by(order_clause).limit(n + 1)).all())
         page_rows = rows[:n]
         next_cursor = _required_id(page_rows[-1].id) if len(rows) > n and page_rows else None
         return Page(

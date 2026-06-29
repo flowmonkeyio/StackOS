@@ -227,6 +227,7 @@ class TrackerMirrorMixin:
         if task is None:
             return
         now = _utcnow()
+        old_status = task.status
         task.status = TrackerItemStatus.IN_PROGRESS
         task.started_at = task.started_at or now
         task.updated_at = now
@@ -243,6 +244,13 @@ class TrackerMirrorMixin:
             run_id=plan.run_id,
             ref=f"run:{plan.run_id}",
             title=f"Run for {plan.title}",
+        )
+        self._record_tracker_task_status_event(
+            task,
+            old_status,
+            task.status,
+            actor="system",
+            reason="tracker.workflow_start",
         )
         self._record_revision(
             tracker,
@@ -270,6 +278,7 @@ class TrackerMirrorMixin:
             return
         now = _utcnow()
         before = self._task_snapshot(task)
+        old_status = task.status
         task.status = TrackerItemStatus.ABORTED
         task.lane_key = "done"
         task.completed_at = now
@@ -286,6 +295,7 @@ class TrackerMirrorMixin:
         for ticket in self._ticket_rows_for_run_plan(tracker.id, plan.id):
             if ticket.status in TERMINAL_TRACKER_STATUSES:
                 continue
+            old_ticket_status = ticket.status
             ticket.status = TrackerItemStatus.ABORTED
             ticket.lane_key = "done"
             ticket.blocker_reason = None
@@ -295,6 +305,22 @@ class TrackerMirrorMixin:
             if reason:
                 ticket.outcome = f"{ticket.outcome} Reason: {reason}"
             self._s.add(ticket)
+            self._record_tracker_ticket_status_event(
+                ticket,
+                old_ticket_status,
+                ticket.status,
+                task=task,
+                actor=actor,
+                reason="tracker.workflow_abort",
+            )
+
+        self._record_tracker_task_status_event(
+            task,
+            old_status,
+            task.status,
+            actor=actor,
+            reason="tracker.workflow_abort",
+        )
 
         self._record_revision(
             tracker,
@@ -325,6 +351,7 @@ class TrackerMirrorMixin:
             return
         now = _utcnow()
         before = self._task_snapshot(task)
+        old_status = task.status
         task.status = TrackerItemStatus.IN_PROGRESS
         task.lane_key = "planning"
         task.started_at = task.started_at or now
@@ -335,6 +362,7 @@ class TrackerMirrorMixin:
 
         step_by_pk = {step.id: step for step in steps if step.id is not None}
         for ticket in self._ticket_rows_for_run_plan(tracker.id, plan.id):
+            old_ticket_status = ticket.status
             ticket.run_id = plan.run_id
             if ticket.run_plan_step_id is None:
                 if self._is_auto_abort_ticket(ticket):
@@ -345,6 +373,14 @@ class TrackerMirrorMixin:
                     ticket.completed_at = None
                 ticket.updated_at = now
                 self._s.add(ticket)
+                self._record_tracker_ticket_status_event(
+                    ticket,
+                    old_ticket_status,
+                    ticket.status,
+                    task=task,
+                    actor=actor,
+                    reason="tracker.workflow_recovery",
+                )
                 continue
             step = step_by_pk.get(ticket.run_plan_step_id)
             if step is None:
@@ -367,8 +403,23 @@ class TrackerMirrorMixin:
                 ticket.completed_at = None
             ticket.updated_at = now
             self._s.add(ticket)
+            self._record_tracker_ticket_status_event(
+                ticket,
+                old_ticket_status,
+                ticket.status,
+                task=task,
+                actor=actor,
+                reason="tracker.workflow_recovery",
+            )
 
         self._sync_task_status(task, now=now)
+        self._record_tracker_task_status_event(
+            task,
+            old_status,
+            task.status,
+            actor=actor,
+            reason="tracker.workflow_recovery",
+        )
         self._record_revision(
             tracker,
             actor=actor,
@@ -398,6 +449,7 @@ class TrackerMirrorMixin:
             return
         now = _utcnow()
         before = self._task_snapshot(task)
+        old_status = task.status
         task.status = TrackerItemStatus.IN_PROGRESS
         task.lane_key = "implementation"
         task.started_at = task.started_at or now
@@ -417,6 +469,7 @@ class TrackerMirrorMixin:
 
         step_by_pk = {step.id: step for step in steps if step.id is not None}
         for ticket in self._ticket_rows_for_run_plan(tracker.id, plan.id):
+            old_ticket_status = ticket.status
             ticket.run_id = plan.run_id
             if ticket.run_plan_step_id is None:
                 ticket.updated_at = now
@@ -440,8 +493,23 @@ class TrackerMirrorMixin:
                 ticket.lane_key = "implementation"
             ticket.updated_at = now
             self._s.add(ticket)
+            self._record_tracker_ticket_status_event(
+                ticket,
+                old_ticket_status,
+                ticket.status,
+                task=task,
+                actor=actor,
+                reason="tracker.workflow_reopen",
+            )
 
         self._sync_task_status(task, now=now)
+        self._record_tracker_task_status_event(
+            task,
+            old_status,
+            task.status,
+            actor=actor,
+            reason="tracker.workflow_reopen",
+        )
         self._record_revision(
             tracker,
             actor=actor,
@@ -491,6 +559,7 @@ class TrackerMirrorMixin:
             return
         now = _utcnow()
         before = self._ticket_snapshot(ticket)
+        old_status = ticket.status
         ticket.status = TrackerItemStatus.IN_PROGRESS
         ticket.assignee = step.claimed_by
         ticket.claimed_at = step.claimed_at or now
@@ -500,6 +569,14 @@ class TrackerMirrorMixin:
         ticket.updated_at = now
         self._s.add(ticket)
         task = self._s.get(TrackerTask, ticket.task_id)
+        self._record_tracker_ticket_status_event(
+            ticket,
+            old_status,
+            ticket.status,
+            task=task,
+            actor=step.claimed_by,
+            reason="tracker.workflow_step_claim",
+        )
         if task is not None:
             self._sync_task_status(task, now=now)
         self._record_revision(
@@ -524,6 +601,7 @@ class TrackerMirrorMixin:
             return
         now = _utcnow()
         before = self._ticket_snapshot(ticket)
+        old_status = ticket.status
         ticket.status = self._ticket_status_from_step(step)
         ticket.outcome = self._step_outcome(step)
         ticket.blocker_reason = self._step_blocker_reason(step)
@@ -533,6 +611,14 @@ class TrackerMirrorMixin:
         ticket.updated_at = now
         self._s.add(ticket)
         task = self._s.get(TrackerTask, ticket.task_id)
+        self._record_tracker_ticket_status_event(
+            ticket,
+            old_status,
+            ticket.status,
+            task=task,
+            actor=step.claimed_by,
+            reason="tracker.workflow_step_record",
+        )
         if task is not None:
             self._sync_task_status(task, now=now)
         self._record_revision(

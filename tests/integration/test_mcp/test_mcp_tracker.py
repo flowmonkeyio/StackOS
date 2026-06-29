@@ -95,12 +95,12 @@ def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict)
     assert created_ticket["data"]["ticket"]["key"] == "mcp-ticket"
 
     next_work = mcp_client.call_tool_structured("tracker.next", {"project_id": project_id})
-    assert [ticket["key"] for ticket in next_work["tickets"]] == ["mcp-ticket"]
-    assert "project_id" not in next_work["tickets"][0]
+    assert [ticket["key"] for ticket in next_work["data"]["tickets"]] == ["mcp-ticket"]
+    assert "project_id" not in next_work["data"]["tickets"][0]
 
     status = mcp_client.call_tool_structured("tracker.status", {"project_id": project_id})
-    assert status["tracker_id"]
-    assert "tracker" not in status
+    assert status["data"]["tracker_id"]
+    assert "tracker" not in status["data"]
 
     picked = mcp_client.call_tool_structured(
         "tracker.pick",
@@ -117,10 +117,10 @@ def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict)
         "tracker.brief",
         {"project_id": project_id, "ticket_key": "mcp-ticket"},
     )
-    assert brief["ticket"]["key"] == "mcp-ticket"
-    assert brief["task"]["key"] == "mcp-tracker"
-    assert "project_id" not in brief["ticket"]
-    assert "created_at" not in brief["ticket"]
+    assert brief["data"]["ticket"]["key"] == "mcp-ticket"
+    assert brief["data"]["task"]["key"] == "mcp-tracker"
+    assert "project_id" not in brief["data"]["ticket"]
+    assert "created_at" not in brief["data"]["ticket"]
 
     full_brief = mcp_client.call_tool_structured(
         "tracker.brief",
@@ -147,15 +147,63 @@ def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict)
         "tracker.changed",
         {"project_id": project_id, "since_rev": 0, "limit": 5},
     )
-    assert changed["changes"]
-    assert "before_json" not in changed["changes"][0]
+    assert changed["data"]["changes"]
+    assert "before_json" not in changed["data"]["changes"][0]
 
     searched = mcp_client.call_tool_structured(
         "tracker.search",
         {"project_id": project_id, "query": "mcp-ticket"},
     )
-    assert [ticket["key"] for ticket in searched["tickets"]] == ["mcp-ticket"]
-    assert "project_id" not in searched["tickets"][0]
+    assert searched["project_id"] == project_id
+    assert [ticket["key"] for ticket in searched["data"]["tickets"]] == ["mcp-ticket"]
+    assert searched["data"]["query"] == "mcp-ticket"
+    assert searched["data"]["ticket_count"] == 1
+    assert "project_id" not in searched["data"]["tickets"][0]
+
+    empty_search = mcp_client.call_tool_structured(
+        "tracker.search",
+        {"project_id": project_id, "query": "not-a-real-ticket"},
+    )
+    assert empty_search["project_id"] == project_id
+    assert empty_search["data"] == {
+        "project_id": project_id,
+        "query": "not-a-real-ticket",
+        "task_count": 0,
+        "ticket_count": 0,
+    }
+
+
+def test_tracker_status_compact_includes_project_pulse(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    mcp_client.call_tool_structured(
+        "tracker.createTask",
+        {
+            "project_id": project_id,
+            "key": "status-pulse",
+            "title": "Status pulse",
+            "created_by": "mcp-test",
+        },
+    )
+    mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {
+            "project_id": project_id,
+            "task_key": "status-pulse",
+            "key": "status-pulse-ticket",
+            "title": "Status pulse ticket",
+            "created_by": "mcp-test",
+        },
+    )
+
+    status = mcp_client.call_tool_structured("tracker.status", {"project_id": project_id})
+
+    assert status["data"]["summary"]["tasks"]["total"] == 1
+    assert status["data"]["summary"]["tasks"]["active"] == 1
+    assert status["data"]["summary"]["tickets"]["total"] == 1
+    assert status["data"]["summary"]["tickets"]["ready"] == 1
+    assert status["data"]["task_counts"]["not-started"] == 1
 
 
 def test_tracker_create_ticket_can_target_workflow_step(
@@ -195,14 +243,14 @@ def test_tracker_create_ticket_can_target_workflow_step(
         "tracker.verify",
         {"project_id": project_id, "ticket_key": "workflow-child-single"},
     )
-    detached_checks = {check["key"]: check for check in detached_verify["checks"]}
+    detached_checks = {check["key"]: check for check in detached_verify["data"]["checks"]}
     assert detached_checks["workflow-step-child-bridge"]["passed"] is False
     assert detached_checks["workflow-child-reachable-from-step"]["passed"] is False
     detached_step_verify = mcp_client.call_tool_structured(
         "tracker.verify",
         {"project_id": project_id, "ticket_key": workflow_step_ticket_key},
     )
-    detached_step_checks = {check["key"]: check for check in detached_step_verify["checks"]}
+    detached_step_checks = {check["key"]: check for check in detached_step_verify["data"]["checks"]}
     assert detached_step_checks["workflow-step-child-bridge"]["passed"] is False
     assert detached_step_checks["workflow-step-children-reachable"]["passed"] is False
     assert detached_step_checks["workflow-step-open-children"]["passed"] is False
@@ -260,6 +308,96 @@ def test_tracker_create_ticket_can_target_workflow_step(
     assert ("workflow-child-b", "workflow-child-a") in dependency_pairs
 
 
+def test_tracker_next_omits_tickets_under_completed_workflow_task(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _workflow_step_plan_json()},
+    )
+    run_plan_id = int(plan["data"]["id"])
+    workflow_task_key = f"workflow-{run_plan_id}"
+    workflow_step_ticket_key = f"{workflow_task_key}-deliver"
+    mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "step_id": "deliver",
+            "key": "closed-workflow-child",
+            "title": "Open child under completed workflow",
+            "dependency_keys": [workflow_step_ticket_key],
+        },
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "deliver", "run_token": run_token},
+    )
+    mcp_client.call_tool_structured(
+        "runPlan.recordStep",
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": "deliver",
+            "status": "success",
+            "run_token": run_token,
+        },
+    )
+
+    tracker = mcp_client.call_tool_structured(
+        "tracker.get",
+        {"project_id": project_id, "task_key": workflow_task_key, "response_mode": "raw"},
+    )
+    next_work = mcp_client.call_tool_structured("tracker.next", {"project_id": project_id})
+
+    assert tracker["tasks"][0]["status"] == "complete"
+    assert "closed-workflow-child" not in [
+        ticket["key"] for ticket in next_work["data"].get("tickets", [])
+    ]
+
+
+def test_tracker_brief_handoff_reflects_running_run_plan_step(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _workflow_step_plan_json()},
+    )
+    run_plan_id = int(plan["data"]["id"])
+    workflow_step_ticket_key = f"workflow-{run_plan_id}-deliver"
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+    run_token = started["data"]["run_token"]
+
+    pending_brief = mcp_client.call_tool_structured(
+        "tracker.brief",
+        {"project_id": project_id, "ticket_key": workflow_step_ticket_key},
+    )
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "deliver", "run_token": run_token},
+    )
+    running_brief = mcp_client.call_tool_structured(
+        "tracker.brief",
+        {"project_id": project_id, "ticket_key": workflow_step_ticket_key},
+    )
+
+    assert "runPlan.claimStep" in pending_brief["data"]["workflow_handoff"]["next_operations"]
+    assert "runPlan.recordStep" in running_brief["data"]["workflow_handoff"]["next_operations"]
+    assert "runPlan.claimStep" not in running_brief["data"]["workflow_handoff"]["next_operations"]
+    assert "already running" in running_brief["data"]["suggested_next_actions"][0]
+
+
 def test_tracker_verify_flags_workflow_gate_children_that_bypass_delivery(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -306,7 +444,7 @@ def test_tracker_verify_flags_workflow_gate_children_that_bypass_delivery(
         "tracker.verify",
         {"project_id": project_id, "ticket_key": "workflow-spine-signoff"},
     )
-    signoff_checks = {check["key"]: check for check in signoff_verify["checks"]}
+    signoff_checks = {check["key"]: check for check in signoff_verify["data"]["checks"]}
     assert signoff_checks["workflow-child-reachable-from-step"]["passed"] is True
     assert signoff_checks["workflow-child-gate-contained"]["passed"] is False
 
@@ -314,7 +452,7 @@ def test_tracker_verify_flags_workflow_gate_children_that_bypass_delivery(
         "tracker.verify",
         {"project_id": project_id, "ticket_key": deliver_step_key},
     )
-    deliver_checks = {check["key"]: check for check in deliver_verify["checks"]}
+    deliver_checks = {check["key"]: check for check in deliver_verify["data"]["checks"]}
     assert deliver_checks["workflow-step-gate-children-contained"]["passed"] is False
 
     snapshot = mcp_client.call_tool_structured(
@@ -370,7 +508,7 @@ def test_tracker_verify_flags_workflow_terminal_child_handoffs(
         "tracker.verify",
         {"project_id": project_id, "ticket_key": verify_step_key},
     )
-    missing_checks = {check["key"]: check for check in missing_handoff["checks"]}
+    missing_checks = {check["key"]: check for check in missing_handoff["data"]["checks"]}
     assert missing_checks["workflow-next-step-terminal-children"]["passed"] is False
     assert (
         "workflow-handoff-signoff"
@@ -404,14 +542,14 @@ def test_tracker_verify_flags_workflow_terminal_child_handoffs(
         "tracker.verify",
         {"project_id": project_id, "ticket_key": verify_step_key},
     )
-    repaired_checks = {check["key"]: check for check in repaired_handoff["checks"]}
+    repaired_checks = {check["key"]: check for check in repaired_handoff["data"]["checks"]}
     assert repaired_checks["workflow-next-step-terminal-children"]["passed"] is True
 
     open_step = mcp_client.call_tool_structured(
         "tracker.verify",
         {"project_id": project_id, "ticket_key": deliver_step_key},
     )
-    open_step_checks = {check["key"]: check for check in open_step["checks"]}
+    open_step_checks = {check["key"]: check for check in open_step["data"]["checks"]}
     assert open_step_checks["workflow-step-open-children"]["passed"] is False
 
     mcp_client.call_tool_structured(
@@ -428,7 +566,7 @@ def test_tracker_verify_flags_workflow_terminal_child_handoffs(
         "tracker.verify",
         {"project_id": project_id, "ticket_key": deliver_step_key},
     )
-    completed_checks = {check["key"]: check for check in completed_step["checks"]}
+    completed_checks = {check["key"]: check for check in completed_step["data"]["checks"]}
     assert completed_checks["workflow-step-open-children"]["passed"] is False
 
 

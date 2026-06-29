@@ -271,8 +271,12 @@ class TrackerChangedOut(BaseModel):
 
 
 class TrackerSearchOut(BaseModel):
+    project_id: int
+    query: str
     tasks: list[TrackerTaskOut]
     tickets: list[TrackerTicketOut]
+    task_count: int = 0
+    ticket_count: int = 0
 
 
 class TrackerListIssueOut(BaseModel):

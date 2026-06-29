@@ -97,9 +97,8 @@ class GoogleAnalyticsIntegration(BaseIntegration):
     async def test_credentials(self) -> dict[str, Any]:
         result = await self.account_summaries_list(page_size=1)
         data = result.data if isinstance(result.data, dict) else {}
-        summaries = (
-            data.get("accountSummaries") if isinstance(data.get("accountSummaries"), list) else []
-        )
+        summaries_raw = data.get("accountSummaries")
+        summaries = summaries_raw if isinstance(summaries_raw, list) else []
         return {
             "ok": True,
             "vendor": self.vendor,

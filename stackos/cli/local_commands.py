@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import sqlite3
+import tempfile
+import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -11,7 +17,7 @@ import typer
 from stackos.config import get_settings
 
 from .app import app
-from .daemon_commands import _install_launchd_autostart
+from .daemon_commands import _install_launchd_autostart, _uninstall_launchd_autostart
 from .doctor_commands import doctor
 from .paths import _doctor_home
 
@@ -19,6 +25,28 @@ from .paths import _doctor_home
 def _stub(milestone: str, name: str) -> None:
     """Print a clear placeholder and exit 0 for reserved CLIs."""
     typer.echo(f"`stackos {name}` not yet implemented ({milestone}).")
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _backup_entry(path: Path, arcname: str) -> dict[str, object]:
+    return {
+        "path": arcname,
+        "bytes": path.stat().st_size,
+        "sha256": _sha256(path),
+    }
+
+
+def _copy_sqlite_backup(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(source) as src, sqlite3.connect(target) as dst:
+        src.backup(dst)
 
 
 @app.command()
@@ -161,11 +189,11 @@ def install(
         typer.echo(f"==> {msg}")
 
     if do_mcp:
-        # Codex first; it prints its own skip-line if not on PATH.
-        msg = installer.register_mcp_codex(home=home, port=settings.port)
-        typer.echo(f"==> {msg}")
-        msg = installer.register_mcp_claude(home=home, port=settings.port)
-        typer.echo(f"==> {msg}")
+        ok, messages = installer.repair_mcp_hosts(home=home)
+        for msg in messages:
+            typer.echo(f"==> {msg}")
+        if not ok:
+            raise typer.Exit(code=1)
 
     if launchd:
         ok, message = _install_launchd_autostart(
@@ -201,6 +229,42 @@ def install(
             elif exc.exit_code not in (0, None):
                 raise
     typer.echo("==> install complete")
+
+
+@app.command()
+def uninstall() -> None:
+    """Remove local integrations while preserving StackOS database and daemon state."""
+    from stackos import install as installer
+
+    settings = get_settings()
+    home = _doctor_home()
+
+    typer.echo("==> Removing launchd autostart")
+    ok, message = _uninstall_launchd_autostart(home=home)
+    if not ok:
+        typer.echo(f"==> launchd autostart removal failed: {message}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"==> {message}")
+
+    for runtime in ("codex", "claude"):
+        target = installer.remove_skills(runtime, home=home)
+        typer.echo(f"==> Removed StackOS {runtime} skill mirror from {target}")
+
+    plugin_target, plugin_cache = installer.remove_plugins(home=home)
+    typer.echo(f"==> Removed StackOS plugin from {plugin_target}")
+    typer.echo(f"==> Removed StackOS plugin cache from {plugin_cache}")
+    msg = installer.register_plugin_marketplace(home=home, remove=True)
+    typer.echo(f"==> {msg}")
+
+    ok, messages = installer.remove_mcp_hosts(home=home)
+    for msg in messages:
+        typer.echo(f"==> {msg}")
+    if not ok:
+        raise typer.Exit(code=1)
+
+    typer.echo(f"==> Preserved database directory: {settings.data_dir}")
+    typer.echo(f"==> Preserved daemon state directory: {settings.state_dir}")
+    typer.echo("==> uninstall complete")
 
 
 @app.command(name="rotate-seed")
@@ -326,19 +390,110 @@ def rotate_token(
         f.write("\n")
     os.replace(str(token_path) + ".new", token_path)
 
-    # Re-register to keep agent MCP clients on the stdio bridge path.
-    msg = installer.register_mcp_codex(port=settings.port, force=True)
-    typer.echo(msg)
-    msg = installer.register_mcp_claude(port=settings.port)
-    typer.echo(msg)
-    typer.echo("rotate-token: token rotated; MCP configs updated.")
+    # Reconcile host MCP clients to keep them on the stdio bridge path.
+    ok, messages = installer.repair_mcp_hosts()
+    for msg in messages:
+        typer.echo(msg)
+    if not ok:
+        typer.echo(
+            "rotate-token: token rotated; MCP host repair needs attention. "
+            "Run `stackos install --mcp-only` after restart.",
+            err=True,
+        )
+    else:
+        typer.echo("rotate-token: token rotated; MCP configs updated.")
     typer.echo("rotate-token: run `stackos restart` so the daemon loads the new token.")
 
 
 @app.command()
-def backup() -> None:
-    """Reserved backup command placeholder."""
-    _stub("backup/restore jobs", "backup")
+def backup(
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Write backup zip to this path."),
+    ] = None,
+) -> None:
+    """Export the minimal local state needed before risky lifecycle changes."""
+    from stackos import __version__
+
+    settings = get_settings()
+    required = {
+        "database": settings.db_path,
+        "seed": settings.seed_path,
+        "token": settings.token_path,
+    }
+    missing = [f"{name}: {path}" for name, path in required.items() if not path.is_file()]
+    if missing:
+        typer.echo("backup: required local state is missing:", err=True)
+        for item in missing:
+            typer.echo(f"  - {item}", err=True)
+        raise typer.Exit(code=1)
+
+    if output is None:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        output = settings.state_dir / "backups" / f"stackos-backup-{stamp}.zip"
+    output = output.expanduser()
+    if output.exists():
+        typer.echo(f"backup: refusing to overwrite existing file: {output}", err=True)
+        raise typer.Exit(code=2)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="stackos-backup-") as tmp:
+        tmp_dir = Path(tmp)
+        db_copy = tmp_dir / "stackos.db"
+        _copy_sqlite_backup(settings.db_path, db_copy)
+
+        files: list[tuple[Path, str]] = [
+            (db_copy, "data/stackos.db"),
+            (settings.seed_path, "state/seed.bin"),
+            (settings.token_path, "state/auth.token"),
+        ]
+        seed_backup = settings.seed_path.with_suffix(settings.seed_path.suffix + ".bak")
+        if seed_backup.is_file():
+            files.append((seed_backup, "state/seed.bin.bak"))
+
+        manifest = {
+            "schema": "stackos.local-backup.v1",
+            "created_at": datetime.now(UTC).isoformat(),
+            "stackos_version": __version__,
+            "source": {
+                "data_dir": str(settings.data_dir),
+                "state_dir": str(settings.state_dir),
+            },
+            "included": [_backup_entry(path, arcname) for path, arcname in files],
+            "excluded": [
+                "daemon logs",
+                "agent runtime skill/plugin mirrors",
+                "Codex plugin cache",
+                "provider cache outside StackOS local DB",
+            ],
+            "restore_status": "manual-only; automated restore is not implemented",
+        }
+
+        fd = None
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            os.chmod(output, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fd = None
+                with zipfile.ZipFile(fh, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                    archive.writestr(
+                        "manifest.json",
+                        json.dumps(manifest, indent=2, sort_keys=True),
+                    )
+                    for path, arcname in files:
+                        archive.write(path, arcname)
+        except FileExistsError:
+            typer.echo(f"backup: refusing to overwrite existing file: {output}", err=True)
+            raise typer.Exit(code=2) from None
+        except Exception:
+            output.unlink(missing_ok=True)
+            raise
+        finally:
+            if fd is not None:
+                os.close(fd)
+    typer.echo(f"backup: wrote {output}")
+    typer.echo("backup: includes stackos.db, seed.bin, auth.token, and manifest.json")
+    typer.echo("backup: automated restore is not implemented; keep this archive private")
 
 
 @app.command()

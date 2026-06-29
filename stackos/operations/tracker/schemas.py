@@ -21,6 +21,22 @@ from stackos.mcp.contract import MCPInput
 
 TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
 
+TRACKER_STATUS_DESCRIPTION = (
+    "Tracker lifecycle status. not-started = planned but not begun; "
+    "in-progress = actively being worked; complete = finished successfully; "
+    "deferred = valid work postponed for later; aborted = stopped, cancelled, "
+    "or rejected; failed = attempted and unsuccessful; skipped = intentionally "
+    "not executed."
+)
+TRACKER_PATCH_DESCRIPTION = (
+    "Explicit tracker patch. For terminal closeout, set status plus a concise "
+    "outcome when the target supports it and structured completion_evidence_json "
+    "with the reason, proof, or residual risk. Terminal ticket updates can roll "
+    "up parent task status, but ticket evidence is not copied to the task; add "
+    "task evidence explicitly when task-level closeout evidence matters. Status meanings: "
+    f"{TRACKER_STATUS_DESCRIPTION}"
+)
+
 
 class TrackerProjectInput(MCPInput):
     model_config = ConfigDict(
@@ -186,7 +202,10 @@ class TrackerCreateTaskInput(MCPInput):
     title: str
     goal: str = ""
     description: str = ""
-    status: TrackerItemStatus = TrackerItemStatus.NOT_STARTED
+    status: TrackerItemStatus = Field(
+        default=TrackerItemStatus.NOT_STARTED,
+        description=TRACKER_STATUS_DESCRIPTION,
+    )
     priority_key: str = "p2"
     lane_key: str = "implementation"
     owner: str | None = None
@@ -261,7 +280,10 @@ class TrackerCreateTicketInput(MCPInput):
     key: str | None = None
     title: str | None = None
     goal: str = ""
-    status: TrackerItemStatus = TrackerItemStatus.NOT_STARTED
+    status: TrackerItemStatus = Field(
+        default=TrackerItemStatus.NOT_STARTED,
+        description=TRACKER_STATUS_DESCRIPTION,
+    )
     kind: TrackerTicketKind = TrackerTicketKind.TICKET
     assignee: str | None = None
     priority_key: str = "p2"
@@ -300,17 +322,29 @@ class TrackerUpdateTaskInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "task_key": "telegram-comms",
-                "patch_json": {"status": "in-progress"},
-            }
+            "examples": [
+                {
+                    "project_id": 1,
+                    "task_key": "telegram-comms",
+                    "patch_json": {"status": "in-progress"},
+                },
+                {
+                    "project_id": 1,
+                    "task_key": "manual-probe",
+                    "patch_json": {
+                        "status": "skipped",
+                        "completion_evidence_json": {
+                            "reason": "Usability probe intentionally did not execute delivery."
+                        },
+                    },
+                },
+            ]
         },
     )
 
     project_id: int
     task_key: str
-    patch_json: dict[str, Any]
+    patch_json: dict[str, Any] = Field(description=TRACKER_PATCH_DESCRIPTION)
     actor: str | None = None
 
 
@@ -415,6 +449,17 @@ class TrackerUpdateTicketInput(MCPInput):
                 },
                 {
                     "project_id": 1,
+                    "ticket_key": "manual-probe",
+                    "patch_json": {
+                        "status": "skipped",
+                        "outcome": "Mock probe; no real delivery performed.",
+                        "completion_evidence_json": {
+                            "reason": "Usability probe intentionally did not execute delivery."
+                        },
+                    },
+                },
+                {
+                    "project_id": 1,
                     "updates_json": [
                         {
                             "ticket_key": "telegram-ingress",
@@ -448,7 +493,10 @@ class TrackerUpdateTicketInput(MCPInput):
 
     project_id: int
     ticket_key: str | None = None
-    patch_json: dict[str, Any] | None = None
+    patch_json: dict[str, Any] | None = Field(
+        default=None,
+        description=TRACKER_PATCH_DESCRIPTION,
+    )
     updates_json: list[dict[str, Any]] | None = Field(
         default=None,
         description=(

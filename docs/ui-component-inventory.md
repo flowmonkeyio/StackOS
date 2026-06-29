@@ -39,7 +39,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiJsonBlock` | folding optional |
 | `UiDiffBlock` | unified + side-by-side |
 | `UiPageHeader` | title + slug + description + actions |
-| `UiSectionHeader` | inside cards/panels |
+| `UiSectionHeader` | inside cards/panels; action slots stack below copy on narrow screens |
 | `UiToolbar` | sticky action bar |
 | `UiFilterBar` | search + chips + filters |
 | `UiBulkActionBar` | generic primitive only; not used in observer-mode product views |
@@ -59,9 +59,10 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 |---|---|
 | `DataTable` | Generic accessible table with sorting, selection, cursor pagination, sticky desktop header, mobile card rendering, row click support, `selected-id` highlighting for master/detail pages, and optional `max-height` for dense ledgers/catalogs. |
 | `TabBar` | Accessible grouped tab navigation; currently available for richer route/tab shells. |
+| `SubNav` | Accessible section rail/strip for dense goal-oriented console pages; vertical on desktop, horizontal on narrow screens. |
 | `KvList` | Compact key/value list for dense read-only metadata. |
 | `MarkdownView` | Sanitized markdown display. |
-| `StatusBadge` | Status tone mapping for projects, jobs, runs, and connector state. |
+| `StatusBadge` | Domain-aware lifecycle/status tone mapping. Use for project, run, tracker, action-call, step, and connection states. |
 
 ## Shipped — StackOS renderers (`ui/src/components/renderers/`)
 
@@ -97,7 +98,7 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 | Inline pattern | Replace with |
 |---|---|
 | `<button class="bg-blue-600 text-white px-3 py-1.5 rounded">…` | `UiButton variant="primary"` |
-| Ad-hoc badge spans with status colors | `UiBadge` + `getStatusTone()` from `status.ts` |
+| Ad-hoc badge spans with lifecycle/status colors | `StatusBadge` or `UiBadge` with a tone from `resolveStatus()` in `status.ts` |
 | Sectioned drawer/detail facts built from repeated custom grids | `UiFactGroups` |
 | Simple ungrouped metadata rows | `UiDescriptionList` or `KvList`, depending on density |
 | `<input class="border rounded px-2 py-1">` with separate label/error divs | `UiFormField` + `UiInput` |
@@ -120,7 +121,7 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 | Run detail | UiPageHeader, UiCodeBlock, UiJsonBlock, RunPlanRenderer, ArtifactRenderer | (none) |
 | Plugins | UiPanel, UiBadge, UiButton | ProjectPageHeader |
 | Capabilities | DataTable, UiBadge, UiButton | ProjectPageHeader |
-| Connections | DataTable, UiBadge, UiFormField, UiInput, UiSecretInput, UiJsonBlock | ProjectPageHeader |
+| Connections | SubNav, UiMetricCard, UiSectionHeader, UiCard, UiEmptyState, UiCallout, UiFormField, UiInput, UiSecretInput, UiSidePanel, StatusBadge | ProjectPageHeader |
 | Workflow templates | DataTable, TemplateRenderer | ProjectPageHeader |
 | Project Data | UiSegmentedControl, DataTable, ArtifactRenderer | ProjectPageHeader |
 | Resource Explorer | DataTable, ResourceViewRenderer, ArtifactRenderer | ProjectPageHeader |

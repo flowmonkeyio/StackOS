@@ -73,7 +73,8 @@ Lifecycle mirroring is mechanical:
 | `runPlan.recordStep(failed)` | marks the ticket `failed` with `blocker_reason` |
 | `runPlan.recordStep(blocked)` | keeps the ticket active with `blocker_reason`; the step can be reclaimed after repair |
 | `runPlan.recover` | reopens a system-recoverable failed/aborted workflow or safely recoverable live step into the same live run-plan task |
-| `tracker.reopen` / `runPlan.reopen` | reopens normal follow-up work after closeout, revives the linked run, and mirrors the workflow task back to active state |
+| `tracker.reopen` | normal agent/operator follow-up after closeout; reopens the task or the linked run-plan/run/task mirror as one lifecycle |
+| `runPlan.reopen` | lower-level lifecycle primitive used by controller/admin paths after the canonical closed run plan has already been selected |
 | `runPlan.abort` / stale abort reconciliation | marks the workflow task and unfinished linked tickets `aborted` |
 
 Only generated workflow step mirror tickets are lifecycle-owned by run-plan
@@ -167,11 +168,10 @@ grant snapshot remain the execution boundary.
 
 For workflow-backed tickets, tracker status is not an alternate run-plan
 lifecycle. The mirrored step ticket is owned by `runPlan.claimStep` and
-`runPlan.recordStep`. Child tickets can hold scoped implementation work and
-evidence, but `in-progress`/`complete` status advances require the attached
-run-plan step and linked audit run to be running. Non-status edits such as
-evidence, metadata, references, blockers, and dependency repair remain valid
-tracker operations.
+`runPlan.recordStep`. Child tickets attached to a workflow step are
+tracker-owned implementation, verification, docs, or audit work; agents may move
+those child tickets through normal tracker statuses with evidence while keeping
+their dependency bridge to the workflow spine accurate.
 For mirrored step tickets, run-plan-owned fields such as assignment, lane,
 title, source, parentage, kind, and blocker state are also controlled by
 `runPlan.*`; use child tickets for agent-owned delivery details.
@@ -185,6 +185,29 @@ Lifecycle timestamps follow the visible state. Moving a task or ticket into a
 terminal status sets `completed_at`; reopening it to `in-progress` or
 `not-started` clears `completed_at` so audits do not treat active work as
 historically complete.
+
+## Status Events
+
+Tracker task and ticket status changes are also written to the project timeline
+as append-only `project_events` rows:
+
+- `tracker.task.status_changed`
+- `tracker.ticket.status_changed`
+
+These events are emitted through the shared StackOS event emitter only after a
+real persisted status transition. Dry-run updates, same-status updates, and
+non-status edits do not emit status events. Parent task status changes caused
+by ticket aggregation and workflow run-plan mirroring emit the same task event
+as direct task status updates.
+
+Timeline metadata includes the entity key, old/new status, and tracker URL
+path, plus event-envelope metadata such as `schema_version` and actor when
+supplied by the producer. Event rows preserve source provenance with `source_type` set to
+`tracker_task` or `tracker_ticket` and `source_id` set to the persisted tracker
+row id. The macOS desktop app consumes this timeline for native notifications,
+but the MVP only displays native notifications for completed tasks. Ticket
+status events remain available for audit, UI timelines, and future notification
+policy without creating native ticket notifications today.
 
 ## Operations
 
@@ -245,6 +268,11 @@ parallel tracker endpoints for list behavior.
    for small atomic edge changes. Use `dependency_keys` only when intentionally
    replacing the full dependency list; it cannot be combined with add/remove
    dependency fields in the same patch.
+   Terminal child-ticket updates can roll up the parent task status when the
+   task's remaining tickets are terminal. Ticket evidence is not copied to the
+   task: compact mutation responses expose `task_rollup` and
+   `completion_evidence_present` so agents can see when task-level closeout
+   evidence still needs an explicit task patch.
 5. Before a large dependency cleanup, call `tracker.updateTicket` with
    `dry_run=true` on the same `patch_json` or `updates_json`. The tracker
    returns `dependency_preview` entries with current, final, added, removed, and
@@ -342,6 +370,12 @@ workflowTemplate.describe
 -> tracker.verify
 ```
 
+Workflow-backed task graphs should have exactly one root: the first workflow
+step mirror ticket. Create child tickets with `run_plan_id` and `step_id` from
+the start, then dependency-bridge them into the step chain. Ordinary non-workflow
+tasks may still have several independent roots when the work is genuinely
+parallel.
+
 For engineering SDLC workflow work, the mirrored tickets should preserve the
 requirements-to-release order instead of collapsing everything into one
 implementation ticket:
@@ -385,7 +419,8 @@ confirm the operator asked for task/dependency tracking without invoking a workf
 -> tracker.brief
 -> do the work
 -> tracker.updateTicket or tracker.patch
--> tracker.rejectTask when the operator rejects or parks the task
+-> tracker.updateTask/updateTicket(status=deferred) when the operator parks resumable work
+-> tracker.rejectTask when the operator rejects or aborts the task
 -> tracker.verify
 ```
 

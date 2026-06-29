@@ -78,27 +78,49 @@ Electron app can run. The app records a composite install key from its app
 version plus packaged payload build info, so replacing a locally built app with
 the same public version still reruns install/repair once.
 
-The macOS bundle icon is generated from the same source as the UI favicon:
-`ui/public/favicon.svg`. `desktop/scripts/build-icons.mjs` syncs that SVG into
-`desktop/assets/stackos-icon.svg` and generates `desktop/assets/stackos-icon.icns`
-for electron-builder.
+The macOS bundle icon is generated from the high-resolution desktop PNG:
+`desktop/assets/stackos-icon.png`. `desktop/scripts/build-icons.mjs` builds
+`desktop/assets/stackos-icon.icns` from that PNG for electron-builder. Keep
+`ui/public/favicon.png` visually aligned with the desktop PNG; `desktop doctor`
+checks both assets are present.
 
 ## Update Flow
 
-The app uses a custom generic update endpoint. At runtime, the endpoint comes
-from:
+The app uses a custom generic update endpoint through `electron-updater`'s
+generic provider. The endpoint is a static HTTPS URL prefix served by the
+website, for example:
+
+```text
+https://example.com/stackos/macos/stable/
+```
+
+FTP or another deploy tool may upload files into that website directory later,
+but FTP is release infrastructure only. The desktop app never stores FTP
+credentials and never speaks FTP; installed apps read update metadata and
+artifacts over HTTPS.
+
+At runtime, the endpoint comes from:
 
 1. `STACKOS_UPDATE_URL`
 2. packaged `resources/update-config.json`
 3. development `desktop/update-config.json`
 
-The endpoint should serve electron-updater generic metadata and artifacts, for
-example:
+Release builds should set `STACKOS_UPDATE_URL` so `desktop/scripts/build-mac.mjs`
+packages `resources/update-config.json` and asks electron-builder to emit the
+generic-provider metadata. Production endpoints must use HTTPS. Local update
+smokes may use `http://127.0.0.1:<port>/...` or `http://localhost:<port>/...`.
+StackOS uses the public `electron-updater` event lifecycle: check emits
+availability, download emits progress, `update-downloaded` is the only
+install-ready signal, and install calls `quitAndInstall()` after that event.
+
+The endpoint should serve the generated electron-updater metadata and artifacts,
+for example:
 
 ```text
-https://updates.example.com/stackos/macos/latest-mac.yml
-https://updates.example.com/stackos/macos/stackos-1.0.1-mac-arm64.zip
-https://updates.example.com/stackos/macos/stackos-1.0.1-mac-arm64.dmg
+https://example.com/stackos/macos/stable/latest-mac.yml
+https://example.com/stackos/macos/stable/stackos-1.0.1-mac-arm64.zip
+https://example.com/stackos/macos/stable/stackos-1.0.1-mac-arm64.dmg
+https://example.com/stackos/macos/stable/stackos-1.0.1-mac-arm64.zip.blockmap
 ```
 
 After an app update, the next launch sees a new app version or new packaged
@@ -115,7 +137,19 @@ Release-grade macOS builds still need operator-supplied values:
 - signing identity or certificate setup
 - notarization credentials
 - production update endpoint URL
-- hosted DMG/ZIP/update metadata
+- hosted `latest-mac.yml`, DMG, ZIP, and generated blockmap artifacts
+- release notes and rollback instructions
+
+macOS auto-update install/relaunch cannot be signed off from an unsigned build.
+Unsigned local builds are useful for feed, discovery, download, and UI smoke
+coverage only; the final install/relaunch gate must run from a signed installed
+app copied out of the DMG.
+
+Keep the Python package version, `stackos/__init__.py`, and
+`desktop/package.json` synchronized for release updates. `electron-updater`
+advertises new app versions from the desktop package metadata; the packaged
+payload build info then decides whether the post-update install/repair path
+needs to run even when a local test reuses the same public app version.
 
 Do not commit these values. Pass them through the build environment or the
 release system.
@@ -126,10 +160,7 @@ Scaffold checks that do not require Electron dependencies:
 
 ```bash
 make desktop-doctor
-cd desktop && node --check src/main.js
-cd desktop && node --check src/preload.js
-cd desktop && node --check src/service.js
-cd desktop && node --check src/updates.js
+pnpm --dir desktop check
 ```
 
 Release checks, once dependencies and signing are configured:
@@ -139,9 +170,40 @@ make desktop-payload
 STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" make desktop-dist
 ```
 
-Manual release smoke should install the DMG, launch `stackos`, confirm the UI
-loads from `127.0.0.1:5180`, run Doctor from the app menu, and verify update
-metadata is reachable from the custom endpoint.
+Build-config smoke without invoking electron-builder:
+
+```bash
+STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
+STACKOS_UPDATE_URL="http://127.0.0.1:8765/stackos/macos" \
+node desktop/scripts/build-mac.mjs
+```
+
+Manual release smoke should install the DMG, launch the installed app, confirm
+the UI loads from `127.0.0.1:5180`, run Doctor from the app menu, and verify
+update metadata is reachable from the custom endpoint. Do not run the update
+smoke from the mounted DMG volume: Squirrel.Mac cannot update an app from a
+read-only volume, so the app must be copied to `/Applications` or another
+writable app location before testing download/install.
+
+Local update-channel smoke before website hosting exists:
+
+1. Build or keep an older installed `StackOS.app` in `/Applications` or another
+   writable app location. Do not launch it from the mounted DMG.
+2. Build a newer desktop artifact with
+   `STACKOS_UPDATE_URL="http://127.0.0.1:8765/stackos/macos" make desktop-dist`.
+3. Serve the generated metadata and artifacts from a local static server rooted
+   at the directory that contains `stackos/macos/latest-mac.yml`.
+4. Launch the installed older app with the same `STACKOS_UPDATE_URL` override
+   or with a packaged update config pointed at the local URL.
+5. Check for updates and download. Install/relaunch is a valid pass only when
+   the app is signed; unsigned local apps may stop after download/UI evidence.
+6. Confirm the UI loads from `127.0.0.1:5180`, Doctor passes, and
+   `~/.local/share/stackos/stackos.db`, `~/.local/state/stackos/seed.bin`, and
+   `~/.local/state/stackos/auth.token` still exist and were not rotated.
+
+For a failure smoke, point `STACKOS_UPDATE_URL` at a missing or malformed local
+feed. The app should show a readable update error and leave local StackOS state
+unchanged.
 
 For a cold-start smoke of the packaged daemon path, run `stackos stop` before
 launching the desktop app. The app should run its packaged `stackos install

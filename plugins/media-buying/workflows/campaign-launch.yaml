@@ -16,10 +16,20 @@ agent_requirements:
     requirement: required
     agent_preset_ref: media-buying.workflow.campaign-launch
     purpose: Plan launch readiness, provider/action validation, approvals, and execution handoff.
+    applies_to_steps:
+      - orient
+      - prepare_launch_shape
+      - create_external_structures
+      - record_launch_state
+      - capture_learning
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review auth, spend, approval, provider-contract, and audit boundaries before launch.
+    applies_to_steps:
+      - prepare_launch_shape
+      - create_external_structures
+      - record_launch_state
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

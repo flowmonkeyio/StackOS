@@ -17,7 +17,9 @@ from sqlmodel import (
 
 from stackos.db.models import (
     RunPlan,
+    RunPlanStatus,
     RunPlanStep,
+    RunPlanStepStatus,
     TaskTracker,
     TaskTrackerLane,
     TaskTrackerPriority,
@@ -300,6 +302,17 @@ class TrackerQueryMixin:
         ticket = brief.ticket
         ticket_row = self._ticket_by_key(ticket.tracker_id, ticket.key)
         checks: list[dict[str, Any]] = []
+        if (
+            ticket.status in TERMINAL_TRACKER_STATUSES
+            and ticket.status != TrackerItemStatus.COMPLETE
+        ):
+            checks.append(
+                {
+                    "key": "ticket-open-or-complete",
+                    "passed": False,
+                    "detail": self._terminal_reopen_detail(ticket),
+                }
+            )
         checks.append(
             {
                 "key": "dependencies-complete",
@@ -667,7 +680,14 @@ class TrackerQueryMixin:
             raise ValidationError("query is required")
         tracker = self._tracker_or_none(project_id=project_id)
         if tracker is None:
-            return TrackerSearchOut(tasks=[], tickets=[])
+            return TrackerSearchOut(
+                project_id=project_id,
+                query=query.strip(),
+                tasks=[],
+                tickets=[],
+                task_count=0,
+                ticket_count=0,
+            )
         tasks = list(
             self._s.exec(
                 select(TrackerTask)
@@ -698,9 +718,15 @@ class TrackerQueryMixin:
                 .limit(max(1, min(limit, 100)))
             )
         )
+        task_out = [self._task_out(row) for row in tasks]
+        ticket_out = self._ticket_out_many(tickets)
         return TrackerSearchOut(
-            tasks=[self._task_out(row) for row in tasks],
-            tickets=self._ticket_out_many(tickets),
+            project_id=project_id,
+            query=query.strip(),
+            tasks=task_out,
+            tickets=ticket_out,
+            task_count=len(task_out),
+            ticket_count=len(ticket_out),
         )
 
     def _tracker_out(self, row: TaskTracker) -> TrackerSummaryOut:
@@ -965,14 +991,21 @@ class TrackerQueryMixin:
             ticket
             for ticket in rows
             if ticket.status not in TERMINAL_TRACKER_STATUSES
+            and not self._ticket_task_is_terminal(ticket)
             and not ticket.blocker_reason
             and not self._blocked_by_incomplete(tracker_id, ticket)
         ]
 
     def _ticket_blocks_active_work(self, tracker_id: int | None, ticket: TrackerTicket) -> bool:
+        if self._ticket_task_is_terminal(ticket):
+            return False
         return ticket.status not in TERMINAL_TRACKER_STATUSES and bool(
             ticket.blocker_reason or self._blocked_by_incomplete(tracker_id, ticket)
         )
+
+    def _ticket_task_is_terminal(self, ticket: TrackerTicket) -> bool:
+        task = self._s.get(TrackerTask, ticket.task_id)
+        return task is not None and _is_terminal_tracker_status(task.status)
 
     def _blocked_by_incomplete(self, tracker_id: int | None, ticket: TrackerTicket) -> list[str]:
         blockers: list[str] = []
@@ -1008,6 +1041,8 @@ class TrackerQueryMixin:
         checks = []
         if ticket.status == TrackerItemStatus.COMPLETE:
             return ["Review dependent tickets or start the next ready item."]
+        if ticket.status in TERMINAL_TRACKER_STATUSES:
+            return [self._terminal_reopen_detail(ticket)]
         blockers = self._blocked_by_incomplete(ticket.tracker_id, ticket)
         if blockers:
             checks.append(f"Complete dependencies first: {', '.join(blockers)}.")
@@ -1016,11 +1051,20 @@ class TrackerQueryMixin:
         handoff = self._workflow_handoff(ticket)
         if handoff is not None and not checks:
             step_ref = handoff.step_id or str(ticket.run_plan_step_id or ticket.key)
-            checks.append(
-                "Workflow ticket: inspect runPlan.get, claim the matching step "
-                f"{step_ref!r}, use the active step's allowed tools, then record "
-                "the step with runPlan.recordStep."
-            )
+            if "runPlan.claimStep" in handoff.next_operations:
+                checks.append(
+                    "Workflow ticket: inspect runPlan.get, claim the matching step "
+                    f"{step_ref!r}, use the active step's allowed tools, then record "
+                    "the step with runPlan.recordStep."
+                )
+            elif "runPlan.recordStep" in handoff.next_operations:
+                checks.append(
+                    "Workflow ticket: the matching run-plan step is already running; "
+                    "continue with its active grants, then record the step with "
+                    "runPlan.recordStep."
+                )
+            else:
+                checks.append("Workflow ticket: inspect the run plan before changing state.")
         if not checks:
             checks.append("Claim or continue the ticket, then update status/outcome when done.")
         return checks
@@ -1043,10 +1087,79 @@ class TrackerQueryMixin:
         template_key = source.get("template_key")
         if not isinstance(template_key, str) or not template_key:
             template_key = None
+        plan = self._s.get(RunPlan, run_plan_id_int)
+        step: RunPlanStep | None = None
+        if ticket.run_plan_step_id is not None:
+            candidate_step = self._s.get(RunPlanStep, ticket.run_plan_step_id)
+            if candidate_step is not None and candidate_step.run_plan_id == run_plan_id_int:
+                step = candidate_step
+        if step is None and step_id is not None:
+            step = self._s.exec(
+                select(RunPlanStep).where(
+                    RunPlanStep.run_plan_id == run_plan_id_int,
+                    RunPlanStep.step_id == step_id,
+                )
+            ).first()
+        if step is not None and step_id is None:
+            step_id = step.step_id
+        if plan is not None:
+            if run_plan_key is None:
+                run_plan_key = plan.key
+            if template_key is None:
+                template_key = plan.template_key
+
         next_operations = ["runPlan.get"]
-        if ticket.run_id is None:
+        notes = [
+            "The tracker ticket is a navigation mirror; run-plan grants remain "
+            "authoritative for workflow execution.",
+        ]
+        if plan is not None and plan.status == RunPlanStatus.DRAFT:
             next_operations.append("runPlan.start")
-        next_operations.extend(["runPlan.claimStep", "toolbox.describe", "runPlan.recordStep"])
+            notes.append("The run plan is still draft; start it before claiming a workflow step.")
+        elif plan is not None and plan.status in {
+            RunPlanStatus.COMPLETED,
+            RunPlanStatus.FAILED,
+            RunPlanStatus.ABORTED,
+        }:
+            next_operations.append("tracker.reopen")
+            notes.append(
+                f"The run plan is {plan.status.value}; use tracker.reopen for normal "
+                "agent follow-up after closeout, or inspect before admin recovery."
+            )
+        elif ticket.status in TERMINAL_TRACKER_STATUSES:
+            notes.append(
+                f"The mirrored workflow ticket is {ticket.status.value}; inspect the run "
+                "plan before reopening or recovering workflow execution."
+            )
+        elif step is not None and step.status == RunPlanStepStatus.PENDING:
+            next_operations.extend(["runPlan.claimStep", "toolbox.describe", "runPlan.recordStep"])
+            notes.append(
+                "The run-plan step is pending; claim it to activate the frozen step grants."
+            )
+        elif step is not None and step.status == RunPlanStepStatus.RUNNING:
+            next_operations.extend(["toolbox.describe", "runPlan.recordStep"])
+            notes.append(
+                "The run-plan step is already running; do not claim it again. Continue "
+                "with the active grants and record the step when finished."
+            )
+        elif step is not None and step.status in {
+            RunPlanStepStatus.SUCCESS,
+            RunPlanStepStatus.FAILED,
+            RunPlanStepStatus.SKIPPED,
+            RunPlanStepStatus.BLOCKED,
+        }:
+            notes.append(
+                f"The run-plan step is {step.status.value}; inspect the plan before "
+                "choosing the next workflow action."
+            )
+        else:
+            if ticket.run_id is None:
+                next_operations.append("runPlan.start")
+            next_operations.extend(["runPlan.claimStep", "toolbox.describe", "runPlan.recordStep"])
+            notes.append(
+                "Use the returned run_id/run_token from runPlan.start and the active "
+                "step grants from runPlan.claimStep before calling step-gated tools."
+            )
         return TrackerWorkflowHandoffOut(
             run_plan_id=run_plan_id_int,
             run_plan_step_id=ticket.run_plan_step_id,
@@ -1055,12 +1168,7 @@ class TrackerQueryMixin:
             run_plan_key=run_plan_key,
             template_key=template_key,
             next_operations=next_operations,
-            notes=[
-                "The tracker ticket is a navigation mirror; run-plan grants remain "
-                "authoritative for workflow execution.",
-                "Use the returned run_id/run_token from runPlan.start and the active "
-                "step grants from runPlan.claimStep before calling step-gated tools.",
-            ],
+            notes=notes,
         )
 
     def _suggest_next_actions_raw(
@@ -1068,10 +1176,25 @@ class TrackerQueryMixin:
         ticket: TrackerTicketOut,
         checks: list[dict[str, Any]],
     ) -> list[str]:
+        if ticket.status == TrackerItemStatus.COMPLETE:
+            return ["Ticket is already complete. Review dependent tickets or audit evidence."]
+        if ticket.status in TERMINAL_TRACKER_STATUSES:
+            return [
+                f"{self._terminal_reopen_detail(ticket)} Do not mark it complete from verification."
+            ]
         failed = [item for item in checks if not item["passed"]]
         if not failed:
             return ["Ticket is verification-ready. Mark complete after final human/agent review."]
         return [str(item["detail"]) for item in failed]
+
+    def _terminal_reopen_detail(self, ticket: TrackerTicket | TrackerTicketOut) -> str:
+        if ticket.run_plan_id is not None:
+            return (
+                f"Ticket is {ticket.status.value}; use tracker.reopen for normal follow-up. "
+                "Use runPlan.get or runPlan.checkConsistency before runPlan.recover only for "
+                "system-recoverable workflow state."
+            )
+        return f"Ticket is {ticket.status.value}; reopen the ticket if work should continue."
 
 
 __all__ = [

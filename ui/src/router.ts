@@ -3,7 +3,9 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import HomeView from './views/HomeView.vue'
 import AuthErrorView from './views/AuthErrorView.vue'
 import ProjectDetailView from './views/ProjectDetailView.vue'
-import OverviewTab from './views/project-detail/OverviewTab.vue'
+import HomeConsoleView from './views/HomeConsoleView.vue'
+import InboxView from './views/InboxView.vue'
+import ActivityView from './views/ActivityView.vue'
 import SetupStatusTab from './views/project-detail/SetupStatusTab.vue'
 import SchedulesTab from './views/project-detail/SchedulesTab.vue'
 import CostBudgetTab from './views/project-detail/CostBudgetTab.vue'
@@ -27,14 +29,18 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/projects/:id',
     component: ProjectDetailView,
-    redirect: (to) => ({ path: `/projects/${to.params.id}/overview` }),
     children: [
-      { path: 'overview', name: 'project-detail-overview', component: OverviewTab },
+      // Home is the operations console; it owns its own page chrome, so
+      // ProjectDetailView renders it without the setup-tab header wrapper.
+      { path: '', name: 'project-home', component: HomeConsoleView },
+      { path: 'overview', redirect: (to) => ({ path: `/projects/${to.params.id}` }) },
       { path: 'setup', name: 'project-detail-setup', component: SetupStatusTab },
       { path: 'schedules', name: 'project-detail-schedules', component: SchedulesTab },
       { path: 'cost-budget', name: 'project-detail-cost-budget', component: CostBudgetTab },
     ],
   },
+  { path: '/projects/:id/inbox', name: 'project-inbox', component: InboxView },
+  { path: '/projects/:id/activity', name: 'project-activity', component: ActivityView },
   { path: '/projects/:id/plugins', name: 'project-plugins', component: PluginsView },
   { path: '/projects/:id/capabilities', name: 'project-capabilities', component: CapabilitiesView },
   { path: '/projects/:id/connections', name: 'project-connections', component: ConnectionsView },

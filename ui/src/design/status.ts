@@ -104,6 +104,60 @@ export const budgetState = defineStatuses({
   capped: { label: 'Capped', tone: 'neutral', icon: 'lock' },
 });
 
+// Provider/credential connection status (auth/status connections[].status).
+export const connectionStatus = defineStatuses({
+  connected: { label: 'Connected', tone: 'success', icon: 'check-circle', dot: true },
+  used: { label: 'Connected', tone: 'success', icon: 'check-circle', dot: true },
+  pending: { label: 'Pending', tone: 'warning', icon: 'clock', dot: true, inFlight: true },
+  expired: { label: 'Expired', tone: 'danger', icon: 'key-round' },
+  failed: { label: 'Failed', tone: 'danger', icon: 'x-circle' },
+  revoked: { label: 'Revoked', tone: 'neutral', icon: 'circle-slash' },
+  'setup-required': { label: 'Setup needed', tone: 'warning', icon: 'wrench' },
+});
+
+// Agent-request lifecycle (the agent/human inbox).
+export const agentRequestStatus = defineStatuses({
+  new: { label: 'New', tone: 'info', icon: 'inbox' },
+  claimed: { label: 'Claimed', tone: 'info', icon: 'loader', dot: true, inFlight: true },
+  'run-created': { label: 'Run created', tone: 'info', icon: 'loader', dot: true, inFlight: true },
+  'run-started': { label: 'Running', tone: 'info', icon: 'loader', dot: true, inFlight: true },
+  responded: { label: 'Responded', tone: 'info', icon: 'check' },
+  resolved: { label: 'Resolved', tone: 'success', icon: 'check-circle' },
+  ignored: { label: 'Ignored', tone: 'neutral', icon: 'circle-slash' },
+  failed: { label: 'Failed', tone: 'danger', icon: 'x-circle' },
+});
+
+// Read/unread/archived attention flag.
+export const attentionState = defineStatuses({
+  unread: { label: 'Unread', tone: 'info', icon: 'inbox', dot: true },
+  read: { label: 'Read', tone: 'neutral', icon: 'check' },
+  archived: { label: 'Archived', tone: 'neutral', icon: 'archive' },
+});
+
+// Local service / daemon health.
+export const systemHealth = defineStatuses({
+  ok: { label: 'Running', tone: 'success', icon: 'check-circle', dot: true },
+  healthy: { label: 'Running', tone: 'success', icon: 'check-circle', dot: true },
+  degraded: { label: 'Degraded', tone: 'warning', icon: 'alert-triangle' },
+  unreachable: { label: 'Unreachable', tone: 'danger', icon: 'x-circle' },
+  checking: { label: 'Checking…', tone: 'neutral', icon: 'loader', dot: true, inFlight: true },
+});
+
+// Agent-memory entities surfaced in Project Data.
+export const memoryState = defineStatuses({
+  proposed: { label: 'Proposed', tone: 'warning', icon: 'clock' },
+  accepted: { label: 'Accepted', tone: 'success', icon: 'check-circle' },
+  active: { label: 'Active', tone: 'success', icon: 'check-circle' },
+  rejected: { label: 'Rejected', tone: 'danger', icon: 'x-circle' },
+  superseded: { label: 'Superseded', tone: 'neutral', icon: 'archive' },
+  recorded: { label: 'Recorded', tone: 'info', icon: 'check' },
+  planned: { label: 'Planned', tone: 'neutral', icon: 'clock' },
+  running: { label: 'Running', tone: 'info', icon: 'loader', dot: true, inFlight: true },
+  complete: { label: 'Complete', tone: 'success', icon: 'check-circle' },
+  completed: { label: 'Complete', tone: 'success', icon: 'check-circle' },
+  archived: { label: 'Archived', tone: 'neutral', icon: 'archive' },
+});
+
 export const statusRegistry = {
   run: runStatus,
   step: stepStatus,
@@ -111,6 +165,11 @@ export const statusRegistry = {
   project: projectState,
   integration: integrationHealth,
   budget: budgetState,
+  connection: connectionStatus,
+  agentRequest: agentRequestStatus,
+  attention: attentionState,
+  system: systemHealth,
+  memory: memoryState,
 } as const;
 
 export type StatusDomain = keyof typeof statusRegistry;

@@ -345,7 +345,15 @@ class TrackerMutationMixin:
         tracker = self.ensure_tracker(project_id=project_id)
         task = self._task_by_key(tracker.id, task_key)
         before = self._task_snapshot(task)
+        old_status = task.status
         self._apply_task_patch(task, patch_json)
+        self._record_tracker_task_status_event(
+            task,
+            old_status,
+            task.status,
+            actor=actor,
+            reason="tracker.update_task",
+        )
         self._record_revision(
             tracker,
             actor=actor,
@@ -398,6 +406,7 @@ class TrackerMutationMixin:
         if not reason:
             raise ValidationError("reason is required to reopen a task")
         before = self._task_snapshot(task)
+        old_status = task.status
         now = _utcnow()
         task.status = TrackerItemStatus.IN_PROGRESS
         task.started_at = task.started_at or now
@@ -427,6 +436,13 @@ class TrackerMutationMixin:
         task.metadata_json = redact_secrets(metadata)
         task.updated_at = now
         self._s.add(task)
+        self._record_tracker_task_status_event(
+            task,
+            old_status,
+            task.status,
+            actor=actor,
+            reason="tracker.reopen_task",
+        )
         self._record_revision(
             tracker,
             actor=actor,
@@ -531,6 +547,7 @@ class TrackerMutationMixin:
                     },
                 )
         before = self._task_snapshot(task)
+        old_status = task.status
         now = _utcnow()
         rejection = {
             "decision": "rejected",
@@ -559,7 +576,8 @@ class TrackerMutationMixin:
         changed_tickets: list[TrackerTicket] = []
         previous_ticket_statuses: dict[str, str] = {}
         for ticket in self._ticket_rows_for_task(task.id):
-            previous_ticket_statuses[ticket.key] = ticket.status.value
+            old_ticket_status = ticket.status
+            previous_ticket_statuses[ticket.key] = old_ticket_status.value
             # Task rejection is an operator terminal override; every child closes
             # as aborted so the parent cannot look partially deliverable later.
             ticket.metadata_json = {
@@ -576,7 +594,23 @@ class TrackerMutationMixin:
             ticket.outcome = f"Rejected before completion. Reason: {reason}"
             ticket.updated_at = now
             self._s.add(ticket)
+            self._record_tracker_ticket_status_event(
+                ticket,
+                old_ticket_status,
+                ticket.status,
+                task=task,
+                actor=actor,
+                reason="tracker.reject_task",
+            )
             changed_tickets.append(ticket)
+
+        self._record_tracker_task_status_event(
+            task,
+            old_status,
+            task.status,
+            actor=actor,
+            reason="tracker.reject_task",
+        )
 
         self._record_revision(
             tracker,
@@ -679,7 +713,16 @@ class TrackerMutationMixin:
                 project_id=project_id,
             )
         before = self._ticket_snapshot(ticket)
+        old_status = ticket.status
         self._apply_ticket_patch(tracker, ticket, patch_json)
+        self._record_tracker_ticket_status_event(
+            ticket,
+            old_status,
+            ticket.status,
+            task=task,
+            actor=actor,
+            reason="tracker.update_ticket",
+        )
         self._sync_task_status(task, now=_utcnow())
         self._record_revision(
             tracker,
@@ -733,7 +776,15 @@ class TrackerMutationMixin:
                     raise ValidationError("task patch entries must be objects")
                 task = self._task_by_key(tracker.id, str(task_key))
                 before = self._task_snapshot(task)
+                old_status = task.status
                 self._apply_task_patch(task, task_patch)
+                self._record_tracker_task_status_event(
+                    task,
+                    old_status,
+                    task.status,
+                    actor=actor,
+                    reason="tracker.patch_task",
+                )
                 changed_task = task
                 self._record_revision(
                     tracker,
@@ -757,7 +808,16 @@ class TrackerMutationMixin:
                 if ticket_task is None:
                     raise NotFoundError("ticket task not found", data={"ticket_key": ticket.key})
                 before = self._ticket_snapshot(ticket)
+                old_status = ticket.status
                 self._apply_ticket_patch(tracker, ticket, ticket_patch)
+                self._record_tracker_ticket_status_event(
+                    ticket,
+                    old_status,
+                    ticket.status,
+                    task=ticket_task,
+                    actor=actor,
+                    reason="tracker.patch_ticket",
+                )
                 self._sync_task_status(ticket_task, now=_utcnow())
                 changed_task = ticket_task
                 changed_tickets.append(ticket)
@@ -860,6 +920,12 @@ class TrackerMutationMixin:
         allow_workflow_status_from_run_plan: bool = False,
     ) -> TrackerTicket:
         now = now or _utcnow()
+        self._validate_workflow_task_ticket_binding(
+            task=task,
+            key=key,
+            run_plan_id=run_plan_id,
+            run_plan_step_id=run_plan_step_id,
+        )
         self._validate_workflow_ticket_initial_status(
             key=key,
             status=status,
@@ -915,6 +981,68 @@ class TrackerMutationMixin:
         self._s.add(row)
         self._s.flush()
         return row
+
+    def _validate_workflow_task_ticket_binding(
+        self,
+        *,
+        task: TrackerTask,
+        key: str,
+        run_plan_id: int | None,
+        run_plan_step_id: int | None,
+    ) -> None:
+        if task.source_kind != TrackerSourceKind.WORKFLOW:
+            return
+        expected_run_plan_id: int | None = None
+        if isinstance(task.source_json, dict) and isinstance(
+            task.source_json.get("run_plan_id"),
+            int,
+        ):
+            expected_run_plan_id = task.source_json["run_plan_id"]
+        if run_plan_id is None or run_plan_step_id is None:
+            raise ValidationError(
+                "workflow-backed tracker tickets must be created under a run-plan step",
+                data={
+                    "task_key": task.key,
+                    "ticket_key": key,
+                    "required_fields": ["run_plan_id", "step_id"],
+                    "reason": (
+                        "the workflow step mirror is the execution spine; child tickets "
+                        "must attach to one step at creation time"
+                    ),
+                    "next_operations": ["runPlan.get", "tracker.createTicket"],
+                },
+            )
+        if expected_run_plan_id is not None and run_plan_id != expected_run_plan_id:
+            raise ValidationError(
+                "workflow-backed tracker ticket run_plan_id must match the workflow task",
+                data={
+                    "task_key": task.key,
+                    "ticket_key": key,
+                    "expected_run_plan_id": expected_run_plan_id,
+                    "run_plan_id": run_plan_id,
+                    "next_operations": ["runPlan.get", "tracker.createTicket"],
+                },
+            )
+        binding = self._workflow_ticket_binding(
+            ticket_key=key,
+            run_plan_id=run_plan_id,
+            run_plan_step_id=run_plan_step_id,
+            action="be created",
+        )
+        if binding is None:
+            return
+        plan, _step = binding
+        if plan.project_id != task.project_id:
+            raise ValidationError(
+                "workflow-backed tracker ticket run plan must belong to the workflow task project",
+                data={
+                    "task_key": task.key,
+                    "ticket_key": key,
+                    "project_id": task.project_id,
+                    "run_plan_project_id": plan.project_id,
+                    "next_operations": ["runPlan.get", "tracker.createTicket"],
+                },
+            )
 
     def _apply_task_patch(self, task: TrackerTask, patch_json: dict[str, Any]) -> None:
         self._validate_task_patch_fields(patch_json)
@@ -1223,6 +1351,18 @@ class TrackerMutationMixin:
                     "next_operations": ["runPlan.checkConsistency"],
                 },
             )
+        if step.run_plan_id != plan.id:
+            raise ValidationError(
+                f"workflow-backed tracker ticket cannot {action} because its run-plan step "
+                "belongs to a different run plan",
+                data={
+                    "ticket_key": ticket_key,
+                    "run_plan_id": run_plan_id,
+                    "run_plan_step_id": run_plan_step_id,
+                    "step_run_plan_id": step.run_plan_id,
+                    "next_operations": ["runPlan.get", "runPlan.checkConsistency"],
+                },
+            )
         return plan, step
 
     def _validate_workflow_ticket_can_be_created(
@@ -1370,6 +1510,12 @@ class TrackerMutationMixin:
         if task.status != old:
             task.updated_at = now
             self._s.add(task)
+            self._record_tracker_task_status_event(
+                task,
+                old,
+                task.status,
+                reason="tracker.sync_task_status",
+            )
 
     def _sync_workflow_task_status(self, task: TrackerTask, *, now: datetime) -> bool:
         run_plan_id = self._workflow_task_run_plan_id(task)
@@ -1406,6 +1552,12 @@ class TrackerMutationMixin:
         if task.status != old:
             task.updated_at = now
             self._s.add(task)
+            self._record_tracker_task_status_event(
+                task,
+                old,
+                task.status,
+                reason="tracker.sync_workflow_task_status",
+            )
         return True
 
     def _next_task_position(self, tracker_id: int | None) -> int:

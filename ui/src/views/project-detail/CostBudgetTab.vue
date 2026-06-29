@@ -6,8 +6,8 @@ import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
 import {
-  UiBadge,
   UiButton,
   UiCallout,
   UiCard,
@@ -15,7 +15,10 @@ import {
   UiMetricCard,
   UiProgressBar,
   UiSectionHeader,
+  UiSparkline,
 } from '@/components/ui'
+import { resolveStatus } from '@/design/status'
+import { formatPercent, formatUsd } from '@/lib/stackos/format'
 import {
   INTEGRATION_KINDS,
   useCostsStore,
@@ -23,6 +26,7 @@ import {
   type IntegrationKind,
 } from '@/stores/costs'
 import type { DataTableColumn } from '@/components/types'
+import type { SparklinePoint } from '@/components/ui/UiSparkline.vue'
 
 const route = useRoute()
 const costsStore = useCostsStore()
@@ -57,7 +61,7 @@ const integrationColumns: DataTableColumn<{
   spend: number
 }>[] = [
   { key: 'integration', label: 'Integration' },
-  { key: 'spend', label: 'Spend (USD)', format: (value) => `$${Number(value).toFixed(2)}` },
+  { key: 'spend', label: 'Spend (USD)', format: (value) => formatUsd(Number(value)) },
 ]
 
 const totalBudgetCap = computed(() =>
@@ -74,31 +78,16 @@ const budgetUsagePercent = computed(() =>
     : 0,
 )
 
-interface SparklinePoint {
-  x: number
-  y: number
-  ym: string
-  total: number
-}
-
-const sparkline = computed<SparklinePoint[]>(() => {
-  if (history.value.length === 0) return []
-  const width = 200
-  const height = 40
-  const max = Math.max(...history.value.map((row) => row.total_usd), 1)
-  return history.value.map((row, index) => ({
-    x: (index / Math.max(history.value.length - 1, 1)) * width,
-    y: height - (row.total_usd / max) * height,
-    ym: row.period_start.slice(0, 7),
-    total: row.total_usd,
-  }))
-})
-
-const sparklinePath = computed<string>(() => {
-  return sparkline.value
-    .map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`)
-    .join(' ')
-})
+const sparklinePoints = computed<SparklinePoint[]>(() =>
+  history.value.map((row) => {
+    const ym = row.period_start.slice(0, 7)
+    return {
+      label: ym,
+      value: row.total_usd,
+      display: formatUsd(row.total_usd),
+    }
+  }),
+)
 
 const historyHasSpend = computed(() =>
   history.value.some((row) => Number(row.total_usd) > 0),
@@ -110,27 +99,21 @@ function integrationLabel(kind: string): string {
     : kind
 }
 
-function formatUsd(value: number | null | undefined): string {
-  return `$${Number(value ?? 0).toFixed(2)}`
-}
-
 function budgetUsage(budget: IntegrationBudget): number {
   if (budget.monthly_budget_usd <= 0) return 0
   return Math.min(100, (budget.current_month_spend / budget.monthly_budget_usd) * 100)
 }
 
-function budgetTone(budget: IntegrationBudget): 'success' | 'warning' | 'danger' {
+// Map pacing to the canonical budget status domain (status.ts).
+function budgetStatus(budget: IntegrationBudget): 'underBudget' | 'approaching' | 'overBudget' {
   const pct = budgetUsage(budget)
-  if (pct >= 100) return 'danger'
-  if (pct >= budget.alert_threshold_pct) return 'warning'
-  return 'success'
+  if (pct >= 100) return 'overBudget'
+  if (pct >= budget.alert_threshold_pct) return 'approaching'
+  return 'underBudget'
 }
 
-function budgetStatusLabel(budget: IntegrationBudget): string {
-  const pct = budgetUsage(budget)
-  if (pct >= 100) return 'Over cap'
-  if (pct >= budget.alert_threshold_pct) return 'Near alert'
-  return 'Healthy'
+function budgetTone(budget: IntegrationBudget): 'success' | 'warning' | 'danger' {
+  return resolveStatus('budget', budgetStatus(budget)).tone as 'success' | 'warning' | 'danger'
 }
 
 async function load(): Promise<void> {
@@ -147,21 +130,17 @@ onMounted(load)
 
 <template>
   <section class="space-y-5">
-    <UiSectionHeader
-      title="Cost & budget"
-      description="Read-only spend, budget caps, and vendor pacing for agent-owned integrations."
-    >
-      <template #actions>
-        <UiButton
-          size="sm"
-          variant="secondary"
-          :disabled="loading"
-          @click="load"
-        >
-          {{ loading ? 'Refreshing...' : 'Refresh' }}
-        </UiButton>
-      </template>
-    </UiSectionHeader>
+    <div class="flex justify-end">
+      <UiButton
+        size="sm"
+        variant="secondary"
+        icon-left="refresh"
+        :loading="loading"
+        @click="load"
+      >
+        Refresh
+      </UiButton>
+    </div>
 
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <UiMetricCard
@@ -176,7 +155,7 @@ onMounted(load)
       <UiMetricCard
         label="Budget cap"
         :value="formatUsd(totalBudgetCap)"
-        :delta="`${budgetUsagePercent.toFixed(0)}%`"
+        :delta="formatPercent(budgetUsagePercent)"
         delta-label="used"
         :delta-tone="
           budgetUsagePercent >= 100 ? 'negative' : budgetUsagePercent >= 80 ? 'neutral' : 'positive'
@@ -235,7 +214,7 @@ onMounted(load)
         title="No budget caps"
         description="Agent-owned caps will appear here with alert thresholds and pacing."
         icon="banknotes"
-        class="rounded-lg border border-dashed border-default bg-bg-surface"
+        framed
       />
 
       <div
@@ -250,9 +229,10 @@ onMounted(load)
             <h4 class="t-h3 text-fg-strong">
               {{ integrationLabel(budget.kind) }}
             </h4>
-            <UiBadge :tone="budgetTone(budget)">
-              {{ budgetStatusLabel(budget) }}
-            </UiBadge>
+            <StatusBadge
+              domain="budget"
+              :status="budgetStatus(budget)"
+            />
           </template>
 
           <p class="text-sm text-fg-muted">
@@ -266,7 +246,7 @@ onMounted(load)
             :max="budget.monthly_budget_usd || 1"
             :tone="budgetTone(budget)"
             show-label
-            :format="() => `${budgetUsage(budget).toFixed(0)}%`"
+            :format="() => formatPercent(budgetUsage(budget))"
             :aria-label="`${integrationLabel(budget.kind)} budget usage`"
           />
 
@@ -277,7 +257,7 @@ onMounted(load)
                   Alert
                 </dt>
                 <dd class="mt-0.5 tabular-nums text-fg-default">
-                  {{ Number(budget.alert_threshold_pct).toFixed(0) }}%
+                  {{ formatPercent(budget.alert_threshold_pct) }}
                 </dd>
               </div>
               <div>
@@ -318,43 +298,24 @@ onMounted(load)
       />
 
       <UiEmptyState
-        v-if="sparkline.length === 0 || !historyHasSpend"
+        v-if="sparklinePoints.length === 0 || !historyHasSpend"
         title="No cost history yet"
         description="The trend appears once a monthly snapshot records vendor spend."
         icon="banknotes"
-        class="rounded-lg border border-dashed border-default bg-bg-surface"
+        framed
       />
       <UiCard v-else>
-        <svg
-          viewBox="0 0 200 40"
-          width="100%"
-          height="60"
-          role="img"
+        <UiSparkline
+          :points="sparklinePoints"
           aria-label="Cost sparkline (last 12 months)"
-        >
-          <path
-            :d="sparklinePath"
-            fill="none"
-            stroke-width="2"
-            style="stroke: var(--color-accent-primary)"
-          />
-          <circle
-            v-for="point in sparkline"
-            :key="point.ym"
-            :cx="point.x"
-            :cy="point.y"
-            r="2"
-            style="fill: var(--color-accent-primary)"
-          >
-            <title>{{ point.ym }}: ${{ point.total.toFixed(2) }}</title>
-          </circle>
-        </svg>
+          tone="accent"
+        />
         <ul class="mt-2 grid grid-cols-4 gap-1 text-xs text-fg-muted lg:grid-cols-6">
           <li
-            v-for="point in sparkline"
-            :key="point.ym"
+            v-for="point in sparklinePoints"
+            :key="point.label"
           >
-            {{ point.ym }}: ${{ point.total.toFixed(2) }}
+            {{ point.label }}: {{ point.display }}
           </li>
         </ul>
       </UiCard>

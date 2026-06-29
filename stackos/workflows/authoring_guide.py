@@ -147,7 +147,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
         ],
         complete_package_scope=[
             "Plugin manifest entries for capabilities, providers, resources, actions, "
-            "workflow templates, presets, and navigation when the workflow belongs to a domain.",
+            "and navigation when the workflow belongs to a domain. Workflow templates, "
+            "agent presets, and skill presets ship from the standard plugin directories.",
             "Resource schemas with ui_schema, record_kind, and agent_guidance for durable "
             "state the workflow reads or writes.",
             "Action contracts and connector registrations for executable provider or "
@@ -194,6 +195,11 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "Wire runtime execution explicitly: action refs, resource refs, auth/provider "
             "requirements, approval gates, run-plan grants, tracker evidence, and "
             "readiness diagnostics.",
+            "For workflow-backed tracker work, keep the run-plan step mirror tickets "
+            "as the one execution spine. Create child tickets with run_plan_id and "
+            "step_id at creation time, attach them to the relevant step ticket, and "
+            "add dependency edges so the workflow graph has exactly one root: the "
+            "first workflow step mirror.",
             "Validate mechanically with manifest/template loaders, workflowTemplate.validate, "
             "agentPreset.resolveForWorkflow, skillPreset.resolveForWorkflow, readiness.check, "
             "and runPlan.validate/create where applicable.",
@@ -243,6 +249,9 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "and provider setup URLs for affected workflows or actions.",
             "runPlan.create/runPlan.validate produce grants that match the workflow's "
             "action, resource, artifact, decision, context, and communication needs.",
+            "Workflow-backed tracker graphs have exactly one root workflow step ticket; attached "
+            "child tickets are dependency-bridged from their step and terminal child "
+            "tickets block the next step until resolved.",
             "Tracker/run-plan evidence, approval gates, and audit outputs are part of "
             "the definition of done, not after-the-fact notes.",
             "Docs route users to the canonical StackOS operation and only summarize "
@@ -262,13 +271,20 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
         ],
         decision_path=[
             "Choose the workflow identity: new template, project extension, or one-off run plan.",
+            "For a host project setup, call workspace.startSession first. If project "
+            "identity is required, bind or create the intended StackOS workspace through "
+            "toolbox.call for workspace.connect or workspace.bootstrap; do not rely on "
+            "a global active project or last-used fallback.",
             "Draft the reusable contract with stable key, inputs, bounded context, "
             "agent/skill requirements, action/resource contracts, policies, approval "
             "gates, ordered steps, outputs, learning hooks, and failure handling.",
             "Validate drafts with workflowTemplate.validate before saving, forking, or "
             "creating a run.",
-            "For project-specific setup on an existing workflow, validate and save a "
-            "workflow extension instead of copying the template.",
+            "For project-specific setup on an existing workflow, describe the workflow, "
+            "resolve agent/skill presets, check readiness, then validate and save a "
+            "workflow extension instead of copying the template. workflowExtension.upsert "
+            "preserves omitted fields by default; use clear_fields_json with merge for "
+            "field-level clearing or update_mode='replace' for reviewed full rewrites.",
             "Before execution, describe the effective workflow, resolve agent and skill "
             "presets, check readiness, create and validate a run plan, then execute "
             "through step-scoped grants.",
@@ -320,8 +336,28 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "success_criteria, or metadata",
             "Atomic top-level workflow field overrides such as agent_requirements, "
             "skill_requirements, skill_preset_requirements, policies, approval_gates, or steps",
+            "Setup-time context that should be merged into future run plans. Run-plan resources, "
+            "artifacts, decisions, learnings, and actions are written later only inside "
+            "a started run with explicit step grants.",
         ],
         execution_path=[
+            "Phase 1 - workflow infrastructure setup: bind the workspace, select "
+            "the workflow, resolve orchestrator/skill presets and agent presets, "
+            "adapt them into host-native project-local agents, skills, commands, "
+            "or orchestrator guidance when the host supports those files, persist "
+            "project extension defaults, and prove the run-plan path without "
+            "collecting prerequisites or producing workflow output. Host-local files "
+            "are execution contracts only; keep prerequisites, state, and secrets in "
+            "StackOS.",
+            "Before creating setup state, inspect the owning project/workspace, "
+            "host workspace identity behavior, selected workflow, required presets, "
+            "host-native file support, and which StackOS writes are direct setup "
+            "writes versus run-plan-step-granted writes.",
+            "workspace.startSession",
+            "toolbox.call for workspace.connect or workspace.bootstrap only when "
+            "project identity selection is required",
+            "toolbox.call for operation.list with mode=grouped and response_mode=compact "
+            "when operation names are not clear",
             "workflowTemplate.authoringGuide",
             "workflowTemplate.validate",
             "workflowTemplate.save or workflowTemplate.fork only with explicit "
@@ -331,6 +367,17 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "agentPreset.resolveForWorkflow",
             "skillPreset.resolveForWorkflow",
             "readiness.check",
+            "workflow prerequisite setup: bind to the existing project and collect "
+            "durable domain inputs such as voice/profile, routes, source policy, "
+            "account mappings, approval rules, or other workflow prerequisites through "
+            "the workflow extension, approved setup operations, or an onboarding run.",
+            "workflow operation: create, resume, or start the concrete run plan; "
+            "load the resolved orchestrator/presets; claim and record steps; use only "
+            "granted tools/actions; and preserve approval gates.",
+            "Before reporting setup complete, show binding proof, workflow extension "
+            "state, local host files with absolute paths, preset-to-file mapping, "
+            "deterministic future binding path, prerequisite gate, run-plan validation "
+            "or create outcome, and confirmation that no workflow output was produced.",
             "runPlan.create",
             "runPlan.validate",
             "runPlan.start",

@@ -34,13 +34,23 @@ def operation_specs():
     return [
         operation_spec(
             name="project.update",
-            summary="Patch safe project metadata.",
+            summary="Patch safe project metadata such as display name.",
             input_model=ProjectUpdateInput,
             output_model=WriteEnvelope[ProjectOut],
             handler=_project_update,
-            purpose="Use this for explicit operator/admin project metadata updates.",
-            when_to_use=("A local admin needs to change safe project fields.",),
-            prerequisites=("Requires an existing project_id and an explicit patch.",),
+            purpose=(
+                "Use this for explicit operator/admin project metadata updates, including "
+                "renaming a project that was created with a poor inferred name."
+            ),
+            when_to_use=(
+                "A local admin needs to change safe project fields.",
+                "The operator wants to correct the business-facing project name without "
+                "changing the workspace folder binding.",
+            ),
+            prerequisites=(
+                "Requires an existing project_id and an explicit patch.",
+                "Changing project metadata does not move or rebind workspace folders.",
+            ),
             examples=(
                 OperationExample(
                     title="Rename project",

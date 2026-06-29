@@ -2,8 +2,6 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { app } = require("electron");
-const { MacUpdater } = require("electron-updater");
 
 function readJsonIfPresent(filePath) {
   try {
@@ -13,23 +11,29 @@ function readJsonIfPresent(filePath) {
   }
 }
 
-function packagedUpdateConfigPath() {
-  if (process.resourcesPath) {
-    return path.join(process.resourcesPath, "update-config.json");
+function packagedUpdateConfigPath(resourcesPath = process.resourcesPath) {
+  if (resourcesPath) {
+    return path.join(resourcesPath, "update-config.json");
   }
   return null;
 }
 
-function devUpdateConfigPath() {
-  return path.resolve(__dirname, "..", "update-config.json");
+function devUpdateConfigPath(desktopDir = path.resolve(__dirname, "..")) {
+  return path.join(desktopDir, "update-config.json");
 }
 
-function configuredUpdateUrl() {
-  if (process.env.STACKOS_UPDATE_URL) {
-    return process.env.STACKOS_UPDATE_URL;
+function configuredUpdateUrl(options = {}) {
+  const env = options.env || process.env;
+  if (env.STACKOS_UPDATE_URL) {
+    return env.STACKOS_UPDATE_URL;
   }
 
-  const configPaths = [packagedUpdateConfigPath(), devUpdateConfigPath()].filter(Boolean);
+  const configPaths =
+    options.configPaths ||
+    [
+      packagedUpdateConfigPath(options.resourcesPath),
+      devUpdateConfigPath(options.desktopDir)
+    ].filter(Boolean);
   for (const configPath of configPaths) {
     const config = readJsonIfPresent(configPath);
     if (config && config.updateUrl) {
@@ -39,40 +43,124 @@ function configuredUpdateUrl() {
   return null;
 }
 
-function createUpdateController() {
-  const updateUrl = configuredUpdateUrl();
-  const state = {
-    enabled: Boolean(updateUrl) && process.platform === "darwin",
-    status: "idle",
-    updateUrl,
-    lastError: null,
-    updateInfo: null
-  };
+function isLocalhost(hostname) {
+  return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname);
+}
 
-  if (!state.enabled) {
+function updateUrlPolicy(updateUrl) {
+  if (!updateUrl) {
     return {
-      state,
-      checkForUpdates: async () => ({
-        ok: false,
-        reason: updateUrl ? "updates are only enabled on macOS" : "update endpoint is not configured"
-      }),
-      downloadUpdate: async () => ({
-        ok: false,
-        reason: "update endpoint is not configured"
-      }),
-      quitAndInstall: () => ({
-        ok: false,
-        reason: "no update is ready to install"
-      })
+      ok: false,
+      reason: "update endpoint is not configured"
     };
   }
 
-  const updater = new MacUpdater({
+  try {
+    const parsed = new URL(updateUrl);
+    if (parsed.protocol === "https:") {
+      return { ok: true };
+    }
+    if (parsed.protocol === "http:" && isLocalhost(parsed.hostname)) {
+      return { ok: true, local: true };
+    }
+  } catch (_error) {
+    return {
+      ok: false,
+      reason: "update endpoint is not a valid URL"
+    };
+  }
+
+  return {
+    ok: false,
+    reason: "update endpoint must use HTTPS unless it is localhost for local testing"
+  };
+}
+
+function loadUpdaterLogger() {
+  try {
+    const logger = require("electron-log");
+    if (logger.transports && logger.transports.file) {
+      logger.transports.file.level = "info";
+    }
+    return logger;
+  } catch (_error) {
+    return console;
+  }
+}
+
+function createMacUpdater(updateUrl, options) {
+  if (options.updater) {
+    return options.updater;
+  }
+  if (options.updaterFactory) {
+    return options.updaterFactory({
+      provider: "generic",
+      url: updateUrl
+    });
+  }
+  const { MacUpdater } = require("electron-updater");
+  return new MacUpdater({
     provider: "generic",
     url: updateUrl
   });
+}
+
+function disabledReason(updateUrl, platform, urlPolicy) {
+  if (platform !== "darwin" && updateUrl) {
+    return "updates are only enabled on macOS";
+  }
+  return urlPolicy.reason;
+}
+
+function createDisabledController(state, reason) {
+  return {
+    state,
+    checkForUpdates: async () => ({
+      ok: false,
+      reason,
+      state
+    }),
+    downloadUpdate: async () => ({
+      ok: false,
+      reason,
+      state
+    }),
+    quitAndInstall: () => ({
+      ok: false,
+      reason: "no update is ready to install",
+      state
+    })
+  };
+}
+
+function recordError(state, error) {
+  state.status = "error";
+  state.lastError = error && error.message ? error.message : String(error);
+}
+
+function createUpdateController(options = {}) {
+  const updateUrl = configuredUpdateUrl(options);
+  const platform = options.platform || process.platform;
+  const urlPolicy = updateUrlPolicy(updateUrl);
+  const state = {
+    enabled: Boolean(updateUrl) && platform === "darwin" && urlPolicy.ok,
+    status: "idle",
+    updateUrl,
+    lastError: null,
+    updateInfo: null,
+    progress: null,
+    reason: null
+  };
+
+  if (!state.enabled) {
+    state.status = "disabled";
+    state.reason = disabledReason(updateUrl, platform, urlPolicy);
+    return createDisabledController(state, state.reason);
+  }
+
+  const updater = createMacUpdater(updateUrl, options);
   updater.autoDownload = false;
-  updater.autoInstallOnAppQuit = false;
+  updater.logger = options.logger || loadUpdaterLogger();
 
   updater.on("checking-for-update", () => {
     state.status = "checking";
@@ -95,44 +183,86 @@ function createUpdateController() {
     state.updateInfo = info;
   });
   updater.on("error", (error) => {
-    state.status = "error";
-    state.lastError = error.message;
+    recordError(state, error);
   });
 
   return {
     state,
     checkForUpdates: async () => {
-      const result = await updater.checkForUpdates();
-      return {
-        ok: true,
-        updateInfo: result ? result.updateInfo : null,
-        state
-      };
+      try {
+        const result = await updater.checkForUpdates();
+        return {
+          ok: true,
+          updateInfo: result ? result.updateInfo : null,
+          state
+        };
+      } catch (error) {
+        recordError(state, error);
+        return {
+          ok: false,
+          reason: state.lastError,
+          state
+        };
+      }
     },
     downloadUpdate: async () => {
-      await updater.downloadUpdate();
-      return {
-        ok: true,
-        state
-      };
+      if (state.status === "downloaded") {
+        return {
+          ok: true,
+          state
+        };
+      }
+      if (state.status !== "available") {
+        return {
+          ok: false,
+          reason: "check for updates before downloading",
+          state
+        };
+      }
+      try {
+        await updater.downloadUpdate();
+        return {
+          ok: true,
+          state
+        };
+      } catch (error) {
+        recordError(state, error);
+        return {
+          ok: false,
+          reason: state.lastError,
+          state
+        };
+      }
     },
     quitAndInstall: () => {
       if (state.status !== "downloaded") {
         return {
           ok: false,
-          reason: "no update is ready to install"
+          reason: "download the update before installing",
+          state
         };
       }
-      app.removeAllListeners("window-all-closed");
-      updater.quitAndInstall(false, true);
-      return {
-        ok: true
-      };
+      try {
+        updater.quitAndInstall();
+        state.status = "installing";
+        return {
+          ok: true,
+          state
+        };
+      } catch (error) {
+        recordError(state, error);
+        return {
+          ok: false,
+          reason: state.lastError,
+          state
+        };
+      }
     }
   };
 }
 
 module.exports = {
   configuredUpdateUrl,
+  updateUrlPolicy,
   createUpdateController
 };

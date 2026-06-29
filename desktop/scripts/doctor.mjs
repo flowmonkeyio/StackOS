@@ -4,6 +4,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(desktopDir, "..");
 const errors = [];
 
 function fail(message) {
@@ -48,10 +49,36 @@ function readText(relativePath) {
   }
 }
 
+function readRootText(relativePath) {
+  const fullPath = path.join(repoRoot, relativePath);
+  try {
+    return fs.readFileSync(fullPath, "utf8");
+  } catch (error) {
+    fail(`${relativePath}: ${error.message}`);
+    return "";
+  }
+}
+
 const pkg = readJson("package.json");
+const pyprojectText = readRootText("pyproject.toml");
+const stackosInitText = readRootText("stackos/__init__.py");
+const pyprojectVersion = pyprojectText.match(/^version = "([^"]+)"$/m)?.[1] || null;
+const stackosVersion = stackosInitText.match(/^__version__ = "([^"]+)"$/m)?.[1] || null;
 
 if (pkg.name !== "stackos-desktop") {
   fail("package name must be stackos-desktop");
+}
+if (!/^\d+\.\d+\.\d+$/.test(pkg.version || "")) {
+  fail("package version must be semver major.minor.patch");
+}
+if (!pyprojectVersion) {
+  fail("pyproject.toml project.version is missing");
+}
+if (!stackosVersion) {
+  fail("stackos/__init__.py __version__ is missing");
+}
+if (pkg.version !== pyprojectVersion || pkg.version !== stackosVersion) {
+  fail("desktop/package.json, pyproject.toml, and stackos/__init__.py versions must match");
 }
 if (pkg.main !== "src/main.js") {
   fail("package main must be src/main.js");
@@ -85,25 +112,24 @@ if (!hasStackosPayload) {
 
 for (const relativePath of [
   "assets/stackos-icon.icns",
-  "assets/stackos-icon.svg",
+  "assets/stackos-icon.png",
   "src/main.js",
   "src/preload.js",
   "src/service.js",
   "src/updates.js",
   "scripts/build-icons.mjs",
-  "scripts/render-icon-electron.cjs",
   "scripts/build-stackos-payload.sh",
   "scripts/build-mac.mjs",
+  "scripts/test-updates.cjs",
+  "scripts/test-build-mac-config.cjs",
   "update-config.example.json"
 ]) {
   mustExist(relativePath);
 }
 
-const uiFaviconPath = path.join(desktopDir, "..", "ui", "public", "favicon.svg");
+const uiFaviconPath = path.join(desktopDir, "..", "ui", "public", "favicon.png");
 if (!fs.existsSync(uiFaviconPath)) {
-  fail("ui/public/favicon.svg is missing");
-} else if (readText("assets/stackos-icon.svg").trim() !== fs.readFileSync(uiFaviconPath, "utf8").trim()) {
-  fail("assets/stackos-icon.svg must match ui/public/favicon.svg");
+  fail("ui/public/favicon.png is missing");
 }
 
 mustContain("src/main.js", "contextIsolation: true");
@@ -116,11 +142,13 @@ mustContain("src/service.js", "--force");
 mustContain("src/service.js", "installKey");
 mustContain("src/service.js", "build-info.json");
 mustContain("src/updates.js", "provider: \"generic\"");
-mustContain("scripts/build-icons.mjs", "ui\", \"public\", \"favicon.svg");
-mustContain("scripts/build-icons.mjs", "render-icon-electron.cjs");
-mustContain("scripts/render-icon-electron.cjs", "capturePage");
+mustContain("src/updates.js", "update endpoint must use HTTPS unless it is localhost for local testing");
+mustContain("scripts/build-icons.mjs", "stackos-icon.png");
+mustContain("scripts/build-icons.mjs", "iconutil");
 mustContain("scripts/build-stackos-payload.sh", "build-info.json");
 mustContain("scripts/build-mac.mjs", "STACKOS_UPDATE_URL");
+mustContain("scripts/build-mac.mjs", "STACKOS_DESKTOP_BUILD_DRY_RUN");
+mustContain("scripts/build-mac.mjs", "must use HTTPS unless it is localhost for local testing");
 mustContain("scripts/build-mac.mjs", "scripts/build-icons.mjs");
 mustContain("scripts/build-mac.mjs", "update-config.json");
 

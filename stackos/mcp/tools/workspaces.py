@@ -9,13 +9,14 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from stackos.config import get_settings
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
+from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import (
     AgentSessionOut,
@@ -47,6 +48,7 @@ def _ui_health() -> dict[str, Any]:
     return {
         "base_url": base,
         "daemon_reached": True,
+        "check_source": "mcp_daemon_response",
         "meaning": (
             "This MCP response came from the StackOS daemon. UI routes use the same "
             "loopback host and port unless the operator configured a different local port."
@@ -63,6 +65,13 @@ def _with_candidate_urls(
     ]
 
 
+def _with_workspace_candidate_urls(candidates: list[Any]) -> list[Any]:
+    return [
+        candidate.model_copy(update={"ui_urls": _ui_urls(candidate.ui_paths)})
+        for candidate in candidates
+    ]
+
+
 def _with_ui_context[
     T: AgentSessionOut | WorkspaceBootstrapOut | WorkspaceResolutionOut,
 ](payload: T) -> T:
@@ -72,6 +81,9 @@ def _with_ui_context[
     }
     if isinstance(payload, (AgentSessionOut, WorkspaceResolutionOut)):
         update["candidate_projects"] = _with_candidate_urls(payload.candidate_projects)
+        update["candidate_workspaces"] = _with_workspace_candidate_urls(
+            payload.candidate_workspaces
+        )
     return cast(T, payload.model_copy(update=update))
 
 
@@ -86,6 +98,7 @@ class WorkspaceResolveInput(MCPInput):
     repo_fingerprint: str | None = None
     git_remote_url: str | None = None
     cwd: str | None = None
+    workspace_alias: str | None = None
 
 
 class WorkspaceConnectInput(MCPInput):
@@ -107,7 +120,8 @@ class WorkspaceConnectInput(MCPInput):
     project_id: int | None = None
     project_slug: str | None = None
     project_name: str | None = None
-    repo_fingerprint: str
+    repo_fingerprint: str | None = None
+    workspace_alias: str | None = None
     git_remote_url: str | None = None
     normalized_repo_name: str | None = None
     last_known_root: str | None = None
@@ -131,6 +145,7 @@ class WorkspaceBootstrapInput(MCPInput):
     )
 
     repo_fingerprint: str | None = None
+    workspace_alias: str | None = None
     git_remote_url: str | None = None
     normalized_repo_name: str | None = None
     cwd: str | None = None
@@ -181,19 +196,25 @@ class WorkspaceStartSessionInput(MCPInput):
         extra="forbid",
         json_schema_extra={
             "example": {
-                "runtime": "codex",
                 "cwd": "/Users/me/Sites/example",
                 "repo_fingerprint": "git:abc123",
             }
         },
     )
 
-    runtime: str
+    runtime: str = Field(
+        default="agent",
+        description=(
+            "Agent host runtime. Workspace bridges inject this automatically "
+            "(for example codex or claude); direct callers may omit it."
+        ),
+    )
     cwd: str | None = None
     repo_fingerprint: str | None = None
     git_remote_url: str | None = None
     thread_id: str | None = None
     client_session_id: str | None = None
+    workspace_alias: str | None = None
     auto_bootstrap: bool = True
 
 
@@ -204,6 +225,7 @@ async def _workspace_resolve(
         repo_fingerprint=inp.repo_fingerprint,
         git_remote_url=inp.git_remote_url,
         cwd=inp.cwd,
+        workspace_alias=inp.workspace_alias,
     )
     return _with_ui_context(resolved)
 
@@ -211,13 +233,31 @@ async def _workspace_resolve(
 async def _workspace_connect(
     inp: WorkspaceConnectInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[WorkspaceBindingOut]:
-    project = ProjectRepository(ctx.session).resolve_identifier(
-        project_id=inp.project_id,
-        project_slug=inp.project_slug,
-        project_name=inp.project_name,
+    repo = WorkspaceRepository(ctx.session)
+    project_identifier_present = any(
+        (inp.project_id is not None, inp.project_slug, inp.project_name)
     )
-    env = WorkspaceRepository(ctx.session).connect(
-        project_id=project.id,
+    workspace_alias: str | None
+    if not project_identifier_present and inp.workspace_alias:
+        resolved = repo.resolve(workspace_alias=inp.workspace_alias)
+        if resolved.binding is None or resolved.project_id is None:
+            raise ValidationError(
+                "project_id, project_slug, or project_name is required for a new named workspace"
+            )
+        project_id = resolved.project_id
+        workspace_alias = inp.workspace_alias
+    else:
+        project = ProjectRepository(ctx.session).resolve_identifier(
+            project_id=inp.project_id,
+            project_slug=inp.project_slug,
+            project_name=inp.project_name,
+        )
+        project_id = project.id
+        workspace_alias = inp.workspace_alias or (
+            project.slug if inp.repo_fingerprint is None else None
+        )
+    env = repo.connect(
+        project_id=project_id,
         repo_fingerprint=inp.repo_fingerprint,
         git_remote_url=inp.git_remote_url,
         normalized_repo_name=inp.normalized_repo_name,
@@ -225,6 +265,7 @@ async def _workspace_connect(
         framework=inp.framework,
         content_model_json=inp.content_model_json,
         rebind_existing=inp.rebind_existing,
+        workspace_alias=workspace_alias,
     )
     return WriteEnvelope[WorkspaceBindingOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
@@ -236,6 +277,7 @@ async def _workspace_bootstrap(
 ) -> WriteEnvelope[WorkspaceBootstrapOut]:
     env = WorkspaceRepository(ctx.session).bootstrap(
         repo_fingerprint=inp.repo_fingerprint,
+        workspace_alias=inp.workspace_alias,
         git_remote_url=inp.git_remote_url,
         normalized_repo_name=inp.normalized_repo_name,
         cwd=inp.cwd,
@@ -285,6 +327,7 @@ async def _workspace_start_session(
         cwd=inp.cwd,
         repo_fingerprint=inp.repo_fingerprint,
         git_remote_url=inp.git_remote_url,
+        workspace_alias=inp.workspace_alias,
         thread_id=inp.thread_id,
         client_session_id=inp.client_session_id,
         auto_bootstrap=inp.auto_bootstrap,

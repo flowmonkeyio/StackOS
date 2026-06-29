@@ -28,7 +28,7 @@ withDefaults(defineProps<{
         aria-hidden="true"
       />
       {{ title }}
-      <span class="font-normal text-fg-subtle">{{ summary }}</span>
+      <span class="font-normal text-fg-muted">{{ summary }}</span>
     </summary>
     <div class="border-t border-subtle p-3">
       <UiJsonBlock

@@ -84,6 +84,24 @@ to the host agent, not the daemon. The workflow and preset responses should
 tell the agent what roles are needed; the host-local format decides how those
 roles are materialized.
 
+Desktop project hosts such as Claude Desktop Cowork/Code should follow the
+same split. StackOS install/repair owns neutral connectivity only: daemon
+state, MCP registration, and the generic StackOS mechanics skill when the host
+uses skills. Domain workflow behavior should be project-local and
+agent-authored. The operator should open or create a real host project for the
+business work, then ask the host agent to set up that project for a named
+StackOS workflow. The agent must resolve the workflow template, skill preset,
+and agent presets, adapt them to the project, and create the host-local
+guidance, skill, or agent files that future sessions in that host project will
+load. It must not write global domain guidance, create tracker-only recipe
+tasks, or rely on a global active project.
+
+For folderless or plain chat sessions, do not invent a project-local install
+target. Bind by explicit `workspace_alias` or project identity, execute with
+the resolved workflow and presets in the current session, and ask the operator
+to move durable recurring work into a real host project when they want future
+sessions to resume reliably.
+
 When a host supports skills, workflow templates may recommend `stackos:stackos`.
 That skill teaches agents how to use StackOS MCP, operations, workflow
 templates, run plans, tracker tasks/tickets, dependencies, and evidence. The
@@ -94,7 +112,7 @@ expectation visible.
 
 ```text
 agent intent
--> operation.list when the available operation names are not already clear
+-> operation.list with surface=mcp, mode=grouped, response_mode=compact when operation names are not clear
 -> operation.describe / action.list / action.describe when the contract is not already clear
 -> integration.list when project integration inventory or hidden-action counts are needed
 -> readiness.check when a selected workflow/action may need provider setup
@@ -186,7 +204,8 @@ tracker.createTask
 -> tracker.brief
 -> toolbox.call(action.run) or local work
 -> tracker.patch / tracker.updateTicket
--> tracker.rejectTask if the operator rejects or parks the task/run
+-> tracker.updateTask/updateTicket(status=deferred) if the operator parks resumable work
+-> tracker.rejectTask if the operator rejects or aborts the task/run
 ```
 
 Agent-facing MCP responses are compact by default for noisy internal
@@ -233,14 +252,19 @@ project, then move to narrowly scoped `toolbox.describe` / `toolbox.call`
 requests. Setup, workflow, tracker, auth, and run-plan tools are reached
 through `toolbox.call`. If a repo is already bound, the bridge injects
 `project_id` and relaxes the advertised schemas so agents do not have to keep
-repeating it. If a caller explicitly passes a different `project_id`, the
-bridge refuses the call. There is no global active project in the agent path;
-the workspace-bound project is the source of truth.
+repeating it. Agents should omit injected fields in toolbox calls unless an
+exact described schema says otherwise outside the bridge path. If a caller
+explicitly passes a different `project_id`, the bridge refuses the call. There
+is no global active project in the agent path; the workspace-bound project is
+the source of truth.
 
 Workspace hints are also scoped. The bridge injects its current
 `cwd`, `repo_fingerprint`, `git_remote_url`, `last_known_root`, runtime, and
 session id where relevant. Calls that try to resolve or connect another
-workspace are refused by the bridge.
+workspace are refused by the bridge. If the bridge has no host-supplied
+workspace identity, caller-supplied directory/repo anchors are refused too;
+desktop/global sessions must bind by explicit `workspace_alias` or project
+identity.
 
 These workspace hints are identifiers for StackOS project binding only. They
 help the daemon inject the correct `project_id` and reject cross-project calls.
@@ -260,7 +284,9 @@ idempotent:
 
 1. Call `workspace.startSession` from the current repo/directory. It creates or
    reuses one project for that workspace root and stores the binding in the
-   daemon DB when no binding exists yet. It does not write files into the repo.
+   daemon DB when reliable directory identity exists. It does not write files
+   into the repo. Desktop/global hosts with no cwd/git signal stay unbound and
+   receive `candidate_workspaces`/project-selection guidance instead.
 2. Read the returned setup state carefully: `workspace_bound` or
    `project_scoped_tools_usable` means project-scoped tools can run. Missing
    `framework` or `content_model_json` means the project profile is
@@ -270,18 +296,32 @@ idempotent:
 4. Use `workspace.resolve` when the caller needs a read-only diagnostic before
    setup.
 5. Use `toolbox.call` for `project.list`, `project.create`,
-   `workspace.bootstrap`, or `workspace.connect` only when the
-   operator intentionally wants to choose a specific existing project or supply
-   explicit project metadata. If the current repo fingerprint is already bound
-   to a different project, `workspace.connect` rejects the move unless the
-   caller passes `rebind_existing=true`.
+   `workspace.bootstrap`, or `workspace.connect` only when the operator or user
+   intent intentionally chooses project identity. For desktop/global sessions
+   with no directory identity, use `workspace.connect` to reuse a selected
+   existing project or named `workspace_alias`; use `workspace.bootstrap` to
+   create a new named workspace from explicit `project_name`, `project_slug`,
+   or `workspace_alias`. Do not call `project.create` and assume the current
+   agent session moved; bind or verify the workspace with `workspace.bootstrap`
+   or `workspace.connect` before project-scoped work. If the current repo
+   fingerprint or alias is already bound to a different project,
+   `workspace.connect` rejects the move unless the caller passes
+   `rebind_existing=true`.
 
 The bridge sends a path fingerprint by default:
-`path:<sha256(workspace_root)[:24]>`. If git is unavailable, this path identity
-is enough for a local directory. If git or a remote is added later, bootstrap can
-attach that metadata to the existing binding when the same root is seen. A
-moved non-git directory without a remote looks like a new workspace unless the
-agent intentionally reconnects or rebinds it.
+`path:<sha256(workspace_root)[:24]>`. The `workspace_root` is the directory the
+host or operator supplied, not necessarily a Git repository root. If git is
+unavailable, this path identity is enough for a local directory. If git or a
+remote is added later, bootstrap can attach that metadata to the existing
+binding when the same root is seen. A moved non-git directory without a remote
+looks like a new workspace unless the agent intentionally reconnects or rebinds
+it.
+
+The bridge only creates path fingerprints for usable workspace roots. Host app
+process cwd is a hint, not proof of project context: explicit `--workspace-root`
+or `STACKOS_WORKSPACE_ROOT` values win, Claude Code's `CLAUDE_PROJECT_DIR` is
+preferred when present, and a global desktop host launched at `/` returns
+`needs_workspace_binding` instead of binding to a generic root project.
 
 This keeps normal agents focused on the project attached to their workspace and
 still gives them a complete MCP-native path when no binding exists yet.
@@ -302,7 +342,9 @@ missing capability.
 - `not_granted_to_active_step` means the current step exists, but its grant
   snapshot does not cover the requested tool or arguments.
 - `unknown_tool` means the name is wrong or the flow was removed; call
-  `operation.list` with a narrow `query` to find the current operation name.
+  `operation.list` through `toolbox.call` with `surface: "mcp"`,
+  `mode: "grouped"`, `response_mode: "compact"`, and optionally a narrow
+  `query` to find the current operation name.
 
 When a tool is operation-backed, `toolbox.describe` includes the operation name,
 category, grant policy, and a pointer to `operation.describe`. Agents should ask

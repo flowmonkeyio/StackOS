@@ -33,7 +33,7 @@ from stackos.repositories.base import (
     NotFoundError,
     Page,
     ValidationError,
-    cursor_paginate,
+    cursor_paginate_desc,
     validate_transition,
 )
 from stackos.repositories.run_plan_dependencies import (
@@ -716,7 +716,7 @@ class RunPlanRepository:
             stmt = stmt.where(RunPlan.status == status)
         if template_key is not None:
             stmt = stmt.where(RunPlan.template_key == template_key)
-        return cursor_paginate(
+        return cursor_paginate_desc(
             self._s,
             stmt,
             id_col=RunPlan.id,

@@ -24,15 +24,15 @@ def test_project_create_returns_envelope(mcp_client: MCPClient) -> None:
 def test_project_get_by_slug(mcp_client: MCPClient, seeded_project: dict) -> None:
     """project.get accepts slug or id."""
     proj = mcp_client.call_tool_structured("project.get", {"id_or_slug": "test-project"})
-    assert proj["slug"] == "test-project"
+    assert proj["data"]["slug"] == "test-project"
     proj2 = mcp_client.call_tool_structured(
         "project.get", {"id_or_slug": seeded_project["data"]["id"]}
     )
-    assert proj2["id"] == seeded_project["data"]["id"]
+    assert proj2["data"]["id"] == seeded_project["data"]["id"]
     proj3 = mcp_client.call_tool_structured(
         "project.get", {"project_id": seeded_project["data"]["id"]}
     )
-    assert proj3["slug"] == "test-project"
+    assert proj3["data"]["slug"] == "test-project"
 
 
 def test_project_list_after_create(mcp_client: MCPClient, seeded_project: dict) -> None:
@@ -50,6 +50,34 @@ def test_project_update_returns_envelope(mcp_client: MCPClient, seeded_project: 
         "project.update", {"project_id": pid, "patch": {"name": "Renamed"}}
     )
     assert env["data"]["name"] == "Renamed"
+
+
+def test_project_update_preserves_workspace_binding(mcp_client: MCPClient) -> None:
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {
+            "cwd": "/tmp/project-update-binding",
+            "project_name": "Original Workspace Name",
+        },
+    )
+    binding = bootstrapped["data"]["binding"]
+    project_id = bootstrapped["project_id"]
+
+    updated = mcp_client.call_tool_structured(
+        "project.update",
+        {"project_id": project_id, "patch": {"name": "Renamed Workspace"}},
+    )
+    resolved = mcp_client.call_tool_structured(
+        "workspace.resolve",
+        {"cwd": "/tmp/project-update-binding"},
+    )
+
+    assert updated["data"]["name"] == "Renamed Workspace"
+    assert resolved["project_id"] == project_id
+    assert resolved["data"]["binding"]["id"] == binding["id"]
+    assert resolved["data"]["binding"]["project_id"] == project_id
+    assert resolved["data"]["binding"]["repo_fingerprint"] == binding["repo_fingerprint"]
+    assert resolved["data"]["binding"]["last_known_root"] == binding["last_known_root"]
 
 
 def test_schedule_set_toggle_and_remove(mcp_client: MCPClient, seeded_project: dict) -> None:

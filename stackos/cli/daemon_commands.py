@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -17,7 +16,13 @@ from typing import Annotated
 import typer
 
 from stackos.config import Settings, get_settings
+from stackos.host_mcp.bridge import WORKSPACE_ROOT_ENV
 from stackos.mcp.bridge import AgentBridgeProxy, bridge_error
+from stackos.workspace_identity import (
+    is_usable_workspace_root,
+    normalize_path,
+    path_fingerprint,
+)
 
 from .app import app, autostart_app
 from .constants import _LAUNCHD_LABEL, _LOOPBACK_HOSTS
@@ -260,9 +265,38 @@ def _launchd_bootout(plist_path: Path) -> tuple[bool, str]:
         except RuntimeError as exc:
             return False, str(exc)
         ok, message = _launchctl(["bootout", service])
+        if not ok:
+            return ok, message
+        if not _wait_for_launchd_unloaded(timeout=5.0):
+            return False, "launchd job did not unload before timeout"
         return ok, message
     # Older launchctl versions accept unload and ignore unloaded jobs.
-    return _launchctl(["unload", str(plist_path)])
+    ok, message = _launchctl(["unload", str(plist_path)])
+    if not ok and _launchd_unload_failure_is_benign(message):
+        return True, message
+    return ok, message
+
+
+def _launchd_unload_failure_is_benign(message: str) -> bool:
+    normalized = message.lower()
+    benign_markers = (
+        "not loaded",
+        "not found",
+        "no such process",
+        "could not find specified service",
+        "service is not loaded",
+    )
+    return any(marker in normalized for marker in benign_markers)
+
+
+def _wait_for_launchd_unloaded(*, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() <= deadline:
+        loaded, _ = _launchd_loaded()
+        if not loaded:
+            return True
+        time.sleep(0.1)
+    return False
 
 
 def _launchd_bootstrap(plist_path: Path) -> tuple[bool, str]:
@@ -280,6 +314,21 @@ def _launchd_bootstrap(plist_path: Path) -> tuple[bool, str]:
     if legacy_ok:
         return True, "launchd job loaded"
     return False, legacy_message or message
+
+
+def _loaded_launchd_plist(home: Path) -> Path | None:
+    """Return the launchd plist path when the StackOS job is currently loaded."""
+    plist_path = _launchd_plist_path(home)
+    if not plist_path.exists():
+        return None
+    loaded, _message = _launchd_loaded()
+    return plist_path if loaded else None
+
+
+def _installed_launchd_plist(home: Path) -> Path | None:
+    """Return the launchd plist path when launchd is the configured owner."""
+    plist_path = _launchd_plist_path(home)
+    return plist_path if plist_path.exists() else None
 
 
 def _launchd_plist_content(
@@ -373,7 +422,9 @@ def _uninstall_launchd_autostart(*, home: Path) -> tuple[bool, str]:
     plist_path = _launchd_plist_path(home)
     if not plist_path.exists():
         return True, f"no launchd plist at {plist_path}; nothing to do"
-    _launchd_bootout(plist_path)
+    ok, message = _launchd_bootout(plist_path)
+    if not ok:
+        return False, f"failed to unload launchd job for {plist_path}: {message}"
     plist_path.unlink(missing_ok=True)
     return True, f"removed launchd plist {plist_path}"
 
@@ -410,7 +461,26 @@ def _pid_is_running(pid: int) -> bool:
         return False
     except PermissionError:
         return True
-    return True
+    return not _pid_is_zombie(pid)
+
+
+def _pid_is_zombie(pid: int) -> bool:
+    ps = shutil.which("ps")
+    if not ps:
+        return False
+    try:
+        result = subprocess.run(
+            [ps, "-p", str(pid), "-o", "stat="],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    return result.stdout.strip().startswith("Z")
 
 
 def _pid_command(pid: int) -> str | None:
@@ -461,15 +531,37 @@ def _git_output(cwd: Path, args: list[str]) -> str | None:
     return value or None
 
 
-def _mcp_bridge_workspace_hints(cwd: Path) -> dict[str, str]:
-    root = _git_output(cwd, ["rev-parse", "--show-toplevel"])
-    workspace_root = Path(root).resolve() if root else cwd.resolve()
-    remote = _git_output(workspace_root, ["config", "--get", "remote.origin.url"])
-    fingerprint_source = str(workspace_root)
-    digest = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()[:24]
+def _usable_workspace_root(path: Path) -> Path | None:
+    resolved = normalize_path(path)
+    if not resolved or not is_usable_workspace_root(resolved):
+        return None
+    return Path(resolved)
+
+
+def _mcp_bridge_workspace_hints(
+    cwd: Path,
+    *,
+    workspace_root: Path | None = None,
+) -> dict[str, str]:
+    # Claude Code supplies the real project root for stdio MCP servers. Claude
+    # Desktop does not, so process cwd is only a fallback hint. The selected
+    # directory is the workspace identity; Git remote is optional metadata.
+    env_workspace_root = os.environ.get(WORKSPACE_ROOT_ENV)
+    candidate = (
+        workspace_root
+        or (Path(env_workspace_root) if env_workspace_root else None)
+        or Path(os.environ.get("CLAUDE_PROJECT_DIR") or cwd)
+    )
+    resolved_root = _usable_workspace_root(candidate)
+    if resolved_root is None:
+        return {}
+    remote = _git_output(resolved_root, ["config", "--get", "remote.origin.url"])
+    fingerprint = path_fingerprint(resolved_root)
+    if fingerprint is None:
+        return {}
     hints = {
-        "cwd": str(workspace_root),
-        "repo_fingerprint": f"path:{digest}",
+        "cwd": str(resolved_root),
+        "repo_fingerprint": fingerprint,
     }
     if remote:
         hints["git_remote_url"] = remote
@@ -524,14 +616,11 @@ def _discover_daemon_processes(settings: Settings, port: int) -> tuple[list[int]
         else:
             blockers.append(pid)
 
-    if (
-        pid_file_pid
-        and pid_file_pid != os.getpid()
-        and pid_file_pid not in seen_daemons
-        and _pid_is_running(pid_file_pid)
-        and _command_looks_like_daemon(_pid_command(pid_file_pid))
-    ):
-        daemons.append(pid_file_pid)
+    if pid_file_pid and pid_file_pid != os.getpid() and pid_file_pid not in seen_daemons:
+        if not _pid_is_running(pid_file_pid):
+            _remove_pid_file(settings.pid_path, pid_file_pid)
+        elif _command_looks_like_daemon(_pid_command(pid_file_pid)):
+            daemons.append(pid_file_pid)
 
     return daemons, blockers
 
@@ -579,6 +668,22 @@ def _terminate_daemon_processes(
         "daemon did not stop before timeout; re-run with `stackos restart --force` "
         "if the process is wedged."
     )
+
+
+def _abort_restart_after_launchd_bootout(launchd_plist: Path, message: str) -> None:
+    restore_ok, restore_message = _launchd_bootstrap(launchd_plist)
+    typer.echo(message, err=True)
+    if restore_ok:
+        typer.echo(
+            f"restart: restored launchd job after failed restart; {restore_message}",
+            err=True,
+        )
+    else:
+        typer.echo(
+            f"restart: failed to restore launchd job after failed restart; {restore_message}",
+            err=True,
+        )
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -683,6 +788,15 @@ def stop(
         )
         raise typer.Exit(code=1)
 
+    launchd_plist = _loaded_launchd_plist(_doctor_home())
+    if launchd_plist is not None:
+        ok, message = _launchd_bootout(launchd_plist)
+        if not ok:
+            typer.echo(f"stop: launchd bootout failed: {message}", err=True)
+            raise typer.Exit(code=1)
+        detail = f"; {message}" if message else ""
+        typer.echo(f"stop: unloaded launchd job{detail}")
+
     daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
         typer.echo(
@@ -751,6 +865,10 @@ def restart(
         )
         raise typer.Exit(code=1)
 
+    launchd_plist = _installed_launchd_plist(_doctor_home())
+    restart_via_launchd = launchd_plist is not None
+    launchd_loaded, _launchd_message = _launchd_loaded() if restart_via_launchd else (False, "")
+
     daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
         typer.echo(
@@ -761,6 +879,27 @@ def restart(
         )
         raise typer.Exit(code=1)
 
+    if launchd_plist is not None and launchd_loaded:
+        ok, message = _launchd_bootout(launchd_plist)
+        if not ok:
+            typer.echo(f"restart: launchd bootout failed: {message}", err=True)
+            raise typer.Exit(code=1)
+        detail = f"; {message}" if message else ""
+        typer.echo(f"restart: unloaded launchd job{detail}")
+        daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
+
+    if blocker_pids:
+        message = (
+            "error: port "
+            f"{daemon_port} is held by non-StackOS process pid(s): "
+            f"{', '.join(str(pid) for pid in blocker_pids)}"
+        )
+        if restart_via_launchd:
+            assert launchd_plist is not None
+            _abort_restart_after_launchd_bootout(launchd_plist, message)
+        typer.echo(message, err=True)
+        raise typer.Exit(code=1)
+
     if daemon_pids:
         ok, message = _terminate_daemon_processes(
             daemon_pids,
@@ -768,17 +907,38 @@ def restart(
             force=force,
         )
         if not ok:
-            typer.echo(f"restart: {message}", err=True)
+            error_message = f"restart: {message}"
+            if restart_via_launchd:
+                assert launchd_plist is not None
+                _abort_restart_after_launchd_bootout(launchd_plist, error_message)
+            typer.echo(error_message, err=True)
             raise typer.Exit(code=1)
         typer.echo(f"restart: {message}")
     elif _tcp_can_connect(daemon_host, daemon_port, timeout=0.25):
-        typer.echo(
-            "error: daemon port is reachable, but no StackOS daemon PID could be identified.",
-            err=True,
-        )
+        message = "error: daemon port is reachable, but no StackOS daemon PID could be identified."
+        if restart_via_launchd:
+            assert launchd_plist is not None
+            _abort_restart_after_launchd_bootout(launchd_plist, message)
+        typer.echo(message, err=True)
         raise typer.Exit(code=1)
     else:
-        typer.echo("restart: no running daemon found")
+        if not restart_via_launchd:
+            typer.echo("restart: no running daemon found")
+
+    if restart_via_launchd:
+        assert launchd_plist is not None
+        ok, message = _launchd_bootstrap(launchd_plist)
+        if not ok:
+            typer.echo(f"restart: launchd bootstrap failed: {message}", err=True)
+            raise typer.Exit(code=1)
+        if not _wait_for_daemon(daemon_host, daemon_port, timeout=timeout):
+            typer.echo(
+                f"restart: launchd job loaded but daemon did not become ready; {message}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        typer.echo(f"restart: {message}; url=http://{daemon_host}:{daemon_port}")
+        return
 
     ok, message = _spawn_detached_daemon(
         settings,
@@ -884,6 +1044,25 @@ def mcp_bridge(
         int | None,
         typer.Option("--port", help="Daemon port; defaults to configured daemon port."),
     ] = None,
+    data_dir: Annotated[
+        Path | None,
+        typer.Option("--data-dir", help="StackOS data dir for this bridge session."),
+    ] = None,
+    state_dir: Annotated[
+        Path | None,
+        typer.Option("--state-dir", help="StackOS state dir for this bridge session."),
+    ] = None,
+    runtime: Annotated[
+        str,
+        typer.Option("--runtime", help="Agent host runtime label for workspace sessions."),
+    ] = "codex",
+    workspace_root: Annotated[
+        Path | None,
+        typer.Option(
+            "--workspace-root",
+            help="Explicit directory to use as this bridge session's StackOS workspace.",
+        ),
+    ] = None,
 ) -> None:
     """Bridge plugin stdio MCP traffic to the singleton HTTP daemon.
 
@@ -893,6 +1072,10 @@ def mcp_bridge(
     """
     import httpx
 
+    if data_dir is not None:
+        os.environ["STACKOS_DATA_DIR"] = str(data_dir)
+    if state_dir is not None:
+        os.environ["STACKOS_STATE_DIR"] = str(state_dir)
     settings = get_settings()
     settings.ensure_dirs()
     bridge_host = host or settings.host
@@ -913,11 +1096,11 @@ def mcp_bridge(
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
     }
-    workspace_hints = _mcp_bridge_workspace_hints(Path.cwd())
+    workspace_hints = _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
     proxy = AgentBridgeProxy(
         url=url,
         headers=headers,
-        runtime="codex",
+        runtime=runtime or "codex",
         client_session_id=f"stackos-bridge:{os.getpid()}",
         **workspace_hints,
     )

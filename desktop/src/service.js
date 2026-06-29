@@ -12,6 +12,10 @@ const DAEMON_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/`;
 const HEALTH_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/api/v1/health`;
 const INSTALL_STATE_FILE = "install-state.json";
 const PAYLOAD_BUILD_INFO_FILE = "build-info.json";
+const STACKOS_STATE_DIR =
+  process.env.STACKOS_STATE_DIR || path.join(os.homedir(), ".local", "state", "stackos");
+const AUTH_TOKEN_PATH =
+  process.env.STACKOS_DESKTOP_AUTH_TOKEN_PATH || path.join(STACKOS_STATE_DIR, "auth.token");
 
 function isExecutable(filePath) {
   try {
@@ -159,6 +163,56 @@ function runStackos(args, options = {}) {
   });
 }
 
+function parseDoctorPayload(result) {
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line.startsWith("{")) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(line);
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        typeof parsed.ok === "boolean" &&
+        typeof parsed.code === "number" &&
+        parsed.checks &&
+        typeof parsed.checks === "object"
+      ) {
+        return parsed;
+      }
+    } catch (_error) {
+      // Keep scanning for the JSON envelope.
+    }
+  }
+  return null;
+}
+
+function readinessFromDoctor(result) {
+  const parsed = result.parsed || parseDoctorPayload(result);
+  if (!parsed) {
+    return {
+      ok: false,
+      status: "doctor-unparsed",
+      code: result.exitCode,
+      repair: "run `stackos doctor --json` from a terminal"
+    };
+  }
+  const provider = parsed.info?.provider_readiness || null;
+  return {
+    ok: parsed.ok,
+    status: parsed.ok ? "ready" : "needs-repair",
+    code: parsed.code,
+    checks: parsed.checks,
+    providerReadiness: provider
+  };
+}
+
 function checkHealth(timeoutMs = 1000) {
   return new Promise((resolve) => {
     const req = http.get(HEALTH_URL, (res) => {
@@ -186,6 +240,66 @@ function checkHealth(timeoutMs = 1000) {
       });
     });
   });
+}
+
+function authTokenPath() {
+  return AUTH_TOKEN_PATH;
+}
+
+function readAuthToken() {
+  return fs.readFileSync(authTokenPath(), "utf8").trim();
+}
+
+function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
+  return new Promise((resolve, reject) => {
+    let url;
+    try {
+      url = new URL(pathname, DAEMON_URL);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    const headers = {};
+    if (auth) {
+      headers.Authorization = `Bearer ${readAuthToken()}`;
+    }
+
+    const req = http.get(url, { headers }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        body += chunk;
+      });
+      res.on("end", () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const error = new Error(`StackOS request failed with HTTP ${res.statusCode}`);
+          error.statusCode = res.statusCode;
+          error.body = trimOutput(body, 2000);
+          reject(error);
+          return;
+        }
+        if (!body.trim()) {
+          resolve(null);
+          return;
+        }
+        try {
+          resolve(JSON.parse(body));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error("StackOS request timed out"));
+    });
+    req.on("error", reject);
+  });
+}
+
+function authenticatedJsonGet(pathname, options = {}) {
+  return daemonJsonGet(pathname, { ...options, auth: true });
 }
 
 async function waitForHealth(timeoutMs = 20000) {
@@ -252,12 +366,29 @@ async function installOrRepair(timeoutSeconds = 240) {
     };
   }
   const start = await restartDaemon(20);
+  const doctor = start.ok ? await runDoctor() : null;
+  const readiness = doctor
+    ? readinessFromDoctor(doctor)
+    : {
+        ok: false,
+        status: "restart-failed",
+        code: null,
+        repair: "restart the StackOS service, then run doctor"
+      };
   return {
-    ok: start.ok,
-    phase: start.ok ? "ready" : "restart",
+    ok: start.ok && (!doctor || doctor.ok),
+    phase: start.ok ? (doctor && !doctor.ok ? "doctor" : "ready") : "restart",
     install,
-    start
+    start,
+    doctor,
+    readiness
   };
+}
+
+async function repairMcpRegistrations(timeoutSeconds = 60) {
+  return runStackos(["install", "--mcp-only", "--skip-doctor"], {
+    timeoutMs: timeoutSeconds * 1000
+  });
 }
 
 function installStatePath(userDataPath) {
@@ -277,36 +408,57 @@ function writeInstallState(userDataPath, state) {
   fs.writeFileSync(installStatePath(userDataPath), `${JSON.stringify(state, null, 2)}\n`);
 }
 
-function installKeyFor({ version, payloadInfo }) {
+function installKeyFor({ version, payloadInfo, commandInfo = resolveStackosCommand() }) {
   if (!payloadInfo) {
-    return version;
+    return [version, commandInfo.mode, commandInfo.command, ...commandInfo.baseArgs].join(":");
   }
-  return [version, payloadInfo.version || "unknown", payloadInfo.buildId || "no-build-id"].join(":");
+  return [
+    version,
+    payloadInfo.version || "unknown",
+    payloadInfo.buildId || "no-build-id",
+    commandInfo.mode,
+    commandInfo.command,
+    ...commandInfo.baseArgs
+  ].join(":");
 }
 
 async function prepareInstalledVersion({
   version,
   userDataPath,
   force = false,
-  payloadInfo = readPackagedBuildInfo()
+  payloadInfo = readPackagedBuildInfo(),
+  installOrRepairFn = installOrRepair,
+  repairMcpRegistrationsFn = repairMcpRegistrations
 }) {
   const state = readInstallState(userDataPath);
-  const installKey = installKeyFor({ version, payloadInfo });
+  const commandInfo = resolveStackosCommand();
+  const installKey = installKeyFor({ version, payloadInfo, commandInfo });
   const preparedCurrentInstall =
     state.prepared === true &&
     (state.installKey === installKey || (!payloadInfo && !state.installKey && state.version === version));
   if (!force && preparedCurrentInstall) {
+    let externalRepair;
+    try {
+      externalRepair = await repairMcpRegistrationsFn();
+    } catch (error) {
+      externalRepair = {
+        ok: false,
+        phase: "external-registration",
+        error: error && error.message ? error.message : String(error)
+      };
+    }
     return {
       ok: true,
       skipped: true,
       version,
       installKey,
       payloadInfo,
-      state
+      state,
+      externalRepair
     };
   }
 
-  const result = await installOrRepair();
+  const result = await installOrRepairFn();
   if (result.ok) {
     writeInstallState(userDataPath, {
       version,
@@ -326,9 +478,15 @@ async function prepareInstalledVersion({
 }
 
 async function runDoctor() {
-  return runStackos(["doctor", "--json"], {
+  const result = await runStackos(["doctor", "--json"], {
     timeoutMs: 60000
   });
+  const parsed = parseDoctorPayload(result);
+  return {
+    ...result,
+    parsed,
+    readiness: readinessFromDoctor({ ...result, parsed })
+  };
 }
 
 function daemonLogPath() {
@@ -338,12 +496,22 @@ function daemonLogPath() {
 module.exports = {
   DAEMON_URL,
   HEALTH_URL,
+  authenticatedJsonGet,
+  authTokenPath,
   checkHealth,
   daemonLogPath,
+  daemonJsonGet,
   ensureDaemonReady,
   installOrRepair,
+  installKeyFor,
+  installStatePath,
   prepareInstalledVersion,
+  parseDoctorPayload,
+  readinessFromDoctor,
+  readAuthToken,
+  readInstallState,
   readPackagedBuildInfo,
+  repairMcpRegistrations,
   resolveStackosCommand,
   restartDaemon,
   runDoctor,

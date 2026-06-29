@@ -107,12 +107,50 @@ run token.
   hints, not blockers. After inspecting the repo's stack and content model, use
   `toolbox.call` for `workspace.updateProfile` when those hints should be
   durable for future agents.
+- Read-only workspace diagnostics: call `workspace.resolve` when the agent only
+  needs to inspect whether the current repo is already bound, what project it
+  maps to, or why setup is unavailable. Do not use it as the normal start path
+  for work that will create, update, execute, or track anything; switch to
+  `workspace.startSession` before mutating project state.
 - Ongoing repo session: call `workspace.startSession`, use the workspace-bound
   project id, then call only the scoped tools needed for the current task. Do
   not request broad schemas or catalog dumps unless debugging.
 - Connect to a specific project: if the operator wants a known existing
-  project, call `toolbox.call` for `workspace.connect` or
-  `workspace.bootstrap` with that project identifier explicitly.
+  project, call `toolbox.call` for `workspace.connect` with that project
+  identifier explicitly.
+- Bind desktop/global hosts to a project: if StackOS says project identity is
+  required, inspect `candidate_workspaces` and user intent. Reuse a known
+  `workspace_alias` or selected existing project with `workspace.connect`, or
+  ask for a business `project_name`/`project_slug` and call
+  `workspace.bootstrap` to create a new named workspace. Do not let app/runtime
+  folder names become projects, do not invent cwd/repo anchors, do not call
+  `project.create` as a substitute for binding, and do not use
+  last-used/global fallback binding.
+- Set up a workflow project in three separate phases, adapted to the selected
+  domain. Phase 1 is workflow infrastructure setup: before creating state,
+  inspect the owning project/workspace, host workspace identity behavior,
+  selected workflow, required orchestrator/skill and agent presets,
+  host-native project-local file support, and StackOS setup-write versus
+  run-plan-step-grant boundaries. Then bind the workspace, describe the selected
+  workflow, resolve required orchestrator/skill presets and agent presets, and
+  adapt those presets into host-native project-local agents, skills, commands,
+  or orchestrator guidance when the host supports those files, check readiness,
+  validate/upsert a workflow extension for durable defaults or guardrails, and
+  prove resumability with `runPlan.validate` or a draft `runPlan.create`.
+  Host-local files are the organic execution layer for future sessions; keep
+  them generic and procedural, and keep project state, prerequisites, and
+  secrets in StackOS. Report binding, extension state, files created, preset
+  mapping, future binding path, prerequisite gate, and run-plan outcome. Do not
+  collect domain prerequisites or produce the workflow output in this phase.
+  Phase 2 is workflow prerequisite setup: bind to the
+  existing project and collect durable inputs the workflow needs before normal
+  operation, such as voice/profile, source policy, route choices, account
+  mappings, approval rules, or other domain-specific setup. Save them through
+  the workflow extension, approved setup operations, or a dedicated onboarding
+  run plan when the state belongs in run-plan-gated resources. Phase 3 is
+  operation: bind to the existing project, create/resume/start the concrete run
+  plan, load the orchestrator/presets, claim/record steps, use only granted
+  tools/actions, and preserve approval gates.
 - Set up support/engineering/local agents: choose the workflow first. Use
   `communications.customer-feedback-intake` to normalize inbound feedback into
   one route-approved canonical Slack thread with media and refs preserved. Use
@@ -151,9 +189,10 @@ run token.
   changing them. Do not invent a new context-sharing mechanism or duplicate the
   workflow unless a new reusable workflow identity is needed.
 - Discover operations: if you do not know the exact operation name, call
-  `toolbox.call` for `operation.list` first, then `operation.describe` for the
-  few operations you intend to use. Keep `toolbox.describe` scoped to exact
-  tool names.
+  `toolbox.call` for `operation.list` with
+  `{"surface":"mcp","mode":"grouped","response_mode":"compact"}`, then use
+  `toolbox.describe` or `operation.describe` for the few exact operations you
+  intend to call. Keep `toolbox.describe` scoped to exact tool names.
 - Use browser automation: call `browser.runtime.status`, then
   `browser.session.start`. If the platform needs login, pause and let the
   operator complete login in the opened browser session, then continue with
@@ -201,7 +240,11 @@ run token.
   status moves the item to the done lane. Use `deferred` only for postponed
   resumable work, `aborted` for stopped/rejected/cancelled work, `failed` for
   attempted unsuccessful work, and `skipped` for intentionally not executed
-  work. `tracker.rejectTask` is an operator rejection override: it marks the
+  work. Terminal child-ticket updates can aggregate the parent task status, but
+  ticket evidence is not copied to the task; read compact `task_rollup` and
+  `completion_evidence_present` fields and patch task-level evidence explicitly
+  when task closeout evidence matters. `tracker.rejectTask` is an operator
+  rejection override: it marks the
   task and all child tickets `aborted`. For workflow-backed tasks, do not patch
   task or mirror-ticket lifecycle directly. Mirror tickets are the generated
   `workflow-{run_plan_id}-{step_id}` tickets; attached child tickets such as
@@ -242,8 +285,10 @@ run token.
   concrete state; `runPlan.start` and step grants control which tools/actions
   are available. Mirror or link tracker tickets when human-visible
   sequencing/evidence matters. For workflow-backed child tickets,
-  `run_plan_id` and `step_id` are attachment/provenance only, not lifecycle
-  ownership transfer. Use `tracker.updateTicket` for those child tickets;
+  pass `run_plan_id` and `step_id` at creation time. They are
+  attachment/provenance only, not lifecycle ownership transfer. The workflow
+  graph should have exactly one root: the first generated workflow step mirror
+  ticket. Use `tracker.updateTicket` for those child tickets;
   use `runPlan.claimStep`/`runPlan.recordStep` only for the generated workflow
   step mirror tickets. Add dependency edges into the mirrored workflow
   spine, then immediately call `tracker.get` with `run_plan_id` and
@@ -252,10 +297,10 @@ run token.
   as an execution blocker.
 - Execute a step: claim the run-plan step, follow the referenced guidance, call
   `toolbox.describe` for needed granted tools, invoke them with `toolbox.call`,
-  then `runPlan.recordStep`. For long implementation stretches between claim
-  and record, call `run.heartbeat` with the active `run_id`; claim and record
-  refresh heartbeat automatically, but an agent doing local work for several
-  minutes should keep the controller run alive explicitly.
+  then `runPlan.recordStep`. Claim and record refresh the linked audit heartbeat,
+  and the stale-run reaper preserves normal long-running workflow work. Do not add
+  periodic `run.heartbeat` calls unless a workflow explicitly asks for audit
+  liveness evidence.
 - Execute one direct action: describe/validate when useful, call
   `toolbox.call` for `readiness.check` when setup is uncertain, resolve an
   `executionContext.*` ref when the provider scope will be reused, call

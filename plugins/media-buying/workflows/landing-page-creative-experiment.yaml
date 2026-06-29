@@ -16,14 +16,25 @@ agent_requirements:
     requirement: required
     agent_preset_ref: media-buying.workflow.landing-page-creative-experiment
     purpose: Coordinate creative, landing-page, tracking, and experiment-readiness work.
+    applies_to_steps:
+      - orient
+      - define_experiment_setup
+      - record_experiment
+      - optional_launch_update
   - role: architecture
     requirement: recommended
     agent_preset_ref: stackos.sdlc.architecture
     purpose: Design cross-surface dependencies and prevent duplicate experiment/tracker logic.
+    applies_to_steps:
+      - define_experiment_setup
+      - record_experiment
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review UI/browser, tracking, provider, and experiment-readiness evidence.
+    applies_to_steps:
+      - record_experiment
+      - optional_launch_update
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

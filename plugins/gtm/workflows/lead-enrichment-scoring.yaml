@@ -15,10 +15,16 @@ agent_requirements:
     requirement: required
     agent_preset_ref: gtm.workflow.lead-enrichment-scoring
     purpose: Enrich and score leads with field-level confidence, source context, and CRM-schema awareness.
+    applies_to_steps:
+      - orient
+      - run_enrichment
+      - score_and_store
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review PII, scoring policy, CRM update, and provider-contract safety before writes.
+    applies_to_steps:
+      - score_and_store
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

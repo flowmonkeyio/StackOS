@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlmodel import Session
 
 from stackos.repositories.tracker.bulk import TrackerBulkMixin
+from stackos.repositories.tracker.events import TrackerEventMixin
 from stackos.repositories.tracker.graph import TrackerGraphMixin
 from stackos.repositories.tracker.mirrors import TrackerMirrorMixin
 from stackos.repositories.tracker.mutations import TrackerMutationMixin
@@ -17,6 +18,7 @@ class TrackerRepository(
     TrackerMirrorMixin,
     TrackerBulkMixin,
     TrackerMutationMixin,
+    TrackerEventMixin,
     TrackerQueryMixin,
     TrackerGraphMixin,
     TrackerRelationsMixin,

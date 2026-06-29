@@ -6,6 +6,7 @@ from __future__ import annotations
 from stackos.db.models import (
     TrackerItemStatus,
     TrackerLinkKind,
+    TrackerSourceKind,
     TrackerTicketKind,
 )
 from stackos.repositories.tracker.schema import (
@@ -21,6 +22,7 @@ from stackos.repositories.tracker.utils import (
     _is_closed_tracker_scope,
     _is_terminal_tracker_status,
 )
+from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
 
 class TrackerGraphMixin:
@@ -160,7 +162,27 @@ class TrackerGraphMixin:
             }
 
         task_title_by_key = {task.key: task.title for task in tasks}
+        task_by_key = {task.key: task for task in tasks}
         for task_key, task_tickets in tickets_by_task.items():
+            task = task_by_key.get(task_key)
+            if task is not None and task.source_kind == TrackerSourceKind.WORKFLOW:
+                edges = dependency_keys_by_task.get(task_key, set())
+                dependent_ticket_keys = {ticket_key for ticket_key, _ in edges}
+                roots = [
+                    ticket for ticket in task_tickets if ticket.key not in dependent_ticket_keys
+                ]
+                workflow_roots = [
+                    ticket for ticket in roots if self._graph_is_workflow_step_mirror_ticket(ticket)
+                ]
+                if len(roots) != 1 or len(workflow_roots) != 1:
+                    sample = ", ".join(ticket.key for ticket in roots[:3])
+                    suffix = "..." if len(roots) > 3 else ""
+                    warnings.append(
+                        "Workflow-backed task "
+                        f"{task_key} should have exactly one root workflow step ticket; "
+                        f"found root tickets ({sample}{suffix}). Child tickets must attach "
+                        "to a run-plan step and dependency-bridge into the workflow spine."
+                    )
             active_tickets = [
                 ticket for ticket in task_tickets if not _is_terminal_tracker_status(ticket.status)
             ]
@@ -385,6 +407,20 @@ class TrackerGraphMixin:
         children: list[TrackerTicketOut],
     ) -> list[TrackerTicketOut]:
         return [child for child in children if not self._graph_is_workflow_gate_child(child)]
+
+    def _graph_is_workflow_step_mirror_ticket(self, ticket: TrackerTicketOut) -> bool:
+        if (
+            ticket.source_kind != TrackerSourceKind.WORKFLOW
+            or ticket.parent_ticket_key is not None
+            or ticket.run_plan_id is None
+            or ticket.run_plan_step_id is None
+            or not isinstance(ticket.source_json, dict)
+        ):
+            return False
+        step_id = ticket.source_json.get("step_id")
+        if not isinstance(step_id, str) or not step_id.strip():
+            return False
+        return ticket.key == workflow_step_ticket_key(ticket.run_plan_id, step_id)
 
     def _graph_is_workflow_gate_child(self, ticket: TrackerTicketOut) -> bool:
         haystack = " ".join(

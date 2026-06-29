@@ -1,6 +1,6 @@
 {
   "name": "stackos-desktop",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "private": true,
   "description": "macOS desktop shell for the local StackOS daemon and UI.",
   "main": "src/main.js",
@@ -9,7 +9,7 @@
   "author": "StackOS contributors",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check scripts/build-icons.mjs && node --check scripts/render-icon-electron.cjs && node --check scripts/build-mac.mjs && node scripts/doctor.mjs",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check src/deep-links.js && node --check src/notifications.js && node --check scripts/build-icons.mjs && node --check scripts/build-mac.mjs && node scripts/doctor.mjs && node scripts/test-service-readiness.cjs && node scripts/test-service-upgrade.cjs && node scripts/test-notifications.cjs && node scripts/test-updates.cjs && node scripts/test-build-mac-config.cjs",
     "doctor": "node scripts/doctor.mjs",
     "icons": "node scripts/build-icons.mjs",
     "payload": "bash scripts/build-stackos-payload.sh",
@@ -18,6 +18,7 @@
     "dist:mac": "node scripts/build-mac.mjs"
   },
   "dependencies": {
+    "electron-log": "^5.4.4",
     "electron-updater": ">=6 <8"
   },
   "devDependencies": {
@@ -36,6 +37,14 @@
       "src/**/*",
       "package.json",
       "update-config.example.json"
+    ],
+    "protocols": [
+      {
+        "name": "StackOS",
+        "schemes": [
+          "stackos"
+        ]
+      }
     ],
     "extraResources": [
       {

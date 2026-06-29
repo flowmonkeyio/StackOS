@@ -99,6 +99,24 @@ export default {
           ring:      'var(--sb-ring)',
         },
       },
+      // Border-color utilities (.border-default / -subtle / -strong / -focus /
+      // -inverse) MUST live here under `borderColor`, NOT under `colors.border`.
+      // A color nested in a namespace literally named `border` flattens to the
+      // color name `border-default`, which Tailwind then re-prefixes into the
+      // unusable class `.border-border-default`. Authored markup writes
+      // `.border-default`, so without this the class matches nothing and every
+      // themed border silently falls back to the preflight gray-200 — which
+      // happens to read fine in light mode but is a glaring near-white line in
+      // dark mode. Defining `DEFAULT` also retints the preflight border reset so
+      // even bare `border` / inherited borders flip with the theme.
+      borderColor: {
+        DEFAULT: 'var(--color-border-default)',
+        default: 'var(--color-border-default)',
+        strong:  'var(--color-border-strong)',
+        subtle:  'var(--color-border-subtle)',
+        focus:   'var(--color-border-focus)',
+        inverse: 'var(--color-border-inverse)',
+      },
       borderRadius: {
         xs:  '4px',
         sm:  '6px',

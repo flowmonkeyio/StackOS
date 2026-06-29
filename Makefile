@@ -35,10 +35,12 @@ install: ## Full dev install — deps + migrate + UI bundle + plugin + MCP + doc
 	  echo "  ui_dist/ missing — running \`make build-ui\` to regenerate"; \
 	  $(MAKE) build-ui; \
 	fi
-	@echo "==> Registering bridge MCP for Codex CLI"
-	@bash scripts/register-mcp-codex.sh
-	@echo "==> Registering bridge MCP for Claude Code"
-	@bash scripts/register-mcp-claude.sh
+	@echo "==> Repairing bridge MCP registrations"
+	@if [ -x .venv/bin/python ]; then \
+	  .venv/bin/python -m stackos install --mcp-only --skip-doctor; \
+	else \
+	  $(PYTHON) -m stackos install --mcp-only --skip-doctor; \
+	fi
 	@echo "==> Installing runtime skill mirrors"
 	@bash scripts/install-codex.sh
 	@bash scripts/install-claude.sh
@@ -69,8 +71,8 @@ desktop-payload: ## Build the packaged StackOS Python payload for Electron
 desktop-dist: build-ui desktop-payload ## Build macOS app artifacts with electron-builder
 	@if [ -d desktop ]; then cd desktop && pnpm install && pnpm run dist:mac; else echo "desktop/ not available in this checkout"; exit 0; fi
 
-desktop-doctor: ## Validate desktop scaffold metadata and source syntax
-	@if [ -d desktop ]; then cd desktop && node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check scripts/build-mac.mjs && node scripts/doctor.mjs; else echo "desktop/ not available in this checkout"; exit 0; fi
+desktop-doctor: ## Validate desktop scaffold, updater contracts, and lifecycle smoke tests
+	@if [ -d desktop ]; then cd desktop && pnpm run check; else echo "desktop/ not available in this checkout"; exit 0; fi
 
 signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/CLI, and UI checks
 	$(UV) run pytest tests/unit \
@@ -79,10 +81,16 @@ signoff: lint typecheck ## Before commit/release: setup docs, actions, MCP/REST/
 		tests/integration/test_routes/test_cli_mock_provider.py \
 		tests/integration/test_routes/test_telegram_setup_to_action_routes.py \
 		tests/integration/test_mcp/test_mcp_actions.py \
+		tests/integration/test_mcp/test_mcp_bridge_agent_path.py \
 		tests/integration/test_mcp/test_mcp_readiness.py \
 		tests/integration/test_mcp/test_mcp_run_plans.py \
+		tests/integration/test_mcp/test_mcp_workspaces.py \
+		tests/integration/test_mcp/test_mcp_projects.py \
+		tests/integration/test_mcp/test_mcp_tracker.py \
 		tests/integration/test_mcp/test_mcp_communications.py \
 		tests/integration/test_mcp/test_mcp_agent_requests.py \
+		tests/integration/test_repositories/test_tracker.py \
+		tests/integration/test_repositories/test_workspaces.py \
 		tests/integration/test_repositories/test_actions.py \
 		tests/integration/test_repositories/test_video_provider_actions.py \
 		tests/integration/test_repositories/test_agent_requests.py \
@@ -123,7 +131,7 @@ gen-types: ## Regenerate ui/src/api.ts from the source OpenAPI spec
 	bash scripts/gen-types.sh
 
 doctor: ## Diagnose local install state
-	$(PYTHON) -m stackos doctor
+	@bash scripts/doctor.sh
 
 clean: ## Remove caches and build artifacts (preserves DB at ~/.local/share/stackos/)
 	rm -rf __pycache__ .ruff_cache .mypy_cache .pytest_cache build dist
@@ -157,7 +165,7 @@ install-launchd: ## Install launchd autostart for the daemon
 
 uninstall: ## Remove installed skills/plugins/MCP entries; preserve DB + seed
 	@echo "==> Booting out launchd job (if loaded)"
-	@bash scripts/install-launchd.sh --uninstall || true
+	@bash scripts/install-launchd.sh --uninstall
 	@echo "==> Removing skills"
 	@rm -rf "$(HOME)/.codex/skills/stackos" "$(HOME)/.claude/skills/stackos"
 	@echo "==> Removing plugins"
@@ -169,8 +177,8 @@ uninstall: ## Remove installed skills/plugins/MCP entries; preserve DB + seed
 	@echo "==> Note: ~/.local/share/stackos/ (DB) and ~/.local/state/stackos/ (seed + token) preserved."
 	@echo "==> uninstall complete"
 
-backup: ## Reserved backup command
-	@echo "Not yet implemented (backup/restore jobs)"
+backup: ## Export minimal local state backup zip (DB + seed + token)
+	$(PYTHON) -m stackos backup
 
 restore: ## Reserved restore command
 	@echo "Not yet implemented (backup/restore jobs)"

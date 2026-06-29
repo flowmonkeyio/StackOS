@@ -167,6 +167,50 @@ def test_tracker_bulk_compact_keeps_counts_and_refs_without_full_rows() -> None:
     assert "context_json" not in str(compact)
 
 
+def test_tracker_mutation_compact_exposes_rollup_evidence_gap() -> None:
+    spec = _spec("tracker.updateTicket")
+    payload = {
+        "project_id": 1,
+        "data": {
+            "valid": True,
+            "rev": 8,
+            "task": {
+                "key": "mock-cleanup",
+                "title": "Mock cleanup",
+                "status": "skipped",
+                "lane_key": "done",
+                "completion_evidence_json": None,
+            },
+            "ticket": {
+                "key": "mock-ticket",
+                "title": "Mock ticket",
+                "status": "skipped",
+                "completion_evidence_json": {
+                    "reason": "Usability probe intentionally did not execute delivery."
+                },
+            },
+            "tracker": {"id": 1, "project_id": 1, "rev": 8},
+        },
+    }
+
+    compact = shape_operation_response(spec, payload, response_mode="compact")
+
+    assert compact["data"]["task"]["completion_evidence_present"] is False
+    assert compact["data"]["ticket"]["completion_evidence_present"] is True
+    assert compact["data"]["task_rollup"] == {
+        "task_key": "mock-cleanup",
+        "status": "skipped",
+        "lane_key": "done",
+        "completion_evidence_present": False,
+        "updated_by_ticket_key": "mock-ticket",
+        "completion_evidence_needs_explicit_update": True,
+        "note": (
+            "Ticket terminal updates can roll up the parent task status; ticket evidence is "
+            "not copied to the task."
+        ),
+    }
+
+
 def test_run_plan_compact_keeps_consistency_issues() -> None:
     spec = _spec("runPlan.get", mutating=False)
     payload = {
@@ -178,6 +222,19 @@ def test_run_plan_compact_keeps_consistency_issues() -> None:
             "key": "demo.run",
             "title": "Demo",
             "status": "started",
+            "steps": [
+                {
+                    "id": 101,
+                    "step_id": "scope",
+                    "title": "Scope",
+                    "status": "running",
+                    "position": 0,
+                    "purpose": "Long reasoning guidance belongs in raw mode.",
+                    "success_criteria_json": ["Long criterion belongs in raw mode."],
+                    "action_refs_json": ["core.catalog.describe"],
+                    "allowed_tools": ["context.query"],
+                }
+            ],
             "consistency_issues": [
                 {
                     "code": "terminal-run-live-plan",
@@ -194,6 +251,19 @@ def test_run_plan_compact_keeps_consistency_issues() -> None:
     compact = shape_operation_response(spec, payload, response_mode="compact")
 
     assert compact["data"]["run_plan_id"] == 42
+    assert compact["data"]["steps"] == [
+        {
+            "id": 101,
+            "step_id": "scope",
+            "title": "Scope",
+            "status": "running",
+            "position": 0,
+            "action_refs_json": ["core.catalog.describe"],
+            "allowed_tools": ["context.query"],
+        }
+    ]
+    assert "success_criteria" not in str(compact["data"]["steps"])
+    assert "purpose" not in compact["data"]["steps"][0]
     assert compact["data"]["consistency_issues"][0]["code"] == "terminal-run-live-plan"
     assert compact["data"]["consistency_issues"][0]["run_id"] == 9
 
@@ -302,7 +372,13 @@ def test_operation_list_compact_keeps_agent_decision_fields() -> None:
                 },
             }
         ],
-        "groups": [{"category": "communications", "count": 1}],
+        "groups": [
+            {
+                "category": "communications",
+                "count": 30,
+                "operation_names": [f"communication.tool{i}" for i in range(30)],
+            }
+        ],
     }
 
     compact = shape_operation_response(spec, payload, response_mode="compact")
@@ -325,7 +401,13 @@ def test_operation_list_compact_keeps_agent_decision_fields() -> None:
             },
         }
     ]
-    assert compact["groups"] == [{"category": "communications", "count": 1}]
+    assert compact["groups"] == [
+        {
+            "category": "communications",
+            "count": 30,
+            "operation_names": [f"communication.tool{i}" for i in range(30)],
+        }
+    ]
 
 
 def test_plain_object_compact_summarizes_schemas_without_full_body() -> None:

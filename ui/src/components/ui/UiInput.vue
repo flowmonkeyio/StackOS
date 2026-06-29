@@ -132,7 +132,10 @@ function clear() {
       aria-label="Clear input"
       @click="clear"
     >
-      <UiIcon name="close" class="h-3 w-3" />
+      <UiIcon
+        name="close"
+        class="h-3 w-3"
+      />
     </button>
     <span
       v-if="$slots.suffix"

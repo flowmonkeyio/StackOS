@@ -16,10 +16,19 @@ agent_requirements:
     requirement: required
     agent_preset_ref: communications.workflow.inbox-review
     purpose: Review stored inbox history, triage requests, and prepare safe handoffs.
+    applies_to_steps:
+      - orient
+      - search
+      - fetch_selected
+      - create_work
+      - update_status
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review privacy, local-history limits, and communication policy before follow-up.
+    applies_to_steps:
+      - create_work
+      - update_status
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

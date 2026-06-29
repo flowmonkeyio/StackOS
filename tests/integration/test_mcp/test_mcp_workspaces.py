@@ -20,6 +20,7 @@ def test_workspace_resolve_unknown_requests_connect(
     assert resolved["setup_state"]["project_scoped_tools_usable"] is False
     assert resolved["ui_urls"]["projects"] == "http://127.0.0.1:5180/"
     assert resolved["ui_health"]["daemon_reached"] is True
+    assert resolved["ui_health"]["check_source"] == "mcp_daemon_response"
     assert resolved["next_step"]["recommended_tool"] == "workspace.bootstrap"
     assert [project["id"] for project in resolved["candidate_projects"]] == [
         seeded_project["data"]["id"]
@@ -55,6 +56,229 @@ def test_workspace_bootstrap_creates_project_once_for_workspace_root(
     assert second["data"]["binding_was_created"] is False
     assert second["data"]["project_id"] == first["data"]["project_id"]
     assert second["data"]["binding"]["id"] == first["data"]["binding"]["id"]
+
+
+def test_workspace_bootstrap_project_id_without_directory_creates_named_binding(
+    mcp_client: MCPClient,
+) -> None:
+    project = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "stackos-local",
+            "name": "StackOS Local",
+            "domain": "stackos.local",
+            "locale": "en-US",
+        },
+    )
+
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {"project_id": project["data"]["id"]},
+    )
+    second = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {"project_id": project["data"]["id"]},
+    )
+
+    assert bootstrapped["project_id"] == project["data"]["id"]
+    assert bootstrapped["data"]["project_was_created"] is False
+    assert bootstrapped["data"]["binding_was_created"] is True
+    assert bootstrapped["data"]["binding"]["binding_kind"] == "named"
+    assert bootstrapped["data"]["binding"]["workspace_alias"] == "stackos-local"
+    assert bootstrapped["data"]["binding"]["last_known_root"] is None
+    assert second["data"]["project_was_created"] is False
+    assert second["data"]["binding_was_created"] is False
+    assert second["data"]["binding"]["id"] == bootstrapped["data"]["binding"]["id"]
+
+
+def test_workspace_bootstrap_rejects_generic_inferred_project_name(
+    mcp_client: MCPClient,
+) -> None:
+    failed = mcp_client.call_tool_error(
+        "workspace.bootstrap",
+        {"cwd": "/tmp/Resources"},
+    )
+
+    assert failed["code"] == -32602
+    assert "project_name or project_slug is required" in failed["data"]["detail"]
+    assert failed["data"]["project_identity_required"] is True
+    assert failed["data"]["recommended_arguments"]["project_name"]
+
+
+def test_workspace_start_session_requests_project_name_for_generic_folder(
+    mcp_client: MCPClient,
+) -> None:
+    started = mcp_client.call_tool_structured(
+        "workspace.startSession",
+        {
+            "runtime": "claude-desktop",
+            "cwd": "/tmp/Resources",
+        },
+    )
+
+    assert started["project_id"] is None
+    assert started["data"]["project_id"] is None
+    assert started["data"]["workspace_binding_id"] is None
+    assert started["data"]["needs_connect"] is True
+    assert started["data"]["next_step"]["project_identity_required"] is True
+    assert started["data"]["next_step"]["recommended_arguments"]["project_name"]
+
+
+def test_workspace_start_session_without_identity_lists_named_workspaces_without_binding(
+    mcp_client: MCPClient,
+) -> None:
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {
+            "project_name": "Flowmonkey",
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    started = mcp_client.call_tool_structured(
+        "workspace.startSession",
+        {
+            "runtime": "claude-desktop",
+        },
+    )
+
+    assert bootstrapped["data"]["binding"]["binding_kind"] == "named"
+    assert bootstrapped["data"]["binding"]["workspace_alias"] == "flowmonkey"
+    assert bootstrapped["data"]["binding"]["last_known_root"] is None
+    assert started["project_id"] is None
+    assert started["data"]["project_id"] is None
+    assert started["data"]["workspace_binding_id"] is None
+    assert started["data"]["needs_connect"] is True
+    assert started["data"]["next_step"]["status"] == "project_selection_required"
+    assert [
+        candidate["workspace_alias"] for candidate in started["data"]["candidate_workspaces"]
+    ] == ["flowmonkey"]
+    assert started["data"]["candidate_workspaces"][0]["project_id"] == bootstrapped["project_id"]
+    assert started["data"]["candidate_workspaces"][0]["ui_urls"]["setup"] == (
+        f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/setup"
+    )
+
+
+def test_workspace_connect_named_workspace_by_alias_only_after_existing_binding(
+    mcp_client: MCPClient,
+) -> None:
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {
+            "project_name": "Flowmonkey",
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    connected = mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    assert connected["project_id"] == bootstrapped["project_id"]
+    assert connected["data"]["id"] == bootstrapped["data"]["binding"]["id"]
+    assert connected["data"]["binding_kind"] == "named"
+    assert connected["data"]["workspace_alias"] == "flowmonkey"
+
+
+def test_workspace_connect_project_id_without_directory_creates_named_binding(
+    mcp_client: MCPClient,
+) -> None:
+    project = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "selected-client",
+            "name": "Selected Client",
+            "domain": "selected.example",
+            "locale": "en-US",
+        },
+    )
+
+    connected = mcp_client.call_tool_structured(
+        "workspace.connect",
+        {"project_id": project["data"]["id"]},
+    )
+
+    assert connected["project_id"] == project["data"]["id"]
+    assert connected["data"]["binding_kind"] == "named"
+    assert connected["data"]["workspace_alias"] == "selected-client"
+    assert connected["data"]["repo_fingerprint"] == "workspace:selected-client"
+    assert connected["data"]["last_known_root"] is None
+
+
+def test_workspace_start_session_rebinds_when_alias_is_explicit(
+    mcp_client: MCPClient,
+) -> None:
+    bootstrapped = mcp_client.call_tool_structured(
+        "workspace.bootstrap",
+        {
+            "project_name": "Flowmonkey",
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    started = mcp_client.call_tool_structured(
+        "workspace.startSession",
+        {
+            "runtime": "claude-desktop",
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    assert started["project_id"] == bootstrapped["project_id"]
+    assert started["data"]["project_id"] == bootstrapped["project_id"]
+    assert started["data"]["workspace_binding_id"] == bootstrapped["data"]["binding"]["id"]
+    assert started["data"]["needs_connect"] is False
+    assert started["data"]["setup_state"]["workspace_bound"] is True
+
+
+def test_workspace_connect_new_named_workspace_requires_project_identity(
+    mcp_client: MCPClient,
+) -> None:
+    failed = mcp_client.call_tool_error(
+        "workspace.connect",
+        {
+            "workspace_alias": "new-client",
+        },
+    )
+
+    assert failed["code"] == -32602
+    assert "project_id, project_slug, or project_name is required" in failed["data"]["detail"]
+
+
+def test_workspace_alias_rejects_non_named_repo_fingerprint_mix(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    failed = mcp_client.call_tool_error(
+        "workspace.connect",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "repo_fingerprint": "path:abc123",
+            "workspace_alias": "flowmonkey",
+        },
+    )
+
+    assert failed["code"] == -32602
+    assert "workspace_alias cannot be combined" in failed["data"]["detail"]
+
+
+def test_workspace_connect_rejects_app_bundle_workspace_root(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    failed = mcp_client.call_tool_error(
+        "workspace.connect",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "repo_fingerprint": "path:app-bundle",
+            "last_known_root": "/Applications/StackOS.app/Contents/Resources",
+        },
+    )
+
+    assert failed["code"] == -32602
+    assert "usable project directory" in failed["data"]["detail"]
 
 
 def test_workspace_connect_list_and_start_session(
@@ -102,6 +326,7 @@ def test_workspace_connect_list_and_start_session(
         started["data"]["ui_urls"]["setup"] == f"http://127.0.0.1:5180/projects/{project_id}/setup"
     )
     assert started["data"]["ui_health"]["daemon_reached"] is True
+    assert started["data"]["ui_health"]["check_source"] == "mcp_daemon_response"
 
 
 def test_workspace_connect_requires_rebind_flag_to_move_existing_binding(

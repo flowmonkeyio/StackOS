@@ -144,14 +144,23 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "branding.sanitization-reviewer",
         "branding.voice-reviewer",
     }
+    branding_step_ids = [step.id for step in branding_content_described.spec.steps]
+    branding_skill_preset = branding_content_described.spec.skill_preset_requirements[0]
+    assert branding_skill_preset.skill_preset_ref == "branding.brand-orchestrator"
+    assert branding_skill_preset.applies_to_steps == branding_step_ids
+    assert "workflowExtension.selected_context_json" in " ".join(branding_skill_preset.setup_notes)
+    assert "Level 2 project overlay" in " ".join(branding_skill_preset.setup_notes)
+    assert "branding_overlay_ref" in {item.key for item in branding_content_described.spec.inputs}
+    branding_resource_contracts = {
+        item.resource for item in branding_content_described.spec.resource_contracts
+    }
+    assert "distribution-record" in branding_resource_contracts
     branding_content_actions = {
         item.key: item for item in branding_content_described.spec.action_contracts
     }
     assert branding_content_actions["image_generate"].action == "utils.image.generate"
     assert branding_content_actions["image_generate"].optional is True
-    assert branding_content_actions["image_generate"].approval_ref == (
-        "image_generation_approval"
-    )
+    assert branding_content_actions["image_generate"].approval_ref == ("image_generation_approval")
     assert branding_content_actions["publish_linkedin"].action == "publish.linkedin"
     assert branding_content_actions["publish_linkedin"].optional is True
     assert branding_content_actions["publish_x"].action == "publish.x"
@@ -171,8 +180,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert branding_content_steps["produce-optional-images"].approval_refs == []
     assert branding_content_steps["approve-and-record"].approval_refs == ["content_packet_approval"]
     assert branding_content_described.spec.metadata_json["artifact_grant_policy"] == "explicit"
-    assert "durable records, not a scratchpad" in (
-        branding_content_described.spec.metadata_json["artifact_lifecycle_guidance"]
+    assert (
+        "durable records, not a scratchpad"
+        in (branding_content_described.spec.metadata_json["artifact_lifecycle_guidance"])
     )
     assert (
         "action.execute:image_generate" in (branding_content_described.spec.metadata_json["grants"])
@@ -196,14 +206,12 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "artifact.archive",
         "artifact.supersede",
     }
-    assert artifact_lifecycle_tools <= branding_template_tool_grants[
-        "produce-optional-images"
-    ]
-    assert artifact_lifecycle_tools <= branding_template_tool_grants[
-        "render-channel-packets"
-    ]
+    assert artifact_lifecycle_tools <= branding_template_tool_grants["produce-optional-images"]
+    assert artifact_lifecycle_tools <= branding_template_tool_grants["render-channel-packets"]
     assert artifact_lifecycle_tools <= branding_template_tool_grants["approve-and-record"]
     assert artifact_lifecycle_tools <= branding_template_tool_grants["execute-publication"]
+    assert "decision.record" in branding_template_tool_grants["approve-and-record"]
+    assert "decision.record" in branding_template_tool_grants["execute-publication"]
     assert {
         "browser.runtime.status",
         "browser.method.manifest",
@@ -287,6 +295,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     }
     assert artifact_lifecycle_tools.isdisjoint(interview_tools)
     assert "distribution_record_refs" in branding_content_steps["execute-publication"].output_refs
+    assert all(step.instructions for step in branding_content_described.spec.steps)
     image_step_text = branding_content_steps["produce-optional-images"].model_dump_json()
     assert "operator-supplied images" in image_step_text
     assert "without requiring image_generation_approval" in image_step_text
@@ -454,6 +463,8 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     plan_text = plan_step.model_dump_json()
     assert "workflow task/run plan from the start" in plan_text
     assert "attachment/provenance only" in plan_text
+    assert "pass run_plan_id and step_id at creation time" in plan_text
+    assert "one root" in plan_text
     assert "tracker.updateTicket" in plan_text
     assert "bridge child tickets" in plan_text
     assert "detached branches" in plan_text
@@ -529,6 +540,23 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert all(
         "payload" not in step.model_dump_json() for step in communications_described.spec.steps
     )
+
+
+def test_builtin_workflow_preset_requirements_are_step_mapped(session: Session) -> None:
+    repo = WorkflowTemplateLoader(session)
+
+    for summary in repo.list_templates().templates:
+        described = repo.describe_template(
+            key=summary.key,
+            plugin_slug=summary.plugin_slug,
+        )
+        step_ids = {step.id for step in described.spec.steps}
+        for requirement in described.spec.agent_requirements:
+            assert requirement.applies_to_steps, requirement.agent_preset_ref
+            assert set(requirement.applies_to_steps) <= step_ids, requirement.agent_preset_ref
+        for requirement in described.spec.skill_preset_requirements:
+            assert requirement.applies_to_steps, requirement.skill_preset_ref
+            assert set(requirement.applies_to_steps) <= step_ids, requirement.skill_preset_ref
 
 
 def test_repo_templates_override_plugin_templates(session: Session, tmp_path: Path) -> None:
@@ -661,6 +689,100 @@ def test_project_workflow_extension_layers_over_base_template(
         )
         is None
     )
+
+
+def test_project_workflow_extension_upsert_preserves_omitted_fields_by_default(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = WorkflowTemplateLoader(session)
+    saved = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        input_defaults_json={"communication_route_ref": "communication-route:support-feedback"},
+        selected_context_json={"audience": "support"},
+        guardrails_json={"private_customer_data": False},
+        metadata_json={"owner": "support"},
+        created_by="unit-test",
+    ).data
+
+    patched = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        metadata_json={"owner": "ops"},
+    ).data
+
+    assert saved.selected_context_json == {"audience": "support"}
+    assert patched.update_mode == "merge"
+    assert patched.metadata_json == {"owner": "ops"}
+    assert patched.input_defaults_json == {
+        "communication_route_ref": "communication-route:support-feedback"
+    }
+    assert patched.selected_context_json == {"audience": "support"}
+    assert patched.guardrails_json == {"private_customer_data": False}
+    assert patched.changed_fields == ["metadata_json"]
+    assert "selected_context_json" in patched.preserved_fields
+    assert patched.cleared_fields == []
+
+    cleared = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        clear_fields_json=["guardrails_json"],
+    ).data
+
+    assert cleared.guardrails_json == {}
+    assert cleared.selected_context_json == {"audience": "support"}
+    assert cleared.cleared_fields == ["guardrails_json"]
+
+    replaced = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        update_mode="replace",
+        metadata_json={"owner": "replace"},
+    ).data
+
+    assert replaced.metadata_json == {"owner": "replace"}
+    assert replaced.selected_context_json == {}
+    assert "selected_context_json" in replaced.cleared_fields
+    assert replaced.warnings[0].code == "replace_cleared_omitted_fields"
+
+    disabled = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        enabled=False,
+    ).data
+    disable_validation = repo.validate_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        metadata_json={"owner": "still-disabled"},
+    )
+    disabled_patched = repo.upsert_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        metadata_json={"owner": "still-disabled"},
+    ).data
+
+    assert disabled.enabled is False
+    assert disable_validation.valid is True
+    assert disabled_patched.enabled is False
+
+    invalid_clear = repo.validate_extension(
+        project_id=project_id,
+        workflow_key="communications.customer-feedback-intake",
+        plugin_slug="communications",
+        update_mode="replace",
+        clear_fields_json=["guardrails_json"],
+    )
+
+    assert invalid_clear.valid is False
+    assert invalid_clear.errors[0].code == "clear_fields_requires_merge"
 
 
 def test_project_workflow_extension_validation_rejects_identity_change(

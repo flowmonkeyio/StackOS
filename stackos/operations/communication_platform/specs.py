@@ -131,6 +131,7 @@ def operation_specs() -> list[OperationSpec]:
                     },
                 ),
             ),
+            mutating=True,
             grant_policy="direct-setup-write",
         ),
         OperationSpec(
@@ -158,6 +159,7 @@ def operation_specs() -> list[OperationSpec]:
                 ),
             ),
             grant_policy="direct-setup-write",
+            mutating=True,
         ),
         OperationSpec(
             name="ingressEndpoint.routes",
@@ -170,6 +172,8 @@ def operation_specs() -> list[OperationSpec]:
             when_to_use=(
                 "An operator or setup agent needs exact webhook URLs to copy or verify.",
                 "The agent is diagnosing route shape without changing provider state.",
+                "A provider route says manual update is needed and the agent needs the "
+                "affected provider/profile and copyable URL.",
             ),
             prerequisites=("Configure ingressEndpoint first.",),
             returns=("Endpoint metadata plus provider route URLs.",),
@@ -197,6 +201,7 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=("Configure ingressEndpoint and communication profiles first.",),
             returns=("Updated routes and per-provider sync results.",),
             examples=(OperationExample(title="Sync routes", arguments={"project_id": 1}),),
+            mutating=True,
             grant_policy="direct-setup-write",
         ),
         OperationSpec(
@@ -210,6 +215,8 @@ def operation_specs() -> list[OperationSpec]:
             when_to_use=(
                 "An agent needs readiness diagnostics before testing inbound messages.",
                 "A setup flow needs model-readable notes about missing endpoint or route state.",
+                "The UI or an agent needs to identify which provider route requires a manual "
+                "webhook update.",
             ),
             prerequisites=("Pass project_id.",),
             returns=("Configured/ready booleans, endpoint metadata, routes, and notes.",),

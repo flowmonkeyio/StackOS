@@ -16,10 +16,16 @@ agent_requirements:
     requirement: required
     agent_preset_ref: communications.workflow.outbound-notification
     purpose: Resolve named targets, validate content/capabilities, and send explicit notifications safely.
+    applies_to_steps:
+      - orient
+      - compose
+      - send
   - role: delivery-reviewer
     requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
     purpose: Review rich-feature, policy, auth, idempotency, and no-silent-degradation behavior.
+    applies_to_steps:
+      - send
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended

@@ -8,12 +8,12 @@ import {
   UiJsonBlock,
   UiMetadataStrip,
 } from '@/components/ui'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import type { TrackerTicket } from '@/lib/task-tracker/types'
 
 import { hasJsonObject } from './detailUtils'
-import TrackerStatusBadge from './TrackerStatusBadge.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -104,7 +104,10 @@ function relationSummary(ticket: TrackerTicket): string {
               Overview
             </h3>
             <div class="mt-1.5 flex flex-wrap items-center gap-2">
-              <TrackerStatusBadge :status="ticket.status" />
+              <StatusBadge
+                domain="tracker"
+                :status="ticket.status"
+              />
               <UiBadge
                 v-if="isWorkflowLinked"
                 tone="accent"
