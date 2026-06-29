@@ -126,6 +126,31 @@ run token.
   folder names become projects, do not invent cwd/repo anchors, do not call
   `project.create` as a substitute for binding, and do not use
   last-used/global fallback binding.
+- Set up a workflow project in three separate phases, adapted to the selected
+  domain. Phase 1 is workflow infrastructure setup: before creating state,
+  inspect the owning project/workspace, host workspace identity behavior,
+  selected workflow, required orchestrator/skill and agent presets,
+  host-native project-local file support, and StackOS setup-write versus
+  run-plan-step-grant boundaries. Then bind the workspace, describe the selected
+  workflow, resolve required orchestrator/skill presets and agent presets, and
+  adapt those presets into host-native project-local agents, skills, commands,
+  or orchestrator guidance when the host supports those files, check readiness,
+  validate/upsert a workflow extension for durable defaults or guardrails, and
+  prove resumability with `runPlan.validate` or a draft `runPlan.create`.
+  Host-local files are the organic execution layer for future sessions; keep
+  them generic and procedural, and keep project state, prerequisites, and
+  secrets in StackOS. Report binding, extension state, files created, preset
+  mapping, future binding path, prerequisite gate, and run-plan outcome. Do not
+  collect domain prerequisites or produce the workflow output in this phase.
+  Phase 2 is workflow prerequisite setup: bind to the
+  existing project and collect durable inputs the workflow needs before normal
+  operation, such as voice/profile, source policy, route choices, account
+  mappings, approval rules, or other domain-specific setup. Save them through
+  the workflow extension, approved setup operations, or a dedicated onboarding
+  run plan when the state belongs in run-plan-gated resources. Phase 3 is
+  operation: bind to the existing project, create/resume/start the concrete run
+  plan, load the orchestrator/presets, claim/record steps, use only granted
+  tools/actions, and preserve approval gates.
 - Set up support/engineering/local agents: choose the workflow first. Use
   `communications.customer-feedback-intake` to normalize inbound feedback into
   one route-approved canonical Slack thread with media and refs preserved. Use

@@ -341,6 +341,18 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "a started run with explicit step grants.",
         ],
         execution_path=[
+            "Phase 1 - workflow infrastructure setup: bind the workspace, select "
+            "the workflow, resolve orchestrator/skill presets and agent presets, "
+            "adapt them into host-native project-local agents, skills, commands, "
+            "or orchestrator guidance when the host supports those files, persist "
+            "project extension defaults, and prove the run-plan path without "
+            "collecting prerequisites or producing workflow output. Host-local files "
+            "are execution contracts only; keep prerequisites, state, and secrets in "
+            "StackOS.",
+            "Before creating setup state, inspect the owning project/workspace, "
+            "host workspace identity behavior, selected workflow, required presets, "
+            "host-native file support, and which StackOS writes are direct setup "
+            "writes versus run-plan-step-granted writes.",
             "workspace.startSession",
             "toolbox.call for workspace.connect or workspace.bootstrap only when "
             "project identity selection is required",
@@ -355,6 +367,17 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "agentPreset.resolveForWorkflow",
             "skillPreset.resolveForWorkflow",
             "readiness.check",
+            "workflow prerequisite setup: bind to the existing project and collect "
+            "durable domain inputs such as voice/profile, routes, source policy, "
+            "account mappings, approval rules, or other workflow prerequisites through "
+            "the workflow extension, approved setup operations, or an onboarding run.",
+            "workflow operation: create, resume, or start the concrete run plan; "
+            "load the resolved orchestrator/presets; claim and record steps; use only "
+            "granted tools/actions; and preserve approval gates.",
+            "Before reporting setup complete, show binding proof, workflow extension "
+            "state, local host files with absolute paths, preset-to-file mapping, "
+            "deterministic future binding path, prerequisite gate, run-plan validation "
+            "or create outcome, and confirmation that no workflow output was produced.",
             "runPlan.create",
             "runPlan.validate",
             "runPlan.start",

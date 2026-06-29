@@ -138,10 +138,25 @@ work, start here:
   exact `tool_names`; do not request broad schemas. If operation names are not
   clear, call `operation.list` through `toolbox.call` with `mode="grouped"` and
   `response_mode="compact"`, then describe only the exact operations needed.
-- Project workflow setup must follow the workflow contract, not tracker prose:
-  bind the workspace, describe the workflow, resolve required skill/agent
-  presets, check readiness, validate/upsert the project extension, then prove
-  the path with a run-plan create/validate smoke when resumability matters.
+- Project workflow setup must follow the workflow contract, not tracker prose,
+  and must keep three phases distinct. First, workflow infrastructure setup:
+  inspect the host identity, binding mechanism, workflow choice,
+  orchestrator/preset requirements, host-native file support, and StackOS write
+  grant model before creating state. Then bind the workspace, describe the
+  workflow, resolve required orchestrator, skill, and agent presets, adapt them
+  into host-native project-local agents, skills, commands, or orchestrator
+  guidance when the host supports those files, check readiness, validate/upsert
+  the project extension, then prove the path with a run-plan create/validate
+  smoke when resumability matters. Host files are execution contracts only;
+  keep prerequisites, state, and secrets in StackOS. Report proof: binding,
+  extension state, local files, preset mapping, deterministic future binding,
+  prerequisite gate, run-plan outcome, and no produced workflow output.
+  Second, workflow prerequisite setup: collect durable workflow-specific inputs
+  such as voice/profile, sources, route choices, policy, account mappings, or
+  approval rules through the right project state or onboarding run, without
+  producing the workflow output. Third, workflow operation: create, resume, or
+  start the concrete run plan and execute steps through the resolved
+  orchestrator/presets, grants, and approval gates.
   `workflowExtension.upsert` preserves omitted fields by default; use
   `clear_fields_json` with merge for field-level clearing, or
   `update_mode="replace"` only for reviewed full rewrites.
