@@ -302,4 +302,19 @@ describe('buildTrackerFlowModel', () => {
       'tracker-node-downstream',
     )
   })
+
+  it('marks active and recently updated graph nodes for visual emphasis', () => {
+    const model = buildTrackerFlowModel(snapshot, {
+      activeNodeIds: new Set(['ticket:deliver']),
+      recentNodeIds: new Set(['ticket:prepare']),
+    })
+
+    const activeNode = model.nodes.find((node) => node.id === 'ticket:deliver')
+    const recentNode = model.nodes.find((node) => node.id === 'ticket:prepare')
+    expect(activeNode?.class).toContain('tracker-node-active')
+    expect(activeNode?.data?.active).toBe(true)
+    expect(activeNode?.zIndex).toBe(30)
+    expect(recentNode?.class).toContain('tracker-node-recent')
+    expect(recentNode?.data?.recentlyUpdated).toBe(true)
+  })
 })

@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { computed, nextTick, onMounted, onUpdated, ref } from 'vue'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
-import { VueFlow } from '@vue-flow/core'
-import type { EdgeMouseEvent, NodeMouseEvent } from '@vue-flow/core'
+import { useVueFlow, VueFlow } from '@vue-flow/core'
+import type { EdgeMouseEvent, NodeMouseEvent, ViewportTransform } from '@vue-flow/core'
 
 import StatusBadge from '@/components/StatusBadge.vue'
 import { UiBadge, UiButton } from '@/components/ui'
@@ -19,10 +20,19 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import '@vue-flow/minimap/dist/style.css'
 
-defineProps<{
+const TICKET_NODE_WIDTH = 236
+const TICKET_NODE_HEIGHT = 96
+const READABLE_FOCUS_ZOOM = 0.72
+
+const props = defineProps<{
   flow: TrackerFlowModel
+  flowId: string
   flowRenderKey: string
   graphFitOnInit: boolean
+  focusNodeIds: string[]
+  primaryFocusNodeId: string | null
+  refocusKey: string
+  initialViewport: ViewportTransform | null
   activeTaskTitle: string
   activeTaskAvailable: boolean
   ticketStatLabel: string
@@ -39,7 +49,7 @@ defineProps<{
   selectionStats: string[]
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'toggleStatus', value: TrackerStatus): void
   (e: 'toggleBlock', value: GraphBlockFilter): void
   (e: 'clearFilters'): void
@@ -50,7 +60,20 @@ defineEmits<{
   (e: 'graphCanvasClick', value: MouseEvent): void
   (e: 'openSelectedDetail'): void
   (e: 'clearGraphFocus'): void
+  (e: 'viewportChangeEnd', value: ViewportTransform): void
+  (e: 'viewportReady', value: string): void
 }>()
+
+const DEFAULT_VIEWPORT: ViewportTransform = { x: 32, y: 64, zoom: 0.58 }
+const initialViewportValue = computed(() => props.initialViewport ?? DEFAULT_VIEWPORT)
+const { fitView, setCenter, setViewport } = useVueFlow({ id: props.flowId })
+const appliedRefocusKey = ref<string | null>(null)
+const viewportReady = ref(false)
+const viewportSettled = computed(
+  () => viewportReady.value && (!props.refocusKey || props.refocusKey === appliedRefocusKey.value),
+)
+let lastViewportIntentSignature = ''
+let initialViewportRenderKey = ''
 
 const BLOCK_TONES: Record<GraphBlockFilter, Tone> = {
   blocked: 'danger',
@@ -60,6 +83,110 @@ const BLOCK_TONES: Record<GraphBlockFilter, Tone> = {
 function statusTone(status: TrackerStatus): Tone {
   return resolveStatus('tracker', status).tone
 }
+
+async function applyViewportIntent(): Promise<void> {
+  await nextTick()
+  await applyInitialViewport()
+  const pendingRefocusKey =
+    props.refocusKey && props.refocusKey !== appliedRefocusKey.value ? props.refocusKey : ''
+  if (!props.flow.nodes.length) {
+    markViewportReady(pendingRefocusKey)
+    return
+  }
+  const availableNodeIds = new Set(props.flow.nodes.map((node) => node.id))
+  const focusNodeIds = props.focusNodeIds.filter((id) => availableNodeIds.has(id))
+  const activeFlowNodeId = props.flow.nodes.find((node) => node.data?.active)?.id ?? null
+  const primaryFocusNodeId =
+    props.primaryFocusNodeId && availableNodeIds.has(props.primaryFocusNodeId)
+      ? props.primaryFocusNodeId
+      : (activeFlowNodeId ?? focusNodeIds[0] ?? null)
+  const shouldRefocus = Boolean(props.refocusKey) && props.refocusKey !== appliedRefocusKey.value
+  if (shouldRefocus && primaryFocusNodeId) {
+    const primaryNode = props.flow.nodes.find((node) => node.id === primaryFocusNodeId)
+    const refocusKey = props.refocusKey
+    appliedRefocusKey.value = refocusKey
+    if (primaryNode) {
+      const center = nodeCenter(primaryNode)
+      await setCenter(center.x, center.y, {
+        zoom: READABLE_FOCUS_ZOOM,
+        duration: viewportReady.value ? 200 : 0,
+      })
+      markViewportReady(refocusKey)
+      return
+    }
+  }
+  if (props.graphFitOnInit && !props.initialViewport && !appliedRefocusKey.value && !viewportReady.value) {
+    await fitView({
+      padding: 0.22,
+      minZoom: 0.16,
+      maxZoom: 0.98,
+      duration: viewportReady.value ? 160 : 0,
+    })
+  }
+  markViewportReady(pendingRefocusKey)
+}
+
+async function applyInitialViewport(): Promise<void> {
+  if (!props.initialViewport || initialViewportRenderKey === props.flowRenderKey) return
+  initialViewportRenderKey = props.flowRenderKey
+  await setViewport(props.initialViewport, { duration: 0 })
+}
+
+function markViewportReady(refocusKey = ''): void {
+  if (refocusKey) appliedRefocusKey.value = refocusKey
+  viewportReady.value = true
+  emit('viewportReady', refocusKey)
+}
+
+function nodeCenter(node: TrackerFlowModel['nodes'][number]): { x: number; y: number } {
+  return {
+    x: node.position.x + nodeWidth(node) / 2,
+    y: node.position.y + nodeHeight(node) / 2,
+  }
+}
+
+function nodeWidth(node: TrackerFlowModel['nodes'][number]): number {
+  return numericStyleValue(styleValue(node, 'width')) ?? TICKET_NODE_WIDTH
+}
+
+function nodeHeight(node: TrackerFlowModel['nodes'][number]): number {
+  return numericStyleValue(styleValue(node, 'height')) ?? TICKET_NODE_HEIGHT
+}
+
+function styleValue(node: TrackerFlowModel['nodes'][number], key: 'width' | 'height'): unknown {
+  return typeof node.style === 'function' ? null : node.style?.[key]
+}
+
+function numericStyleValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value !== 'string') return null
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+async function onNodesInitialized(): Promise<void> {
+  viewportReady.value = false
+  await applyViewportIntent()
+}
+
+onUpdated(() => {
+  const signature = [
+    props.flowRenderKey,
+    props.refocusKey,
+    props.flow.nodes.length,
+  ].join(':')
+  if (signature !== lastViewportIntentSignature) {
+    lastViewportIntentSignature = signature
+    if (props.refocusKey && props.refocusKey !== appliedRefocusKey.value) {
+      viewportReady.value = false
+    }
+    void applyViewportIntent()
+  }
+})
+
+onMounted(() => {
+  void applyViewportIntent()
+})
 </script>
 
 <template>
@@ -143,18 +270,23 @@ function statusTone(status: TrackerStatus): Tone {
 
     <div
       class="tracker-flow-frame"
+      :class="{ 'tracker-flow-frame--settled': viewportSettled }"
       @click.capture="$emit('graphCanvasClick', $event)"
     >
       <VueFlow
         :key="flowRenderKey"
+        :id="flowId"
         class="tracker-flow"
+        :class="{ 'tracker-flow--settled': viewportSettled }"
         :nodes="flow.nodes"
         :edges="flow.edges"
-        :default-viewport="{ x: 32, y: 64, zoom: 0.58 }"
-        :fit-view-on-init="graphFitOnInit"
+        :default-viewport="initialViewportValue"
+        :fit-view-on-init="false"
         :min-zoom="0.12"
         :max-zoom="1.5"
         pan-on-scroll
+        @nodes-initialized="onNodesInitialized"
+        @viewport-change-end="emit('viewportChangeEnd', $event)"
         @node-click="$emit('nodeClick', $event)"
         @edge-click="$emit('edgeClick', $event)"
         @pane-click="$emit('paneClick', $event)"
@@ -280,6 +412,13 @@ function statusTone(status: TrackerStatus): Tone {
   width: 100%;
   min-height: 520px;
   min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tracker-flow-frame--settled {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .tracker-flow {

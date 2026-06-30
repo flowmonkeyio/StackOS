@@ -22,6 +22,8 @@ export interface TrackerVueNodeData {
   blockedBy?: string[]
   assignee?: string | null
   runPlanId?: number | null
+  active?: boolean
+  recentlyUpdated?: boolean
   raw: TrackerTask | TrackerTicket | TrackerGraphNode
 }
 
@@ -36,6 +38,8 @@ export interface BuildTrackerFlowOptions {
   downstreamNodeIds?: Set<string>
   downstreamEdgeIds?: Set<string>
   activeEdgeId?: string | null
+  activeNodeIds?: Set<string>
+  recentNodeIds?: Set<string>
   spotlight?: boolean
 }
 
@@ -107,7 +111,7 @@ export function buildTrackerFlowModel(
         width: `${taskWidth(childColumns, childCount)}px`,
         height: `${taskHeight(childRows, childCount)}px`,
       },
-      data: vueNodeData(graphNode, snapshot),
+      data: vueNodeData(graphNode, snapshot, options),
       class: nodeClass(options, graphNode.id),
       zIndex: nodeZIndex(options, graphNode.id),
     })
@@ -135,7 +139,7 @@ export function buildTrackerFlowModel(
         selectable: !graphNode.id.startsWith('link:'),
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        data: vueNodeData(graphNode, snapshot),
+        data: vueNodeData(graphNode, snapshot, options),
         class: nodeClass(options, graphNode.id),
         zIndex: nodeZIndex(options, graphNode.id),
       })
@@ -195,7 +199,7 @@ function buildDependencyTreeFlow(
         selectable: true,
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        data: vueNodeData(graphNode, snapshot),
+        data: vueNodeData(graphNode, snapshot, options),
         class: nodeClass(options, graphNode.id),
         zIndex: nodeZIndex(options, graphNode.id),
       })
@@ -223,7 +227,7 @@ function buildDependencyTreeFlow(
       selectable: true,
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
-      data: vueNodeData(graphNode, snapshot),
+      data: vueNodeData(graphNode, snapshot, options),
       class: nodeClass(options, graphNode.id),
       zIndex: nodeZIndex(options, graphNode.id),
     })
@@ -244,7 +248,7 @@ function buildDependencyTreeFlow(
       selectable: false,
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
-      data: vueNodeData(graphNode, snapshot),
+      data: vueNodeData(graphNode, snapshot, options),
       class: nodeClass(options, graphNode.id),
       zIndex: nodeZIndex(options, graphNode.id),
     })
@@ -598,7 +602,11 @@ function statusSort(status: string): number {
   return trackerStatusSortOrder(status)
 }
 
-function vueNodeData(graphNode: TrackerGraphNode, snapshot: TrackerSnapshot): TrackerVueNodeData {
+function vueNodeData(
+  graphNode: TrackerGraphNode,
+  snapshot: TrackerSnapshot,
+  options: BuildTrackerFlowOptions,
+): TrackerVueNodeData {
   const itemKind = itemKindForNodeId(graphNode.id)
   const itemKey = itemKeyForNodeId(graphNode.id) ?? graphNode.id
   const raw = rawForGraphNode(graphNode, snapshot) ?? graphNode
@@ -620,6 +628,8 @@ function vueNodeData(graphNode: TrackerGraphNode, snapshot: TrackerSnapshot): Tr
     blockedBy: ticket?.blocked_by,
     assignee: ticket?.assignee,
     runPlanId: ticket?.run_plan_id,
+    active: options.activeNodeIds?.has(graphNode.id) === true,
+    recentlyUpdated: options.recentNodeIds?.has(graphNode.id) === true,
     raw,
   }
 }
@@ -694,6 +704,8 @@ function nodeClass(options: BuildTrackerFlowOptions, graphNodeId: string): strin
   if (upstream) classes.push('tracker-node-upstream')
   if (downstream) classes.push('tracker-node-downstream')
   if (selected) classes.push('tracker-node-selected')
+  if (options.activeNodeIds?.has(graphNodeId) === true) classes.push('tracker-node-active')
+  if (options.recentNodeIds?.has(graphNodeId) === true) classes.push('tracker-node-recent')
   return classes.join(' ')
 }
 
@@ -704,7 +716,8 @@ function nodeZIndex(options: BuildTrackerFlowOptions, graphNodeId: string): numb
     kind && key && options.selected?.kind === kind && options.selected.key === key,
   )
   const selected = selectedByItem || options.selectedNodeId === graphNodeId
-  if (selected) return 30
+  if (selected || options.activeNodeIds?.has(graphNodeId) === true) return 30
+  if (options.recentNodeIds?.has(graphNodeId) === true) return 26
   if (
     options.upstreamNodeIds?.has(graphNodeId) === true ||
     options.downstreamNodeIds?.has(graphNodeId) === true ||

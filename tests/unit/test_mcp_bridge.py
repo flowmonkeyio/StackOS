@@ -541,9 +541,7 @@ def test_bridge_toolbox_describe_rejects_broad_schema_dump_without_exact_names()
 
 
 def test_bridge_toolbox_describe_virtual_schema_matches_scoped_schema_contract() -> None:
-    toolbox = next(
-        tool for tool in _bridge_toolbox_specs() if tool["name"] == "toolbox.describe"
-    )
+    toolbox = next(tool for tool in _bridge_toolbox_specs() if tool["name"] == "toolbox.describe")
     include_description = toolbox["inputSchema"]["properties"]["include_schemas"]["description"]
 
     assert "tool_names must contain exact tool" in include_description
@@ -1183,9 +1181,7 @@ def test_operation_discovery_tools_return_operation_spec_guidance() -> None:
         )
     )
     listed_names = {
-        operation_name
-        for group in listed.groups
-        for operation_name in group.operation_names
+        operation_name for group in listed.groups for operation_name in group.operation_names
     }
     assert listed.items == []
     assert "operation.list" in listed_names

@@ -94,17 +94,32 @@ function nodeFocusFor(graph: TrackerGraphShape, nodeId: string): GraphFocus {
 
 function addDependencyContext(graph: TrackerGraphShape, focus: GraphFocus, nodeId: string): void {
   const { incoming, outgoing } = dependencyMaps(graph)
+  const maxDepth = 2
 
-  function collectUpstream(nodeId: string): void {
+  function collectUpstream(nodeId: string, depth: number, visited: Set<string>): void {
+    if (depth >= maxDepth) return
     for (const edge of incoming.get(nodeId) ?? []) {
       if (focus.edgeIds.has(edge.id)) continue
       addUpstreamGraphEdge(focus, edge)
-      collectUpstream(edge.source)
+      if (visited.has(edge.source)) continue
+      visited.add(edge.source)
+      collectUpstream(edge.source, depth + 1, visited)
     }
   }
 
-  collectUpstream(nodeId)
-  for (const edge of outgoing.get(nodeId) ?? []) addDownstreamGraphEdge(focus, edge)
+  function collectDownstream(nodeId: string, depth: number, visited: Set<string>): void {
+    if (depth >= maxDepth) return
+    for (const edge of outgoing.get(nodeId) ?? []) {
+      if (focus.edgeIds.has(edge.id)) continue
+      addDownstreamGraphEdge(focus, edge)
+      if (visited.has(edge.target)) continue
+      visited.add(edge.target)
+      collectDownstream(edge.target, depth + 1, visited)
+    }
+  }
+
+  collectUpstream(nodeId, 0, new Set([nodeId]))
+  collectDownstream(nodeId, 0, new Set([nodeId]))
 }
 
 function dependencyMaps(graph: TrackerGraphShape): {

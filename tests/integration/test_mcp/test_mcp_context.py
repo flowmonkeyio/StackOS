@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from .conftest import MCPClient
 
@@ -111,6 +112,72 @@ def test_context_timeline_returns_projected_event_page(
     assert "sources" not in timeline
 
 
+def test_context_timeline_stream_filters_tracker_status_events_by_task(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    for task_key, ticket_key in [
+        ("live-one", "live-one-ticket"),
+        ("live-two", "live-two-ticket"),
+    ]:
+        mcp_client.call_tool_structured(
+            "tracker.createTask",
+            {
+                "project_id": project_id,
+                "key": task_key,
+                "title": task_key,
+                "created_by": "mcp-test",
+            },
+        )
+        mcp_client.call_tool_structured(
+            "tracker.createTicket",
+            {
+                "project_id": project_id,
+                "task_key": task_key,
+                "key": ticket_key,
+                "title": ticket_key,
+                "created_by": "mcp-test",
+            },
+        )
+
+    mcp_client.call_tool_structured(
+        "tracker.updateTicket",
+        {
+            "project_id": project_id,
+            "ticket_key": "live-two-ticket",
+            "patch_json": {"status": "in-progress"},
+            "actor": "mcp-test",
+            "response_mode": "raw",
+        },
+    )
+    mcp_client.call_tool_structured(
+        "tracker.updateTicket",
+        {
+            "project_id": project_id,
+            "ticket_key": "live-one-ticket",
+            "patch_json": {"status": "in-progress"},
+            "actor": "mcp-test",
+            "response_mode": "raw",
+        },
+    )
+
+    response = mcp_client.test_client.get(
+        f"/api/v1/projects/{project_id}/context/timeline/stream"
+        "?task_key=live-one&max_events=1&poll_ms=250&replay=true",
+        headers=mcp_client._headers(),
+    )
+    response.raise_for_status()
+    events = _parse_sse(response.text)
+
+    assert len(events) == 1
+    assert events[0]["event"] == "tracker-status"
+    assert events[0]["data"]["event_type"] == "tracker.ticket.status_changed"
+    assert events[0]["data"]["metadata_json"]["task_key"] == "live-one"
+    assert events[0]["data"]["metadata_json"]["ticket_key"] == "live-one-ticket"
+    assert "live-two-ticket" not in response.text
+
+
 def test_context_writes_are_not_system_granted(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -176,3 +243,23 @@ def test_experiment_and_decision_queries_are_visible(
         "status": "running",
     }
     assert decisions["items"][0]["fields"] == {"decision": "Keep running."}
+
+
+def _parse_sse(text: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for block in text.strip().split("\n\n"):
+        if not block:
+            continue
+        event: dict[str, Any] = {"data": ""}
+        data_lines: list[str] = []
+        for line in block.splitlines():
+            if line.startswith("id: "):
+                event["id"] = line[4:]
+            elif line.startswith("event: "):
+                event["event"] = line[7:]
+            elif line.startswith("data: "):
+                data_lines.append(line[6:])
+        if data_lines:
+            event["data"] = json.loads("\n".join(data_lines))
+        events.append(event)
+    return events

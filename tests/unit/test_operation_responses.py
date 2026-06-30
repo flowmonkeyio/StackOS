@@ -129,6 +129,42 @@ def test_non_side_effect_default_response_mode_uses_policy_default() -> None:
     assert resolve_response_mode(spec, {"response_mode": "standard"}, surface="rest") == "raw"
 
 
+def test_context_compact_response_preserves_projected_fields() -> None:
+    spec = _spec("context.query", mutating=False)
+    payload = {
+        "project_id": 1,
+        "sources": ["learnings"],
+        "fields": ["statement", "confidence"],
+        "items": [
+            {
+                "source": "learnings",
+                "id": 3,
+                "project_id": 1,
+                "title": "Founder creative lowered CPA",
+                "occurred_at": "2026-06-30T06:41:08",
+                "fields": {
+                    "statement": "Founder creative lowered CPA with api_key=[redacted]",
+                    "confidence": "medium",
+                },
+                "provenance": {"table": "learnings", "id": 3},
+                "metadata_json": {"large": "not part of projected context"},
+            }
+        ],
+        "next_cursor": None,
+        "total_estimate": 1,
+    }
+
+    compact = shape_operation_response(spec, payload, response_mode="compact")
+
+    assert compact["items"][0]["fields"] == {
+        "statement": "Founder creative lowered CPA with api_key=[redacted]",
+        "confidence": "medium",
+    }
+    assert compact["items"][0]["occurred_at"] == "2026-06-30T06:41:08"
+    assert compact["items"][0]["provenance"] == {"table": "learnings", "id": 3}
+    assert "metadata_json" not in compact["items"][0]
+
+
 def test_tracker_bulk_compact_keeps_counts_and_refs_without_full_rows() -> None:
     spec = _spec("tracker.createTicket")
     payload = {

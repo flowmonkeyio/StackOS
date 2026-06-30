@@ -2,8 +2,10 @@
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 
+import { resolveStatus } from '@/design/status'
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
+import type { TrackerStatus } from '@/lib/task-tracker/types'
 
 const props = defineProps<{
   data: TrackerVueNodeData
@@ -12,12 +14,20 @@ const props = defineProps<{
 const isOpen = computed(() => !isTerminalTrackerStatus(props.data.status))
 const isBlocked = computed(() => isOpen.value && (props.data.blockedBy?.length ?? 0) > 0)
 const statusClass = computed(() => `ticket-graph-node--status-${props.data.status}`)
+const statusLabel = computed(() => resolveStatus('tracker', props.data.status as TrackerStatus).label)
 </script>
 
 <template>
   <div
     class="ticket-graph-node"
-    :class="[statusClass, { 'ticket-graph-node--blocked': isBlocked }]"
+    :class="[
+      statusClass,
+      {
+        'ticket-graph-node--blocked': isBlocked,
+        'ticket-graph-node--active': data.active,
+        'ticket-graph-node--recent': data.recentlyUpdated,
+      },
+    ]"
   >
     <Handle
       id="in"
@@ -42,6 +52,18 @@ const statusClass = computed(() => `ticket-graph-node--status-${props.data.statu
         class="ticket-graph-node__dot"
         :title="data.status"
       />
+    </div>
+
+    <div class="ticket-graph-node__state">
+      <span class="ticket-graph-node__status-label">{{ statusLabel }}</span>
+      <span
+        v-if="data.active"
+        class="ticket-graph-node__active-label"
+      >Active</span>
+      <span
+        v-else-if="data.recentlyUpdated"
+        class="ticket-graph-node__active-label"
+      >Updated</span>
     </div>
 
     <p
@@ -122,6 +144,14 @@ const statusClass = computed(() => `ticket-graph-node--status-${props.data.statu
   border-color: color-mix(in srgb, var(--color-danger-default) 45%, var(--color-border-default));
 }
 
+.ticket-graph-node--active {
+  border-color: var(--color-accent-primary);
+}
+
+.ticket-graph-node--recent {
+  border-color: color-mix(in srgb, var(--ticket-node-status) 62%, var(--color-border-default));
+}
+
 .ticket-graph-node__handle {
   width: 8px;
   height: 8px;
@@ -164,6 +194,37 @@ const statusClass = computed(() => `ticket-graph-node--status-${props.data.statu
   background: var(--ticket-node-status);
 }
 
+.ticket-graph-node__state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  margin-top: 5px;
+  white-space: nowrap;
+}
+
+.ticket-graph-node__status-label,
+.ticket-graph-node__active-label {
+  overflow: hidden;
+  max-width: 98px;
+  border-radius: var(--radius-sm);
+  padding: 2px 5px;
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  text-overflow: ellipsis;
+}
+
+.ticket-graph-node__status-label {
+  background: color-mix(in srgb, var(--ticket-node-status) 14%, var(--color-bg-surface));
+  color: color-mix(in srgb, var(--ticket-node-status) 82%, var(--color-fg-strong));
+}
+
+.ticket-graph-node__active-label {
+  background: color-mix(in srgb, var(--color-accent-primary) 12%, var(--color-bg-surface));
+  color: var(--color-accent-primary);
+}
+
 .ticket-graph-node__subtitle {
   overflow: hidden;
   margin-top: 3px;
@@ -203,5 +264,45 @@ const statusClass = computed(() => `ticket-graph-node--status-${props.data.statu
   line-height: var(--lh-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+:global(.tracker-node-active) .ticket-graph-node {
+  animation: tracker-active-node 1.8s ease-in-out infinite;
+}
+
+:global(.tracker-node-recent) .ticket-graph-node {
+  animation: tracker-recent-node 1.35s ease-out 1;
+}
+
+@keyframes tracker-active-node {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent-primary) 0%, transparent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent-primary) 18%, transparent);
+  }
+}
+
+@keyframes tracker-recent-node {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ticket-node-status) 0%, transparent);
+  }
+
+  34% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--ticket-node-status) 20%, transparent);
+  }
+
+  100% {
+    box-shadow: var(--shadow-xs);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.tracker-node-active) .ticket-graph-node,
+  :global(.tracker-node-recent) .ticket-graph-node {
+    animation: none;
+  }
 }
 </style>

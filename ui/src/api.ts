@@ -660,6 +660,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/context/timeline/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Context Timeline Stream
+         * @description Stream tracker status timeline updates as Server-Sent Events.
+         */
+        get: operations["context_timeline_stream_api_v1_projects__project_id__context_timeline_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/cost": {
         parameters: {
             query?: never;
@@ -4206,13 +4226,12 @@ export interface components {
         };
         /** WorkflowTemplateExtensionBody */
         WorkflowTemplateExtensionBody: {
+            /** Clear Fields Json */
+            clear_fields_json?: string[] | null;
             /** Created By */
             created_by?: string | null;
-            /**
-             * Enabled
-             * @default true
-             */
-            enabled: boolean;
+            /** Enabled */
+            enabled?: boolean | null;
             /** Guardrails Json */
             guardrails_json?: {
                 [key: string]: unknown;
@@ -4243,6 +4262,11 @@ export interface components {
             template_overrides_json?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Update Mode
+             * @default merge
+             */
+            update_mode: string;
         };
         /** WorkflowTemplateExtensionDeleteOut */
         WorkflowTemplateExtensionDeleteOut: {
@@ -4299,6 +4323,68 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Workflow Key */
+            workflow_key: string;
+        };
+        /** WorkflowTemplateExtensionUpsertOut */
+        WorkflowTemplateExtensionUpsertOut: {
+            /** Changed Fields */
+            changed_fields?: string[];
+            /** Cleared Fields */
+            cleared_fields?: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Guardrails Json */
+            guardrails_json?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: number;
+            /** Input Defaults Json */
+            input_defaults_json?: {
+                [key: string]: unknown;
+            };
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            };
+            /** Preserved Fields */
+            preserved_fields?: string[];
+            /** Project Id */
+            project_id: number;
+            /** Required Input Keys Json */
+            required_input_keys_json?: string[];
+            /** Selected Context Json */
+            selected_context_json?: {
+                [key: string]: unknown;
+            };
+            /** Step Overrides Json */
+            step_overrides_json?: {
+                [key: string]: unknown;
+            };
+            /** Template Overrides Json */
+            template_overrides_json?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Update Mode
+             * @default merge
+             */
+            update_mode: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Warnings */
+            warnings?: components["schemas"]["WorkflowTemplateIssue"][];
             /** Workflow Key */
             workflow_key: string;
         };
@@ -4459,9 +4545,9 @@ export interface components {
             /** Run Id */
             run_id?: number | null;
         };
-        /** WriteEnvelope[WorkflowTemplateExtensionOut] */
-        WriteEnvelope_WorkflowTemplateExtensionOut_: {
-            data: components["schemas"]["WorkflowTemplateExtensionOut"];
+        /** WriteEnvelope[WorkflowTemplateExtensionUpsertOut] */
+        WriteEnvelope_WorkflowTemplateExtensionUpsertOut_: {
+            data: components["schemas"]["WorkflowTemplateExtensionUpsertOut"];
             /** Project Id */
             project_id?: number | null;
             /** Run Id */
@@ -4797,13 +4883,14 @@ export type SchemaWorkflowTemplateExtensionBody = components['schemas']['Workflo
 export type SchemaWorkflowTemplateExtensionDeleteOut = components['schemas']['WorkflowTemplateExtensionDeleteOut'];
 export type SchemaWorkflowTemplateExtensionListOut = components['schemas']['WorkflowTemplateExtensionListOut'];
 export type SchemaWorkflowTemplateExtensionOut = components['schemas']['WorkflowTemplateExtensionOut'];
+export type SchemaWorkflowTemplateExtensionUpsertOut = components['schemas']['WorkflowTemplateExtensionUpsertOut'];
 export type SchemaWorkflowTemplateExtensionValidationOut = components['schemas']['WorkflowTemplateExtensionValidationOut'];
 export type SchemaWorkflowTemplateIssue = components['schemas']['WorkflowTemplateIssue'];
 export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTemplateListOut'];
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
-export type SchemaWriteEnvelopeWorkflowTemplateExtensionOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionOut_'];
+export type SchemaWriteEnvelopeWorkflowTemplateExtensionUpsertOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionUpsertOut_'];
 export type SchemaWriteResponseArtifactOut = components['schemas']['WriteResponse_ArtifactOut_'];
 export type SchemaWriteResponseAuthCredentialSetOut = components['schemas']['WriteResponse_AuthCredentialSetOut_'];
 export type SchemaWriteResponseAuthRevokeOut = components['schemas']['WriteResponse_AuthRevokeOut_'];
@@ -6111,6 +6198,45 @@ export interface operations {
             };
         };
     };
+    context_timeline_stream_api_v1_projects__project_id__context_timeline_stream_get: {
+        parameters: {
+            query?: {
+                task_key?: string | null;
+                after?: number | null;
+                limit?: number;
+                poll_ms?: number;
+                heartbeat_ms?: number;
+                max_events?: number | null;
+                replay?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_project_cost_api_v1_projects__project_id__cost_get: {
         parameters: {
             query?: {
@@ -7077,7 +7203,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WriteEnvelope_WorkflowTemplateExtensionOut_"];
+                    "application/json": components["schemas"]["WriteEnvelope_WorkflowTemplateExtensionUpsertOut_"];
                 };
             };
             /** @description Validation Error */

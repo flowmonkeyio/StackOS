@@ -209,6 +209,21 @@ but the MVP only displays native notifications for completed tasks. Ticket
 status events remain available for audit, UI timelines, and future notification
 policy without creating native ticket notifications today.
 
+The browser UI consumes selected-task status changes through the project
+timeline stream:
+
+```text
+GET /api/v1/projects/{project_id}/context/timeline/stream?task_key=...
+```
+
+The stream emits sanitized `ProjectEventOut` payloads as
+`event: tracker-status` frames and optional `event: heartbeat` frames. Normal
+browser streams start from the latest matching tracker status event so opening a
+task does not replay historical status changes into the chart. Debug and tests
+may pass `replay=true` with `max_events` to read a bounded historical batch.
+Stream filtering is task-scoped so two tabs on different active tasks can
+subscribe independently.
+
 ## Operations
 
 Tracker behavior is registered once as StackOS operations. MCP, REST, CLI, and
@@ -477,6 +492,14 @@ The Tasks UI is a generic project work map. It renders:
 - edge click highlighting for the selected dependency chain. Unrelated nodes
   and edges dim while upstream and downstream dependencies remain readable.
 - a minimap and controls for navigating large task graphs
+- active task graphs refocus on the selected or in-progress ticket plus a
+  bounded two-hop dependency neighborhood, not the full project graph. Refresh
+  and first load must not fall back to the static default viewport.
+- ticket nodes show lifecycle status as text plus color, and active or recently
+  updated nodes may animate. Motion must respect reduced-motion preferences.
+- selected-task live updates come from the task-scoped timeline stream. A live
+  status event refreshes only the selected task graph and marks the touched node
+  as recently updated without changing unrelated tabs.
 - ticket table for dense scanning
 - detail panel for selected task/ticket context
 

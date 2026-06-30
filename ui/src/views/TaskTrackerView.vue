@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
-import type { Edge, EdgeMouseEvent, NodeMouseEvent } from '@vue-flow/core'
+import type { Edge, EdgeMouseEvent, NodeMouseEvent, ViewportTransform } from '@vue-flow/core'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { UiButton, UiCallout, UiEmptyState, UiPageShell } from '@/components/ui'
@@ -11,6 +11,11 @@ import { callOperation } from '@/lib/operations'
 import { resolveStatus, trackerStatus } from '@/design/status'
 import { graphFocusFor, graphItemFromNodeId } from '@/lib/task-tracker/graphFocus'
 import { buildTrackerFlowModel, type TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
+import {
+  openTrackerStatusStream,
+  type ProjectTimelineEvent,
+  type TrackerStatusStream,
+} from '@/lib/task-tracker/liveEvents'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import { formatDateTime } from '@/lib/stackos/json'
 import type {
@@ -72,8 +77,16 @@ const taskContextLoading = ref(false)
 const taskContextError = ref<string | null>(null)
 const graphStatusFilters = ref<TrackerStatus[]>([])
 const graphBlockFilters = ref<GraphBlockFilter[]>([])
+const graphViewport = ref<ViewportTransform | null>(null)
+const graphRefocusKey = ref('')
+const recentGraphNodeIds = ref<Set<string>>(new Set())
+const liveError = ref<string | null>(null)
 let graphRequestSeq = 0
+let graphRefocusSeq = 0
 let taskContextRequestSeq = 0
+let trackerStatusStream: TrackerStatusStream | null = null
+const recentNodeTimers = new Map<string, number>()
+const streamCursorByTaskKey = new Map<string, number>()
 
 const statusOptions: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'All' },
@@ -370,6 +383,46 @@ const relationFocusActive = computed(
   () => relationFocus.value.edgeIds.size > 0 || relationFocus.value.nodeIds.size > 1,
 )
 
+const activeGraphNodeIds = computed(() => {
+  const nodeIds = new Set<string>()
+  if (selectedNodeFocusId.value) nodeIds.add(selectedNodeFocusId.value)
+  if (selectedTicket.value) nodeIds.add(`ticket:${selectedTicket.value.key}`)
+  for (const ticket of graphTickets.value) {
+    if (ticket.status === 'in-progress') nodeIds.add(`ticket:${ticket.key}`)
+  }
+  if (!nodeIds.size) {
+    const firstOpenTicket = graphTickets.value.find(
+      (ticket) => !isTerminalTrackerStatus(ticket.status) && !isGraphBlockedTicket(ticket),
+    )
+    if (firstOpenTicket) nodeIds.add(`ticket:${firstOpenTicket.key}`)
+  }
+  return nodeIds
+})
+
+const primaryGraphFocusNodeId = computed(() => Array.from(activeGraphNodeIds.value)[0] ?? null)
+
+const graphFocusNodeIds = computed(() => {
+  const graph = filteredSnapshot.value?.graph ?? null
+  if (!graph) return []
+  if (relationFocus.value.nodeIds.size) return Array.from(relationFocus.value.nodeIds)
+  const primaryNodeId = primaryGraphFocusNodeId.value
+  if (!primaryNodeId) return []
+  const focus = graphFocusFor(graph, { nodeId: primaryNodeId, edgeId: null })
+  return Array.from(new Set([primaryNodeId, ...focus.nodeIds]))
+})
+
+const graphFlowId = computed(() => `tracker-flow-${projectId.value}`)
+const graphViewportStorageKey = computed(() =>
+  [
+    'stackos',
+    'tracker-graph',
+    projectId.value,
+    activeTaskRow.value?.key ?? 'empty',
+    graphStatusFilters.value.join(',') || 'all-status',
+    graphBlockFilters.value.join(',') || 'all-block',
+  ].join(':'),
+)
+
 const relationFocusLabel = computed(() => {
   if (selectedEdgeId.value) return 'Selected relation'
   if (selectedNodeFocusId.value) return 'Related dependencies'
@@ -406,7 +459,6 @@ const graphSelectionStats = computed(() => {
 const flowRenderKey = computed(() =>
   [
     activeTaskRow.value?.key ?? 'empty',
-    graphLoading.value ? 'loading-graph' : 'graph-ready',
     graphStatusFilters.value.join(',') || 'all-status',
     graphBlockFilters.value.join(',') || 'all-block',
   ].join(':'),
@@ -424,6 +476,8 @@ const flow = computed(() =>
         downstreamNodeIds: relationFocus.value.downstreamNodeIds,
         downstreamEdgeIds: relationFocus.value.downstreamEdgeIds,
         activeEdgeId: relationFocus.value.activeEdgeId,
+        activeNodeIds: activeGraphNodeIds.value,
+        recentNodeIds: recentGraphNodeIds.value,
         spotlight: relationFocusActive.value,
       })
     : { nodes: [], edges: [] as Edge[], warnings: [] },
@@ -450,19 +504,21 @@ const ticketColumns: DataTableColumn<TrackerTicket>[] = [
   },
 ]
 
-async function load(): Promise<void> {
+async function load(options: { refocus?: boolean; restartStream?: boolean } = {}): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
   loading.value = true
   error.value = null
   try {
-    graphSnapshot.value = null
     snapshot.value = await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value,
       include_graph: false,
     })
     await nextTick()
-    ensureActiveTask()
-    await loadFocusedGraph(activeTaskKey.value)
+    const nextTaskKey = ensureActiveTask()
+    const restoredViewport = options.refocus === false ? Boolean(graphViewport.value) : restoreGraphViewport()
+    const shouldRefocus = options.refocus ?? !restoredViewport
+    await loadFocusedGraph(nextTaskKey, { refocus: shouldRefocus })
+    if (options.restartStream !== false) restartTrackerStatusStream()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'failed to load tracker'
   } finally {
@@ -470,7 +526,10 @@ async function load(): Promise<void> {
   }
 }
 
-async function loadFocusedGraph(taskKey: string): Promise<void> {
+async function loadFocusedGraph(
+  taskKey: string,
+  options: { refocus?: boolean } = {},
+): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value) || !taskKey) {
     graphSnapshot.value = null
     return
@@ -485,6 +544,7 @@ async function loadFocusedGraph(taskKey: string): Promise<void> {
     })
     if (requestSeq === graphRequestSeq) {
       graphSnapshot.value = nextGraph
+      if (options.refocus) requestGraphRefocus()
     }
   } catch (err) {
     if (requestSeq === graphRequestSeq) {
@@ -686,6 +746,7 @@ function toggleGraphStatus(status: TrackerStatus): void {
   graphStatusFilters.value = graphStatusFilters.value.includes(status)
     ? graphStatusFilters.value.filter((item) => item !== status)
     : [...graphStatusFilters.value, status]
+  if (!restoreGraphViewport()) requestGraphRefocus()
   clearGraphFocus()
 }
 
@@ -693,13 +754,119 @@ function toggleGraphBlock(block: GraphBlockFilter): void {
   graphBlockFilters.value = graphBlockFilters.value.includes(block)
     ? graphBlockFilters.value.filter((item) => item !== block)
     : [...graphBlockFilters.value, block]
+  if (!restoreGraphViewport()) requestGraphRefocus()
   clearGraphFocus()
 }
 
 function clearGraphFilters(): void {
   graphStatusFilters.value = []
   graphBlockFilters.value = []
+  if (!restoreGraphViewport()) requestGraphRefocus()
   clearGraphFocus()
+}
+
+function requestGraphRefocus(): void {
+  graphRefocusKey.value = `${flowRenderKey.value}:${++graphRefocusSeq}`
+}
+
+function restoreGraphViewport(): boolean {
+  if (typeof window === 'undefined') return false
+  const raw = window.sessionStorage.getItem(graphViewportStorageKey.value)
+  if (!raw) {
+    graphViewport.value = null
+    return false
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<ViewportTransform>
+    const nextViewport =
+      typeof parsed.x === 'number' &&
+      typeof parsed.y === 'number' &&
+      typeof parsed.zoom === 'number'
+        ? { x: parsed.x, y: parsed.y, zoom: parsed.zoom }
+        : null
+    graphViewport.value = nextViewport
+    return nextViewport !== null
+  } catch {
+    graphViewport.value = null
+    return false
+  }
+}
+
+function onGraphViewportReady(refocusKey: string): void {
+  if (refocusKey && graphRefocusKey.value === refocusKey) {
+    graphRefocusKey.value = ''
+  }
+}
+
+function onGraphViewportChange(viewport: ViewportTransform): void {
+  graphViewport.value = viewport
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(graphViewportStorageKey.value, JSON.stringify(viewport))
+}
+
+function restartTrackerStatusStream(): void {
+  stopTrackerStatusStream()
+  if (!projectId.value || Number.isNaN(projectId.value) || !activeTaskKey.value) return
+  const taskKey = activeTaskKey.value
+  liveError.value = null
+  trackerStatusStream = openTrackerStatusStream({
+    projectId: projectId.value,
+    taskKey,
+    afterId: streamCursorByTaskKey.get(taskKey) ?? null,
+    onEvent: onTrackerStatusEvent,
+    onError(error) {
+      liveError.value = formatApiError(error, 'Live tracker updates paused')
+    },
+  })
+}
+
+function stopTrackerStatusStream(): void {
+  trackerStatusStream?.close()
+  trackerStatusStream = null
+}
+
+function onTrackerStatusEvent(event: ProjectTimelineEvent): void {
+  const metadata = timelineEventMetadata(event)
+  const taskKey = typeof metadata.task_key === 'string' ? metadata.task_key : activeTaskKey.value
+  if (taskKey) streamCursorByTaskKey.set(taskKey, event.id)
+  const touchedNodeIds = touchedGraphNodeIds(event)
+  markRecentGraphNodes(touchedNodeIds)
+  void load({ refocus: false, restartStream: false }).then(() => {
+    markRecentGraphNodes(touchedNodeIds)
+  })
+}
+
+function touchedGraphNodeIds(event: ProjectTimelineEvent): string[] {
+  const metadata = timelineEventMetadata(event)
+  const ticketKey = typeof metadata.ticket_key === 'string' ? metadata.ticket_key : null
+  const taskKey = typeof metadata.task_key === 'string' ? metadata.task_key : null
+  if (ticketKey) return [`ticket:${ticketKey}`]
+  if (taskKey) return [`task:${taskKey}`]
+  return []
+}
+
+function timelineEventMetadata(event: ProjectTimelineEvent): Record<string, unknown> {
+  return event.metadata_json && typeof event.metadata_json === 'object' ? event.metadata_json : {}
+}
+
+function markRecentGraphNodes(nodeIds: string[]): void {
+  if (!nodeIds.length || typeof window === 'undefined') return
+  const next = new Set(recentGraphNodeIds.value)
+  for (const nodeId of nodeIds) {
+    next.add(nodeId)
+    const existing = recentNodeTimers.get(nodeId)
+    if (existing) window.clearTimeout(existing)
+    recentNodeTimers.set(
+      nodeId,
+      window.setTimeout(() => {
+        const reduced = new Set(recentGraphNodeIds.value)
+        reduced.delete(nodeId)
+        recentGraphNodeIds.value = reduced
+        recentNodeTimers.delete(nodeId)
+      }, 4500),
+    )
+  }
+  recentGraphNodeIds.value = next
 }
 
 function onTaskRow(row: TaskProgressRow): void {
@@ -709,7 +876,9 @@ function onTaskRow(row: TaskProgressRow): void {
   activeTaskKey.value = row.key
   syncActiveTaskToUrl(row.key)
   selected.value = null
-  void loadFocusedGraph(row.key)
+  const restoredViewport = restoreGraphViewport()
+  void loadFocusedGraph(row.key, { refocus: !restoredViewport })
+  restartTrackerStatusStream()
   if (taskDetailOpen.value) void loadTaskContexts(row.task)
 }
 
@@ -773,8 +942,11 @@ function onTicketRow(row: TrackerTicket): void {
   activeTaskKey.value = row.task_key
   syncActiveTaskToUrl(row.task_key)
   selected.value = { kind: 'ticket', key: row.key }
+  selectedNodeFocusId.value = `ticket:${row.key}`
   detailPanelOpen.value = true
-  void loadFocusedGraph(row.task_key)
+  restoreGraphViewport()
+  void loadFocusedGraph(row.task_key, { refocus: false })
+  restartTrackerStatusStream()
   if (taskDetailOpen.value) void loadTaskContexts(activeTask.value)
 }
 
@@ -824,7 +996,9 @@ async function reconcileActiveTask(): Promise<void> {
   const previousTaskKey = activeTaskKey.value
   const nextTaskKey = ensureActiveTask()
   if (snapshot.value && nextTaskKey && nextTaskKey !== previousTaskKey) {
-    await loadFocusedGraph(nextTaskKey)
+    const restoredViewport = restoreGraphViewport()
+    await loadFocusedGraph(nextTaskKey, { refocus: !restoredViewport })
+    restartTrackerStatusStream()
   }
   if (taskDetailOpen.value) void loadTaskContexts(activeTask.value)
 }
@@ -869,7 +1043,7 @@ async function updateActiveTaskStatus(status: TrackerStatus): Promise<void> {
       patch_json: { status },
       actor: 'ui',
     })
-    await load()
+    await load({ refocus: false, restartStream: false })
   } catch (err) {
     error.value = formatApiError(err, 'failed to update task status')
   }
@@ -917,13 +1091,25 @@ function countStatuses(statuses: TrackerStatus[]): Record<TrackerStatus, number>
   )
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+})
+
+onBeforeUnmount(() => {
+  stopTrackerStatusStream()
+  for (const timer of recentNodeTimers.values()) {
+    window.clearTimeout(timer)
+  }
+  recentNodeTimers.clear()
+})
+
 onBeforeRouteUpdate((to) => {
   const nextTaskKey = taskKeyFromQueryValue(to.query.task)
   if (nextTaskKey === activeTaskKey.value) return
   activeTaskKey.value = nextTaskKey
   selectedEdgeId.value = null
   selectedNodeFocusId.value = null
+  selected.value = null
   void reconcileActiveTask()
 })
 </script>
@@ -942,7 +1128,7 @@ onBeforeRouteUpdate((to) => {
           size="sm"
           icon-left="refresh"
           :loading="loading"
-          @click="load"
+          @click="load()"
         >
           Refresh
         </UiButton>
@@ -954,6 +1140,13 @@ onBeforeRouteUpdate((to) => {
       tone="danger"
     >
       {{ error }}
+    </UiCallout>
+
+    <UiCallout
+      v-if="liveError"
+      tone="warning"
+    >
+      {{ liveError }}
     </UiCallout>
 
     <TaskTrackerCommandPanel
@@ -1010,8 +1203,13 @@ onBeforeRouteUpdate((to) => {
           <TrackerGraphPanel
             v-if="viewMode === 'graph'"
             :flow="flow"
+            :flow-id="graphFlowId"
             :flow-render-key="flowRenderKey"
             :graph-fit-on-init="graphFitOnInit"
+            :focus-node-ids="graphFocusNodeIds"
+            :primary-focus-node-id="primaryGraphFocusNodeId"
+            :refocus-key="graphRefocusKey"
+            :initial-viewport="graphViewport"
             :active-task-title="activeTaskRow?.task.title ?? 'Task graph'"
             :active-task-available="Boolean(activeTask)"
             :ticket-stat-label="graphTicketStatLabel"
@@ -1036,6 +1234,8 @@ onBeforeRouteUpdate((to) => {
             @graph-canvas-click="onGraphCanvasClick"
             @open-selected-detail="openSelectedDetail"
             @clear-graph-focus="clearGraphFocus"
+            @viewport-change-end="onGraphViewportChange"
+            @viewport-ready="onGraphViewportReady"
           />
 
           <TrackerTicketTable

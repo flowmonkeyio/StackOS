@@ -87,17 +87,22 @@ function buildUrl(path: string): string {
   return `${base}${suffix}`
 }
 
-export async function apiFetch<T = unknown>(path: string, init: ApiInit = {}): Promise<T> {
-  const { token: explicitToken, headers, ...rest } = init
+function buildHeaders(init: ApiInit, defaultAccept: string): Headers {
+  const { token: explicitToken, headers } = init
   const finalHeaders = new Headers(headers)
-  if (!finalHeaders.has('Accept')) finalHeaders.set('Accept', 'application/json')
+  if (!finalHeaders.has('Accept')) finalHeaders.set('Accept', defaultAccept)
   // Explicit token wins (used by tests + the bootstrap probe itself).
   // Otherwise pull from the auth store if it's been wired up.
   const token = explicitToken ?? _authStore?.token ?? null
   if (token) {
     finalHeaders.set('Authorization', `Bearer ${token}`)
   }
+  return finalHeaders
+}
 
+export async function apiFetch<T = unknown>(path: string, init: ApiInit = {}): Promise<T> {
+  const { token: _explicitToken, headers: _headers, ...rest } = init
+  const finalHeaders = buildHeaders(init, 'application/json')
   const res = await fetch(buildUrl(path), { ...rest, headers: finalHeaders })
   const contentType = res.headers.get('content-type') ?? ''
   const isJson = contentType.includes('application/json')
@@ -112,6 +117,24 @@ export async function apiFetch<T = unknown>(path: string, init: ApiInit = {}): P
     )
   }
   return body as T
+}
+
+export async function apiStream(path: string, init: ApiInit = {}): Promise<Response> {
+  const { token: _explicitToken, headers: _headers, ...rest } = init
+  const finalHeaders = buildHeaders(init, 'text/event-stream')
+  const res = await fetch(buildUrl(path), { ...rest, headers: finalHeaders })
+  if (!res.ok) {
+    const contentType = res.headers.get('content-type') ?? ''
+    const isJson = contentType.includes('application/json')
+    const body = isJson ? await res.json().catch(() => null) : await res.text()
+    throw new ApiError(
+      `Request to ${path} failed with ${res.status}`,
+      res.status,
+      body,
+      res.headers.get('x-request-id'),
+    )
+  }
+  return res
 }
 
 export function formatApiError(err: unknown, fallback = 'Request failed'): string {
