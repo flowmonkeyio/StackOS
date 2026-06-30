@@ -32,6 +32,13 @@ _MAX_COMPACT_LIST_ITEMS = 25
 _MAX_COMPACT_STRING_CHARS = 800
 _MAX_SCHEMA_DESCRIPTION_CHARS = 240
 _TERMINAL_TRACKER_STATUSES = {"complete", "deferred", "aborted", "failed", "skipped"}
+_CONTEXT_PAGE_OPERATIONS = {
+    "context.query",
+    "context.timeline",
+    "learning.query",
+    "experiment.query",
+    "decision.query",
+}
 
 _REF_FIELD_SUFFIXES = ("_id", "_ids", "_key", "_keys", "_ref", "_refs", "_token")
 _URL_FIELD_SUFFIXES = ("_url", "_urls")
@@ -555,6 +562,24 @@ def _compact_page(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
     return out
 
 
+def _compact_context_item(item: dict[str, Any]) -> dict[str, Any]:
+    out = _compact_mapping(item)
+    if "occurred_at" in item:
+        out["occurred_at"] = _compact_text(item["occurred_at"])
+    fields = item.get("fields")
+    if isinstance(fields, dict):
+        out["fields"] = {str(key): _compact_context_field(value) for key, value in fields.items()}
+    return out
+
+
+def _compact_context_field(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _compact_context_field(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_compact_context_field(item) for item in value[:_MAX_COMPACT_LIST_ITEMS]]
+    return _compact_text(value)
+
+
 def _compact_operation_list(payload: dict[str, Any]) -> dict[str, Any]:
     items = payload.get("items")
     item_list = items if isinstance(items, list) else []
@@ -658,6 +683,8 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return _compact_workflow_extension_list(data)
     if operation_name.startswith("workflowExtension."):
         return _compact_workflow_extension(data)
+    if operation_name in _CONTEXT_PAGE_OPERATIONS:
+        return _compact_context_item(data)
     return _compact_mapping(data)
 
 

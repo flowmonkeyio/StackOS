@@ -11,6 +11,10 @@ from sqlmodel import col, select
 
 from stackos.db.models import ProjectEvent
 from stackos.repositories.base import Page, ValidationError
+from stackos.repositories.tracker.events import (
+    TRACKER_TASK_STATUS_CHANGED,
+    TRACKER_TICKET_STATUS_CHANGED,
+)
 
 from .schema import ContextItemOut, ContextPageOut, ContextQueryOut, ProjectEventOut
 from .support import ContextRepositorySupport
@@ -120,6 +124,61 @@ class ContextQueryMixin(ContextRepositorySupport):
             next_cursor=next_cursor,
             total_estimate=total,
         )
+
+    def tracker_status_timeline(
+        self,
+        *,
+        project_id: int,
+        limit: int | None = None,
+        after_id: int | None = None,
+        task_key: str | None = None,
+    ) -> Page[ProjectEventOut]:
+        """Page tracker task/ticket status events for realtime UI streams."""
+        self._require_project(project_id)
+        n = _normalise_limit(limit)
+        event_types = [TRACKER_TASK_STATUS_CHANGED, TRACKER_TICKET_STATUS_CHANGED]
+        filters: list[Any] = [
+            col(ProjectEvent.project_id) == project_id,
+            col(ProjectEvent.event_type).in_(event_types),
+        ]
+        if task_key:
+            metadata_json: Any = ProjectEvent.metadata_json
+            filters.append(metadata_json["task_key"].as_string() == task_key)
+        total = _scalar_count(
+            self._s,
+            sa_select(func.count()).select_from(ProjectEvent).where(*filters),
+        )
+        stmt = select(ProjectEvent).where(*filters)
+        if after_id is not None:
+            stmt = stmt.where(col(ProjectEvent.id) > after_id)
+        rows = list(self._s.exec(stmt.order_by(col(ProjectEvent.id).asc()).limit(n + 1)).all())
+        page_rows = rows[:n]
+        next_cursor = _required_id(page_rows[-1].id) if len(rows) > n and page_rows else None
+        return Page(
+            items=[self._event_out(row) for row in page_rows],
+            next_cursor=next_cursor,
+            total_estimate=total,
+        )
+
+    def latest_tracker_status_event_id(
+        self,
+        *,
+        project_id: int,
+        task_key: str | None = None,
+    ) -> int | None:
+        self._require_project(project_id)
+        event_types = [TRACKER_TASK_STATUS_CHANGED, TRACKER_TICKET_STATUS_CHANGED]
+        filters: list[Any] = [
+            col(ProjectEvent.project_id) == project_id,
+            col(ProjectEvent.event_type).in_(event_types),
+        ]
+        if task_key:
+            metadata_json: Any = ProjectEvent.metadata_json
+            filters.append(metadata_json["task_key"].as_string() == task_key)
+        row = self._s.exec(
+            select(ProjectEvent).where(*filters).order_by(col(ProjectEvent.id).desc()).limit(1)
+        ).first()
+        return _required_id(row.id) if row is not None else None
 
     def query_event_context(
         self,

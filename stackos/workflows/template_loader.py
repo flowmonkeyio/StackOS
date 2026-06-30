@@ -376,8 +376,7 @@ class WorkflowTemplateLoader:
                     path="update_mode",
                     code="invalid_update_mode",
                     message=(
-                        "update_mode must be one of "
-                        f"{', '.join(sorted(_EXTENSION_UPDATE_MODES))}"
+                        f"update_mode must be one of {', '.join(sorted(_EXTENSION_UPDATE_MODES))}"
                     ),
                 )
             )
@@ -852,9 +851,7 @@ class WorkflowTemplateLoader:
             and desired.get(field) == _EXTENSION_JSON_FIELD_DEFAULTS[field]
         ]
         preserved_fields = [
-            field
-            for field in ("enabled", *_EXTENSION_JSON_FIELDS)
-            if field not in changed_fields
+            field for field in ("enabled", *_EXTENSION_JSON_FIELDS) if field not in changed_fields
         ]
         if row is None:
             row = WorkflowTemplateExtension(

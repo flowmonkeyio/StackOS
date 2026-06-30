@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import time
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
-from stackos.api.deps import get_session
+from stackos.api.deps import get_engine, get_session
 from stackos.api.envelopes import WriteResponse, write_response
 from stackos.api.pagination import (
     PageResponse,
@@ -30,6 +35,8 @@ from stackos.context import (
 )
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["project-memory"])
+
+TRACKER_STREAM_EVENT = "tracker-status"
 
 
 class ContextQueryRequest(BaseModel):
@@ -185,6 +192,82 @@ async def context_timeline(
             descending=order == "desc",
         )
     )
+
+
+@router.get("/context/timeline/stream")
+async def context_timeline_stream(
+    project_id: int,
+    request: Request,
+    task_key: str | None = Query(default=None),
+    after: int | None = Query(default=None, ge=0),
+    limit: int = Query(default=25, ge=1, le=200),
+    poll_ms: int = Query(default=1000, ge=250, le=30_000),
+    heartbeat_ms: int = Query(default=15_000, ge=1000, le=120_000),
+    max_events: int | None = Query(default=None, ge=1, le=200),
+    replay: bool = Query(default=False),
+    engine: Engine = Depends(get_engine),
+) -> StreamingResponse:
+    """Stream tracker status timeline updates as Server-Sent Events."""
+
+    async def event_source():
+        cursor = after
+        emitted = 0
+        next_heartbeat = time.monotonic() + heartbeat_ms / 1000
+        if cursor is None and not replay:
+            with Session(engine) as session:
+                cursor = ContextRepository(session).latest_tracker_status_event_id(
+                    project_id=project_id,
+                    task_key=task_key,
+                )
+        while True:
+            if await request.is_disconnected():
+                break
+
+            with Session(engine) as session:
+                page = ContextRepository(session).tracker_status_timeline(
+                    project_id=project_id,
+                    limit=limit,
+                    after_id=cursor,
+                    task_key=task_key,
+                )
+
+            if page.items:
+                for item in page.items:
+                    cursor = item.id
+                    emitted += 1
+                    yield sse_frame(
+                        event=TRACKER_STREAM_EVENT,
+                        data=item.model_dump(mode="json"),
+                        event_id=str(item.id),
+                    )
+                    if max_events is not None and emitted >= max_events:
+                        return
+                next_heartbeat = time.monotonic() + heartbeat_ms / 1000
+            elif time.monotonic() >= next_heartbeat:
+                yield sse_frame(event="heartbeat", data={"cursor": cursor})
+                next_heartbeat = time.monotonic() + heartbeat_ms / 1000
+
+            await asyncio.sleep(poll_ms / 1000)
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def sse_frame(*, event: str, data: dict[str, Any], event_id: str | None = None) -> str:
+    lines: list[str] = []
+    if event_id is not None:
+        lines.append(f"id: {event_id}")
+    lines.append(f"event: {event}")
+    payload = json.dumps(data, separators=(",", ":"))
+    for line in payload.splitlines() or [""]:
+        lines.append(f"data: {line}")
+    return "\n".join(lines) + "\n\n"
 
 
 @router.get("/context/snapshots", response_model=PageResponse[ContextSnapshotOut])

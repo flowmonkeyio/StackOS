@@ -282,8 +282,7 @@ def _connect_required_next_step(
                 {
                     "tool": "workspace.connect",
                     "when": (
-                        "Reuse a known named workspace or intentionally selected "
-                        "existing project."
+                        "Reuse a known named workspace or intentionally selected existing project."
                     ),
                     "arguments": {
                         "workspace_alias": "<known alias>",
