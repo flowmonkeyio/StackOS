@@ -33,6 +33,35 @@ WHEEL_PATH="$(find "${BUILD_DIR}/dist" -name 'stackos-*.whl' -print -quit)"
 "${UV_BIN}" venv "${PAYLOAD_DIR}/.venv" --python "${PYTHON_VERSION}"
 "${UV_BIN}" pip install --python "${PAYLOAD_DIR}/.venv/bin/python" "${WHEEL_PATH}"
 
+PYTHON_LINK="${PAYLOAD_DIR}/.venv/bin/python"
+if [[ -L "${PYTHON_LINK}" ]]; then
+  PYTHON_TARGET="$(readlink "${PYTHON_LINK}")"
+  if [[ "${PYTHON_TARGET}" == "~/"* ]]; then
+    PYTHON_TARGET="${HOME}/${PYTHON_TARGET#~/}"
+  elif [[ "${PYTHON_TARGET}" != /* ]]; then
+    PYTHON_TARGET="$(cd "$(dirname "${PYTHON_LINK}")/$(dirname "${PYTHON_TARGET}")" && pwd)/$(basename "${PYTHON_TARGET}")"
+  fi
+  if [[ ! -x "${PYTHON_TARGET}" ]]; then
+    echo "venv python target is not executable: ${PYTHON_TARGET}" >&2
+    exit 1
+  fi
+  PYTHON_ROOT="$(cd "$(dirname "${PYTHON_TARGET}")/.." && pwd -P)"
+  PYTHON_DYLIB="$(find -L "${PYTHON_ROOT}/lib" -maxdepth 1 -name 'libpython*.dylib' -print -quit)"
+  if [[ -z "${PYTHON_DYLIB}" || ! -f "${PYTHON_DYLIB}" ]]; then
+    echo "venv python dylib is missing under ${PYTHON_ROOT}/lib" >&2
+    exit 1
+  fi
+  mkdir -p "${PAYLOAD_DIR}/.venv/lib"
+  cp "${PYTHON_DYLIB}" "${PAYLOAD_DIR}/.venv/lib/"
+  rm "${PYTHON_LINK}"
+  cp "${PYTHON_TARGET}" "${PYTHON_LINK}"
+  chmod 755 "${PYTHON_LINK}"
+  codesign --remove-signature "${PYTHON_LINK}" 2>/dev/null || true
+  codesign --remove-signature "${PAYLOAD_DIR}/.venv/lib/$(basename "${PYTHON_DYLIB}")" 2>/dev/null || true
+  codesign --force --sign - "${PAYLOAD_DIR}/.venv/lib/$(basename "${PYTHON_DYLIB}")"
+  codesign --force --sign - "${PYTHON_LINK}"
+fi
+
 PACKAGE_VERSION="$("${PAYLOAD_DIR}/.venv/bin/python" -c 'from importlib.metadata import version; print(version("stackos"))')"
 BUILD_ID="${STACKOS_DESKTOP_BUILD_ID:-$(date -u '+%Y%m%dT%H%M%SZ')}"
 BUILT_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"

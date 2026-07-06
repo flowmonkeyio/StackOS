@@ -1,8 +1,8 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.2.1
-description: Reusable SDLC workflow for requirements, discovery, design, test planning, delivery, verification, review, and release through StackOS tracker state.
+version: 0.2.3
+description: Reusable SDLC workflow for requirements, flow design, discovery, design, test planning, delivery, verification, review, and release through StackOS tracker state.
 domain: engineering
 owner:
   team: StackOS
@@ -20,7 +20,7 @@ agent_requirements:
   - role: requirements-flow-definer
     requirement: required
     agent_preset_ref: stackos.sdlc.requirements-flow-definer
-    purpose: Convert broad intent into explicit flows, acceptance criteria, non-goals, and evidence expectations.
+    purpose: Convert broad intent into explicit user, data, system, and business flows, acceptance criteria, non-goals, and evidence expectations.
     applies_to_steps:
       - define-requirements
   - role: codebase-explorer
@@ -46,7 +46,7 @@ agent_requirements:
   - role: test-designer
     requirement: required
     agent_preset_ref: stackos.sdlc.test-designer
-    purpose: Map acceptance criteria and design risks to TDD/red-first proof, automated checks, manual scenarios, expected outcomes, and signoff evidence.
+    purpose: Map flow design, acceptance criteria, and design risks to TDD/red-first proof, automated checks, agent-executed E2E/manual scenarios, expected outcomes, and signoff evidence.
     applies_to_steps:
       - design-tests
   - role: delivery
@@ -59,7 +59,7 @@ agent_requirements:
   - role: delivery-reviewer
     requirement: required
     agent_preset_ref: stackos.sdlc.delivery-reviewer
-    purpose: Review design, completed delivery, verification, tracker truth, docs, security, and release risk.
+    purpose: Review design, completed delivery, flow-regression coverage, independent verification, tracker truth, docs, security, and release risk.
     applies_to_steps:
       - review-design
       - review-delivery
@@ -75,7 +75,7 @@ skill_requirements:
       - For Codex-style hosts, inspect .codex/config.toml and existing .codex/agents/*.toml before proposing local agent file changes.
       - Keep the main agent accountable for integration and final decisions; specialist agents support discovery, design, review, and verification.
       - Use operation.list when operation names are unclear, then operation.describe for the few operations the agent intends to use.
-      - Read engineering-decision and engineering-evidence with resource.query; write reusable evidence only inside granted run-plan steps with resource.upsert, artifact.create, or decision.record.
+      - Read engineering-decision and engineering-evidence with resource.query; write reusable evidence only inside granted run-plan steps with resource.upsert or decision.record.
 skill_preset_requirements:
   - skill_preset_ref: stackos.sdlc.delivery-orchestrator
     requirement: required
@@ -164,7 +164,7 @@ resource_contracts:
     purpose: Store durable design or release decisions when the run creates reusable engineering rationale.
   - key: evidence
     resource: engineering-evidence
-    purpose: Store verification and signoff evidence when the run creates reusable artifacts.
+    purpose: Store verification and signoff evidence when the run creates reusable evidence records.
 policies:
   - key: agent_decides_strategy
     kind: boundary
@@ -193,6 +193,15 @@ policies:
   - key: quality_over_speed
     kind: verification
     description: The orchestrator chooses proof depth from production risk and user/business impact; speed never justifies skipping the evidence needed for a high-quality outcome.
+  - key: mandatory_flow_design
+    kind: requirements
+    description: Every non-micro delivery needs an explicit user/data/system/business flow design before implementation; micro work must record why flow design is unchanged or not applicable.
+  - key: agent_executed_flow_proof
+    kind: verification
+    description: E2E/manual flow proof is agent-executed by default and closeout-blocking for changed or at-risk flows unless the operator explicitly owns or waives the gate.
+  - key: independent_closeout_verification
+    kind: review
+    description: Non-micro delivery closeout includes independent verification of one-brain ownership, cleanup, architecture/contracts, and business/user/data/system flows, or a recorded waiver.
 steps:
   - id: scope-work
     title: Scope Work
@@ -224,21 +233,26 @@ steps:
       - Delivery mode, missing project guidance, and host-agent format are explicit.
   - id: define-requirements
     title: Define Requirements And Flows
-    purpose: Convert user intent into explicit flows, acceptance criteria, non-goals, and evidence expectations.
+    purpose: Convert user intent into explicit user, data, system, and business flows, acceptance criteria, non-goals, and evidence expectations.
     instructions:
       - Define actors, entry points, allowed outcomes, denied/error outcomes, empty/legacy states, and operator-visible behavior.
+      - Design the relevant user flows, data flows, system flows, and business-rule flows for the task; for micro work, record why these flows are unchanged or not applicable.
+      - For changed flows, capture the pre-change behavior or code path, intended change, expected current behavior after delivery, and why the change is safe.
       - Keep the brief project-adapted and implementation-aware, but avoid importing domain assumptions from another project.
       - Name the proof surface expected for each acceptance criterion.
     policy_refs:
       - evidence_over_assertion
       - project_adaptation_required
+      - mandatory_flow_design
     depends_on:
       - scope-work
     output_refs:
       - requirements_brief
+      - flow_design
     success_criteria:
       - A designer can proceed without guessing intended behavior.
       - Acceptance criteria are testable and include failure paths.
+      - Relevant user, data, system, and business flows are explicit, or the not-applicable rationale is documented for micro work.
   - id: discover-impact
     title: Discover Impact
     purpose: Map affected scopes, real execution paths, ownership boundaries, downstream readers, tests, docs, and signoff fallout.
@@ -264,6 +278,7 @@ steps:
     purpose: Create or update tracker tasks/tickets with dependencies, sequencing, blockers, owned scopes, and definition of done.
     instructions:
       - "Slice work by ownership and proof surface: requirements/discovery, contracts, data, backend/runtime, UI, tests, docs/signoff, verification, and release when relevant."
+      - Include flow-design, E2E/manual flow proof, and independent closeout-verification tickets when the work is non-micro or touches user/data/system/business behavior.
       - When workflow intent was explicit, create every discovery, design, delivery, verification, and closeout ticket under the workflow task/run plan from the start.
       - Use a direct tracker task only when the operator asks for task/dependency tracking without invoking a workflow.
       - Give each ticket dependencies, likely files or operation surfaces, acceptance criteria, and completion evidence expectations.
@@ -272,6 +287,7 @@ steps:
       - "Keep the workflow graph to one root: the first generated workflow step mirror ticket. Any extra root under a workflow-backed task is detached work that must be repaired before delivery continues."
       - Make the first executable child of a workflow step depend on the workflow step ticket, and make the next workflow step depend on the terminal child tickets from the prior step.
       - Keep delivery verification, docs, signoff, and release tickets inside the delivery graph so they cannot become ready independently of the workflow spine.
+      - Keep independent verification tickets inside the graph before closeout so one-brain, cleanup, architecture/contracts, and business-flow findings cannot be bypassed.
       - After creating or updating workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true; review graph warnings, repair material sequencing issues, and record non-blocking cleanup instead of freezing progress.
       - Keep the tracker aligned with project rules; the tracker mirrors work, it does not replace policy or verification.
     policy_refs:
@@ -287,6 +303,7 @@ steps:
       - Tickets are executable without rereading the whole conversation.
       - No delivery truth is split across a direct tracker task and a later workflow task when the operator requested a workflow.
       - Dependencies match the actual delivery order and no loose ends are hidden.
+      - Flow design, E2E/manual proof, and independent verification are represented in the graph or explicitly waived.
       - Workflow-backed work includes an explicit graph check covering parent step ticket, first child dependency, terminal child tickets, next-step handoff, and detached branches.
       - tracker.get include_graph=true has been reviewed, with material workflow-spine warnings repaired or captured as explicit follow-up risk.
       - Detached delivery, verification, docs, signoff, or release branches are either repaired or explicitly tracked as non-blocking cleanup.
@@ -328,12 +345,14 @@ steps:
       - Review findings are actionable and scoped.
   - id: design-tests
     title: Design Tests, TDD, And Manual Scenarios
-    purpose: "Own the full proof plan before delivery: TDD/red-first automated tests, verification commands, manual/user scenarios, expected outcomes, and signoff requirements."
+    purpose: "Own the full proof plan before delivery: TDD/red-first automated tests, verification commands, agent-executed E2E/manual flow scenarios, expected outcomes, and signoff requirements."
     instructions:
-      - Own all test planning for this delivery, including automated tests, red-first/TDD gates, manual proof depth, docs/tracker checks, and signoff evidence.
-      - "Let the orchestrator reason about the manual proof needed for the risk profile: no manual step, narrow smoke, full manual signoff, browser/user walkthrough, provider live check, migration rehearsal, or operator-owned release gate."
+      - Own all test planning for this delivery, including automated tests, red-first/TDD gates, E2E/manual flow proof, docs/tracker checks, and signoff evidence.
+      - Start from the flow_design and map every changed or at-risk user flow, data flow, system flow, and business-rule flow to an automated, E2E, or manual proof item.
+      - "Let the orchestrator reason about the manual proof depth needed for the risk profile: no manual step, narrow smoke, full manual signoff, browser/user walkthrough, provider live check, migration rehearsal, or operator-owned release gate."
+      - Treat E2E/manual flow scenarios as agent-executed and closeout-blocking by default; mark a scenario operator-owned, residual, skipped, or not applicable only with an explicit reason.
       - For risky behavior, define the one narrow failing proof that should be locked before runtime edits.
-      - For manual scenarios, name preconditions, exact user/agent steps, expected outcomes, evidence artifacts or screenshots, and whether the scenario is required for closeout or residual/operator-owned.
+      - For manual scenarios, name preconditions, exact user/agent steps, expected outcomes, evidence links, screenshots, or logs, and whether the scenario is required for closeout or residual/operator-owned.
       - For browser-assisted platform flows that depend on login state, name the stable StackOS browser profile_key, operator login precondition, cookie/session reuse expectation, and whether that precondition blocks closeout.
       - Prefer targeted checks first and broaden based on blast radius.
       - Include docs/tracker/signoff verification when the project makes them part of done.
@@ -342,12 +361,15 @@ steps:
       - evidence_over_assertion
       - quality_over_speed
       - truthful_tracker_state
+      - mandatory_flow_design
+      - agent_executed_flow_proof
     depends_on:
       - review-design
     output_refs:
       - test_plan
     success_criteria:
       - Every acceptance criterion has an automated or manual proof surface.
+      - Every changed or at-risk user/data/system/business flow has E2E/manual or automated proof coverage, or an explicit closeout waiver.
       - Manual scenarios include steps, expected outcomes, and evidence requirements.
       - Browser-login scenarios state whether a stable profile_key and persisted cookies/session are required, already satisfied, or operator-owned.
       - The test design itself has been verified or explicitly waived before implementation starts.
@@ -379,12 +401,14 @@ steps:
     instructions:
       - Classify changed surfaces and choose the smallest convincing checks first.
       - Execute, update, or explicitly mark every automated and manual proof item from the test plan; do not silently replace the test design with ad hoc checks.
+      - Execute the agent-owned E2E/manual flow scenarios from the test plan before signoff, capturing evidence for changed user, data, system, and business flows.
       - For browser-assisted platform proof, reuse the profile_key specified by the test plan so persisted cookies/session state is tested intentionally.
       - Widen to project signoff when contracts, grants, adapters, migrations, UI, provider, or release behavior crosses boundaries.
       - Report pass, fail, blocked, and not-run checks truthfully.
     policy_refs:
       - evidence_over_assertion
       - truthful_tracker_state
+      - agent_executed_flow_proof
     resource_refs:
       - evidence
     depends_on:
@@ -394,19 +418,25 @@ steps:
     success_criteria:
       - Verification evidence matches the changed surfaces and definition of done.
       - Verification covers the test plan's automated checks and manual scenarios, or records why an item is blocked, skipped, residual, or not applicable.
+      - Agent-executed E2E/manual flow scenarios are complete for changed flows, or operator-owned/waived gates are explicit.
       - Unrun or blocked checks are explicit.
   - id: review-delivery
     title: Review Delivery
     purpose: Review completed delivery across behavior, QA, integration contracts, security boundaries, docs, tracker evidence, and release risk.
     instructions:
       - Reconstruct user/agent/operator flow, data flow, permission/grant boundary, and mutation safety before findings.
+      - For non-micro work, run or verify independent closeout checks for one-brain ownership, cleanup/dead-code risk, architecture/contracts, and business/user/data/system flow regressions.
+      - Each independent closeout check must compare pre-change behavior or code path, what changed, current delivered behavior, and why the result is safe.
       - Review tests, fixtures, docs, tracker updates, and implementation together.
       - Compare delivered verification against the approved test design, including manual scenarios and expected evidence.
       - For browser-assisted platform proof, verify the delivered evidence used the planned persistent profile_key or explains why a fresh profile was required.
+      - Treat verifier and reviewer feedback as advisory claims; adjudicate each material claim against the operator request, accepted deliverables, actual diff/code paths, test evidence, and intended outcome before making new work.
+      - Reject, defer, or mark residual feedback that is unsupported, already covered, out of scope, or would over-engineer beyond the scoped deliverable.
       - Lead with confirmed findings ordered by severity; separate false positives, project decisions, and residual gaps.
     policy_refs:
       - evidence_over_assertion
       - one_brain_delivery
+      - independent_closeout_verification
     resource_refs:
       - evidence
     depends_on:
@@ -415,12 +445,15 @@ steps:
       - review_summary
     success_criteria:
       - Release blockers and residual risks are explicit.
+      - Verifier feedback is classified before it becomes work, and only validated required fixes block closeout.
+      - Independent verification findings are adjudicated before closeout, or an explicit waiver explains why they were not needed.
       - The review does not rubber-stamp open or unverified tickets.
   - id: audit-tracker
     title: Audit Tracker Truth
     purpose: Confirm tracker state, run-plan state, docs, tests, evidence, and the actual diff agree before closeout.
     instructions:
       - Compare completed tickets with code, verification, docs, run-plan steps, and evidence.
+      - Confirm flow_design, test_plan, E2E/manual flow proof, independent verification, and final claims agree.
       - Mark hidden required work, stale blockers, dangling dependencies, and deferred scope explicitly.
       - Treat duplicate direct tracker tasks created before a workflow-backed run plan for explicitly requested workflow work as a blocking tracker-truth finding.
       - Treat a detached workflow step ticket versus child-ticket chain as a blocking tracker-truth finding, not a vague missing-dependencies note.
@@ -430,6 +463,9 @@ steps:
       - workflow_selection_precedence
       - workflow_dependency_spine
       - evidence_over_assertion
+      - mandatory_flow_design
+      - agent_executed_flow_proof
+      - independent_closeout_verification
     depends_on:
       - review-delivery
     output_refs:
@@ -438,12 +474,14 @@ steps:
       - No required open work is hidden from the closeout.
       - Explicit workflow work has one canonical workflow task/run plan, not a split direct-task plus workflow-task record.
       - Tracker status and delivery evidence agree.
+      - No final claim depends on unexecuted E2E/manual flow proof or unadjudicated independent verification.
       - Workflow-backed tickets are dependency-bridged into the workflow spine, with no ready detached branch bypassing delivery order.
   - id: release-closeout
     title: Release Closeout
     purpose: Confirm final signoff, docs, known limitations, commit/release state, rollback/watch notes, and post-release checks.
     instructions:
       - Compare final release claims to tracker audit and verification evidence.
+      - Summarize the before/change/now/why flow-regression evidence for non-micro work.
       - Name limitations, deferred work, rollback/watch notes, and post-release checks for externally visible changes.
       - Keep release messaging provider-neutral and evidence-bound.
     input_refs:
@@ -467,6 +505,10 @@ outputs:
     required: true
   - key: requirements_brief
     name: Requirements Brief
+    type: object
+    required: true
+  - key: flow_design
+    name: Flow Design
     type: object
     required: true
   - key: impact_map
@@ -519,10 +561,12 @@ failure_handling:
   - If project guidance or host-agent format is missing, record the exact gap and ask for it before writing local agent files.
   - If tracker dependencies reveal blocked work, update ticket blockers instead of continuing with invisible chat-only state.
   - If verification fails, use root-cause debugging before broad reruns or speculative fixes.
+  - If flow design, E2E/manual flow proof, or independent closeout verification is missing for non-micro work, return to the earliest affected step instead of closing the delivery.
   - If review finds missing requirements, impact, test, or tracker truth, return to the earliest affected step rather than patching the final report.
 metadata:
   builtin: true
   run_mode: stackos_run_plan
+  artifact_grant_policy: explicit
   workflow_family: sdlc
   baseline: requirements_to_release
   workflow_selection_invariant: explicit_workflow_intent_requires_run_plan_before_tracker_tickets

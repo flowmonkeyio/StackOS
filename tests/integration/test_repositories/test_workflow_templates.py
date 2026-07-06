@@ -422,8 +422,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "operation.list" in engineering_setup_notes
     assert "resource.query" in engineering_setup_notes
     assert "resource.upsert" in engineering_setup_notes
-    assert "artifact.create" in engineering_setup_notes
+    assert "artifact.create" not in engineering_setup_notes
     assert "decision.record" in engineering_setup_notes
+    assert engineering_described.spec.metadata_json["artifact_grant_policy"] == "explicit"
     sdlc_skill_preset = next(
         item
         for item in engineering_described.spec.skill_preset_requirements
@@ -457,8 +458,17 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     engineering_text = engineering_described.spec.model_dump_json()
     assert "workflow_selection_precedence" in engineering_text
     assert "quality_over_speed" in engineering_text
+    assert "mandatory_flow_design" in engineering_text
+    assert "agent_executed_flow_proof" in engineering_text
+    assert "independent_closeout_verification" in engineering_text
     assert "workflow-backed run plan before creating tracker tickets" in engineering_text
     assert "direct tracker task and a later workflow task" in engineering_text
+    define_step = next(
+        step for step in engineering_described.spec.steps if step.id == "define-requirements"
+    )
+    define_text = define_step.model_dump_json()
+    assert "user flows, data flows, system flows, and business-rule flows" in define_text
+    assert "pre-change behavior or code path" in define_text
     plan_step = next(step for step in engineering_described.spec.steps if step.id == "plan-tickets")
     plan_text = plan_step.model_dump_json()
     assert "workflow task/run plan from the start" in plan_text
@@ -475,6 +485,8 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "manual proof depth" in test_design_text
     assert "quality_over_speed" in test_design_text
     assert "full manual signoff" in test_design_text
+    assert "agent-executed" in test_design_text
+    assert "Every changed or at-risk user/data/system/business flow" in test_design_text
     assert "stable StackOS browser profile_key" in test_design_text
     assert "unverified or incomplete proof plan" in test_design_text
     verify_step = next(
@@ -483,10 +495,31 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     verify_text = verify_step.model_dump_json()
     assert "test plan" in verify_text
     assert "profile_key specified by the test plan" in verify_text
+    assert "agent-owned E2E/manual flow scenarios" in verify_text
+    review_step = next(
+        step for step in engineering_described.spec.steps if step.id == "review-delivery"
+    )
+    review_text = review_step.model_dump_json()
+    assert "one-brain ownership" in review_text
+    assert "pre-change behavior or code path" in review_text
+    assert "advisory claims" in review_text
+    assert "over-engineer beyond the scoped deliverable" in review_text
+    assert "only validated required fixes block closeout" in review_text
     audit_step = next(
         step for step in engineering_described.spec.steps if step.id == "audit-tracker"
     )
     assert "detached workflow step ticket" in audit_step.model_dump_json()
+    assert "E2E/manual flow proof" in audit_step.model_dump_json()
+    engineering_run_plan = run_plan_from_template(
+        engineering_described,
+        inputs_json={"goal": "verify engineering grants"},
+    )
+    engineering_granted_tools = {
+        tool
+        for grant in engineering_run_plan.grant_snapshot_json["mcp_tool_grants"]
+        for tool in ([grant["tool"]] if "tool" in grant else grant["tools"])
+    }
+    assert "artifact.create" not in engineering_granted_tools
     assert engineering_described.spec.metadata_json["agent_subset"] == [
         "requirements-flow-definer",
         "codebase-explorer",

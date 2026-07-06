@@ -60,14 +60,14 @@ run token.
 8. When a step requires a provider call, use `action.describe`,
    `action.validate`, and the step-granted `action.execute` path. When several
    provider calls share credential, provider scope, output policy, request
-   budget, or artifact namespace, use `executionContext.discover`,
+   budget, or reusable execution context, use `executionContext.discover`,
    `executionContext.resolve`, or `executionContext.create` and pass
    `context_ref` instead of repeating credential/provider context on every
    call. The daemon resolves credentials inside the action process and returns
    only sanitized output. External-provider action output is file-backed by
    default; inspect the returned response-file path before rerunning provider
    calls. If the envelope schema is needed, call `schema.get` with the returned
-   `schema_ref`. Use `artifact.read` only for intentional artifact rows.
+   `schema_ref`.
 9. When the user asks for one explicit action and no workflow state is needed,
    use `toolbox.call` for `action.run` with `confirm_direct=true`,
    `intent_summary`, and an `idempotency_key` for non-read actions. External
@@ -76,9 +76,8 @@ run token.
    checksum, and semantic name. The sanitized request/response envelope lives
    in the file. Fetch the schema through `schema.get` only when needed. Request
    raw only when the next step truly needs the full public audit shape.
-   `artifact.read` remains available for intentional artifacts; pass
-   `response_mode=raw` when the bounded artifact content itself should enter
-   the context window.
+   Pass `response_mode=raw` only when the bounded response-file content itself
+   should enter the context window.
 10. For browser automation, use the direct `browser.*` tools when mounted, or
     `toolbox.call` for the same operation names before the current Codex session
     is restarted. `browser.session.start` opens a persistent Playwright Chromium session
@@ -309,13 +308,13 @@ run token.
   with `schema_ref` only when the file envelope schema is needed.
 - Execute a workflow action: validate the manifest and input, let the daemon
   resolve credentials through `action.execute`, then store synthesized outputs
-  as resources, artifacts, learnings, or run step summaries. Keep endpoint
+  as resources, learnings, or run step summaries. Keep endpoint
   payload in `input_json`; keep provider scope such as acting-on-behalf options
   in provider context or an execution context. External provider outputs are
   file-backed by default; inspect the returned response-file path before
   rerunning production calls. Call `schema.get` with `schema_ref` only when the
-  file envelope schema is needed. Use `artifact.read` for intentional artifacts.
+  file envelope schema is needed.
 - Use engineering evidence/resources: read existing `engineering-decision` and
   `engineering-evidence` records with `resource.query`. Create durable evidence
-  only inside a run-plan step with explicit grants such as `resource.upsert`,
-  `artifact.create`, or `decision.record`.
+  only inside a run-plan step with explicit grants such as `resource.upsert`
+  or `decision.record`.

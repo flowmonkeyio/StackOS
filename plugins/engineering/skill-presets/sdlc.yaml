@@ -3,7 +3,7 @@ presets:
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
     version: 0.1.0
-    description: Generic main-agent SDLC delivery orchestration preset for project-adapted planning, tracker/run-plan coordination, reviewer selection, verification matrices, evidence gates, and truthful closeout.
+    description: Generic main-agent SDLC delivery orchestration preset for project-adapted flow design, planning, tracker/run-plan coordination, reviewer selection, E2E/manual verification matrices, evidence gates, and truthful closeout.
     domain: engineering
     skill_type: main-agent-orchestration
     generic_preset: true
@@ -66,7 +66,8 @@ presets:
         the smallest convincing proof, and name skipped ceremony. Choose direct
         tracker versus workflow-backed delivery from operator intent and
         project policy. Read project guidance, inspect existing StackOS
-        task/run-plan state, map changed surfaces to verification, and keep the
+        task/run-plan state, map changed user/data/system/business flows to
+        verification, and keep the
         main agent accountable for integration and final claims. Use specialist
         agents or reviewers for depth when risk warrants it, but do not
         delegate away final accountability.
@@ -79,16 +80,20 @@ presets:
         - Keep StackOS task, ticket, and run-plan state canonical and avoid duplicate delivery truth.
         - Read project guidance, scoped rules, workflow extensions, local skills, local agent setup, and signoff docs before planning.
         - Map user flow, data flow, permissions, scope, business risk, runtime, migration, UI, and deployment blast radius when relevant.
+        - Ensure non-micro work has an explicit flow design covering user, data, system, and business flows, including before/change/now/why context for changed flows.
         - Select specialist agents or reviewers only when changed-surface risk requires their depth.
         - Enforce TDD/red-first gates when requested or when behavior, scoping, contract, or integration risk requires it.
-        - Ensure the test-design step owns the full proof plan, including automated checks, red-first/TDD gates, manual proof depth, expected outcomes, and evidence artifacts.
+        - Ensure the test-design step owns the full proof plan, including automated checks, red-first/TDD gates, agent-executed E2E/manual flow proof, expected outcomes, evidence links, screenshots, or logs.
         - Ensure browser-assisted platform proof names any required stable StackOS browser profile_key, operator-login precondition, and cookie/session reuse expectation.
         - Choose proof depth by reasoning from quality, production risk, and user/business impact rather than speed.
         - Verify or explicitly waive the test design before implementation begins.
         - Merge, shorten, or skip SDLC phases when the thread already contains enough evidence and the risk profile is low, while recording the reason.
         - Dependency-bridge workflow-backed tickets into the workflow spine.
         - Maintain a changed-surface verification matrix.
-        - Adjudicate reviewer findings as evidence-backed claims before turning them into tickets, fixes, or release blockers.
+        - Ensure changed or at-risk flows have E2E/manual or automated coverage that the agent executes before signoff unless the gate is explicitly operator-owned or waived.
+        - Before final closeout, require or waive independent verification checks for one-brain ownership, cleanup/dead-code risk, architecture/contracts, and business/user/data/system flow regressions.
+        - Treat verifier and reviewer findings as advisory claims; subagents can drift, and the orchestrator remains responsible for scope, deliverables, code truth, and final decisions.
+        - Adjudicate reviewer findings against the task goal, accepted deliverables, actual diff/code paths, test evidence, and intended outcome before turning them into tickets, fixes, or release blockers.
         - Keep the operator oriented with short ticket-start, ticket-end, and task-end progress reports whose shape is consistent and whose content is synthesized from evidence.
         - Reconcile StackOS state, docs/signoff, changed files, test evidence, reviewer findings, and final user-facing claims.
       must_do:
@@ -96,18 +101,24 @@ presets:
         - Treat StackOS tasks, tickets, and run plans as durable delivery state.
         - Treat project docs, AGENTS/rules, skills, and local agent configs as project adaptation inputs.
         - Treat tests, runtime probes, manual verification, and reviewed diffs as truth.
+        - For non-micro work, produce or verify a flow design that names relevant user flows, data flows, system flows, and business-rule flows.
+        - For changed flows, capture what existed before, what changed, what exists now, and why it is safe before final signoff.
         - Use the smallest convincing proof for the actual changed surface.
         - For micro changes such as wording, docs, metadata, or preset guidance, prefer load/parse/resolve checks over broad test suites unless the change affects generated contracts, parsers, runtime behavior, or release-critical surfaces.
         - Keep the main agent accountable for integration and final decisions.
         - Before delivery starts, confirm the test design maps each accepted requirement to automated proof or a risk-appropriate manual proof path with steps, expected outcomes, and evidence.
+        - Confirm the test design maps each changed or at-risk flow to automated, E2E, or manual proof, and that agent-executed E2E/manual scenarios are closeout-blocking unless explicitly waived.
         - Use quality over speed as the guiding principle when choosing between no manual step, narrow smoke, full manual signoff, browser/user walkthrough, provider live check, migration rehearsal, or operator-owned release gate.
         - For browser-assisted platform flows that depend on login state, classify the persistent browser profile requirement as satisfied, blocked on operator login, closeout-blocking, operator-owned, or intentionally fresh-profile.
         - Explicitly classify checks as passed, failed, blocked, skipped by instruction, or not applicable.
-        - After reviewers report, classify each claim as valid unresolved issue, fixed issue, false positive/unsupported, residual risk, or info before creating work.
+        - After reviewers report, classify each claim as valid required fix, already covered, false positive/unsupported, out of scope, optional improvement, over-engineering risk, residual risk, or operator-owned gap before creating work.
+        - Address only reviewer feedback that protects the scoped deliverable, safety, or correctness; do not expand scope or redesign just because a verifier suggested a nice-to-have.
+        - Before final closeout, run or explicitly waive independent closeout checks for one-brain ownership, cleanup/dead-code risk, architecture/contracts, and business-flow verification.
         - "Use contextual status markers only: ✅ for verified good/fixed/pass, ❌ for unresolved blocker/failed check, ⚠️ for residual risk or operator-owned gap, and ℹ️ for context or rejected/unsupported claim."
         - At the start and end of each ticket, report the ticket sequence as n/N and the concise work boundary.
         - At ticket closeout, list which agents or reviewers ran and summarize adjudicated issues with contextual status markers using interpreted evidence, not copied template text.
         - At task closeout, provide a short TLDR that covers one-brain ownership, architectural stability, pattern adherence, over-engineering risk, self-verification, business logic signoff, documentation updates, and targeted automated/manual checks.
+        - "Include flow-regression evidence in task closeout for non-micro work: what was before, what changed, what is now, why it is safe, and which E2E/manual scenarios proved it."
         - Block final done claims until evidence and tracker state agree.
         - Report residual risk, skipped checks, deferred work, and deployment readiness truthfully.
       must_not_do:
@@ -115,7 +126,9 @@ presets:
         - Do not replace tracker, planning, architecture, delivery, test-design, review, or tracker-review agents.
         - Do not create a second local tracking system.
         - Do not mechanically run every workflow phase, broad test suite, or reviewer just because the workflow mentions it.
+        - Do not implement verifier suggestions without adjudicating them against the task deliverables, code, evidence, and intended outcome.
         - Do not mark work complete because one broad check passed.
+        - Do not close non-micro work without flow design, E2E/manual flow proof, and independent verification unless each missing gate is explicitly waived.
         - Do not treat workflow step attachment as dependency order.
         - Do not treat progress report fields as exact text to copy; preserve structure while writing useful TLDR content.
         - Do not hide skipped checks or user-prohibited checks.
@@ -123,11 +136,14 @@ presets:
       required_outputs:
         - Delivery calibration
         - Delivery ledger
+        - User/data/system/business flow design
         - Required skill/agent/reviewer matrix
         - Ticket/run-plan topology check
         - Test design/TDD/manual proof matrix
         - Test design verification status
+        - E2E/manual flow proof execution matrix
         - Changed-surface verification matrix
+        - Independent closeout verification matrix
         - Reviewer finding adjudication matrix
         - Ticket start report
         - Ticket end report
@@ -138,25 +154,32 @@ presets:
       success_criteria:
         - The selected lifecycle depth is justified by changed-surface risk and completed without unnecessary ceremony.
         - Requirements, design, implementation, verification, review, tracker audit, and closeout happen in the chosen depth/order unless project policy or calibration explicitly waives or merges a phase.
-        - Test design is verified before delivery and covers automated proof, risk-appropriate manual proof depth, expected outcomes, and evidence requirements for the accepted scope.
-        - Reviewer outputs are adjudicated; only validated unresolved issues become new work or release blockers.
+        - Flow design is explicit for non-micro work and connects changed flows to before/change/now/why rationale.
+        - Test design is verified before delivery and covers automated proof, risk-appropriate agent-executed E2E/manual proof depth, expected outcomes, and evidence requirements for the accepted scope.
+        - E2E/manual flow proof is executed by the agent before closeout or marked operator-owned/waived with reason.
+        - Independent closeout verification is adjudicated before final claims for non-micro work.
+        - Reviewer outputs are adjudicated against scope, deliverables, code truth, evidence, and intended outcome; only validated required fixes become new work or release blockers.
         - Every skipped phase, check, or reviewer has a concrete reason tied to risk, user instruction, or unchanged surfaces.
         - The main agent can explain why each specialist/reviewer was used or not applicable.
         - Final claims match StackOS state, evidence, and reviewed diff.
       self_check:
         - Did I capture operator constraints from the current thread?
+        - Did I create or verify the flow design for user, data, system, and business flows?
+        - For changed flows, did I capture what was before, what changed, what is now, and why?
         - What changed, what could break, and what is the cheapest reliable proof?
         - "Which lifecycle depth did I choose: micro, standard, high-risk, or blocked?"
         - Am I running any test, reviewer, or phase only because the workflow exists rather than because risk warrants it?
         - Did I choose direct tracker versus workflow-backed delivery correctly?
         - Did I verify StackOS graph and ticket dependencies?
         - Did I invoke or require the right specialist agents/reviewers?
-        - Did the test design include TDD/red-first proof, risk-appropriate manual proof depth, expected outcomes, and evidence artifacts?
+        - Did the test design include TDD/red-first proof, risk-appropriate agent-executed E2E/manual proof depth, expected outcomes, evidence links, screenshots, or logs?
+        - Did the E2E/manual cases cover the changed flows, and did the agent execute them?
         - Did browser-assisted proof identify the stable profile_key and session reuse expectation when login state matters?
         - Did I choose proof depth for quality and production safety rather than speed?
         - Did I verify the test design before delivery started, or record a clear waiver?
         - Did I map changed surfaces to concrete verification?
-        - Did I adjudicate reviewer claims with evidence before treating them as real issues?
+        - Did I adjudicate reviewer claims against the scoped deliverables, actual code, evidence, and intended outcome before treating them as real issues?
+        - Did I run or waive independent one-brain, cleanup, architecture/contracts, and business-flow verification before closeout?
         - Did I reconcile docs, rules, skills, signoff, tracker, tests, and diff?
         - Did an independent reviewer sign off when risk required it?
         - Did I keep progress reports short enough for the user to stay oriented without reading a full audit?
@@ -190,7 +213,7 @@ presets:
             use_when:
               - Auth, permissions, provider execution, generated schemas, runtime contracts, migrations, UI flows, production data, or release-critical behavior changes.
             expected_shape:
-              - Explicit requirements, impact, design, test plan, implementation, verification, independent review, tracker audit, and release readiness.
+              - Explicit requirements, flow design, impact, design, test plan, implementation, E2E/manual flow proof, independent review, tracker audit, and release readiness.
               - Broader tests only when they prove the affected contract or blast radius.
           blocked:
             use_when:
@@ -207,7 +230,7 @@ presets:
             - change: Workflow schema or resolver contract.
               proof: Schema, repository, and MCP resolver tests.
             - change: UI drawer or user-flow behavior.
-              proof: Focused UI tests plus orchestrator-selected manual proof depth, from browser screenshot verification to full manual signoff when risk warrants it.
+              proof: Focused UI tests plus orchestrator-selected agent-executed E2E/manual proof depth, from browser screenshot verification to full manual signoff when risk warrants it.
             - change: Browser-assisted platform flow that depends on authenticated state.
               proof: Reuse the planned stable StackOS browser profile_key after operator login, then verify the user-visible flow and record whether persisted cookies/session state was required, already present, blocked, or operator-owned.
             - change: Provider auth, action runtime, or generated API execution.
@@ -218,6 +241,7 @@ presets:
             - Use architecture review for ownership, schema, operation, or shared-contract changes.
             - Use test-design review for behavioral, state-machine, or contract-risk changes.
             - Use UI review for visual/user-flow changes.
+            - Use independent closeout verification for non-micro delivery, covering one-brain ownership, cleanup/dead-code risk, architecture/contracts, and business/user/data/system flows.
             - Use no specialist reviewer for safe micro changes unless the operator asks.
       progress_reporting:
         emoji_legend:
@@ -249,6 +273,7 @@ presets:
             - "Self-verification: ✅/❌ <checks>"
             - "Architecture signoff: ✅/❌ <reviewer or reason>"
             - "Business logic signoff: ✅/❌ <evidence or reason>"
+            - "Flow regression proof: ✅/❌ <before/change/now/why and E2E/manual evidence>"
             - "Docs updated: ✅/❌"
             - "Targeted E2E/manual: ✅/❌/not applicable"
             - "Unit/integration tests: ✅/❌/not applicable"

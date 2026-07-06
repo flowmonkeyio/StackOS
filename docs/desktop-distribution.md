@@ -53,6 +53,78 @@ STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" make desktop-dist
 set it so electron-builder emits generic-provider update metadata for the
 custom endpoint.
 
+Local desktop builds intentionally do not require Apple signing or notarization
+parameters. A release-intent build is detected when `STACKOS_REQUIRE_SIGNING=1`
+is set or when `STACKOS_UPDATE_URL` points at a non-localhost HTTPS endpoint.
+Release-intent builds require signing and notarization inputs unless an
+operator explicitly sets `STACKOS_ALLOW_UNSIGNED_RELEASE=1` for a non-release
+smoke. The release wrapper signs the generated DMGs, notarizes the app bundles
+through electron-builder, then notarizes and staples the current-version DMGs.
+
+## Signing and Notarization Environment
+
+Do not commit Apple credentials or paste them into agent chat. Pass them through
+the shell environment, a local secret manager, or CI secrets.
+
+Signing accepts one of these inputs:
+
+```bash
+# Local keychain identity.
+export CSC_NAME="Example Org (ABCDE12345)"
+
+# Or CI/imported certificate.
+export CSC_LINK="/absolute/path/to/developer-id-application.p12"
+export CSC_KEY_PASSWORD="..."
+
+# Or deliberate local auto-discovery for release smoke only.
+export STACKOS_ALLOW_SIGNING_AUTO_DISCOVERY=1
+```
+
+Notarization accepts one of these methods. App Store Connect API key is preferred:
+
+```bash
+export APPLE_API_KEY="/absolute/path/to/AuthKey_XXXXXXXXXX.p8"
+export APPLE_API_KEY_ID="XXXXXXXXXX"
+export APPLE_API_ISSUER="00000000-0000-0000-0000-000000000000"
+```
+
+Apple ID app-specific password is also supported:
+
+```bash
+export APPLE_ID="developer@example.com"
+export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+export APPLE_TEAM_ID="ABCDE12345"
+```
+
+Or store credentials in the macOS keychain with `xcrun notarytool
+store-credentials`, then pass the profile:
+
+```bash
+export APPLE_KEYCHAIN_PROFILE="stackos-notary"
+export APPLE_KEYCHAIN="login.keychain"
+```
+
+For a strict release dry-run that validates the env contract without invoking
+electron-builder:
+
+```bash
+STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
+STACKOS_REQUIRE_SIGNING=1 \
+node desktop/scripts/build-mac.mjs
+```
+
+For an unsigned local smoke where release metadata should still be generated,
+make the bypass explicit:
+
+```bash
+STACKOS_ALLOW_UNSIGNED_RELEASE=1 \
+STACKOS_SKIP_NOTARIZATION=1 \
+STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" \
+make desktop-dist
+```
+
+That bypass is not valid public release evidence.
+
 ## Installer Flow
 
 The macOS app is distributed as a DMG and ZIP from electron-builder. On first
@@ -176,6 +248,27 @@ Build-config smoke without invoking electron-builder:
 STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
 STACKOS_UPDATE_URL="http://127.0.0.1:8765/stackos/macos" \
 node desktop/scripts/build-mac.mjs
+```
+
+Strict release-config smoke:
+
+```bash
+STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
+STACKOS_REQUIRE_SIGNING=1 \
+CSC_NAME="Example Org (ABCDE12345)" \
+APPLE_API_KEY="/absolute/path/to/AuthKey_XXXXXXXXXX.p8" \
+APPLE_API_KEY_ID="XXXXXXXXXX" \
+APPLE_API_ISSUER="00000000-0000-0000-0000-000000000000" \
+node desktop/scripts/build-mac.mjs
+```
+
+After building signed artifacts, verify signatures and stapling before sharing
+outside the build machine:
+
+```bash
+codesign --verify --deep --strict --verbose=2 desktop/dist/mac/StackOS.app
+spctl --assess --type open --context context:primary-signature --verbose desktop/dist/stackos-<version>-mac-arm64.dmg
+xcrun stapler validate desktop/dist/stackos-<version>-mac-arm64.dmg
 ```
 
 Manual release smoke should install the DMG, launch the installed app, confirm

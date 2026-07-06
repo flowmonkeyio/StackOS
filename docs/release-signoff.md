@@ -117,6 +117,10 @@ endpoint are configured:
 
 ```bash
 make desktop-payload
+STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
+STACKOS_REQUIRE_SIGNING=1 \
+STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" \
+node desktop/scripts/build-mac.mjs
 STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" make desktop-dist
 ```
 
@@ -128,8 +132,12 @@ Before public desktop distribution, record the managed-update evidence:
   transport and no FTP credentials are packaged into the app.
 - Artifact URLs referenced by the update metadata are reachable and are not
   stale behind website/CDN cache.
+- The strict release dry-run passed with signing and notarization env supplied
+  through the environment or CI secrets, and no Apple credential values were
+  written into generated config files or logs.
 - Apple signing and notarization status is recorded for each published macOS
-  artifact.
+  artifact. Include `codesign --verify --deep --strict`, `spctl --assess`, and
+  `xcrun stapler validate` output for the shipped DMG/ZIP app contents.
 - `pyproject.toml`, `stackos/__init__.py`, and `desktop/package.json` versions
   are synchronized for the release.
 - A local `STACKOS_UPDATE_URL=http://127.0.0.1:<port>/...` smoke has covered

@@ -86,10 +86,14 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
 
     assert "manual proof depth" in test_designer_text
     assert "full manual signoff" in test_designer_text
+    assert "agent-executable E2E/manual proof scenario matrix" in test_designer_text
+    assert "changed user/data/system/business flows" in test_designer_text
     assert "stable StackOS browser `profile_key`" in test_designer_text
     assert "test-design verification status" in test_designer_text
     assert "evidence-backed validity status" in reviewer_text
     assert "claims to verify" in reviewer_text
+    assert "independent closeout checks" in reviewer_text
+    assert "before the change, what changed, what exists now" in reviewer_text
     assert "without concrete evidence" in reviewer_text
     assert "planned persistent `profile_key`" in reviewer_text
     assert "include_graph=true" in planning_text
@@ -98,7 +102,12 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     assert "not a subagent" in orchestrator_text
     assert "Quality beats speed" in orchestrator_text
     assert "StackOS browser `profile_key`" in orchestrator_text
-    assert "Reviewer outputs are claims until verified" in orchestrator_text
+    assert "Reviewer and verifier outputs are advisory claims" in orchestrator_text
+    assert "Subagents can" in orchestrator_text
+    assert "over-engineering risk" in orchestrator_text
+    assert "Every non-micro delivery needs an explicit flow design" in orchestrator_text
+    assert "E2E/manual flow scenarios are agent-executed" in orchestrator_text
+    assert "one-brain ownership" in orchestrator_text
 
 
 def test_agent_preset_loader_lists_bundled_roles() -> None:
@@ -417,7 +426,7 @@ def test_agent_preset_setup_guidance_names_host_and_toolbox_boundaries() -> None
     assert "direct tracker tasks only" in guidance
     assert "resource.query" in guidance
     assert "resource.upsert" in guidance
-    assert "artifact.create" in guidance
+    assert "artifact.create" not in guidance
     assert "decision.record" in guidance
     assert "toolbox.describe" in guidance
     assert "toolbox.call" in guidance

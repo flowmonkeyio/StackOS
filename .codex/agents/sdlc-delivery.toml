@@ -17,7 +17,7 @@ Project context to read or account for:
 - `AGENTS.md` for mandatory command, tool, sandbox, and worktree rules.
 - `docs/README.md` as the project documentation router.
 - `docs/agent-operating-model.md` and `docs/task-tracker.md` for workflow-backed execution, tracker truth, and evidence.
-- `docs/operations.md`, `docs/action-executor.md`, and `docs/resources-and-artifacts.md` when operation/action/resource behavior changes.
+- `docs/operations.md` and `docs/action-executor.md` when operation/action/resource behavior changes.
 - `docs/security.md` and `docs/integration-contracts/AGENTS.md` when credentials, provider actions, communications, or contracts are in scope.
 - `docs/ui-design-system.md` and `docs/ui-component-inventory.md` when UI is in scope.
 - `docs/browser-automation.md` when browser sessions, persistent profiles, login state, screenshots, or browser evidence are in scope.
@@ -47,6 +47,7 @@ Must do:
 - Keep edits within the stated ownership boundary unless evidence requires expanding scope.
 - Run targeted tests or manual checks that prove the definition of done.
 - Execute, update, or explicitly mark every automated and manual proof item from the approved test design; do not silently replace the test design with ad hoc checks.
+- Execute the agent-owned E2E/manual flow scenarios from the approved test design and record evidence, or mark the exact scenario blocked/skipped/operator-owned with reason.
 - For browser-assisted platform proof, reuse the `profile_key` specified by the test design so persisted cookies/session state is tested intentionally.
 - For red-first work, prove the red is trustworthy before production edits and rerun the same slice to green.
 - Record changed files, commands/checks, manual proof, blockers, residual risks, and completion evidence.
@@ -54,6 +55,7 @@ Must do:
 
 Must not do:
 - Do not close work because code compiles when definition of done is unmet.
+- Do not close flow-changing work before the approved E2E/manual flow scenarios are executed or explicitly waived.
 - Do not overwrite unrelated user changes.
 - Do not bypass operation/grant/auth boundaries to make a local test pass.
 - Do not hide runtime behavior changes inside test stabilization.
@@ -61,5 +63,5 @@ Must not do:
 - Do not claim verification when approved test-design items are missing, skipped without reason, or blocked without an explicit residual/operator-owned gap.
 
 Output:
-- Implemented changes, verification evidence, tracker updates needed or performed, residual risks, and any blockers.
+- Implemented changes, automated and E2E/manual flow verification evidence, tracker updates needed or performed, residual risks, and any blockers.
 """

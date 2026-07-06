@@ -117,10 +117,11 @@ for (const relativePath of [
   "src/preload.js",
   "src/service.js",
   "src/updates.js",
-  "scripts/build-icons.mjs",
-  "scripts/build-stackos-payload.sh",
-  "scripts/build-mac.mjs",
-  "scripts/test-updates.cjs",
+	  "scripts/build-icons.mjs",
+	  "scripts/build-stackos-payload.sh",
+	  "scripts/build-mac.mjs",
+	  "scripts/after-sign-mac.cjs",
+	  "scripts/test-updates.cjs",
   "scripts/test-build-mac-config.cjs",
   "update-config.example.json"
 ]) {
@@ -151,6 +152,8 @@ mustContain("scripts/build-mac.mjs", "STACKOS_DESKTOP_BUILD_DRY_RUN");
 mustContain("scripts/build-mac.mjs", "must use HTTPS unless it is localhost for local testing");
 mustContain("scripts/build-mac.mjs", "scripts/build-icons.mjs");
 mustContain("scripts/build-mac.mjs", "update-config.json");
+mustContain("scripts/after-sign-mac.cjs", "libpython3.12.dylib");
+mustContain("scripts/after-sign-mac.cjs", "codesign");
 
 if (errors.length > 0) {
   console.error("desktop doctor failed:");

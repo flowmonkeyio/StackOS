@@ -33,9 +33,9 @@ agents to inspect the returned file paths before rerunning provider calls and
 to call `schema.get` with `schema_ref` only when they need the response-file
 envelope schema. CLI calls default to raw inline output unless an explicit
 output policy says otherwise.
-Intentional artifact rows remain readable through `artifact.read`. When repeated
-calls share credential, provider scope, output policy, request budget, or
-artifact namespace, use `executionContext.discover`/`executionContext.resolve`
+When repeated calls share credential, provider scope, output policy, request
+budget, or reusable execution context, use
+`executionContext.discover`/`executionContext.resolve`
 or create a context and pass `context_ref` to `action.run` or
 `action.execute`. Keep endpoint payload in `input_json`; keep provider scope in
 provider context or the execution context.
@@ -117,7 +117,7 @@ from a resolvable Slack target. `communicationTarget.resolve` answers where a
 named target would send; `communicationRoute.*` or a current operator
 instruction answers whether this source is allowed to go there. The same
 preflight owns media fidelity: every inbound image, document, video, audio,
-voice note, screenshot, URL, artifact, or provider file ref must either be
+voice note, screenshot, URL, or provider file ref must either be
 forwarded in the same canonical Slack handoff message when supported, or become
 an explicit blocker/waiver before the workflow continues.
 
@@ -145,7 +145,7 @@ discovery, planning, architecture, test design, delivery, delivery review, and
 release closeout coordinated by the main agent. Test design is the single owner
 for test planning: it maps accepted requirements to automated proof, red-first
 TDD slices when needed, manual proof depth, expected outcomes, and evidence
-artifacts. The main orchestrator chooses that proof depth by reasoning from
+links, screenshots, or logs. The main orchestrator chooses that proof depth by reasoning from
 quality, production risk, and user/business impact; a quick smoke is not a
 substitute for full manual signoff or rehearsal when the risk calls for it.
 When browser-assisted platform work depends on login state, the test plan must
@@ -248,10 +248,8 @@ Use these operations through MCP, REST, or CLI:
   and recommended agents plus skill requirements
 - `resource.query`: read existing workflow resources such as
   `engineering-decision` and `engineering-evidence`
-- `resource.upsert`, `artifact.create`, `artifact.update`, `artifact.archive`,
-  `artifact.supersede`, `decision.record`: write or lifecycle durable workflow
-  evidence only from a started run-plan step with an explicit grant; artifacts
-  are intentional durable records, not scratch files for normal iteration
+- `resource.upsert`, `decision.record`: write durable workflow evidence only
+  from a started run-plan step with an explicit grant
 
 Example:
 

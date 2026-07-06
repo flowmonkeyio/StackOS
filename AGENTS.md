@@ -227,6 +227,17 @@ fresh install happy path. Verify the lifecycle state machine end to end:
 - Desktop package replacement is part of upgrade. Same-version or same-payload
   app moves must still refresh launchd and host MCP registrations when the
   packaged command path changes.
+- macOS desktop signing and notarization are optional for local packaging and
+  required for public release evidence. Use `docs/desktop-distribution.md` as
+  the source of truth for `CSC_*`, `APPLE_*`, `STACKOS_REQUIRE_SIGNING`,
+  `STACKOS_ALLOW_UNSIGNED_RELEASE`, and `STACKOS_SKIP_NOTARIZATION`. Do not ask
+  users to paste Apple certificates, `.p8` contents, app-specific passwords, or
+  certificate passwords into chat; accept them only through local environment
+  variables, keychain profiles, or CI secrets. Validate release env before
+  invoking `make desktop-dist`:
+  ```bash
+  STACKOS_DESKTOP_BUILD_DRY_RUN=1 STACKOS_REQUIRE_SIGNING=1 node desktop/scripts/build-mac.mjs
+  ```
 - Optional agent hosts are advisory when absent or unsupported. They should not
   block install/repair unless StackOS owns an unsafe/stale entry that requires
   repair. Claude Desktop config writes require restarting Claude Desktop before

@@ -6,6 +6,11 @@ SHELL := /bin/bash
 PYTHON ?= uv run python
 UV ?= uv
 
+ifneq (,$(wildcard .env.local))
+include .env.local
+export
+endif
+
 .DEFAULT_GOAL := help
 
 .PHONY: help install serve dev-ui build-ui signoff register-codex register-claude \

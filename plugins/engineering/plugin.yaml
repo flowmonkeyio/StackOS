@@ -91,7 +91,7 @@ resources:
       agent_guidance: Record durable decisions only when they affect future engineering delivery, review, or release work.
   - key: engineering-evidence
     name: Engineering Evidence
-    description: Verification evidence, manual review notes, or signoff artifacts for engineering work.
+    description: Verification evidence, manual review notes, or signoff evidence for engineering work.
     schema:
       type: object
       additionalProperties: false
@@ -135,10 +135,6 @@ resources:
           type: string
         result:
           type: string
-        artifact_refs:
-          type: array
-          items:
-            type: string
         reviewer:
           type: string
         checked_at:
@@ -167,7 +163,6 @@ resources:
             - ticket_keys
             - run_plan_id
             - command
-            - artifact_refs
     config:
       schema_version: stackos.resource.v1
       record_kind: engineering-evidence

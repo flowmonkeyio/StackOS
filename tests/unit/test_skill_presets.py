@@ -49,8 +49,15 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert "quality over speed" in contract_text
     assert "manual proof depth" in contract_text
     assert "full manual signoff" in contract_text
+    assert "flow design" in contract_text
+    assert "agent-executed e2e/manual proof" in contract_text
+    assert "independent closeout verification" in contract_text
+    assert "what was before" in contract_text
     assert "stable stackos browser profile_key" in contract_text
     assert "adjudicate reviewer claims" in contract_text
+    assert "subagents can drift" in contract_text
+    assert "over-engineering risk" in contract_text
+    assert "accepted deliverables" in contract_text
     assert "micro, standard, high-risk, or blocked" in contract_text
     assert "do not mechanically run every workflow phase" in contract_text
     assert "tracker" in contract_text
