@@ -5,6 +5,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const service = require("./service");
 const { resolveStackosDeepLink } = require("./deep-links");
+const { buildApplicationMenuTemplate } = require("./menu-template");
 const { createNotificationController } = require("./notifications");
 const { createUpdateController } = require("./updates");
 
@@ -675,90 +676,38 @@ async function showUpdateResult(action, result) {
 }
 
 function createMenu() {
-  const template = [
-    {
-      label: "StackOS",
-      submenu: [
-        { role: "about" },
-        { type: "separator" },
-        { role: "quit" }
-      ]
+  const template = buildApplicationMenuTemplate({
+    appLabel: "StackOS",
+    onOpenStackOS: () => prepareAndLoadStackOS(),
+    onInstallOrRepair: async () => {
+      await prepareAndLoadStackOS({ forceInstall: true });
     },
-    {
-      label: "Service",
-      submenu: [
-        {
-          label: "Open StackOS",
-          click: () => prepareAndLoadStackOS()
-        },
-        {
-          label: "Install or Repair",
-          click: async () => {
-            await prepareAndLoadStackOS({ forceInstall: true });
-          }
-        },
-        {
-          label: "Restart Service",
-          click: async () => {
-            const result = await service.restartDaemon();
-            await showCommandResult("Restart Service", result);
-            if (result.ok) {
-              await prepareAndLoadStackOS();
-            }
-          }
-        },
-        {
-          label: "Run Doctor",
-          click: async () => {
-            await showCommandResult("Doctor", await service.runDoctor());
-          }
-        },
-        {
-          label: "Open Daemon Log",
-          click: () => {
-            shell.openPath(service.daemonLogPath());
-          }
-        }
-      ]
+    onRestartService: async () => {
+      const result = await service.restartDaemon();
+      await showCommandResult("Restart Service", result);
+      if (result.ok) {
+        await prepareAndLoadStackOS();
+      }
     },
-    {
-      label: "Updates",
-      submenu: [
-        {
-          label: "Check for Updates",
-          click: async () => {
-            await showUpdateResult("check", await updateController.checkForUpdates());
-          }
-        },
-        {
-          label: "Download Update",
-          click: async () => {
-            await showUpdateResult("download", await updateController.downloadUpdate());
-          }
-        },
-        {
-          label: "Install Downloaded Update",
-          click: () => {
-            const result = updateController.quitAndInstall();
-            if (!result.ok) {
-              showUpdateResult("install", result);
-            }
-          }
-        }
-      ]
+    onRunDoctor: async () => {
+      await showCommandResult("Doctor", await service.runDoctor());
     },
-    {
-      label: "View",
-      submenu: [
-        { role: "reload" },
-        { role: "toggleDevTools" },
-        { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" }
-      ]
+    onOpenDaemonLog: () => {
+      shell.openPath(service.daemonLogPath());
+    },
+    onCheckForUpdates: async () => {
+      await showUpdateResult("check", await updateController.checkForUpdates());
+    },
+    onDownloadUpdate: async () => {
+      await showUpdateResult("download", await updateController.downloadUpdate());
+    },
+    onInstallUpdate: () => {
+      const result = updateController.quitAndInstall();
+      if (!result.ok) {
+        showUpdateResult("install", result);
+      }
     }
-  ];
+  });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
