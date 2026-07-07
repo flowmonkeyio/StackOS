@@ -12,6 +12,7 @@ import {
   UiSkeleton,
 } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 import { providerLabel, routeStatusLabel } from './formatters'
 import { routeNeedsManualProviderUpdate } from './ingressResults'
@@ -64,11 +65,7 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
   const url = routeActionUrl(route)
   if (!url) return
 
-  try {
-    await navigator.clipboard.writeText(url)
-  } catch {
-    // Clipboard can be unavailable in some browser contexts; keep the URL visible for manual copy.
-  }
+  await copyTextToClipboard(url)
 }
 </script>
 

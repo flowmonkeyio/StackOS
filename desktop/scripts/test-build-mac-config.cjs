@@ -14,16 +14,20 @@ function cleanup() {
   fs.rmSync(generatedUpdateConfigPath, { force: true });
 }
 
-function runBuild(env) {
+function runBuild(env, options = {}) {
+  const writeConfig = options.writeConfig !== false;
   return spawnSync(process.execPath, ["scripts/build-mac.mjs"], {
     cwd: desktopDir,
     env: {
       ...process.env,
       STACKOS_UPDATE_URL: "",
       STACKOS_REQUIRE_SIGNING: "",
+      STACKOS_REQUIRE_UPDATE_URL: "",
       STACKOS_ALLOW_UNSIGNED_RELEASE: "",
+      STACKOS_UNSIGNED_DEV: "",
       STACKOS_SKIP_NOTARIZATION: "",
       STACKOS_ALLOW_SIGNING_AUTO_DISCOVERY: "",
+      CSC_IDENTITY_AUTO_DISCOVERY: "",
       CSC_NAME: "",
       CSC_LINK: "",
       CSC_KEY_PASSWORD: "",
@@ -36,7 +40,8 @@ function runBuild(env) {
       APPLE_KEYCHAIN_PROFILE: "",
       APPLE_KEYCHAIN: "",
       ...env,
-      STACKOS_DESKTOP_BUILD_DRY_RUN: "1"
+      STACKOS_DESKTOP_BUILD_DRY_RUN: "1",
+      STACKOS_DESKTOP_DRY_RUN_WRITE_CONFIG: writeConfig ? "1" : ""
     },
     encoding: "utf8"
   });
@@ -51,7 +56,42 @@ try {
   assert.equal(fs.existsSync(generatedConfigPath), false);
   assert.equal(fs.existsSync(generatedUpdateConfigPath), false);
 
+  cleanup();
+  const unsignedDev = runBuild({
+    STACKOS_UNSIGNED_DEV: "1",
+    STACKOS_ALLOW_UNSIGNED_RELEASE: "1",
+    STACKOS_SKIP_NOTARIZATION: "1",
+    CSC_IDENTITY_AUTO_DISCOVERY: "false",
+    CSC_NAME: "Developer ID Application: Bad Env (BADENV1234)",
+    APPLE_API_KEY: "partial-env-ignored-for-dev"
+  });
+  assert.equal(unsignedDev.status, 0, unsignedDev.stderr);
+  assert.match(unsignedDev.stdout, /signing=unsigned-dev/);
+  assert.match(unsignedDev.stdout, /notarization=disabled/);
+  const unsignedDevConfig = JSON.parse(fs.readFileSync(generatedConfigPath, "utf8"));
+  assert.equal(unsignedDevConfig.forceCodeSigning, false);
+  assert.equal(unsignedDevConfig.mac.identity, null);
+  assert.equal(unsignedDevConfig.mac.notarize, false);
+  assert.equal(unsignedDevConfig.dmg.sign, false);
+
+  cleanup();
+  const unsignedReleaseIntentWithoutBypass = runBuild({
+    STACKOS_UNSIGNED_DEV: "1",
+    STACKOS_REQUIRE_SIGNING: "1",
+    STACKOS_SKIP_NOTARIZATION: "1"
+  });
+  assert.notEqual(unsignedReleaseIntentWithoutBypass.status, 0);
+  assert.match(unsignedReleaseIntentWithoutBypass.stderr, /STACKOS_UNSIGNED_DEV release-intent/);
+
+  cleanup();
   const localUrl = "http://127.0.0.1:8765/stackos/macos";
+  const localNoWrite = runBuild({ STACKOS_UPDATE_URL: localUrl }, { writeConfig: false });
+  assert.equal(localNoWrite.status, 0, localNoWrite.stderr);
+  assert.match(localNoWrite.stdout, /generatedConfig=$/m);
+  assert.equal(fs.existsSync(generatedConfigPath), false);
+  assert.equal(fs.existsSync(generatedUpdateConfigPath), false);
+
+  cleanup();
   const local = runBuild({ STACKOS_UPDATE_URL: localUrl });
   assert.equal(local.status, 0, local.stderr);
   assert.match(local.stdout, /generatedConfig=/);
@@ -68,15 +108,47 @@ try {
   );
 
   cleanup();
-  const httpsUrl = "https://updates.example.com/stackos/macos";
+  const httpsUrl = "https://flowmonkey.io/StackOS/";
+  const artifactUrl = "https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.dmg";
+  const artifactUrlBuild = runBuild({ STACKOS_UPDATE_URL: artifactUrl });
+  assert.notEqual(artifactUrlBuild.status, 0);
+  assert.match(artifactUrlBuild.stderr, /base directory containing latest-mac.yml/);
+
+  cleanup();
   const missingReleaseSigning = runBuild({ STACKOS_UPDATE_URL: httpsUrl });
   assert.notEqual(missingReleaseSigning.status, 0);
   assert.match(missingReleaseSigning.stderr, /release builds require CSC_NAME/);
   assert.match(missingReleaseSigning.stderr, /release builds require notarization credentials/);
 
   cleanup();
+  const missingReleaseUpdateUrl = runBuild({
+    STACKOS_REQUIRE_SIGNING: "1",
+    STACKOS_REQUIRE_UPDATE_URL: "1",
+    CSC_NAME: "Example Org (ABCDE12345)",
+    APPLE_API_KEY: "fake-base64-p8",
+    APPLE_API_KEY_ID: "ABC123DEFG",
+    APPLE_API_ISSUER: "00000000-0000-0000-0000-000000000000"
+  });
+  assert.notEqual(missingReleaseUpdateUrl.status, 0);
+  assert.match(missingReleaseUpdateUrl.stderr, /public release builds require STACKOS_UPDATE_URL/);
+
+  cleanup();
+  const releaseAutoDiscovery = runBuild({
+    STACKOS_REQUIRE_SIGNING: "1",
+    STACKOS_REQUIRE_UPDATE_URL: "1",
+    STACKOS_UPDATE_URL: httpsUrl,
+    STACKOS_ALLOW_SIGNING_AUTO_DISCOVERY: "1",
+    APPLE_API_KEY: "fake-base64-p8",
+    APPLE_API_KEY_ID: "ABC123DEFG",
+    APPLE_API_ISSUER: "00000000-0000-0000-0000-000000000000"
+  });
+  assert.notEqual(releaseAutoDiscovery.status, 0);
+  assert.match(releaseAutoDiscovery.stderr, /public release builds require CSC_NAME/);
+
+  cleanup();
   const signedRelease = runBuild({
     STACKOS_UPDATE_URL: httpsUrl,
+    STACKOS_REQUIRE_UPDATE_URL: "1",
     CSC_NAME: "Example Org (ABCDE12345)",
     APPLE_API_KEY: "fake-base64-p8",
     APPLE_API_KEY_ID: "ABC123DEFG",

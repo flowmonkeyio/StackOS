@@ -192,6 +192,57 @@ def test_claude_desktop_inspect_surfaces_pending_restart(tmp_path: Path, monkeyp
     assert inspected.needs_restart is True
 
 
+def test_claude_desktop_inspect_clears_restart_when_app_is_closed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_token(tmp_path)
+    config = tmp_path / "claude_desktop_config.json"
+    config.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+    packaged = tmp_path / "stackos"
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    monkeypatch.setenv("STACKOS_CLAUDE_DESKTOP_CONFIG", str(config))
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "running")
+
+    registered = claude_desktop.register(tmp_path)
+    monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "not_running")
+    inspected = claude_desktop.inspect(tmp_path)
+
+    assert registered.status == "restart_required"
+    assert inspected.ok is True
+    assert inspected.status == "registered_current"
+    assert inspected.needs_restart is False
+    assert not state_path(tmp_path).exists() or "claude-desktop" not in json.loads(
+        state_path(tmp_path).read_text(encoding="utf-8")
+    )
+
+
+def test_claude_desktop_register_does_not_require_restart_when_app_is_closed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_token(tmp_path)
+    config = tmp_path / "claude_desktop_config.json"
+    config.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+    packaged = tmp_path / "stackos"
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    monkeypatch.setenv("STACKOS_CLAUDE_DESKTOP_CONFIG", str(config))
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "not_running")
+
+    registered = claude_desktop.register(tmp_path)
+    inspected = claude_desktop.inspect(tmp_path)
+
+    assert registered.ok is True
+    assert registered.status == "registered_current"
+    assert registered.needs_restart is False
+    assert inspected.status == "registered_current"
+    assert not state_path(tmp_path).exists()
+
+
 def test_claude_desktop_restart_hint_expires(
     tmp_path: Path,
     monkeypatch,

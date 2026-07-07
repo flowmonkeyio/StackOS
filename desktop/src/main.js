@@ -12,6 +12,7 @@ let mainWindow = null;
 let updateController = null;
 let notificationController = null;
 let pendingDeepLink = null;
+let startupMaintenancePromise = null;
 
 function escapeHtml(value) {
   return String(value || "")
@@ -58,6 +59,7 @@ function loadStackosDeepLink(candidate) {
     }
     createWindow();
   }
+  loadingPageActive = false;
   mainWindow.loadURL(targetUrl);
   mainWindow.show();
   mainWindow.focus();
@@ -73,6 +75,8 @@ function handleStackosDeepLink(candidate) {
 }
 
 let lastLoadingProgress = 0;
+let startupProgressQueue = Promise.resolve();
+let loadingPageActive = false;
 let splashLogoDataUri = null;
 
 function getSplashLogo() {
@@ -90,7 +94,6 @@ function getSplashLogo() {
 function loadingHtml({ phase, progress, from = 0 }) {
   const clamp = (value) => Math.max(0, Math.min(100, Number(value) || 0));
   const target = Math.max(5, clamp(progress));
-  const start = Math.min(target, clamp(from));
   const safePhase = escapeHtml(phase);
   const logo = getSplashLogo();
   return `<!doctype html>
@@ -171,7 +174,7 @@ function loadingHtml({ phase, progress, from = 0 }) {
       width: ${target}%;
       border-radius: inherit;
       background: linear-gradient(90deg, var(--brand-a), var(--brand-b));
-      animation: grow 720ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+      transition: width 520ms cubic-bezier(0.22, 0.61, 0.36, 1);
     }
     .sweep {
       position: absolute;
@@ -186,10 +189,6 @@ function loadingHtml({ phase, progress, from = 0 }) {
       0%, 100% { transform: translateY(0); }
       50% { transform: translateY(-4px); }
     }
-    @keyframes grow {
-      from { width: ${start}%; }
-      to { width: ${target}%; }
-    }
     @keyframes sweep {
       0% { transform: translateX(-120%); }
       100% { transform: translateX(280%); }
@@ -199,7 +198,8 @@ function loadingHtml({ phase, progress, from = 0 }) {
       to { opacity: 1; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .panel, .phase, .logo, .fill { animation: none !important; }
+      .panel, .phase, .logo { animation: none !important; }
+      .fill { transition: none !important; }
       .sweep { display: none; }
     }
   </style>
@@ -210,15 +210,44 @@ function loadingHtml({ phase, progress, from = 0 }) {
       ${logo ? `<img class="logo" src="${logo}" alt="" aria-hidden="true">` : ""}
       <h1 class="brand">StackOS</h1>
       <p class="tagline">Everything runs on your computer</p>
-      <p class="phase" aria-live="polite">${safePhase}</p>
-      <div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${target}" aria-label="${safePhase}">
-        <div class="fill"></div>
+      <p class="phase" data-loading-phase aria-live="polite">${safePhase}</p>
+      <div class="track" data-loading-track role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${target}" aria-label="${safePhase}">
+        <div class="fill" data-loading-fill></div>
         <div class="sweep" aria-hidden="true"></div>
       </div>
     </section>
   </main>
 </body>
 </html>`;
+}
+
+async function updateLoadingPage(phase, progress) {
+  if (!loadingPageActive || !mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+  try {
+    return await mainWindow.webContents.executeJavaScript(
+      `(() => {
+        const phase = ${JSON.stringify(phase)};
+        const progress = ${JSON.stringify(progress)};
+        const phaseEl = document.querySelector("[data-loading-phase]");
+        const trackEl = document.querySelector("[data-loading-track]");
+        const fillEl = document.querySelector("[data-loading-fill]");
+        if (!phaseEl || !trackEl || !fillEl) {
+          return false;
+        }
+        phaseEl.textContent = phase;
+        trackEl.setAttribute("aria-valuenow", String(Math.round(progress)));
+        trackEl.setAttribute("aria-label", phase);
+        fillEl.style.width = progress + "%";
+        return true;
+      })()`,
+      true
+    );
+  } catch (_error) {
+    loadingPageActive = false;
+    return false;
+  }
 }
 
 async function loadLoading(phase, progress) {
@@ -228,9 +257,50 @@ async function loadLoading(phase, progress) {
   const target = Math.max(5, Math.min(100, Number(progress) || 5));
   const from = target >= lastLoadingProgress ? lastLoadingProgress : 0;
   lastLoadingProgress = target;
+  if (await updateLoadingPage(phase, target)) {
+    return;
+  }
   await mainWindow.loadURL(
     `data:text/html;charset=utf-8,${encodeURIComponent(loadingHtml({ phase, progress: target, from }))}`
   );
+  loadingPageActive = true;
+}
+
+function showStartupProgress(update, fallbackProgress = 5) {
+  startupProgressQueue = startupProgressQueue
+    .catch(() => {})
+    .then(async () => {
+      const phase = typeof update === "string" ? update : update && update.phase;
+      const requestedProgress =
+        typeof update === "string" ? fallbackProgress : update && update.progress;
+      const progress = Math.max(lastLoadingProgress, Number(requestedProgress) || fallbackProgress);
+      await loadLoading(phase || "Starting StackOS...", progress);
+    });
+  return startupProgressQueue;
+}
+
+function schedulePreparedInstallMaintenance(install) {
+  if (!install || install.maintenanceRequired !== true || startupMaintenancePromise) {
+    return;
+  }
+
+  startupMaintenancePromise = new Promise((resolve) => {
+    setTimeout(() => {
+      service
+        .repairPreparedInstall()
+        .then((result) => {
+          if (!result || result.ok === false) {
+            console.warn("StackOS startup maintenance did not complete", result);
+          }
+        })
+        .catch((error) => {
+          console.warn("StackOS startup maintenance failed", error);
+        })
+        .finally(resolve);
+    }, 1500);
+  }).finally(() => {
+    startupMaintenancePromise = null;
+  });
 }
 
 function failureHtml(title, { summary, repair, details }) {
@@ -376,6 +446,7 @@ function failureCopy(title, payload) {
 async function loadFailure(title, payload) {
   const details = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
   const copy = failureCopy(title, payload);
+  loadingPageActive = false;
   await mainWindow.loadURL(
     `data:text/html;charset=utf-8,${encodeURIComponent(
       failureHtml(title, {
@@ -388,27 +459,36 @@ async function loadFailure(title, payload) {
 }
 
 async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
-  await loadLoading(forceInstall ? "Patching things up…" : "Checking your setup…", 20);
+  if (!loadingPageActive) {
+    lastLoadingProgress = 0;
+  }
+  startupProgressQueue = Promise.resolve();
+  await showStartupProgress(forceInstall ? "Repairing StackOS..." : "Checking your setup...", 8);
   const install = await service.prepareInstalledVersion({
     version: app.getVersion(),
     userDataPath: app.getPath("userData"),
     payloadInfo: service.readPackagedBuildInfo(),
-    force: forceInstall
+    force: forceInstall,
+    runDoctor: forceInstall,
+    onProgress: showStartupProgress
   });
   if (!install.ok) {
     await loadFailure("StackOS install or repair failed", install);
     return;
   }
 
-  await loadLoading("Powering up StackOS…", 70);
-  const ready = await service.ensureDaemonReady();
+  const ready = await service.ensureDaemonReady({
+    onProgress: showStartupProgress
+  });
   if (!ready.ok) {
     await loadFailure("StackOS service is not ready", ready);
     return;
   }
 
-  await loadLoading("Opening your workspace…", 92);
+  await showStartupProgress("Opening your workspace...", 94);
+  loadingPageActive = false;
   await mainWindow.loadURL(service.DAEMON_URL);
+  schedulePreparedInstallMaintenance(install);
   if (pendingDeepLink) {
     const candidate = pendingDeepLink;
     pendingDeepLink = null;
@@ -447,16 +527,53 @@ function createWindow() {
     }
   });
 
-  loadLoading("Getting things ready…", 10);
+  loadingPageActive = false;
+  lastLoadingProgress = 0;
+  void loadLoading("Getting things ready...", 10);
   return mainWindow;
 }
 
 async function showCommandResult(title, result) {
+  const readiness = result && typeof result === "object" ? result.readiness : null;
+  const health = result && typeof result === "object" ? result.health : null;
+  let copy;
+  if (!result || result.ok === false) {
+    const failure = failureCopy(title, result);
+    copy = {
+      type: "error",
+      message: failure.summary,
+      detail: failure.repair
+    };
+  } else if (readiness && readiness.ok === false) {
+    copy = {
+      type: "error",
+      message: "Doctor found setup issues",
+      detail: readiness.repair || "Use Service > Install or Repair, then run Doctor again."
+    };
+  } else if (title === "Doctor") {
+    copy = {
+      type: "info",
+      message: "Doctor passed",
+      detail: "StackOS local setup is ready."
+    };
+  } else if (health && health.ok === false) {
+    copy = {
+      type: "error",
+      message: "Service restarted, but health is not ready",
+      detail: "Run Doctor from the Service menu, then use Install or Repair if needed."
+    };
+  } else {
+    copy = {
+      type: "info",
+      message: `${title} complete`,
+      detail: "StackOS completed the service action."
+    };
+  }
   await dialog.showMessageBox(mainWindow, {
-    type: result.ok ? "info" : "error",
-    title,
-    message: title,
-    detail: JSON.stringify(result, null, 2).slice(0, 6000)
+    type: copy.type,
+    title: copy.message,
+    message: copy.message,
+    detail: copy.detail
   });
 }
 
@@ -709,6 +826,7 @@ app.on("before-quit", () => {
 
 app.whenReady().then(async () => {
   app.setName("StackOS");
+  service.setPackagedRuntime(app.isPackaged);
   app.setAsDefaultProtocolClient("stackos");
   updateController = createUpdateController();
   notificationController = createNotificationController({

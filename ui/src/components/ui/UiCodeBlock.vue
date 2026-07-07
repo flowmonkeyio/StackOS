@@ -6,6 +6,7 @@
 import { ref } from 'vue';
 import UiIcon from './UiIcon.vue';
 import UiIconButton from './UiIconButton.vue';
+import { copyTextToClipboard } from '@/lib/clipboard';
 
 defineProps<{
   code: string;
@@ -26,11 +27,10 @@ defineProps<{
 const copied = ref(false);
 
 async function copy(code: string) {
-  try {
-    await navigator.clipboard.writeText(code);
+  if (await copyTextToClipboard(code)) {
     copied.value = true;
     setTimeout(() => { copied.value = false; }, 1500);
-  } catch { /* noop */ }
+  }
 }
 </script>
 

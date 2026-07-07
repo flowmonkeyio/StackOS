@@ -7,6 +7,7 @@ import { computed, ref } from 'vue';
 import UiIcon from './UiIcon.vue';
 import UiIconButton from './UiIconButton.vue';
 import UiInput from './UiInput.vue';
+import { copyTextToClipboard } from '@/lib/clipboard';
 
 export interface UiSecretInputProps {
   modelValue?: string;
@@ -43,11 +44,10 @@ const displayType = computed(() => (revealed.value ? 'text' : 'password'));
 
 async function copy() {
   if (!props.modelValue) return;
-  try {
-    await navigator.clipboard.writeText(props.modelValue);
+  if (await copyTextToClipboard(props.modelValue)) {
     copied.value = true;
     setTimeout(() => { copied.value = false; }, 1500);
-  } catch { /* clipboard not available */ }
+  }
 }
 </script>
 

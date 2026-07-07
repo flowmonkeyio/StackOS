@@ -75,6 +75,11 @@ _UI_SETUP_OPERATION_CALLS: frozenset[str] = frozenset(
         "ingressEndpoint.sync",
     }
 )
+_UI_LOCAL_CONSOLE_OPERATION_CALLS: frozenset[str] = frozenset(
+    {
+        "tracker.updateTask",
+    }
+)
 
 
 class TokenFileError(RuntimeError):
@@ -133,7 +138,8 @@ def derive_ui_token(token: str) -> str:
     The daemon token remains the write-capable local-admin token stored on disk.
     The derived UI token is what ``/api/v1/auth/ui-token`` returns; middleware
     accepts it only for safe REST reads, read-only operation calls, project
-    creation setup, and narrow provider-auth setup writes.
+    creation setup, narrow provider-auth/setup writes, and explicit local
+    console operations such as task status updates.
     """
     digest = hmac.new(token.encode("utf-8"), _UI_TOKEN_MESSAGE, hashlib.sha256).digest()
     encoded = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
@@ -186,8 +192,8 @@ def _allows_ui_read_operation_call(path: str, method: str) -> bool:
     return spec.read_only
 
 
-def _allows_ui_setup_operation_call(path: str, method: str) -> bool:
-    """Return True for narrow browser setup operations with no secret exposure."""
+def _allows_ui_console_operation_call(path: str, method: str) -> bool:
+    """Return True for explicitly browser-safe local console operation writes."""
     if method.upper() != "POST":
         return False
     segments = path.strip("/").split("/")
@@ -198,7 +204,10 @@ def _allows_ui_setup_operation_call(path: str, method: str) -> bool:
         or not segments[3]
     ):
         return False
-    return segments[3] in _UI_SETUP_OPERATION_CALLS
+    return (
+        segments[3] in _UI_SETUP_OPERATION_CALLS
+        or segments[3] in _UI_LOCAL_CONSOLE_OPERATION_CALLS
+    )
 
 
 def _allows_ui_auth_setup(path: str, method: str) -> bool:
@@ -236,8 +245,8 @@ def _ui_scope_for_request(path: str, method: str) -> str | None:
         return "ui-read"
     if _allows_ui_read_operation_call(path, method):
         return "ui-read-operation"
-    if _allows_ui_setup_operation_call(path, method):
-        return "ui-setup-operation"
+    if _allows_ui_console_operation_call(path, method):
+        return "ui-console-operation"
     if _allows_ui_project_setup(path, method):
         return "ui-project-setup"
     if _allows_ui_auth_setup(path, method):
@@ -252,8 +261,8 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
     and the local MCP bridge process. The bridge does not reveal that token to
     agents; agent workflow execution is gated inside MCP by run-plan grants.
     The UI token is REST-only and limited to reads, read-only operation calls,
-    plus setup writes needed for the local console. It cannot access MCP or
-    general mutation routes.
+    setup writes, and explicit local-console writes needed by the product UI.
+    It cannot access MCP or general mutation routes.
     Token values are supplied at construction time so middleware setup never
     re-reads the file at request time. Token rotation requires a daemon restart,
     which matches the spec (rotation runs via `make install`).
@@ -291,9 +300,9 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(
                     {
                         "detail": (
-                            "UI token can only read REST data, call read-only operations, "
-                            "create projects, and manage provider auth setup; use the daemon "
-                            "token for other mutations"
+                            "UI token can only read REST data, call read-only or explicitly "
+                            "browser-safe operations, create projects, and manage provider "
+                            "auth setup; use the daemon token for other mutations"
                         )
                     },
                     status_code=403,

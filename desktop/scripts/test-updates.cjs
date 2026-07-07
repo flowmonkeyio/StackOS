@@ -39,10 +39,15 @@ withTempDir((dir) => {
   assert.equal(configuredUpdateUrl({ env: {}, configPaths: [] }), null);
 });
 
-assert.equal(updateUrlPolicy("https://updates.example.com/stackos/macos").ok, true);
+assert.equal(updateUrlPolicy("https://flowmonkey.io/StackOS/").ok, true);
 assert.equal(updateUrlPolicy("http://127.0.0.1:8765/stackos/macos").ok, true);
 assert.equal(updateUrlPolicy("http://updates.example.com/stackos/macos").ok, false);
 assert.equal(updateUrlPolicy("not a url").reason, "update endpoint is not a valid URL");
+assert.match(
+  updateUrlPolicy("https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.dmg").reason,
+  /base directory/
+);
+assert.match(updateUrlPolicy("https://flowmonkey.io/StackOS/latest-mac.yml").reason, /base directory/);
 
 {
   const controller = createUpdateController({ env: {}, platform: "darwin", configPaths: [] });
@@ -53,7 +58,7 @@ assert.equal(updateUrlPolicy("not a url").reason, "update endpoint is not a vali
 
 {
   const controller = createUpdateController({
-    env: { STACKOS_UPDATE_URL: "https://updates.example.com/stackos/macos" },
+    env: { STACKOS_UPDATE_URL: "https://flowmonkey.io/StackOS/" },
     platform: "linux"
   });
   assert.equal(controller.state.enabled, false);
@@ -94,7 +99,7 @@ class FakeUpdater extends EventEmitter {
 (async () => {
   const updater = new FakeUpdater();
   const controller = createUpdateController({
-    env: { STACKOS_UPDATE_URL: "https://updates.example.com/stackos/macos" },
+    env: { STACKOS_UPDATE_URL: "https://flowmonkey.io/StackOS/" },
     platform: "darwin",
     updater
   });
@@ -131,7 +136,7 @@ class FakeUpdater extends EventEmitter {
   }
 
   const failing = createUpdateController({
-    env: { STACKOS_UPDATE_URL: "https://updates.example.com/stackos/macos" },
+    env: { STACKOS_UPDATE_URL: "https://flowmonkey.io/StackOS/" },
     platform: "darwin",
     updater: new ThrowingUpdater()
   });

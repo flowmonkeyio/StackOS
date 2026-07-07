@@ -20,8 +20,54 @@ The app resolves the `stackos` CLI in this order:
 
 1. `STACKOS_DESKTOP_CLI`
 2. packaged `resources/stackos/bin/stackos`
-3. repository `.venv/bin/python -m stackos`
-4. `stackos` on `PATH`
+3. repository `.venv/bin/python -m stackos` in development only
+4. `stackos` on `PATH` in development only
+
+Packaged desktop builds fail closed if `resources/stackos/bin/stackos` is
+missing or not executable. They must not fall back to a developer checkout or a
+global `stackos` on `PATH`, because that hides broken release artifacts on the
+build machine.
+
+Current desktop distribution is **Apple Silicon (`arm64`) only**. Do not publish
+an x64 DMG/ZIP until the build creates a separate x64 standalone Python payload
+or a verified universal2 payload.
+
+## Packaging Dependencies
+
+Runtime users should not need Python, uv, Node, pnpm, Homebrew, Xcode, or a
+source checkout. The DMG must contain the standalone StackOS Python payload.
+
+Build machines need:
+
+| Dependency | Purpose | Required for |
+| --- | --- | --- |
+| Node.js + pnpm | Electron build scripts and dependencies | all desktop builds |
+| `uv` | Build the StackOS wheel and Python payload | all desktop builds |
+| `bash` + `rsync` | Build/copy the standalone Python runtime | all desktop builds |
+| `file`, `lipo`, `otool`, `codesign`, `security` | Inspect/thin/sign bundled Mach-O runtime files | all desktop builds |
+| `xcrun notarytool` + `xcrun stapler` | Submit, staple, and validate notarization | public release |
+| Developer ID Application certificate | Sign the app and DMG | signed/release builds |
+| Apple notarization credentials | Apple malware/trust ticket for non-App-Store distribution | public release |
+
+Run the preflight before public release packaging:
+
+```bash
+CSC_NAME="Example Org (ABCDE12345)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run release:preflight
+```
+
+The preflight prints only whether required inputs are visible; it does not print
+secret values. To also validate notarization credentials with Apple:
+
+```bash
+STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 \
+CSC_NAME="Example Org (ABCDE12345)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run release:preflight
+```
 
 ## Build Commands
 
@@ -43,23 +89,57 @@ Build the Python payload for the app resources:
 make desktop-payload
 ```
 
-Build macOS artifacts:
+Build unsigned local development artifacts:
 
 ```bash
-STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" make desktop-dist
+pnpm --dir desktop run dist:mac:dev
 ```
 
-`STACKOS_UPDATE_URL` is optional for local packaging, but release builds should
-set it so electron-builder emits generic-provider update metadata for the
-custom endpoint.
+This command sets `STACKOS_UNSIGNED_DEV=1` and
+`CSC_IDENTITY_AUTO_DISCOVERY=false`, so electron-builder writes `mac.identity`
+to `null`, leaves the DMG unsigned, and disables notarization even on a machine
+that has a Developer ID certificate in the keychain.
 
-Local desktop builds intentionally do not require Apple signing or notarization
-parameters. A release-intent build is detected when `STACKOS_REQUIRE_SIGNING=1`
-is set or when `STACKOS_UPDATE_URL` points at a non-localhost HTTPS endpoint.
-Release-intent builds require signing and notarization inputs unless an
-operator explicitly sets `STACKOS_ALLOW_UNSIGNED_RELEASE=1` for a non-release
-smoke. The release wrapper signs the generated DMGs, notarizes the app bundles
-through electron-builder, then notarizes and staples the current-version DMGs.
+Build signed local artifacts without notarization:
+
+```bash
+pnpm --dir desktop run dist:mac:signed
+```
+
+This command sets `STACKOS_ALLOW_SIGNING_AUTO_DISCOVERY=1`, so it works on a
+developer Mac when exactly one Developer ID Application identity is visible. Set
+`CSC_NAME="Example Org (ABCDE12345)"` as well when multiple identities are
+present or when CI should pin the signing identity.
+
+Build signed and notarized release artifacts:
+
+```bash
+CSC_NAME="Example Org (ABCDE12345)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run dist:mac:release
+```
+
+Public release builds require `CSC_NAME` and a non-localhost HTTPS
+`STACKOS_UPDATE_URL`. `CSC_LINK` may still be supplied when CI imports a
+certificate, but `CSC_NAME` pins the Developer ID identity used by the packaged
+runtime signing hook. The update URL makes electron-builder emit
+generic-provider update metadata for the custom endpoint.
+
+Unsigned local development builds intentionally do not require Apple signing or
+notarization parameters and deliberately disable signing auto-discovery. Signed
+local builds require signing inputs and explicitly set
+`STACKOS_SKIP_NOTARIZATION=1`; they are not public release evidence. Release
+builds use `STACKOS_REQUIRE_SIGNING=1` and `STACKOS_REQUIRE_UPDATE_URL=1`, and
+require `CSC_NAME`, notarization inputs, and update metadata. A
+release-intent build is also detected when `STACKOS_UPDATE_URL` points at a
+non-localhost HTTPS endpoint. Release-intent builds require signing and
+notarization inputs unless an operator explicitly sets
+`STACKOS_ALLOW_UNSIGNED_RELEASE=1` for a non-release smoke.
+
+The release wrapper rebuilds the standalone Python payload, signs the generated
+app bundle, signs the generated DMG, submits to Apple notarization, staples the
+DMG ticket, and validates the staple.
 
 ## Signing and Notarization Environment
 
@@ -79,6 +159,14 @@ export CSC_KEY_PASSWORD="..."
 # Or deliberate local auto-discovery for release smoke only.
 export STACKOS_ALLOW_SIGNING_AUTO_DISCOVERY=1
 ```
+
+`CSC_NAME` is required for public release because StackOS signs the bundled
+Python runtime in an `afterPack` hook before electron-builder performs the
+final app signing and notarization. `CSC_LINK` is supported as a certificate
+import mechanism when `CSC_NAME` also names the imported identity.
+Auto-discovery is reserved for local signed smokes and only works when exactly
+one Developer ID Application identity is visible to `security find-identity`
+during the full Electron build.
 
 Notarization accepts one of these methods. App Store Connect API key is preferred:
 
@@ -100,6 +188,11 @@ Or store credentials in the macOS keychain with `xcrun notarytool
 store-credentials`, then pass the profile:
 
 ```bash
+xcrun notarytool store-credentials stackos-notary \
+  --apple-id "developer@example.com" \
+  --team-id "ABCDE12345" \
+  --password "app-specific-password"
+
 export APPLE_KEYCHAIN_PROFILE="stackos-notary"
 export APPLE_KEYCHAIN="login.keychain"
 ```
@@ -110,6 +203,10 @@ electron-builder:
 ```bash
 STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
 STACKOS_REQUIRE_SIGNING=1 \
+STACKOS_REQUIRE_UPDATE_URL=1 \
+CSC_NAME="Example Org (ABCDE12345)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
 node desktop/scripts/build-mac.mjs
 ```
 
@@ -118,9 +215,11 @@ make the bypass explicit:
 
 ```bash
 STACKOS_ALLOW_UNSIGNED_RELEASE=1 \
+STACKOS_UNSIGNED_DEV=1 \
 STACKOS_SKIP_NOTARIZATION=1 \
-STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" \
-make desktop-dist
+CSC_IDENTITY_AUTO_DISCOVERY=false \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run dist:mac
 ```
 
 That bypass is not valid public release evidence.
@@ -146,9 +245,16 @@ registration, Playwright Chromium runtime setup, and launchd autostart. It does 
 Generated payloads are ignored by git. `desktop/scripts/build-stackos-payload.sh`
 builds a wheel, installs it into `desktop/payload/stackos/.venv`, writes
 `build-info.json`, and writes a small `bin/stackos` wrapper that the packaged
-Electron app can run. The app records a composite install key from its app
-version plus packaged payload build info, so replacing a locally built app with
-the same public version still reruns install/repair once.
+Electron app can run. The payload vendors a standalone CPython runtime under
+`.venv`, including the standard library, `lib-dynload`, `site-packages`,
+`bin/python`, and `libpython*.dylib`. Desktop payload builds also install
+Playwright Chromium into `ms-playwright` by default. The wrapper sets the
+packaged `PYTHONHOME` and `PLAYWRIGHT_BROWSERS_PATH`, disables bytecode writes,
+ignores user site packages, and clears ambient Python environment variables so
+another Mac does not need uv, Python, Homebrew, the source checkout, or a
+first-run browser download. The app records a composite install key from its
+app version plus packaged payload build info, so replacing a locally built app
+with the same public version still reruns install/repair once.
 
 The macOS bundle icon is generated from the high-resolution desktop PNG:
 `desktop/assets/stackos-icon.png`. `desktop/scripts/build-icons.mjs` builds
@@ -163,7 +269,7 @@ generic provider. The endpoint is a static HTTPS URL prefix served by the
 website, for example:
 
 ```text
-https://example.com/stackos/macos/stable/
+https://flowmonkey.io/StackOS/
 ```
 
 FTP or another deploy tool may upload files into that website directory later,
@@ -189,11 +295,17 @@ The endpoint should serve the generated electron-updater metadata and artifacts,
 for example:
 
 ```text
-https://example.com/stackos/macos/stable/latest-mac.yml
-https://example.com/stackos/macos/stable/stackos-1.0.1-mac-arm64.zip
-https://example.com/stackos/macos/stable/stackos-1.0.1-mac-arm64.dmg
-https://example.com/stackos/macos/stable/stackos-1.0.1-mac-arm64.zip.blockmap
+https://flowmonkey.io/StackOS/latest-mac.yml
+https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.zip
+https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.dmg
+https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.zip.blockmap
 ```
+
+Set `STACKOS_UPDATE_URL` to the directory URL (`https://flowmonkey.io/StackOS/`),
+not to `latest-mac.yml`, a DMG, a ZIP, or a blockmap file. Electron's macOS
+generic updater checks `latest-mac.yml` at that base URL; the YAML then points
+to the downloadable ZIP artifact. The DMG can live in the same directory for
+manual download and drag-and-drop installation.
 
 After an app update, the next launch sees a new app version or new packaged
 payload build id and reruns `stackos install --launchd --force`, then restarts
@@ -238,8 +350,14 @@ pnpm --dir desktop check
 Release checks, once dependencies and signing are configured:
 
 ```bash
-make desktop-payload
-STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" make desktop-dist
+CSC_NAME="Example Org (ABCDE12345)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run release:preflight
+CSC_NAME="Example Org (ABCDE12345)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run dist:mac:release
 ```
 
 Build-config smoke without invoking electron-builder:
@@ -266,9 +384,18 @@ After building signed artifacts, verify signatures and stapling before sharing
 outside the build machine:
 
 ```bash
-codesign --verify --deep --strict --verbose=2 desktop/dist/mac/StackOS.app
+codesign --verify --deep --strict --verbose=2 desktop/dist/mac-arm64/StackOS.app
 spctl --assess --type open --context context:primary-signature --verbose desktop/dist/stackos-<version>-mac-arm64.dmg
 xcrun stapler validate desktop/dist/stackos-<version>-mac-arm64.dmg
+PYTHONHOME=/tmp/bad PYTHONPATH=/tmp/bad desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/bin/stackos --version
+```
+
+Standalone payload checks should also confirm no build-machine paths leak into
+the app resources:
+
+```bash
+rg "/Users/|\\.local/share/uv|payload-build" desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos
+find desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv -name '*.pyc' -o -name '__pycache__'
 ```
 
 Manual release smoke should install the DMG, launch the installed app, confirm
@@ -283,7 +410,7 @@ Local update-channel smoke before website hosting exists:
 1. Build or keep an older installed `StackOS.app` in `/Applications` or another
    writable app location. Do not launch it from the mounted DMG.
 2. Build a newer desktop artifact with
-   `STACKOS_UPDATE_URL="http://127.0.0.1:8765/stackos/macos" make desktop-dist`.
+   `STACKOS_UPDATE_URL="http://127.0.0.1:8765/stackos/macos" pnpm --dir desktop run dist:mac:dev`.
 3. Serve the generated metadata and artifacts from a local static server rooted
    at the directory that contains `stackos/macos/latest-mac.yml`.
 4. Launch the installed older app with the same `STACKOS_UPDATE_URL` override

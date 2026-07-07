@@ -184,6 +184,41 @@ def test_ui_token_can_call_ingress_setup_operation(
     assert resp.json()["data"]["public_base_url"] == "https://stackos.example.com"
 
 
+def test_ui_token_can_update_tracker_task_status(client: TestClient, auth_token: str) -> None:
+    """The local console can close or reopen tasks without exposing daemon auth."""
+    project_id = _create_project(client, auth_token)
+    ui_token = derive_ui_token(auth_token)
+
+    created = client.post(
+        "/api/v1/operations/tracker.createTask/call",
+        headers={"authorization": f"Bearer {auth_token}"},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "ui-status-task",
+                "title": "UI status task",
+                "created_by": "test",
+            }
+        },
+    )
+    assert created.status_code == 200, created.text
+
+    resp = client.post(
+        "/api/v1/operations/tracker.updateTask/call",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "task_key": "ui-status-task",
+                "patch_json": {"status": "complete"},
+                "actor": "ui",
+            }
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["task"]["status"] == "complete"
+
+
 def test_ui_token_cannot_call_mutating_operations(client: TestClient, auth_token: str) -> None:
     """Operation POST access stays limited by the operation spec, not URL shape."""
     project_id = _create_project(client, auth_token)
@@ -201,7 +236,22 @@ def test_ui_token_cannot_call_mutating_operations(client: TestClient, auth_token
         },
     )
     assert resp.status_code == 403
-    assert "read-only operations" in resp.json()["detail"]
+    assert "browser-safe operations" in resp.json()["detail"]
+
+    tracker_resp = client.post(
+        "/api/v1/operations/tracker.createTicket/call",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "task_key": "ui-status-task",
+                "key": "blocked-ui-ticket",
+                "title": "Blocked UI ticket",
+            }
+        },
+    )
+    assert tracker_resp.status_code == 403
+    assert "browser-safe operations" in tracker_resp.json()["detail"]
 
     lifecycle_resp = client.post(
         "/api/v1/operations/runPlan.reopen/call",
@@ -209,7 +259,7 @@ def test_ui_token_cannot_call_mutating_operations(client: TestClient, auth_token
         json={"arguments": {"run_plan_id": 1, "reason": "UI token must not reopen workflows."}},
     )
     assert lifecycle_resp.status_code == 403
-    assert "read-only operations" in lifecycle_resp.json()["detail"]
+    assert "browser-safe operations" in lifecycle_resp.json()["detail"]
 
 
 def test_ui_token_can_manage_provider_auth_setup(client: TestClient, auth_token: str) -> None:

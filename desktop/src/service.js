@@ -16,6 +16,7 @@ const STACKOS_STATE_DIR =
   process.env.STACKOS_STATE_DIR || path.join(os.homedir(), ".local", "state", "stackos");
 const AUTH_TOKEN_PATH =
   process.env.STACKOS_DESKTOP_AUTH_TOKEN_PATH || path.join(STACKOS_STATE_DIR, "auth.token");
+let packagedRuntime = false;
 
 function isExecutable(filePath) {
   try {
@@ -84,6 +85,15 @@ function resolveStackosCommand() {
     };
   }
 
+  if (packagedRuntime) {
+    return {
+      command: null,
+      baseArgs: [],
+      mode: "packaged-missing",
+      error: `packaged StackOS CLI is missing or not executable at ${packaged || packagedStackosPath()}`
+    };
+  }
+
   const root = repoRoot();
   const venvPython = path.join(root, ".venv", "bin", "python");
   if (isExecutable(venvPython)) {
@@ -101,6 +111,10 @@ function resolveStackosCommand() {
   };
 }
 
+function setPackagedRuntime(value) {
+  packagedRuntime = Boolean(value);
+}
+
 function trimOutput(value, limit = 12000) {
   if (!value) {
     return "";
@@ -111,17 +125,105 @@ function trimOutput(value, limit = 12000) {
   return `${value.slice(0, limit)}\n[trimmed ${value.length - limit} chars]`;
 }
 
+function normalizeLifecycleOptions(value, defaultTimeoutSeconds) {
+  if (typeof value === "number") {
+    return {
+      timeoutSeconds: value
+    };
+  }
+  if (value && typeof value === "object") {
+    return {
+      ...value,
+      timeoutSeconds: Number.isFinite(value.timeoutSeconds)
+        ? value.timeoutSeconds
+        : defaultTimeoutSeconds
+    };
+  }
+  return {
+    timeoutSeconds: defaultTimeoutSeconds
+  };
+}
+
+async function reportProgress(options, phase, progress) {
+  if (!options || typeof options.onProgress !== "function") {
+    return;
+  }
+  try {
+    await options.onProgress({
+      phase,
+      progress
+    });
+  } catch (_error) {
+    // Startup progress should never make lifecycle work fail.
+  }
+}
+
+function reportInstallLineProgress(options, line) {
+  const progressByPattern = [
+    [/Install mode/i, ["Checking install mode...", 32]],
+    [/Bootstrap state ready/i, ["Preparing local state...", 36]],
+    [/Database schema/i, ["Updating local database...", 42]],
+    [/Browser runtime/i, ["Checking browser runtime...", 48]],
+    [/Installed \d+ skills/i, ["Installing agent skills...", 54]],
+    [/Installed \d+ plugins/i, ["Installing plugins...", 58]],
+    [/marketplace/i, ["Registering plugin marketplace...", 60]],
+    [/(Codex|Claude|Gemini|MCP)/i, ["Registering app connections...", 63]],
+    [/launchd|autostart/i, ["Installing autostart...", 66]]
+  ];
+  for (const [pattern, [phase, progress]] of progressByPattern) {
+    if (pattern.test(line)) {
+      void reportProgress(options, phase, progress);
+      return;
+    }
+  }
+}
+
+function createInstallProgressReporter(options) {
+  let buffer = "";
+  return (chunk) => {
+    buffer += chunk;
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      reportInstallLineProgress(options, line);
+    }
+  };
+}
+
 function runStackos(args, options = {}) {
   const resolved = resolveStackosCommand();
   const timeoutMs = options.timeoutMs || 120000;
   const cwd = options.cwd || repoRoot();
+  if (resolved.error || !resolved.command) {
+    return Promise.resolve({
+      ok: false,
+      commandMode: resolved.mode,
+      args,
+      exitCode: null,
+      signal: null,
+      stdout: "",
+      stderr: resolved.error || "StackOS command is not available"
+    });
+  }
+  const env = {
+    ...process.env,
+    PYTHONDONTWRITEBYTECODE: "1",
+    PYTHONNOUSERSITE: "1",
+    PYTHONUNBUFFERED: "1"
+  };
+  if (resolved.mode === "packaged") {
+    const root = packagedStackosRoot();
+    env.PYTHONHOME = path.join(root, ".venv");
+    env.PLAYWRIGHT_BROWSERS_PATH = path.join(root, "ms-playwright");
+    env.STACKOS_PACKAGED_CLI = packagedStackosPath();
+    delete env.PYTHONPATH;
+    delete env.VIRTUAL_ENV;
+    delete env.__PYVENV_LAUNCHER__;
+  }
   return new Promise((resolve) => {
     const child = childProcess.spawn(resolved.command, [...resolved.baseArgs, ...args], {
       cwd,
-      env: {
-        ...process.env,
-        PYTHONUNBUFFERED: "1"
-      },
+      env,
       stdio: ["ignore", "pipe", "pipe"]
     });
 
@@ -132,10 +234,18 @@ function runStackos(args, options = {}) {
     }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      if (typeof options.onStdout === "function") {
+        options.onStdout(text);
+      }
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      if (typeof options.onStderr === "function") {
+        options.onStderr(text);
+      }
     });
     child.on("error", (error) => {
       clearTimeout(timer);
@@ -312,13 +422,17 @@ async function waitForHealth(timeoutMs = 20000) {
   return last;
 }
 
-async function startDaemon(timeoutSeconds = 20) {
+async function startDaemon(options = 20) {
+  const lifecycle = normalizeLifecycleOptions(options, 20);
+  const timeoutSeconds = lifecycle.timeoutSeconds;
+  await reportProgress(lifecycle, "Starting local service...", 58);
   const result = await runStackos(["start", "--timeout", String(timeoutSeconds)], {
     timeoutMs: (timeoutSeconds + 5) * 1000
   });
   if (!result.ok) {
     return result;
   }
+  await reportProgress(lifecycle, "Waiting for local service...", 72);
   const health = await waitForHealth(timeoutSeconds * 1000);
   return {
     ...result,
@@ -326,13 +440,17 @@ async function startDaemon(timeoutSeconds = 20) {
   };
 }
 
-async function restartDaemon(timeoutSeconds = 20) {
+async function restartDaemon(options = 20) {
+  const lifecycle = normalizeLifecycleOptions(options, 20);
+  const timeoutSeconds = lifecycle.timeoutSeconds;
+  await reportProgress(lifecycle, "Restarting local service...", 62);
   const result = await runStackos(["restart", "--timeout", String(timeoutSeconds)], {
     timeoutMs: (timeoutSeconds + 10) * 1000
   });
   if (!result.ok) {
     return result;
   }
+  await reportProgress(lifecycle, "Waiting for local service...", 74);
   const health = await waitForHealth(timeoutSeconds * 1000);
   return {
     ...result,
@@ -340,23 +458,76 @@ async function restartDaemon(timeoutSeconds = 20) {
   };
 }
 
-async function ensureDaemonReady(timeoutSeconds = 20) {
+function parseJsonResult(result) {
+  if (!result || !result.stdout) {
+    return null;
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function autostartStatus(options = 20) {
+  const lifecycle = normalizeLifecycleOptions(options, 20);
+  const timeoutSeconds = lifecycle.timeoutSeconds;
+  const result = await runStackos(["autostart", "status", "--json"], {
+    timeoutMs: timeoutSeconds * 1000
+  });
+  return {
+    ...result,
+    parsed: parseJsonResult(result)
+  };
+}
+
+function packagedLaunchdIsCurrent(status) {
+  const root = packagedStackosRoot();
+  if (!root || !status || !status.ok || !status.parsed) {
+    return false;
+  }
+  const message = String(status.parsed.launchctl_message || "");
+  return (
+    status.parsed.plist_present === true &&
+    status.parsed.launchd_loaded === true &&
+    message.includes(path.join(root, ".venv", "bin", "python")) &&
+    message.includes("STACKOS_PACKAGED_CLI") &&
+    message.includes("PYTHONHOME") &&
+    message.includes("PLAYWRIGHT_BROWSERS_PATH")
+  );
+}
+
+async function ensureDaemonReady(options = 20) {
+  const lifecycle = normalizeLifecycleOptions(options, 20);
+  const timeoutSeconds = lifecycle.timeoutSeconds;
+  await reportProgress(lifecycle, "Checking local service...", 48);
   const health = await checkHealth();
   if (health.ok) {
+    await reportProgress(lifecycle, "Local service is running...", 78);
     return {
       ok: true,
       alreadyRunning: true,
       health
     };
   }
-  return startDaemon(timeoutSeconds);
+  return startDaemon({
+    ...lifecycle,
+    timeoutSeconds
+  });
 }
 
-async function installOrRepair(timeoutSeconds = 240) {
+async function installOrRepair(options = 240) {
+  const lifecycle = normalizeLifecycleOptions(options, 240);
+  const timeoutSeconds = lifecycle.timeoutSeconds;
+  const shouldRunDoctor = lifecycle.runDoctor !== false;
   const installArgs =
-    process.platform === "darwin" ? ["install", "--launchd", "--force"] : ["install"];
+    process.platform === "darwin"
+      ? ["install", "--launchd", "--force", "--skip-doctor"]
+      : ["install", "--skip-doctor"];
+  await reportProgress(lifecycle, "Preparing local files...", 30);
   const install = await runStackos(installArgs, {
-    timeoutMs: timeoutSeconds * 1000
+    timeoutMs: timeoutSeconds * 1000,
+    onStdout: createInstallProgressReporter(lifecycle)
   });
   if (!install.ok) {
     return {
@@ -365,19 +536,39 @@ async function installOrRepair(timeoutSeconds = 240) {
       install
     };
   }
-  const start = await restartDaemon(20);
-  const doctor = start.ok ? await runDoctor() : null;
+  const start = await restartDaemon({
+    ...lifecycle,
+    timeoutSeconds: 20
+  });
+  const startReady = start.ok && start.health && start.health.ok;
+  let doctor = null;
+  if (startReady && shouldRunDoctor) {
+    await reportProgress(lifecycle, "Running doctor...", 84);
+    doctor = await runDoctor();
+  }
   const readiness = doctor
     ? readinessFromDoctor(doctor)
-    : {
-        ok: false,
-        status: "restart-failed",
-        code: null,
-        repair: "restart the StackOS service, then run doctor"
-      };
+    : startReady
+      ? {
+          ok: true,
+          status: "health-ready",
+          code: null,
+          repair: null
+        }
+      : {
+          ok: false,
+          status: start.ok ? "health-failed" : "restart-failed",
+          code: null,
+          repair: start.ok
+            ? "wait for the StackOS service, then run doctor"
+            : "restart the StackOS service, then run doctor"
+        };
+  if (startReady && (!doctor || doctor.ok)) {
+    await reportProgress(lifecycle, "Local service is ready...", 88);
+  }
   return {
-    ok: start.ok && (!doctor || doctor.ok),
-    phase: start.ok ? (doctor && !doctor.ok ? "doctor" : "ready") : "restart",
+    ok: startReady && (!doctor || doctor.ok),
+    phase: !start.ok ? "restart" : startReady ? (doctor && !doctor.ok ? "doctor" : "ready") : "health",
     install,
     start,
     doctor,
@@ -385,10 +576,57 @@ async function installOrRepair(timeoutSeconds = 240) {
   };
 }
 
-async function repairMcpRegistrations(timeoutSeconds = 60) {
+async function repairMcpRegistrations(options = 60) {
+  const lifecycle = normalizeLifecycleOptions(options, 60);
+  const timeoutSeconds = lifecycle.timeoutSeconds;
+  await reportProgress(lifecycle, "Refreshing app connections...", 32);
   return runStackos(["install", "--mcp-only", "--skip-doctor"], {
-    timeoutMs: timeoutSeconds * 1000
+    timeoutMs: timeoutSeconds * 1000,
+    onStdout: createInstallProgressReporter(lifecycle)
   });
+}
+
+async function repairPreparedInstall(options = 180) {
+  const lifecycle = normalizeLifecycleOptions(options, 180);
+  const timeoutSeconds = lifecycle.timeoutSeconds;
+  const commandInfo = resolveStackosCommand();
+  if (process.platform !== "darwin" || commandInfo.mode !== "packaged") {
+    return repairMcpRegistrations(lifecycle);
+  }
+
+  await reportProgress(lifecycle, "Checking autostart...", 20);
+  const status = await autostartStatus({
+    ...lifecycle,
+    timeoutSeconds: 20
+  });
+  if (packagedLaunchdIsCurrent(status)) {
+    return repairMcpRegistrations(lifecycle);
+  }
+
+  await reportProgress(lifecycle, "Repairing autostart...", 46);
+  const install = await runStackos(["install", "--launchd", "--force", "--skip-doctor"], {
+    timeoutMs: timeoutSeconds * 1000,
+    onStdout: createInstallProgressReporter(lifecycle)
+  });
+  if (!install.ok) {
+    return {
+      ok: false,
+      phase: "prepared-launchd-repair",
+      status,
+      install
+    };
+  }
+  const restart = await restartDaemon({
+    ...lifecycle,
+    timeoutSeconds: 20
+  });
+  return {
+    ok: restart.ok,
+    phase: restart.ok ? "prepared-launchd-repaired" : "prepared-launchd-restart",
+    status,
+    install,
+    restart
+  };
 }
 
 function installStatePath(userDataPath) {
@@ -428,8 +666,13 @@ async function prepareInstalledVersion({
   force = false,
   payloadInfo = readPackagedBuildInfo(),
   installOrRepairFn = installOrRepair,
-  repairMcpRegistrationsFn = repairMcpRegistrations
+  repairPreparedInstallFn = null,
+  repairMcpRegistrationsFn = null,
+  repairPreparedInstallBeforeReady = false,
+  runDoctor = force,
+  onProgress = null
 }) {
+  const progressOptions = { onProgress };
   const state = readInstallState(userDataPath);
   const commandInfo = resolveStackosCommand();
   const installKey = installKeyFor({ version, payloadInfo, commandInfo });
@@ -437,28 +680,58 @@ async function prepareInstalledVersion({
     state.prepared === true &&
     (state.installKey === installKey || (!payloadInfo && !state.installKey && state.version === version));
   if (!force && preparedCurrentInstall) {
-    let externalRepair;
-    try {
-      externalRepair = await repairMcpRegistrationsFn();
-    } catch (error) {
-      externalRepair = {
-        ok: false,
-        phase: "external-registration",
-        error: error && error.message ? error.message : String(error)
+    await reportProgress(progressOptions, "Setup is current...", 30);
+    if (repairPreparedInstallBeforeReady) {
+      let externalRepair;
+      try {
+        externalRepair = await (
+          repairPreparedInstallFn ||
+          repairMcpRegistrationsFn ||
+          repairPreparedInstall
+        )({
+          onProgress
+        });
+      } catch (error) {
+        externalRepair = {
+          ok: false,
+          phase: "external-registration",
+          error: error && error.message ? error.message : String(error)
+        };
+      }
+      const repairOk = externalRepair && externalRepair.ok !== false;
+      return {
+        ok: repairOk,
+        phase: repairOk ? "prepared" : externalRepair.phase || "external-registration",
+        skipped: true,
+        version,
+        installKey,
+        payloadInfo,
+        state,
+        externalRepair
       };
     }
+
     return {
       ok: true,
+      phase: "prepared",
       skipped: true,
+      maintenanceRequired: true,
       version,
       installKey,
       payloadInfo,
-      state,
-      externalRepair
+      state
     };
   }
 
-  const result = await installOrRepairFn();
+  await reportProgress(
+    progressOptions,
+    force ? "Repairing StackOS..." : "Preparing StackOS...",
+    24
+  );
+  const result = await installOrRepairFn({
+    runDoctor,
+    onProgress
+  });
   if (result.ok) {
     writeInstallState(userDataPath, {
       version,
@@ -501,6 +774,7 @@ module.exports = {
   checkHealth,
   daemonLogPath,
   daemonJsonGet,
+  autostartStatus,
   ensureDaemonReady,
   installOrRepair,
   installKeyFor,
@@ -511,10 +785,13 @@ module.exports = {
   readAuthToken,
   readInstallState,
   readPackagedBuildInfo,
+  packagedLaunchdIsCurrent,
   repairMcpRegistrations,
+  repairPreparedInstall,
   resolveStackosCommand,
   restartDaemon,
   runDoctor,
   runStackos,
+  setPackagedRuntime,
   startDaemon
 };

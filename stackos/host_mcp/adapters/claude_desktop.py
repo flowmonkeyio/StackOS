@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
@@ -14,13 +15,18 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.json_config import read_json_object, remove_mcp_server, upsert_mcp_server
-from stackos.host_mcp.restart_state import mark_restart_required, pending_restart
+from stackos.host_mcp.restart_state import (
+    clear_restart_required,
+    mark_restart_required,
+    pending_restart,
+)
 from stackos.host_mcp.result import HostMcpResult, looks_secretish
 
 HOST_KEY = "claude-desktop"
 SURFACE = "desktop-json"
 CONFIG_ENV = "STACKOS_CLAUDE_DESKTOP_CONFIG"
 RESTART_REPAIR = "Run `stackos install --mcp-only` or desktop Repair, then restart Claude Desktop."
+RunningState = Literal["running", "not_running", "unknown"]
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
@@ -76,6 +82,22 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
     expected_command = resolve_bridge_command(runtime=HOST_KEY)
     if command_matches(expected_command, command):
         if pending_restart(HOST_KEY, config_path=str(path), command=expected_command, home=home):
+            running_state = _claude_desktop_running()
+            if running_state == "not_running":
+                clear_restart_required(HOST_KEY, home=home)
+                return HostMcpResult(
+                    host_key=HOST_KEY,
+                    surface=SURFACE,
+                    status="registered_current",
+                    message=(
+                        "Claude Desktop StackOS MCP registration is ready; "
+                        "Claude Desktop will load it next time it starts."
+                    ),
+                    ok=True,
+                    available=True,
+                    config_path=str(path),
+                    command=command,
+                )
             return HostMcpResult(
                 host_key=HOST_KEY,
                 surface=SURFACE,
@@ -139,6 +161,21 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
     )
     if not ok:
         return _config_error(path, error)
+    if _claude_desktop_running() == "not_running":
+        clear_restart_required(HOST_KEY, home=home)
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="registered_current",
+            message=(
+                f"Registered MCP '{server_name}' with Claude Desktop; "
+                "Claude Desktop will load it next time it starts."
+            ),
+            ok=True,
+            available=True,
+            config_path=str(path),
+            command=command,
+        )
     mark_restart_required(
         HOST_KEY,
         surface=SURFACE,
@@ -210,6 +247,26 @@ def _available(path: Path) -> bool:
             Path("/Applications/Claude Desktop.app"),
         )
     )
+
+
+def _claude_desktop_running() -> RunningState:
+    if sys.platform != "darwin":
+        return "unknown"
+    for process_name in ("Claude", "Claude Desktop"):
+        try:
+            result = subprocess.run(
+                ["pgrep", "-x", process_name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return "unknown"
+        if result.returncode == 0:
+            return "running"
+        if result.returncode != 1:
+            return "unknown"
+    return "not_running"
 
 
 def _absent(

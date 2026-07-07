@@ -73,8 +73,8 @@ desktop-dev: ## Run the macOS Electron shell against the local daemon
 desktop-payload: ## Build the packaged StackOS Python payload for Electron
 	@if [ -d desktop ]; then cd desktop && pnpm run payload; else echo "desktop/ not available in this checkout"; exit 0; fi
 
-desktop-dist: build-ui desktop-payload ## Build macOS app artifacts with electron-builder
-	@if [ -d desktop ]; then cd desktop && pnpm install && pnpm run dist:mac; else echo "desktop/ not available in this checkout"; exit 0; fi
+desktop-dist: build-ui ## Build unsigned macOS development artifacts
+	@if [ -d desktop ]; then cd desktop && pnpm install && pnpm run dist:mac:dev; else echo "desktop/ not available in this checkout"; exit 0; fi
 
 desktop-doctor: ## Validate desktop scaffold, updater contracts, and lifecycle smoke tests
 	@if [ -d desktop ]; then cd desktop && pnpm run check; else echo "desktop/ not available in this checkout"; exit 0; fi

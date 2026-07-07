@@ -36,8 +36,10 @@ async function main() {
 
     let calls = 0;
     let mcpRepairCalls = 0;
-    const okInstall = async () => {
+    let lastInstallOptions = null;
+    const okInstall = async (options = {}) => {
       calls += 1;
+      lastInstallOptions = options;
       return {
         ok: true,
         phase: "ready"
@@ -61,6 +63,7 @@ async function main() {
     assert.equal(first.ok, true);
     assert.equal(first.skipped, false);
     assert.equal(calls, 1);
+    assert.equal(lastInstallOptions.runDoctor, false);
     assert.equal(mcpRepairCalls, 0);
     assert.equal(
       service.readInstallState(userDataPath).installKey,
@@ -77,8 +80,30 @@ async function main() {
     assert.equal(current.ok, true);
     assert.equal(current.skipped, true);
     assert.equal(calls, 1);
-    assert.equal(mcpRepairCalls, 1);
-    assert.equal(current.externalRepair.ok, true);
+    assert.equal(mcpRepairCalls, 0);
+    assert.equal(current.maintenanceRequired, true);
+    assert.equal(current.externalRepair, undefined);
+
+    const progressEvents = [];
+    const currentWithProgress = await service.prepareInstalledVersion({
+      version: "1.0.0",
+      userDataPath,
+      payloadInfo: payloadA,
+      installOrRepairFn: okInstall,
+      repairMcpRegistrationsFn: okMcpRepair,
+      onProgress: (event) => {
+        progressEvents.push(event);
+      }
+    });
+    assert.equal(currentWithProgress.ok, true);
+    assert.equal(currentWithProgress.skipped, true);
+    assert.equal(calls, 1);
+    assert.deepEqual(progressEvents, [
+      {
+        phase: "Setup is current...",
+        progress: 30
+      }
+    ]);
 
     const upgradedPayload = await service.prepareInstalledVersion({
       version: "1.0.0",
@@ -90,7 +115,7 @@ async function main() {
     assert.equal(upgradedPayload.ok, true);
     assert.equal(upgradedPayload.skipped, false);
     assert.equal(calls, 2);
-    assert.equal(mcpRepairCalls, 1);
+    assert.equal(mcpRepairCalls, 0);
     assert.equal(
       service.readInstallState(userDataPath).installKey,
       service.installKeyFor({ version: "1.0.0", payloadInfo: payloadB })
@@ -107,12 +132,14 @@ async function main() {
     assert.equal(forced.ok, true);
     assert.equal(forced.skipped, false);
     assert.equal(calls, 3);
-    assert.equal(mcpRepairCalls, 1);
+    assert.equal(lastInstallOptions.runDoctor, true);
+    assert.equal(mcpRepairCalls, 0);
 
     const currentWithFailedMcpRepair = await service.prepareInstalledVersion({
       version: "1.0.0",
       userDataPath,
       payloadInfo: payloadB,
+      repairPreparedInstallBeforeReady: true,
       installOrRepairFn: okInstall,
       repairMcpRegistrationsFn: async () => ({
         ok: false,
@@ -120,23 +147,45 @@ async function main() {
         stderr: "Claude unavailable"
       })
     });
-    assert.equal(currentWithFailedMcpRepair.ok, true);
+    assert.equal(currentWithFailedMcpRepair.ok, false);
     assert.equal(currentWithFailedMcpRepair.skipped, true);
     assert.equal(currentWithFailedMcpRepair.externalRepair.ok, false);
+    assert.equal(currentWithFailedMcpRepair.phase, "external-registration");
 
     const currentWithThrownMcpRepair = await service.prepareInstalledVersion({
       version: "1.0.0",
       userDataPath,
       payloadInfo: payloadB,
+      repairPreparedInstallBeforeReady: true,
       installOrRepairFn: okInstall,
       repairMcpRegistrationsFn: async () => {
         throw new Error("Claude repair crashed");
       }
     });
-    assert.equal(currentWithThrownMcpRepair.ok, true);
+    assert.equal(currentWithThrownMcpRepair.ok, false);
     assert.equal(currentWithThrownMcpRepair.skipped, true);
     assert.equal(currentWithThrownMcpRepair.externalRepair.ok, false);
     assert.equal(currentWithThrownMcpRepair.externalRepair.phase, "external-registration");
+
+    let preparedRepairCalls = 0;
+    const currentWithPreparedRepair = await service.prepareInstalledVersion({
+      version: "1.0.0",
+      userDataPath,
+      payloadInfo: payloadB,
+      repairPreparedInstallBeforeReady: true,
+      installOrRepairFn: okInstall,
+      repairPreparedInstallFn: async () => {
+        preparedRepairCalls += 1;
+        return {
+          ok: true,
+          phase: "prepared-launchd-repaired"
+        };
+      }
+    });
+    assert.equal(currentWithPreparedRepair.ok, true);
+    assert.equal(currentWithPreparedRepair.skipped, true);
+    assert.equal(preparedRepairCalls, 1);
+    assert.equal(currentWithPreparedRepair.externalRepair.phase, "prepared-launchd-repaired");
 
     assert.match(
       service.installKeyFor({

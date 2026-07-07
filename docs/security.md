@@ -75,8 +75,10 @@ REST mutation routes are local-admin surfaces behind the daemon bearer token.
 The browser UI receives only a derived REST-only console token. That token can
 read REST state, call operation-registry entries whose specs are read-only,
 create projects during local setup, and manage provider auth setup for a
-project (`auth.start`, secret storage, sanitized auth tests, and revoke), but it
-cannot access MCP, mutating operation calls, or general mutation routes. The
+project (`auth.start`, secret storage, sanitized auth tests, and revoke). It can
+also call explicitly browser-safe local console operations such as
+`tracker.updateTask` for task status changes. It cannot access MCP, arbitrary
+mutating operation calls, or general mutation routes. The
 installable MCP bridge keeps the daemon bearer inside the bridge process rather
 than giving it to the agent. Normal agent workflow writes and external action
 execution go through MCP run-plan grants (`runPlan.claimStep` + step-scoped
@@ -139,9 +141,10 @@ to `127.0.0.1:5180` can fetch the UI token by sending `GET
 for REST reads, read-only `POST /api/v1/operations/{operation}/call` transport
 calls, `POST /api/v1/projects`, narrow no-secret setup operations such as
 `communicationProfile.upsert` and `ingressEndpoint.*`, and the
-provider-auth setup routes under `/api/v1/projects/{id}/auth/*`; it cannot
-access `/mcp` and cannot mutate existing projects, resources, runs, action
-execution, templates, or project data.
+provider-auth setup routes under `/api/v1/projects/{id}/auth/*`. It can also
+call explicitly browser-safe local console operations such as
+`tracker.updateTask`; it cannot access `/mcp` and cannot mutate existing
+projects, resources, runs, action execution, templates, or project data.
 Previously, only a process that could read `auth.token` (mode 0600, owned by
 the daemon's user) could obtain any bearer token. On a single-user macOS or
 Linux box that's a near-zero delta (same-user processes already had file
@@ -157,8 +160,8 @@ and add/test/revoke provider credentials through the local setup surface.
   daemon token. `BearerTokenMiddleware` accepts it only for `GET`,
   `HEAD`, and `OPTIONS` requests under `/api/v1/*`, `POST /api/v1/projects`,
   read-only operation-registry calls, narrow no-secret setup operations, and
-  `POST` to the exact project auth setup endpoints. It is never accepted for
-  `/mcp`.
+  explicit local console operations such as `tracker.updateTask`, plus `POST`
+  to the exact project auth setup endpoints. It is never accepted for `/mcp`.
 - The `HostHeaderMiddleware` rejects requests with a forged `Host:`
   header, so a remote attacker who has somehow proxied to the loopback
   port (e.g. through a compromised tunnel) is rebuffed.

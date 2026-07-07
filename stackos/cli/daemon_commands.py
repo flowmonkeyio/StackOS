@@ -342,6 +342,21 @@ def _launchd_plist_content(
     import plistlib
 
     settings.ensure_dirs()
+    environment = {
+        "HOME": str(home),
+        "STACKOS_DATA_DIR": str(settings.data_dir),
+        "STACKOS_STATE_DIR": str(settings.state_dir),
+        "STACKOS_HOST": host,
+        "STACKOS_PORT": str(port),
+        "STACKOS_LOG_LEVEL": log_level,
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
+    }
+    for key in ("STACKOS_PACKAGED_CLI", "PYTHONHOME", "PLAYWRIGHT_BROWSERS_PATH"):
+        value = os.environ.get(key)
+        if value:
+            environment[key] = value
+
     payload = {
         "Label": _LAUNCHD_LABEL,
         "ProgramArguments": _daemon_args(host, port, log_level),
@@ -350,14 +365,7 @@ def _launchd_plist_content(
         "WorkingDirectory": str(home),
         "StandardOutPath": str(settings.log_path),
         "StandardErrorPath": str(settings.log_path),
-        "EnvironmentVariables": {
-            "HOME": str(home),
-            "STACKOS_DATA_DIR": str(settings.data_dir),
-            "STACKOS_STATE_DIR": str(settings.state_dir),
-            "STACKOS_HOST": host,
-            "STACKOS_PORT": str(port),
-            "STACKOS_LOG_LEVEL": log_level,
-        },
+        "EnvironmentVariables": environment,
     }
     return plistlib.dumps(payload, sort_keys=False)
 

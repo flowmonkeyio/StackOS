@@ -230,13 +230,16 @@ fresh install happy path. Verify the lifecycle state machine end to end:
 - macOS desktop signing and notarization are optional for local packaging and
   required for public release evidence. Use `docs/desktop-distribution.md` as
   the source of truth for `CSC_*`, `APPLE_*`, `STACKOS_REQUIRE_SIGNING`,
-  `STACKOS_ALLOW_UNSIGNED_RELEASE`, and `STACKOS_SKIP_NOTARIZATION`. Do not ask
-  users to paste Apple certificates, `.p8` contents, app-specific passwords, or
-  certificate passwords into chat; accept them only through local environment
-  variables, keychain profiles, or CI secrets. Validate release env before
-  invoking `make desktop-dist`:
+  `STACKOS_REQUIRE_UPDATE_URL`, `STACKOS_ALLOW_UNSIGNED_RELEASE`, and
+  `STACKOS_SKIP_NOTARIZATION`. Do not ask users to paste Apple certificates,
+  `.p8` contents, app-specific passwords, or certificate passwords into chat;
+  accept them only through local environment variables, keychain profiles, or CI
+  secrets. Public release builds must pin signing with `CSC_NAME` or `CSC_LINK`,
+  set a non-localhost HTTPS `STACKOS_UPDATE_URL`, and use the package release
+  command:
   ```bash
-  STACKOS_DESKTOP_BUILD_DRY_RUN=1 STACKOS_REQUIRE_SIGNING=1 node desktop/scripts/build-mac.mjs
+  CSC_NAME="Example Org (ABCDE12345)" APPLE_KEYCHAIN_PROFILE="stackos-notary" STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" pnpm --dir desktop run release:preflight
+  CSC_NAME="Example Org (ABCDE12345)" APPLE_KEYCHAIN_PROFILE="stackos-notary" STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" pnpm --dir desktop run dist:mac:release
   ```
 - Optional agent hosts are advisory when absent or unsupported. They should not
   block install/repair unless StackOS owns an unsafe/stale entry that requires

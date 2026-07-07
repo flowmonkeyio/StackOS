@@ -10,6 +10,7 @@ const generatedConfigPath = path.join(desktopDir, ".electron-builder.generated.j
 const generatedUpdateConfigPath = path.join(desktopDir, ".update-config.generated.json");
 const updateUrl = process.env.STACKOS_UPDATE_URL;
 const dryRun = process.env.STACKOS_DESKTOP_BUILD_DRY_RUN === "1";
+const dryRunWriteConfig = process.env.STACKOS_DESKTOP_DRY_RUN_WRITE_CONFIG === "1";
 
 const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
 const config = JSON.parse(JSON.stringify(pkg.build));
@@ -42,6 +43,10 @@ function validateUpdateUrl(parsed) {
   if (!parsed) {
     return;
   }
+  if (updateUrlLooksLikeFile(parsed)) {
+    console.error("STACKOS_UPDATE_URL must be the base directory containing latest-mac.yml, not an artifact or metadata file");
+    process.exit(1);
+  }
   if (parsed.protocol === "https:") {
     return;
   }
@@ -50,6 +55,14 @@ function validateUpdateUrl(parsed) {
   }
   console.error("STACKOS_UPDATE_URL must use HTTPS unless it is localhost for local testing");
   process.exit(1);
+}
+
+function updateUrlLooksLikeFile(parsed) {
+  const basename = path.posix.basename(parsed.pathname || "").toLowerCase();
+  return (
+    /^latest(?:-[a-z0-9]+)?\.ya?ml$/.test(basename) ||
+    /\.(?:dmg|zip|blockmap)$/.test(basename)
+  );
 }
 
 function validateSigningEnv() {
@@ -67,7 +80,14 @@ function validateSigningEnv() {
   }
 
   const configured = hasCscName || hasCscLink || allowAutoDiscovery;
-  return { configured, issues, method: hasCscLink ? "csc-link" : hasCscName ? "csc-name" : allowAutoDiscovery ? "auto-discovery" : "none" };
+  return {
+    configured,
+    explicit: hasCscName || hasCscLink,
+    cscName: hasCscName,
+    cscLink: hasCscLink,
+    issues,
+    method: hasCscLink ? "csc-link" : hasCscName ? "csc-name" : allowAutoDiscovery ? "auto-discovery" : "none"
+  };
 }
 
 function validateNotarizationEnv() {
@@ -169,9 +189,34 @@ function notarizationArgsForEnv() {
   return args;
 }
 
+function configuredDmgArches() {
+  const targets = config.mac?.target || [];
+  const arches = new Set();
+  for (const target of targets) {
+    if (typeof target === "string") {
+      if (target === "dmg") {
+        arches.add(process.arch === "x64" ? "x64" : "arm64");
+      }
+      continue;
+    }
+    if (target?.target !== "dmg") {
+      continue;
+    }
+    for (const arch of target.arch || []) {
+      arches.add(arch);
+    }
+  }
+  return [...arches];
+}
+
 function currentDmgArtifacts() {
   const distDir = path.join(desktopDir, "dist");
-  const artifacts = ["arm64", "x64"].map((arch) =>
+  const arches = configuredDmgArches();
+  if (arches.length === 0) {
+    console.error("Desktop mac release has no configured DMG targets");
+    process.exit(1);
+  }
+  const artifacts = arches.map((arch) =>
     path.join(distDir, `stackos-${pkg.version}-mac-${arch}.dmg`)
   );
   const missing = artifacts.filter((artifact) => !fs.existsSync(artifact));
@@ -209,12 +254,30 @@ validateUpdateUrl(parsedUpdateUrl);
 const updateUrlIsLocal = parsedUpdateUrl ? isLocalhost(parsedUpdateUrl.hostname) : false;
 const releaseUpdateUrl = parsedUpdateUrl ? parsedUpdateUrl.protocol === "https:" && !updateUrlIsLocal : false;
 const requireSigning = isTruthy(process.env.STACKOS_REQUIRE_SIGNING);
+const requireUpdateUrl = isTruthy(process.env.STACKOS_REQUIRE_UPDATE_URL);
 const allowUnsignedRelease = isTruthy(process.env.STACKOS_ALLOW_UNSIGNED_RELEASE);
+const unsignedDev = isTruthy(process.env.STACKOS_UNSIGNED_DEV);
 const skipNotarization = isTruthy(process.env.STACKOS_SKIP_NOTARIZATION);
 const releaseIntent = requireSigning || releaseUpdateUrl;
 const signing = validateSigningEnv();
 const notarization = validateNotarizationEnv();
-const configIssues = [...signing.issues, ...notarization.issues];
+const configIssues = unsignedDev ? [] : [...signing.issues, ...notarization.issues];
+
+if (unsignedDev && releaseIntent && !allowUnsignedRelease) {
+  configIssues.push(
+    "STACKOS_UNSIGNED_DEV release-intent builds require STACKOS_ALLOW_UNSIGNED_RELEASE=1"
+  );
+}
+if (requireUpdateUrl) {
+  if (!parsedUpdateUrl) {
+    configIssues.push("public release builds require STACKOS_UPDATE_URL");
+  } else if (!releaseUpdateUrl) {
+    configIssues.push("public release builds require a non-localhost HTTPS STACKOS_UPDATE_URL");
+  }
+}
+if (requireUpdateUrl && !signing.cscName) {
+  configIssues.push("public release builds require CSC_NAME; auto-discovery is only for local signed smokes");
+}
 
 if (releaseIntent && !allowUnsignedRelease) {
   if (!signing.configured) {
@@ -232,10 +295,6 @@ if (releaseIntent && !allowUnsignedRelease) {
 failConfig(configIssues);
 
 if (updateUrl) {
-  fs.writeFileSync(
-    generatedUpdateConfigPath,
-    `${JSON.stringify({ updateUrl }, null, 2)}\n`
-  );
   config.extraResources = [
     ...(config.extraResources || []),
     {
@@ -259,7 +318,18 @@ if (releaseIntent && !allowUnsignedRelease) {
   };
 }
 
-if (skipNotarization) {
+if (unsignedDev) {
+  config.forceCodeSigning = false;
+  config.mac = {
+    ...(config.mac || {}),
+    identity: null,
+    notarize: false
+  };
+  config.dmg = {
+    ...(config.dmg || {}),
+    sign: false
+  };
+} else if (skipNotarization) {
   config.mac = {
     ...(config.mac || {}),
     notarize: false
@@ -272,29 +342,43 @@ if (skipNotarization) {
 }
 
 const dynamicConfigNeeded =
-  Boolean(updateUrl) || releaseIntent || skipNotarization || notarization.configured;
+  Boolean(updateUrl) || releaseIntent || unsignedDev || skipNotarization || notarization.configured;
 
-if (dynamicConfigNeeded) {
-  fs.writeFileSync(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`);
+function writeGeneratedConfigFiles() {
+  if (updateUrl) {
+    fs.writeFileSync(
+      generatedUpdateConfigPath,
+      `${JSON.stringify({ updateUrl }, null, 2)}\n`
+    );
+  }
+  if (dynamicConfigNeeded) {
+    fs.writeFileSync(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`);
+  }
 }
 
 if (dryRun) {
+  if (dryRunWriteConfig) {
+    writeGeneratedConfigFiles();
+  }
   console.log("desktop mac build config dry run ok");
   console.log(`updateUrl=${updateUrl || ""}`);
+  console.log(`requireUpdateUrl=${requireUpdateUrl ? "true" : "false"}`);
   console.log(`releaseIntent=${releaseIntent ? "true" : "false"}`);
-  console.log(`signing=${signing.method}`);
-  console.log(`notarization=${skipNotarization ? "skipped" : notarization.method}`);
-  console.log(`generatedConfig=${dynamicConfigNeeded ? generatedConfigPath : ""}`);
-  console.log(`generatedUpdateConfig=${updateUrl ? generatedUpdateConfigPath : ""}`);
+  console.log(`signing=${unsignedDev ? "unsigned-dev" : signing.method}`);
+  console.log(`notarization=${unsignedDev ? "disabled" : skipNotarization ? "skipped" : notarization.method}`);
+  console.log(`generatedConfig=${dynamicConfigNeeded && dryRunWriteConfig ? generatedConfigPath : ""}`);
+  console.log(`generatedUpdateConfig=${updateUrl && dryRunWriteConfig ? generatedUpdateConfigPath : ""}`);
   process.exit(0);
 }
 
 const command = process.platform === "win32" ? "electron-builder.cmd" : "electron-builder";
 const args = ["--mac"];
 if (dynamicConfigNeeded) {
+  writeGeneratedConfigFiles();
   args.push("--config", generatedConfigPath);
 }
 
+runStep("bash", ["scripts/build-stackos-payload.sh"]);
 runStep(process.execPath, ["scripts/build-icons.mjs"]);
 runStep(command, args);
 

@@ -92,7 +92,7 @@ installed app path, not only the source checkout:
 ```bash
 uv run pytest tests/unit/test_cli_daemon.py -q
 make desktop-doctor
-make desktop-dist
+pnpm --dir desktop run dist:mac:dev
 /Applications/StackOS.app/Contents/Resources/stackos/bin/stackos autostart status --json
 /Applications/StackOS.app/Contents/Resources/stackos/bin/stackos restart --timeout 20
 ```
@@ -116,12 +116,21 @@ artifacts after dependencies, signing, notarization, and the custom update
 endpoint are configured:
 
 ```bash
-make desktop-payload
+CSC_NAME="Example Org (ABCDE12345)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run release:preflight
 STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
 STACKOS_REQUIRE_SIGNING=1 \
-STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" \
+STACKOS_REQUIRE_UPDATE_URL=1 \
+CSC_NAME="Example Org (ABCDE12345)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
 node desktop/scripts/build-mac.mjs
-STACKOS_UPDATE_URL="https://updates.example.com/stackos/macos" make desktop-dist
+CSC_NAME="Example Org (ABCDE12345)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run dist:mac:release
 ```
 
 Before public desktop distribution, record the managed-update evidence:

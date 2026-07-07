@@ -47,6 +47,14 @@ function isLocalhost(hostname) {
   return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname);
 }
 
+function updateUrlLooksLikeFile(parsed) {
+  const basename = path.posix.basename(parsed.pathname || "").toLowerCase();
+  return (
+    /^latest(?:-[a-z0-9]+)?\.ya?ml$/.test(basename) ||
+    /\.(?:dmg|zip|blockmap)$/.test(basename)
+  );
+}
+
 function updateUrlPolicy(updateUrl) {
   if (!updateUrl) {
     return {
@@ -57,6 +65,12 @@ function updateUrlPolicy(updateUrl) {
 
   try {
     const parsed = new URL(updateUrl);
+    if (updateUrlLooksLikeFile(parsed)) {
+      return {
+        ok: false,
+        reason: "update endpoint must be the base directory containing latest-mac.yml, not an artifact or metadata file"
+      };
+    }
     if (parsed.protocol === "https:") {
       return { ok: true };
     }
