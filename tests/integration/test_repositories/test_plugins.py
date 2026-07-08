@@ -35,6 +35,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
         "branding",
         "media-buying",
         "trackbooth",
+        "shopify",
         "publishing",
         "seo",
         "core",

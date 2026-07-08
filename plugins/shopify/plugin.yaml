@@ -1,0 +1,2279 @@
+slug: shopify
+name: Shopify
+version: 0.1.0
+description: Shopify Admin GraphQL provider with a curated, static action catalog for commerce agents.
+display_order: 46
+source: builtin
+ui:
+  nav:
+    section: Shopify
+capabilities:
+  - key: analytics
+    name: Analytics
+    description: Shopify analytics and reporting operations backed by ShopifyQL or Admin GraphQL.
+    kind: integration
+  - key: customers
+    name: Customers
+    description: Shopify customers Admin GraphQL operations.
+    kind: integration
+  - key: inventory
+    name: Inventory
+    description: Shopify inventory Admin GraphQL operations.
+    kind: integration
+  - key: orders
+    name: Orders
+    description: Shopify orders Admin GraphQL operations.
+    kind: integration
+  - key: products
+    name: Products
+    description: Shopify products Admin GraphQL operations.
+    kind: integration
+providers:
+  - key: shopify
+    name: Shopify Admin API
+    description: Static-token Shopify Admin GraphQL provider. Tokens stay daemon-held; agents can only run curated action catalog operations.
+    auth_type: api-token
+    auth_methods:
+      - key: admin-api-token
+        label: Shopify Admin API access token
+        auth_type: api-token
+        payload_format: raw
+        payload_field: admin_api_access_token
+        fields:
+          - key: admin_api_access_token
+            label: Admin API access token
+            type: secret
+            secret: true
+            required: true
+          - key: store_domain
+            label: Store domain
+            type: text
+            secret: false
+            required: true
+            placeholder: example.myshopify.com
+            description: The store myshopify.com domain used in the Admin GraphQL endpoint.
+          - key: api_version
+            label: Admin API version
+            type: text
+            secret: false
+            required: false
+            placeholder: 2026-07
+            description: Defaults to the official 2026-07 stable Admin API version.
+    config:
+      default_api_version: 2026-07
+      endpoint_template: https://{store_domain}/admin/api/{api_version}/graphql.json
+      connection_category: Commerce
+      setup_note: Store an existing Shopify Admin API access token and the store myshopify.com domain. StackOS does not create tokens or run OAuth for this provider.
+      setup:
+        credential_label: Shopify Admin API access token
+        setup_note: Use an existing token from a Shopify custom app with only the scopes needed for the enabled actions.
+        homepage_url: https://shopify.dev/docs/api/admin-graphql
+        console_url: https://admin.shopify.com/
+        api_key_url: https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens
+        docs_url: https://shopify.dev/docs/api/admin-graphql/latest
+        support_url: https://help.shopify.com/
+        fallback_url: https://shopify.dev/docs/api/admin-graphql/latest
+        fallback_reason: Static-token setup requires an operator-supplied Admin API access token; OAuth/token acquisition is deliberately out of scope.
+        verified_at: "2026-07-08"
+        url_confidence:
+          homepage_url: verified
+          console_url: directional
+          api_key_url: verified
+          docs_url: verified
+          support_url: verified
+          fallback_url: verified
+resources:
+  - key: admin-graphql-action
+    name: Shopify Admin GraphQL Action
+    description: Static metadata for one curated Shopify action generated from the cob-shopify-mcp catalog and executed through the local StackOS Shopify connector.
+    schema:
+      type: object
+      additionalProperties: true
+      required:
+        - action_name
+        - domain
+        - scopes
+      properties:
+        action_name:
+          type: string
+        domain:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        graphql_file:
+          type: string
+        mode:
+          type: string
+actions:
+  - key: conversion_funnel
+    name: "Conversion Funnel"
+    description: "Conversion funnel metrics: sessions, orders, and derived conversion rate (values in shop currency)"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: conversion_funnel
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/conversion-funnel.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: customer_cohort_analysis
+    name: "Customer Cohort Analysis"
+    description: "Customer cohort analysis showing customers, orders, and sales grouped by time period"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        group_by:
+          type: string
+          description: "Time grouping for cohorts"
+          enum:
+            - "day"
+            - "week"
+            - "month"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: customer_cohort_analysis
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/customer-cohort-analysis.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: customer_lifetime_value
+    name: "Customer Lifetime Value"
+    description: "Customer lifetime value report showing top customers by spend or order count. Note: groups by customer_name which may not be unique across customers with the same name."
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        limit:
+          type: integer
+          description: "Number of customers to return"
+          minimum: 1
+          maximum: 100
+        sort_by:
+          type: string
+          description: "Sort by total spend or order count"
+          enum:
+            - "amount"
+            - "orders"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: customer_lifetime_value
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/customer-lifetime-value.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: discount_performance
+    name: "Discount Performance"
+    description: "Analyze discount impact on sales: discounted vs total revenue, discount percentage, and total discount amount"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: discount_performance
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/discount-performance.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: inventory_risk_report
+    name: "Inventory Risk Report"
+    description: "Products at overstock or understock risk based on sales velocity"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        days_of_stock_threshold:
+          type: integer
+          description: "Days of stock threshold for risk classification"
+        limit:
+          type: integer
+          description: "Number of items to return"
+          minimum: 1
+          maximum: 100
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: inventory_risk_report
+        domain: analytics
+        mode: inventory_risk
+        scopes: ["read_inventory", "read_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/inventory-risk-report.tool.ts"
+        graphql_file: "graphql/analytics/inventory-risk-report.graphql"
+  - key: orders_by_date_range
+    name: "Orders By Date Range"
+    description: "Order count and metrics grouped by day/week/month (values in shop currency)"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        group_by:
+          type: string
+          description: "Group orders by day, week, or month"
+          enum:
+            - "day"
+            - "week"
+            - "month"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: orders_by_date_range
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/orders-by-date-range.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: product_vendor_performance
+    name: "Product Vendor Performance"
+    description: "Revenue and orders broken down by product vendor"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        limit:
+          type: integer
+          description: "Number of vendors to return"
+          minimum: 1
+          maximum: 50
+        sort_by:
+          type: string
+          description: "Sort vendors by: revenue or orders"
+          enum:
+            - "revenue"
+            - "orders"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: product_vendor_performance
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/product-vendor-performance.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: refund_rate_summary
+    name: "Refund Rate Summary"
+    description: "Refund summary for a date range using returned product quantities and estimated refund amounts (values in shop currency)"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: refund_rate_summary
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/refund-rate-summary.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: repeat_customer_rate
+    name: "Repeat Customer Rate"
+    description: "Approximate repeat customer rate for a date range. Uses ShopifyQL customers vs orders count to estimate repeat purchasing behavior."
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: repeat_customer_rate
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/repeat-customer-rate.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: sales_by_channel
+    name: "Sales By Channel"
+    description: "Revenue and orders broken down by sales channel"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        limit:
+          type: integer
+          description: "Number of channels to return"
+          minimum: 1
+          maximum: 50
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: sales_by_channel
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/sales-by-channel.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: sales_by_geography
+    name: "Sales By Geography"
+    description: "Sales breakdown by geographic region (country or region) using ShopifyQL"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        group_by:
+          type: string
+          description: "Group sales by country or region"
+          enum:
+            - "country"
+            - "region"
+        limit:
+          type: integer
+          description: "Number of locations to return"
+          minimum: 1
+          maximum: 100
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: sales_by_geography
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/sales-by-geography.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: sales_comparison
+    name: "Sales Comparison"
+    description: "Compare sales metrics across time periods using ShopifyQL COMPARE TO. Returns current and comparison period data with percent changes - ideal for period-over-period analysis."
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date for the start of the period, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date for the end of the period, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        compare_to:
+          type: string
+          description: "Compare against the previous period of equal length, or the same period last year"
+        group_by:
+          type: string
+          description: "Time granularity for the comparison breakdown"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: sales_comparison
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/sales-comparison.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: sales_summary
+    name: "Sales Summary"
+    description: "Sales total/average by date range (values in shop currency)"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: sales_summary
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/sales-summary.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: shopifyql_query
+    name: "Shopifyql Query"
+    description: "Execute a bounded, read-only ShopifyQL analytics query. Query text must start with FROM and pass StackOS connector safety checks."
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: "ShopifyQL query string, e.g. FROM sales SHOW total_sales SINCE -30d"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: shopifyql_query
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/shopifyql-query.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: top_products
+    name: "Top Products"
+    description: "Best-selling products by revenue or order count in a date range (values in shop currency)"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        sort_by:
+          type: string
+          description: "Sort by revenue or order count"
+          enum:
+            - "revenue"
+            - "orders"
+        limit:
+          type: integer
+          description: "Number of products to return"
+          minimum: 1
+          maximum: 50
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: top_products
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/top-products.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: traffic_analytics
+    name: "Traffic Analytics"
+    description: "Session traffic analytics over time, grouped by day, week, or month"
+    provider: shopify
+    capability: analytics
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - start_date
+        - end_date
+      properties:
+        start_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-01"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        end_date:
+          type: string
+          description: "ISO 8601 date, e.g. 2026-01-31"
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        group_by:
+          type: string
+          description: "Time grouping for traffic data"
+          enum:
+            - "day"
+            - "week"
+            - "month"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: traffic_analytics
+        domain: analytics
+        mode: shopifyql
+        scopes: ["read_reports"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/analytics/traffic-analytics.tool.ts"
+        graphql_file: graphql/shopifyql.graphql
+  - key: add_customer_tag
+    name: "Add Customer Tag"
+    description: "Add one or more tags to a customer using the tagsAdd mutation."
+    provider: shopify
+    capability: customers
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - tags
+      properties:
+        id:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: add_customer_tag
+        domain: customers
+        mode: graphql
+        scopes: ["write_customers"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/customers/add-customer-tag.tool.ts"
+        graphql_file: "graphql/customers/add-customer-tag.graphql"
+  - key: create_customer
+    name: "Create Customer"
+    description: "Create a new customer with firstName, lastName, email, phone, tags, and note."
+    provider: shopify
+    capability: customers
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - firstName
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        note:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: create_customer
+        domain: customers
+        mode: graphql
+        scopes: ["write_customers"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/customers/create-customer.tool.ts"
+        graphql_file: "graphql/customers/create-customer.graphql"
+  - key: get_customer
+    name: "Get Customer"
+    description: "Get a single customer by ID with full detail including addresses, note, state, and createdAt."
+    provider: shopify
+    capability: customers
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_customer
+        domain: customers
+        mode: graphql
+        scopes: ["read_customers"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/customers/get-customer.tool.ts"
+        graphql_file: "graphql/customers/get-customer.graphql"
+  - key: get_customer_lifetime_value
+    name: "Get Customer Lifetime Value"
+    description: "Get customer lifetime value: totalSpent, ordersCount, computed avgOrderValue, and first/last order dates."
+    provider: shopify
+    capability: customers
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+      properties:
+        customer_id:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_customer_lifetime_value
+        domain: customers
+        mode: graphql
+        scopes: ["read_customers"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/customers/get-customer-lifetime-value.tool.ts"
+        graphql_file: "graphql/customers/get-customer-lifetime-value.graphql"
+  - key: get_customer_orders
+    name: "Get Customer Orders"
+    description: "List orders for a specific customer. Returns order summary with name, totalPrice, status, and createdAt."
+    provider: shopify
+    capability: customers
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+      properties:
+        customer_id:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 250
+        cursor:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_customer_orders
+        domain: customers
+        mode: graphql
+        scopes: ["read_customers"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/customers/get-customer-orders.tool.ts"
+        graphql_file: "graphql/customers/get-customer-orders.graphql"
+  - key: list_customers
+    name: "List Customers"
+    description: "List customers with cursor pagination. Returns displayName, email, ordersCount, totalSpent, tags, and state."
+    provider: shopify
+    capability: customers
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 250
+        cursor:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: list_customers
+        domain: customers
+        mode: graphql
+        scopes: ["read_customers"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/customers/list-customers.tool.ts"
+        graphql_file: "graphql/customers/list-customers.graphql"
+  - key: remove_customer_tag
+    name: "Remove Customer Tag"
+    description: "Remove one or more tags from a customer using the tagsRemove mutation."
+    provider: shopify
+    capability: customers
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - tags
+      properties:
+        id:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: remove_customer_tag
+        domain: customers
+        mode: graphql
+        scopes: ["write_customers"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/customers/remove-customer-tag.tool.ts"
+        graphql_file: "graphql/customers/remove-customer-tag.graphql"
+  - key: search_customers
+    name: "Search Customers"
+    description: "Search customers by email, name, phone, or tag. Uses the Shopify customers(query:) filter syntax."
+    provider: shopify
+    capability: customers
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - query
+      properties:
+        query:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 250
+        cursor:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: search_customers
+        domain: customers
+        mode: graphql
+        scopes: ["read_customers"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/customers/search-customers.tool.ts"
+        graphql_file: "graphql/customers/search-customers.graphql"
+  - key: update_customer
+    name: "Update Customer"
+    description: "Update customer fields such as name, email, phone, and note."
+    provider: shopify
+    capability: customers
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        note:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: update_customer
+        domain: customers
+        mode: graphql
+        scopes: ["write_customers"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/customers/update-customer.tool.ts"
+        graphql_file: "graphql/customers/update-customer.graphql"
+  - key: adjust_inventory
+    name: "Adjust Inventory"
+    description: "Adjust inventory quantity by a delta (positive to add, negative to subtract) at a specific location. Uses the inventoryAdjustQuantities mutation."
+    provider: shopify
+    capability: inventory
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - inventory_item_id
+        - location_id
+        - delta
+      properties:
+        inventory_item_id:
+          type: string
+          description: "Shopify GID of the inventory item"
+        location_id:
+          type: string
+          description: "Shopify GID of the location"
+        delta:
+          type: number
+          description: "Quantity change - positive to add, negative to subtract"
+        reason:
+          type: string
+          description: "Reason for adjustment (e.g."
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: adjust_inventory
+        domain: inventory
+        mode: graphql
+        scopes: ["write_inventory"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/inventory/adjust-inventory.tool.ts"
+        graphql_file: "graphql/inventory/adjust-inventory.graphql"
+  - key: get_inventory_by_sku
+    name: "Get Inventory By Sku"
+    description: "Look up inventory items by SKU string. Uses the inventoryItems query with a SKU filter."
+    provider: shopify
+    capability: inventory
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - sku
+      properties:
+        sku:
+          type: string
+          description: "SKU string to search for"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_inventory_by_sku
+        domain: inventory
+        mode: graphql
+        scopes: ["read_inventory"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/inventory/get-inventory-by-sku.tool.ts"
+        graphql_file: "graphql/inventory/get-inventory-by-sku.graphql"
+  - key: get_inventory_item
+    name: "Get Inventory Item"
+    description: "Get an inventory item by its Shopify GID. Returns SKU, tracked status, and inventory levels per location with quantities."
+    provider: shopify
+    capability: inventory
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          description: "Shopify GID of the inventory item"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_inventory_item
+        domain: inventory
+        mode: graphql
+        scopes: ["read_inventory"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/inventory/get-inventory-item.tool.ts"
+        graphql_file: "graphql/inventory/get-inventory-item.graphql"
+  - key: get_location_inventory
+    name: "Get Location Inventory"
+    description: "Get all inventory items at a specific location. Returns items with SKU, available, and incoming quantities."
+    provider: shopify
+    capability: inventory
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - location_id
+      properties:
+        location_id:
+          type: string
+          description: "Shopify GID of the location"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 250
+        cursor:
+          type: string
+          description: "Pagination cursor"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_location_inventory
+        domain: inventory
+        mode: graphql
+        scopes: ["read_inventory", "read_locations"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/inventory/get-location-inventory.tool.ts"
+        graphql_file: "graphql/inventory/get-location-inventory.graphql"
+  - key: list_inventory_levels
+    name: "List Inventory Levels"
+    description: "List inventory levels across all locations. Returns location name and available/committed/on_hand quantities. Supports cursor pagination."
+    provider: shopify
+    capability: inventory
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 250
+        cursor:
+          type: string
+          description: "Pagination cursor"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: list_inventory_levels
+        domain: inventory
+        mode: graphql
+        scopes: ["read_inventory", "read_locations"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/inventory/list-inventory-levels.tool.ts"
+        graphql_file: "graphql/inventory/list-inventory-levels.graphql"
+  - key: low_stock_report
+    name: "Low Stock Report"
+    description: "Get a report of inventory items below a specified stock threshold. Queries all inventory, filters items with available quantity below threshold, and returns a sorted list with product name, variant title, SKU, available quantity, and location."
+    provider: shopify
+    capability: inventory
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        threshold:
+          type: integer
+          description: "Stock threshold - items with available quantity below this are included"
+        limit:
+          type: integer
+          description: "Maximum number of low-stock items to return"
+          minimum: 1
+          maximum: 100
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: low_stock_report
+        domain: inventory
+        mode: graphql
+        scopes: ["read_inventory", "read_products", "read_locations"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/inventory/low-stock-report.tool.ts"
+        graphql_file: "graphql/inventory/low-stock-report.graphql"
+  - key: set_inventory_level
+    name: "Set Inventory Level"
+    description: "Set inventory to an exact quantity at a specific location. Uses the inventorySetQuantities mutation."
+    provider: shopify
+    capability: inventory
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - inventory_item_id
+        - location_id
+        - quantity
+      properties:
+        inventory_item_id:
+          type: string
+          description: "Shopify GID of the inventory item"
+        location_id:
+          type: string
+          description: "Shopify GID of the location"
+        quantity:
+          type: integer
+          description: "Exact quantity to set"
+        reason:
+          type: string
+          description: "Reason for setting quantity (e.g."
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: set_inventory_level
+        domain: inventory
+        mode: graphql
+        scopes: ["write_inventory"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/inventory/set-inventory-level.tool.ts"
+        graphql_file: "graphql/inventory/set-inventory-level.graphql"
+  - key: add_order_note
+    name: "Add Order Note"
+    description: "Add or update a private note on an order."
+    provider: shopify
+    capability: orders
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - note
+      properties:
+        id:
+          type: string
+        note:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: add_order_note
+        domain: orders
+        mode: graphql
+        scopes: ["write_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/add-order-note.tool.ts"
+        graphql_file: "graphql/orders/add-order-note.graphql"
+  - key: add_order_tag
+    name: "Add Order Tag"
+    description: "Add one or more tags to an order."
+    provider: shopify
+    capability: orders
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - tags
+      properties:
+        id:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: add_order_tag
+        domain: orders
+        mode: graphql
+        scopes: ["write_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/add-order-tag.tool.ts"
+        graphql_file: "graphql/orders/add-order-tag.graphql"
+  - key: create_draft_order
+    name: "Create Draft Order"
+    description: "Create a draft order with line items, optional customer, shipping address, and note. Returns draft order with calculated totals."
+    provider: shopify
+    capability: orders
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - line_items
+      properties:
+        line_items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        customer_id:
+          type: string
+        note:
+          type: string
+        shipping_address:
+          type: object
+          additionalProperties: true
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: create_draft_order
+        domain: orders
+        mode: graphql
+        scopes: ["write_draft_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/create-draft-order.tool.ts"
+        graphql_file: "graphql/orders/create-draft-order.graphql"
+  - key: get_order
+    name: "Get Order"
+    description: "Get a single order by ID with full detail: all line items, fulfillments with tracking, customer, addresses, notes, and tags."
+    provider: shopify
+    capability: orders
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_order
+        domain: orders
+        mode: graphql
+        scopes: ["read_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/get-order.tool.ts"
+        graphql_file: "graphql/orders/get-order.graphql"
+  - key: get_order_by_name
+    name: "Get Order By Name"
+    description: "Get an order by its order number (e.g., \"#1001\"). Uses Shopify order search by name."
+    provider: shopify
+    capability: orders
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_order_by_name
+        domain: orders
+        mode: graphql
+        scopes: ["read_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/get-order-by-name.tool.ts"
+        graphql_file: "graphql/orders/get-order-by-name.graphql"
+  - key: get_order_fulfillment_status
+    name: "Get Order Fulfillment Status"
+    description: "Get the fulfillment status of an order with tracking numbers, carrier, and tracking URLs for each fulfillment."
+    provider: shopify
+    capability: orders
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_order_fulfillment_status
+        domain: orders
+        mode: graphql
+        scopes: ["read_orders", "read_assigned_fulfillment_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/get-order-fulfillment-status.tool.ts"
+        graphql_file: "graphql/orders/get-order-fulfillment-status.graphql"
+  - key: get_order_timeline
+    name: "Get Order Timeline"
+    description: "Get the event timeline for an order (comments, status changes, fulfillments, refunds)."
+    provider: shopify
+    capability: orders
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_order_timeline
+        domain: orders
+        mode: graphql
+        scopes: ["read_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/get-order-timeline.tool.ts"
+        graphql_file: "graphql/orders/get-order-timeline.graphql"
+  - key: list_orders
+    name: "List Orders"
+    description: "List orders with optional filtering by status, financial status, and fulfillment status. Returns order details including line items and fulfillment tracking."
+    provider: shopify
+    capability: orders
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+        status:
+          type: string
+        financial_status:
+          type: string
+        fulfillment_status:
+          type: string
+        cursor:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: list_orders
+        domain: orders
+        mode: graphql
+        scopes: ["read_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/list-orders.tool.ts"
+        graphql_file: "graphql/orders/list-orders.graphql"
+  - key: mark_order_paid
+    name: "Mark Order Paid"
+    description: "Mark an order as paid using the orderMarkAsPaid mutation."
+    provider: shopify
+    capability: orders
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: mark_order_paid
+        domain: orders
+        mode: graphql
+        scopes: ["write_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/mark-order-paid.tool.ts"
+        graphql_file: "graphql/orders/mark-order-paid.graphql"
+  - key: search_orders
+    name: "Search Orders"
+    description: "Search orders by query string (customer name, email, order number, date range). Uses Shopify's order search syntax."
+    provider: shopify
+    capability: orders
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - query
+      properties:
+        query:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+        cursor:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: search_orders
+        domain: orders
+        mode: graphql
+        scopes: ["read_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/search-orders.tool.ts"
+        graphql_file: "graphql/orders/search-orders.graphql"
+  - key: update_order_note
+    name: "Update Order Note"
+    description: "Update an existing note on an order."
+    provider: shopify
+    capability: orders
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - note
+      properties:
+        id:
+          type: string
+        note:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: update_order_note
+        domain: orders
+        mode: graphql
+        scopes: ["write_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/update-order-note.tool.ts"
+        graphql_file: "graphql/orders/update-order-note.graphql"
+  - key: update_order_tags
+    name: "Update Order Tags"
+    description: "Set or replace tags on an order using tagsAdd."
+    provider: shopify
+    capability: orders
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - tags
+      properties:
+        id:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: update_order_tags
+        domain: orders
+        mode: graphql
+        scopes: ["write_orders"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/orders/update-order-tags.tool.ts"
+        graphql_file: "graphql/orders/update-order-tags.graphql"
+  - key: create_collection
+    name: "Create Collection"
+    description: "Create a new collection with title and optional description."
+    provider: shopify
+    capability: products
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: create_collection
+        domain: products
+        mode: graphql
+        scopes: ["write_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/create-collection.tool.ts"
+        graphql_file: "graphql/products/create-collection.graphql"
+  - key: create_product
+    name: "Create Product"
+    description: "Create a new product with title, description, vendor, product type, status, and tags."
+    provider: shopify
+    capability: products
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        vendor:
+          type: string
+        product_type:
+          type: string
+        status:
+          type: string
+          enum:
+            - "ACTIVE"
+            - "DRAFT"
+            - "ARCHIVED"
+        tags:
+          type: array
+          items:
+            type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: create_product
+        domain: products
+        mode: graphql
+        scopes: ["write_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/create-product.tool.ts"
+        graphql_file: "graphql/products/create-product.graphql"
+  - key: create_product_variant
+    name: "Create Product Variant"
+    description: "Add a variant to an existing product with price, SKU, and options. Options format: \"OptionName:Value\" (e.g. \"Size:Large,Color:Red\")."
+    provider: shopify
+    capability: products
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - price
+      properties:
+        product_id:
+          type: string
+        price:
+          type: string
+        sku:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: create_product_variant
+        domain: products
+        mode: graphql
+        scopes: ["write_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/create-product-variant.tool.ts"
+        graphql_file: "graphql/products/create-product-variant.graphql"
+  - key: get_collection
+    name: "Get Collection"
+    description: "Get a single collection by its Shopify GID. Returns collection details with its products."
+    provider: shopify
+    capability: products
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_collection
+        domain: products
+        mode: graphql
+        scopes: ["read_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/get-collection.tool.ts"
+        graphql_file: "graphql/products/get-collection.graphql"
+  - key: get_product
+    name: "Get Product"
+    description: "Get a single product by its Shopify GID. Returns full product detail including all variants and images."
+    provider: shopify
+    capability: products
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_product
+        domain: products
+        mode: graphql
+        scopes: ["read_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/get-product.tool.ts"
+        graphql_file: "graphql/products/get-product.graphql"
+  - key: get_product_by_handle
+    name: "Get Product By Handle"
+    description: "Get a product by its URL handle (slug). Returns full product detail including all variants and images."
+    provider: shopify
+    capability: products
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - handle
+      properties:
+        handle:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_product_by_handle
+        domain: products
+        mode: graphql
+        scopes: ["read_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/get-product-by-handle.tool.ts"
+        graphql_file: "graphql/products/get-product-by-handle.graphql"
+  - key: get_product_variant
+    name: "Get Product Variant"
+    description: "Get a single product variant by its Shopify GID. Returns full variant detail including price, SKU, and selected options."
+    provider: shopify
+    capability: products
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: get_product_variant
+        domain: products
+        mode: graphql
+        scopes: ["read_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/get-product-variant.tool.ts"
+        graphql_file: "graphql/products/get-product-variant.graphql"
+  - key: list_collections
+    name: "List Collections"
+    description: "List collections with cursor pagination. Returns collection title, handle, products count, and image."
+    provider: shopify
+    capability: products
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 250
+        cursor:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: list_collections
+        domain: products
+        mode: graphql
+        scopes: ["read_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/list-collections.tool.ts"
+        graphql_file: "graphql/products/list-collections.graphql"
+  - key: list_product_variants
+    name: "List Product Variants"
+    description: "List all variants for a product. Returns variant details including price, SKU, inventory, and selected options."
+    provider: shopify
+    capability: products
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+      properties:
+        product_id:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        cursor:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: list_product_variants
+        domain: products
+        mode: graphql
+        scopes: ["read_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/list-product-variants.tool.ts"
+        graphql_file: "graphql/products/list-product-variants.graphql"
+  - key: list_products
+    name: "List Products"
+    description: "List products with optional filtering by status, vendor, and product type. Supports cursor pagination."
+    provider: shopify
+    capability: products
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 250
+        status:
+          type: string
+          enum:
+            - "ACTIVE"
+            - "DRAFT"
+            - "ARCHIVED"
+        vendor:
+          type: string
+        product_type:
+          type: string
+        cursor:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: list_products
+        domain: products
+        mode: graphql
+        scopes: ["read_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/list-products.tool.ts"
+        graphql_file: "graphql/products/list-products.graphql"
+  - key: manage_product_tags
+    name: "Manage Product Tags"
+    description: "Add or remove tags on a product. Provide arrays of tags to add and/or remove."
+    provider: shopify
+    capability: products
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        add:
+          type: array
+          items:
+            type: string
+        remove:
+          type: array
+          items:
+            type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: manage_product_tags
+        domain: products
+        mode: tag_mutations
+        scopes: ["write_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/manage-product-tags.tool.ts"
+  - key: search_products
+    name: "Search Products"
+    description: "Search products by keyword query string using Shopify full-text search. Supports cursor pagination."
+    provider: shopify
+    capability: products
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - query
+      properties:
+        query:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 250
+        cursor:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: search_products
+        domain: products
+        mode: graphql
+        scopes: ["read_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/search-products.tool.ts"
+        graphql_file: "graphql/products/search-products.graphql"
+  - key: update_product
+    name: "Update Product"
+    description: "Update product fields such as title, description, vendor, product type, and status."
+    provider: shopify
+    capability: products
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        vendor:
+          type: string
+        product_type:
+          type: string
+        status:
+          type: string
+          enum:
+            - "ACTIVE"
+            - "DRAFT"
+            - "ARCHIVED"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: update_product
+        domain: products
+        mode: graphql
+        scopes: ["write_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/update-product.tool.ts"
+        graphql_file: "graphql/products/update-product.graphql"
+  - key: update_product_status
+    name: "Update Product Status"
+    description: "Change a product's status to ACTIVE, DRAFT, or ARCHIVED."
+    provider: shopify
+    capability: products
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum:
+            - "ACTIVE"
+            - "DRAFT"
+            - "ARCHIVED"
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: update_product_status
+        domain: products
+        mode: graphql
+        scopes: ["write_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/update-product-status.tool.ts"
+        graphql_file: "graphql/products/update-product-status.graphql"
+  - key: update_product_variant
+    name: "Update Product Variant"
+    description: "Update variant fields such as price and SKU."
+    provider: shopify
+    capability: products
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - product_id
+      properties:
+        id:
+          type: string
+        product_id:
+          type: string
+        price:
+          type: string
+        sku:
+          type: string
+        barcode:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: true
+    config:
+      schema_version: stackos.action.v1
+      connector: shopify
+      operation: admin.graphql
+      requires_credential: true
+      shopify:
+        action_name: update_product_variant
+        domain: products
+        mode: graphql
+        scopes: ["write_products"]
+        source: cob-shopify-mcp
+        source_path: "src/shopify/tools/products/update-product-variant.tool.ts"
+        graphql_file: "graphql/products/update-product-variant.graphql"
+config:
+  catalog_source:
+    name: cob-shopify-mcp
+    license: MIT
+    extracted_at: "2026-07-08"
+    tool_count: 59
+  official_docs:
+    admin_graphql: https://shopify.dev/docs/api/admin-graphql/latest
+    access_scopes: https://shopify.dev/docs/api/usage/access-scopes
+    versioning: https://shopify.dev/docs/api/usage/versioning
+    limits: https://shopify.dev/docs/api/usage/limits

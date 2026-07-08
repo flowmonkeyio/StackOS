@@ -37,6 +37,7 @@ from stackos.integrations.openrouter import OpenRouterIntegration
 from stackos.integrations.reddit import RedditIntegration
 from stackos.integrations.reve_images import ReveImagesIntegration
 from stackos.integrations.serper import SerperIntegration
+from stackos.integrations.shopify import ShopifyIntegration
 from stackos.integrations.slack_bot import SlackBotIntegration
 from stackos.integrations.smtp import SmtpIntegration
 from stackos.integrations.telegram_bot import TelegramBotIntegration
@@ -52,6 +53,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "dataforseo": DataForSeoIntegration,
     "alibaba-wan": AlibabaWanIntegration,
     "serper": SerperIntegration,
+    "shopify": ShopifyIntegration,
     "firecrawl": FirecrawlIntegration,
     "openai-images": OpenAIImagesIntegration,
     "xai-imagine": XAIImagineIntegration,
@@ -115,6 +117,7 @@ __all__ = [
     "RedditIntegration",
     "ReveImagesIntegration",
     "SerperIntegration",
+    "ShopifyIntegration",
     "SlackBotIntegration",
     "SmtpIntegration",
     "TelegramBotIntegration",

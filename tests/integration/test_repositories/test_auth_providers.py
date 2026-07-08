@@ -314,6 +314,59 @@ def test_trackbooth_auth_test_passes_safe_custom_api_url_config(
     assert "tb-secret" not in rendered
 
 
+def test_shopify_auth_test_passes_static_token_and_safe_store_config(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="shopify",
+        auth_method_key="admin-api-token",
+        profile_key="primary",
+        fields={
+            "admin_api_access_token": "shpat-secret",
+            "store_domain": "demo.myshopify.com",
+            "api_version": "2026-07",
+        },
+    ).data
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "shopify",
+        )
+    ).one()
+    assert row.id is not None
+    assert IntegrationCredentialRepository(session).get_decrypted(row.id) == b"shpat-secret"
+    assert row.config_json["store_domain"] == "demo.myshopify.com"
+    assert row.config_json["api_version"] == "2026-07"
+
+    httpx_mock.add_response(
+        method="POST",
+        url="https://demo.myshopify.com/admin/api/2026-07/graphql.json",
+        json={
+            "data": {
+                "shop": {
+                    "id": "gid://shopify/Shop/1",
+                    "name": "Demo Shop",
+                    "myshopifyDomain": "demo.myshopify.com",
+                }
+            }
+        },
+    )
+
+    tested = asyncio.run(repo.test(project_id=project_id, credential_ref=stored.credential_ref))
+    request = httpx_mock.get_requests()[0]
+    rendered = json.dumps(tested.data.model_dump(mode="json"))
+
+    assert tested.data.ok is True
+    assert tested.data.metadata["shop_name"] == "Demo Shop"
+    assert tested.data.metadata["store_domain"] == "demo.myshopify.com"
+    assert request.headers["X-Shopify-Access-Token"] == "shpat-secret"
+    assert "shpat-secret" not in rendered
+
+
 def test_telegram_status_excludes_global_credentials(
     session: Session,
     project_id: int,

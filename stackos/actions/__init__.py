@@ -64,6 +64,7 @@ from stackos.actions.reve_images import ReveImagesActionConnector
 from stackos.actions.salesforce import SalesforceActionConnector
 from stackos.actions.salesloft import SalesloftActionConnector
 from stackos.actions.serper import SerperActionConnector
+from stackos.actions.shopify import ShopifyActionConnector
 from stackos.actions.sitemap import SitemapActionConnector
 from stackos.actions.slack_bot import SlackBotActionConnector
 from stackos.actions.smtp import SmtpActionConnector
@@ -111,6 +112,7 @@ DEFAULT_ACTION_CONNECTORS.register(GoogleAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TaboolaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TelegramBotActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TrackboothActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(ShopifyActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SlackBotActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SmtpActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ImapActionConnector())
@@ -168,6 +170,7 @@ __all__ = [
     "SalesforceActionConnector",
     "SalesloftActionConnector",
     "SerperActionConnector",
+    "ShopifyActionConnector",
     "SitemapActionConnector",
     "SlackBotActionConnector",
     "SmtpActionConnector",

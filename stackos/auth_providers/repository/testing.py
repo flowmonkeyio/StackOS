@@ -198,6 +198,18 @@ class CredentialTestingMixin:
                     extra[key] = value.strip()
         elif row.kind in {"telegram-bot", "slack-bot", "trackbooth"} and config.get("api_base_url"):
             extra["api_base_url"] = str(config["api_base_url"])
+        elif row.kind == "shopify":
+            store_domain = (
+                config.get("store_domain") or config.get("shop_domain") or config.get("shop")
+            )
+            if not store_domain:
+                raise ValidationError(
+                    "shopify credential missing config_json.store_domain",
+                    data={"credential_id": row.id},
+                )
+            extra["store_domain"] = str(store_domain)
+            if config.get("api_version"):
+                extra["api_version"] = str(config["api_version"])
         elif row.kind in {"smtp", "imap"}:
             for key in ("host", "port", "tls_mode", "username", "timeout_s"):
                 if key in config and config[key] is not None:

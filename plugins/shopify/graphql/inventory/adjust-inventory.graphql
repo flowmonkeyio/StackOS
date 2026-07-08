@@ -1,0 +1,24 @@
+mutation InventoryAdjustQuantities($input: InventoryAdjustQuantitiesInput!, $idempotencyKey: String!) {
+  inventoryAdjustQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+    inventoryAdjustmentGroup {
+      reason
+      changes {
+        name
+        delta
+        quantityAfterChange
+        item {
+          id
+          sku
+        }
+        location {
+          id
+          name
+        }
+      }
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
