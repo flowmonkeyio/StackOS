@@ -1,7 +1,9 @@
-mutation UpdateOrderTags($id: ID!, $tags: [String!]!) {
-  tagsAdd(id: $id, tags: $tags) {
-    node {
+mutation UpdateOrderTags($input: OrderInput!) {
+  orderUpdate(input: $input) {
+    order {
       id
+      name
+      tags
     }
     userErrors {
       field

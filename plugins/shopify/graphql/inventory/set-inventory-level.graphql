@@ -17,6 +17,7 @@ mutation InventorySetQuantities($input: InventorySetQuantitiesInput!, $idempoten
       }
     }
     userErrors {
+      code
       field
       message
     }

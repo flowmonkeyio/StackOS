@@ -1,5 +1,5 @@
-mutation CollectionCreate($input: CollectionInput!) {
-  collectionCreate(input: $input) {
+mutation CollectionCreate($collection: CollectionCreateInput!) {
+  collectionCreate(collection: $collection) {
     collection {
       id
       title

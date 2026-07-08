@@ -178,12 +178,122 @@ const tools = walk(sourceRoot)
       delete tool.input.properties.collection_type;
     }
     if (tool.name === "shopifyql_query") {
-      tool.description =
-        "Execute a bounded, read-only ShopifyQL analytics query. Query text must start with FROM and pass StackOS connector safety checks.";
+      return null;
     }
+    applyStackOSOverrides(tool);
     return tool;
   })
+  .filter(Boolean)
   .sort((left, right) => domains.indexOf(left.domain) - domains.indexOf(right.domain) || left.name.localeCompare(right.name));
+
+function addEnum(schema, values) {
+  if (schema) schema.enum = values;
+}
+
+function addInteger(schema, description) {
+  if (schema) {
+    schema.type = "integer";
+    schema.description = description;
+  }
+}
+
+function applyStackOSOverrides(tool) {
+  if (tool.name === "conversion_funnel") {
+    tool.description =
+      "Conversion funnel metrics: sessions, orders, customers, and ShopifyQL conversion_rate (values in shop currency)";
+  }
+  if (tool.name === "customer_lifetime_value") {
+    tool.description =
+      "Customer lifetime value report from the ShopifyQL customers dataset showing customer_name, total_amount_spent, and total_orders. Note: groups by customer_name, which may not be unique across customers with the same name.";
+  }
+  if (tool.name === "inventory_risk_report") {
+    tool.scopes = ["read_inventory", "read_products", "read_orders"];
+  }
+  if (tool.name === "refund_rate_summary") {
+    tool.description =
+      "Sales reversal summary for a date range using documented Shopify sales metrics (orders, sales_reversals, gross_sales, net_sales, discounts; values in shop currency). Does not compute a physical-return rate.";
+  }
+  if (tool.name === "sales_comparison") {
+    addEnum(tool.input.properties.compare_to, ["previous_period", "previous_year"]);
+    addEnum(tool.input.properties.group_by, ["day", "week", "month"]);
+  }
+  if (tool.name === "get_customer_lifetime_value") {
+    tool.description =
+      "Get customer amountSpent, numberOfOrders, and first/last visible order dates. True first/last order history can require Shopify read_all_orders access beyond the default order window.";
+    tool.scopes = ["read_customers", "read_orders"];
+  }
+  if (tool.name === "get_customer_orders") {
+    tool.description =
+      "List visible orders for a specific customer. Historical orders beyond Shopify's default order window can require read_all_orders access.";
+    tool.scopes = ["read_customers", "read_orders"];
+  }
+  if (tool.name === "adjust_inventory") {
+    addInteger(
+      tool.input.properties.delta,
+      "Quantity change - positive to add, negative to subtract",
+    );
+    tool.input.properties.change_from_quantity = {
+      type: "integer",
+      description:
+        "Optional compare-and-swap expected current quantity. Omit to send explicit null and skip the CAS check.",
+    };
+  }
+  if (tool.name === "set_inventory_level") {
+    tool.input.properties.change_from_quantity = {
+      type: "integer",
+      description:
+        "Optional compare-and-swap expected current quantity. Omit to send explicit null and skip the CAS check.",
+    };
+  }
+  if (tool.name === "get_order" || tool.name === "get_order_by_name") {
+    tool.scopes = ["read_orders", "read_customers"];
+  }
+  if (tool.name === "get_order") {
+    tool.description =
+      "Get a single order by ID with customer, addresses, notes, tags, fulfillments, and the first 50 line items plus pagination metadata.";
+  }
+  if (tool.name === "get_order_by_name") {
+    tool.description =
+      'Get an order by its exact Shopify order name (for example, #1001 or a custom prefixed name). Uses Shopify order search by name.';
+  }
+  if (tool.name === "get_order_fulfillment_status") {
+    tool.scopes = ["read_orders"];
+  }
+  if (tool.name === "list_orders" || tool.name === "search_orders") {
+    tool.scopes = ["read_orders", "read_customers"];
+  }
+  if (tool.name === "mark_order_paid") {
+    tool.description =
+      "Mark an order as paid using the orderMarkAsPaid mutation. Shopify also requires the acting staff user to have the mark_orders_as_paid permission.";
+  }
+  if (tool.name === "update_order_tags") {
+    tool.description =
+      "Set or replace tags on an order using orderUpdate; supplied tags overwrite the order's tag list.";
+  }
+  if (tool.name === "get_product") {
+    tool.description =
+      "Get a single product by its Shopify GID. Returns product detail with first 10 media and first 100 variants plus pagination metadata.";
+  }
+  if (tool.name === "get_product_by_handle") {
+    tool.description =
+      "Get a product by its URL handle (slug). Returns product detail with first 10 media and first 100 variants plus pagination metadata.";
+  }
+  if (tool.name === "list_product_variants") {
+    tool.description =
+      "List variants for a product with cursor pagination. Returns variant details including price, SKU, inventory, and selected options.";
+    if (tool.input.properties.limit) tool.input.properties.limit.maximum = 250;
+  }
+  if (
+    ["create_product", "list_products", "update_product", "update_product_status"].includes(
+      tool.name,
+    )
+  ) {
+    addEnum(tool.input.properties.status, ["ACTIVE", "DRAFT", "ARCHIVED", "UNLISTED"]);
+  }
+  if (tool.name === "update_product_status") {
+    tool.description = "Change a product's status to ACTIVE, DRAFT, ARCHIVED, or UNLISTED.";
+  }
+}
 
 let yaml = `slug: shopify
 name: Shopify

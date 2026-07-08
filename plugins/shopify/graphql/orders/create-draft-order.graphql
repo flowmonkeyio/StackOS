@@ -43,7 +43,7 @@ mutation CreateDraftOrder($input: DraftOrderInput!) {
           }
         }
       }
-      note
+      note2
       shippingAddress {
         address1
         city

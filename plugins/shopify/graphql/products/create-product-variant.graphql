@@ -12,6 +12,7 @@ mutation ProductVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsB
       }
     }
     userErrors {
+      code
       field
       message
     }

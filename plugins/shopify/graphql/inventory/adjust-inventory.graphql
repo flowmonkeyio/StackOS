@@ -17,6 +17,7 @@ mutation InventoryAdjustQuantities($input: InventoryAdjustQuantitiesInput!, $ide
       }
     }
     userErrors {
+      code
       field
       message
     }

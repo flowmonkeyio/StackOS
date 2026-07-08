@@ -109,7 +109,7 @@ resources:
 actions:
   - key: conversion_funnel
     name: "Conversion Funnel"
-    description: "Conversion funnel metrics: sessions, orders, and derived conversion rate (values in shop currency)"
+    description: "Conversion funnel metrics: sessions, orders, customers, and ShopifyQL conversion_rate (values in shop currency)"
     provider: shopify
     capability: analytics
     risk_level: read
@@ -190,7 +190,7 @@ actions:
         graphql_file: graphql/shopifyql.graphql
   - key: customer_lifetime_value
     name: "Customer Lifetime Value"
-    description: "Customer lifetime value report showing top customers by spend or order count. Note: groups by customer_name which may not be unique across customers with the same name."
+    description: "Customer lifetime value report from the ShopifyQL customers dataset showing customer_name, total_amount_spent, and total_orders. Note: groups by customer_name, which may not be unique across customers with the same name."
     provider: shopify
     capability: analytics
     risk_level: read
@@ -292,7 +292,7 @@ actions:
         action_name: inventory_risk_report
         domain: analytics
         mode: inventory_risk
-        scopes: ["read_inventory", "read_products"]
+        scopes: ["read_inventory", "read_products", "read_orders"]
         source: cob-shopify-mcp
         source_path: "src/shopify/tools/analytics/inventory-risk-report.tool.ts"
         graphql_file: "graphql/analytics/inventory-risk-report.graphql"
@@ -390,7 +390,7 @@ actions:
         graphql_file: graphql/shopifyql.graphql
   - key: refund_rate_summary
     name: "Refund Rate Summary"
-    description: "Refund summary for a date range using returned product quantities and estimated refund amounts (values in shop currency)"
+    description: "Sales reversal summary for a date range using documented Shopify sales metrics (orders, sales_reversals, gross_sales, net_sales, discounts; values in shop currency). Does not compute a physical-return rate."
     provider: shopify
     capability: analytics
     risk_level: read
@@ -576,9 +576,16 @@ actions:
         compare_to:
           type: string
           description: "Compare against the previous period of equal length, or the same period last year"
+          enum:
+            - "previous_period"
+            - "previous_year"
         group_by:
           type: string
           description: "Time granularity for the comparison breakdown"
+          enum:
+            - "day"
+            - "week"
+            - "month"
     output_schema:
       type: object
       additionalProperties: true
@@ -631,37 +638,6 @@ actions:
         scopes: ["read_reports"]
         source: cob-shopify-mcp
         source_path: "src/shopify/tools/analytics/sales-summary.tool.ts"
-        graphql_file: graphql/shopifyql.graphql
-  - key: shopifyql_query
-    name: "Shopifyql Query"
-    description: "Execute a bounded, read-only ShopifyQL analytics query. Query text must start with FROM and pass StackOS connector safety checks."
-    provider: shopify
-    capability: analytics
-    risk_level: read
-    input_schema:
-      type: object
-      additionalProperties: false
-      required:
-        - query
-      properties:
-        query:
-          type: string
-          description: "ShopifyQL query string, e.g. FROM sales SHOW total_sales SINCE -30d"
-    output_schema:
-      type: object
-      additionalProperties: true
-    config:
-      schema_version: stackos.action.v1
-      connector: shopify
-      operation: admin.graphql
-      requires_credential: true
-      shopify:
-        action_name: shopifyql_query
-        domain: analytics
-        mode: shopifyql
-        scopes: ["read_reports"]
-        source: cob-shopify-mcp
-        source_path: "src/shopify/tools/analytics/shopifyql-query.tool.ts"
         graphql_file: graphql/shopifyql.graphql
   - key: top_products
     name: "Top Products"
@@ -864,7 +840,7 @@ actions:
         graphql_file: "graphql/customers/get-customer.graphql"
   - key: get_customer_lifetime_value
     name: "Get Customer Lifetime Value"
-    description: "Get customer lifetime value: totalSpent, ordersCount, computed avgOrderValue, and first/last order dates."
+    description: "Get customer amountSpent, numberOfOrders, and first/last visible order dates. True first/last order history can require Shopify read_all_orders access beyond the default order window."
     provider: shopify
     capability: customers
     risk_level: read
@@ -888,13 +864,13 @@ actions:
         action_name: get_customer_lifetime_value
         domain: customers
         mode: graphql
-        scopes: ["read_customers"]
+        scopes: ["read_customers", "read_orders"]
         source: cob-shopify-mcp
         source_path: "src/shopify/tools/customers/get-customer-lifetime-value.tool.ts"
         graphql_file: "graphql/customers/get-customer-lifetime-value.graphql"
   - key: get_customer_orders
     name: "Get Customer Orders"
-    description: "List orders for a specific customer. Returns order summary with name, totalPrice, status, and createdAt."
+    description: "List visible orders for a specific customer. Historical orders beyond Shopify's default order window can require read_all_orders access."
     provider: shopify
     capability: customers
     risk_level: read
@@ -924,7 +900,7 @@ actions:
         action_name: get_customer_orders
         domain: customers
         mode: graphql
-        scopes: ["read_customers"]
+        scopes: ["read_customers", "read_orders"]
         source: cob-shopify-mcp
         source_path: "src/shopify/tools/customers/get-customer-orders.tool.ts"
         graphql_file: "graphql/customers/get-customer-orders.graphql"
@@ -1092,8 +1068,11 @@ actions:
           type: string
           description: "Shopify GID of the location"
         delta:
-          type: number
+          type: integer
           description: "Quantity change - positive to add, negative to subtract"
+        change_from_quantity:
+          type: integer
+          description: "Optional compare-and-swap expected current quantity. Omit to send explicit null and skip the CAS check."
         reason:
           type: string
           description: "Reason for adjustment (e.g."
@@ -1307,6 +1286,9 @@ actions:
         quantity:
           type: integer
           description: "Exact quantity to set"
+        change_from_quantity:
+          type: integer
+          description: "Optional compare-and-swap expected current quantity. Omit to send explicit null and skip the CAS check."
         reason:
           type: string
           description: "Reason for setting quantity (e.g."
@@ -1436,7 +1418,7 @@ actions:
         graphql_file: "graphql/orders/create-draft-order.graphql"
   - key: get_order
     name: "Get Order"
-    description: "Get a single order by ID with full detail: all line items, fulfillments with tracking, customer, addresses, notes, and tags."
+    description: "Get a single order by ID with customer, addresses, notes, tags, fulfillments, and the first 50 line items plus pagination metadata."
     provider: shopify
     capability: orders
     risk_level: read
@@ -1460,13 +1442,13 @@ actions:
         action_name: get_order
         domain: orders
         mode: graphql
-        scopes: ["read_orders"]
+        scopes: ["read_orders", "read_customers"]
         source: cob-shopify-mcp
         source_path: "src/shopify/tools/orders/get-order.tool.ts"
         graphql_file: "graphql/orders/get-order.graphql"
   - key: get_order_by_name
     name: "Get Order By Name"
-    description: "Get an order by its order number (e.g., \"#1001\"). Uses Shopify order search by name."
+    description: "Get an order by its exact Shopify order name (for example, #1001 or a custom prefixed name). Uses Shopify order search by name."
     provider: shopify
     capability: orders
     risk_level: read
@@ -1490,7 +1472,7 @@ actions:
         action_name: get_order_by_name
         domain: orders
         mode: graphql
-        scopes: ["read_orders"]
+        scopes: ["read_orders", "read_customers"]
         source: cob-shopify-mcp
         source_path: "src/shopify/tools/orders/get-order-by-name.tool.ts"
         graphql_file: "graphql/orders/get-order-by-name.graphql"
@@ -1520,7 +1502,7 @@ actions:
         action_name: get_order_fulfillment_status
         domain: orders
         mode: graphql
-        scopes: ["read_orders", "read_assigned_fulfillment_orders"]
+        scopes: ["read_orders"]
         source: cob-shopify-mcp
         source_path: "src/shopify/tools/orders/get-order-fulfillment-status.tool.ts"
         graphql_file: "graphql/orders/get-order-fulfillment-status.graphql"
@@ -1556,7 +1538,7 @@ actions:
         graphql_file: "graphql/orders/get-order-timeline.graphql"
   - key: list_orders
     name: "List Orders"
-    description: "List orders with optional filtering by status, financial status, and fulfillment status. Returns order details including line items and fulfillment tracking."
+    description: "List visible orders with optional filtering by status, financial status, and fulfillment status. Returns order details including first-page line items, customer summary, and fulfillment tracking."
     provider: shopify
     capability: orders
     risk_level: read
@@ -1588,13 +1570,13 @@ actions:
         action_name: list_orders
         domain: orders
         mode: graphql
-        scopes: ["read_orders"]
+        scopes: ["read_orders", "read_customers"]
         source: cob-shopify-mcp
         source_path: "src/shopify/tools/orders/list-orders.tool.ts"
         graphql_file: "graphql/orders/list-orders.graphql"
   - key: mark_order_paid
     name: "Mark Order Paid"
-    description: "Mark an order as paid using the orderMarkAsPaid mutation."
+    description: "Mark an order as paid using the orderMarkAsPaid mutation. Shopify also requires the acting staff user to have the mark_orders_as_paid permission."
     provider: shopify
     capability: orders
     risk_level: write
@@ -1654,7 +1636,7 @@ actions:
         action_name: search_orders
         domain: orders
         mode: graphql
-        scopes: ["read_orders"]
+        scopes: ["read_orders", "read_customers"]
         source: cob-shopify-mcp
         source_path: "src/shopify/tools/orders/search-orders.tool.ts"
         graphql_file: "graphql/orders/search-orders.graphql"
@@ -1693,7 +1675,7 @@ actions:
         graphql_file: "graphql/orders/update-order-note.graphql"
   - key: update_order_tags
     name: "Update Order Tags"
-    description: "Set or replace tags on an order using tagsAdd."
+    description: "Set or replace tags on an order using orderUpdate; supplied tags overwrite the order's tag list."
     provider: shopify
     capability: orders
     risk_level: write
@@ -1784,6 +1766,7 @@ actions:
             - "ACTIVE"
             - "DRAFT"
             - "ARCHIVED"
+            - "UNLISTED"
         tags:
           type: array
           items:
@@ -1875,7 +1858,7 @@ actions:
         graphql_file: "graphql/products/get-collection.graphql"
   - key: get_product
     name: "Get Product"
-    description: "Get a single product by its Shopify GID. Returns full product detail including all variants and images."
+    description: "Get a single product by its Shopify GID. Returns product detail with first 10 media and first 100 variants plus pagination metadata."
     provider: shopify
     capability: products
     risk_level: read
@@ -1905,7 +1888,7 @@ actions:
         graphql_file: "graphql/products/get-product.graphql"
   - key: get_product_by_handle
     name: "Get Product By Handle"
-    description: "Get a product by its URL handle (slug). Returns full product detail including all variants and images."
+    description: "Get a product by its URL handle (slug). Returns product detail with first 10 media and first 100 variants plus pagination metadata."
     provider: shopify
     capability: products
     risk_level: read
@@ -1997,7 +1980,7 @@ actions:
         graphql_file: "graphql/products/list-collections.graphql"
   - key: list_product_variants
     name: "List Product Variants"
-    description: "List all variants for a product. Returns variant details including price, SKU, inventory, and selected options."
+    description: "List variants for a product with cursor pagination. Returns variant details including price, SKU, inventory, and selected options."
     provider: shopify
     capability: products
     risk_level: read
@@ -2012,7 +1995,7 @@ actions:
         limit:
           type: integer
           minimum: 1
-          maximum: 100
+          maximum: 250
         cursor:
           type: string
     output_schema:
@@ -2051,6 +2034,7 @@ actions:
             - "ACTIVE"
             - "DRAFT"
             - "ARCHIVED"
+            - "UNLISTED"
         vendor:
           type: string
         product_type:
@@ -2174,6 +2158,7 @@ actions:
             - "ACTIVE"
             - "DRAFT"
             - "ARCHIVED"
+            - "UNLISTED"
     output_schema:
       type: object
       additionalProperties: true
@@ -2192,7 +2177,7 @@ actions:
         graphql_file: "graphql/products/update-product.graphql"
   - key: update_product_status
     name: "Update Product Status"
-    description: "Change a product's status to ACTIVE, DRAFT, or ARCHIVED."
+    description: "Change a product's status to ACTIVE, DRAFT, ARCHIVED, or UNLISTED."
     provider: shopify
     capability: products
     risk_level: write
@@ -2211,6 +2196,7 @@ actions:
             - "ACTIVE"
             - "DRAFT"
             - "ARCHIVED"
+            - "UNLISTED"
     output_schema:
       type: object
       additionalProperties: true
@@ -2271,7 +2257,7 @@ config:
     name: cob-shopify-mcp
     license: MIT
     extracted_at: "2026-07-08"
-    tool_count: 59
+    tool_count: 58
   official_docs:
     admin_graphql: https://shopify.dev/docs/api/admin-graphql/latest
     access_scopes: https://shopify.dev/docs/api/usage/access-scopes

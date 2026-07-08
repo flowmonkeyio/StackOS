@@ -32,7 +32,6 @@ from stackos.repositories.base import ValidationError
 
 MAX_GRAPHQL_PAGES = 20
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_SHOPIFYQL_SAFE_RE = re.compile(r"^[A-Za-z0-9_.,:*#'\"<>=!()\s+-]+$")
 _TIMESERIES_VALUES = {"day", "week", "month"}
 _SALES_COMPARE_VALUES = {"previous_period", "previous_year"}
 _GEOGRAPHY_GROUP_VALUES = {"country", "region"}
@@ -55,13 +54,14 @@ _RECENT_SALES_QUERY = """query RecentSales($first: Int!, $query: String, $after:
   orders(first: $first, query: $query, after: $after) {
     edges {
       node {
-        lineItems(first: 50) {
+        lineItems(first: 250) {
           edges {
             node {
               quantity
               variant { id }
             }
           }
+          pageInfo { hasNextPage endCursor }
         }
       }
     }
@@ -93,12 +93,6 @@ class ShopifyActionConnector:
             issues.append(
                 issue("$.config.shopify.graphql_file", "graphql_file is required", "required")
             )
-        if request.action_key == "shopifyql_query":
-            query = request.input_json.get("query")
-            if not isinstance(query, str) or not query.strip().lower().startswith("from "):
-                issues.append(
-                    issue("$.query", "ShopifyQL query must start with FROM", "validation_error")
-                )
         if request.action_key == "manage_product_tags":
             add = request.input_json.get("add")
             remove = request.input_json.get("remove")
@@ -422,6 +416,11 @@ async def _recent_sales_velocity(
                     velocity[variant_id] = velocity.get(variant_id, 0) + int(
                         item.get("quantity") or 0
                     )
+            line_items_page = (
+                line_items.get("pageInfo") if isinstance(line_items, dict) else None
+            )
+            if isinstance(line_items_page, dict) and line_items_page.get("hasNextPage"):
+                truncated = True
         page_info = (
             connection.get("pageInfo") if isinstance(connection.get("pageInfo"), dict) else {}
         )
@@ -592,7 +591,6 @@ def _variables_for_action(action_key: str, payload: dict[str, Any]) -> dict[str,
         "add_customer_tag",
         "remove_customer_tag",
         "add_order_tag",
-        "update_order_tags",
     }:
         return {"id": _required_str(payload, "id"), "tags": payload.get("tags") or []}
     if action_key in {
@@ -611,7 +609,7 @@ def _variables_for_action(action_key: str, payload: dict[str, Any]) -> dict[str,
     if action_key == "get_customer_orders":
         return {
             "id": _required_str(payload, "customer_id"),
-            "first": _limit(payload, default=10, maximum=50),
+            "first": _limit(payload, default=10, maximum=250),
             "after": payload.get("cursor"),
         }
     if action_key in {"list_customers", "list_collections", "list_inventory_levels"}:
@@ -639,6 +637,7 @@ def _variables_for_action(action_key: str, payload: dict[str, Any]) -> dict[str,
                         "inventoryItemId": _required_str(payload, "inventory_item_id"),
                         "locationId": _required_str(payload, "location_id"),
                         "delta": payload.get("delta"),
+                        "changeFromQuantity": payload.get("change_from_quantity"),
                     }
                 ],
             },
@@ -649,12 +648,12 @@ def _variables_for_action(action_key: str, payload: dict[str, Any]) -> dict[str,
             "input": {
                 "reason": payload.get("reason") or "correction",
                 "name": "available",
-                "ignoreCompareQuantity": True,
                 "quantities": [
                     {
                         "inventoryItemId": _required_str(payload, "inventory_item_id"),
                         "locationId": _required_str(payload, "location_id"),
                         "quantity": payload.get("quantity"),
+                        "changeFromQuantity": payload.get("change_from_quantity"),
                     }
                 ],
             },
@@ -662,7 +661,7 @@ def _variables_for_action(action_key: str, payload: dict[str, Any]) -> dict[str,
         }
     if action_key == "get_inventory_by_sku":
         return {
-            "query": f"sku:{_required_str(payload, 'sku')}",
+            "query": f"sku:{_shopify_search_quote(_required_str(payload, 'sku'))}",
             "first": _limit(payload, default=10, maximum=50),
         }
     if action_key == "get_location_inventory":
@@ -677,12 +676,15 @@ def _variables_for_action(action_key: str, payload: dict[str, Any]) -> dict[str,
         return {
             "input": {"id": _required_str(payload, "id"), "note": _required_str(payload, "note")}
         }
+    if action_key == "update_order_tags":
+        return {
+            "input": {"id": _required_str(payload, "id"), "tags": payload.get("tags") or []}
+        }
     if action_key == "create_draft_order":
         return {"input": _draft_order_input(payload)}
     if action_key == "get_order_by_name":
         name = _required_str(payload, "name")
-        order_name = name if name.startswith("#") else f"#{name}"
-        return {"query": f"name:{_shopify_search_quote(order_name)}"}
+        return {"query": f"name:{_shopify_search_quote(name)}"}
     if action_key == "list_orders":
         parts = []
         for field in ("status", "financial_status", "fulfillment_status"):
@@ -699,7 +701,7 @@ def _variables_for_action(action_key: str, payload: dict[str, Any]) -> dict[str,
         collection = {"title": _required_str(payload, "title")}
         if payload.get("description") is not None:
             collection["descriptionHtml"] = payload["description"]
-        return {"input": collection}
+        return {"collection": collection}
     if action_key == "create_product":
         return {"product": _product_input(payload, include_id=False)}
     if action_key == "update_product":
@@ -732,7 +734,7 @@ def _variables_for_action(action_key: str, payload: dict[str, Any]) -> dict[str,
     if action_key == "list_products":
         parts = []
         if payload.get("status"):
-            parts.append(f"status:{payload['status']}")
+            parts.append(f"status:{str(payload['status']).lower()}")
         if payload.get("vendor"):
             parts.append(f"vendor:{_shopify_search_quote(str(payload['vendor']))}")
         if payload.get("product_type"):
@@ -746,18 +748,14 @@ def _variables_for_action(action_key: str, payload: dict[str, Any]) -> dict[str,
 
 
 def _shopifyql_queries(action_key: str, payload: dict[str, Any]) -> list[tuple[str, str]]:
-    if action_key == "shopifyql_query":
-        query = _required_str(payload, "query").strip()
-        _validate_shopifyql_text(query)
-        return [("query", query)]
     if action_key == "customer_lifetime_value":
         sort_by = _enum_value(payload, "sort_by", {"amount", "orders"}, default="amount")
-        sort_column = "total_sales" if sort_by == "amount" else "orders"
+        sort_column = "total_amount_spent" if sort_by == "amount" else "total_orders"
         return [
             (
                 "customer_lifetime_value",
                 (
-                    "FROM sales SHOW total_sales, orders "
+                    "FROM customers SHOW customer_name, total_amount_spent, total_orders "
                     f"GROUP BY customer_name ORDER BY {sort_column} DESC "
                     f"LIMIT {_limit(payload, default=25, maximum=100)}"
                 ),
@@ -773,6 +771,10 @@ def _shopifyql_queries(action_key: str, payload: dict[str, Any]) -> list[tuple[s
                 f"FROM sales SHOW orders, total_sales, customers SINCE {start} UNTIL {end}",
             ),
             ("sessions", f"FROM sessions SHOW sessions SINCE {start} UNTIL {end}"),
+            (
+                "conversion_rate",
+                f"FROM sessions SHOW conversion_rate SINCE {start} UNTIL {end}",
+            ),
         ]
     if action_key == "customer_cohort_analysis":
         group_by = _enum_value(payload, "group_by", _TIMESERIES_VALUES, default="month")
@@ -829,7 +831,7 @@ def _shopifyql_queries(action_key: str, payload: dict[str, Any]) -> list[tuple[s
             (
                 "refunds",
                 (
-                    "FROM sales SHOW orders, returns, gross_sales, net_sales, discounts "
+                    "FROM sales SHOW orders, sales_reversals, gross_sales, net_sales, discounts "
                     f"SINCE {start} UNTIL {end}"
                 ),
             )
@@ -876,7 +878,7 @@ def _shopifyql_queries(action_key: str, payload: dict[str, Any]) -> list[tuple[s
                 (
                     "FROM sales SHOW total_sales, orders, net_sales "
                     f"TIMESERIES {group_by} SINCE {start} UNTIL {end} "
-                    f"COMPARE TO {compare_to}"
+                    f"COMPARE TO {compare_to} WITH PERCENT_CHANGE"
                 ),
             )
         ]
@@ -916,9 +918,6 @@ def _shopifyql_queries(action_key: str, payload: dict[str, Any]) -> list[tuple[s
 
 
 def _validate_action_payload(action_key: str, payload: dict[str, Any]) -> None:
-    if action_key == "shopifyql_query":
-        _validate_shopifyql_text(_required_str(payload, "query"))
-        return
     if action_key in {"search_customers", "search_products", "search_orders"}:
         _validate_search_query(_required_str(payload, "query"))
     if action_key in {
@@ -964,26 +963,22 @@ def _validate_action_payload(action_key: str, payload: dict[str, Any]) -> None:
         _draft_order_input(payload)
     if action_key == "adjust_inventory":
         _int_value(payload, "delta", minimum=-1_000_000, maximum=1_000_000)
+        if payload.get("change_from_quantity") is not None:
+            _int_value(
+                payload,
+                "change_from_quantity",
+                minimum=-1_000_000_000,
+                maximum=1_000_000_000,
+            )
     if action_key == "set_inventory_level":
         _int_value(payload, "quantity", minimum=0, maximum=1_000_000)
-
-
-def _validate_shopifyql_text(query: str) -> None:
-    text = query.strip()
-    lowered = text.lower()
-    if not lowered.startswith("from "):
-        raise ValidationError("ShopifyQL query must start with FROM")
-    if len(text) > 1000:
-        raise ValidationError("ShopifyQL query is too long")
-    if any(token in lowered for token in ("mutation", "fragment", "__schema", "__type")):
-        raise ValidationError("ShopifyQL query cannot contain GraphQL operation tokens")
-    if any(token in text for token in ("{", "}", ";", "--", "/*", "*/")):
-        raise ValidationError("ShopifyQL query contains unsupported syntax")
-    if not _SHOPIFYQL_SAFE_RE.match(text):
-        raise ValidationError("ShopifyQL query contains unsupported characters")
-    limit_match = re.search(r"\blimit\s+(\d+)\b", lowered)
-    if limit_match and int(limit_match.group(1)) > 250:
-        raise ValidationError("ShopifyQL query limit must be 250 or less")
+        if payload.get("change_from_quantity") is not None:
+            _int_value(
+                payload,
+                "change_from_quantity",
+                minimum=-1_000_000_000,
+                maximum=1_000_000_000,
+            )
 
 
 def _validate_search_query(query: str) -> None:

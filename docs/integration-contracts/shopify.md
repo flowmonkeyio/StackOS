@@ -43,12 +43,15 @@ The official Admin GraphQL API is one HTTP endpoint with many root fields. The
 - Rendered documentation listed 478 mutation fields at audit time; the schema
   contained five additional mutation fields not present in that rendered list.
 
-StackOS does not expose those 751 root fields directly. This plugin exposes 59
-curated actions copied from the `cob-shopify-mcp` tool catalog:
+StackOS does not expose those 751 root fields directly. This plugin exposes 58
+curated actions copied from the `cob-shopify-mcp` tool catalog and corrected
+against Shopify's 2026-07 documentation. The generic `shopifyql_query` tool was
+removed because it exposed arbitrary ShopifyQL instead of a curated agent
+action.
 
 | Domain | Action count |
 | --- | ---: |
-| Analytics | 16 |
+| Analytics | 15 |
 | Customers | 9 |
 | Inventory | 7 |
 | Orders | 12 |
@@ -74,15 +77,19 @@ mode in `plugins/shopify/plugin.yaml`.
 
 - GraphQL actions load a checked-in `.graphql` file and map action inputs to the
   exact variables Shopify expects.
-- ShopifyQL analytics actions use the checked-in `shopifyqlQuery` wrapper. The
-  inherited `shopifyql_query` action allows ShopifyQL, not raw GraphQL, and the
-  connector rejects GraphQL operation tokens, unsupported syntax, oversized
-  queries, and unbounded `LIMIT` values.
+- ShopifyQL analytics actions use the checked-in `shopifyqlQuery` wrapper with
+  connector-owned query strings only; agents cannot submit arbitrary ShopifyQL
+  or raw GraphQL.
 - Product tag management may execute both `tagsAdd` and `tagsRemove` when both
   `add` and `remove` arrays are provided.
 - `adjust_inventory` and `set_inventory_level` send Shopify's required
-  `@idempotent` directive and an internally generated idempotency key for the
-  2026-07 Admin API.
+  `@idempotent` directive, an internally generated idempotency key for the
+  2026-07 Admin API, and explicit `changeFromQuantity` fields. When
+  `change_from_quantity` is omitted by the caller, StackOS sends `null` to skip
+  the compare-and-swap check intentionally.
+- Order actions that select customer name/email fields require `read_customers`
+  in addition to `read_orders`, and live use can require Shopify protected
+  customer data approval.
 - `low_stock_report` reads inventory items, filters inventory levels below the
   requested threshold in the connector, sorts by available quantity ascending,
   and returns a bounded result set.
@@ -108,17 +115,23 @@ Automated coverage added in this delivery:
 - `tests/integration/test_integrations/test_shopify.py`
 - `tests/integration/test_repositories/test_auth_providers.py`
 - `tests/integration/test_repositories/test_shopify_actions.py`
+- `docs/integration-contracts/shopify-action-signoff.md`
 
 Covered behavior:
 
 - Static token auth probe posts to the correct versioned endpoint with
   `X-Shopify-Access-Token`.
 - Credential storage keeps the token encrypted and stores only safe config.
-- Plugin catalog exposes exactly 59 static Shopify actions.
+- Plugin catalog exposes exactly 58 static Shopify actions.
 - `shopify.list_products` executes a checked-in GraphQL document and maps action
   inputs to Shopify variables.
-- Draft order, inventory write idempotency, low-stock filtering, ShopifyQL
-  bounds, and mutation `userErrors` have focused repository tests.
+- Draft order `note2`, inventory write idempotency/CAS input shape, low-stock
+  filtering, lower-case product status search, order tag replacement,
+  collection creation argument shape, product `UNLISTED` status, and mutation
+  `userErrors` have focused repository tests.
+- A July 8, 2026 manual verifier pass checked every Shopify action against
+  official Shopify documentation. Rows with blockers were fixed locally and
+  signed off in `shopify-action-signoff.md`.
 
 Live smoke with a real Shopify store token remains an operator-provided release
 gate, because this session did not have Shopify credentials.

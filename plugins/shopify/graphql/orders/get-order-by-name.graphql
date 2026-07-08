@@ -54,6 +54,10 @@ query GetOrderByName($query: String!) {
               }
             }
           }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
         }
         fulfillments {
           status
