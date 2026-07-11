@@ -232,6 +232,7 @@ function currentDmgArtifacts() {
 
 function notarizeDmgArtifacts() {
   const authArgs = notarizationArgsForEnv();
+  const updateMetadataPath = path.join(desktopDir, "dist", "latest-mac.yml");
   for (const artifact of currentDmgArtifacts()) {
     console.log(`notarizing ${path.basename(artifact)}`);
     runStep("xcrun", [
@@ -245,6 +246,11 @@ function notarizeDmgArtifacts() {
     ]);
     runStep("xcrun", ["stapler", "staple", artifact]);
     runStep("xcrun", ["stapler", "validate", artifact]);
+    runStep(process.execPath, [
+      "scripts/refresh-notarized-update-metadata.cjs",
+      artifact,
+      updateMetadataPath
+    ]);
   }
 }
 

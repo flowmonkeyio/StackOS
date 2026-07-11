@@ -111,6 +111,66 @@ developer Mac when exactly one Developer ID Application identity is visible. Set
 `CSC_NAME="Example Org (ABCDE12345)"` as well when multiple identities are
 present or when CI should pin the signing identity.
 
+### Current direct-distribution signing command
+
+The current Developer ID identity installed for StackOS releases is:
+
+```text
+SERGEY RURA (TSHN26FR48)
+```
+
+Pass the identity without the `Developer ID Application:` prefix. For the
+website-hosted static distribution that is signed but intentionally not
+notarized, use:
+
+```bash
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run dist:mac:signed
+```
+
+This produces the DMG, ZIP, blockmaps, and `latest-mac.yml` with Developer ID
+signatures and the production update endpoint, while
+`STACKOS_SKIP_NOTARIZATION=1` is supplied by the script. This is distinct from
+an App Store submission. It is also distinct from a notarized direct download:
+macOS Gatekeeper can still warn or reject a signed-but-not-notarized app on a
+different Mac. When a notarytool credential profile is added, use
+`dist:mac:release` for the smooth public-download path.
+
+### One-time notarization profile setup
+
+Notarization is an automated Apple security scan for Developer ID software
+distributed outside the App Store; it is not an App Store submission. Create
+an app-specific password for the release Apple ID, then run this command in a
+local terminal. Do not put the password in the command or repository. When
+prompted, enter the app-specific password securely:
+
+```bash
+xcrun notarytool store-credentials stackos-notary \
+  --apple-id "YOUR_APPLE_ID" \
+  --team-id "TSHN26FR48"
+```
+
+Validate the stored profile and all release inputs:
+
+```bash
+STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 \
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run release:preflight
+```
+
+Then build, submit, wait for acceptance, staple, and validate the public
+release artifacts:
+
+```bash
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
+APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+pnpm --dir desktop run dist:mac:release
+```
+
 Build signed and notarized release artifacts:
 
 ```bash
@@ -139,7 +199,10 @@ notarization inputs unless an operator explicitly sets
 
 The release wrapper rebuilds the standalone Python payload, signs the generated
 app bundle, signs the generated DMG, submits to Apple notarization, staples the
-DMG ticket, and validates the staple.
+DMG ticket, validates the staple, and then regenerates the DMG blockmap and its
+`latest-mac.yml` hash and size. That final metadata refresh is required because
+stapling changes the DMG bytes after electron-builder first emits updater
+metadata.
 
 ## Signing and Notarization Environment
 

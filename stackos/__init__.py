@@ -6,7 +6,7 @@ MCP (`/mcp`), or the bundled Vue UI (`/`), not via direct Python imports.
 
 from __future__ import annotations
 
-__version__ = "1.1.6"
+__version__ = "2.0.0"
 __milestone__ = "M10"
 
 __all__ = ["__milestone__", "__version__"]
