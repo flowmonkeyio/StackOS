@@ -83,8 +83,8 @@ Build command: pnpm install --frozen-lockfile && pnpm generate
 Output directory: .output/public
 Environment variable: NUXT_PUBLIC_SITE_URL=https://stackos.flowmonkey.io
 Environment variable: NUXT_PUBLIC_GA_MEASUREMENT_ID=G-KPZXCGXGG5
-Environment variable: NUXT_PUBLIC_DOWNLOAD_URL=https://flowmonkey.io/StackOS/stackos-1.1.6-mac-arm64.dmg
-Environment variable: NUXT_PUBLIC_DOWNLOAD_VERSION=1.1.6
+Environment variable: NUXT_PUBLIC_DOWNLOAD_URL=https://flowmonkey.io/StackOS/stackos-2.0.0-mac-arm64.dmg
+Environment variable: NUXT_PUBLIC_DOWNLOAD_VERSION=2.0.0
 ```
 
 If the output directory is resolved relative to the repository root, enter

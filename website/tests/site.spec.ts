@@ -9,7 +9,7 @@ test('communicates the product and completes the core evaluation flow', async ({
   await expect(page.getByText('23', { exact: true })).toBeVisible()
   await expect(page.getByText('Claude Code connected', { exact: true })).toBeAttached()
 
-  const downloadUrl = 'https://flowmonkey.io/StackOS/stackos-1.1.6-mac-arm64.dmg'
+  const downloadUrl = 'https://flowmonkey.io/StackOS/stackos-2.0.0-mac-arm64.dmg'
   await expect(page.locator('.site-nav--desktop a[data-download="stackos-mac"]')).toHaveAttribute('href', downloadUrl)
 
   await page.getByRole('link', { name: 'See how it works' }).click()
@@ -29,7 +29,7 @@ test('communicates the product and completes the core evaluation flow', async ({
 
   await page.locator('#install').scrollIntoViewIfNeeded()
   await expect(page.locator('#install').getByRole('link', { name: 'Download for Mac' })).toHaveAttribute('href', downloadUrl)
-  await expect(page.locator('#install').getByText('StackOS 1.1.6 · Apple silicon')).toBeVisible()
+  await expect(page.locator('#install').getByText('StackOS 2.0.0 · Apple silicon')).toBeVisible()
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(1)
