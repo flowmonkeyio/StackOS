@@ -1,0 +1,55 @@
+{
+  "key": "support.issue-investigation",
+  "slug": "support-issue-investigation",
+  "name": "Issue Investigation",
+  "description": "Investigate a reported issue, gather the evidence, and return a clear conclusion in the same conversation.",
+  "domain": "support",
+  "audience": "Support and success teams",
+  "color": "#a8e37f",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to investigate a reported issue, gather the evidence, and return a clear conclusion in the same conversation.",
+    "Best for support and success teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "read-canonical-thread",
+      "title": "Read main Thread",
+      "summary": "Read the full stored thread and source context before forming hypotheses."
+    },
+    {
+      "id": "clarify-missing-context",
+      "title": "Clarify Missing Context",
+      "summary": "Ask a same-thread clarification only when missing evidence blocks a safe conclusion; otherwise record why clarification was skipped."
+    },
+    {
+      "id": "investigate-issue",
+      "title": "Investigate Issue",
+      "summary": "Trace the symptom through project evidence, validate or bound root cause, and identify affected surfaces and delivery direction."
+    },
+    {
+      "id": "post-support-conclusion",
+      "title": "Post Support Conclusion",
+      "summary": "Post the evidence-backed conclusion in the main thread and tell the person that task creation is a separate instructed handoff."
+    }
+  ],
+  "agentNames": [
+    "Support Issue Investigator",
+    "Codebase Explorer"
+  ],
+  "agentRefs": [
+    {
+      "key": "support.workflow.issue-investigator",
+      "slug": "support-workflow-issue-investigator",
+      "name": "Support Issue Investigator"
+    },
+    {
+      "key": "stackos.sdlc.codebase-explorer",
+      "slug": "stackos-sdlc-codebase-explorer",
+      "name": "Codebase Explorer"
+    }
+  ],
+  "integrations": [
+    "Slack Bot"
+  ]
+}

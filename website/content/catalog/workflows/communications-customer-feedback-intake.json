@@ -1,0 +1,50 @@
+{
+  "key": "communications.customer-feedback-intake",
+  "slug": "communications-customer-feedback-intake",
+  "name": "Customer Feedback Intake",
+  "description": "Bring customer feedback from chat and email into one clear, investigation-ready thread.",
+  "domain": "communications",
+  "audience": "Customer and operations teams",
+  "color": "#7ee2ad",
+  "featured": true,
+  "whenToUse": [
+    "Use this when you want to bring customer feedback from chat and email into one clear, investigation-ready thread.",
+    "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "capture-feedback",
+      "title": "Capture Feedback",
+      "summary": "Read the inbound request and source refs, including media inventory and route hints."
+    },
+    {
+      "id": "establish-canonical-thread",
+      "title": "Establish main Thread",
+      "summary": "Reuse a Slack-origin thread or create one route-approved Slack handoff that preserves source context and media."
+    },
+    {
+      "id": "add-intake-reaction",
+      "title": "Add Intake Reaction",
+      "summary": "Mark the main Slack message with a reaction that indicates support intake has started."
+    },
+    {
+      "id": "prepare-investigation-handoff",
+      "title": "Prepare Investigation Handoff",
+      "summary": "Return the refs and concise support context needed to start support.issue-investigation without re-discovering the source message."
+    }
+  ],
+  "agentNames": [
+    "Communications Customer Feedback Intake Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "communications.workflow.customer-feedback-intake",
+      "slug": "communications-workflow-customer-feedback-intake",
+      "name": "Communications Customer Feedback Intake Agent"
+    }
+  ],
+  "integrations": [
+    "Slack Bot",
+    "Telegram Bot"
+  ]
+}

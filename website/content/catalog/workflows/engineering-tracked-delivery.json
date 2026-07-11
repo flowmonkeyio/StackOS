@@ -1,0 +1,123 @@
+{
+  "key": "engineering.tracked-delivery",
+  "slug": "engineering-tracked-delivery",
+  "name": "Engineering Tracked Delivery",
+  "description": "Turn a request into a clear plan, complete it step by step, check the result, and keep the proof.",
+  "domain": "engineering",
+  "audience": "Product and engineering teams",
+  "color": "#7892ff",
+  "featured": true,
+  "whenToUse": [
+    "Use this when you want to turn a request into a clear plan, complete it step by step, check the result, and keep the proof.",
+    "Best for product and engineering teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "scope-work",
+      "title": "Scope Work",
+      "summary": "Restate the engineering goal, delivery mode, constraints, project setup, host-agent format, and missing context."
+    },
+    {
+      "id": "define-requirements",
+      "title": "Define Requirements And Flows",
+      "summary": "Convert user intent into explicit user, data, system, and business flows, acceptance criteria, non-goals, and evidence expectations."
+    },
+    {
+      "id": "discover-impact",
+      "title": "Discover Impact",
+      "summary": "Map affected scopes, real work paths, ownership boundaries, downstream readers, tests, docs, and signoff fallout."
+    },
+    {
+      "id": "plan-tickets",
+      "title": "Plan Tracker Tickets",
+      "summary": "Create or update tracker tasks/tickets with dependencies, sequencing, blockers, owned scopes, and definition of done."
+    },
+    {
+      "id": "design-approach",
+      "title": "Design Approach",
+      "summary": "Identify main ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications."
+    },
+    {
+      "id": "review-design",
+      "title": "Review Design",
+      "summary": "Challenge the requirements, impact map, ticket plan, and design before implementation."
+    },
+    {
+      "id": "design-tests",
+      "title": "Design Tests, TDD, And Manual Scenarios",
+      "summary": "Own the full proof plan before delivery: TDD/red-first automated tests, verification commands, agent-executed E2E/manual flow scenarios, expected…"
+    },
+    {
+      "id": "deliver-tickets",
+      "title": "Deliver Tickets",
+      "summary": "Claim ready tracker tickets, implement one by one, update status, and record focused verification evidence."
+    },
+    {
+      "id": "verify-delivery",
+      "title": "Verify Delivery",
+      "summary": "Run and report the mandatory verification stack for the actual diff and risk profile."
+    },
+    {
+      "id": "review-delivery",
+      "title": "Review Delivery",
+      "summary": "Review completed delivery across behavior, QA, integration contracts, security boundaries, docs, tracker evidence, and release risk."
+    },
+    {
+      "id": "audit-tracker",
+      "title": "Audit Tracker Truth",
+      "summary": "Confirm tracker state, plan state, docs, tests, evidence, and the actual diff agree before closeout."
+    },
+    {
+      "id": "release-closeout",
+      "title": "Release Closeout",
+      "summary": "Confirm final signoff, docs, known limitations, commit/release state, rollback/watch notes, and post-release checks."
+    }
+  ],
+  "agentNames": [
+    "Requirements Flow Definer",
+    "Codebase Explorer",
+    "Planning Agent",
+    "Architecture Agent",
+    "Test Designer",
+    "Delivery Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "stackos.sdlc.requirements-flow-definer",
+      "slug": "stackos-sdlc-requirements-flow-definer",
+      "name": "Requirements Flow Definer"
+    },
+    {
+      "key": "stackos.sdlc.codebase-explorer",
+      "slug": "stackos-sdlc-codebase-explorer",
+      "name": "Codebase Explorer"
+    },
+    {
+      "key": "stackos.sdlc.planning",
+      "slug": "stackos-sdlc-planning",
+      "name": "Planning Agent"
+    },
+    {
+      "key": "stackos.sdlc.architecture",
+      "slug": "stackos-sdlc-architecture",
+      "name": "Architecture Agent"
+    },
+    {
+      "key": "stackos.sdlc.test-designer",
+      "slug": "stackos-sdlc-test-designer",
+      "name": "Test Designer"
+    },
+    {
+      "key": "stackos.sdlc.delivery",
+      "slug": "stackos-sdlc-delivery",
+      "name": "Delivery Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": []
+}

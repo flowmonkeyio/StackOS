@@ -1,0 +1,50 @@
+{
+  "name": "stackos-website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nuxt 4 business website for StackOS.",
+  "scripts": {
+    "content:sync": "node scripts/sync-library-catalog.mjs",
+    "integrations:sync": "node scripts/sync-integration-catalog.mjs",
+    "predev": "pnpm content:sync",
+    "prebuild": "pnpm content:sync",
+    "pregenerate": "pnpm content:sync",
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "typecheck": "nuxt typecheck",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@fontsource-variable/manrope": "^5.2.8",
+    "@nuxt/content": "^3.15.0",
+    "@nuxt/image": "^2.0.0",
+    "@nuxt/scripts": "^1.3.0",
+    "@nuxtjs/seo": "^5.3.2",
+    "@resvg/resvg-js": "^2.6.2",
+    "@vue-flow/background": "^1.3.2",
+    "@vue-flow/controls": "^1.1.3",
+    "@vue-flow/core": "^1.48.2",
+    "better-sqlite3": "^12.11.1",
+    "nuxt": "^4.4.8",
+    "satori": "^0.26.0",
+    "vue": "^3.5.22",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.48.0",
+    "typescript": "^5.7.0",
+    "vue-tsc": "^2.2.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "sharp"
+    ]
+  },
+  "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
+}

@@ -1,0 +1,2114 @@
+{
+  "workflows": [
+    {
+      "key": "branding.content-production",
+      "slug": "branding-content-production",
+      "name": "Branding Content Production",
+      "description": "Turn an idea into a researched, reviewed piece of content, then prepare it for every channel you choose.",
+      "domain": "branding",
+      "audience": "Content and brand teams",
+      "color": "#d8ff63",
+      "featured": true,
+      "whenToUse": [
+        "Use this when you want to turn an idea into a researched, reviewed piece of content, then prepare it for every channel you choose.",
+        "Best for content and brand teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "interview-capture",
+          "title": "Interview Capture",
+          "summary": "Ask journalist-style questions and capture facts, surprises, tradeoffs, hypotheses, and open research questions."
+        },
+        {
+          "id": "research-fact-collection",
+          "title": "Research And Fact Collection",
+          "summary": "Use the interview pack to collect, verify, and organize supporting facts from the right sources before angle selection."
+        },
+        {
+          "id": "angle-and-structure",
+          "title": "Angle And Structure",
+          "summary": "Propose one to three piece ideas, select the structure, name target channels, and decide whether images are needed."
+        },
+        {
+          "id": "draft-canonical",
+          "title": "Draft main",
+          "summary": "Write the main piece in the adapted person voice from the selected angle and evidence pack."
+        },
+        {
+          "id": "editorial-review",
+          "title": "Editorial Review",
+          "summary": "Run one compact review pass for factual support, prior-position consistency, voice, and channel form."
+        },
+        {
+          "id": "sanitization-review",
+          "title": "Sanitization Review",
+          "summary": "Apply disclosure policy separately and fail closed on public-use risk."
+        },
+        {
+          "id": "produce-optional-images",
+          "title": "Produce Optional Images",
+          "summary": "Resolve the selected image set, generating assets only when the image plan requires connected app-generated website or channel media."
+        },
+        {
+          "id": "render-channel-packets",
+          "title": "Render Channel Publication Jobs",
+          "summary": "Produce executable website, X, LinkedIn, and optional email publication payloads plus one channel-ready publication bundle from the main draft and image…"
+        },
+        {
+          "id": "approve-and-record",
+          "title": "Approve And Record",
+          "summary": "Approve the main draft, channel publication jobs, publication bundle, optional image refs, follow-up hooks, and memory updates together before external…"
+        },
+        {
+          "id": "execute-publication",
+          "title": "Execute Publication",
+          "summary": "Publish or stage every approved channel through its selected automation path, then record distribution results."
+        }
+      ],
+      "agentNames": [
+        "Branding Evidence Curator",
+        "Branding Channel Strategist",
+        "Branding Narrative Writer",
+        "Branding Claim Auditor",
+        "Branding Voice Reviewer",
+        "Branding Sanitization Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "branding.evidence-curator",
+          "slug": "branding-evidence-curator",
+          "name": "Branding Evidence Curator"
+        },
+        {
+          "key": "branding.channel-strategist",
+          "slug": "branding-channel-strategist",
+          "name": "Branding Channel Strategist"
+        },
+        {
+          "key": "branding.narrative-writer",
+          "slug": "branding-narrative-writer",
+          "name": "Branding Narrative Writer"
+        },
+        {
+          "key": "branding.claim-auditor",
+          "slug": "branding-claim-auditor",
+          "name": "Branding Claim Auditor"
+        },
+        {
+          "key": "branding.voice-reviewer",
+          "slug": "branding-voice-reviewer",
+          "name": "Branding Voice Reviewer"
+        },
+        {
+          "key": "branding.sanitization-reviewer",
+          "slug": "branding-sanitization-reviewer",
+          "name": "Branding Sanitization Reviewer"
+        }
+      ],
+      "integrations": [
+        "Openai Images",
+        "Git Remote",
+        "X Api",
+        "Linkedin Api",
+        "Esp"
+      ]
+    },
+    {
+      "key": "communications.inbox-review",
+      "slug": "communications-inbox-review",
+      "name": "Communications Inbox Review",
+      "description": "Review incoming messages, identify what needs action, and turn selected items into organized work.",
+      "domain": "communications",
+      "audience": "Customer and operations teams",
+      "color": "#7ee2ad",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to review incoming messages, identify what needs action, and turn selected items into organized work.",
+        "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From Mailbox History",
+          "summary": "Read prior messages, requests, and the current goal."
+        },
+        {
+          "id": "search",
+          "title": "Search Bounded Messages",
+          "summary": "Search the configured mailbox by explicit criteria and limit."
+        },
+        {
+          "id": "fetch_selected",
+          "title": "Fetch Selected Messages",
+          "summary": "Fetch only selected fields/body previews for candidate UIDs."
+        },
+        {
+          "id": "create_work",
+          "title": "Create Or Prepare Work",
+          "summary": "Create or prepare generic agent requests only for messages that need follow-up."
+        },
+        {
+          "id": "update_status",
+          "title": "Update Mailbox Status",
+          "summary": "Mark reviewed messages seen only when approval and policy allow it."
+        }
+      ],
+      "agentNames": [
+        "Communications Inbox Review Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "communications.workflow.inbox-review",
+          "slug": "communications-workflow-inbox-review",
+          "name": "Communications Inbox Review Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Imap"
+      ]
+    },
+    {
+      "key": "communications.outbound-notification",
+      "slug": "communications-outbound-notification",
+      "name": "Communications Outbound Notification",
+      "description": "Send an approved update after a task, decision, or result is ready.",
+      "domain": "communications",
+      "audience": "Customer and operations teams",
+      "color": "#7ee2ad",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to send an approved update after a task, decision, or result is ready.",
+        "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Confirm Notification Need",
+          "summary": "Read the goal and recent action calls before composing a notification."
+        },
+        {
+          "id": "compose",
+          "title": "Compose Explicit Payload",
+          "summary": "Produce exact recipient/channel, subject, body, and optional origin refs."
+        },
+        {
+          "id": "send",
+          "title": "Send Notification",
+          "summary": "Execute the explicitly granted send action."
+        }
+      ],
+      "agentNames": [
+        "Communications Outbound Notification Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "communications.workflow.outbound-notification",
+          "slug": "communications-workflow-outbound-notification",
+          "name": "Communications Outbound Notification Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Smtp",
+        "Telegram Bot"
+      ]
+    },
+    {
+      "key": "communications.customer-feedback-intake",
+      "slug": "communications-customer-feedback-intake",
+      "name": "Customer Feedback Intake",
+      "description": "Bring customer feedback from chat and email into one clear, investigation-ready thread.",
+      "domain": "communications",
+      "audience": "Customer and operations teams",
+      "color": "#7ee2ad",
+      "featured": true,
+      "whenToUse": [
+        "Use this when you want to bring customer feedback from chat and email into one clear, investigation-ready thread.",
+        "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "capture-feedback",
+          "title": "Capture Feedback",
+          "summary": "Read the inbound request and source refs, including media inventory and route hints."
+        },
+        {
+          "id": "establish-canonical-thread",
+          "title": "Establish main Thread",
+          "summary": "Reuse a Slack-origin thread or create one route-approved Slack handoff that preserves source context and media."
+        },
+        {
+          "id": "add-intake-reaction",
+          "title": "Add Intake Reaction",
+          "summary": "Mark the main Slack message with a reaction that indicates support intake has started."
+        },
+        {
+          "id": "prepare-investigation-handoff",
+          "title": "Prepare Investigation Handoff",
+          "summary": "Return the refs and concise support context needed to start support.issue-investigation without re-discovering the source message."
+        }
+      ],
+      "agentNames": [
+        "Communications Customer Feedback Intake Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "communications.workflow.customer-feedback-intake",
+          "slug": "communications-workflow-customer-feedback-intake",
+          "name": "Communications Customer Feedback Intake Agent"
+        }
+      ],
+      "integrations": [
+        "Slack Bot",
+        "Telegram Bot"
+      ]
+    },
+    {
+      "key": "support.delivery-task-handoff",
+      "slug": "support-delivery-task-handoff",
+      "name": "Delivery Task Handoff",
+      "description": "Turn a completed support investigation into ready-to-start delivery work.",
+      "domain": "support",
+      "audience": "Support and success teams",
+      "color": "#a8e37f",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to turn a completed support investigation into ready-to-start delivery work.",
+        "Best for support and success teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "confirm-thread-instruction",
+          "title": "Confirm Thread Instruction",
+          "summary": "Re-read the main thread and confirm the task instruction belongs to the same thread as the support conclusion."
+        },
+        {
+          "id": "create-delivery-task",
+          "title": "Create Delivery Task",
+          "summary": "Create delivery-ready tracker work with cause, scope, acceptance criteria, verification expectations, and preserved chat refs."
+        },
+        {
+          "id": "post-task-handoff",
+          "title": "Post Task Handoff",
+          "summary": "Reply in the main thread with the task link/key, scoped delivery summary, and engineering.tracked-delivery handoff."
+        },
+        {
+          "id": "add-task-created-reaction",
+          "title": "Add Task-Created Reaction",
+          "summary": "Add a semantically matching reaction to the main message only after task creation succeeds."
+        }
+      ],
+      "agentNames": [
+        "Support Delivery Handoff Agent",
+        "Planning Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "support.workflow.delivery-handoff",
+          "slug": "support-workflow-delivery-handoff",
+          "name": "Support Delivery Handoff Agent"
+        },
+        {
+          "key": "stackos.sdlc.planning",
+          "slug": "stackos-sdlc-planning",
+          "name": "Planning Agent"
+        }
+      ],
+      "integrations": [
+        "Slack Bot"
+      ]
+    },
+    {
+      "key": "engineering.tracked-delivery",
+      "slug": "engineering-tracked-delivery",
+      "name": "Engineering Tracked Delivery",
+      "description": "Turn a request into a clear plan, complete it step by step, check the result, and keep the proof.",
+      "domain": "engineering",
+      "audience": "Product and engineering teams",
+      "color": "#7892ff",
+      "featured": true,
+      "whenToUse": [
+        "Use this when you want to turn a request into a clear plan, complete it step by step, check the result, and keep the proof.",
+        "Best for product and engineering teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "scope-work",
+          "title": "Scope Work",
+          "summary": "Restate the engineering goal, delivery mode, constraints, project setup, host-agent format, and missing context."
+        },
+        {
+          "id": "define-requirements",
+          "title": "Define Requirements And Flows",
+          "summary": "Convert user intent into explicit user, data, system, and business flows, acceptance criteria, non-goals, and evidence expectations."
+        },
+        {
+          "id": "discover-impact",
+          "title": "Discover Impact",
+          "summary": "Map affected scopes, real work paths, ownership boundaries, downstream readers, tests, docs, and signoff fallout."
+        },
+        {
+          "id": "plan-tickets",
+          "title": "Plan Tracker Tickets",
+          "summary": "Create or update tracker tasks/tickets with dependencies, sequencing, blockers, owned scopes, and definition of done."
+        },
+        {
+          "id": "design-approach",
+          "title": "Design Approach",
+          "summary": "Identify main ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications."
+        },
+        {
+          "id": "review-design",
+          "title": "Review Design",
+          "summary": "Challenge the requirements, impact map, ticket plan, and design before implementation."
+        },
+        {
+          "id": "design-tests",
+          "title": "Design Tests, TDD, And Manual Scenarios",
+          "summary": "Own the full proof plan before delivery: TDD/red-first automated tests, verification commands, agent-executed E2E/manual flow scenarios, expected…"
+        },
+        {
+          "id": "deliver-tickets",
+          "title": "Deliver Tickets",
+          "summary": "Claim ready tracker tickets, implement one by one, update status, and record focused verification evidence."
+        },
+        {
+          "id": "verify-delivery",
+          "title": "Verify Delivery",
+          "summary": "Run and report the mandatory verification stack for the actual diff and risk profile."
+        },
+        {
+          "id": "review-delivery",
+          "title": "Review Delivery",
+          "summary": "Review completed delivery across behavior, QA, integration contracts, security boundaries, docs, tracker evidence, and release risk."
+        },
+        {
+          "id": "audit-tracker",
+          "title": "Audit Tracker Truth",
+          "summary": "Confirm tracker state, plan state, docs, tests, evidence, and the actual diff agree before closeout."
+        },
+        {
+          "id": "release-closeout",
+          "title": "Release Closeout",
+          "summary": "Confirm final signoff, docs, known limitations, commit/release state, rollback/watch notes, and post-release checks."
+        }
+      ],
+      "agentNames": [
+        "Requirements Flow Definer",
+        "Codebase Explorer",
+        "Planning Agent",
+        "Architecture Agent",
+        "Test Designer",
+        "Delivery Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "stackos.sdlc.requirements-flow-definer",
+          "slug": "stackos-sdlc-requirements-flow-definer",
+          "name": "Requirements Flow Definer"
+        },
+        {
+          "key": "stackos.sdlc.codebase-explorer",
+          "slug": "stackos-sdlc-codebase-explorer",
+          "name": "Codebase Explorer"
+        },
+        {
+          "key": "stackos.sdlc.planning",
+          "slug": "stackos-sdlc-planning",
+          "name": "Planning Agent"
+        },
+        {
+          "key": "stackos.sdlc.architecture",
+          "slug": "stackos-sdlc-architecture",
+          "name": "Architecture Agent"
+        },
+        {
+          "key": "stackos.sdlc.test-designer",
+          "slug": "stackos-sdlc-test-designer",
+          "name": "Test Designer"
+        },
+        {
+          "key": "stackos.sdlc.delivery",
+          "slug": "stackos-sdlc-delivery",
+          "name": "Delivery Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": []
+    },
+    {
+      "key": "gtm.account-research",
+      "slug": "gtm-account-research",
+      "name": "GTM Account Research",
+      "description": "Build a useful account brief from your saved context and current research.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to build a useful account brief from your saved context and current research.",
+        "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From Account History",
+          "summary": "Read existing records, learnings, decisions, and the current research goal."
+        },
+        {
+          "id": "collect_evidence",
+          "title": "Collect Evidence",
+          "summary": "Use granted retrieval actions only for evidence gaps the agent identifies."
+        },
+        {
+          "id": "store_research",
+          "title": "Store Research",
+          "summary": "Persist reviewed account, company, and contact context with provenance."
+        },
+        {
+          "id": "capture_learning",
+          "title": "Capture Learning",
+          "summary": "Record reusable GTM lessons only when evidence is explicit."
+        }
+      ],
+      "agentNames": [
+        "GTM Account Research Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "gtm.workflow.account-research",
+          "slug": "gtm-workflow-account-research",
+          "name": "GTM Account Research Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Jina",
+        "Firecrawl"
+      ]
+    },
+    {
+      "key": "gtm.crm-hygiene-pass",
+      "slug": "gtm-crm-hygiene-pass",
+      "name": "GTM CRM Hygiene Pass",
+      "description": "Find incomplete or inconsistent CRM records and prepare safe, reviewed corrections.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to find incomplete or inconsistent CRM records and prepare safe, reviewed corrections.",
+        "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From CRM Context",
+          "summary": "Read scope, policy, stored records, and prior hygiene lessons."
+        },
+        {
+          "id": "prepare_cleanup",
+          "title": "Prepare Cleanup",
+          "summary": "Identify field updates, notes, tasks, duplicates, and records requiring human review."
+        },
+        {
+          "id": "optional_apply_cleanup",
+          "title": "Optional Apply Cleanup",
+          "summary": "Execute approved CRM write actions only when granted by the concrete plan."
+        }
+      ],
+      "agentNames": [
+        "GTM CRM Hygiene Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "gtm.workflow.crm-hygiene-pass",
+          "slug": "gtm-workflow-crm-hygiene-pass",
+          "name": "GTM CRM Hygiene Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Hubspot",
+        "Salesforce"
+      ]
+    },
+    {
+      "key": "gtm.lead-enrichment-scoring",
+      "slug": "gtm-lead-enrichment-scoring",
+      "name": "GTM Lead Enrichment And Scoring",
+      "description": "Enrich leads with relevant context and score them against your chosen criteria.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to enrich leads with relevant context and score them against your chosen criteria.",
+        "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From Lead Context",
+          "summary": "Read existing lead records, enrichment state, scoring policy, and prior lessons."
+        },
+        {
+          "id": "run_enrichment",
+          "title": "Run Enrichment",
+          "summary": "Execute only the connected app enrichment actions granted by the concrete plan."
+        },
+        {
+          "id": "score_and_store",
+          "title": "Score And Store",
+          "summary": "Persist enrichment records, lead scores, qualification notes, and provenance."
+        }
+      ],
+      "agentNames": [
+        "GTM Lead Enrichment Scoring Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "gtm.workflow.lead-enrichment-scoring",
+          "slug": "gtm-workflow-lead-enrichment-scoring",
+          "name": "GTM Lead Enrichment Scoring Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Apollo",
+        "Clay",
+        "Clearbit By Hubspot",
+        "Custom Gtm Tool"
+      ]
+    },
+    {
+      "key": "gtm.outbound-sequence-preparation",
+      "slug": "gtm-outbound-sequence-preparation",
+      "name": "GTM Outbound Sequence Preparation",
+      "description": "Prepare a reviewed outreach sequence from qualified leads and account context.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to prepare a reviewed outreach sequence from qualified leads and account context.",
+        "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From Outbound Context",
+          "summary": "Read lead context, prior sequences, touchpoints, send policy, and outbound lessons."
+        },
+        {
+          "id": "prepare_sequence",
+          "title": "Prepare Sequence",
+          "summary": "Prepare reviewed prospect groups, messaging refs, task needs, and approval notes."
+        },
+        {
+          "id": "optional_sequence_add",
+          "title": "Optional Outbound Actions",
+          "summary": "Execute approved connected app sequence, mail, or calendar actions only when granted by the concrete plan."
+        }
+      ],
+      "agentNames": [
+        "GTM Outbound Sequence Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "gtm.workflow.outbound-sequence-preparation",
+          "slug": "gtm-workflow-outbound-sequence-preparation",
+          "name": "GTM Outbound Sequence Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Outreach",
+        "Salesloft",
+        "Custom Gtm Tool",
+        "Google Workspace",
+        "Microsoft 365"
+      ]
+    },
+    {
+      "key": "gtm.pipeline-risk-review",
+      "slug": "gtm-pipeline-risk-review",
+      "name": "GTM Pipeline Risk Review",
+      "description": "Find deals that need attention and turn the risks into clear follow-up actions.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to find deals that need attention and turn the risks into clear follow-up actions.",
+        "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From Pipeline Context",
+          "summary": "Read review scope, targets, stored snapshots, learnings, and decisions."
+        },
+        {
+          "id": "fetch_metric_gaps",
+          "title": "Fetch Metric Gaps",
+          "summary": "Use granted read actions only when stored pipeline evidence is insufficient."
+        },
+        {
+          "id": "diagnose_risks",
+          "title": "Diagnose Risks",
+          "summary": "Separate likely stage, activity, account, deal, ownership, and timing risks."
+        }
+      ],
+      "agentNames": [
+        "GTM Pipeline Risk Review Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "gtm.workflow.pipeline-risk-review",
+          "slug": "gtm-workflow-pipeline-risk-review",
+          "name": "GTM Pipeline Risk Review Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Hubspot",
+        "Salesforce",
+        "Pipedrive",
+        "Custom Gtm Tool"
+      ]
+    },
+    {
+      "key": "support.issue-investigation",
+      "slug": "support-issue-investigation",
+      "name": "Issue Investigation",
+      "description": "Investigate a reported issue, gather the evidence, and return a clear conclusion in the same conversation.",
+      "domain": "support",
+      "audience": "Support and success teams",
+      "color": "#a8e37f",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to investigate a reported issue, gather the evidence, and return a clear conclusion in the same conversation.",
+        "Best for support and success teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "read-canonical-thread",
+          "title": "Read main Thread",
+          "summary": "Read the full stored thread and source context before forming hypotheses."
+        },
+        {
+          "id": "clarify-missing-context",
+          "title": "Clarify Missing Context",
+          "summary": "Ask a same-thread clarification only when missing evidence blocks a safe conclusion; otherwise record why clarification was skipped."
+        },
+        {
+          "id": "investigate-issue",
+          "title": "Investigate Issue",
+          "summary": "Trace the symptom through project evidence, validate or bound root cause, and identify affected surfaces and delivery direction."
+        },
+        {
+          "id": "post-support-conclusion",
+          "title": "Post Support Conclusion",
+          "summary": "Post the evidence-backed conclusion in the main thread and tell the person that task creation is a separate instructed handoff."
+        }
+      ],
+      "agentNames": [
+        "Support Issue Investigator",
+        "Codebase Explorer"
+      ],
+      "agentRefs": [
+        {
+          "key": "support.workflow.issue-investigator",
+          "slug": "support-workflow-issue-investigator",
+          "name": "Support Issue Investigator"
+        },
+        {
+          "key": "stackos.sdlc.codebase-explorer",
+          "slug": "stackos-sdlc-codebase-explorer",
+          "name": "Codebase Explorer"
+        }
+      ],
+      "integrations": [
+        "Slack Bot"
+      ]
+    },
+    {
+      "key": "media-buying.landing-page-creative-experiment",
+      "slug": "media-buying-landing-page-creative-experiment",
+      "name": "Landing Page And Creative Experiment",
+      "description": "Design a measurable experiment that connects creative, landing pages, and business goals.",
+      "domain": "media-buying",
+      "audience": "Growth and paid media teams",
+      "color": "#ffbd5c",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to design a measurable experiment that connects creative, landing pages, and business goals.",
+        "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From Experiment History",
+          "summary": "Read existing experiments, related resources, prior lessons, and current inputs."
+        },
+        {
+          "id": "define_experiment_setup",
+          "title": "Define Experiment Setup",
+          "summary": "Define the variant set, metric targets, observation windows, and stopping rules."
+        },
+        {
+          "id": "record_experiment",
+          "title": "Record Experiment",
+          "summary": "Persist the experiment setup before any campaign or ad changes."
+        },
+        {
+          "id": "optional_launch_update",
+          "title": "Optional Launch Update",
+          "summary": "Execute approved campaign or ad updates only when granted by the concrete plan."
+        }
+      ],
+      "agentNames": [
+        "Landing Page Creative Experiment Agent",
+        "Architecture Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "media-buying.workflow.landing-page-creative-experiment",
+          "slug": "media-buying-workflow-landing-page-creative-experiment",
+          "name": "Landing Page Creative Experiment Agent"
+        },
+        {
+          "key": "stackos.sdlc.architecture",
+          "slug": "stackos-sdlc-architecture",
+          "name": "Architecture Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Meta Ads",
+        "Google Ads",
+        "Custom Media Tool"
+      ]
+    },
+    {
+      "key": "marketing.campaign-production",
+      "slug": "marketing-campaign-production",
+      "name": "Marketing Campaign Production",
+      "description": "Move from a campaign idea to messaging, creative, landing pages, and a complete review gallery.",
+      "domain": "marketing",
+      "audience": "Marketing teams",
+      "color": "#ff78ac",
+      "featured": true,
+      "whenToUse": [
+        "Use this when you want to move from a campaign idea to messaging, creative, landing pages, and a complete review gallery.",
+        "Best for marketing teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "intake-brief",
+          "title": "Intake Campaign Brief",
+          "summary": "Convert person inputs into a complete structured campaign brief with persisted input artifacts and an explicit media request."
+        },
+        {
+          "id": "setup-workspace",
+          "title": "Set Up Campaign Workspace",
+          "summary": "Create the repository campaign workspace and scaffold campaign.md as the person-readable campaign ledger."
+        },
+        {
+          "id": "plan-campaign",
+          "title": "Plan Campaign And Media Manifest",
+          "summary": "Produce the campaign plan that production executes and signoff verifies; media manifest, landing page variant plans, gallery plan, and cost estimate."
+        },
+        {
+          "id": "produce-media",
+          "title": "Produce Campaign Media",
+          "summary": "Execute approved manifest entries through granted generation actions and materialize results into the campaign workspace."
+        },
+        {
+          "id": "build-landing-pages",
+          "title": "Build Landing Page Variants",
+          "summary": "Build each planned variant as a self-contained static page in the workspace using produced media and the approved angle."
+        },
+        {
+          "id": "visual-signoff",
+          "title": "Visual Signoff",
+          "summary": "Verify every produced asset and page against the approved plan with rendered evidence and explicit per-item verdicts."
+        },
+        {
+          "id": "build-gallery",
+          "title": "Build Campaign Gallery",
+          "summary": "Build the local human-readable gallery page that presents everything the campaign produced to a non-engineer."
+        },
+        {
+          "id": "closeout",
+          "title": "Campaign Closeout",
+          "summary": "Reconcile state, finalize the campaign ledger, and hand the person one front door to everything produced."
+        }
+      ],
+      "agentNames": [
+        "Campaign Brief Analyst",
+        "Campaign Creative Director",
+        "Campaign Media Producer",
+        "Campaign Landing Page Builder",
+        "Campaign Visual Signoff Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "marketing.campaign.brief-analyst",
+          "slug": "marketing-campaign-brief-analyst",
+          "name": "Campaign Brief Analyst"
+        },
+        {
+          "key": "marketing.campaign.creative-director",
+          "slug": "marketing-campaign-creative-director",
+          "name": "Campaign Creative Director"
+        },
+        {
+          "key": "marketing.campaign.media-producer",
+          "slug": "marketing-campaign-media-producer",
+          "name": "Campaign Media Producer"
+        },
+        {
+          "key": "marketing.campaign.landing-page-builder",
+          "slug": "marketing-campaign-landing-page-builder",
+          "name": "Campaign Landing Page Builder"
+        },
+        {
+          "key": "marketing.campaign.visual-signoff-reviewer",
+          "slug": "marketing-campaign-visual-signoff-reviewer",
+          "name": "Campaign Visual Signoff Reviewer"
+        }
+      ],
+      "integrations": [
+        "Openai Images",
+        "Google Veo",
+        "Byteplus Ark",
+        "Alibaba Wan",
+        "Kling",
+        "Xai Imagine"
+      ]
+    },
+    {
+      "key": "media-buying.budget-reallocation-review",
+      "slug": "media-buying-budget-reallocation-review",
+      "name": "Media Buying Budget Reallocation Review",
+      "description": "Review campaign performance and prepare evidence-backed budget changes for approval.",
+      "domain": "media-buying",
+      "audience": "Growth and paid media teams",
+      "color": "#ffbd5c",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to review campaign performance and prepare evidence-backed budget changes for approval.",
+        "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From Budget History",
+          "summary": "Read budget policy, recent performance, prior budget changes, learnings, and decisions."
+        },
+        {
+          "id": "fetch_metric_gaps",
+          "title": "Fetch Metric Gaps",
+          "summary": "Use granted read actions only when stored evidence is insufficient."
+        },
+        {
+          "id": "propose_changes",
+          "title": "Propose Changes",
+          "summary": "Produce a bounded reallocation recommendation with rationale, risk, and observation plan."
+        },
+        {
+          "id": "optional_apply_changes",
+          "title": "Optional Apply Changes",
+          "summary": "Execute approved budget update actions only when granted by the concrete plan."
+        }
+      ],
+      "agentNames": [
+        "Media Budget Reallocation Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "media-buying.workflow.budget-reallocation-review",
+          "slug": "media-buying-workflow-budget-reallocation-review",
+          "name": "Media Budget Reallocation Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Meta Ads",
+        "Google Ads",
+        "Taboola",
+        "Custom Media Tool"
+      ]
+    },
+    {
+      "key": "media-buying.campaign-launch",
+      "slug": "media-buying-campaign-launch",
+      "name": "Media Buying Campaign Launch",
+      "description": "Plan and launch a paid campaign through clear checks, approvals, and connected ad tools.",
+      "domain": "media-buying",
+      "audience": "Growth and paid media teams",
+      "color": "#ffbd5c",
+      "featured": true,
+      "whenToUse": [
+        "Use this when you want to plan and launch a paid campaign through clear checks, approvals, and connected ad tools.",
+        "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From History",
+          "summary": "Read recent work, resources, learnings, experiments, and the current goal."
+        },
+        {
+          "id": "prepare_launch_shape",
+          "title": "Prepare Launch Shape",
+          "summary": "Define the channel path, campaign structure, creative needs, measurement window, and open risks."
+        },
+        {
+          "id": "create_external_structures",
+          "title": "Create External Structures",
+          "summary": "Execute only approved connected app actions granted by the concrete plan."
+        },
+        {
+          "id": "record_launch_state",
+          "title": "Record Launch State",
+          "summary": "Persist campaign, creative, landing page, and initial measurement records."
+        },
+        {
+          "id": "capture_learning",
+          "title": "Capture Learning",
+          "summary": "Record reusable setup lessons with evidence and provenance."
+        }
+      ],
+      "agentNames": [
+        "Media Campaign Launch Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "media-buying.workflow.campaign-launch",
+          "slug": "media-buying-workflow-campaign-launch",
+          "name": "Media Campaign Launch Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Meta Ads",
+        "Google Ads",
+        "Taboola",
+        "Custom Media Tool"
+      ]
+    },
+    {
+      "key": "media-buying.creative-variant-generation",
+      "slug": "media-buying-creative-variant-generation",
+      "name": "Media Buying Creative Variant Generation",
+      "description": "Create a focused set of ad variations from your offer, brand, and past performance.",
+      "domain": "media-buying",
+      "audience": "Growth and paid media teams",
+      "color": "#ffbd5c",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to create a focused set of ad variations from your offer, brand, and past performance.",
+        "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From Creative History",
+          "summary": "Read recent creatives, learnings, active experiments, and constraints."
+        },
+        {
+          "id": "define_candidate_set",
+          "title": "Define Candidate Set",
+          "summary": "Create explicit candidate angles, copy needs, asset needs, and review criteria."
+        },
+        {
+          "id": "generate_or_attach_assets",
+          "title": "Generate Or Attach Assets",
+          "summary": "Use granted utility actions or existing asset refs to create the candidate asset set."
+        },
+        {
+          "id": "store_reviewed_creatives",
+          "title": "Store Reviewed Creatives",
+          "summary": "Persist reviewed candidate creative records and their provenance."
+        },
+        {
+          "id": "optional_external_upload",
+          "title": "Optional External Upload",
+          "summary": "Execute approved connected app upload or campaign update actions only when granted by the concrete plan."
+        }
+      ],
+      "agentNames": [
+        "Media Creative Variant Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "media-buying.workflow.creative-variant-generation",
+          "slug": "media-buying-workflow-creative-variant-generation",
+          "name": "Media Creative Variant Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Openai Images",
+        "Meta Ads",
+        "Google Ads",
+        "Taboola",
+        "Custom Media Tool"
+      ]
+    },
+    {
+      "key": "media-buying.performance-diagnosis",
+      "slug": "media-buying-performance-diagnosis",
+      "name": "Media Buying Performance Diagnosis",
+      "description": "Explain what changed in paid media performance and recommend what to do next.",
+      "domain": "media-buying",
+      "audience": "Growth and paid media teams",
+      "color": "#ffbd5c",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to explain what changed in paid media performance and recommend what to do next.",
+        "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From Performance Context",
+          "summary": "Read the review scope, metric targets, recent snapshots, related learnings, and active experiments."
+        },
+        {
+          "id": "fetch_additional_metrics",
+          "title": "Fetch Additional Metrics",
+          "summary": "Execute only approved read actions that the concrete plan grants for missing evidence."
+        },
+        {
+          "id": "diagnose_drivers",
+          "title": "Diagnose Drivers",
+          "summary": "Compare evidence against targets and separate likely channel, audience, creative, landing page, and budget drivers."
+        },
+        {
+          "id": "record_followups",
+          "title": "Record Followups",
+          "summary": "Store recommended follow-up resources, budget review notes, and learning candidates."
+        }
+      ],
+      "agentNames": [
+        "Media Performance Diagnosis Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "media-buying.workflow.performance-diagnosis",
+          "slug": "media-buying-workflow-performance-diagnosis",
+          "name": "Media Performance Diagnosis Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Meta Ads",
+        "Google Ads",
+        "Taboola",
+        "Custom Media Tool"
+      ]
+    },
+    {
+      "key": "core.project-memory-review",
+      "slug": "core-project-memory-review",
+      "name": "Project Memory Review",
+      "description": "Review what the project already knows and recommend the most useful next move.",
+      "domain": "core",
+      "audience": "Every team",
+      "color": "#8ea6ff",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to review what the project already knows and recommend the most useful next move.",
+        "Best for every team that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "clarify-goal",
+          "title": "Clarify Goal And Scope",
+          "summary": "Restate the goal, assumptions, constraints, and missing inputs."
+        },
+        {
+          "id": "retrieve-context",
+          "title": "Retrieve Bounded Context",
+          "summary": "Query only the declared fields and limits before reasoning."
+        },
+        {
+          "id": "propose-next-plan",
+          "title": "Propose Next Plan",
+          "summary": "Draft an agent-authored plan, explicit open questions, and any approval needs."
+        }
+      ],
+      "agentNames": [
+        "Project Memory Review Agent",
+        "Planning Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "stackos.workflow.project-memory-review",
+          "slug": "stackos-workflow-project-memory-review",
+          "name": "Project Memory Review Agent"
+        },
+        {
+          "key": "stackos.sdlc.planning",
+          "slug": "stackos-sdlc-planning",
+          "name": "Planning Agent"
+        }
+      ],
+      "integrations": []
+    },
+    {
+      "key": "communications.rich-telegram-reply",
+      "slug": "communications-rich-telegram-reply",
+      "name": "Rich Telegram Reply",
+      "description": "Reply in Telegram with text, images, and useful actions while keeping the conversation connected.",
+      "domain": "communications",
+      "audience": "Customer and operations teams",
+      "color": "#7ee2ad",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to reply in Telegram with text, images, and useful actions while keeping the conversation connected.",
+        "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Read Origin Context",
+          "summary": "Inspect the request metadata, communication profile guidance, and thread context."
+        },
+        {
+          "id": "compose",
+          "title": "Compose Response Payload",
+          "summary": "Decide exact text, image refs, and optional button payloads without embedding secrets."
+        },
+        {
+          "id": "send",
+          "title": "Send Telegram Response",
+          "summary": "Execute the explicit Telegram send action granted by the plan."
+        }
+      ],
+      "agentNames": [
+        "Communications Rich Telegram Reply Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "communications.workflow.rich-telegram-reply",
+          "slug": "communications-workflow-rich-telegram-reply",
+          "name": "Communications Rich Telegram Reply Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Telegram Bot"
+      ]
+    },
+    {
+      "key": "seo.content-refresh",
+      "slug": "seo-content-refresh",
+      "name": "SEO Content Refresh",
+      "description": "Find why an existing page is underperforming, improve it, and verify the result.",
+      "domain": "seo",
+      "audience": "SEO and content teams",
+      "color": "#79dfff",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to find why an existing page is underperforming, improve it, and verify the result.",
+        "Best for seo and content teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "read_history",
+          "title": "Read History",
+          "summary": "Complete the read history stage."
+        },
+        {
+          "id": "diagnose",
+          "title": "Diagnose Refresh Need",
+          "summary": "Complete the diagnose stage."
+        },
+        {
+          "id": "execute_change",
+          "title": "Execute Change",
+          "summary": "Agent performs the chosen external or repository work using tools available in the current environment."
+        },
+        {
+          "id": "record_outcome",
+          "title": "Record Outcome",
+          "summary": "Complete the record outcome stage."
+        }
+      ],
+      "agentNames": [
+        "SEO Content Refresh Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "seo.workflow.content-refresh",
+          "slug": "seo-workflow-content-refresh",
+          "name": "SEO Content Refresh Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Dataforseo"
+      ]
+    },
+    {
+      "key": "seo.keyword-research",
+      "slug": "seo-keyword-research",
+      "name": "SEO Keyword Research",
+      "description": "Turn a business goal into a prioritized map of search opportunities and content ideas.",
+      "domain": "seo",
+      "audience": "SEO and content teams",
+      "color": "#79dfff",
+      "featured": true,
+      "whenToUse": [
+        "Use this when you want to turn a business goal into a prioritized map of search opportunities and content ideas.",
+        "Best for seo and content teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Orient From History",
+          "summary": "Read recent research, learnings, and the current project goal; if the user did not provide seed terms or competitors, ask a small number of…"
+        },
+        {
+          "id": "collect_evidence",
+          "title": "Collect Evidence",
+          "summary": "Execute only the connected app calls the plan grants and the agent still needs; preserve returned response-file paths, use schema.get with schema_ref…"
+        },
+        {
+          "id": "store_opportunities",
+          "title": "Store Opportunities",
+          "summary": "Persist a useful list of keyword opportunities, not just one or two terms, with clusters, metrics, source refs, and a polished brief/CSV when the run…"
+        },
+        {
+          "id": "capture_learning",
+          "title": "Capture Learning",
+          "summary": "Record reusable lessons or rejected patterns for future runs."
+        }
+      ],
+      "agentNames": [
+        "SEO Keyword Research Agent",
+        "Planning Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "seo.workflow.keyword-research",
+          "slug": "seo-workflow-keyword-research",
+          "name": "SEO Keyword Research Agent"
+        },
+        {
+          "key": "stackos.sdlc.planning",
+          "slug": "stackos-sdlc-planning",
+          "name": "Planning Agent"
+        }
+      ],
+      "integrations": [
+        "Dataforseo",
+        "Ahrefs"
+      ]
+    },
+    {
+      "key": "communications.callback-follow-up",
+      "slug": "communications-callback-follow-up",
+      "name": "Telegram Callback Follow-Up",
+      "description": "Continue a customer conversation after they choose an option in a message.",
+      "domain": "communications",
+      "audience": "Customer and operations teams",
+      "color": "#7ee2ad",
+      "featured": false,
+      "whenToUse": [
+        "Use this when you want to continue a customer conversation after they choose an option in a message.",
+        "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+      ],
+      "stages": [
+        {
+          "id": "orient",
+          "title": "Read Callback Context",
+          "summary": "Load the inbound callback, outbound button, and originating request metadata."
+        },
+        {
+          "id": "acknowledge",
+          "title": "Acknowledge Callback",
+          "summary": "Optionally clear Telegram client loading state with static acknowledgement text."
+        },
+        {
+          "id": "follow_up",
+          "title": "Send Follow-Up When Needed",
+          "summary": "Send an origin-bound reply only if the agent decision requires it."
+        }
+      ],
+      "agentNames": [
+        "Communications Callback Follow-Up Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "communications.workflow.callback-follow-up",
+          "slug": "communications-workflow-callback-follow-up",
+          "name": "Communications Callback Follow-Up Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Telegram Bot"
+      ]
+    }
+  ],
+  "agents": [
+    {
+      "key": "stackos.sdlc.architecture",
+      "slug": "stackos-sdlc-architecture",
+      "name": "Architecture Agent",
+      "description": "Designs implementation structure, ownership boundaries, schemas, operation contracts, and one-brain reuse before delivery.",
+      "domain": "engineering",
+      "audience": "Product and engineering teams",
+      "color": "#7892ff",
+      "featured": false,
+      "role": "Architecture",
+      "workflowKeys": []
+    },
+    {
+      "key": "branding.channel-strategist",
+      "slug": "branding-channel-strategist",
+      "name": "Branding Channel Strategist",
+      "description": "Owns angle, structure, and channel publication job decisions without executing publication.",
+      "domain": "branding",
+      "audience": "Content and brand teams",
+      "color": "#d8ff63",
+      "featured": true,
+      "role": "Channel Strategist",
+      "workflowKeys": [
+        "branding.content-production"
+      ]
+    },
+    {
+      "key": "branding.claim-auditor",
+      "slug": "branding-claim-auditor",
+      "name": "Branding Claim Auditor",
+      "description": "Read-only adversarial reviewer that enforces evidence-over-assertion.",
+      "domain": "branding",
+      "audience": "Content and brand teams",
+      "color": "#d8ff63",
+      "featured": true,
+      "role": "Claim Auditor",
+      "workflowKeys": [
+        "branding.content-production"
+      ]
+    },
+    {
+      "key": "branding.evidence-curator",
+      "slug": "branding-evidence-curator",
+      "name": "Branding Evidence Curator",
+      "description": "Interviews, researches, harvests, classifies, dedupes, and captures operational receipts as traceable evidence-items.",
+      "domain": "branding",
+      "audience": "Content and brand teams",
+      "color": "#d8ff63",
+      "featured": true,
+      "role": "Evidence Curator",
+      "workflowKeys": [
+        "branding.content-production"
+      ]
+    },
+    {
+      "key": "branding.narrative-writer",
+      "slug": "branding-narrative-writer",
+      "name": "Branding Narrative Writer",
+      "description": "Drafts main pieces and channel renditions from cleared evidence in the project-adapted voice.",
+      "domain": "branding",
+      "audience": "Content and brand teams",
+      "color": "#d8ff63",
+      "featured": true,
+      "role": "Narrative Writer",
+      "workflowKeys": [
+        "branding.content-production"
+      ]
+    },
+    {
+      "key": "branding.sanitization-reviewer",
+      "slug": "branding-sanitization-reviewer",
+      "name": "Branding Sanitization Reviewer",
+      "description": "Read-only disclosure reviewer that fails closed with cleared or blocked verdicts.",
+      "domain": "branding",
+      "audience": "Content and brand teams",
+      "color": "#d8ff63",
+      "featured": true,
+      "role": "Sanitization Reviewer",
+      "workflowKeys": [
+        "branding.content-production"
+      ]
+    },
+    {
+      "key": "branding.voice-reviewer",
+      "slug": "branding-voice-reviewer",
+      "name": "Branding Voice Reviewer",
+      "description": "Read-only reviewer for base voice, channel register delta, form contract, and kill tests.",
+      "domain": "branding",
+      "audience": "Content and brand teams",
+      "color": "#d8ff63",
+      "featured": true,
+      "role": "Voice Reviewer",
+      "workflowKeys": [
+        "branding.content-production"
+      ]
+    },
+    {
+      "key": "marketing.campaign.brief-analyst",
+      "slug": "marketing-campaign-brief-analyst",
+      "name": "Campaign Brief Analyst",
+      "description": "Converts raw person inputs into a complete, professional campaign brief resource with persisted input artifacts and a proposed campaign workspace slug.",
+      "domain": "marketing",
+      "audience": "Marketing teams",
+      "color": "#ff78ac",
+      "featured": true,
+      "role": "Campaign Brief Analyst",
+      "workflowKeys": [
+        "marketing.campaign-production"
+      ]
+    },
+    {
+      "key": "marketing.campaign.creative-director",
+      "slug": "marketing-campaign-creative-director",
+      "name": "Campaign Creative Director",
+      "description": "Turns the approved brief into the campaign plan whose media manifest, page plans, and acceptance criteria form the traceability contract for production and signoff.",
+      "domain": "marketing",
+      "audience": "Marketing teams",
+      "color": "#ff78ac",
+      "featured": true,
+      "role": "Creative Director",
+      "workflowKeys": [
+        "marketing.campaign-production"
+      ]
+    },
+    {
+      "key": "marketing.campaign.landing-page-builder",
+      "slug": "marketing-campaign-landing-page-builder",
+      "name": "Campaign Landing Page Builder",
+      "description": "Builds each planned landing page variant as a self-contained static HTML file in the campaign workspace and assembles gallery.html as the person-facing index.",
+      "domain": "marketing",
+      "audience": "Marketing teams",
+      "color": "#ff78ac",
+      "featured": true,
+      "role": "Landing Page Builder",
+      "workflowKeys": [
+        "marketing.campaign-production"
+      ]
+    },
+    {
+      "key": "marketing.campaign.media-producer",
+      "slug": "marketing-campaign-media-producer",
+      "name": "Campaign Media Producer",
+      "description": "Executes approved image manifest entries through granted generation actions with drift control, set consistency, cost discipline, and truthful per-asset records; video requests are…",
+      "domain": "marketing",
+      "audience": "Marketing teams",
+      "color": "#ff78ac",
+      "featured": true,
+      "role": "Media Producer",
+      "workflowKeys": [
+        "marketing.campaign-production"
+      ]
+    },
+    {
+      "key": "marketing.campaign.visual-signoff-reviewer",
+      "slug": "marketing-campaign-visual-signoff-reviewer",
+      "name": "Campaign Visual Signoff Reviewer",
+      "description": "Verifies every produced asset and page against the approved campaign plan's acceptance criteria with rendered evidence and per-item verdicts instead of rubber stamps.",
+      "domain": "marketing",
+      "audience": "Marketing teams",
+      "color": "#ff78ac",
+      "featured": true,
+      "role": "Visual Signoff Reviewer",
+      "workflowKeys": [
+        "marketing.campaign-production"
+      ]
+    },
+    {
+      "key": "stackos.sdlc.codebase-explorer",
+      "slug": "stackos-sdlc-codebase-explorer",
+      "name": "Codebase Explorer",
+      "description": "Read-only mapper for affected scopes, work paths, ownership boundaries, and downstream fallout before code changes.",
+      "domain": "engineering",
+      "audience": "Product and engineering teams",
+      "color": "#7892ff",
+      "featured": false,
+      "role": "Codebase Explorer",
+      "workflowKeys": []
+    },
+    {
+      "key": "communications.workflow.callback-follow-up",
+      "slug": "communications-workflow-callback-follow-up",
+      "name": "Communications Callback Follow-Up Agent",
+      "description": "Handles callback or follow-up requests with origin context, route policy, and reply/send safety.",
+      "domain": "communications",
+      "audience": "Customer and operations teams",
+      "color": "#7ee2ad",
+      "featured": false,
+      "role": "Communications Callback Follow Up",
+      "workflowKeys": [
+        "communications.callback-follow-up"
+      ]
+    },
+    {
+      "key": "communications.workflow.customer-feedback-intake",
+      "slug": "communications-workflow-customer-feedback-intake",
+      "name": "Communications Customer Feedback Intake Agent",
+      "description": "Normalizes customer feedback from Slack, Telegram, or another channel into one route-approved main Slack support thread while preserving media and handoff refs.",
+      "domain": "communications",
+      "audience": "Customer and operations teams",
+      "color": "#7ee2ad",
+      "featured": true,
+      "role": "Communications Customer Feedback Intake",
+      "workflowKeys": [
+        "communications.customer-feedback-intake"
+      ]
+    },
+    {
+      "key": "communications.workflow.inbox-review",
+      "slug": "communications-workflow-inbox-review",
+      "name": "Communications Inbox Review Agent",
+      "description": "Reviews stored inbound communications, triages requests, and prepares safe workflow or reply handoffs.",
+      "domain": "communications",
+      "audience": "Customer and operations teams",
+      "color": "#7ee2ad",
+      "featured": false,
+      "role": "Communications Inbox Review",
+      "workflowKeys": [
+        "communications.inbox-review"
+      ]
+    },
+    {
+      "key": "communications.workflow.outbound-notification",
+      "slug": "communications-workflow-outbound-notification",
+      "name": "Communications Outbound Notification Agent",
+      "description": "Prepares and sends explicit connected app-neutral outbound notifications through named targets.",
+      "domain": "communications",
+      "audience": "Customer and operations teams",
+      "color": "#7ee2ad",
+      "featured": false,
+      "role": "Communications Outbound Notification",
+      "workflowKeys": [
+        "communications.outbound-notification"
+      ]
+    },
+    {
+      "key": "communications.workflow.rich-telegram-reply",
+      "slug": "communications-workflow-rich-telegram-reply",
+      "name": "Communications Rich Telegram Reply Agent",
+      "description": "Sends or validates Telegram replies with rich features while preserving exact delivery semantics.",
+      "domain": "communications",
+      "audience": "Customer and operations teams",
+      "color": "#7ee2ad",
+      "featured": false,
+      "role": "Communications Rich Telegram Reply",
+      "workflowKeys": [
+        "communications.rich-telegram-reply"
+      ]
+    },
+    {
+      "key": "stackos.sdlc.delivery",
+      "slug": "stackos-sdlc-delivery",
+      "name": "Delivery Agent",
+      "description": "Implements tickets one by one, debugs root causes when checks fail, updates tracker state, verifies behavior, and preserves project conventions.",
+      "domain": "engineering",
+      "audience": "Product and engineering teams",
+      "color": "#7892ff",
+      "featured": false,
+      "role": "Delivery",
+      "workflowKeys": []
+    },
+    {
+      "key": "gtm.workflow.account-research",
+      "slug": "gtm-workflow-account-research",
+      "name": "GTM Account Research Agent",
+      "description": "Produces account research briefs with source clarity, ICP fit, risks, and outreach-ready handoff.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "role": "Gtm Account Research",
+      "workflowKeys": [
+        "gtm.account-research"
+      ]
+    },
+    {
+      "key": "gtm.workflow.crm-hygiene-pass",
+      "slug": "gtm-workflow-crm-hygiene-pass",
+      "name": "GTM CRM Hygiene Agent",
+      "description": "Plans and reviews CRM cleanup with field-level atomic updates, duplicates, and audit visibility.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "role": "Gtm Crm Hygiene",
+      "workflowKeys": [
+        "gtm.crm-hygiene-pass"
+      ]
+    },
+    {
+      "key": "gtm.workflow.lead-enrichment-scoring",
+      "slug": "gtm-workflow-lead-enrichment-scoring",
+      "name": "GTM Lead Enrichment Scoring Agent",
+      "description": "Enriches and scores leads according to project-specific fields, confidence, and review policy.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "role": "Gtm Lead Enrichment Scoring",
+      "workflowKeys": [
+        "gtm.lead-enrichment-scoring"
+      ]
+    },
+    {
+      "key": "gtm.workflow.outbound-sequence-preparation",
+      "slug": "gtm-workflow-outbound-sequence-preparation",
+      "name": "GTM Outbound Sequence Agent",
+      "description": "Prepares outbound sequence content and targeting with research, compliance, and approval context.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "role": "Gtm Outbound Sequence",
+      "workflowKeys": [
+        "gtm.outbound-sequence-preparation"
+      ]
+    },
+    {
+      "key": "gtm.workflow.pipeline-risk-review",
+      "slug": "gtm-workflow-pipeline-risk-review",
+      "name": "GTM Pipeline Risk Review Agent",
+      "description": "Reviews pipeline risk, stale opportunities, and next actions using CRM context and project-specific stage rules.",
+      "domain": "gtm",
+      "audience": "Sales and go-to-market teams",
+      "color": "#ff9f73",
+      "featured": false,
+      "role": "Gtm Pipeline Risk Review",
+      "workflowKeys": [
+        "gtm.pipeline-risk-review"
+      ]
+    },
+    {
+      "key": "media-buying.workflow.landing-page-creative-experiment",
+      "slug": "media-buying-workflow-landing-page-creative-experiment",
+      "name": "Landing Page Creative Experiment Agent",
+      "description": "Coordinates landing-page and creative experiment planning across UX, media, tracking, and review.",
+      "domain": "media-buying",
+      "audience": "Growth and paid media teams",
+      "color": "#ffbd5c",
+      "featured": false,
+      "role": "Media Landing Page Creative Experiment",
+      "workflowKeys": [
+        "media-buying.landing-page-creative-experiment"
+      ]
+    },
+    {
+      "key": "media-buying.workflow.budget-reallocation-review",
+      "slug": "media-buying-workflow-budget-reallocation-review",
+      "name": "Media Budget Reallocation Agent",
+      "description": "Reviews budget movement proposals with evidence, constraints, and approval awareness.",
+      "domain": "media-buying",
+      "audience": "Growth and paid media teams",
+      "color": "#ffbd5c",
+      "featured": false,
+      "role": "Media Budget Reallocation",
+      "workflowKeys": [
+        "media-buying.budget-reallocation-review"
+      ]
+    },
+    {
+      "key": "media-buying.workflow.campaign-launch",
+      "slug": "media-buying-workflow-campaign-launch",
+      "name": "Media Campaign Launch Agent",
+      "description": "Prepares paid media campaign launches with explicit assumptions, approvals, and connected app-action boundaries.",
+      "domain": "media-buying",
+      "audience": "Growth and paid media teams",
+      "color": "#ffbd5c",
+      "featured": true,
+      "role": "Media Campaign Launch",
+      "workflowKeys": [
+        "media-buying.campaign-launch"
+      ]
+    },
+    {
+      "key": "media-buying.workflow.creative-variant-generation",
+      "slug": "media-buying-workflow-creative-variant-generation",
+      "name": "Media Creative Variant Agent",
+      "description": "Generates and reviews creative variant plans tied to hypothesis, brand constraints, and measurement.",
+      "domain": "media-buying",
+      "audience": "Growth and paid media teams",
+      "color": "#ffbd5c",
+      "featured": false,
+      "role": "Media Creative Variant",
+      "workflowKeys": [
+        "media-buying.creative-variant-generation"
+      ]
+    },
+    {
+      "key": "media-buying.workflow.performance-diagnosis",
+      "slug": "media-buying-workflow-performance-diagnosis",
+      "name": "Media Performance Diagnosis Agent",
+      "description": "Diagnoses media performance using bounded evidence, live-data caveats, and prioritized next checks.",
+      "domain": "media-buying",
+      "audience": "Growth and paid media teams",
+      "color": "#ffbd5c",
+      "featured": false,
+      "role": "Media Performance Diagnosis",
+      "workflowKeys": [
+        "media-buying.performance-diagnosis"
+      ]
+    },
+    {
+      "key": "stackos.sdlc.planning",
+      "slug": "stackos-sdlc-planning",
+      "name": "Planning Agent",
+      "description": "Turns scoped work into tracker tasks, dependencies, ticket slices, acceptance criteria, and verification strategy.",
+      "domain": "engineering",
+      "audience": "Product and engineering teams",
+      "color": "#7892ff",
+      "featured": false,
+      "role": "Planning",
+      "workflowKeys": []
+    },
+    {
+      "key": "stackos.workflow.project-memory-review",
+      "slug": "stackos-workflow-project-memory-review",
+      "name": "Project Memory Review Agent",
+      "description": "Reviews bounded StackOS project memory and prepares a grounded next-step recommendation.",
+      "domain": "core",
+      "audience": "Every team",
+      "color": "#8ea6ff",
+      "featured": false,
+      "role": "Project Memory Review",
+      "workflowKeys": [
+        "core.project-memory-review"
+      ]
+    },
+    {
+      "key": "stackos.sdlc.release-ops",
+      "slug": "stackos-sdlc-release-ops",
+      "name": "Release/Ops Agent",
+      "description": "Handles release readiness, rollout notes, post-release checks, and operational cleanup.",
+      "domain": "engineering",
+      "audience": "Product and engineering teams",
+      "color": "#7892ff",
+      "featured": false,
+      "role": "Release Ops",
+      "workflowKeys": []
+    },
+    {
+      "key": "stackos.sdlc.requirements-flow-definer",
+      "slug": "stackos-sdlc-requirements-flow-definer",
+      "name": "Requirements Flow Definer",
+      "description": "Turns broad intent into explicit project-adapted user, data, system, and business flows, acceptance criteria, non-goals, and evidence expectations before design begins.",
+      "domain": "engineering",
+      "audience": "Product and engineering teams",
+      "color": "#7892ff",
+      "featured": false,
+      "role": "Requirements Flow Definer",
+      "workflowKeys": []
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent",
+      "description": "Reviews designs and completed delivery across behavior, flow-regression coverage, QA, integration contracts, security, tracker evidence, and release risk.",
+      "domain": "engineering",
+      "audience": "Product and engineering teams",
+      "color": "#7892ff",
+      "featured": false,
+      "role": "Delivery Reviewer",
+      "workflowKeys": []
+    },
+    {
+      "key": "seo.workflow.content-refresh",
+      "slug": "seo-workflow-content-refresh",
+      "name": "SEO Content Refresh Agent",
+      "description": "Reviews stale or underperforming content and prepares a refresh plan with source-backed changes.",
+      "domain": "seo",
+      "audience": "SEO and content teams",
+      "color": "#79dfff",
+      "featured": false,
+      "role": "Seo Content Refresh",
+      "workflowKeys": [
+        "seo.content-refresh"
+      ]
+    },
+    {
+      "key": "seo.workflow.keyword-research",
+      "slug": "seo-workflow-keyword-research",
+      "name": "SEO Keyword Research Agent",
+      "description": "Plans and reviews keyword discovery workflows with evidence, constraints, and content opportunity handoff.",
+      "domain": "seo",
+      "audience": "SEO and content teams",
+      "color": "#79dfff",
+      "featured": true,
+      "role": "Seo Keyword Research",
+      "workflowKeys": [
+        "seo.keyword-research"
+      ]
+    },
+    {
+      "key": "support.workflow.delivery-handoff",
+      "slug": "support-workflow-delivery-handoff",
+      "name": "Support Delivery Handoff Agent",
+      "description": "Converts a support conclusion and same-thread person instruction into delivery-ready tracker work with durable chat refs.",
+      "domain": "support",
+      "audience": "Support and success teams",
+      "color": "#a8e37f",
+      "featured": false,
+      "role": "Support Delivery Handoff",
+      "workflowKeys": [
+        "support.delivery-task-handoff"
+      ]
+    },
+    {
+      "key": "support.workflow.issue-investigator",
+      "slug": "support-workflow-issue-investigator",
+      "name": "Support Issue Investigator",
+      "description": "Investigates the full main support thread and project evidence, asks bounded clarification questions, and posts a thread-bound conclusion without implementing fixes.",
+      "domain": "support",
+      "audience": "Support and success teams",
+      "color": "#a8e37f",
+      "featured": false,
+      "role": "Support Issue Investigator",
+      "workflowKeys": [
+        "support.issue-investigation"
+      ]
+    },
+    {
+      "key": "stackos.sdlc.test-designer",
+      "slug": "stackos-sdlc-test-designer",
+      "name": "Test Designer",
+      "description": "Maps flow design, requirements, and design risks to focused tests, proof surfaces, TDD gates, agent-executed E2E/manual proof depth, and signoff evidence.",
+      "domain": "engineering",
+      "audience": "Product and engineering teams",
+      "color": "#7892ff",
+      "featured": false,
+      "role": "Test Designer",
+      "workflowKeys": []
+    },
+    {
+      "key": "trackbooth.agent-api-operator",
+      "slug": "trackbooth-agent-api-operator",
+      "name": "Trackbooth Agent API person",
+      "description": "Operates Trackbooth Agent API inventory only through StackOS manual catalog sync, generated actions, and StackOS-held API-key auth.",
+      "domain": "trackbooth",
+      "audience": "Operations teams",
+      "color": "#8ea6ff",
+      "featured": false,
+      "role": "Trackbooth Agent Api Operator",
+      "workflowKeys": []
+    },
+    {
+      "key": "stackos.workflow.workflow-author",
+      "slug": "stackos-workflow-workflow-author",
+      "name": "Workflow Author",
+      "description": "Designs reusable StackOS workflow contracts, project workflow extensions, and concrete run plans from project-safe context.",
+      "domain": "core",
+      "audience": "Every team",
+      "color": "#8ea6ff",
+      "featured": false,
+      "role": "Workflow Author",
+      "workflowKeys": []
+    }
+  ],
+  "orchestrators": [
+    {
+      "key": "branding.brand-orchestrator",
+      "slug": "branding-brand-orchestrator",
+      "name": "Brand Orchestrator",
+      "description": "Main-agent operating loop for interview-led, evidence-grounded authority content production and automated channel publication.",
+      "domain": "branding",
+      "audience": "Content and brand teams",
+      "color": "#d8ff63",
+      "featured": true,
+      "workflowKeys": [
+        "branding.content-production"
+      ],
+      "coordinates": [
+        "Branding Evidence Curator",
+        "Branding Narrative Writer",
+        "Branding Channel Strategist",
+        "Branding Claim Auditor",
+        "Branding Voice Reviewer",
+        "Branding Sanitization Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "branding.evidence-curator",
+          "slug": "branding-evidence-curator",
+          "name": "Branding Evidence Curator"
+        },
+        {
+          "key": "branding.narrative-writer",
+          "slug": "branding-narrative-writer",
+          "name": "Branding Narrative Writer"
+        },
+        {
+          "key": "branding.channel-strategist",
+          "slug": "branding-channel-strategist",
+          "name": "Branding Channel Strategist"
+        },
+        {
+          "key": "branding.claim-auditor",
+          "slug": "branding-claim-auditor",
+          "name": "Branding Claim Auditor"
+        },
+        {
+          "key": "branding.voice-reviewer",
+          "slug": "branding-voice-reviewer",
+          "name": "Branding Voice Reviewer"
+        },
+        {
+          "key": "branding.sanitization-reviewer",
+          "slug": "branding-sanitization-reviewer",
+          "name": "Branding Sanitization Reviewer"
+        }
+      ]
+    },
+    {
+      "key": "marketing.campaign-production-orchestrator",
+      "slug": "marketing-campaign-production-orchestrator",
+      "name": "Campaign Production Orchestrator",
+      "description": "Generic main-agent coordination preset for end-to-end marketing campaign production from intake brief through plan approval, media production, landing pages, visual signoff, and gallery…",
+      "domain": "marketing",
+      "audience": "Marketing teams",
+      "color": "#ff78ac",
+      "featured": true,
+      "workflowKeys": [
+        "marketing.campaign-production"
+      ],
+      "coordinates": [
+        "Campaign Brief Analyst",
+        "Campaign Creative Director",
+        "Campaign Media Producer",
+        "Campaign Landing Page Builder",
+        "Campaign Visual Signoff Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "marketing.campaign.brief-analyst",
+          "slug": "marketing-campaign-brief-analyst",
+          "name": "Campaign Brief Analyst"
+        },
+        {
+          "key": "marketing.campaign.creative-director",
+          "slug": "marketing-campaign-creative-director",
+          "name": "Campaign Creative Director"
+        },
+        {
+          "key": "marketing.campaign.media-producer",
+          "slug": "marketing-campaign-media-producer",
+          "name": "Campaign Media Producer"
+        },
+        {
+          "key": "marketing.campaign.landing-page-builder",
+          "slug": "marketing-campaign-landing-page-builder",
+          "name": "Campaign Landing Page Builder"
+        },
+        {
+          "key": "marketing.campaign.visual-signoff-reviewer",
+          "slug": "marketing-campaign-visual-signoff-reviewer",
+          "name": "Campaign Visual Signoff Reviewer"
+        }
+      ]
+    },
+    {
+      "key": "stackos.sdlc.delivery-orchestrator",
+      "slug": "stackos-sdlc-delivery-orchestrator",
+      "name": "Delivery Orchestrator",
+      "description": "Generic main-agent SDLC delivery coordination preset for project-adapted flow design, planning, tracker/plan coordination, reviewer selection, E2E/manual verification matrices, evidence…",
+      "domain": "engineering",
+      "audience": "Product and engineering teams",
+      "color": "#7892ff",
+      "featured": true,
+      "workflowKeys": [
+        "engineering.tracked-delivery"
+      ],
+      "coordinates": [],
+      "agentRefs": []
+    }
+  ]
+}

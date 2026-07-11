@@ -1,0 +1,63 @@
+{
+  "key": "media-buying.landing-page-creative-experiment",
+  "slug": "media-buying-landing-page-creative-experiment",
+  "name": "Landing Page And Creative Experiment",
+  "description": "Design a measurable experiment that connects creative, landing pages, and business goals.",
+  "domain": "media-buying",
+  "audience": "Growth and paid media teams",
+  "color": "#ffbd5c",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to design a measurable experiment that connects creative, landing pages, and business goals.",
+    "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Orient From Experiment History",
+      "summary": "Read existing experiments, related resources, prior lessons, and current inputs."
+    },
+    {
+      "id": "define_experiment_setup",
+      "title": "Define Experiment Setup",
+      "summary": "Define the variant set, metric targets, observation windows, and stopping rules."
+    },
+    {
+      "id": "record_experiment",
+      "title": "Record Experiment",
+      "summary": "Persist the experiment setup before any campaign or ad changes."
+    },
+    {
+      "id": "optional_launch_update",
+      "title": "Optional Launch Update",
+      "summary": "Execute approved campaign or ad updates only when granted by the concrete plan."
+    }
+  ],
+  "agentNames": [
+    "Landing Page Creative Experiment Agent",
+    "Architecture Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "media-buying.workflow.landing-page-creative-experiment",
+      "slug": "media-buying-workflow-landing-page-creative-experiment",
+      "name": "Landing Page Creative Experiment Agent"
+    },
+    {
+      "key": "stackos.sdlc.architecture",
+      "slug": "stackos-sdlc-architecture",
+      "name": "Architecture Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Meta Ads",
+    "Google Ads",
+    "Custom Media Tool"
+  ]
+}

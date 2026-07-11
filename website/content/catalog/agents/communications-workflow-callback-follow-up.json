@@ -1,0 +1,14 @@
+{
+  "key": "communications.workflow.callback-follow-up",
+  "slug": "communications-workflow-callback-follow-up",
+  "name": "Communications Callback Follow-Up Agent",
+  "description": "Handles callback or follow-up requests with origin context, route policy, and reply/send safety.",
+  "domain": "communications",
+  "audience": "Customer and operations teams",
+  "color": "#7ee2ad",
+  "featured": false,
+  "role": "Communications Callback Follow Up",
+  "workflowKeys": [
+    "communications.callback-follow-up"
+  ]
+}

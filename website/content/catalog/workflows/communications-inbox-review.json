@@ -1,0 +1,60 @@
+{
+  "key": "communications.inbox-review",
+  "slug": "communications-inbox-review",
+  "name": "Communications Inbox Review",
+  "description": "Review incoming messages, identify what needs action, and turn selected items into organized work.",
+  "domain": "communications",
+  "audience": "Customer and operations teams",
+  "color": "#7ee2ad",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to review incoming messages, identify what needs action, and turn selected items into organized work.",
+    "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Orient From Mailbox History",
+      "summary": "Read prior messages, requests, and the current goal."
+    },
+    {
+      "id": "search",
+      "title": "Search Bounded Messages",
+      "summary": "Search the configured mailbox by explicit criteria and limit."
+    },
+    {
+      "id": "fetch_selected",
+      "title": "Fetch Selected Messages",
+      "summary": "Fetch only selected fields/body previews for candidate UIDs."
+    },
+    {
+      "id": "create_work",
+      "title": "Create Or Prepare Work",
+      "summary": "Create or prepare generic agent requests only for messages that need follow-up."
+    },
+    {
+      "id": "update_status",
+      "title": "Update Mailbox Status",
+      "summary": "Mark reviewed messages seen only when approval and policy allow it."
+    }
+  ],
+  "agentNames": [
+    "Communications Inbox Review Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "communications.workflow.inbox-review",
+      "slug": "communications-workflow-inbox-review",
+      "name": "Communications Inbox Review Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Imap"
+  ]
+}

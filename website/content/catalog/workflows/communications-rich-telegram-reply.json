@@ -1,0 +1,50 @@
+{
+  "key": "communications.rich-telegram-reply",
+  "slug": "communications-rich-telegram-reply",
+  "name": "Rich Telegram Reply",
+  "description": "Reply in Telegram with text, images, and useful actions while keeping the conversation connected.",
+  "domain": "communications",
+  "audience": "Customer and operations teams",
+  "color": "#7ee2ad",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to reply in Telegram with text, images, and useful actions while keeping the conversation connected.",
+    "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Read Origin Context",
+      "summary": "Inspect the request metadata, communication profile guidance, and thread context."
+    },
+    {
+      "id": "compose",
+      "title": "Compose Response Payload",
+      "summary": "Decide exact text, image refs, and optional button payloads without embedding secrets."
+    },
+    {
+      "id": "send",
+      "title": "Send Telegram Response",
+      "summary": "Execute the explicit Telegram send action granted by the plan."
+    }
+  ],
+  "agentNames": [
+    "Communications Rich Telegram Reply Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "communications.workflow.rich-telegram-reply",
+      "slug": "communications-workflow-rich-telegram-reply",
+      "name": "Communications Rich Telegram Reply Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Telegram Bot"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "key": "branding.voice-reviewer",
+  "slug": "branding-voice-reviewer",
+  "name": "Branding Voice Reviewer",
+  "description": "Read-only reviewer for base voice, channel register delta, form contract, and kill tests.",
+  "domain": "branding",
+  "audience": "Content and brand teams",
+  "color": "#d8ff63",
+  "featured": true,
+  "role": "Voice Reviewer",
+  "workflowKeys": [
+    "branding.content-production"
+  ]
+}

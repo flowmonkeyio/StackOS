@@ -1,0 +1,12 @@
+{
+  "key": "stackos.workflow.workflow-author",
+  "slug": "stackos-workflow-workflow-author",
+  "name": "Workflow Author",
+  "description": "Designs reusable StackOS workflow contracts, project workflow extensions, and concrete run plans from project-safe context.",
+  "domain": "core",
+  "audience": "Every team",
+  "color": "#8ea6ff",
+  "featured": false,
+  "role": "Workflow Author",
+  "workflowKeys": []
+}

@@ -1,0 +1,55 @@
+{
+  "key": "support.delivery-task-handoff",
+  "slug": "support-delivery-task-handoff",
+  "name": "Delivery Task Handoff",
+  "description": "Turn a completed support investigation into ready-to-start delivery work.",
+  "domain": "support",
+  "audience": "Support and success teams",
+  "color": "#a8e37f",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to turn a completed support investigation into ready-to-start delivery work.",
+    "Best for support and success teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "confirm-thread-instruction",
+      "title": "Confirm Thread Instruction",
+      "summary": "Re-read the main thread and confirm the task instruction belongs to the same thread as the support conclusion."
+    },
+    {
+      "id": "create-delivery-task",
+      "title": "Create Delivery Task",
+      "summary": "Create delivery-ready tracker work with cause, scope, acceptance criteria, verification expectations, and preserved chat refs."
+    },
+    {
+      "id": "post-task-handoff",
+      "title": "Post Task Handoff",
+      "summary": "Reply in the main thread with the task link/key, scoped delivery summary, and engineering.tracked-delivery handoff."
+    },
+    {
+      "id": "add-task-created-reaction",
+      "title": "Add Task-Created Reaction",
+      "summary": "Add a semantically matching reaction to the main message only after task creation succeeds."
+    }
+  ],
+  "agentNames": [
+    "Support Delivery Handoff Agent",
+    "Planning Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "support.workflow.delivery-handoff",
+      "slug": "support-workflow-delivery-handoff",
+      "name": "Support Delivery Handoff Agent"
+    },
+    {
+      "key": "stackos.sdlc.planning",
+      "slug": "stackos-sdlc-planning",
+      "name": "Planning Agent"
+    }
+  ],
+  "integrations": [
+    "Slack Bot"
+  ]
+}

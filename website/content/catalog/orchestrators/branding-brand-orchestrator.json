@@ -1,0 +1,53 @@
+{
+  "key": "branding.brand-orchestrator",
+  "slug": "branding-brand-orchestrator",
+  "name": "Brand Orchestrator",
+  "description": "Main-agent operating loop for interview-led, evidence-grounded authority content production and automated channel publication.",
+  "domain": "branding",
+  "audience": "Content and brand teams",
+  "color": "#d8ff63",
+  "featured": true,
+  "workflowKeys": [
+    "branding.content-production"
+  ],
+  "coordinates": [
+    "Branding Evidence Curator",
+    "Branding Narrative Writer",
+    "Branding Channel Strategist",
+    "Branding Claim Auditor",
+    "Branding Voice Reviewer",
+    "Branding Sanitization Reviewer"
+  ],
+  "agentRefs": [
+    {
+      "key": "branding.evidence-curator",
+      "slug": "branding-evidence-curator",
+      "name": "Branding Evidence Curator"
+    },
+    {
+      "key": "branding.narrative-writer",
+      "slug": "branding-narrative-writer",
+      "name": "Branding Narrative Writer"
+    },
+    {
+      "key": "branding.channel-strategist",
+      "slug": "branding-channel-strategist",
+      "name": "Branding Channel Strategist"
+    },
+    {
+      "key": "branding.claim-auditor",
+      "slug": "branding-claim-auditor",
+      "name": "Branding Claim Auditor"
+    },
+    {
+      "key": "branding.voice-reviewer",
+      "slug": "branding-voice-reviewer",
+      "name": "Branding Voice Reviewer"
+    },
+    {
+      "key": "branding.sanitization-reviewer",
+      "slug": "branding-sanitization-reviewer",
+      "name": "Branding Sanitization Reviewer"
+    }
+  ]
+}

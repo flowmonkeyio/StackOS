@@ -1,0 +1,14 @@
+{
+  "key": "gtm.workflow.lead-enrichment-scoring",
+  "slug": "gtm-workflow-lead-enrichment-scoring",
+  "name": "GTM Lead Enrichment Scoring Agent",
+  "description": "Enriches and scores leads according to project-specific fields, confidence, and review policy.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "role": "Gtm Lead Enrichment Scoring",
+  "workflowKeys": [
+    "gtm.lead-enrichment-scoring"
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "key": "marketing.campaign-production",
+  "slug": "marketing-campaign-production",
+  "name": "Marketing Campaign Production",
+  "description": "Move from a campaign idea to messaging, creative, landing pages, and a complete review gallery.",
+  "domain": "marketing",
+  "audience": "Marketing teams",
+  "color": "#ff78ac",
+  "featured": true,
+  "whenToUse": [
+    "Use this when you want to move from a campaign idea to messaging, creative, landing pages, and a complete review gallery.",
+    "Best for marketing teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "intake-brief",
+      "title": "Intake Campaign Brief",
+      "summary": "Convert person inputs into a complete structured campaign brief with persisted input artifacts and an explicit media request."
+    },
+    {
+      "id": "setup-workspace",
+      "title": "Set Up Campaign Workspace",
+      "summary": "Create the repository campaign workspace and scaffold campaign.md as the person-readable campaign ledger."
+    },
+    {
+      "id": "plan-campaign",
+      "title": "Plan Campaign And Media Manifest",
+      "summary": "Produce the campaign plan that production executes and signoff verifies; media manifest, landing page variant plans, gallery plan, and cost estimate."
+    },
+    {
+      "id": "produce-media",
+      "title": "Produce Campaign Media",
+      "summary": "Execute approved manifest entries through granted generation actions and materialize results into the campaign workspace."
+    },
+    {
+      "id": "build-landing-pages",
+      "title": "Build Landing Page Variants",
+      "summary": "Build each planned variant as a self-contained static page in the workspace using produced media and the approved angle."
+    },
+    {
+      "id": "visual-signoff",
+      "title": "Visual Signoff",
+      "summary": "Verify every produced asset and page against the approved plan with rendered evidence and explicit per-item verdicts."
+    },
+    {
+      "id": "build-gallery",
+      "title": "Build Campaign Gallery",
+      "summary": "Build the local human-readable gallery page that presents everything the campaign produced to a non-engineer."
+    },
+    {
+      "id": "closeout",
+      "title": "Campaign Closeout",
+      "summary": "Reconcile state, finalize the campaign ledger, and hand the person one front door to everything produced."
+    }
+  ],
+  "agentNames": [
+    "Campaign Brief Analyst",
+    "Campaign Creative Director",
+    "Campaign Media Producer",
+    "Campaign Landing Page Builder",
+    "Campaign Visual Signoff Reviewer"
+  ],
+  "agentRefs": [
+    {
+      "key": "marketing.campaign.brief-analyst",
+      "slug": "marketing-campaign-brief-analyst",
+      "name": "Campaign Brief Analyst"
+    },
+    {
+      "key": "marketing.campaign.creative-director",
+      "slug": "marketing-campaign-creative-director",
+      "name": "Campaign Creative Director"
+    },
+    {
+      "key": "marketing.campaign.media-producer",
+      "slug": "marketing-campaign-media-producer",
+      "name": "Campaign Media Producer"
+    },
+    {
+      "key": "marketing.campaign.landing-page-builder",
+      "slug": "marketing-campaign-landing-page-builder",
+      "name": "Campaign Landing Page Builder"
+    },
+    {
+      "key": "marketing.campaign.visual-signoff-reviewer",
+      "slug": "marketing-campaign-visual-signoff-reviewer",
+      "name": "Campaign Visual Signoff Reviewer"
+    }
+  ],
+  "integrations": [
+    "Openai Images",
+    "Google Veo",
+    "Byteplus Ark",
+    "Alibaba Wan",
+    "Kling",
+    "Xai Imagine"
+  ]
+}

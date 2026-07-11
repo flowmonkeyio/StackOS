@@ -1,0 +1,64 @@
+{
+  "key": "media-buying.creative-variant-generation",
+  "slug": "media-buying-creative-variant-generation",
+  "name": "Media Buying Creative Variant Generation",
+  "description": "Create a focused set of ad variations from your offer, brand, and past performance.",
+  "domain": "media-buying",
+  "audience": "Growth and paid media teams",
+  "color": "#ffbd5c",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to create a focused set of ad variations from your offer, brand, and past performance.",
+    "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Orient From Creative History",
+      "summary": "Read recent creatives, learnings, active experiments, and constraints."
+    },
+    {
+      "id": "define_candidate_set",
+      "title": "Define Candidate Set",
+      "summary": "Create explicit candidate angles, copy needs, asset needs, and review criteria."
+    },
+    {
+      "id": "generate_or_attach_assets",
+      "title": "Generate Or Attach Assets",
+      "summary": "Use granted utility actions or existing asset refs to create the candidate asset set."
+    },
+    {
+      "id": "store_reviewed_creatives",
+      "title": "Store Reviewed Creatives",
+      "summary": "Persist reviewed candidate creative records and their provenance."
+    },
+    {
+      "id": "optional_external_upload",
+      "title": "Optional External Upload",
+      "summary": "Execute approved connected app upload or campaign update actions only when granted by the concrete plan."
+    }
+  ],
+  "agentNames": [
+    "Media Creative Variant Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "media-buying.workflow.creative-variant-generation",
+      "slug": "media-buying-workflow-creative-variant-generation",
+      "name": "Media Creative Variant Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Openai Images",
+    "Meta Ads",
+    "Google Ads",
+    "Taboola",
+    "Custom Media Tool"
+  ]
+}

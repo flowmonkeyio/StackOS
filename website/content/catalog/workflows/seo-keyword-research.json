@@ -1,0 +1,56 @@
+{
+  "key": "seo.keyword-research",
+  "slug": "seo-keyword-research",
+  "name": "SEO Keyword Research",
+  "description": "Turn a business goal into a prioritized map of search opportunities and content ideas.",
+  "domain": "seo",
+  "audience": "SEO and content teams",
+  "color": "#79dfff",
+  "featured": true,
+  "whenToUse": [
+    "Use this when you want to turn a business goal into a prioritized map of search opportunities and content ideas.",
+    "Best for seo and content teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Orient From History",
+      "summary": "Read recent research, learnings, and the current project goal; if the user did not provide seed terms or competitors, ask a small number of…"
+    },
+    {
+      "id": "collect_evidence",
+      "title": "Collect Evidence",
+      "summary": "Execute only the connected app calls the plan grants and the agent still needs; preserve returned response-file paths, use schema.get with schema_ref…"
+    },
+    {
+      "id": "store_opportunities",
+      "title": "Store Opportunities",
+      "summary": "Persist a useful list of keyword opportunities, not just one or two terms, with clusters, metrics, source refs, and a polished brief/CSV when the run…"
+    },
+    {
+      "id": "capture_learning",
+      "title": "Capture Learning",
+      "summary": "Record reusable lessons or rejected patterns for future runs."
+    }
+  ],
+  "agentNames": [
+    "SEO Keyword Research Agent",
+    "Planning Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "seo.workflow.keyword-research",
+      "slug": "seo-workflow-keyword-research",
+      "name": "SEO Keyword Research Agent"
+    },
+    {
+      "key": "stackos.sdlc.planning",
+      "slug": "stackos-sdlc-planning",
+      "name": "Planning Agent"
+    }
+  ],
+  "integrations": [
+    "Dataforseo",
+    "Ahrefs"
+  ]
+}

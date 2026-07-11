@@ -1,0 +1,14 @@
+{
+  "key": "seo.workflow.content-refresh",
+  "slug": "seo-workflow-content-refresh",
+  "name": "SEO Content Refresh Agent",
+  "description": "Reviews stale or underperforming content and prepares a refresh plan with source-backed changes.",
+  "domain": "seo",
+  "audience": "SEO and content teams",
+  "color": "#79dfff",
+  "featured": false,
+  "role": "Seo Content Refresh",
+  "workflowKeys": [
+    "seo.content-refresh"
+  ]
+}

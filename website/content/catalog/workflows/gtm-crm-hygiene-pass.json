@@ -1,0 +1,51 @@
+{
+  "key": "gtm.crm-hygiene-pass",
+  "slug": "gtm-crm-hygiene-pass",
+  "name": "GTM CRM Hygiene Pass",
+  "description": "Find incomplete or inconsistent CRM records and prepare safe, reviewed corrections.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to find incomplete or inconsistent CRM records and prepare safe, reviewed corrections.",
+    "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Orient From CRM Context",
+      "summary": "Read scope, policy, stored records, and prior hygiene lessons."
+    },
+    {
+      "id": "prepare_cleanup",
+      "title": "Prepare Cleanup",
+      "summary": "Identify field updates, notes, tasks, duplicates, and records requiring human review."
+    },
+    {
+      "id": "optional_apply_cleanup",
+      "title": "Optional Apply Cleanup",
+      "summary": "Execute approved CRM write actions only when granted by the concrete plan."
+    }
+  ],
+  "agentNames": [
+    "GTM CRM Hygiene Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "gtm.workflow.crm-hygiene-pass",
+      "slug": "gtm-workflow-crm-hygiene-pass",
+      "name": "GTM CRM Hygiene Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Hubspot",
+    "Salesforce"
+  ]
+}

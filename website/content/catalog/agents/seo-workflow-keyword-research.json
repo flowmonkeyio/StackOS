@@ -1,0 +1,14 @@
+{
+  "key": "seo.workflow.keyword-research",
+  "slug": "seo-workflow-keyword-research",
+  "name": "SEO Keyword Research Agent",
+  "description": "Plans and reviews keyword discovery workflows with evidence, constraints, and content opportunity handoff.",
+  "domain": "seo",
+  "audience": "SEO and content teams",
+  "color": "#79dfff",
+  "featured": true,
+  "role": "Seo Keyword Research",
+  "workflowKeys": [
+    "seo.keyword-research"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "key": "media-buying.workflow.landing-page-creative-experiment",
+  "slug": "media-buying-workflow-landing-page-creative-experiment",
+  "name": "Landing Page Creative Experiment Agent",
+  "description": "Coordinates landing-page and creative experiment planning across UX, media, tracking, and review.",
+  "domain": "media-buying",
+  "audience": "Growth and paid media teams",
+  "color": "#ffbd5c",
+  "featured": false,
+  "role": "Media Landing Page Creative Experiment",
+  "workflowKeys": [
+    "media-buying.landing-page-creative-experiment"
+  ]
+}

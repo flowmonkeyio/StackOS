@@ -1,0 +1,12 @@
+{
+  "key": "stackos.sdlc.architecture",
+  "slug": "stackos-sdlc-architecture",
+  "name": "Architecture Agent",
+  "description": "Designs implementation structure, ownership boundaries, schemas, operation contracts, and one-brain reuse before delivery.",
+  "domain": "engineering",
+  "audience": "Product and engineering teams",
+  "color": "#7892ff",
+  "featured": false,
+  "role": "Architecture",
+  "workflowKeys": []
+}

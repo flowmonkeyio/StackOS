@@ -1,0 +1,51 @@
+{
+  "key": "communications.outbound-notification",
+  "slug": "communications-outbound-notification",
+  "name": "Communications Outbound Notification",
+  "description": "Send an approved update after a task, decision, or result is ready.",
+  "domain": "communications",
+  "audience": "Customer and operations teams",
+  "color": "#7ee2ad",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to send an approved update after a task, decision, or result is ready.",
+    "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Confirm Notification Need",
+      "summary": "Read the goal and recent action calls before composing a notification."
+    },
+    {
+      "id": "compose",
+      "title": "Compose Explicit Payload",
+      "summary": "Produce exact recipient/channel, subject, body, and optional origin refs."
+    },
+    {
+      "id": "send",
+      "title": "Send Notification",
+      "summary": "Execute the explicitly granted send action."
+    }
+  ],
+  "agentNames": [
+    "Communications Outbound Notification Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "communications.workflow.outbound-notification",
+      "slug": "communications-workflow-outbound-notification",
+      "name": "Communications Outbound Notification Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Smtp",
+    "Telegram Bot"
+  ]
+}

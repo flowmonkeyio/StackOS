@@ -1,0 +1,14 @@
+{
+  "key": "media-buying.workflow.creative-variant-generation",
+  "slug": "media-buying-workflow-creative-variant-generation",
+  "name": "Media Creative Variant Agent",
+  "description": "Generates and reviews creative variant plans tied to hypothesis, brand constraints, and measurement.",
+  "domain": "media-buying",
+  "audience": "Growth and paid media teams",
+  "color": "#ffbd5c",
+  "featured": false,
+  "role": "Media Creative Variant",
+  "workflowKeys": [
+    "media-buying.creative-variant-generation"
+  ]
+}

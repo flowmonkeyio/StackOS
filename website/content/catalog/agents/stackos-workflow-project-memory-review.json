@@ -1,0 +1,14 @@
+{
+  "key": "stackos.workflow.project-memory-review",
+  "slug": "stackos-workflow-project-memory-review",
+  "name": "Project Memory Review Agent",
+  "description": "Reviews bounded StackOS project memory and prepares a grounded next-step recommendation.",
+  "domain": "core",
+  "audience": "Every team",
+  "color": "#8ea6ff",
+  "featured": false,
+  "role": "Project Memory Review",
+  "workflowKeys": [
+    "core.project-memory-review"
+  ]
+}

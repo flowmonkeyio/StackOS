@@ -1,0 +1,14 @@
+{
+  "key": "communications.workflow.outbound-notification",
+  "slug": "communications-workflow-outbound-notification",
+  "name": "Communications Outbound Notification Agent",
+  "description": "Prepares and sends explicit connected app-neutral outbound notifications through named targets.",
+  "domain": "communications",
+  "audience": "Customer and operations teams",
+  "color": "#7ee2ad",
+  "featured": false,
+  "role": "Communications Outbound Notification",
+  "workflowKeys": [
+    "communications.outbound-notification"
+  ]
+}

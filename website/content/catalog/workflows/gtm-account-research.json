@@ -1,0 +1,56 @@
+{
+  "key": "gtm.account-research",
+  "slug": "gtm-account-research",
+  "name": "GTM Account Research",
+  "description": "Build a useful account brief from your saved context and current research.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to build a useful account brief from your saved context and current research.",
+    "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Orient From Account History",
+      "summary": "Read existing records, learnings, decisions, and the current research goal."
+    },
+    {
+      "id": "collect_evidence",
+      "title": "Collect Evidence",
+      "summary": "Use granted retrieval actions only for evidence gaps the agent identifies."
+    },
+    {
+      "id": "store_research",
+      "title": "Store Research",
+      "summary": "Persist reviewed account, company, and contact context with provenance."
+    },
+    {
+      "id": "capture_learning",
+      "title": "Capture Learning",
+      "summary": "Record reusable GTM lessons only when evidence is explicit."
+    }
+  ],
+  "agentNames": [
+    "GTM Account Research Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "gtm.workflow.account-research",
+      "slug": "gtm-workflow-account-research",
+      "name": "GTM Account Research Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Jina",
+    "Firecrawl"
+  ]
+}

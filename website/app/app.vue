@@ -1,0 +1,4 @@
+<template>
+  <NuxtPage />
+  <AnalyticsConsent />
+</template>

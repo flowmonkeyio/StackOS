@@ -1,0 +1,12 @@
+{
+  "key": "stackos.sdlc.requirements-flow-definer",
+  "slug": "stackos-sdlc-requirements-flow-definer",
+  "name": "Requirements Flow Definer",
+  "description": "Turns broad intent into explicit project-adapted user, data, system, and business flows, acceptance criteria, non-goals, and evidence expectations before design begins.",
+  "domain": "engineering",
+  "audience": "Product and engineering teams",
+  "color": "#7892ff",
+  "featured": false,
+  "role": "Requirements Flow Definer",
+  "workflowKeys": []
+}

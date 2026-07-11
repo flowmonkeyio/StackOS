@@ -1,0 +1,12 @@
+{
+  "key": "stackos.sdlc.release-ops",
+  "slug": "stackos-sdlc-release-ops",
+  "name": "Release/Ops Agent",
+  "description": "Handles release readiness, rollout notes, post-release checks, and operational cleanup.",
+  "domain": "engineering",
+  "audience": "Product and engineering teams",
+  "color": "#7892ff",
+  "featured": false,
+  "role": "Release Ops",
+  "workflowKeys": []
+}

@@ -1,0 +1,12 @@
+{
+  "key": "stackos.sdlc.codebase-explorer",
+  "slug": "stackos-sdlc-codebase-explorer",
+  "name": "Codebase Explorer",
+  "description": "Read-only mapper for affected scopes, work paths, ownership boundaries, and downstream fallout before code changes.",
+  "domain": "engineering",
+  "audience": "Product and engineering teams",
+  "color": "#7892ff",
+  "featured": false,
+  "role": "Codebase Explorer",
+  "workflowKeys": []
+}

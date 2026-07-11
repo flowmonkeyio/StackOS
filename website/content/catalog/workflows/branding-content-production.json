@@ -1,0 +1,113 @@
+{
+  "key": "branding.content-production",
+  "slug": "branding-content-production",
+  "name": "Branding Content Production",
+  "description": "Turn an idea into a researched, reviewed piece of content, then prepare it for every channel you choose.",
+  "domain": "branding",
+  "audience": "Content and brand teams",
+  "color": "#d8ff63",
+  "featured": true,
+  "whenToUse": [
+    "Use this when you want to turn an idea into a researched, reviewed piece of content, then prepare it for every channel you choose.",
+    "Best for content and brand teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "interview-capture",
+      "title": "Interview Capture",
+      "summary": "Ask journalist-style questions and capture facts, surprises, tradeoffs, hypotheses, and open research questions."
+    },
+    {
+      "id": "research-fact-collection",
+      "title": "Research And Fact Collection",
+      "summary": "Use the interview pack to collect, verify, and organize supporting facts from the right sources before angle selection."
+    },
+    {
+      "id": "angle-and-structure",
+      "title": "Angle And Structure",
+      "summary": "Propose one to three piece ideas, select the structure, name target channels, and decide whether images are needed."
+    },
+    {
+      "id": "draft-canonical",
+      "title": "Draft main",
+      "summary": "Write the main piece in the adapted person voice from the selected angle and evidence pack."
+    },
+    {
+      "id": "editorial-review",
+      "title": "Editorial Review",
+      "summary": "Run one compact review pass for factual support, prior-position consistency, voice, and channel form."
+    },
+    {
+      "id": "sanitization-review",
+      "title": "Sanitization Review",
+      "summary": "Apply disclosure policy separately and fail closed on public-use risk."
+    },
+    {
+      "id": "produce-optional-images",
+      "title": "Produce Optional Images",
+      "summary": "Resolve the selected image set, generating assets only when the image plan requires connected app-generated website or channel media."
+    },
+    {
+      "id": "render-channel-packets",
+      "title": "Render Channel Publication Jobs",
+      "summary": "Produce executable website, X, LinkedIn, and optional email publication payloads plus one channel-ready publication bundle from the main draft and image…"
+    },
+    {
+      "id": "approve-and-record",
+      "title": "Approve And Record",
+      "summary": "Approve the main draft, channel publication jobs, publication bundle, optional image refs, follow-up hooks, and memory updates together before external…"
+    },
+    {
+      "id": "execute-publication",
+      "title": "Execute Publication",
+      "summary": "Publish or stage every approved channel through its selected automation path, then record distribution results."
+    }
+  ],
+  "agentNames": [
+    "Branding Evidence Curator",
+    "Branding Channel Strategist",
+    "Branding Narrative Writer",
+    "Branding Claim Auditor",
+    "Branding Voice Reviewer",
+    "Branding Sanitization Reviewer"
+  ],
+  "agentRefs": [
+    {
+      "key": "branding.evidence-curator",
+      "slug": "branding-evidence-curator",
+      "name": "Branding Evidence Curator"
+    },
+    {
+      "key": "branding.channel-strategist",
+      "slug": "branding-channel-strategist",
+      "name": "Branding Channel Strategist"
+    },
+    {
+      "key": "branding.narrative-writer",
+      "slug": "branding-narrative-writer",
+      "name": "Branding Narrative Writer"
+    },
+    {
+      "key": "branding.claim-auditor",
+      "slug": "branding-claim-auditor",
+      "name": "Branding Claim Auditor"
+    },
+    {
+      "key": "branding.voice-reviewer",
+      "slug": "branding-voice-reviewer",
+      "name": "Branding Voice Reviewer"
+    },
+    {
+      "key": "branding.sanitization-reviewer",
+      "slug": "branding-sanitization-reviewer",
+      "name": "Branding Sanitization Reviewer"
+    }
+  ],
+  "integrations": [
+    "Openai Images",
+    "Git Remote",
+    "X Api",
+    "Linkedin Api",
+    "Esp"
+  ]
+}

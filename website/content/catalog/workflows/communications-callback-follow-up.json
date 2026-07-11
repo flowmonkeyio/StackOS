@@ -1,0 +1,50 @@
+{
+  "key": "communications.callback-follow-up",
+  "slug": "communications-callback-follow-up",
+  "name": "Telegram Callback Follow-Up",
+  "description": "Continue a customer conversation after they choose an option in a message.",
+  "domain": "communications",
+  "audience": "Customer and operations teams",
+  "color": "#7ee2ad",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to continue a customer conversation after they choose an option in a message.",
+    "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Read Callback Context",
+      "summary": "Load the inbound callback, outbound button, and originating request metadata."
+    },
+    {
+      "id": "acknowledge",
+      "title": "Acknowledge Callback",
+      "summary": "Optionally clear Telegram client loading state with static acknowledgement text."
+    },
+    {
+      "id": "follow_up",
+      "title": "Send Follow-Up When Needed",
+      "summary": "Send an origin-bound reply only if the agent decision requires it."
+    }
+  ],
+  "agentNames": [
+    "Communications Callback Follow-Up Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "communications.workflow.callback-follow-up",
+      "slug": "communications-workflow-callback-follow-up",
+      "name": "Communications Callback Follow-Up Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Telegram Bot"
+  ]
+}

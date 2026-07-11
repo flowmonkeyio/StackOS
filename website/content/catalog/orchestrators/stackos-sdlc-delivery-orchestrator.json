@@ -1,0 +1,15 @@
+{
+  "key": "stackos.sdlc.delivery-orchestrator",
+  "slug": "stackos-sdlc-delivery-orchestrator",
+  "name": "Delivery Orchestrator",
+  "description": "Generic main-agent SDLC delivery coordination preset for project-adapted flow design, planning, tracker/plan coordination, reviewer selection, E2E/manual verification matrices, evidence…",
+  "domain": "engineering",
+  "audience": "Product and engineering teams",
+  "color": "#7892ff",
+  "featured": true,
+  "workflowKeys": [
+    "engineering.tracked-delivery"
+  ],
+  "coordinates": [],
+  "agentRefs": []
+}

@@ -1,0 +1,14 @@
+{
+  "key": "media-buying.workflow.performance-diagnosis",
+  "slug": "media-buying-workflow-performance-diagnosis",
+  "name": "Media Performance Diagnosis Agent",
+  "description": "Diagnoses media performance using bounded evidence, live-data caveats, and prioritized next checks.",
+  "domain": "media-buying",
+  "audience": "Growth and paid media teams",
+  "color": "#ffbd5c",
+  "featured": false,
+  "role": "Media Performance Diagnosis",
+  "workflowKeys": [
+    "media-buying.performance-diagnosis"
+  ]
+}

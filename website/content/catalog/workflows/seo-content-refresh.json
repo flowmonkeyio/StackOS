@@ -1,0 +1,55 @@
+{
+  "key": "seo.content-refresh",
+  "slug": "seo-content-refresh",
+  "name": "SEO Content Refresh",
+  "description": "Find why an existing page is underperforming, improve it, and verify the result.",
+  "domain": "seo",
+  "audience": "SEO and content teams",
+  "color": "#79dfff",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to find why an existing page is underperforming, improve it, and verify the result.",
+    "Best for seo and content teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "read_history",
+      "title": "Read History",
+      "summary": "Complete the read history stage."
+    },
+    {
+      "id": "diagnose",
+      "title": "Diagnose Refresh Need",
+      "summary": "Complete the diagnose stage."
+    },
+    {
+      "id": "execute_change",
+      "title": "Execute Change",
+      "summary": "Agent performs the chosen external or repository work using tools available in the current environment."
+    },
+    {
+      "id": "record_outcome",
+      "title": "Record Outcome",
+      "summary": "Complete the record outcome stage."
+    }
+  ],
+  "agentNames": [
+    "SEO Content Refresh Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "seo.workflow.content-refresh",
+      "slug": "seo-workflow-content-refresh",
+      "name": "SEO Content Refresh Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Dataforseo"
+  ]
+}

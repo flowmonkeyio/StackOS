@@ -1,0 +1,14 @@
+{
+  "key": "marketing.campaign.media-producer",
+  "slug": "marketing-campaign-media-producer",
+  "name": "Campaign Media Producer",
+  "description": "Executes approved image manifest entries through granted generation actions with drift control, set consistency, cost discipline, and truthful per-asset records; video requests are…",
+  "domain": "marketing",
+  "audience": "Marketing teams",
+  "color": "#ff78ac",
+  "featured": true,
+  "role": "Media Producer",
+  "workflowKeys": [
+    "marketing.campaign-production"
+  ]
+}

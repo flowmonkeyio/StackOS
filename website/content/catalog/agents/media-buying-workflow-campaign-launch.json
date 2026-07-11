@@ -1,0 +1,14 @@
+{
+  "key": "media-buying.workflow.campaign-launch",
+  "slug": "media-buying-workflow-campaign-launch",
+  "name": "Media Campaign Launch Agent",
+  "description": "Prepares paid media campaign launches with explicit assumptions, approvals, and connected app-action boundaries.",
+  "domain": "media-buying",
+  "audience": "Growth and paid media teams",
+  "color": "#ffbd5c",
+  "featured": true,
+  "role": "Media Campaign Launch",
+  "workflowKeys": [
+    "media-buying.campaign-launch"
+  ]
+}

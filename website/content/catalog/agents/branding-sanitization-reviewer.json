@@ -1,0 +1,14 @@
+{
+  "key": "branding.sanitization-reviewer",
+  "slug": "branding-sanitization-reviewer",
+  "name": "Branding Sanitization Reviewer",
+  "description": "Read-only disclosure reviewer that fails closed with cleared or blocked verdicts.",
+  "domain": "branding",
+  "audience": "Content and brand teams",
+  "color": "#d8ff63",
+  "featured": true,
+  "role": "Sanitization Reviewer",
+  "workflowKeys": [
+    "branding.content-production"
+  ]
+}

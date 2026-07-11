@@ -1,0 +1,14 @@
+{
+  "key": "marketing.campaign.visual-signoff-reviewer",
+  "slug": "marketing-campaign-visual-signoff-reviewer",
+  "name": "Campaign Visual Signoff Reviewer",
+  "description": "Verifies every produced asset and page against the approved campaign plan's acceptance criteria with rendered evidence and per-item verdicts instead of rubber stamps.",
+  "domain": "marketing",
+  "audience": "Marketing teams",
+  "color": "#ff78ac",
+  "featured": true,
+  "role": "Visual Signoff Reviewer",
+  "workflowKeys": [
+    "marketing.campaign-production"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "key": "gtm.workflow.outbound-sequence-preparation",
+  "slug": "gtm-workflow-outbound-sequence-preparation",
+  "name": "GTM Outbound Sequence Agent",
+  "description": "Prepares outbound sequence content and targeting with research, compliance, and approval context.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "role": "Gtm Outbound Sequence",
+  "workflowKeys": [
+    "gtm.outbound-sequence-preparation"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "key": "branding.channel-strategist",
+  "slug": "branding-channel-strategist",
+  "name": "Branding Channel Strategist",
+  "description": "Owns angle, structure, and channel publication job decisions without executing publication.",
+  "domain": "branding",
+  "audience": "Content and brand teams",
+  "color": "#d8ff63",
+  "featured": true,
+  "role": "Channel Strategist",
+  "workflowKeys": [
+    "branding.content-production"
+  ]
+}

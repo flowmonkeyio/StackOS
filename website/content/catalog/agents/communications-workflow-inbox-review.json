@@ -1,0 +1,14 @@
+{
+  "key": "communications.workflow.inbox-review",
+  "slug": "communications-workflow-inbox-review",
+  "name": "Communications Inbox Review Agent",
+  "description": "Reviews stored inbound communications, triages requests, and prepares safe workflow or reply handoffs.",
+  "domain": "communications",
+  "audience": "Customer and operations teams",
+  "color": "#7ee2ad",
+  "featured": false,
+  "role": "Communications Inbox Review",
+  "workflowKeys": [
+    "communications.inbox-review"
+  ]
+}

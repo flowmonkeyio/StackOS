@@ -1,0 +1,14 @@
+{
+  "key": "communications.workflow.rich-telegram-reply",
+  "slug": "communications-workflow-rich-telegram-reply",
+  "name": "Communications Rich Telegram Reply Agent",
+  "description": "Sends or validates Telegram replies with rich features while preserving exact delivery semantics.",
+  "domain": "communications",
+  "audience": "Customer and operations teams",
+  "color": "#7ee2ad",
+  "featured": false,
+  "role": "Communications Rich Telegram Reply",
+  "workflowKeys": [
+    "communications.rich-telegram-reply"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "key": "media-buying.performance-diagnosis",
+  "slug": "media-buying-performance-diagnosis",
+  "name": "Media Buying Performance Diagnosis",
+  "description": "Explain what changed in paid media performance and recommend what to do next.",
+  "domain": "media-buying",
+  "audience": "Growth and paid media teams",
+  "color": "#ffbd5c",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to explain what changed in paid media performance and recommend what to do next.",
+    "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Orient From Performance Context",
+      "summary": "Read the review scope, metric targets, recent snapshots, related learnings, and active experiments."
+    },
+    {
+      "id": "fetch_additional_metrics",
+      "title": "Fetch Additional Metrics",
+      "summary": "Execute only approved read actions that the concrete plan grants for missing evidence."
+    },
+    {
+      "id": "diagnose_drivers",
+      "title": "Diagnose Drivers",
+      "summary": "Compare evidence against targets and separate likely channel, audience, creative, landing page, and budget drivers."
+    },
+    {
+      "id": "record_followups",
+      "title": "Record Followups",
+      "summary": "Store recommended follow-up resources, budget review notes, and learning candidates."
+    }
+  ],
+  "agentNames": [
+    "Media Performance Diagnosis Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "media-buying.workflow.performance-diagnosis",
+      "slug": "media-buying-workflow-performance-diagnosis",
+      "name": "Media Performance Diagnosis Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Meta Ads",
+    "Google Ads",
+    "Taboola",
+    "Custom Media Tool"
+  ]
+}

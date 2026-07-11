@@ -1,0 +1,14 @@
+{
+  "key": "gtm.workflow.pipeline-risk-review",
+  "slug": "gtm-workflow-pipeline-risk-review",
+  "name": "GTM Pipeline Risk Review Agent",
+  "description": "Reviews pipeline risk, stale opportunities, and next actions using CRM context and project-specific stage rules.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "role": "Gtm Pipeline Risk Review",
+  "workflowKeys": [
+    "gtm.pipeline-risk-review"
+  ]
+}

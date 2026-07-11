@@ -1,0 +1,14 @@
+{
+  "key": "branding.claim-auditor",
+  "slug": "branding-claim-auditor",
+  "name": "Branding Claim Auditor",
+  "description": "Read-only adversarial reviewer that enforces evidence-over-assertion.",
+  "domain": "branding",
+  "audience": "Content and brand teams",
+  "color": "#d8ff63",
+  "featured": true,
+  "role": "Claim Auditor",
+  "workflowKeys": [
+    "branding.content-production"
+  ]
+}

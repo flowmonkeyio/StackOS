@@ -1,0 +1,53 @@
+{
+  "key": "gtm.lead-enrichment-scoring",
+  "slug": "gtm-lead-enrichment-scoring",
+  "name": "GTM Lead Enrichment And Scoring",
+  "description": "Enrich leads with relevant context and score them against your chosen criteria.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to enrich leads with relevant context and score them against your chosen criteria.",
+    "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Orient From Lead Context",
+      "summary": "Read existing lead records, enrichment state, scoring policy, and prior lessons."
+    },
+    {
+      "id": "run_enrichment",
+      "title": "Run Enrichment",
+      "summary": "Execute only the connected app enrichment actions granted by the concrete plan."
+    },
+    {
+      "id": "score_and_store",
+      "title": "Score And Store",
+      "summary": "Persist enrichment records, lead scores, qualification notes, and provenance."
+    }
+  ],
+  "agentNames": [
+    "GTM Lead Enrichment Scoring Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "gtm.workflow.lead-enrichment-scoring",
+      "slug": "gtm-workflow-lead-enrichment-scoring",
+      "name": "GTM Lead Enrichment Scoring Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Apollo",
+    "Clay",
+    "Clearbit By Hubspot",
+    "Custom Gtm Tool"
+  ]
+}

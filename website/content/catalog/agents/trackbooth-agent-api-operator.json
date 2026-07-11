@@ -1,0 +1,12 @@
+{
+  "key": "trackbooth.agent-api-operator",
+  "slug": "trackbooth-agent-api-operator",
+  "name": "Trackbooth Agent API person",
+  "description": "Operates Trackbooth Agent API inventory only through StackOS manual catalog sync, generated actions, and StackOS-held API-key auth.",
+  "domain": "trackbooth",
+  "audience": "Operations teams",
+  "color": "#8ea6ff",
+  "featured": false,
+  "role": "Trackbooth Agent Api Operator",
+  "workflowKeys": []
+}

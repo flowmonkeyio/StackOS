@@ -1,0 +1,12 @@
+{
+  "key": "stackos.sdlc.delivery",
+  "slug": "stackos-sdlc-delivery",
+  "name": "Delivery Agent",
+  "description": "Implements tickets one by one, debugs root causes when checks fail, updates tracker state, verifies behavior, and preserves project conventions.",
+  "domain": "engineering",
+  "audience": "Product and engineering teams",
+  "color": "#7892ff",
+  "featured": false,
+  "role": "Delivery",
+  "workflowKeys": []
+}

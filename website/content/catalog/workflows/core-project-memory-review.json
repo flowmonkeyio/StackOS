@@ -1,0 +1,48 @@
+{
+  "key": "core.project-memory-review",
+  "slug": "core-project-memory-review",
+  "name": "Project Memory Review",
+  "description": "Review what the project already knows and recommend the most useful next move.",
+  "domain": "core",
+  "audience": "Every team",
+  "color": "#8ea6ff",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to review what the project already knows and recommend the most useful next move.",
+    "Best for every team that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "clarify-goal",
+      "title": "Clarify Goal And Scope",
+      "summary": "Restate the goal, assumptions, constraints, and missing inputs."
+    },
+    {
+      "id": "retrieve-context",
+      "title": "Retrieve Bounded Context",
+      "summary": "Query only the declared fields and limits before reasoning."
+    },
+    {
+      "id": "propose-next-plan",
+      "title": "Propose Next Plan",
+      "summary": "Draft an agent-authored plan, explicit open questions, and any approval needs."
+    }
+  ],
+  "agentNames": [
+    "Project Memory Review Agent",
+    "Planning Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "stackos.workflow.project-memory-review",
+      "slug": "stackos-workflow-project-memory-review",
+      "name": "Project Memory Review Agent"
+    },
+    {
+      "key": "stackos.sdlc.planning",
+      "slug": "stackos-sdlc-planning",
+      "name": "Planning Agent"
+    }
+  ],
+  "integrations": []
+}

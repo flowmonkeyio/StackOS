@@ -1,0 +1,14 @@
+{
+  "key": "gtm.workflow.crm-hygiene-pass",
+  "slug": "gtm-workflow-crm-hygiene-pass",
+  "name": "GTM CRM Hygiene Agent",
+  "description": "Plans and reviews CRM cleanup with field-level atomic updates, duplicates, and audit visibility.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "role": "Gtm Crm Hygiene",
+  "workflowKeys": [
+    "gtm.crm-hygiene-pass"
+  ]
+}

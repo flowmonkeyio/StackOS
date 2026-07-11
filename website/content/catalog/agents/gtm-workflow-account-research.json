@@ -1,0 +1,14 @@
+{
+  "key": "gtm.workflow.account-research",
+  "slug": "gtm-workflow-account-research",
+  "name": "GTM Account Research Agent",
+  "description": "Produces account research briefs with source clarity, ICP fit, risks, and outreach-ready handoff.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "role": "Gtm Account Research",
+  "workflowKeys": [
+    "gtm.account-research"
+  ]
+}

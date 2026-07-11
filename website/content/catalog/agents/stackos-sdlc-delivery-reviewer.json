@@ -1,0 +1,12 @@
+{
+  "key": "stackos.sdlc.delivery-reviewer",
+  "slug": "stackos-sdlc-delivery-reviewer",
+  "name": "Review Agent",
+  "description": "Reviews designs and completed delivery across behavior, flow-regression coverage, QA, integration contracts, security, tracker evidence, and release risk.",
+  "domain": "engineering",
+  "audience": "Product and engineering teams",
+  "color": "#7892ff",
+  "featured": false,
+  "role": "Delivery Reviewer",
+  "workflowKeys": []
+}

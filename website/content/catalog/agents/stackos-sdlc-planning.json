@@ -1,0 +1,12 @@
+{
+  "key": "stackos.sdlc.planning",
+  "slug": "stackos-sdlc-planning",
+  "name": "Planning Agent",
+  "description": "Turns scoped work into tracker tasks, dependencies, ticket slices, acceptance criteria, and verification strategy.",
+  "domain": "engineering",
+  "audience": "Product and engineering teams",
+  "color": "#7892ff",
+  "featured": false,
+  "role": "Planning",
+  "workflowKeys": []
+}

@@ -1,0 +1,14 @@
+{
+  "key": "marketing.campaign.creative-director",
+  "slug": "marketing-campaign-creative-director",
+  "name": "Campaign Creative Director",
+  "description": "Turns the approved brief into the campaign plan whose media manifest, page plans, and acceptance criteria form the traceability contract for production and signoff.",
+  "domain": "marketing",
+  "audience": "Marketing teams",
+  "color": "#ff78ac",
+  "featured": true,
+  "role": "Creative Director",
+  "workflowKeys": [
+    "marketing.campaign-production"
+  ]
+}

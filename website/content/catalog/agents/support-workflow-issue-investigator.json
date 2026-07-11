@@ -1,0 +1,14 @@
+{
+  "key": "support.workflow.issue-investigator",
+  "slug": "support-workflow-issue-investigator",
+  "name": "Support Issue Investigator",
+  "description": "Investigates the full main support thread and project evidence, asks bounded clarification questions, and posts a thread-bound conclusion without implementing fixes.",
+  "domain": "support",
+  "audience": "Support and success teams",
+  "color": "#a8e37f",
+  "featured": false,
+  "role": "Support Issue Investigator",
+  "workflowKeys": [
+    "support.issue-investigation"
+  ]
+}

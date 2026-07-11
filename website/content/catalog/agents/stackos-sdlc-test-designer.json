@@ -1,0 +1,12 @@
+{
+  "key": "stackos.sdlc.test-designer",
+  "slug": "stackos-sdlc-test-designer",
+  "name": "Test Designer",
+  "description": "Maps flow design, requirements, and design risks to focused tests, proof surfaces, TDD gates, agent-executed E2E/manual proof depth, and signoff evidence.",
+  "domain": "engineering",
+  "audience": "Product and engineering teams",
+  "color": "#7892ff",
+  "featured": false,
+  "role": "Test Designer",
+  "workflowKeys": []
+}

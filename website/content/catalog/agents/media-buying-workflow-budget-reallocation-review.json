@@ -1,0 +1,14 @@
+{
+  "key": "media-buying.workflow.budget-reallocation-review",
+  "slug": "media-buying-workflow-budget-reallocation-review",
+  "name": "Media Budget Reallocation Agent",
+  "description": "Reviews budget movement proposals with evidence, constraints, and approval awareness.",
+  "domain": "media-buying",
+  "audience": "Growth and paid media teams",
+  "color": "#ffbd5c",
+  "featured": false,
+  "role": "Media Budget Reallocation",
+  "workflowKeys": [
+    "media-buying.budget-reallocation-review"
+  ]
+}

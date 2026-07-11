@@ -1,0 +1,63 @@
+{
+  "key": "media-buying.campaign-launch",
+  "slug": "media-buying-campaign-launch",
+  "name": "Media Buying Campaign Launch",
+  "description": "Plan and launch a paid campaign through clear checks, approvals, and connected ad tools.",
+  "domain": "media-buying",
+  "audience": "Growth and paid media teams",
+  "color": "#ffbd5c",
+  "featured": true,
+  "whenToUse": [
+    "Use this when you want to plan and launch a paid campaign through clear checks, approvals, and connected ad tools.",
+    "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Orient From History",
+      "summary": "Read recent work, resources, learnings, experiments, and the current goal."
+    },
+    {
+      "id": "prepare_launch_shape",
+      "title": "Prepare Launch Shape",
+      "summary": "Define the channel path, campaign structure, creative needs, measurement window, and open risks."
+    },
+    {
+      "id": "create_external_structures",
+      "title": "Create External Structures",
+      "summary": "Execute only approved connected app actions granted by the concrete plan."
+    },
+    {
+      "id": "record_launch_state",
+      "title": "Record Launch State",
+      "summary": "Persist campaign, creative, landing page, and initial measurement records."
+    },
+    {
+      "id": "capture_learning",
+      "title": "Capture Learning",
+      "summary": "Record reusable setup lessons with evidence and provenance."
+    }
+  ],
+  "agentNames": [
+    "Media Campaign Launch Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "media-buying.workflow.campaign-launch",
+      "slug": "media-buying-workflow-campaign-launch",
+      "name": "Media Campaign Launch Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Meta Ads",
+    "Google Ads",
+    "Taboola",
+    "Custom Media Tool"
+  ]
+}

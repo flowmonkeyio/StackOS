@@ -1,0 +1,116 @@
+# Static website deployment
+
+The StackOS website is generated as a fully static Nuxt site. Production does
+not require Node.js, `node_modules`, a database, or a running StackOS daemon.
+Node.js and the repository are required only while generating the static
+artifact.
+
+## Build
+
+Run the build from the repository root so the content synchronization scripts
+can read the StackOS plugin catalog:
+
+```bash
+pnpm --dir website generate
+```
+
+Nuxt loads the public production settings from `website/.env`. Keep
+`website/.env.example` in sync when a public URL or measurement ID changes.
+
+The generated website is written to:
+
+```text
+/Users/sergeyrura/Bin/content-stack/website/.output/public
+```
+
+Only the contents of that directory are deployable. Do not upload `website`,
+the repository root, `.nuxt`, or `node_modules`.
+
+## Hostinger FTP upload
+
+The uncompressed, FTP-ready release directory is:
+
+```text
+/Users/sergeyrura/Bin/content-stack/website/.output/public
+```
+
+Connect an FTP client to the document root assigned to
+`stackos.flowmonkey.io`, normally `public_html`. Open the local `public`
+directory above, select everything inside it, and drag those files and folders
+into the remote document root.
+
+For the first deployment after July 10, 2026, remove every old `.br` and `.gz`
+file from the remote document root before uploading. Earlier builds generated
+precompressed sidecar files, and LiteSpeed can prefer an old `index.html.br`
+over a newly uploaded `index.html`. Current builds deliberately omit those
+sidecars because Hostinger compresses responses itself.
+
+Confirm that `index.html`, `_nuxt`, `library`, `robots.txt`, and `sitemap.xml`
+are directly inside the remote document root.
+
+After replacing an existing release, open Hostinger hPanel → Cache Manager and
+use **Purge All**. If Hostinger CDN is enabled, flush its cache too. Use the
+Hostinger **No Cache Preview** to confirm the new HTML before checking a normal
+browser window.
+
+The deployment must look like this:
+
+```text
+public_html/
+├── index.html
+├── 404.html
+├── robots.txt
+├── sitemap.xml
+├── feed.xml
+├── _nuxt/
+├── fonts/
+├── images/
+└── library/
+```
+
+Do not upload the containing `public` directory as another directory. Select
+its contents so an extra `public` or `.output` directory is not created on the
+server.
+
+## Hostinger build settings
+
+If Hostinger builds from the Git repository instead of using the FTP-ready
+directory, use:
+
+```text
+Root directory: website
+Build command: pnpm install --frozen-lockfile && pnpm generate
+Output directory: .output/public
+Environment variable: NUXT_PUBLIC_SITE_URL=https://stackos.flowmonkey.io
+Environment variable: NUXT_PUBLIC_GA_MEASUREMENT_ID=G-KPZXCGXGG5
+Environment variable: NUXT_PUBLIC_DOWNLOAD_URL=https://flowmonkey.io/StackOS/stackos-1.1.6-mac-arm64.dmg
+Environment variable: NUXT_PUBLIC_DOWNLOAD_VERSION=1.1.6
+```
+
+If the output directory is resolved relative to the repository root, enter
+`website/.output/public` instead. Dependency installation during the build is
+normal; `node_modules` must not be present in the published output.
+
+## Routing and SEO
+
+Do not add a single-page-app rewrite that sends every request to `/index.html`.
+Nuxt has generated real HTML files for the public routes, including nested
+library pages. Rewriting all URLs to the homepage would break correct 404
+responses and weaken search indexing.
+
+After deployment, verify:
+
+- `/`
+- `/library`
+- `/library/integrations`
+- at least one article, workflow, agent, orchestrator, and integration detail
+  page
+- `/robots.txt`
+- `/sitemap.xml`
+- `/feed.xml`
+- a nonexistent URL returns HTTP 404 and displays `404.html`
+- page source contains the production canonical URL
+- HTTPS is enabled and forced
+
+When the production domain changes, rebuild with the new
+`NUXT_PUBLIC_SITE_URL` before uploading the replacement artifact.

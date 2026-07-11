@@ -1,0 +1,53 @@
+{
+  "key": "gtm.pipeline-risk-review",
+  "slug": "gtm-pipeline-risk-review",
+  "name": "GTM Pipeline Risk Review",
+  "description": "Find deals that need attention and turn the risks into clear follow-up actions.",
+  "domain": "gtm",
+  "audience": "Sales and go-to-market teams",
+  "color": "#ff9f73",
+  "featured": false,
+  "whenToUse": [
+    "Use this when you want to find deals that need attention and turn the risks into clear follow-up actions.",
+    "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+  ],
+  "stages": [
+    {
+      "id": "orient",
+      "title": "Orient From Pipeline Context",
+      "summary": "Read review scope, targets, stored snapshots, learnings, and decisions."
+    },
+    {
+      "id": "fetch_metric_gaps",
+      "title": "Fetch Metric Gaps",
+      "summary": "Use granted read actions only when stored pipeline evidence is insufficient."
+    },
+    {
+      "id": "diagnose_risks",
+      "title": "Diagnose Risks",
+      "summary": "Separate likely stage, activity, account, deal, ownership, and timing risks."
+    }
+  ],
+  "agentNames": [
+    "GTM Pipeline Risk Review Agent",
+    "Review Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "gtm.workflow.pipeline-risk-review",
+      "slug": "gtm-workflow-pipeline-risk-review",
+      "name": "GTM Pipeline Risk Review Agent"
+    },
+    {
+      "key": "stackos.sdlc.delivery-reviewer",
+      "slug": "stackos-sdlc-delivery-reviewer",
+      "name": "Review Agent"
+    }
+  ],
+  "integrations": [
+    "Hubspot",
+    "Salesforce",
+    "Pipedrive",
+    "Custom Gtm Tool"
+  ]
+}
