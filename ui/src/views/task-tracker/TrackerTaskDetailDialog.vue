@@ -9,12 +9,10 @@ import {
   UiEmptyState,
   UiJsonBlock,
   UiMetadataStrip,
-  UiSelect,
 } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { trackerStatus } from '@/design/status'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
-import type { TrackerStatus, TrackerTask } from '@/lib/task-tracker/types'
+import type { TrackerTask } from '@/lib/task-tracker/types'
 
 import type {
   TaskExecutionContext,
@@ -46,13 +44,7 @@ const props = withDefaults(
 
 defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'statusChange', value: TrackerStatus): void
 }>()
-
-const statusOptions = Object.entries(trackerStatus).map(([value, definition]) => ({
-  value,
-  label: definition.label,
-}))
 
 const taskFacts = computed(() => {
   const task = props.task
@@ -178,15 +170,6 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
               </UiBadge>
             </div>
           </div>
-          <UiSelect
-            class="min-w-40"
-            size="sm"
-            :block="false"
-            :model-value="task.status"
-            :options="statusOptions"
-            aria-label="Task status"
-            @change="$emit('statusChange', String($event ?? task.status) as TrackerStatus)"
-          />
         </div>
         <UiMetadataStrip
           :items="taskFacts"
@@ -202,11 +185,8 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             aria-label="Task trace metadata"
           />
         </details>
-        <p
-          v-if="workflowManaged"
-          class="text-xs text-fg-muted"
-        >
-          Workflow task status is normally driven by the run-plan lifecycle; use this as a manual tracker correction.
+        <p class="text-xs text-fg-muted">
+          Status is managed by the originating agent or run-plan lifecycle.
         </p>
       </section>
 

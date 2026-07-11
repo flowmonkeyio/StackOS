@@ -17,11 +17,21 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "branding",
         "media-buying",
         "trackbooth",
+        "shopify",
         "publishing",
         "seo",
         "core",
         "utils",
     ]
+
+    compact_plugins = api.get("/api/v1/plugins", params={"compact": True})
+    assert compact_plugins.status_code == 200
+    assert [p["slug"] for p in compact_plugins.json()] == [p["slug"] for p in plugins.json()]
+    assert all(
+        set(plugin["manifest_json"]).issubset({"display_order", "ui"})
+        for plugin in compact_plugins.json()
+    )
+    assert len(compact_plugins.content) < len(plugins.content)
 
     catalog = api.get("/api/v1/catalog/utils")
     assert catalog.status_code == 200

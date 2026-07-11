@@ -227,9 +227,7 @@ async def _execute_low_stock_report(
         if not isinstance(connection, dict):
             break
         items.extend(_low_stock_items(connection, threshold))
-        page_info = (
-            connection.get("pageInfo") if isinstance(connection.get("pageInfo"), dict) else {}
-        )
+        page_info = _dict_value(connection.get("pageInfo"))
         if not page_info.get("hasNextPage"):
             break
         after = page_info.get("endCursor")
@@ -342,7 +340,7 @@ async def _execute_inventory_risk(
         for edge in connection.get("edges") or []:
             node = edge.get("node") if isinstance(edge, dict) else None
             if isinstance(node, dict):
-                product = node.get("product") if isinstance(node.get("product"), dict) else {}
+                product = _dict_value(node.get("product"))
                 variants.append(
                     {
                         "variantId": node.get("id"),
@@ -353,9 +351,7 @@ async def _execute_inventory_risk(
                         "productTitle": product.get("title") or "Unknown Product",
                     }
                 )
-        page_info = (
-            connection.get("pageInfo") if isinstance(connection.get("pageInfo"), dict) else {}
-        )
+        page_info = _dict_value(connection.get("pageInfo"))
         if not page_info.get("hasNextPage"):
             break
         after = page_info.get("endCursor")
@@ -410,20 +406,16 @@ async def _recent_sales_velocity(
                 item = item_edge.get("node") if isinstance(item_edge, dict) else None
                 if not isinstance(item, dict):
                     continue
-                variant = item.get("variant") if isinstance(item.get("variant"), dict) else {}
+                variant = _dict_value(item.get("variant"))
                 variant_id = variant.get("id")
                 if isinstance(variant_id, str) and variant_id:
                     velocity[variant_id] = velocity.get(variant_id, 0) + int(
                         item.get("quantity") or 0
                     )
-            line_items_page = (
-                line_items.get("pageInfo") if isinstance(line_items, dict) else None
-            )
+            line_items_page = line_items.get("pageInfo") if isinstance(line_items, dict) else None
             if isinstance(line_items_page, dict) and line_items_page.get("hasNextPage"):
                 truncated = True
-        page_info = (
-            connection.get("pageInfo") if isinstance(connection.get("pageInfo"), dict) else {}
-        )
+        page_info = _dict_value(connection.get("pageInfo"))
         if not page_info.get("hasNextPage"):
             break
         after = page_info.get("endCursor")
@@ -677,9 +669,7 @@ def _variables_for_action(action_key: str, payload: dict[str, Any]) -> dict[str,
             "input": {"id": _required_str(payload, "id"), "note": _required_str(payload, "note")}
         }
     if action_key == "update_order_tags":
-        return {
-            "input": {"id": _required_str(payload, "id"), "tags": payload.get("tags") or []}
-        }
+        return {"input": {"id": _required_str(payload, "id"), "tags": payload.get("tags") or []}}
     if action_key == "create_draft_order":
         return {"input": _draft_order_input(payload)}
     if action_key == "get_order_by_name":
@@ -1047,15 +1037,15 @@ def _low_stock_items(connection: dict[str, Any], threshold: int) -> list[dict[st
         if not isinstance(item, dict):
             continue
         variant = _first_variant(item)
-        for level_edge in (item.get("inventoryLevels") or {}).get("edges") or []:
+        for level_edge in _dict_value(item.get("inventoryLevels")).get("edges") or []:
             level = level_edge.get("node") if isinstance(level_edge, dict) else None
             if not isinstance(level, dict):
                 continue
             available = _quantity_value(level.get("quantities"), "available")
             if available >= threshold:
                 continue
-            location = level.get("location") if isinstance(level.get("location"), dict) else {}
-            product = variant.get("product") if isinstance(variant.get("product"), dict) else {}
+            location = _dict_value(level.get("location"))
+            product = _dict_value(variant.get("product"))
             out.append(
                 {
                     "inventoryItemId": item.get("id"),
@@ -1073,7 +1063,7 @@ def _low_stock_items(connection: dict[str, Any], threshold: int) -> list[dict[st
 
 
 def _first_variant(item: dict[str, Any]) -> dict[str, Any]:
-    variants = item.get("variants") if isinstance(item.get("variants"), dict) else {}
+    variants = _dict_value(item.get("variants"))
     nodes = variants.get("nodes")
     if isinstance(nodes, list) and nodes and isinstance(nodes[0], dict):
         return nodes[0]
@@ -1083,6 +1073,10 @@ def _first_variant(item: dict[str, Any]) -> dict[str, Any]:
         if isinstance(node, dict):
             return node
     return {}
+
+
+def _dict_value(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _quantity_value(quantities: Any, name: str) -> int:
@@ -1142,9 +1136,7 @@ def _draft_order_input(payload: dict[str, Any]) -> dict[str, Any]:
     line_items = payload.get("line_items")
     if not isinstance(line_items, list) or not line_items:
         raise ValidationError("line_items is required")
-    out: dict[str, Any] = {
-        "lineItems": [_draft_order_line_item(item) for item in line_items]
-    }
+    out: dict[str, Any] = {"lineItems": [_draft_order_line_item(item) for item in line_items]}
     if payload.get("customer_id"):
         out["customerId"] = payload["customer_id"]
     if payload.get("note"):

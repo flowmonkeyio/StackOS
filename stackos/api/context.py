@@ -56,6 +56,8 @@ class ContextQueryRequest(BaseModel):
     tags: list[str] | None = None
     domain: str | None = None
     statuses: list[str] | None = None
+    plugin_slug: str | None = None
+    resource_keys: list[str] | None = None
 
 
 class ContextSnapshotCreateRequest(BaseModel):
@@ -167,6 +169,8 @@ async def query_context(
         tags=body.tags,
         domain=body.domain,
         statuses=body.statuses,
+        plugin_slug=body.plugin_slug,
+        resource_keys=body.resource_keys,
     )
 
 

@@ -101,7 +101,7 @@ function buildHeaders(init: ApiInit, defaultAccept: string): Headers {
 }
 
 export async function apiFetch<T = unknown>(path: string, init: ApiInit = {}): Promise<T> {
-  const { token: _explicitToken, headers: _headers, ...rest } = init
+  const rest = requestInitWithoutAuthOverrides(init)
   const finalHeaders = buildHeaders(init, 'application/json')
   const res = await fetch(buildUrl(path), { ...rest, headers: finalHeaders })
   const contentType = res.headers.get('content-type') ?? ''
@@ -120,7 +120,7 @@ export async function apiFetch<T = unknown>(path: string, init: ApiInit = {}): P
 }
 
 export async function apiStream(path: string, init: ApiInit = {}): Promise<Response> {
-  const { token: _explicitToken, headers: _headers, ...rest } = init
+  const rest = requestInitWithoutAuthOverrides(init)
   const finalHeaders = buildHeaders(init, 'text/event-stream')
   const res = await fetch(buildUrl(path), { ...rest, headers: finalHeaders })
   if (!res.ok) {
@@ -135,6 +135,13 @@ export async function apiStream(path: string, init: ApiInit = {}): Promise<Respo
     )
   }
   return res
+}
+
+function requestInitWithoutAuthOverrides(init: ApiInit): RequestInit {
+  const rest: ApiInit = { ...init }
+  delete rest.token
+  delete rest.headers
+  return rest
 }
 
 export function formatApiError(err: unknown, fallback = 'Request failed'): string {

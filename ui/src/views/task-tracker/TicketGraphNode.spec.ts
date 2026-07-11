@@ -16,8 +16,15 @@ describe('TicketGraphNode', () => {
       global: { stubs: { Handle: true } },
     })
 
-    expect(active.text()).toContain('In Progress')
-    expect(active.text()).toContain('Active')
+    expect(active.text()).toContain('Active now')
+    expect(active.text()).not.toContain('In Progress')
+    expect(active.text()).toContain('P1')
+    expect(active.text()).toContain('Owner')
+    expect(active.text()).toContain('Codex')
+    expect(active.text()).toContain('Agent')
+    expect(active.text()).toContain('Claude Code')
+    expect(active.text()).toContain('Workflow')
+    expect(active.text()).toContain('Run 142')
     expect(active.classes()).toContain('ticket-graph-node--active')
     expect(recent.text()).toContain('Complete')
     expect(recent.text()).toContain('Updated')
@@ -36,6 +43,9 @@ function nodeData(overrides: Partial<TrackerVueNodeData> = {}): TrackerVueNodeDa
     subtitle: 'Keep the graph fresh',
     blockedBy: [],
     assignee: 'codex',
+    owner: 'codex',
+    agent: 'claude-code',
+    sourceKind: 'workflow',
     runPlanId: 142,
     raw: {
       id: 'ticket:tracker-chart-live-client',

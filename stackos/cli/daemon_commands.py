@@ -257,7 +257,11 @@ def _launchd_loaded() -> tuple[bool, str]:
     return _launchctl(["print", service])
 
 
-def _launchd_bootout(plist_path: Path) -> tuple[bool, str]:
+def _launchd_bootout(
+    plist_path: Path,
+    *,
+    wait_timeout: float = 5.0,
+) -> tuple[bool, str]:
     loaded, _ = _launchd_loaded()
     if loaded:
         try:
@@ -267,7 +271,7 @@ def _launchd_bootout(plist_path: Path) -> tuple[bool, str]:
         ok, message = _launchctl(["bootout", service])
         if not ok:
             return ok, message
-        if not _wait_for_launchd_unloaded(timeout=5.0):
+        if not _wait_for_launchd_unloaded(timeout=wait_timeout):
             return False, "launchd job did not unload before timeout"
         return ok, message
     # Older launchctl versions accept unload and ignore unloaded jobs.
@@ -798,7 +802,7 @@ def stop(
 
     launchd_plist = _loaded_launchd_plist(_doctor_home())
     if launchd_plist is not None:
-        ok, message = _launchd_bootout(launchd_plist)
+        ok, message = _launchd_bootout(launchd_plist, wait_timeout=timeout)
         if not ok:
             typer.echo(f"stop: launchd bootout failed: {message}", err=True)
             raise typer.Exit(code=1)
@@ -888,7 +892,7 @@ def restart(
         raise typer.Exit(code=1)
 
     if launchd_plist is not None and launchd_loaded:
-        ok, message = _launchd_bootout(launchd_plist)
+        ok, message = _launchd_bootout(launchd_plist, wait_timeout=timeout)
         if not ok:
             typer.echo(f"restart: launchd bootout failed: {message}", err=True)
             raise typer.Exit(code=1)

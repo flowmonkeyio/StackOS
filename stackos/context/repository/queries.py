@@ -39,6 +39,8 @@ class ContextQueryMixin(ContextRepositorySupport):
         tags: list[str] | None = None,
         domain: str | None = None,
         statuses: list[str] | None = None,
+        plugin_slug: str | None = None,
+        resource_keys: list[str] | None = None,
     ) -> ContextQueryOut:
         self._require_project(project_id)
         n = _normalise_limit(limit)
@@ -70,6 +72,8 @@ class ContextQueryMixin(ContextRepositorySupport):
                 tags=tag_filter,
                 domain=domain,
                 statuses=statuses,
+                plugin_slug=plugin_slug,
+                resource_keys=resource_keys,
             )
             total += len(source_items)
             items.extend(source_items)

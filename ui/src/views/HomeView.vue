@@ -10,12 +10,19 @@ import { isDesktopShell } from '@/lib/desktop'
 import { useProjectsStore } from '@/stores/projects'
 
 import HomeProjectsSection from './home/HomeProjectsSection.vue'
+import HomePortfolioOverview from './home/HomePortfolioOverview.vue'
 import HomeSystemStatusCard from './home/HomeSystemStatusCard.vue'
 import { useHomeAgentHostStatuses } from './home/useHomeAgentHostStatuses'
+import { useHomePortfolioInsights } from './home/useHomePortfolioInsights'
 import { useHomeSystemStatus } from './home/useHomeSystemStatus'
 
 const projects = useProjectsStore()
-const { items: projectItems, loading: projectsLoading, error: projectsError } = storeToRefs(projects)
+const {
+  items: projectItems,
+  loading: projectsLoading,
+  error: projectsError,
+  activeProjectId,
+} = storeToRefs(projects)
 
 const isShell = isDesktopShell()
 const repairOpen = ref(false)
@@ -29,10 +36,23 @@ const { health, systemBusy, statusTone, statusLabel, systemFacts, loadHealth, ru
     onRepairComplete: loadHostStatuses,
   })
 
+const {
+  insights,
+  insightByProjectId,
+  activeWork,
+  totals: portfolioTotals,
+  loading: portfolioLoading,
+  failedProjectCount,
+  load: loadPortfolioInsights,
+} = useHomePortfolioInsights()
+
 onMounted(() => {
-  void projects.refresh()
   void loadHealth()
   void loadHostStatuses()
+  void (async () => {
+    await projects.refresh()
+    await loadPortfolioInsights(projectItems.value)
+  })()
 })
 
 function confirmRepair(): void {
@@ -45,7 +65,7 @@ function confirmRepair(): void {
   <UiPageShell>
     <UiPageHeader
       title="StackOS"
-      description="Your local, agent-run operations."
+      description="Local runtime, projects, and agent-client readiness."
     />
 
     <HomeSystemStatusCard
@@ -63,10 +83,20 @@ function confirmRepair(): void {
       @refresh-hosts="loadHostStatuses"
     />
 
+    <HomePortfolioOverview
+      :insights="insights"
+      :active-work="activeWork"
+      :totals="portfolioTotals"
+      :loading="portfolioLoading"
+      :failed-project-count="failedProjectCount"
+    />
+
     <HomeProjectsSection
       :items="projectItems"
       :loading="projectsLoading"
       :error="projectsError"
+      :current-project-id="activeProjectId"
+      :insights="insightByProjectId"
     />
 
     <UiConfirmDialog

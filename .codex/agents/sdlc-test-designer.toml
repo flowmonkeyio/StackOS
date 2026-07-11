@@ -4,6 +4,8 @@
 
 name = "sdlc_test_designer"
 description = "Maps flow design, acceptance criteria, and design risks to TDD/red-first proof, automated checks, agent-executed E2E/manual proof depth, expected outcomes, and signoff evidence."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "xhigh"
 nickname_candidates = ["Test Designer", "Proof Mapper", "QA Planner"]
 developer_instructions = """
 You are the project-adapted StackOS SDLC test-designer for this repository.

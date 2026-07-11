@@ -13,7 +13,6 @@ from sqlmodel import Session, col, select
 from stackos.action_availability import ActionAvailabilityOut, ActionExposureOut
 from stackos.db.models import (
     Action,
-    ActionVersion,
     Capability,
     Plugin,
     PluginSource,
@@ -26,8 +25,9 @@ from stackos.generated_inventory import (
     generated_action_public_key,
     generated_action_visible_for_project,
 )
-from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS, PluginManifest, plugin_sort_key
+from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS, plugin_sort_key
 from stackos.repositories.base import ConflictError, Envelope, NotFoundError
+from stackos.repositories.plugin_manifest_sync import sync_plugin_manifest
 from stackos.repositories.resources import ResourceOut
 
 
@@ -161,17 +161,29 @@ class PluginRepository:
             self._builtin_plugins_synced = True
             return
         for manifest in BUILTIN_PLUGIN_MANIFESTS:
-            self._sync_manifest(manifest)
+            sync_plugin_manifest(self._s, manifest)
         self._s.commit()
         self._builtin_plugins_synced = True
         self._builtin_sync_engines.add(engine)
 
-    def list_plugins(self, *, project_id: int | None = None) -> list[PluginOut]:
+    def list_plugins(
+        self,
+        *,
+        project_id: int | None = None,
+        compact: bool = False,
+    ) -> list[PluginOut]:
         self.sync_builtin_plugins()
         enabled_by_plugin = self._enabled_map(project_id)
         rows = list(self._s.exec(select(Plugin)).all())
         rows = sorted(rows, key=lambda row: plugin_sort_key(row.slug, row.manifest_json))
-        return [self._plugin_out(row, enabled_by_plugin.get(_required_id(row.id))) for row in rows]
+        return [
+            self._plugin_out(
+                row,
+                enabled_by_plugin.get(_required_id(row.id)),
+                compact=compact,
+            )
+            for row in rows
+        ]
 
     def get_plugin(self, slug: str, *, project_id: int | None = None) -> PluginOut:
         self.sync_builtin_plugins()
@@ -425,178 +437,6 @@ class PluginRepository:
         ]
         return CatalogOut(plugins=catalogs)
 
-    def _sync_manifest(self, manifest: PluginManifest) -> Plugin:
-        now = _utcnow()
-        row = self._s.exec(select(Plugin).where(Plugin.slug == manifest.slug)).first()
-        manifest_json = manifest.model_dump(mode="json", by_alias=True)
-        if row is None:
-            row = Plugin(
-                slug=manifest.slug,
-                name=manifest.name,
-                version=manifest.version,
-                description=manifest.description,
-                source=PluginSource(manifest.source),
-                manifest_json=manifest_json,
-            )
-        else:
-            row.name = manifest.name
-            row.version = manifest.version
-            row.description = manifest.description
-            row.source = PluginSource(manifest.source)
-            row.manifest_json = manifest_json
-            row.updated_at = now
-        self._s.add(row)
-        self._s.flush()
-        assert row.id is not None
-
-        providers_by_key: dict[str, Provider] = {}
-        for provider_manifest in manifest.providers:
-            provider_config = dict(provider_manifest.config or {})
-            if provider_manifest.auth_methods:
-                provider_config["auth_methods"] = [
-                    method.model_dump(mode="json") for method in provider_manifest.auth_methods
-                ]
-            provider = self._s.exec(
-                select(Provider).where(
-                    Provider.plugin_id == row.id,
-                    Provider.key == provider_manifest.key,
-                )
-            ).first()
-            if provider is None:
-                provider = Provider(
-                    plugin_id=row.id,
-                    key=provider_manifest.key,
-                    name=provider_manifest.name,
-                    description=provider_manifest.description,
-                    auth_type=provider_manifest.auth_type,
-                    config_json=provider_config or None,
-                )
-            else:
-                provider.name = provider_manifest.name
-                provider.description = provider_manifest.description
-                provider.auth_type = provider_manifest.auth_type
-                provider.config_json = provider_config or None
-                provider.updated_at = now
-            self._s.add(provider)
-            self._s.flush()
-            providers_by_key[provider.key] = provider
-
-        for capability_manifest in manifest.capabilities:
-            capability = self._s.exec(
-                select(Capability).where(
-                    Capability.plugin_id == row.id,
-                    Capability.key == capability_manifest.key,
-                )
-            ).first()
-            if capability is None:
-                capability = Capability(
-                    plugin_id=row.id,
-                    key=capability_manifest.key,
-                    name=capability_manifest.name,
-                    description=capability_manifest.description,
-                    kind=capability_manifest.kind,
-                    config_json=capability_manifest.config,
-                )
-            else:
-                capability.name = capability_manifest.name
-                capability.description = capability_manifest.description
-                capability.kind = capability_manifest.kind
-                capability.config_json = capability_manifest.config
-                capability.updated_at = now
-            self._s.add(capability)
-
-        for resource_manifest in manifest.resources:
-            resource = self._s.exec(
-                select(Resource).where(
-                    Resource.plugin_id == row.id,
-                    Resource.key == resource_manifest.key,
-                )
-            ).first()
-            if resource is None:
-                resource = Resource(
-                    plugin_id=row.id,
-                    key=resource_manifest.key,
-                    name=resource_manifest.name,
-                    description=resource_manifest.description,
-                    schema_data=resource_manifest.schema_data,
-                    ui_schema_json=resource_manifest.ui_schema,
-                    config_json=resource_manifest.config,
-                )
-            else:
-                resource.name = resource_manifest.name
-                resource.description = resource_manifest.description
-                resource.schema_data = resource_manifest.schema_data
-                resource.ui_schema_json = resource_manifest.ui_schema
-                resource.config_json = resource_manifest.config
-                resource.updated_at = now
-            self._s.add(resource)
-
-        for action_manifest in manifest.actions:
-            provider_id = None
-            if action_manifest.provider is not None:
-                provider = providers_by_key.get(action_manifest.provider)
-                if provider is None:
-                    raise ConflictError(
-                        "action references unknown provider",
-                        data={
-                            "plugin_slug": manifest.slug,
-                            "action": action_manifest.key,
-                            "provider": action_manifest.provider,
-                        },
-                    )
-                provider_id = provider.id
-            action = self._s.exec(
-                select(Action).where(Action.plugin_id == row.id, Action.key == action_manifest.key)
-            ).first()
-            if action is None:
-                action = Action(
-                    plugin_id=row.id,
-                    provider_id=provider_id,
-                    key=action_manifest.key,
-                    name=action_manifest.name,
-                    description=action_manifest.description,
-                    capability_key=action_manifest.capability,
-                    risk_level=action_manifest.risk_level,
-                    input_schema_json=action_manifest.input_schema,
-                    output_schema_json=action_manifest.output_schema,
-                    config_json=action_manifest.config,
-                )
-            else:
-                action.provider_id = provider_id
-                action.name = action_manifest.name
-                action.description = action_manifest.description
-                action.capability_key = action_manifest.capability
-                action.risk_level = action_manifest.risk_level
-                action.input_schema_json = action_manifest.input_schema
-                action.output_schema_json = action_manifest.output_schema
-                action.config_json = action_manifest.config
-                action.updated_at = now
-            self._s.add(action)
-            self._s.flush()
-            assert action.id is not None
-            version = self._s.exec(
-                select(ActionVersion).where(
-                    ActionVersion.action_id == action.id,
-                    ActionVersion.version == manifest.version,
-                )
-            ).first()
-            if version is None:
-                version = ActionVersion(
-                    action_id=action.id,
-                    version=manifest.version,
-                    manifest_json=action_manifest.model_dump(mode="json", by_alias=True),
-                )
-                self._s.add(version)
-        if manifest.slug == "trackbooth":
-            from stackos.actions.trackbooth import retire_removed_trackbooth_actions
-
-            retire_removed_trackbooth_actions(
-                session=self._s,
-                plugin_id=_required_id(row.id),
-                now=now,
-            )
-        return row
-
     def _require_project(self, project_id: int) -> None:
         if self._s.get(Project, project_id) is None:
             raise NotFoundError(f"project {project_id} not found")
@@ -656,8 +496,23 @@ class PluginRepository:
             self._connector_keys_cache = set(DEFAULT_ACTION_CONNECTORS.list_keys())
         return self._connector_keys_cache
 
-    def _plugin_out(self, row: Plugin, enabled_for_project: bool | None) -> PluginOut:
+    def _plugin_out(
+        self,
+        row: Plugin,
+        enabled_for_project: bool | None,
+        *,
+        compact: bool = False,
+    ) -> PluginOut:
         out = PluginOut.model_validate(row)
+        if compact:
+            # The global app shell only needs ordering and contributed nav.
+            # Avoid serializing action, provider, workflow, and resource
+            # manifests on every project navigation.
+            out.manifest_json = {
+                key: row.manifest_json[key]
+                for key in ("display_order", "ui")
+                if key in row.manifest_json
+            }
         out.enabled_for_project = enabled_for_project
         return out
 

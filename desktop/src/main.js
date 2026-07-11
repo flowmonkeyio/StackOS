@@ -104,13 +104,13 @@ function loadingHtml({ phase, progress, from = 0 }) {
   <title>StackOS</title>
   <style>
     :root {
-      --bg: #f7f7f8;
-      --ink: #09090b;
-      --fg: #27272a;
-      --muted: #52525b;
-      --track: #e4e4e7;
-      --brand-a: #6366f1;
-      --brand-b: #7c3aed;
+      --bg: #0b0b0e;
+      --surface: #151519;
+      --ink: #fafafa;
+      --fg: #d4d4d8;
+      --muted: #92929c;
+      --track: #2a2a30;
+      --brand: #a3e635;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
@@ -118,9 +118,7 @@ function loadingHtml({ phase, progress, from = 0 }) {
       margin: 0;
       font-family: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       color: var(--fg);
-      background:
-        radial-gradient(78% 48% at 50% 40%, rgba(99, 102, 241, 0.08), rgba(99, 102, 241, 0) 62%),
-        var(--bg);
+      background: var(--bg);
       -webkit-font-smoothing: antialiased;
     }
     main {
@@ -132,35 +130,38 @@ function loadingHtml({ phase, progress, from = 0 }) {
     }
     .panel {
       width: 100%;
-      max-width: 320px;
-      text-align: center;
-      animation: fade 280ms ease-out both;
+      max-width: 380px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      background: var(--surface);
+      padding: 28px;
+      text-align: left;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+      animation: fade 180ms ease-out both;
     }
     .logo {
-      width: 88px;
-      height: 88px;
+      width: 64px;
+      height: 64px;
       display: block;
-      margin: 0 auto 22px;
-      filter: drop-shadow(0 14px 28px rgba(16, 16, 20, 0.24)) drop-shadow(0 2px 6px rgba(16, 16, 20, 0.14));
-      animation: float 3.6s ease-in-out infinite;
+      margin: 0 0 18px;
+      filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.28));
     }
     .brand {
       color: var(--ink);
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 600;
       letter-spacing: -0.011em;
-      margin: 0 0 6px;
+      margin: 0 0 4px;
     }
     .tagline {
       color: var(--muted);
       font-size: 13px;
-      margin: 0 0 32px;
+      margin: 0 0 28px;
     }
     .phase {
       font-size: 13px;
       font-weight: 500;
-      margin: 0 0 12px;
-      animation: fade 360ms ease-out both;
+      margin: 0 0 10px;
     }
     .track {
       position: relative;
@@ -174,34 +175,22 @@ function loadingHtml({ phase, progress, from = 0 }) {
       height: 100%;
       width: ${target}%;
       border-radius: inherit;
-      background: linear-gradient(90deg, var(--brand-a), var(--brand-b));
+      background: var(--brand);
       transition: width 520ms cubic-bezier(0.22, 0.61, 0.36, 1);
     }
-    .sweep {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      left: 0;
-      width: 42%;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
-      animation: sweep 1.5s ease-in-out infinite;
-    }
-    @keyframes float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-4px); }
-    }
-    @keyframes sweep {
-      0% { transform: translateX(-120%); }
-      100% { transform: translateX(280%); }
+    .local-note {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 16px;
+      margin: 14px 0 0;
     }
     @keyframes fade {
       from { opacity: 0; }
       to { opacity: 1; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .panel, .phase, .logo { animation: none !important; }
+      .panel, .phase { animation: none !important; }
       .fill { transition: none !important; }
-      .sweep { display: none; }
     }
   </style>
 </head>
@@ -210,12 +199,12 @@ function loadingHtml({ phase, progress, from = 0 }) {
     <section class="panel" aria-label="StackOS is starting">
       ${logo ? `<img class="logo" src="${logo}" alt="" aria-hidden="true">` : ""}
       <h1 class="brand">StackOS</h1>
-      <p class="tagline">Everything runs on your computer</p>
+      <p class="tagline">Local runtime for connected agents</p>
       <p class="phase" data-loading-phase aria-live="polite">${safePhase}</p>
       <div class="track" data-loading-track role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${target}" aria-label="${safePhase}">
         <div class="fill" data-loading-fill></div>
-        <div class="sweep" aria-hidden="true"></div>
       </div>
+      <p class="local-note">Projects and credentials stay on this machine.</p>
     </section>
   </main>
 </body>
@@ -313,51 +302,59 @@ function failureHtml(title, { summary, repair, details }) {
   <style>
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f7f7f5;
-      color: #151515;
+      font-family: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0b0b0e;
+      color: #d4d4d8;
+      -webkit-font-smoothing: antialiased;
     }
     main {
-      max-width: 760px;
-      margin: 12vh auto;
+      max-width: 720px;
+      margin: 10vh auto;
       padding: 0 32px;
     }
     h1 {
-      font-size: 28px;
-      font-weight: 650;
+      color: #fafafa;
+      font-size: 26px;
+      font-weight: 600;
+      letter-spacing: -0.011em;
       margin: 0 0 16px;
     }
     p {
-      color: #4f4a42;
+      color: #b4b4bd;
       line-height: 1.55;
       margin: 0 0 16px;
     }
     .summary {
-      background: #fff;
-      border: 1px solid #ddd9cf;
-      border-radius: 8px;
-      padding: 16px;
+      background: #1a1a20;
+      border: 1px solid #2a2a30;
+      border-radius: 10px;
+      padding: 20px;
       margin-bottom: 16px;
     }
     .label {
-      color: #6f6a60;
+      color: #a3e635;
       font-size: 12px;
-      font-weight: 650;
-      letter-spacing: 0.04em;
+      font-weight: 600;
+      letter-spacing: 0.05em;
       margin-bottom: 4px;
       text-transform: uppercase;
     }
     details {
-      background: #fff;
-      border: 1px solid #ddd9cf;
-      border-radius: 8px;
-      padding: 16px;
+      background: #151519;
+      border: 1px solid #242429;
+      border-radius: 10px;
+      padding: 16px 20px;
     }
     summary {
       cursor: pointer;
-      font-weight: 650;
+      color: #d4d4d8;
+      font-weight: 600;
     }
     pre {
+      color: #9c9ca5;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.55;
       white-space: pre-wrap;
       margin: 16px 0 0;
       overflow: auto;

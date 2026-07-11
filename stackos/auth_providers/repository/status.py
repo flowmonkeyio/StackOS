@@ -140,7 +140,10 @@ class CredentialStatusMixin:
         method: AuthMethodOut | None = None,
     ) -> Credential:
         assert row.id is not None
-        provider = self._get_provider(row.kind, required=False)
+        # status() has already synchronized the provider catalog once through
+        # list_providers(). Repeating that catalog sync for every connection was
+        # the dominant cost of the read-only auth status endpoint.
+        provider = self._get_provider(row.kind, required=False, sync=False)
         if method is None and provider is not None:
             method = self._get_auth_method(
                 provider,

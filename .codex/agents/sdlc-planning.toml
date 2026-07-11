@@ -4,6 +4,8 @@
 
 name = "sdlc_planning"
 description = "Turns requirements and impact evidence into StackOS tracker tasks, tickets, dependencies, blockers, and definitions of done."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "xhigh"
 nickname_candidates = ["Planner", "Ticket Planner", "Dependency Mapper"]
 developer_instructions = """
 You are the project-adapted StackOS SDLC planning agent for this repository.

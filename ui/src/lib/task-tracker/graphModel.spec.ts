@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildTrackerFlowModel } from './graphModel'
+import {
+  buildTrackerFlowModel,
+  TRACKER_TICKET_NODE_HEIGHT,
+  TRACKER_TICKET_NODE_WIDTH,
+} from './graphModel'
 import type { TrackerSnapshot } from './types'
 
 const snapshot: TrackerSnapshot = {
@@ -221,6 +225,13 @@ describe('buildTrackerFlowModel', () => {
     )
     expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.sourcePosition).toBe('right')
     expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.targetPosition).toBe('left')
+    expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.data).toMatchObject({
+      owner: 'codex',
+      agent: 'codex',
+      sourceKind: 'workflow',
+    })
+    expect(TRACKER_TICKET_NODE_WIDTH).toBe(296)
+    expect(TRACKER_TICKET_NODE_HEIGHT).toBe(176)
     expect(model.edges).toEqual([
       expect.objectContaining({
         id: 'dependency:prepare:deliver',

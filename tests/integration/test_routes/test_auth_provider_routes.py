@@ -109,6 +109,32 @@ def test_auth_start_for_api_key_returns_local_setup_url_only(
     assert body["data"]["credential_ref"] is None
 
 
+def test_disabled_plugin_rejects_provider_setup(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    enabled = api.post(f"/api/v1/projects/{project_id}/plugins/utils/enable", json={})
+    assert enabled.status_code == 200, enabled.text
+    disabled = api.post(f"/api/v1/projects/{project_id}/plugins/utils/disable", json={})
+    assert disabled.status_code == 200, disabled.text
+
+    started = api.post(f"/api/v1/projects/{project_id}/auth/firecrawl/start", json={})
+    assert started.status_code == 409, started.text
+    assert started.json()["data"]["next_action"] == (
+        "Enable the plugin before connecting this provider."
+    )
+
+    stored = api.post(
+        f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
+        json={
+            "auth_method_key": "api_key",
+            "profile_key": "primary",
+            "fields": {"api_key": "fc-secret"},
+        },
+    )
+    assert stored.status_code == 409, stored.text
+
+
 def test_auth_test_uses_credential_ref_and_returns_sanitized_result(
     api: TestClient,
     project_id: int,

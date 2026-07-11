@@ -205,8 +205,7 @@ def _allows_ui_console_operation_call(path: str, method: str) -> bool:
     ):
         return False
     return (
-        segments[3] in _UI_SETUP_OPERATION_CALLS
-        or segments[3] in _UI_LOCAL_CONSOLE_OPERATION_CALLS
+        segments[3] in _UI_SETUP_OPERATION_CALLS or segments[3] in _UI_LOCAL_CONSOLE_OPERATION_CALLS
     )
 
 

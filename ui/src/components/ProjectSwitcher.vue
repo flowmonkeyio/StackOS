@@ -6,13 +6,14 @@
 // Behavior:
 //   - Displays the current route project name + chevron in collapsed state
 //   - Click to open dropdown with list of all projects (archived last)
-//   - Selecting a project only navigates to `/projects/{id}/overview`
+//   - Selecting a project preserves the current surface and portable filters
 
 import { computed, ref, onBeforeUnmount, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
 import UiIcon from '@/components/ui/UiIcon.vue'
+import { projectSwitchDestination } from '@/lib/stackos/projectNavigation'
 import { useProjectsStore } from '@/stores/projects'
 
 const projects = useProjectsStore()
@@ -61,7 +62,7 @@ function projectInitials(name: string): string {
 
 async function pick(id: number): Promise<void> {
   close()
-  await router.push(`/projects/${id}`)
+  await router.push(projectSwitchDestination(route, id))
 }
 
 function onClickOutside(e: MouseEvent): void {

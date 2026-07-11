@@ -14,6 +14,7 @@ function makeRouter() {
       { path: '/projects', component: { template: '<div/>' } },
       { path: '/projects/:id', component: { template: '<div/>' } },
       { path: '/projects/:id/connections', component: { template: '<div/>' } },
+      { path: '/projects/:id/tasks', component: { template: '<div/>' } },
     ],
   })
 }
@@ -143,6 +144,29 @@ describe('ProjectSwitcher', () => {
     await options[1].trigger('click')
     await flushPromises()
     expect((projects as unknown as Record<string, unknown>).activate).toBeUndefined()
-    expect(pushSpy).toHaveBeenCalledWith('/projects/2')
+    expect(pushSpy).toHaveBeenCalledWith({ path: '/projects/2', query: {}, hash: '' })
+  })
+
+  it('keeps the current surface and safe filters when a project is picked', async () => {
+    const projects = useProjectsStore()
+    projects.items = sample as never
+    projects.activeProjectId = 1
+    const router = makeRouter()
+    await router.push('/projects/1/tasks?view=stories&status=in-progress&task=alpha-task')
+    await router.isReady()
+    const pushSpy = vi.spyOn(router, 'push')
+    const w = mount(ProjectSwitcher, {
+      global: { plugins: [router] },
+    })
+
+    await w.find('button').trigger('click')
+    await w.findAll('[role="option"]')[1].trigger('click')
+    await flushPromises()
+
+    expect(pushSpy).toHaveBeenCalledWith({
+      path: '/projects/2/tasks',
+      query: { view: 'stories', status: 'in-progress' },
+      hash: '',
+    })
   })
 })

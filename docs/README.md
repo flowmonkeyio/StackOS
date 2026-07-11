@@ -22,7 +22,8 @@ obvious without loading every document.
 | Adding or changing plugins | [`plugins.md`](./plugins.md), [`extending.md`](./extending.md), [`workflow-templates.md`](./workflow-templates.md) |
 | Building or changing workflow packages or templates | [`workflow-templates.md`](./workflow-templates.md), [`plugins.md`](./plugins.md), [`run-plans.md`](./run-plans.md), [`agent-presets.md`](./agent-presets.md), [`project-memory.md`](./project-memory.md) |
 | Changing resources or artifacts | [`resources-and-artifacts.md`](./resources-and-artifacts.md), [`project-memory.md`](./project-memory.md) |
-| Changing UI | [`ui-design-system.md`](./ui-design-system.md), [`ui-component-inventory.md`](./ui-component-inventory.md) |
+| Changing UI | [`ui-design-system.md`](./ui-design-system.md), [`ui-component-inventory.md`](./ui-component-inventory.md), [`ui-page-layout-map.md`](./ui-page-layout-map.md), [`ui-screen-redesign.md`](./ui-screen-redesign.md) |
+| Diagnosing slow desktop or local API loads | [`performance.md`](./performance.md), [`setup.md`](./setup.md) |
 | Reviewing provider contracts | [`integration-contracts/`](./integration-contracts/) |
 | Selecting or integrating image/video generation providers | [`integration-contracts/media-generation.md`](./integration-contracts/media-generation.md), [`action-executor.md`](./action-executor.md) |
 | Before-commit or release validation | [`release-signoff.md`](./release-signoff.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md) |

@@ -32,6 +32,10 @@ describe('formatRelativeDateTime', () => {
     expect(formatRelativeDateTime('2026-06-09T12:30:00Z', NOW)).toBe('in 30m')
     expect(formatRelativeDateTime('2026-06-10T13:00:00Z', NOW)).toBe('in 1d')
   })
+
+  it('treats daemon ISO timestamps without a zone as UTC', () => {
+    expect(formatRelativeDateTime('2026-06-09T11:00:00', NOW)).toBe('1h ago')
+  })
 })
 
 describe('formatDurationMinutes', () => {

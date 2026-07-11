@@ -130,6 +130,12 @@ const selectedLabel = computed(() => selectedOption.value?.label ?? props.placeh
 const selectedIndex = computed(() =>
   normalized.value.findIndex((option) => String(option.value) === String(props.modelValue ?? '')),
 )
+const activeOptionId = computed(() => {
+  if (!open.value) return undefined
+  const option = normalized.value[activeIndex.value]
+  if (!option || option.disabled || !filteredNormalized.value.includes(option)) return undefined
+  return optionId(option)
+})
 
 const sizeClass = computed(
   () =>
@@ -176,6 +182,10 @@ function optionSearchText(option: NormalizedOption): string {
 
 function visibleIndexFor(option: NormalizedOption): number {
   return normalized.value.findIndex((candidate) => candidate.value === option.value)
+}
+
+function optionId(option: NormalizedOption): string {
+  return `${listboxId.value}-option-${visibleIndexFor(option)}`
 }
 
 function visibleActiveOptions(): NormalizedOption[] {
@@ -271,6 +281,8 @@ function onSearchKeydown(event: KeyboardEvent): void {
   } else if (event.key === 'Escape') {
     open.value = false
     void nextTick(() => buttonRef.value?.focus())
+  } else if (event.key === 'Tab') {
+    open.value = false
   }
 }
 
@@ -297,6 +309,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
       role="combobox"
       :aria-expanded="open"
       :aria-controls="listboxId"
+      :aria-activedescendant="!searchable ? activeOptionId : undefined"
       :aria-invalid="controlInvalid || undefined"
       :aria-describedby="controlDescribedBy"
       :aria-required="controlRequired || undefined"
@@ -319,7 +332,13 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
         class="min-w-0 flex-1 truncate"
         :class="!selectedOption && 'text-fg-disabled'"
       >
-        {{ selectedLabel }}
+        <slot
+          name="selected"
+          :option="selectedOption"
+          :label="selectedLabel"
+        >
+          {{ selectedLabel }}
+        </slot>
       </span>
       <span
         v-if="hasRightContent(selectedOption)"
@@ -365,6 +384,11 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
           size="sm"
           :placeholder="searchPlaceholder"
           aria-label="Search options"
+          role="combobox"
+          aria-autocomplete="list"
+          :aria-expanded="open"
+          :aria-controls="listboxId"
+          :aria-activedescendant="activeOptionId"
           clearable
           @update:model-value="setSearchQuery"
           @keydown="onSearchKeydown"
@@ -395,10 +419,11 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
           </div>
           <button
             v-for="option in groupOptions"
-            :id="`${controlId}-${option.value}`"
+            :id="optionId(option)"
             :key="option.value"
             type="button"
             role="option"
+            tabindex="-1"
             :aria-selected="isSelected(option)"
             :disabled="option.disabled"
             :class="[
@@ -414,7 +439,15 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
             @mouseenter="activeIndex = visibleIndexFor(option)"
             @click="selectOption(option)"
           >
-            <span class="block min-w-0 flex-1 truncate">{{ option.label }}</span>
+            <span class="block min-w-0 flex-1 truncate">
+              <slot
+                name="option"
+                :option="option"
+                :selected="isSelected(option)"
+              >
+                {{ option.label }}
+              </slot>
+            </span>
             <span class="ml-auto flex min-w-0 max-w-[50%] shrink-0 items-center gap-1.5 overflow-hidden">
               <span
                 v-if="option.rightLabel"

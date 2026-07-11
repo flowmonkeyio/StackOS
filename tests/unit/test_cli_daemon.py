@@ -219,6 +219,29 @@ def test_launchd_bootout_waits_until_job_is_unloaded(
     assert events == [["bootout", "gui/501/com.stackos.daemon"]]
 
 
+def test_launchd_bootout_uses_caller_timeout_for_slow_launchd_handoff(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
+    observed: list[float] = []
+
+    monkeypatch.setattr(daemon_cli, "_launchd_loaded", lambda: (True, "loaded"))
+    monkeypatch.setattr(daemon_cli, "_launchd_service", lambda: "gui/501/com.stackos.daemon")
+    monkeypatch.setattr(daemon_cli, "_launchctl", lambda _args: (True, "booted out"))
+    monkeypatch.setattr(
+        daemon_cli,
+        "_wait_for_launchd_unloaded",
+        lambda *, timeout: observed.append(timeout) or True,
+    )
+
+    ok, message = daemon_cli._launchd_bootout(plist, wait_timeout=20.0)
+
+    assert ok is True
+    assert message == "booted out"
+    assert observed == [20.0]
+
+
 def test_cli_restart_stops_existing_daemon_and_starts_new(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -312,7 +335,8 @@ def test_cli_stop_boots_out_loaded_launchd_before_stopping(
     plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
     events: list[tuple[str, object]] = []
 
-    def fake_bootout(path: Path) -> tuple[bool, str]:
+    def fake_bootout(path: Path, *, wait_timeout: float) -> tuple[bool, str]:
+        assert wait_timeout == 0.5
         events.append(("bootout", path))
         return True, "launchd job unloaded"
 
@@ -353,7 +377,8 @@ def test_cli_restart_uses_loaded_launchd_job(
     plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
     events: list[tuple[str, object]] = []
 
-    def fake_bootout(path: Path) -> tuple[bool, str]:
+    def fake_bootout(path: Path, *, wait_timeout: float) -> tuple[bool, str]:
+        assert wait_timeout == 0.5
         events.append(("bootout", path))
         return True, "launchd job unloaded"
 
@@ -408,7 +433,8 @@ def test_cli_restart_ignores_stale_zombie_pid_before_launchd_bootstrap(
     pid_path.write_text("123\n", encoding="utf-8")
     events: list[tuple[str, object]] = []
 
-    def fake_bootout(path: Path) -> tuple[bool, str]:
+    def fake_bootout(path: Path, *, wait_timeout: float) -> tuple[bool, str]:
+        assert wait_timeout == 0.5
         events.append(("bootout", path))
         return True, "launchd job unloaded"
 
@@ -469,7 +495,7 @@ def test_cli_restart_hands_off_detached_daemon_to_installed_launchd(
         events.append(("terminate", {"pids": pids, "timeout": timeout, "force": force}))
         return True, "stopped daemon pid(s): 111"
 
-    def fake_bootout(_path: Path) -> tuple[bool, str]:
+    def fake_bootout(_path: Path, **_kwargs: object) -> tuple[bool, str]:
         raise AssertionError("unloaded launchd job must not be booted out")
 
     def fake_bootstrap(path: Path) -> tuple[bool, str]:
@@ -510,7 +536,7 @@ def test_cli_restart_refuses_launchd_blocker_before_bootout(
 ) -> None:
     plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
 
-    def fail_bootout(_path: Path) -> tuple[bool, str]:
+    def fail_bootout(_path: Path, **_kwargs: object) -> tuple[bool, str]:
         raise AssertionError("restart must not unload launchd when a blocker is already known")
 
     monkeypatch.setattr(daemon_cli, "_installed_launchd_plist", lambda _home: plist)
@@ -531,7 +557,7 @@ def test_cli_restart_restores_launchd_when_termination_fails(
     plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
     events: list[tuple[str, object]] = []
 
-    def fake_bootout(path: Path) -> tuple[bool, str]:
+    def fake_bootout(path: Path, **_kwargs: object) -> tuple[bool, str]:
         events.append(("bootout", path))
         return True, "launchd job unloaded"
 

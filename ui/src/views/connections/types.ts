@@ -5,7 +5,6 @@ export type AuthMethod = NonNullable<SchemaAuthProviderOut['auth_methods']>[numb
 export type AuthField = NonNullable<AuthMethod['fields']>[number]
 export type MessageTone = 'success' | 'danger' | 'info'
 export type ConnectionSection =
-  | 'overview'
   | 'services'
   | 'bots'
   | 'channels'

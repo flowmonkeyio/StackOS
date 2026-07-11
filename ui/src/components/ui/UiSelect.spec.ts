@@ -64,6 +64,26 @@ describe('UiSelect', () => {
     wrapper.unmount()
   })
 
+  it('supports custom selected-value and option presentation', async () => {
+    const wrapper = mount(UiSelect, {
+      props: {
+        modelValue: 'slack-bot',
+        options: [{ value: 'slack-bot', label: 'Slack Bot' }],
+      },
+      slots: {
+        selected: '<template #selected="{ option }"><strong class="selected-custom">{{ option.label }} selected</strong></template>',
+        option: '<template #option="{ option }"><span class="option-custom">Icon · {{ option.label }}</span></template>',
+      },
+      attachTo: document.body,
+    })
+
+    expect(wrapper.get('.selected-custom').text()).toBe('Slack Bot selected')
+
+    await wrapper.get('[role="combobox"]').trigger('click')
+    expect(wrapper.get('.option-custom').text()).toBe('Icon · Slack Bot')
+    wrapper.unmount()
+  })
+
   it('clips long option content instead of allowing horizontal menu overflow', async () => {
     const wrapper = mount(UiSelect, {
       props: {
@@ -144,14 +164,27 @@ describe('UiSelect', () => {
     await button.trigger('click')
     const searchInput = wrapper.get<HTMLInputElement>('input[aria-label="Search options"]')
     expect(searchInput.attributes('placeholder')).toBe('Search services')
+    expect(searchInput.attributes('role')).toBe('combobox')
+    expect(searchInput.attributes('aria-controls')).toBeTruthy()
+    expect(searchInput.attributes('aria-activedescendant')).toBeTruthy()
+    expect(wrapper.findAll('[role="option"]').every((option) => option.attributes('tabindex') === '-1')).toBe(true)
 
-    await searchInput.setValue('affiliation')
+    await searchInput.trigger('keydown', { key: 'ArrowDown' })
+    expect(searchInput.attributes('aria-activedescendant')).toContain('option-1')
+
+    await searchInput.trigger('keydown', { key: 'Tab' })
+    expect(button.attributes('aria-expanded')).toBe('false')
+
+    await button.trigger('click')
+    const reopenedSearchInput = wrapper.get<HTMLInputElement>('input[aria-label="Search options"]')
+
+    await reopenedSearchInput.setValue('affiliation')
     expect(wrapper.findAll('[role="option"]').map((option) => option.text())).toEqual([
       'Trackbooth',
     ])
     expect(wrapper.text()).toContain('Affiliation')
 
-    await searchInput.trigger('keydown', { key: 'Enter' })
+    await reopenedSearchInput.trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['trackbooth'])
 
     await button.trigger('click')

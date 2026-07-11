@@ -45,6 +45,9 @@ def test_tracker_operations_rest_vertical_slice(api: TestClient, project_id: int
     )
     assert next_work.status_code == 200, next_work.text
     assert _operation_data(next_work)["tickets"][0]["key"] == "rest-ticket"
+    assert "stackos-operation;dur=" in next_work.headers["server-timing"]
+    assert "stackos-http;dur=" in next_work.headers["server-timing"]
+    assert int(next_work.headers["x-stackos-operation-duration-ms"]) >= 0
 
     snapshot = api.post(
         "/api/v1/operations/tracker.get/call",

@@ -36,6 +36,8 @@ class ContextQueryInput(MCPInput):
     tags: list[str] | None = None
     domain: str | None = None
     statuses: list[str] | None = None
+    plugin_slug: str | None = None
+    resource_keys: list[str] | None = None
 
 
 class ContextTimelineInput(MCPInput):
@@ -207,6 +209,8 @@ async def _context_query(
         tags=inp.tags,
         domain=inp.domain,
         statuses=inp.statuses,
+        plugin_slug=inp.plugin_slug,
+        resource_keys=inp.resource_keys,
     )
 
 

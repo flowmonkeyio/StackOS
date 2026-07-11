@@ -102,20 +102,13 @@ function select(key: string): void {
 </script>
 
 <template>
-  <nav
-    :aria-label="ariaLabel"
-    class="min-w-0 max-w-full"
-  >
+  <nav :aria-label="ariaLabel" class="min-w-0 max-w-full">
     <div
       role="tablist"
-      aria-orientation="vertical"
       :aria-label="`${ariaLabel} tabs`"
       class="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0"
     >
-      <template
-        v-for="(group, groupIndex) in groups"
-        :key="group.label ?? `group-${groupIndex}`"
-      >
+      <template v-for="(group, groupIndex) in groups" :key="group.label ?? `group-${groupIndex}`">
         <p
           v-if="group.label"
           class="t-overline hidden shrink-0 px-2.5 pb-1 pt-4 text-fg-subtle first:pt-1 lg:block"
@@ -151,11 +144,7 @@ function select(key: string): void {
             aria-hidden="true"
           />
           <span class="truncate">{{ item.label }}</span>
-          <UiCountBadge
-            v-if="typeof item.count === 'number'"
-            :value="item.count"
-            class="ml-auto"
-          />
+          <UiCountBadge v-if="typeof item.count === 'number'" :value="item.count" class="ml-auto" />
         </button>
       </template>
     </div>

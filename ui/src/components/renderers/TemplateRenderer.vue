@@ -3,28 +3,19 @@ import { computed } from 'vue'
 
 import type {
   SchemaLoadedWorkflowTemplate,
-  SchemaWorkflowAgentRequirementSpec,
-  SchemaWorkflowSkillPresetRequirementSpec,
-  SchemaWorkflowSkillRequirementSpec,
   SchemaWorkflowTemplateSpec,
   SchemaWorkflowTemplateExtensionOut,
 } from '@/api'
-import type { BadgeTone } from '@/components/ui/UiBadge.vue'
 import {
   UiAdvancedJsonPanel,
   UiBadge,
   UiCallout,
   UiCard,
-  UiCountBadge,
-  UiDescriptionList,
-  UiIcon,
-  UiJsonBlock,
   UiMetadataStrip,
 } from '@/components/ui'
 import type { UiMetadataStripItem } from '@/components/ui/UiMetadataStrip.vue'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
-
-type TemplateStep = SchemaWorkflowTemplateSpec['steps'][number]
+import WorkflowTemplateJourney from './WorkflowTemplateJourney.vue'
 
 const props = defineProps<{
   template: SchemaLoadedWorkflowTemplate
@@ -34,601 +25,310 @@ const spec = computed<SchemaWorkflowTemplateSpec>(() => props.template.spec)
 const projectExtension = computed<SchemaWorkflowTemplateExtensionOut | null>(
   () => props.template.project_extension ?? null,
 )
-const contextRequirements = computed(() => spec.value.context_requirements ?? [])
-const agentRequirements = computed(() => spec.value.agent_requirements ?? [])
-const skillRequirements = computed(() => spec.value.skill_requirements ?? [])
-const skillPresetRequirements = computed(() => spec.value.skill_preset_requirements ?? [])
 const inputs = computed(() => spec.value.inputs ?? [])
 const outputs = computed(() => spec.value.outputs ?? [])
 const approvals = computed(() => spec.value.approval_gates ?? [])
-const policies = computed(() => spec.value.policies ?? [])
-const hooks = computed(() => spec.value.learning_hooks ?? [])
-const rawTemplate = computed(() => sanitizeForDisplay(spec.value))
-const extensionJson = computed(() =>
-  projectExtension.value ? sanitizeForDisplay(projectExtension.value) : null,
-)
-const extensionRequiredInputs = computed(() => projectExtension.value?.required_input_keys_json ?? [])
+const authRequirements = computed(() => spec.value.auth_requirements ?? [])
+const capabilityRequirements = computed(() => spec.value.capability_requirements ?? [])
+const agentRequirements = computed(() => spec.value.agent_requirements ?? [])
+const requiredInputs = computed(() => inputs.value.filter((input) => input.required))
+const requiredConnections = computed(() => authRequirements.value.filter((item) => !item.optional))
+const projectRequiredInputKeys = computed(() => projectExtension.value?.required_input_keys_json ?? [])
 
-const extensionKeyGroups = computed<{ title: string; keys: string[]; tone: BadgeTone }[]>(() => [
-  { title: 'Defaults', keys: objectKeys(projectExtension.value?.input_defaults_json), tone: 'neutral' },
-  { title: 'Context', keys: objectKeys(projectExtension.value?.selected_context_json), tone: 'neutral' },
-  { title: 'Step overrides', keys: objectKeys(projectExtension.value?.step_overrides_json), tone: 'neutral' },
-  { title: 'Guardrails', keys: objectKeys(projectExtension.value?.guardrails_json), tone: 'neutral' },
-  { title: 'Workflow changes', keys: objectKeys(projectExtension.value?.template_overrides_json), tone: 'accent' },
-])
-
-function objectKeys(value: Record<string, unknown> | null | undefined): string[] {
-  if (!value || typeof value !== 'object') return []
-  return Object.keys(value)
-}
-
-function requirementTone(
-  requirement:
-    | SchemaWorkflowAgentRequirementSpec['requirement']
-    | SchemaWorkflowSkillPresetRequirementSpec['requirement']
-    | SchemaWorkflowSkillRequirementSpec['requirement'],
-): BadgeTone {
-  if (requirement === 'required') return 'warning'
-  if (requirement === 'recommended') return 'info'
-  return 'neutral'
-}
+const projectSetupAreas = computed(() => {
+  if (!projectExtension.value) return []
+  return [
+    { label: 'Saved starting values', value: projectExtension.value.input_defaults_json },
+    { label: 'Chosen project context', value: projectExtension.value.selected_context_json },
+    { label: 'Safety guardrails', value: projectExtension.value.guardrails_json },
+    { label: 'Stage adjustments', value: projectExtension.value.step_overrides_json },
+    { label: 'Workflow changes', value: projectExtension.value.template_overrides_json },
+  ].filter((item) => item.value && Object.keys(item.value).length > 0)
+})
 
 const templateFacts = computed<UiMetadataStripItem[]>(() => [
-  { label: 'Key', value: spec.value.key, mono: true },
-  { label: 'Domain', value: spec.value.domain ?? null },
-  {
-    label: 'Origin',
-    value: props.template.summary.origin_path ?? null,
-    mono: true,
-    title: props.template.summary.origin_path ?? undefined,
-  },
-  { label: 'Source', value: props.template.summary.source },
-  { label: 'Plugin', value: props.template.summary.plugin_slug ?? null },
+  { label: 'Area', value: spec.value.domain ? humanize(spec.value.domain) : 'General' },
+  { label: 'Stages', value: spec.value.steps.length },
+  { label: 'Required inputs', value: requiredInputs.value.length + projectRequiredInputKeys.value.length },
+  { label: 'Human checkpoints', value: approvals.value.length },
+  { label: 'Outcomes', value: outputs.value.length },
   { label: 'Version', value: spec.value.version },
 ])
 
-function stepContracts(step: TemplateStep): { label: string; value: string }[] {
-  return [
-    { label: 'Context', refs: step.context_refs ?? [] },
-    { label: 'Actions', refs: step.action_refs ?? [] },
-    { label: 'Approvals', refs: step.approval_refs ?? [] },
-    { label: 'Outputs', refs: step.output_refs ?? [] },
-  ]
-    .filter((group) => group.refs.length > 0)
-    .map((group) => ({ label: group.label, value: group.refs.join(', ') }))
+const technicalContract = computed(() => sanitizeForDisplay({
+  identity: {
+    key: spec.value.key,
+    schema_version: spec.value.schema_version,
+    source: props.template.summary.source,
+    plugin_slug: props.template.summary.plugin_slug,
+    origin_path: props.template.summary.origin_path,
+  },
+  inputs: inputs.value,
+  outputs: outputs.value,
+  context_requirements: spec.value.context_requirements ?? [],
+  action_contracts: spec.value.action_contracts ?? [],
+  resource_contracts: spec.value.resource_contracts ?? [],
+  policies: spec.value.policies ?? [],
+  learning_hooks: spec.value.learning_hooks ?? [],
+  agent_requirements: agentRequirements.value,
+  skill_requirements: spec.value.skill_requirements ?? [],
+  skill_preset_requirements: spec.value.skill_preset_requirements ?? [],
+  steps: spec.value.steps,
+  project_extension: projectExtension.value,
+}))
+
+function humanize(value: string): string {
+  return value.replace(/[._:-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 </script>
 
 <template>
   <div class="space-y-5">
-    <!-- Key facts only — the drawer header already shows the template name and description. -->
-    <UiMetadataStrip
-      :items="templateFacts"
-      aria-label="Template facts"
-    />
+    <section class="workflow-overview overflow-hidden rounded-xl border border-default bg-bg-surface">
+      <div class="workflow-overview__hero px-5 py-5 sm:px-6">
+        <div class="max-w-3xl">
+          <div class="flex flex-wrap items-center gap-2">
+            <UiBadge tone="accent">
+              At a glance
+            </UiBadge>
+            <UiBadge
+              :tone="projectExtension?.enabled ? 'success' : projectExtension ? 'warning' : 'neutral'"
+            >
+              {{ projectExtension?.enabled ? 'Ready for this project' : projectExtension ? 'Turned off for this project' : 'Shared starting point' }}
+            </UiBadge>
+          </div>
+          <h3 class="mt-4 text-xl font-semibold tracking-tight text-fg-strong">
+            What this workflow helps accomplish
+          </h3>
+          <p class="mt-2 text-sm leading-6 text-fg-muted">
+            {{ spec.description || 'A reusable path that guides a connected agent from project context to a reviewed outcome.' }}
+          </p>
+        </div>
+
+        <div
+          v-if="spec.when_to_use?.length || spec.when_not_to_use?.length"
+          class="mt-5 grid gap-3 md:grid-cols-2"
+        >
+          <div
+            v-if="spec.when_to_use?.length"
+            class="workflow-overview__fit workflow-overview__fit--good"
+          >
+            <h4>Good fit when</h4>
+            <ul>
+              <li
+                v-for="item in spec.when_to_use"
+                :key="item"
+              >
+                {{ item }}
+              </li>
+            </ul>
+          </div>
+          <div
+            v-if="spec.when_not_to_use?.length"
+            class="workflow-overview__fit"
+          >
+            <h4>Choose another route when</h4>
+            <ul>
+              <li
+                v-for="item in spec.when_not_to_use"
+                :key="item"
+              >
+                {{ item }}
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <UiMetadataStrip
+        :items="templateFacts"
+        aria-label="Workflow at a glance"
+      />
+    </section>
+
+    <WorkflowTemplateJourney :spec="spec" />
 
     <UiCard section>
       <template #header>
-        <h3 class="t-h3 text-fg-strong">
-          Project Setup
-        </h3>
-        <div class="flex shrink-0 items-center gap-1.5">
-          <UiBadge
-            v-if="projectExtension?.enabled"
-            tone="success"
-          >
-            Active
-          </UiBadge>
-          <UiBadge
-            v-else-if="projectExtension"
-            tone="warning"
-          >
-            Disabled
-          </UiBadge>
-          <UiBadge v-else>
-            Shared template
-          </UiBadge>
+        <div>
+          <p class="t-overline text-accent-primary">
+            Before the agent starts
+          </p>
+          <h3 class="t-h2 mt-1 text-fg-strong">
+            Project readiness
+          </h3>
         </div>
+        <UiBadge :tone="requiredInputs.length || requiredConnections.length ? 'warning' : 'success'">
+          {{ requiredInputs.length + requiredConnections.length }} required items
+        </UiBadge>
       </template>
 
       <UiCallout
-        v-if="!projectExtension"
         tone="info"
         density="compact"
       >
-        This project is using the shared workflow template as-is.
+        People set the goal, connect approved tools, and confirm sensitive checkpoints. The agent then uses MCP to ask StackOS for the scoped plan and permitted actions.
       </UiCallout>
 
-      <div
-        v-else
-        class="space-y-4"
-      >
-        <p class="text-xs text-fg-muted">
-          Project-specific defaults, context, guardrails, and workflow changes for this template.
-        </p>
-
-        <UiDescriptionList
-          layout="grid"
-          :columns="2"
-          :items="[
-            { label: 'Workflow key', value: projectExtension.workflow_key, mono: true },
-            { label: 'Extension ID', value: projectExtension.id, mono: true },
-          ]"
-        />
-
-        <div
-          v-if="extensionRequiredInputs.length"
-          class="space-y-1.5"
-        >
-          <h4 class="text-xs font-medium text-fg-muted">
-            Required inputs
-          </h4>
-          <div class="flex flex-wrap gap-1.5">
-            <UiBadge
-              v-for="key in extensionRequiredInputs"
-              :key="key"
-              tone="warning"
-            >
-              {{ key }}
-            </UiBadge>
-          </div>
-        </div>
-
-        <div class="grid gap-2 md:grid-cols-2">
-          <section
-            v-for="group in extensionKeyGroups"
-            :key="group.title"
-            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
-          >
-            <h4 class="text-xs font-medium text-fg-muted">
-              {{ group.title }}
-            </h4>
-            <div class="mt-1.5 flex flex-wrap gap-1.5">
-              <UiBadge
-                v-for="key in group.keys"
-                :key="key"
-                :tone="group.tone"
-              >
-                {{ key }}
-              </UiBadge>
-              <span
-                v-if="group.keys.length === 0"
-                class="text-xs text-fg-subtle"
-              >
-                —
-              </span>
-            </div>
-          </section>
-        </div>
-
-        <UiJsonBlock
-          :data="extensionJson"
-          max-height="18rem"
-          density="compact"
-          wrap
-          aria-label="Project workflow extension JSON"
-        />
-      </div>
-    </UiCard>
-
-    <UiCard section>
-      <template #header>
-        <h3 class="t-h3 text-fg-strong">
-          Agents & skills
-        </h3>
-        <div class="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-          <UiBadge>{{ agentRequirements.length }} agents</UiBadge>
-          <UiBadge>{{ skillRequirements.length }} skills</UiBadge>
-          <UiBadge>{{ skillPresetRequirements.length }} presets</UiBadge>
-        </div>
-      </template>
-
-      <div class="space-y-4">
-        <p class="text-xs text-fg-muted">
-          Generic presets and host skills the caller should adapt before running this workflow.
-        </p>
-
-        <div class="grid gap-4 lg:grid-cols-3">
-          <section class="min-w-0 space-y-2">
-            <h4 class="text-xs font-medium text-fg-muted">
-              Agents
-            </h4>
-            <p
-              v-if="agentRequirements.length === 0"
-              class="text-sm text-fg-muted"
-            >
-              No agent requirements.
-            </p>
-            <ul
-              v-else
-              class="space-y-2"
-            >
-              <li
-                v-for="agent in agentRequirements"
-                :key="agent.role"
-                class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
-              >
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm font-medium text-fg-default">{{ agent.role }}</span>
-                  <UiBadge :tone="requirementTone(agent.requirement)">
-                    {{ agent.requirement }}
-                  </UiBadge>
-                </div>
-                <p
-                  class="mt-0.5 truncate font-mono text-2xs text-fg-subtle"
-                  :title="agent.agent_preset_ref"
-                >
-                  {{ agent.agent_preset_ref }}
-                </p>
-                <p
-                  v-if="agent.purpose"
-                  class="mt-1.5 line-clamp-3 text-xs text-fg-muted"
-                >
-                  {{ agent.purpose }}
-                </p>
-                <div
-                  v-if="agent.applies_to_steps?.length"
-                  class="mt-1.5 flex flex-wrap gap-1"
-                >
-                  <UiBadge
-                    v-for="step in agent.applies_to_steps"
-                    :key="step"
-                    size="sm"
-                    tone="accent"
-                  >
-                    {{ step }}
-                  </UiBadge>
-                </div>
-                <ul
-                  v-if="agent.handoff_notes?.length"
-                  class="mt-1.5 space-y-1 text-xs text-fg-muted"
-                >
-                  <li
-                    v-for="note in agent.handoff_notes"
-                    :key="note"
-                  >
-                    {{ note }}
-                  </li>
-                </ul>
-              </li>
-            </ul>
-          </section>
-
-          <section class="min-w-0 space-y-2">
-            <h4 class="text-xs font-medium text-fg-muted">
-              Skill presets
-            </h4>
-            <p
-              v-if="skillPresetRequirements.length === 0"
-              class="text-sm text-fg-muted"
-            >
-              No skill presets.
-            </p>
-            <ul
-              v-else
-              class="space-y-2"
-            >
-              <li
-                v-for="preset in skillPresetRequirements"
-                :key="preset.skill_preset_ref"
-                class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
-              >
-                <div class="flex flex-wrap items-center gap-2">
-                  <span
-                    class="min-w-0 truncate font-mono text-xs font-medium text-fg-default"
-                    :title="preset.skill_preset_ref"
-                  >
-                    {{ preset.skill_preset_ref }}
-                  </span>
-                  <UiBadge :tone="requirementTone(preset.requirement)">
-                    {{ preset.requirement }}
-                  </UiBadge>
-                </div>
-                <p
-                  v-if="preset.purpose"
-                  class="mt-1.5 line-clamp-3 text-xs text-fg-muted"
-                >
-                  {{ preset.purpose }}
-                </p>
-                <div
-                  v-if="preset.applies_to_steps?.length"
-                  class="mt-1.5 flex flex-wrap gap-1"
-                >
-                  <UiBadge
-                    v-for="step in preset.applies_to_steps"
-                    :key="step"
-                    size="sm"
-                    tone="accent"
-                  >
-                    {{ step }}
-                  </UiBadge>
-                </div>
-                <ul
-                  v-if="preset.setup_notes?.length"
-                  class="mt-1.5 space-y-1 text-xs text-fg-muted"
-                >
-                  <li
-                    v-for="note in preset.setup_notes"
-                    :key="note"
-                  >
-                    {{ note }}
-                  </li>
-                </ul>
-              </li>
-            </ul>
-          </section>
-
-          <section class="min-w-0 space-y-2">
-            <h4 class="text-xs font-medium text-fg-muted">
-              Skills
-            </h4>
-            <p
-              v-if="skillRequirements.length === 0"
-              class="text-sm text-fg-muted"
-            >
-              No skill requirements.
-            </p>
-            <ul
-              v-else
-              class="space-y-2"
-            >
-              <li
-                v-for="skill in skillRequirements"
-                :key="skill.skill_ref"
-                class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
-              >
-                <div class="flex flex-wrap items-center gap-2">
-                  <span
-                    class="min-w-0 truncate font-mono text-xs font-medium text-fg-default"
-                    :title="skill.skill_ref"
-                  >
-                    {{ skill.skill_ref }}
-                  </span>
-                  <UiBadge :tone="requirementTone(skill.requirement)">
-                    {{ skill.requirement }}
-                  </UiBadge>
-                </div>
-                <p
-                  v-if="skill.purpose"
-                  class="mt-1.5 line-clamp-3 text-xs text-fg-muted"
-                >
-                  {{ skill.purpose }}
-                </p>
-                <div
-                  v-if="skill.applies_to_steps?.length"
-                  class="mt-1.5 flex flex-wrap gap-1"
-                >
-                  <UiBadge
-                    v-for="step in skill.applies_to_steps"
-                    :key="step"
-                    size="sm"
-                    tone="accent"
-                  >
-                    {{ step }}
-                  </UiBadge>
-                </div>
-                <ul
-                  v-if="skill.setup_notes?.length"
-                  class="mt-1.5 space-y-1 text-xs text-fg-muted"
-                >
-                  <li
-                    v-for="note in skill.setup_notes"
-                    :key="note"
-                  >
-                    {{ note }}
-                  </li>
-                </ul>
-              </li>
-            </ul>
-          </section>
-        </div>
-      </div>
-    </UiCard>
-
-    <UiCard section>
-      <template #header>
-        <h3 class="t-h3 text-fg-strong">
-          Workflow steps
-        </h3>
-        <UiBadge>{{ spec.steps.length }} steps</UiBadge>
-      </template>
-
-      <ol class="space-y-2">
-        <li
-          v-for="(step, index) in spec.steps"
-          :key="step.id"
-          class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
-        >
-          <div class="flex flex-wrap items-center gap-2">
-            <span
-              class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-sunken text-2xs font-medium text-fg-muted"
-              aria-hidden="true"
-            >
-              {{ index + 1 }}
-            </span>
-            <span class="text-sm font-medium text-fg-default">{{ step.title }}</span>
-            <span class="font-mono text-2xs text-fg-subtle">{{ step.id }}</span>
-          </div>
-          <p
-            v-if="step.purpose"
-            class="mt-1 text-xs text-fg-muted"
-          >
-            {{ step.purpose }}
+      <div class="mt-4 grid gap-3 lg:grid-cols-3">
+        <section class="workflow-readiness-card">
+          <h4>Information to provide</h4>
+          <p v-if="!requiredInputs.length && !projectRequiredInputKeys.length">
+            No required information is declared.
           </p>
-          <details
-            v-if="stepContracts(step).length > 0"
-            class="group mt-2 rounded-md border border-subtle bg-bg-surface"
-          >
-            <summary class="focus-ring flex cursor-pointer list-none items-center gap-1.5 rounded-md px-2.5 py-1.5 text-2xs font-medium text-fg-muted transition-colors duration-fast hover:text-fg-default [&::-webkit-details-marker]:hidden">
-              <UiIcon
-                name="chevron-right"
-                class="h-3 w-3 shrink-0 text-fg-subtle transition-transform duration-fast group-open:rotate-90"
-                aria-hidden="true"
-              />
-              Contracts
-            </summary>
-            <UiDescriptionList
-              class="border-t border-subtle px-2.5 py-2"
-              layout="grid"
-              :columns="2"
-              density="compact"
-              :items="stepContracts(step).map((group) => ({ ...group, mono: true }))"
-              :aria-label="`${step.title} contracts`"
-            />
-          </details>
-        </li>
-      </ol>
-    </UiCard>
-
-    <UiCard section>
-      <template #header>
-        <h3 class="t-h3 text-fg-strong">
-          Contracts
-        </h3>
-        <div class="flex shrink-0 items-center gap-1.5">
-          <UiBadge>{{ inputs.length }} inputs</UiBadge>
-          <UiBadge>{{ outputs.length }} outputs</UiBadge>
-        </div>
-      </template>
-
-      <div class="grid gap-4 lg:grid-cols-2">
-        <section class="min-w-0 space-y-2">
-          <h4 class="text-xs font-medium text-fg-muted">
-            Inputs
-          </h4>
-          <p
-            v-if="inputs.length === 0"
-            class="text-sm text-fg-muted"
-          >
-            No declared inputs.
-          </p>
-          <ul
-            v-else
-            class="space-y-2"
-          >
+          <ul v-else>
             <li
-              v-for="input in inputs"
+              v-for="input in requiredInputs"
               :key="input.key"
-              class="flex items-center justify-between gap-3 rounded-md border border-subtle bg-bg-surface-alt px-2.5 py-2 text-sm"
             >
-              <span class="min-w-0 truncate font-medium text-fg-default">
-                {{ input.name ?? input.key }}
-              </span>
-              <UiBadge :tone="input.required ? 'warning' : 'neutral'">
-                {{ input.type }}
-              </UiBadge>
+              <strong>{{ input.name || humanize(input.key) }}</strong>
+              <span>{{ input.description || 'Needed before this workflow can begin.' }}</span>
             </li>
-          </ul>
-        </section>
-        <section class="min-w-0 space-y-2">
-          <h4 class="text-xs font-medium text-fg-muted">
-            Outputs
-          </h4>
-          <p
-            v-if="outputs.length === 0"
-            class="text-sm text-fg-muted"
-          >
-            No declared outputs.
-          </p>
-          <ul
-            v-else
-            class="space-y-2"
-          >
             <li
-              v-for="output in outputs"
-              :key="output.key"
-              class="flex items-center justify-between gap-3 rounded-md border border-subtle bg-bg-surface-alt px-2.5 py-2 text-sm"
+              v-for="key in projectRequiredInputKeys"
+              :key="key"
             >
-              <span class="min-w-0 truncate font-medium text-fg-default">
-                {{ output.name ?? output.key }}
-              </span>
-              <UiBadge>{{ output.type }}</UiBadge>
+              <strong>{{ humanize(key) }}</strong><span>Required by this project.</span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="workflow-readiness-card">
+          <h4>Connections and tools</h4>
+          <p v-if="!authRequirements.length && !capabilityRequirements.length">
+            No extra connection is declared.
+          </p>
+          <ul v-else>
+            <li
+              v-for="connection in authRequirements"
+              :key="connection.key"
+            >
+              <strong>{{ humanize(connection.provider) }}</strong>
+              <span>{{ connection.description || (connection.optional ? 'Optional connection.' : 'Must be connected before use.') }}</span>
+            </li>
+            <li
+              v-for="capability in capabilityRequirements"
+              :key="capability.key"
+            >
+              <strong>{{ humanize(capability.key) }}</strong><span>{{ capability.description }}</span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="workflow-readiness-card">
+          <h4>Who needs to be involved</h4>
+          <p v-if="!agentRequirements.length && !approvals.length">
+            Only the connected agent is declared.
+          </p>
+          <ul v-else>
+            <li
+              v-for="agent in agentRequirements"
+              :key="agent.role"
+            >
+              <strong>{{ humanize(agent.role) }}</strong><span>{{ agent.purpose || 'Handles assigned stages.' }}</span>
+            </li>
+            <li
+              v-for="approval in approvals"
+              :key="approval.key"
+            >
+              <strong>{{ approval.approver ? humanize(approval.approver) : 'A human approver' }}</strong>
+              <span>{{ approval.description || 'Reviews a protected checkpoint.' }}</span>
             </li>
           </ul>
         </section>
       </div>
     </UiCard>
 
-    <UiCard section>
-      <template #header>
-        <div class="flex min-w-0 items-center gap-2">
-          <h3 class="t-h3 text-fg-strong">
-            Context
-          </h3>
-          <UiCountBadge :value="contextRequirements.length" />
-        </div>
-      </template>
-
-      <p
-        v-if="contextRequirements.length === 0"
-        class="text-sm text-fg-muted"
-      >
-        No context requirements.
-      </p>
-      <ul
-        v-else
-        class="space-y-2"
-      >
-        <li
-          v-for="req in contextRequirements"
-          :key="req.id"
-          class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
+    <div class="grid gap-5 lg:grid-cols-2">
+      <UiCard section>
+        <template #header>
+          <h3 class="t-h2 text-fg-strong">
+            What the user gets
+          </h3><UiBadge>{{ outputs.length }}</UiBadge>
+        </template>
+        <p
+          v-if="!outputs.length"
+          class="text-sm text-fg-muted"
         >
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-sm font-medium text-fg-default">{{ req.id }}</span>
-            <UiBadge tone="info">
-              {{ req.source }}
-            </UiBadge>
-          </div>
-          <p
-            v-if="req.purpose"
-            class="mt-1 text-xs text-fg-muted"
+          The template does not declare a named final outcome.
+        </p>
+        <ul
+          v-else
+          class="workflow-output-list"
+        >
+          <li
+            v-for="output in outputs"
+            :key="output.key"
           >
-            {{ req.purpose }}
-          </p>
-        </li>
-      </ul>
-    </UiCard>
+            <span aria-hidden="true">✓</span>
+            <div><strong>{{ output.name || humanize(output.key) }}</strong><p>{{ output.description || 'A recorded outcome available to the next person or agent.' }}</p></div>
+          </li>
+        </ul>
+      </UiCard>
 
-    <UiCard section>
-      <template #header>
-        <h3 class="t-h3 text-fg-strong">
-          Rules
-        </h3>
-        <div class="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-          <UiBadge>{{ approvals.length }} approvals</UiBadge>
-          <UiBadge>{{ policies.length }} policies</UiBadge>
-          <UiBadge>{{ hooks.length }} hooks</UiBadge>
+      <UiCard section>
+        <template #header>
+          <h3 class="t-h2 text-fg-strong">
+            Project setup
+          </h3><UiBadge>{{ projectSetupAreas.length }}</UiBadge>
+        </template>
+        <UiCallout
+          v-if="!projectExtension"
+          tone="neutral"
+          density="compact"
+        >
+          This project uses the shared workflow without project-specific changes.
+        </UiCallout>
+        <UiCallout
+          v-else-if="!projectExtension.enabled"
+          tone="warning"
+          density="compact"
+        >
+          This workflow is currently disabled for this project.
+        </UiCallout>
+        <div
+          v-else-if="projectSetupAreas.length"
+          class="flex flex-wrap gap-2"
+        >
+          <UiBadge
+            v-for="area in projectSetupAreas"
+            :key="area.label"
+            tone="success"
+          >
+            {{ area.label }}
+          </UiBadge>
         </div>
-      </template>
-
-      <div class="space-y-2">
-        <UiAdvancedJsonPanel
-          title="Approvals"
-          :summary="`${approvals.length} entries`"
-          :data="sanitizeForDisplay(approvals)"
-          max-height="12rem"
-        />
-        <UiAdvancedJsonPanel
-          title="Policies"
-          :summary="`${policies.length} entries`"
-          :data="sanitizeForDisplay(policies)"
-          max-height="12rem"
-        />
-        <UiAdvancedJsonPanel
-          title="Learning hooks"
-          :summary="`${hooks.length} entries`"
-          :data="sanitizeForDisplay(hooks)"
-          max-height="12rem"
-        />
-      </div>
-    </UiCard>
+        <p
+          v-else
+          class="text-sm text-fg-muted"
+        >
+          The workflow is enabled with its standard settings.
+        </p>
+      </UiCard>
+    </div>
 
     <UiAdvancedJsonPanel
-      title="Template JSON"
-      summary="Raw template spec"
-      :data="rawTemplate"
-      max-height="24rem"
+      title="Technical contract"
+      summary="IDs, exact references, policies, and project overrides"
+      :data="technicalContract"
+      max-height="30rem"
     />
   </div>
 </template>
+
+<style scoped>
+.workflow-overview__hero { background: radial-gradient(circle at 85% 10%, color-mix(in srgb, var(--color-accent-primary) 11%, transparent), transparent 34%), var(--color-bg-surface); }
+.workflow-overview__fit { border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-bg-surface-alt); padding: 12px; }
+.workflow-overview__fit--good { border-color: color-mix(in srgb, var(--color-success-default) 30%, var(--color-border-subtle)); background: color-mix(in srgb, var(--color-success-default) 5%, var(--color-bg-surface)); }
+.workflow-overview__fit h4, .workflow-readiness-card h4 { color: var(--color-fg-strong); font-size: var(--fs-xs); font-weight: var(--fw-semibold); }
+.workflow-overview__fit ul { margin-top: 6px; list-style: disc; padding-left: 17px; color: var(--color-fg-muted); font-size: var(--fs-xs); line-height: 1.55; }
+.workflow-readiness-card { min-width: 0; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-bg-surface-alt); padding: 14px; }
+.workflow-readiness-card > p { margin-top: 8px; color: var(--color-fg-muted); font-size: var(--fs-xs); }
+.workflow-readiness-card ul { margin-top: 8px; display: grid; gap: 10px; }
+.workflow-readiness-card li { display: grid; gap: 2px; }
+.workflow-readiness-card strong { color: var(--color-fg-default); font-size: var(--fs-xs); font-weight: var(--fw-semibold); }
+.workflow-readiness-card span { color: var(--color-fg-muted); font-size: var(--fs-xs); line-height: 1.45; }
+.workflow-output-list { display: grid; gap: 10px; }
+.workflow-output-list li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; border-radius: var(--radius-md); background: var(--color-bg-surface-alt); padding: 12px; }
+.workflow-output-list li > span { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 999px; background: var(--color-success-subtle); color: var(--color-success-fg); font-size: 11px; font-weight: var(--fw-bold); }
+.workflow-output-list strong { color: var(--color-fg-strong); font-size: var(--fs-sm); }.workflow-output-list p { margin-top: 3px; color: var(--color-fg-muted); font-size: var(--fs-xs); line-height: 1.5; }
+</style>

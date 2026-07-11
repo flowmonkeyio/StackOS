@@ -223,9 +223,7 @@ def test_shopify_create_draft_order_maps_line_items_and_shipping_address(
             project_id=project_id,
             action_ref="shopify.create_draft_order",
             input_json={
-                "line_items": [
-                    {"variant_id": "gid://shopify/ProductVariant/1", "quantity": 2}
-                ],
+                "line_items": [{"variant_id": "gid://shopify/ProductVariant/1", "quantity": 2}],
                 "note": "Ship together",
                 "shipping_address": {
                     "address1": "1 Main St",
@@ -359,9 +357,7 @@ def test_shopify_order_name_and_tag_replacement_mappings(
     bodies = [json.loads(request.content) for request in httpx_mock.get_requests()]
     assert bodies[0]["variables"] == {"query": 'name:"EN1001"'}
     assert "orderUpdate(input: $input)" in bodies[1]["query"]
-    assert bodies[1]["variables"] == {
-        "input": {"id": "gid://shopify/Order/1", "tags": ["vip"]}
-    }
+    assert bodies[1]["variables"] == {"input": {"id": "gid://shopify/Order/1", "tags": ["vip"]}}
 
 
 def test_shopify_collection_and_product_status_mappings(
@@ -462,10 +458,7 @@ def test_shopify_variant_user_error_codes_are_preserved(
             )
         )
 
-    assert (
-        excinfo.value.data["provider_error"]["userErrors"][0]["code"]
-        == "INVALID_INPUT"
-    )
+    assert excinfo.value.data["provider_error"]["userErrors"][0]["code"] == "INVALID_INPUT"
 
 
 def test_shopify_low_stock_report_filters_and_sorts_by_threshold(
@@ -562,9 +555,7 @@ def _inventory_item_edge(sku: str, available: int, product_title: str) -> dict[s
                                 "id": "gid://shopify/Location/1",
                                 "name": "Warehouse",
                             },
-                            "quantities": [
-                                {"name": "available", "quantity": available}
-                            ],
+                            "quantities": [{"name": "available", "quantity": available}],
                         }
                     }
                 ]

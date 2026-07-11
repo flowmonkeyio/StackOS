@@ -316,15 +316,26 @@ def operation_specs():
             handler=_context_query,
             purpose=(
                 "Use this to read bounded project memory. Direct calls are field-filtered; "
-                "workflow steps can request explicit source/field grants."
+                "workflow steps can request explicit source/field grants. Resource-backed "
+                "context can be narrowed with plugin_slug and resource_keys."
             ),
             examples=(
                 OperationExample(
-                    title="Read decisions and learnings",
+                    title="Read accepted learnings",
                     arguments={
                         "project_id": 1,
-                        "sources": ["decisions", "learnings"],
-                        "fields": ["title", "summary", "status"],
+                        "sources": ["learnings"],
+                        "fields": ["statement", "confidence", "status"],
+                    },
+                ),
+                OperationExample(
+                    title="Read saved SEO research",
+                    arguments={
+                        "project_id": 1,
+                        "sources": ["resources"],
+                        "plugin_slug": "seo",
+                        "resource_keys": ["keyword-opportunity", "serp-snapshot"],
+                        "fields": ["resource_key", "title", "status", "data_json"],
                     },
                 ),
             ),

@@ -17,6 +17,7 @@ from stackos.db.models import (
     ProjectEvent,
     Run,
 )
+from stackos.repositories.resources import ResourceRecordOut, ResourceRepository
 
 from .schema import ContextItemOut
 from .support import ContextRepositorySupport
@@ -34,7 +35,20 @@ class ContextProjectionMixin(ContextRepositorySupport):
         tags: list[str] | None,
         domain: str | None,
         statuses: list[str] | None,
+        plugin_slug: str | None,
+        resource_keys: list[str] | None,
     ) -> list[ContextItemOut]:
+        if source == "resources":
+            return self._resource_items(
+                project_id=project_id,
+                fields=fields,
+                limit=limit,
+                tags=tags,
+                domain=domain,
+                statuses=statuses,
+                plugin_slug=plugin_slug,
+                resource_keys=resource_keys,
+            )
         if source == "runs":
             if tags or domain is not None:
                 return []
@@ -142,6 +156,80 @@ class ContextProjectionMixin(ContextRepositorySupport):
             return []
         rows = self._project_rows(MetricSnapshot, project_id=project_id, limit=limit)
         return [self._item_from_metric(row, fields) for row in rows]
+
+    def _resource_items(
+        self,
+        *,
+        project_id: int,
+        fields: list[str],
+        limit: int,
+        tags: list[str] | None,
+        domain: str | None,
+        statuses: list[str] | None,
+        plugin_slug: str | None,
+        resource_keys: list[str] | None,
+    ) -> list[ContextItemOut]:
+        keys = list(dict.fromkeys(resource_keys or []))
+        pages = (
+            [
+                ResourceRepository(self._s).query_records(
+                    project_id=project_id,
+                    plugin_slug=plugin_slug,
+                    resource_key=key,
+                    limit=limit,
+                )
+                for key in keys
+            ]
+            if keys
+            else [
+                ResourceRepository(self._s).query_records(
+                    project_id=project_id,
+                    plugin_slug=plugin_slug,
+                    limit=limit,
+                )
+            ]
+        )
+        rows = [item for page in pages for item in page.items]
+        rows.sort(key=lambda item: item.updated_at, reverse=True)
+        filtered = [
+            item
+            for item in rows
+            if _has_all_tags(item.data_json.get("tags"), tags)
+            and (domain is None or item.data_json.get("domain") == domain)
+            and (not statuses or item.data_json.get("status") in statuses)
+        ]
+        return [self._item_from_resource(item, fields) for item in filtered[:limit]]
+
+    def _item_from_resource(
+        self,
+        row: ResourceRecordOut,
+        fields: list[str],
+    ) -> ContextItemOut:
+        values: dict[str, Any] = {
+            "plugin_slug": row.plugin_slug,
+            "resource_key": row.resource_key,
+            "external_id": row.external_id,
+            "title": row.title,
+            "status": row.data_json.get("status"),
+            "data_json": row.data_json,
+            "provenance_json": row.provenance_json,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+        return ContextItemOut(
+            source="resources",
+            id=row.id,
+            project_id=row.project_id,
+            title=row.title or row.resource_key,
+            occurred_at=row.updated_at,
+            fields={field: _safe_json(values[field]) for field in fields if field in values},
+            provenance={
+                "table": "resource_records",
+                "id": row.id,
+                "plugin_slug": row.plugin_slug,
+                "resource_key": row.resource_key,
+            },
+        )
 
     def _project_rows(
         self,

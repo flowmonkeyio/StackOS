@@ -14,7 +14,7 @@ withDefaults(
 <template>
   <div
     :class="[
-      'ui-page-shell mx-auto w-full max-w-content-wide',
+      'ui-page-shell w-full min-w-0',
       spacing === 'sm' ? 'space-y-3' : spacing === 'lg' ? 'space-y-8' : 'space-y-4',
       paddedBottom ? 'pb-20' : '',
     ]"

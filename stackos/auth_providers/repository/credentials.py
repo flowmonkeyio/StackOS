@@ -41,6 +41,7 @@ class CredentialStorageMixin:
         self._require_project(project_id)
         provider = self._get_provider(provider_key)
         assert provider is not None
+        self._require_provider_enabled_for_project(project_id=project_id, provider=provider)
         method = self._get_auth_method(provider, auth_method_key)
         assert method is not None
         profile_key = self._normalize_profile_key(profile_key)

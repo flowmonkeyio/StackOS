@@ -40,4 +40,14 @@ describe('UiButton', () => {
 
     expect(wrapper.find('svg.ui-button__icon').exists()).toBe(false)
   })
+
+  it('forwards form ownership for side-panel submit actions', () => {
+    const wrapper = mount(UiButton, {
+      props: { type: 'submit', form: 'connection-form' },
+      slots: { default: 'Save' },
+    })
+
+    expect(wrapper.get('button').attributes('type')).toBe('submit')
+    expect(wrapper.get('button').attributes('form')).toBe('connection-form')
+  })
 })

@@ -64,6 +64,8 @@ class ContextRepositorySupport:
         tags: list[str] | None,
         domain: str | None,
         statuses: list[str] | None,
+        plugin_slug: str | None,
+        resource_keys: list[str] | None,
     ) -> list[ContextItemOut]:
         raise NotImplementedError
 

@@ -27,6 +27,26 @@ decision-free.
   through a plugin action manifest, operation/action visibility, run-plan
   grants, and tests.
 
+## Large Provider Modules
+
+When one provider grows beyond a cohesive connector file, keep its registered
+connector class and established imports in the provider's public module. Split
+only decision-free supporting responsibilities, using provider-prefixed sibling
+modules with explicit ownership:
+
+- bundled assets and live-catalog projection;
+- pure action/schema and validation builders;
+- generated inventory persistence and retirement lifecycle;
+- payload serialization and response parsing.
+
+Do not introduce a generic provider framework merely to reduce line count, and
+do not move HTTP execution, credential resolution, or provider decisions into
+the helpers. Partition integration tests by the same provider behaviors (for
+example catalog, inventory, and execution), with a non-collected support module
+for shared fixtures. Preserve public imports and any intentional monkeypatch
+surface through the provider module, and verify the old import paths in focused
+tests.
+
 ## Test Checklist
 
 - Validation rejects missing required fields and invalid provider enums/limits.

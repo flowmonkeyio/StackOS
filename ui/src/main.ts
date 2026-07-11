@@ -54,9 +54,6 @@ async function start(): Promise<void> {
 
   if (!auth.ready && router.currentRoute.value.name !== 'auth-error') {
     await router.replace('/auth-error')
-  } else if (shouldResolveProjectRoute) {
-    const projectId = projects?.activeProject?.id ?? projects?.items[0]?.id
-    if (projectId) await router.replace(`/projects/${projectId}`)
   }
 
   app.mount('#app')

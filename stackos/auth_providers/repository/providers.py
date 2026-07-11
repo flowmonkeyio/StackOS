@@ -10,9 +10,9 @@ from sqlmodel import col, select
 
 from stackos.artifacts import redact_secrets
 from stackos.config import Settings
-from stackos.db.models import AuthProvider, Plugin, Project, Provider
+from stackos.db.models import AuthProvider, Plugin, Project, ProjectPlugin, Provider
 from stackos.provider_setup import sanitize_provider_setup_config
-from stackos.repositories.base import Envelope, NotFoundError, ValidationError
+from stackos.repositories.base import ConflictError, Envelope, NotFoundError, ValidationError
 
 from .schema import AuthFieldOut, AuthMethodOut, AuthProviderOut, AuthStartOut
 from .utils import utcnow
@@ -33,17 +33,17 @@ class ProviderMetadataMixin:
             .join(Plugin, col(Provider.plugin_id) == col(Plugin.id))
             .order_by(col(Plugin.slug).asc(), col(Provider.key).asc())
         ).all()
+        existing = {
+            (row.plugin_id, row.key): row for row in self._s.exec(select(AuthProvider)).all()
+        }
         now = utcnow()
+        changed = False
         for provider, plugin in rows:
-            row = self._s.exec(
-                select(AuthProvider).where(
-                    AuthProvider.plugin_id == plugin.id,
-                    AuthProvider.key == provider.key,
-                )
-            ).first()
+            row = existing.get((plugin.id, provider.key))
             scopes = None
             if provider.config_json and isinstance(provider.config_json.get("scopes"), list):
                 scopes = [str(scope) for scope in provider.config_json["scopes"]]
+            safe_config = self._safe_provider_config(provider.config_json)
             if row is None:
                 row = AuthProvider(
                     plugin_id=plugin.id,
@@ -52,17 +52,25 @@ class ProviderMetadataMixin:
                     description=provider.description,
                     auth_type=provider.auth_type,
                     scopes_json=scopes,
-                    config_json=self._safe_provider_config(provider.config_json),
+                    config_json=safe_config,
                 )
+                changed = True
             else:
-                row.name = provider.name
-                row.description = provider.description
-                row.auth_type = provider.auth_type
-                row.scopes_json = scopes
-                row.config_json = self._safe_provider_config(provider.config_json)
-                row.updated_at = now
+                values = {
+                    "name": provider.name,
+                    "description": provider.description,
+                    "auth_type": provider.auth_type,
+                    "scopes_json": scopes,
+                    "config_json": safe_config,
+                }
+                if any(getattr(row, field) != value for field, value in values.items()):
+                    for field, value in values.items():
+                        setattr(row, field, value)
+                    row.updated_at = now
+                    changed = True
             self._s.add(row)
-        self._s.commit()
+        if changed:
+            self._s.commit()
 
     def list_providers(self, *, provider_key: str | None = None) -> list[AuthProviderOut]:
         self.sync_providers()
@@ -86,6 +94,7 @@ class ProviderMetadataMixin:
         self._require_project(project_id)
         provider = self._get_provider(provider_key)
         assert provider is not None
+        self._require_provider_enabled_for_project(project_id=project_id, provider=provider)
         method = self._get_auth_method(provider, auth_method_key)
         assert method is not None
         _ = redirect_uri
@@ -113,14 +122,44 @@ class ProviderMetadataMixin:
             project_id=project_id,
         )
 
+    def _require_provider_enabled_for_project(self, *, project_id: int, provider: Any) -> None:
+        """Reject setup for providers whose owning plugin is disabled in this project."""
+
+        if provider.plugin_id is None:
+            return
+        project_plugin = self._s.exec(
+            select(ProjectPlugin).where(
+                ProjectPlugin.project_id == project_id,
+                ProjectPlugin.plugin_id == provider.plugin_id,
+            )
+        ).first()
+        if project_plugin is not None and project_plugin.enabled is False:
+            plugin = self._s.get(Plugin, provider.plugin_id)
+            raise ConflictError(
+                "provider plugin is disabled for project",
+                data={
+                    "project_id": project_id,
+                    "provider_key": provider.key,
+                    "plugin_slug": plugin.slug if plugin is not None else None,
+                    "next_action": "Enable the plugin before connecting this provider.",
+                },
+            )
+
     def _local_setup_url(self, *, settings: Settings, project_id: int, provider_key: str) -> str:
         return (
             f"http://{settings.host}:{settings.port}"
             f"/projects/{project_id}/connections?provider_key={provider_key}"
         )
 
-    def _get_provider(self, provider_key: str, *, required: bool = True) -> AuthProvider | None:
-        self.sync_providers()
+    def _get_provider(
+        self,
+        provider_key: str,
+        *,
+        required: bool = True,
+        sync: bool = True,
+    ) -> AuthProvider | None:
+        if sync:
+            self.sync_providers()
         row = self._s.exec(
             select(AuthProvider).where(col(AuthProvider.key) == provider_key)
         ).first()

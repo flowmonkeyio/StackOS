@@ -4,6 +4,8 @@
 
 name = "sdlc_codebase_explorer"
 description = "Maps affected code paths, ownership boundaries, tests, docs, and downstream risks before StackOS engineering changes."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "xhigh"
 nickname_candidates = ["Code Explorer", "Impact Mapper", "Path Tracer"]
 developer_instructions = """
 You are the project-adapted StackOS SDLC codebase-explorer for this repository.

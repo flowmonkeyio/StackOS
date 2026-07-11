@@ -12,6 +12,8 @@ import UiIcon from './UiIcon.vue';
 export interface UiMetricCardProps {
   label: string;
   value: string | number;
+  /** Plain-language explanation shown beneath the value. */
+  hint?: string;
   /** Optional unit shown smaller after value. */
   unit?: string;
   /** Numeric delta — positive/negative determines tone unless `deltaTone` set. */
@@ -35,6 +37,7 @@ export interface UiMetricCardProps {
 
 const props = withDefaults(defineProps<UiMetricCardProps>(), {
   unit: undefined,
+  hint: undefined,
   delta: undefined,
   deltaLabel: undefined,
   deltaTone: undefined,
@@ -114,6 +117,12 @@ const deltaIconName = computed(() => ({
         >{{ unit }}</span>
       </template>
     </div>
+    <p
+      v-if="hint"
+      class="mt-2 text-xs leading-4 text-fg-subtle"
+    >
+      {{ hint }}
+    </p>
     <div
       v-if="(delta !== undefined && delta !== null) || $slots.spark"
       class="mt-2 flex items-center justify-between gap-2"

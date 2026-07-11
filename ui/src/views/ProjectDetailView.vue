@@ -48,7 +48,7 @@ const PAGE_COPY = {
   },
   setup: {
     title: 'Setup',
-    description: 'Whether StackOS is ready to run agent work — and where to finish setting up.',
+    description: 'Whether connected agents can use this project safely — and where to finish setup.',
   },
   schedules: {
     title: 'Schedules',

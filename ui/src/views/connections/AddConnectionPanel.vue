@@ -1,26 +1,20 @@
 <script setup lang="ts">
 import type { SchemaAuthProviderOut } from '@/api'
-import {
-  UiBadge,
-  UiButton,
-  UiCallout,
-  UiFormField,
-  UiInput,
-  UiMedallion,
-  UiSecretInput,
-  UiSelect,
-  UiSidePanel,
-} from '@/components/ui'
+import { UiButton, UiCallout, UiSidePanel } from '@/components/ui'
 
-import { formatAuthType, pluginLabel, providerSetupNote, providerActionKey } from './formatters'
+import { providerSetupNote, providerActionKey } from './formatters'
+import ConnectionCredentialFields from './ConnectionCredentialFields.vue'
+import ConnectionServiceSelect from './ConnectionServiceSelect.vue'
 import type { AuthField, AuthMethod, MessageMap } from './types'
 
-defineProps<{
+const props = defineProps<{
   modelValue: boolean
   selectedProvider: SchemaAuthProviderOut | null
   visibleAuthProviders: SchemaAuthProviderOut[]
   providerOptions: Array<{ value: string; label: string; group?: string }>
   providerMessages: MessageMap
+  providerSetupUrls: Record<string, string>
+  fieldErrors: Record<string, string>
   busyAction: string | null
   authMethods: (provider: SchemaAuthProviderOut) => AuthMethod[]
   selectedMethodKey: (provider: SchemaAuthProviderOut) => string
@@ -57,7 +51,25 @@ defineEmits<{
   (e: 'select-method', providerKey: string, value: string | number | null): void
   (e: 'start-provider', provider: SchemaAuthProviderOut): void
   (e: 'save-credential', provider: SchemaAuthProviderOut): void
+  (e: 'go-plugins'): void
 }>()
+
+function credentialFieldValues(provider: SchemaAuthProviderOut, method: AuthMethod) {
+  return Object.fromEntries(
+    (method.fields ?? []).map((field) => [
+      field.key,
+      props.fieldValue(provider.key, method.key, field.key),
+    ]),
+  )
+}
+
+function updateCredentialField(
+  provider: SchemaAuthProviderOut,
+  method: AuthMethod,
+  update: { fieldKey: string; value: string | number | null },
+) {
+  props.setFieldValue(provider.key, method.key, update.fieldKey, update.value)
+}
 </script>
 
 <template>
@@ -68,359 +80,108 @@ defineEmits<{
     size="lg"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <div
-      v-if="selectedProvider"
-      class="grid gap-4"
+    <form
+      id="connection-credential-form"
+      @submit.prevent="selectedProvider && $emit('save-credential', selectedProvider)"
     >
-      <UiCallout
-        v-if="visibleAuthProviders.length === 0"
-        tone="info"
-      >
-        Enable a plugin before adding provider connections.
-      </UiCallout>
+      <p class="mb-4 text-xs leading-5 text-fg-muted">
+        Credentials stay in the local daemon. Connected agents receive only safe references.
+      </p>
 
-      <UiFormField label="Service">
-        <template #default="{ id, describedBy, invalid }">
-          <UiSelect
-            :id="id"
-            :model-value="selectedProvider.key"
-            :options="providerOptions"
-            :aria-describedby="describedBy"
-            :invalid="invalid"
-            searchable
-            search-placeholder="Search services"
-            empty-label="No services found"
-            @update:model-value="$emit('select-provider', $event)"
-          />
-        </template>
-      </UiFormField>
+      <div v-if="selectedProvider" class="grid gap-4">
+        <UiCallout v-if="visibleAuthProviders.length === 0" tone="info">
+          Enable a plugin before adding provider connections.
+        </UiCallout>
 
-      <div class="flex gap-3 rounded-lg border border-subtle bg-bg-surface-alt p-3">
-        <UiMedallion
-          icon="plug"
-          shape="square"
-          tone="info"
+        <ConnectionServiceSelect
+          :selected-provider="selectedProvider"
+          :providers="visibleAuthProviders"
+          :options="providerOptions"
+          @select="$emit('select-provider', $event)"
         />
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <h3 class="t-h3 text-fg-strong">
-              {{ selectedProvider.name }}
-            </h3>
-            <UiBadge tone="accent">
-              {{ pluginLabel(selectedProvider.plugin_slug) }}
-            </UiBadge>
-            <UiBadge>{{ formatAuthType(selectedProvider.auth_type) }}</UiBadge>
-          </div>
-          <p
-            v-if="selectedProvider.description"
-            class="mt-1 text-sm text-fg-muted"
+
+        <UiCallout v-if="providerSetupNote(selectedProvider)" tone="info" density="compact">
+          {{ providerSetupNote(selectedProvider) }}
+        </UiCallout>
+
+        <template v-if="supportsCredential(selectedProvider) && selectedMethod(selectedProvider)">
+          <ConnectionCredentialFields
+            :auth-methods="authMethods(selectedProvider)"
+            :selected-method-key="selectedMethodKey(selectedProvider)"
+            :selected-method="selectedMethod(selectedProvider)!"
+            :profile-value="
+              profileValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
+            "
+            :label-value="
+              labelValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
+            "
+            :primary-fields="
+              primaryCredentialFields(selectedProvider, selectedMethod(selectedProvider))
+            "
+            :advanced-fields="
+              advancedCredentialFields(selectedProvider, selectedMethod(selectedProvider))
+            "
+            :input-type="inputType"
+            :is-secret-field="isSecretField"
+            :has-field-options="hasFieldOptions"
+            :field-options="fieldOptions"
+            :field-values="
+              credentialFieldValues(selectedProvider, selectedMethod(selectedProvider)!)
+            "
+            :field-errors="fieldErrors"
+            @select-method="$emit('select-method', selectedProvider.key, $event)"
+            @update:profile="
+              setProfileValue(
+                selectedProvider.key,
+                selectedMethod(selectedProvider)?.key ?? '',
+                $event,
+              )
+            "
+            @update:label="
+              setLabelValue(
+                selectedProvider.key,
+                selectedMethod(selectedProvider)?.key ?? '',
+                $event,
+              )
+            "
+            @update:field="
+              updateCredentialField(selectedProvider, selectedMethod(selectedProvider)!, $event)
+            "
+          />
+
+          <UiCallout
+            v-if="providerMessages[selectedProvider.key]"
+            :tone="providerMessages[selectedProvider.key].tone"
           >
-            {{ selectedProvider.description }}
-          </p>
-        </div>
+            {{ providerMessages[selectedProvider.key].text }}
+            <template v-if="providerSetupUrls[selectedProvider.key]" #actions>
+              <a
+                class="focus-ring rounded-sm font-medium text-fg-link hover:underline"
+                :href="providerSetupUrls[selectedProvider.key]"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Continue setup →
+              </a>
+            </template>
+          </UiCallout>
+        </template>
+
+        <UiCallout v-else tone="info"> No credential required. </UiCallout>
       </div>
 
-      <UiCallout
-        v-if="providerSetupNote(selectedProvider)"
-        tone="info"
-        density="compact"
-      >
-        {{ providerSetupNote(selectedProvider) }}
+      <UiCallout v-else tone="info">
+        Enable a plugin before adding provider connections.
+        <template #actions>
+          <UiButton size="sm" variant="secondary" icon-left="puzzle" @click="$emit('go-plugins')">
+            Go to Plugins
+          </UiButton>
+        </template>
       </UiCallout>
-
-      <template v-if="supportsCredential(selectedProvider) && selectedMethod(selectedProvider)">
-        <UiFormField
-          v-if="authMethods(selectedProvider).length > 1"
-          label="Auth method"
-        >
-          <template #default="{ id, describedBy, invalid }">
-            <UiSelect
-              :id="id"
-              :model-value="selectedMethodKey(selectedProvider)"
-              :options="
-                authMethods(selectedProvider).map((method) => ({
-                  value: method.key,
-                  label: method.label,
-                }))
-              "
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              @update:model-value="$emit('select-method', selectedProvider.key, $event)"
-            />
-          </template>
-        </UiFormField>
-
-        <UiFormField
-          label="Connection name"
-          help="Leave blank for the default account. Use a short name like client-a or sandbox when this service has more than one account."
-        >
-          <template #default="{ id, describedBy, invalid }">
-            <UiInput
-              :id="id"
-              :model-value="
-                profileValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
-              "
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              placeholder="default"
-              @update:model-value="
-                setProfileValue(
-                  selectedProvider.key,
-                  selectedMethod(selectedProvider)?.key ?? '',
-                  $event,
-                )
-              "
-            />
-          </template>
-        </UiFormField>
-
-        <UiFormField
-          label="Display label"
-          help="Shown to operators and agents as safe metadata."
-        >
-          <template #default="{ id, describedBy, invalid }">
-            <UiInput
-              :id="id"
-              :model-value="
-                labelValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
-              "
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              placeholder="Primary account"
-              @update:model-value="
-                setLabelValue(
-                  selectedProvider.key,
-                  selectedMethod(selectedProvider)?.key ?? '',
-                  $event,
-                )
-              "
-            />
-          </template>
-        </UiFormField>
-
-        <UiFormField
-          v-for="field in primaryCredentialFields(
-            selectedProvider,
-            selectedMethod(selectedProvider),
-          )"
-          :key="field.key"
-          :label="field.label"
-          :help="field.description ?? undefined"
-          :required="field.required"
-        >
-          <template #default="{ id, describedBy, invalid }">
-            <UiSelect
-              v-if="hasFieldOptions(field)"
-              :id="id"
-              :model-value="
-                fieldValue(
-                  selectedProvider.key,
-                  selectedMethod(selectedProvider)?.key ?? '',
-                  field.key,
-                )
-              "
-              :options="fieldOptions(field)"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              :placeholder="field.placeholder ?? 'Select'"
-              @update:model-value="
-                setFieldValue(
-                  selectedProvider.key,
-                  selectedMethod(selectedProvider)?.key ?? '',
-                  field.key,
-                  $event,
-                )
-              "
-            />
-            <UiSecretInput
-              v-else-if="isSecretField(field)"
-              :id="id"
-              :model-value="
-                fieldValue(
-                  selectedProvider.key,
-                  selectedMethod(selectedProvider)?.key ?? '',
-                  field.key,
-                )
-              "
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              no-copy
-              no-reveal
-              :placeholder="field.placeholder ?? ''"
-              @update:model-value="
-                setFieldValue(
-                  selectedProvider.key,
-                  selectedMethod(selectedProvider)?.key ?? '',
-                  field.key,
-                  $event,
-                )
-              "
-            />
-            <UiInput
-              v-else
-              :id="id"
-              :model-value="
-                fieldValue(
-                  selectedProvider.key,
-                  selectedMethod(selectedProvider)?.key ?? '',
-                  field.key,
-                )
-              "
-              :type="inputType(field)"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              :placeholder="field.placeholder ?? undefined"
-              @update:model-value="
-                setFieldValue(
-                  selectedProvider.key,
-                  selectedMethod(selectedProvider)?.key ?? '',
-                  field.key,
-                  $event,
-                )
-              "
-            />
-          </template>
-        </UiFormField>
-
-        <details
-          v-if="
-            advancedCredentialFields(selectedProvider, selectedMethod(selectedProvider)).length > 0
-          "
-          class="rounded-lg border border-subtle bg-bg-surface-alt"
-        >
-          <summary
-            class="focus-ring cursor-pointer rounded-lg px-3 py-2 text-sm font-medium text-fg-default"
-          >
-            Advanced connection settings
-            <span class="ml-2 text-xs font-normal text-fg-muted">
-              self-hosted Bot API and webhook secret overrides
-            </span>
-          </summary>
-          <div class="grid gap-4 border-t border-subtle p-3">
-            <UiFormField
-              v-for="field in advancedCredentialFields(
-                selectedProvider,
-                selectedMethod(selectedProvider),
-              )"
-              :key="field.key"
-              :label="field.label"
-              :help="field.description ?? undefined"
-              :required="field.required"
-            >
-              <template #default="{ id, describedBy, invalid }">
-                <UiSelect
-                  v-if="hasFieldOptions(field)"
-                  :id="id"
-                  :model-value="
-                    fieldValue(
-                      selectedProvider.key,
-                      selectedMethod(selectedProvider)?.key ?? '',
-                      field.key,
-                    )
-                  "
-                  :options="fieldOptions(field)"
-                  :aria-describedby="describedBy"
-                  :invalid="invalid"
-                  :placeholder="field.placeholder ?? 'Select'"
-                  @update:model-value="
-                    setFieldValue(
-                      selectedProvider.key,
-                      selectedMethod(selectedProvider)?.key ?? '',
-                      field.key,
-                      $event,
-                    )
-                  "
-                />
-                <UiSecretInput
-                  v-else-if="isSecretField(field)"
-                  :id="id"
-                  :model-value="
-                    fieldValue(
-                      selectedProvider.key,
-                      selectedMethod(selectedProvider)?.key ?? '',
-                      field.key,
-                    )
-                  "
-                  :aria-describedby="describedBy"
-                  :invalid="invalid"
-                  no-copy
-                  no-reveal
-                  :placeholder="field.placeholder ?? ''"
-                  @update:model-value="
-                    setFieldValue(
-                      selectedProvider.key,
-                      selectedMethod(selectedProvider)?.key ?? '',
-                      field.key,
-                      $event,
-                    )
-                  "
-                />
-                <UiInput
-                  v-else
-                  :id="id"
-                  :model-value="
-                    fieldValue(
-                      selectedProvider.key,
-                      selectedMethod(selectedProvider)?.key ?? '',
-                      field.key,
-                    )
-                  "
-                  :type="inputType(field)"
-                  :aria-describedby="describedBy"
-                  :invalid="invalid"
-                  :placeholder="field.placeholder ?? undefined"
-                  @update:model-value="
-                    setFieldValue(
-                      selectedProvider.key,
-                      selectedMethod(selectedProvider)?.key ?? '',
-                      field.key,
-                      $event,
-                    )
-                  "
-                />
-              </template>
-            </UiFormField>
-          </div>
-        </details>
-
-        <UiCallout
-          v-if="selectedMethod(selectedProvider)?.description"
-          tone="info"
-          density="compact"
-        >
-          {{ selectedMethod(selectedProvider)?.description }}
-        </UiCallout>
-
-        <UiCallout
-          v-if="providerMessages[selectedProvider.key]"
-          :tone="providerMessages[selectedProvider.key].tone"
-        >
-          {{ providerMessages[selectedProvider.key].text }}
-        </UiCallout>
-      </template>
-
-      <UiCallout
-        v-else
-        tone="info"
-      >
-        No credential required.
-      </UiCallout>
-    </div>
-
-    <UiCallout
-      v-else
-      tone="info"
-    >
-      Enable a plugin before adding provider connections.
-    </UiCallout>
+    </form>
 
     <template #footer>
-      <UiButton
-        variant="ghost"
-        @click="$emit('update:modelValue', false)"
-      >
-        Cancel
-      </UiButton>
+      <UiButton variant="ghost" @click="$emit('update:modelValue', false)"> Cancel </UiButton>
       <UiButton
         v-if="selectedProvider && selectedMethod(selectedProvider)?.interactive"
         variant="secondary"
@@ -434,11 +195,13 @@ defineEmits<{
         v-if="selectedProvider"
         variant="primary"
         icon-left="save"
+        type="submit"
+        form="connection-credential-form"
         :loading="busyAction === providerActionKey(selectedProvider.key, 'save')"
         :disabled="selectedMethod(selectedProvider)?.payload_format === 'none'"
-        @click="$emit('save-credential', selectedProvider)"
+        @click.prevent="$emit('save-credential', selectedProvider)"
       >
-        Save connection
+        Save and verify
       </UiButton>
     </template>
   </UiSidePanel>

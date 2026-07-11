@@ -82,8 +82,8 @@ onBeforeRouteUpdate((to) => {
   <UiPageShell>
     <ProjectPageHeader
       :project-id="projectId"
-      title="Workflow library"
-      description="Reusable workflow configuration and instruction contracts."
+      title="Workflow templates"
+      description="Reusable contracts available to connected agents through MCP."
       :breadcrumbs="[{ label: 'Workflow library' }]"
     />
 
@@ -133,11 +133,30 @@ onBeforeRouteUpdate((to) => {
       v-model="detailOpen"
       :title="selected?.spec.name ?? 'Template'"
       :description="selected?.spec.description"
-      size="xl"
+      size="2xl"
       :has-detail="Boolean(selected)"
       empty-title="No template selected"
       empty-description="Select a workflow template row to inspect setup, guidance, and grants."
     >
+      <template #header="{ titleId, descriptionId }">
+        <div class="min-w-0">
+          <p class="t-overline text-accent-primary">
+            Workflow guide
+          </p>
+          <h2
+            :id="titleId"
+            class="t-h2 mt-1 text-fg-strong"
+          >
+            {{ selected?.spec.name ?? 'Template' }}
+          </h2>
+          <p
+            :id="descriptionId"
+            class="mt-1 max-w-3xl text-sm text-fg-muted"
+          >
+            See how the work moves, what the agent needs, where people approve, and what the project receives.
+          </p>
+        </div>
+      </template>
       <TemplateRenderer
         v-if="selected"
         :template="selected"

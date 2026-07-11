@@ -35,6 +35,19 @@ predictable, and fast.
 - If you change a repository flow, update operation behavior, adapters, UI
   callers, and tests together so the StackOS model remains coherent.
 
+## Decomposition Pattern
+
+- Keep the public repository class as the transaction and query boundary.
+  Extract a long, independently testable persistence lifecycle only when its
+  inputs are explicit and it uses the caller's `Session`; do not open a second
+  session or commit inside the helper.
+- `PluginRepository` is the reference: catalog reads and project enablement
+  stay in `plugins.py`, while one-manifest persistence lives in
+  `plugin_manifest_sync.py`. The repository still owns commit timing and
+  engine-scoped sync idempotency.
+- Preserve repository output types and public imports. Do not create mixins or
+  pass-through classes just to lower a line count.
+
 ## Performance Checklist
 
 - Measure the route/tool before changing it, ideally in browser and at the

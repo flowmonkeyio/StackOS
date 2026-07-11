@@ -11,13 +11,20 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 const WEEK = 7 * DAY
 
+function parseStackOsDate(value: string): Date {
+  const normalized = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+    ? `${value}Z`
+    : value
+  return new Date(normalized)
+}
+
 /** "just now" / "4m ago" / "3h ago" / "2d ago" / "5w ago" / "Mar 3, 2026". */
 export function formatRelativeDateTime(
   value: string | null | undefined,
   now: Date = new Date(),
 ): string {
   if (!value) return '-'
-  const date = new Date(value)
+  const date = parseStackOsDate(value)
   if (Number.isNaN(date.getTime())) return value
 
   const delta = now.getTime() - date.getTime()
@@ -40,7 +47,7 @@ export function formatRelativeDateTime(
 /** Absolute form for titles/tooltips alongside the relative label. */
 export function formatAbsoluteDateTime(value: string | null | undefined): string {
   if (!value) return ''
-  const date = new Date(value)
+  const date = parseStackOsDate(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString()
 }
@@ -69,8 +76,10 @@ export function newestFirst<T>(
   pick: (item: T) => string | null | undefined,
 ): T[] {
   return [...items].sort((a, b) => {
-    const ta = Date.parse(pick(a) ?? '')
-    const tb = Date.parse(pick(b) ?? '')
+    const aValue = pick(a)
+    const bValue = pick(b)
+    const ta = aValue ? parseStackOsDate(aValue).getTime() : Number.NaN
+    const tb = bValue ? parseStackOsDate(bValue).getTime() : Number.NaN
     return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta)
   })
 }
@@ -82,9 +91,9 @@ export function formatDurationBetween(
   now: Date = new Date(),
 ): string {
   if (!start) return '-'
-  const startDate = new Date(start)
+  const startDate = parseStackOsDate(start)
   if (Number.isNaN(startDate.getTime())) return '-'
-  const endDate = end ? new Date(end) : now
+  const endDate = end ? parseStackOsDate(end) : now
   if (Number.isNaN(endDate.getTime())) return '-'
   const minutes = (endDate.getTime() - startDate.getTime()) / MINUTE
   return formatDurationMinutes(minutes)

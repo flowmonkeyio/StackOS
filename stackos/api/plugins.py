@@ -35,10 +35,11 @@ class PluginEnableRequest(BaseModel):
 @router.get("/plugins", response_model=list[PluginOut])
 async def list_plugins(
     project_id: int | None = Query(default=None),
+    compact: bool = Query(default=False),
     session: Session = Depends(get_session),
 ) -> list[PluginOut]:
     """List installed plugins, optionally annotated with project enablement."""
-    return PluginRepository(session).list_plugins(project_id=project_id)
+    return PluginRepository(session).list_plugins(project_id=project_id, compact=compact)
 
 
 @router.get("/plugins/{plugin_slug}", response_model=PluginOut)

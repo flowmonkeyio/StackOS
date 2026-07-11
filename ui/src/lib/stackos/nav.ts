@@ -63,15 +63,15 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
       label: 'Operate',
       items: [
         { key: 'home', label: 'Home', to: base, icon: 'home' },
-        { key: 'inbox', label: 'Inbox', to: `${base}/inbox`, icon: 'inbox' },
+        { key: 'attention', label: 'Attention', to: `${base}/inbox`, icon: 'inbox' },
         { key: 'tasks', label: 'Work', to: `${base}/tasks`, matchPrefix: true, icon: 'tasks' },
         { key: 'activity', label: 'Activity', to: `${base}/activity`, icon: 'list' },
         { key: 'setup', label: 'Setup', to: `${base}/setup`, icon: 'settings' },
       ],
     },
     {
-      key: 'configure',
-      label: 'Configure',
+      key: 'setup-tools',
+      label: 'Setup tools',
       items: [
         { key: 'connections', label: 'Connections', to: `${base}/connections`, icon: 'link' },
         { key: 'schedules', label: 'Automation', to: `${base}/schedules`, icon: 'calendar' },
@@ -80,21 +80,33 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
       ],
     },
     {
-      key: 'developer',
-      label: 'Developer',
+      key: 'execution',
+      label: 'Execution',
       items: [
         { key: 'runs', label: 'Runs', to: `${base}/runs`, matchPrefix: true, icon: 'runs' },
+        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests`, icon: 'queue-list' },
+        { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls`, icon: 'bolt' },
+      ],
+    },
+    {
+      key: 'catalog',
+      label: 'Catalog',
+      items: [
         {
           key: 'workflow-templates',
-          label: 'Workflow Library',
+          label: 'Workflow Templates',
           to: `${base}/workflow-templates`,
           icon: 'library',
         },
         { key: 'agent-presets', label: 'Agent Presets', to: `${base}/agent-presets`, icon: 'users' },
-        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests`, icon: 'queue-list' },
         { key: 'capabilities', label: 'Capabilities', to: `${base}/capabilities`, icon: 'chip' },
         { key: 'operations', label: 'Operations', to: `${base}/operations`, icon: 'terminal' },
-        { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls`, icon: 'bolt' },
+      ],
+    },
+    {
+      key: 'data-evidence',
+      label: 'Data & evidence',
+      items: [
         { key: 'resources', label: 'Resources', to: `${base}/resources`, icon: 'folder' },
         { key: 'project-data', label: 'Project Data', to: `${base}/data`, icon: 'database' },
       ],
@@ -123,11 +135,9 @@ export function projectNavSections(
   projectId: number,
   plugins: SchemaPluginOut[],
 ): StackOsNavSection[] {
-  const [operate, configure, developer] = coreNavSections(projectId)
+  const [operate, setupTools, execution, catalog, dataEvidence] = coreNavSections(projectId)
   const pluginSections = pluginContributionSections(projectId, plugins)
-  // Operate + Configure lead; plugin lanes sit between config and the demoted
-  // Developer (audit/registry) group.
-  return [operate, configure, ...pluginSections, developer].filter(
+  return [operate, setupTools, execution, catalog, dataEvidence, ...pluginSections].filter(
     (section): section is StackOsNavSection => Boolean(section?.items.length),
   )
 }

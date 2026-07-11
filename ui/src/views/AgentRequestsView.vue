@@ -14,6 +14,7 @@ import {
   UiCheckbox,
   UiCountBadge,
   UiFormField,
+  UiIcon,
   UiMetadataStrip,
   UiMetricCard,
   UiPageShell,
@@ -75,6 +76,10 @@ interface AgentRequestPage {
 const route = useRoute()
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const requestedRequestId = computed(() => {
+  const value = Number.parseInt(String(route.query.request ?? ''), 10)
+  return Number.isNaN(value) ? null : value
+})
 const rows = ref<AgentRequestOut[]>([])
 const selectedRequest = ref<AgentRequestOut | null>(null)
 const detailOpen = ref(false)
@@ -141,6 +146,34 @@ const loadedTerminal = computed(
 const loadedUnread = computed(
   () => rows.value.filter((item) => item.attention_status === 'unread').length,
 )
+const loadedActive = computed(
+  () => rows.value.filter((item) => ['new', 'claimed', 'run-created', 'run-started', 'responded'].includes(item.status)).length,
+)
+
+const requestStages = [
+  { key: 'arrived', label: 'Request arrives', detail: 'A plugin, trigger, or agent records an input.' },
+  { key: 'claimed', label: 'Agent claims it', detail: 'A connected agent decides how to handle it.' },
+  { key: 'work', label: 'Work becomes visible', detail: 'The task and run appear in Work for supervision.' },
+  { key: 'outcome', label: 'Outcome is recorded', detail: 'Results and evidence appear in Activity.' },
+] as const
+
+function requestStageIndex(status: AgentRequestStatus): number {
+  if (status === 'new') return 0
+  if (status === 'claimed') return 1
+  if (['run-created', 'run-started'].includes(status)) return 2
+  return 3
+}
+
+function requestNextStep(request: AgentRequestOut): string {
+  if (request.status === 'new') return 'Waiting for a connected agent to claim it.'
+  if (request.status === 'claimed') return 'The claiming agent should create or link tracked work.'
+  if (request.status === 'run-created') return 'The run is ready for the agent to start.'
+  if (request.status === 'run-started') return 'Follow progress in Work; intervene only if Attention asks.'
+  if (request.status === 'responded') return 'The agent responded; the request can now be resolved.'
+  if (request.status === 'resolved') return 'Complete. Review the outcome and evidence in Activity.'
+  if (request.status === 'failed') return 'Review the failure and any required human action.'
+  return 'No action is expected for this request.'
+}
 
 function statusArguments(): AgentRequestStatus[] | undefined {
   if (mode.value === 'active') return ['new', 'claimed', 'run-created', 'run-started', 'responded']
@@ -186,7 +219,14 @@ async function fetchRequests({ append = false }: { append?: boolean } = {}): Pro
 }
 
 function reconcileSelectedRequest(nextRows: AgentRequestOut[], append: boolean): void {
-  if (!append && autoSelectNewest.value) {
+  const requested = requestedRequestId.value
+    ? nextRows.find((request) => request.id === requestedRequestId.value)
+    : null
+  if (!append && requested) {
+    autoSelectNewest.value = false
+    selectedRequest.value = requested
+    detailOpen.value = true
+  } else if (!append && autoSelectNewest.value) {
     selectedRequest.value = nextRows[0] ?? null
   } else if (selectedRequest.value) {
     selectedRequest.value =
@@ -271,7 +311,7 @@ onMounted(() => {
     <ProjectPageHeader
       :project-id="projectId"
       title="Agent requests"
-      description="Generic claimable queue state for agents, scripts, triggers, and project-local tooling."
+      description="Inputs waiting for agents, and the handoff from request to visible work and recorded outcome."
       :breadcrumbs="[{ label: 'Agent requests' }]"
     >
       <template #actions>
@@ -294,15 +334,60 @@ onMounted(() => {
       {{ error }}
     </UiCallout>
 
+    <section
+      aria-labelledby="request-journey-title"
+      class="rounded-xl border border-subtle bg-bg-surface p-4 shadow-xs"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2
+            id="request-journey-title"
+            class="text-sm font-semibold text-fg-strong"
+          >
+            From request to outcome
+          </h2>
+          <p class="mt-1 text-xs text-fg-muted">
+            StackOS holds and exposes the request. A connected agent decides and acts through MCP; people supervise the resulting work here.
+          </p>
+        </div>
+        <RouterLink
+          :to="`/projects/${projectId}/tasks`"
+          class="focus-ring inline-flex items-center gap-1 text-xs font-semibold text-fg-link"
+        >
+          Open Work
+          <UiIcon
+            name="arrow-right"
+            class="h-3.5 w-3.5"
+            aria-hidden="true"
+          />
+        </RouterLink>
+      </div>
+      <ol class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <li
+          v-for="(stage, index) in requestStages"
+          :key="stage.key"
+          class="rounded-lg border border-subtle bg-bg-surface-alt p-3"
+        >
+          <p class="text-2xs font-semibold uppercase tracking-wide text-accent-fg">
+            {{ index + 1 }} · {{ stage.label }}
+          </p>
+          <p class="mt-1 text-xs leading-5 text-fg-muted">
+            {{ stage.detail }}
+          </p>
+        </li>
+      </ol>
+    </section>
+
     <div class="grid gap-3 md:grid-cols-4">
       <UiMetricCard
-        label="Loaded"
-        :value="rows.length"
+        label="Waiting to be claimed"
+        :value="loadedNew"
         density="compact"
+        :value-tone="loadedNew > 0 ? 'info' : 'default'"
       />
       <UiMetricCard
-        label="New"
-        :value="loadedNew"
+        label="Active requests"
+        :value="loadedActive"
         density="compact"
       />
       <UiMetricCard
@@ -311,9 +396,10 @@ onMounted(() => {
         density="compact"
       />
       <UiMetricCard
-        label="Unread"
+        label="Needs review"
         :value="loadedUnread"
         density="compact"
+        :value-tone="loadedUnread > 0 ? 'warning' : 'default'"
       />
     </div>
 
@@ -494,6 +580,48 @@ onMounted(() => {
           :items="agentRequestCoreMetadata(selectedRequest)"
           aria-label="Agent request metadata"
         />
+
+        <section class="rounded-lg border border-subtle bg-bg-surface-alt p-4">
+          <p class="t-overline text-fg-subtle">
+            Where this request is now
+          </p>
+          <div class="mt-3 flex items-start gap-3">
+            <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-sm font-semibold text-accent-fg">
+              {{ requestStageIndex(selectedRequest.status) + 1 }}
+            </span>
+            <div>
+              <p class="text-sm font-semibold text-fg-strong">
+                {{ requestStages[requestStageIndex(selectedRequest.status)].label }}
+              </p>
+              <p class="mt-1 text-xs leading-5 text-fg-muted">
+                {{ requestNextStep(selectedRequest) }}
+              </p>
+            </div>
+          </div>
+          <div class="mt-4 flex flex-wrap gap-2">
+            <RouterLink
+              v-if="selectedRequest.run_plan_id"
+              :to="`/projects/${projectId}/tasks`"
+              class="focus-ring inline-flex h-8 items-center rounded-md bg-accent px-3 text-xs font-medium text-fg-on-accent"
+            >
+              Follow in Work
+            </RouterLink>
+            <RouterLink
+              v-if="selectedRequest.run_plan_id"
+              :to="`/projects/${projectId}/runs`"
+              class="focus-ring inline-flex h-8 items-center rounded-md border border-default bg-bg-surface px-3 text-xs font-medium text-fg-default"
+            >
+              Inspect run
+            </RouterLink>
+            <RouterLink
+              v-if="['responded', 'resolved', 'failed'].includes(selectedRequest.status)"
+              :to="`/projects/${projectId}/activity`"
+              class="focus-ring inline-flex h-8 items-center rounded-md border border-default bg-bg-surface px-3 text-xs font-medium text-fg-default"
+            >
+              Review Activity
+            </RouterLink>
+          </div>
+        </section>
 
         <details class="rounded-md border border-subtle bg-bg-surface px-3 py-2">
           <summary class="cursor-pointer text-xs font-semibold uppercase text-fg-subtle">

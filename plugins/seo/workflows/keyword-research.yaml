@@ -196,6 +196,9 @@ learning_hooks:
 metadata:
   builtin: true
   run_mode: stackos_run_plan
+  mcp_tool_grants:
+    - step_id: capture_learning
+      tool: learning.create
   step_ids:
     - orient
     - collect_evidence

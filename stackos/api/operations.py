@@ -12,6 +12,7 @@ from sqlmodel import Session
 
 from stackos.api.deps import get_session, get_settings
 from stackos.config import Settings
+from stackos.logging import get_logger
 from stackos.operations.dispatcher import OperationDispatcher
 from stackos.operations.registry import build_operation_registry
 from stackos.operations.spec import OperationDescribeOut, OperationListOut
@@ -74,7 +75,20 @@ async def call_operation(
         client_surface=normalized_client_surface,
         settings=settings,
     )
-    return JSONResponse(content=jsonable_encoder(result.payload))
+    if result.duration_ms >= 100:
+        get_logger("stackos.api.operations").warning(
+            "operation.request.slow",
+            operation=operation_name,
+            duration_ms=result.duration_ms,
+            response_mode=(payload.arguments or {}).get("response_mode"),
+        )
+    return JSONResponse(
+        content=jsonable_encoder(result.payload),
+        headers={
+            "Server-Timing": f"stackos-operation;dur={result.duration_ms}",
+            "X-StackOS-Operation-Duration-Ms": str(result.duration_ms),
+        },
+    )
 
 
 __all__ = ["router"]

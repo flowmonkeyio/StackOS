@@ -78,6 +78,7 @@ release-*.png
 
 # Claude Code session state (per-machine, not portable)
 .claude/
+.gemini/
 
 # OS
 .DS_Store

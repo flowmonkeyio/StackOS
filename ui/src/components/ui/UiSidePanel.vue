@@ -21,7 +21,7 @@ export interface UiSidePanelProps {
   title?: string;
   description?: string;
   side?: 'right' | 'left';
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   /** When true, content scrolls within the panel; header/footer stay fixed. */
   scrollBody?: boolean;
   hideClose?: boolean;
@@ -140,7 +140,13 @@ function isTopSidePanel(): boolean {
   return stackIndex !== null && openSidePanelStack.at(-1) === stackIndex;
 }
 
-const sizePx = computed(() => ({ sm: '320px', md: '480px', lg: '640px', xl: '880px' }[props.size]));
+const sizePx = computed(() => ({
+  sm: '320px',
+  md: '480px',
+  lg: '640px',
+  xl: '880px',
+  '2xl': '1120px',
+}[props.size]));
 const enterClass = computed(() => props.side === 'right' ? 'translate-x-full' : '-translate-x-full');
 const titleId = computed(() => (props.title ? `ui-sidepanel-title-${sidePanelId}` : undefined));
 const descriptionId = computed(() =>

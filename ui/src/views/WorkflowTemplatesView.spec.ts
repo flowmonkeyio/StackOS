@@ -94,14 +94,18 @@ describe('WorkflowTemplatesView', () => {
       .find((row) => row.text().includes('Engineering Tracked Delivery'))
       ?.trigger('click')
     await vi.waitFor(() =>
-      expect(document.body.textContent ?? '').toContain('Project Setup'),
+      expect(document.body.textContent ?? '').toContain('Workflow journey'),
     )
     const text = document.body.textContent ?? ''
+    expect(text).toContain('How the work moves')
+    expect(text).toContain('Project readiness')
+    expect(text).toContain('What the user gets')
+    expect(text).toContain('StackOS keeps the plan')
+    expect(text).toContain('it does not do the work itself')
     expect(text).toContain('communication_route_ref')
     expect(text).toContain('support-triage')
-    expect(text).toContain('7 agents')
-    expect(text).toContain('1 skills')
-    expect(text).toContain('1 presets')
+    expect(text).toContain('Requirements Flow Definer')
+    expect(text).toContain('Delivery Reviewer')
     expect(text).toContain('stackos.sdlc.requirements-flow-definer')
     expect(text).toContain('stackos.sdlc.codebase-explorer')
     expect(text).toContain('stackos.sdlc.planning')
@@ -112,7 +116,7 @@ describe('WorkflowTemplatesView', () => {
     expect(text).toContain('stackos:stackos')
     expect(text).toContain('stackos.sdlc.delivery-orchestrator')
     expect(text).toContain('workflow-specific skill presets')
-    expect(text).toContain('12 steps')
+    expect(text).toContain('12 stages')
     for (const step of EXPECTED_WORKFLOW_STEPS) {
       expect(text).toContain(step.id)
       expect(text).toContain(step.title)

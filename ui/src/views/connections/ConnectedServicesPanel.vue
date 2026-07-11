@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import type { SchemaAuthProviderOut } from '@/api'
 import {
   UiBadge,
   UiButton,
@@ -10,17 +9,18 @@ import {
   UiCountBadge,
   UiEmptyState,
   UiFilterBar,
-  UiMedallion,
   UiSectionHeader,
   UiSegmentedControl,
   UiSkeleton,
 } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
+import ProviderMark from '@/components/domain/ProviderMark.vue'
 import { resolveStatus } from '@/design/status'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 
 import {
   accountLabel,
+  connectionActionKey,
   connectionNeedsAttention,
   connectionStatusKey,
   connectionTitle,
@@ -38,7 +38,6 @@ const props = defineProps<{
   connectionsCount: number
   connectionMessages: MessageMap
   busyAction: string | null
-  canAddProvider: (provider: SchemaAuthProviderOut) => boolean
 }>()
 
 defineEmits<{
@@ -82,10 +81,6 @@ const visibleGroups = computed(() => {
   })
 })
 
-function connectionActionKey(credentialRef: string, action: string): string {
-  return `${credentialRef}:${action}`
-}
-
 function isAttention(connection: ConnectionRow): boolean {
   return connectionNeedsAttention(connection)
 }
@@ -111,7 +106,9 @@ const DOT_CLASS: Record<string, string> = {
 }
 
 function statusDotClass(connection: ConnectionRow): string {
-  return DOT_CLASS[resolveStatus('connection', connectionStatusKey(connection)).tone] ?? 'bg-fg-subtle'
+  return (
+    DOT_CLASS[resolveStatus('connection', connectionStatusKey(connection)).tone] ?? 'bg-fg-subtle'
+  )
 }
 
 function statusLabel(connection: ConnectionRow): string {
@@ -120,10 +117,7 @@ function statusLabel(connection: ConnectionRow): string {
 </script>
 
 <template>
-  <section
-    class="space-y-3"
-    aria-label="Services"
-  >
+  <section class="space-y-3" aria-label="Services">
     <UiSectionHeader
       title="Services"
       description="Tools and accounts your agents can use. Secrets stay on this machine — agents only ever get a safe reference."
@@ -140,23 +134,13 @@ function statusLabel(connection: ConnectionRow): string {
       search-placeholder="Find a service or account…"
       aria-label="Service filters"
     >
-      <UiSegmentedControl
-        v-if="categoryOptions.length > 2"
-        v-model="category"
-        :options="categoryOptions"
-        label="Category"
-      />
+      <div v-if="categoryOptions.length > 2" class="connection-category-scroll">
+        <UiSegmentedControl v-model="category" :options="categoryOptions" label="Category" />
+      </div>
     </UiFilterBar>
 
-    <UiCard
-      v-if="loading"
-      role="status"
-      aria-label="Loading connections"
-    >
-      <UiSkeleton
-        shape="line"
-        :lines="3"
-      />
+    <UiCard v-if="loading" role="status" aria-label="Loading connections">
+      <UiSkeleton shape="line" :lines="3" />
     </UiCard>
 
     <UiEmptyState
@@ -167,12 +151,7 @@ function statusLabel(connection: ConnectionRow): string {
       framed
     >
       <template #actions>
-        <UiButton
-          variant="primary"
-          size="sm"
-          icon-left="plus"
-          @click="$emit('add-connection')"
-        >
+        <UiButton variant="primary" size="sm" icon-left="plus" @click="$emit('add-connection')">
           Add connection
         </UiButton>
       </template>
@@ -186,10 +165,7 @@ function statusLabel(connection: ConnectionRow): string {
       framed
     />
 
-    <div
-      v-else
-      class="grid grid-cols-1 gap-3"
-    >
+    <div v-else class="grid grid-cols-1 gap-3">
       <UiCard
         v-for="group in visibleGroups"
         :key="group.providerKey"
@@ -200,54 +176,39 @@ function statusLabel(connection: ConnectionRow): string {
       >
         <template #header>
           <div class="flex min-w-0 items-center gap-3">
-            <UiMedallion
-              icon="plug"
-              shape="square"
-              tone="neutral"
+            <ProviderMark
+              :name="serviceName(group)"
+              :provider-key="group.providerKey"
+              :plugin-slug="group.provider?.plugin_slug"
             />
             <div class="min-w-0">
               <div class="flex min-w-0 flex-wrap items-center gap-2">
                 <h4 class="t-h3 truncate text-fg-strong">
                   {{ serviceName(group) }}
                 </h4>
-                <UiBadge
-                  v-if="group.provider"
-                  variant="outline"
-                >
+                <UiBadge v-if="group.provider" variant="outline">
                   {{ pluginLabel(group.provider.plugin_slug) }}
                 </UiBadge>
+                <UiBadge>
+                  {{ group.connections.length }}
+                  {{ group.connections.length === 1 ? 'account' : 'accounts' }}
+                </UiBadge>
               </div>
-              <p
-                v-if="group.provider?.description"
-                class="mt-0.5 truncate text-xs text-fg-subtle"
-              >
+              <p v-if="group.provider?.description" class="mt-0.5 truncate text-xs text-fg-subtle">
                 {{ group.provider.description }}
               </p>
             </div>
           </div>
-          <UiButton
-            v-if="group.provider && canAddProvider(group.provider)"
-            class="shrink-0"
-            size="sm"
-            variant="ghost"
-            icon-left="plus"
-            @click="$emit('add-connection', group.provider.key)"
-          >
-            Add another
-          </UiButton>
         </template>
 
-        <ul
-          class="divide-y divide-border-subtle"
-          :aria-label="`${serviceName(group)} connections`"
-        >
+        <ul class="divide-y divide-border-subtle" :aria-label="`${serviceName(group)} connections`">
           <li
             v-for="connection in group.connections"
             :key="connection.credential_ref"
             class="px-4 py-2.5"
             :class="isAttention(connection) ? 'bg-warning-subtle' : ''"
           >
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 max-[350px]:flex-wrap">
               <span
                 role="img"
                 :aria-label="statusLabel(connection)"
@@ -268,10 +229,7 @@ function statusLabel(connection: ConnectionRow): string {
                 </div>
                 <p class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-fg-muted">
                   <span>{{ authLabel(group, connection) }}</span>
-                  <span
-                    aria-hidden="true"
-                    class="text-fg-subtle"
-                  >·</span>
+                  <span aria-hidden="true" class="text-fg-subtle">·</span>
                   <span :title="formatAbsoluteDateTime(connection.last_tested_at)">
                     {{
                       connection.last_tested_at
@@ -280,24 +238,20 @@ function statusLabel(connection: ConnectionRow): string {
                     }}
                   </span>
                   <template v-if="connection.expires_at">
-                    <span
-                      aria-hidden="true"
-                      class="text-fg-subtle"
-                    >·</span>
+                    <span aria-hidden="true" class="text-fg-subtle">·</span>
                     <span :title="formatAbsoluteDateTime(connection.expires_at)">
                       expires {{ formatRelativeDateTime(connection.expires_at) }}
                     </span>
                   </template>
                   <template v-if="showAccount(connection)">
-                    <span
-                      aria-hidden="true"
-                      class="text-fg-subtle"
-                    >·</span>
+                    <span aria-hidden="true" class="text-fg-subtle">·</span>
                     <span class="truncate font-mono text-2xs">{{ accountLabel(connection) }}</span>
                   </template>
                 </p>
               </div>
-              <div class="flex shrink-0 items-center gap-1">
+              <div
+                class="flex shrink-0 items-center gap-1 max-[350px]:ml-5 max-[350px]:w-full max-[350px]:justify-end"
+              >
                 <UiButton
                   size="sm"
                   variant="secondary"
@@ -335,3 +289,16 @@ function statusLabel(connection: ConnectionRow): string {
     </div>
   </section>
 </template>
+
+<style scoped>
+.connection-category-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  padding-block-end: 0.125rem;
+}
+
+.connection-category-scroll :deep(.ui-segmented-control) {
+  min-width: max-content;
+  flex-wrap: nowrap;
+}
+</style>

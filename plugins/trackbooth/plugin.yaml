@@ -1,7 +1,7 @@
 slug: trackbooth
 name: Trackbooth
 version: 0.1.0
-description: Trackbooth Agent API StackOS action bridge for permission-filtered catalog discovery and explicit operation execution.
+description: Manage Trackbooth accounts, partners, offers, campaigns, tracking, reporting, payouts, and permissions from a StackOS workflow.
 display_order: 45
 source: builtin
 ui:
@@ -10,12 +10,12 @@ ui:
 capabilities:
   - key: agent-api
     name: Agent API
-    description: Discover and call Trackbooth operations through StackOS actions generated from the live account-scoped Agent API catalog.
+    description: Use the Trackbooth operations available to the connected account inside an organized, reviewable workflow.
     kind: integration
 providers:
   - key: trackbooth
     name: Trackbooth
-    description: Trackbooth Agent API provider. API keys stay daemon-held; Trackbooth server requests are performed only by the StackOS connector.
+    description: Manage accounts, partners, offers, campaigns, tracking links, reporting, payouts, and permissions in Trackbooth.
     auth_type: api-key
     auth_methods:
       - key: api-key
@@ -44,19 +44,13 @@ providers:
       setup:
         credential_label: Trackbooth API key
         setup_note: Trackbooth setup is account-specific. Store the account API key in StackOS; use the production API base URL unless local testing requires an override.
-        homepage_url: https://apis.trackbooth.com
-        console_url: https://apis.trackbooth.com
+        homepage_url: https://trackbooth.com/
         api_key_url: https://apis.trackbooth.com
-        docs_url: https://apis.trackbooth.com
-        fallback_url: https://apis.trackbooth.com
         fallback_reason: No public self-service registration/API-key page is verified; use the Trackbooth account/API endpoint and StackOS local connection form.
         verified_at: "2026-06-11"
         url_confidence:
-          homepage_url: directional
-          console_url: directional
+          homepage_url: verified
           api_key_url: directional
-          docs_url: directional
-          fallback_url: directional
 resources:
   - key: agent-api-operation
     name: Agent API Operation

@@ -21,6 +21,9 @@ export interface TrackerVueNodeData {
   subtitle?: string
   blockedBy?: string[]
   assignee?: string | null
+  owner?: string | null
+  agent?: string | null
+  sourceKind?: string | null
   runPlanId?: number | null
   active?: boolean
   recentlyUpdated?: boolean
@@ -51,17 +54,20 @@ export interface TrackerFlowModel {
 
 type EdgeFocusTone = 'default' | 'muted' | 'upstream' | 'downstream' | 'active' | 'highlighted'
 
-const TASK_WIDTH = 336
-const TICKET_WIDTH = 236
-const TICKET_HEIGHT = 88
-const TASK_GAP_X = 386
-const TASK_GAP_Y = 322
-const CHILD_GAP_X = 22
-const CHILD_GAP_Y = 14
-const DEPENDENCY_LAYER_GAP_X = 308
-const DEPENDENCY_ROW_GAP_Y = 116
-const DEPENDENCY_GROUP_GAP_Y = 320
-const LINK_GAP_X = 176
+export const TRACKER_TICKET_NODE_WIDTH = 296
+export const TRACKER_TICKET_NODE_HEIGHT = 176
+
+const TASK_WIDTH = 392
+const TICKET_WIDTH = TRACKER_TICKET_NODE_WIDTH
+const TICKET_HEIGHT = TRACKER_TICKET_NODE_HEIGHT
+const TASK_GAP_X = 474
+const TASK_GAP_Y = 416
+const CHILD_GAP_X = 30
+const CHILD_GAP_Y = 26
+const DEPENDENCY_LAYER_GAP_X = 430
+const DEPENDENCY_ROW_GAP_Y = 224
+const DEPENDENCY_GROUP_GAP_Y = 460
+const LINK_GAP_X = 222
 const EDGE_STROKE_WIDTH = 1.2
 const EDGE_MARKER_SIZE = 7
 
@@ -417,11 +423,11 @@ function dagreDependencyLayout(
     const graph = new Graph({ multigraph: true })
     graph.setGraph({
       rankdir: 'LR',
-      nodesep: 30,
-      ranksep: 90,
-      edgesep: 12,
-      marginx: 24,
-      marginy: 24,
+      nodesep: 62,
+      ranksep: 132,
+      edgesep: 16,
+      marginx: 40,
+      marginy: 40,
     })
     graph.setDefaultEdgeLabel(() => ({}))
 
@@ -627,11 +633,34 @@ function vueNodeData(
       linkSubtitle(graphNode),
     blockedBy: ticket?.blocked_by,
     assignee: ticket?.assignee,
+    owner: ticket?.assignee ?? task?.owner,
+    agent: trackerAgent(raw),
+    sourceKind: ticket?.source_kind ?? task?.source_kind ?? null,
     runPlanId: ticket?.run_plan_id,
     active: options.activeNodeIds?.has(graphNode.id) === true,
     recentlyUpdated: options.recentNodeIds?.has(graphNode.id) === true,
     raw,
   }
+}
+
+function trackerAgent(value: TrackerTask | TrackerTicket | TrackerGraphNode): string | null {
+  if (!isTrackerTask(value) && !isTrackerTicket(value)) return null
+  const explicitAgent = firstString(
+    value.source_json?.agent,
+    value.source_json?.agent_key,
+    value.source_json?.agent_role,
+    value.metadata_json?.agent,
+    value.metadata_json?.agent_key,
+    value.metadata_json?.agent_role,
+  )
+  return explicitAgent ?? value.created_by
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return null
 }
 
 function vueEdge(edge: TrackerGraphEdge, options: BuildTrackerFlowOptions): Edge {

@@ -78,7 +78,10 @@ describe('SetupStatusTab (calm readiness)', () => {
 
     const wrapper = mount(SetupStatusTab, { global: { plugins: [router] } })
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Ready to run agent work'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('This project is ready for connected agents'))
+    expect(wrapper.text()).toContain('Setup path')
+    expect(wrapper.text()).toContain('Required runtime state first')
+    expect(wrapper.text()).toContain('Optional setup items')
     // The few human checks, not the 16-row registry checklist.
     expect(wrapper.text()).toContain('Local service')
     expect(wrapper.text()).toContain('Background automation')
@@ -88,7 +91,8 @@ describe('SetupStatusTab (calm readiness)', () => {
     expect(wrapper.text()).toContain('Automation')
     expect(wrapper.text()).toContain('Spend')
     expect(wrapper.text()).toContain('Plugins')
-    expect(wrapper.text()).toContain('StackOS v1.0.1')
+    expect(wrapper.text()).toContain('StackOS version')
+    expect(wrapper.text()).toContain('1.0.1')
     // No registry jargon, no raw credential refs.
     expect(wrapper.text()).not.toContain('Operation contracts')
     expect(wrapper.text()).not.toContain('cred_firecrawl')

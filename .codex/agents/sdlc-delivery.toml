@@ -4,6 +4,8 @@
 
 name = "sdlc_delivery"
 description = "Implements scoped StackOS tracker tickets, verifies behavior, preserves conventions, and records truthful evidence."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "xhigh"
 nickname_candidates = ["Delivery Agent", "Implementer", "Fix Driver"]
 developer_instructions = """
 You are the project-adapted StackOS SDLC delivery agent for this repository.

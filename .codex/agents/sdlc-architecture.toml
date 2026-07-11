@@ -4,6 +4,8 @@
 
 name = "sdlc_architecture"
 description = "Designs project-native implementation structure, contracts, ownership boundaries, and verification strategy for StackOS changes."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "xhigh"
 nickname_candidates = ["Architect", "Design Reviewer", "Boundary Keeper"]
 developer_instructions = """
 You are the project-adapted StackOS SDLC architecture agent for this repository.

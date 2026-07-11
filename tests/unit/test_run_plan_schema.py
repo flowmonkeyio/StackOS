@@ -246,6 +246,69 @@ def test_run_plan_schema_builds_template_derived_grants() -> None:
     assert context_grant["fields"] == ["status", "summary"]
 
 
+def test_run_plan_context_requirements_keep_source_specific_field_grants() -> None:
+    template = WorkflowTemplateSpec.model_validate(
+        {
+            "schema_version": "stackos.workflow-template.v1",
+            "key": "seo.research-context",
+            "name": "Research context",
+            "version": "0.1.0",
+            "context_requirements": [
+                {
+                    "id": "recent_research",
+                    "source": "resources",
+                    "fields": ["resource_key", "title", "data_json"],
+                },
+                {
+                    "id": "accepted_learnings",
+                    "source": "learnings",
+                    "fields": ["statement", "confidence"],
+                },
+            ],
+            "steps": [
+                {
+                    "id": "orient",
+                    "title": "Orient",
+                    "context_refs": ["recent_research", "accepted_learnings"],
+                }
+            ],
+        }
+    )
+    plan = run_plan_from_template(
+        LoadedWorkflowTemplate(
+            summary=WorkflowTemplateSummaryOut(
+                key=template.key,
+                name=template.name,
+                version=template.version,
+                source="plugin",
+                precedence=10,
+                plugin_slug="seo",
+            ),
+            spec=template,
+        )
+    )
+
+    grants = [
+        grant
+        for grant in plan.grant_snapshot_json["mcp_tool_grants"]
+        if grant.get("tool") == "context.query"
+    ]
+    assert grants == [
+        {
+            "step_id": "orient",
+            "tool": "context.query",
+            "sources": ["resources"],
+            "fields": ["data_json", "resource_key", "title"],
+        },
+        {
+            "step_id": "orient",
+            "tool": "context.query",
+            "sources": ["learnings"],
+            "fields": ["confidence", "statement"],
+        },
+    ]
+
+
 def test_run_plan_schema_allows_explicit_artifact_grant_policy_without_output_grants() -> None:
     template = WorkflowTemplateSpec.model_validate(
         {

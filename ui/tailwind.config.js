@@ -121,8 +121,8 @@ export default {
         xs:  '4px',
         sm:  '6px',
         md:  '8px',
-        lg:  '10px',
-        xl:  '14px',
+        lg:  '8px',
+        xl:  '10px',
       },
       boxShadow: {
         xs:    'var(--shadow-xs)',

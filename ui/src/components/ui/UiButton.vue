@@ -22,6 +22,8 @@ export interface UiButtonProps {
   size?: 'sm' | 'md' | 'lg'
   /** Render as <a> when set; otherwise <button>. */
   href?: string
+  /** Associate a submit button with a form when the button renders outside it. */
+  form?: string
   type?: 'button' | 'submit' | 'reset'
   disabled?: boolean
   loading?: boolean
@@ -40,6 +42,7 @@ const props = withDefaults(defineProps<UiButtonProps>(), {
   variant: 'secondary',
   size: 'md',
   href: undefined,
+  form: undefined,
   type: 'button',
   disabled: false,
   loading: false,
@@ -87,6 +90,7 @@ const sizeClass = computed(
   <component
     :is="href ? 'a' : 'button'"
     :href="href"
+    :form="form"
     :type="href ? undefined : type"
     :disabled="!href && isDisabled"
     :aria-disabled="isDisabled || undefined"

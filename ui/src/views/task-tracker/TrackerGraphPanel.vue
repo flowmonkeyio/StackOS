@@ -9,7 +9,11 @@ import type { EdgeMouseEvent, NodeMouseEvent, ViewportTransform } from '@vue-flo
 import StatusBadge from '@/components/StatusBadge.vue'
 import { UiBadge, UiButton } from '@/components/ui'
 import { resolveStatus, type Tone } from '@/design/status'
-import type { TrackerFlowModel } from '@/lib/task-tracker/graphModel'
+import {
+  TRACKER_TICKET_NODE_HEIGHT,
+  TRACKER_TICKET_NODE_WIDTH,
+  type TrackerFlowModel,
+} from '@/lib/task-tracker/graphModel'
 import type { TrackerStatus, TrackerTicket } from '@/lib/task-tracker/types'
 
 import TicketGraphNode from './TicketGraphNode.vue'
@@ -20,9 +24,9 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import '@vue-flow/minimap/dist/style.css'
 
-const TICKET_NODE_WIDTH = 236
-const TICKET_NODE_HEIGHT = 96
-const READABLE_FOCUS_ZOOM = 0.72
+const TICKET_NODE_WIDTH = TRACKER_TICKET_NODE_WIDTH
+const TICKET_NODE_HEIGHT = TRACKER_TICKET_NODE_HEIGHT
+const READABLE_FOCUS_ZOOM = 0.82
 
 const props = defineProps<{
   flow: TrackerFlowModel
@@ -64,8 +68,12 @@ const emit = defineEmits<{
   (e: 'viewportReady', value: string): void
 }>()
 
-const DEFAULT_VIEWPORT: ViewportTransform = { x: 32, y: 64, zoom: 0.58 }
+const DEFAULT_VIEWPORT: ViewportTransform = { x: 48, y: 72, zoom: 0.68 }
 const initialViewportValue = computed(() => props.initialViewport ?? DEFAULT_VIEWPORT)
+const flowCssVariables = {
+  '--tracker-ticket-node-width': `${TICKET_NODE_WIDTH}px`,
+  '--tracker-ticket-node-height': `${TICKET_NODE_HEIGHT}px`,
+}
 const { fitView, setCenter, setViewport } = useVueFlow({ id: props.flowId })
 const appliedRefocusKey = ref<string | null>(null)
 const viewportReady = ref(false)
@@ -115,11 +123,16 @@ async function applyViewportIntent(): Promise<void> {
       return
     }
   }
-  if (props.graphFitOnInit && !props.initialViewport && !appliedRefocusKey.value && !viewportReady.value) {
+  if (
+    props.graphFitOnInit &&
+    !props.initialViewport &&
+    !appliedRefocusKey.value &&
+    !viewportReady.value
+  ) {
     await fitView({
       padding: 0.22,
       minZoom: 0.16,
-      maxZoom: 0.98,
+      maxZoom: 0.9,
       duration: viewportReady.value ? 160 : 0,
     })
   }
@@ -170,11 +183,7 @@ async function onNodesInitialized(): Promise<void> {
 }
 
 onUpdated(() => {
-  const signature = [
-    props.flowRenderKey,
-    props.refocusKey,
-    props.flow.nodes.length,
-  ].join(':')
+  const signature = [props.flowRenderKey, props.refocusKey, props.flow.nodes.length].join(':')
   if (signature !== lastViewportIntentSignature) {
     lastViewportIntentSignature = signature
     if (props.refocusKey && props.refocusKey !== appliedRefocusKey.value) {
@@ -194,11 +203,11 @@ onMounted(() => {
     class="tracker-flow-shell rounded-lg border border-default bg-bg-surface shadow-xs"
     aria-label="Task dependency graph"
   >
-    <header class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-subtle px-4 py-3">
+    <header
+      class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-subtle px-4 py-3"
+    >
       <div class="min-w-0">
-        <p class="t-overline text-fg-subtle">
-          Dependency map
-        </p>
+        <p class="t-overline text-fg-subtle">Dependency map</p>
         <h3 class="t-h3 truncate text-fg-strong">
           {{ activeTaskTitle }}
         </h3>
@@ -221,7 +230,9 @@ onMounted(() => {
       </div>
     </header>
 
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle bg-bg-surface px-4 py-2">
+    <div
+      class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle bg-bg-surface px-4 py-2"
+    >
       <div class="flex flex-wrap items-center gap-1.5">
         <span class="t-overline text-fg-subtle">Status</span>
         <UiBadge
@@ -257,12 +268,7 @@ onMounted(() => {
         </UiBadge>
       </div>
       <div class="ml-auto flex items-center">
-        <UiButton
-          v-if="filtersActive"
-          variant="ghost"
-          size="sm"
-          @click="$emit('clearFilters')"
-        >
+        <UiButton v-if="filtersActive" variant="ghost" size="sm" @click="$emit('clearFilters')">
           Clear graph filters
         </UiButton>
       </div>
@@ -274,10 +280,11 @@ onMounted(() => {
       @click.capture="$emit('graphCanvasClick', $event)"
     >
       <VueFlow
-        :key="flowRenderKey"
         :id="flowId"
+        :key="flowRenderKey"
         class="tracker-flow"
         :class="{ 'tracker-flow--settled': viewportSettled }"
+        :style="flowCssVariables"
         :nodes="flow.nodes"
         :edges="flow.edges"
         :default-viewport="initialViewportValue"
@@ -291,14 +298,11 @@ onMounted(() => {
         @edge-click="$emit('edgeClick', $event)"
         @pane-click="$emit('paneClick', $event)"
       >
-        <template #node-tracker-ticket="props">
-          <TicketGraphNode v-bind="props" />
+        <template #node-tracker-ticket="nodeProps">
+          <TicketGraphNode v-bind="nodeProps" />
         </template>
         <Background pattern-color="var(--color-border-subtle)" />
-        <MiniMap
-          pannable
-          zoomable
-        />
+        <MiniMap pannable zoomable />
         <Controls />
         <div
           v-if="selectionVisible"
@@ -311,25 +315,15 @@ onMounted(() => {
               <p class="t-overline text-fg-subtle">
                 {{ selectionLabel }}
               </p>
-              <StatusBadge
-                v-if="selectedTicket"
-                domain="tracker"
-                :status="selectedTicket.status"
-              />
+              <StatusBadge v-if="selectedTicket" domain="tracker" :status="selectedTicket.status" />
             </div>
             <p class="truncate text-sm font-medium text-fg-strong">
               {{ selectedTicket?.title ?? 'Dependency context' }}
             </p>
             <p class="tracker-graph-selection__meta text-2xs text-fg-muted">
-              <span
-                v-if="selectedTicket"
-                class="font-mono"
-              >{{ selectedTicket.key }}</span>
+              <span v-if="selectedTicket" class="font-mono">{{ selectedTicket.key }}</span>
               <span v-if="selectedEdgeLabel">{{ selectedEdgeLabel }}</span>
-              <span
-                v-for="stat in selectionStats"
-                :key="stat"
-              >{{ stat }}</span>
+              <span v-for="stat in selectionStats" :key="stat">{{ stat }}</span>
               <span v-if="selectedTicket?.assignee">Owner {{ selectedTicket.assignee }}</span>
               <span v-if="selectedTicket?.run_plan_id">Run {{ selectedTicket.run_plan_id }}</span>
             </p>
@@ -343,11 +337,7 @@ onMounted(() => {
             >
               Details
             </UiButton>
-            <UiButton
-              variant="ghost"
-              size="sm"
-              @click.stop="$emit('clearGraphFocus')"
-            >
+            <UiButton variant="ghost" size="sm" @click.stop="$emit('clearGraphFocus')">
               Clear
             </UiButton>
           </div>
@@ -437,6 +427,18 @@ onMounted(() => {
   z-index: 20 !important;
 }
 
+.tracker-flow :deep(.vue-flow__node) {
+  border-radius: var(--radius-md);
+}
+
+.tracker-flow :deep(.vue-flow__node.selected),
+.tracker-flow :deep(.vue-flow__node:focus),
+.tracker-flow :deep(.vue-flow__node:focus-visible) {
+  outline: none;
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
 /* Zoom controls — small icon buttons on the surface material. */
 .tracker-flow :deep(.vue-flow__controls) {
   display: flex;
@@ -503,9 +505,13 @@ onMounted(() => {
 }
 
 :deep(.tracker-node-selected .ticket-graph-node) {
+  animation: none;
   border-color: var(--color-accent-primary);
+  border-radius: var(--radius-md);
   background: var(--color-bg-surface);
-  box-shadow: var(--shadow-md);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--color-accent-primary) 22%, transparent),
+    var(--shadow-md);
 }
 
 :deep(.tracker-node-muted) {

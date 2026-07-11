@@ -37,6 +37,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "branding",
         "media-buying",
         "trackbooth",
+        "shopify",
         "publishing",
         "seo",
         "core",
@@ -618,7 +619,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 51
+    assert len(providers) == 52
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -634,6 +635,8 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         expected_verified_at = (
             "2026-06-17"
             if plugin_slug == "seo" and provider.key in google_seo_providers
+            else "2026-07-08"
+            if plugin_slug == "shopify" and provider.key == "shopify"
             else "2026-06-11"
         )
         assert setup.get("verified_at") == expected_verified_at

@@ -52,7 +52,7 @@ onMounted(load)
     <ProjectPageHeader
       :project-id="projectId"
       title="Capabilities"
-      description="Capabilities, providers, and actions exposed by the installed catalog."
+      description="Capabilities, providers, and actions available to connected agents."
       :breadcrumbs="[{ label: 'Capabilities' }]"
     >
       <template #actions>

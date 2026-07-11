@@ -45,10 +45,10 @@ function parseProjectId(raw: unknown): number | null {
 
 const routeProjectId = computed(() => parseProjectId(route.params.id))
 
-const currentProjectId = computed(() => routeProjectId.value ?? activeProject.value?.id ?? null)
+const currentProjectId = computed(() => routeProjectId.value)
 
 const currentProject = computed(() => {
-  if (currentProjectId.value === null) return activeProject.value
+  if (currentProjectId.value === null) return null
   return projects.getById(currentProjectId.value) ?? activeProject.value
 })
 
@@ -86,7 +86,7 @@ onMounted(() => {
 })
 
 const removeCatalogRefreshHook = router.afterEach((to) => {
-  refreshPluginsForProject(parseProjectId(to.params.id) ?? activeProject.value?.id ?? null)
+  refreshPluginsForProject(parseProjectId(to.params.id))
 })
 
 onBeforeUnmount(() => {
@@ -239,7 +239,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
             v-if="projectNavSections.length === 0"
             class="rounded-md border border-dashed border-sb-border px-3 py-3 text-sm text-sb-muted"
           >
-            Pick a project to see its operating navigation.
+            Open a project to see its operating navigation.
           </p>
           <PluginNavRenderer
             v-else

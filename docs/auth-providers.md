@@ -54,11 +54,17 @@ provider/profile they need; `auth.status` is still available for diagnostics.
    register, where to find the vendor API key/token, where billing/credits live,
    and which official docs apply. Only the operator/local admin uses setup
    routes or interactive OAuth starts.
-4. The operator chooses the provider auth method and enters the fields required
+4. The provider's plugin must be enabled for the project. The UI filters setup
+   choices and the daemon independently rejects start/store attempts for an
+   explicitly disabled plugin.
+5. The operator chooses the provider auth method and enters the fields required
    by that method, or starts the provider OAuth flow when one is configured.
-5. The agent calls `toolbox.call` for `auth.test` with the selected
-   `credential_ref`.
-6. The daemon decrypts the secret inside its process, calls the connector,
+   Local UI setup stores the credential and immediately attempts the same
+   provider-neutral credential test. A failed or unavailable test remains a
+   repairable connection; it is never reported as verified.
+6. An agent may later call `toolbox.call` for `auth.test` with the selected
+   `credential_ref` when work needs a fresh readiness check.
+7. The daemon decrypts the secret inside its process, calls the connector,
    records a redacted usage event, and returns sanitized status/metadata.
 
 No step requires an agent prompt, workflow template, or repository file to carry
@@ -115,11 +121,16 @@ The local Connections screen is service/account first:
 
 - primary action: `Add connection`
 - main list: connected services grouped by provider, with multiple named
-  connections per service
+  connections per service; revoked history is excluded while failed/expired
+  active connections remain visible for repair
 - connection rows: safe label, account metadata, profile key, status, last
   tested time, expiry, and opaque `credential_ref`
 - setup panel: enabled-plugin providers only, rendered from `auth_methods`
 - diagnostics: raw sanitized auth status only in a disclosure
+
+`GET /projects/{project_id}/auth/status` is the UI's canonical provider and
+connection read model. Its `providers` collection avoids a second provider
+catalog synchronization request during normal Connections loading.
 
 Built-in placeholder providers for project-local custom tools, such as
 `custom-media-tool` and `custom-gtm-tool`, are not normal service credentials.

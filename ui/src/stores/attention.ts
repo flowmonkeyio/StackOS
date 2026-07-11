@@ -46,6 +46,16 @@ export interface AttentionItem {
   to: string
   /** CTA verb shown on the item. */
   cta: string
+  /** User-facing consequence if the item is ignored. */
+  impact: string
+  /** Clear split between human and agent ownership. */
+  ownership: string
+  /** Expected state after the human follows the CTA. */
+  after: string
+}
+
+interface AttentionRefreshOptions {
+  authStatus?: Promise<SchemaAuthStatusOut>
 }
 
 const TONE_RANK: Record<Tone, number> = {
@@ -102,7 +112,10 @@ export const useAttentionStore = defineStore('attention', () => {
       detail: run.error ?? null,
       when: run.ended_at ?? run.started_at ?? null,
       to: `${base}/runs/${run.id}`,
-      cta: 'Inspect',
+      cta: 'Inspect failed run',
+      impact: 'The run stopped before it reached its intended outcome.',
+      ownership: 'A person inspects the failure and decides whether setup needs repair or the originating agent should retry. StackOS does not retry on its own.',
+      after: 'The run remains auditable. A connected agent can resume or create follow-up work after the cause is understood.',
     }))
   }
 
@@ -120,8 +133,11 @@ export const useAttentionStore = defineStore('attention', () => {
       title: req.title?.trim() || 'A request is waiting for you',
       detail: req.body_preview?.trim() || null,
       when: req.created_at ?? null,
-      to: `${base}/inbox`,
-      cta: 'Open',
+      to: `${base}/agent-requests?request=${req.id}&attention_status=unread`,
+      cta: 'Open request',
+      impact: 'Related agent work may be waiting for a human answer or approval.',
+      ownership: 'You provide the decision in the request context. The originating agent owns the next execution step.',
+      after: 'The answered request stays in the audit trail and the agent can continue through MCP.',
     }))
   }
 
@@ -140,13 +156,21 @@ export const useAttentionStore = defineStore('attention', () => {
         detail: 'Work is waiting on an unmet dependency.',
         when: null,
         to: `${base}/tasks?focus=blocked`,
-        cta: 'Review',
+        cta: 'Review blocked work',
+        impact: `${count} ${count === 1 ? 'work item cannot' : 'work items cannot'} progress until dependencies or recorded blockers change.`,
+        ownership: 'Agents own execution and dependency updates. A person reviews impact, supplies missing decisions, or coordinates external repair.',
+        after: 'When the owning agent records the dependency as resolved, the item leaves Attention automatically.',
       },
     ]
   }
 
-  async function connections(id: number, base: string): Promise<AttentionItem[]> {
-    const status = await apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/auth/status`)
+  async function connections(
+    id: number,
+    base: string,
+    authStatus?: Promise<SchemaAuthStatusOut>,
+  ): Promise<AttentionItem[]> {
+    const status = await (authStatus ??
+      apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/auth/status`))
     const attention = (status.connections ?? []).filter(
       (c) => c.revoked_at == null && c.status !== 'connected' && c.status !== 'used',
     )
@@ -157,8 +181,11 @@ export const useAttentionStore = defineStore('attention', () => {
       title: `${c.label || c.provider_key} needs attention`,
       detail: `Connection ${c.status}.`,
       when: c.last_tested_at ?? null,
-      to: `${base}/connections`,
-      cta: 'Reconnect',
+      to: `${base}/connections?section=services&provider_key=${encodeURIComponent(c.provider_key)}`,
+      cta: 'Repair connection',
+      impact: `Agent actions that require ${c.label || c.provider_key} may fail or remain unavailable.`,
+      ownership: 'Connection setup is a human local-admin action. Credentials stay inside the StackOS daemon.',
+      after: 'Test the repaired connection. Connected agents will receive the same safe credential reference when it is healthy.',
     }))
   }
 
@@ -187,14 +214,19 @@ export const useAttentionStore = defineStore('attention', () => {
         title: over ? `${b.kind} is over budget` : `${b.kind} is approaching its budget`,
         detail: `$${spend.toFixed(2)} of $${cap.toFixed(2)} this month (${Math.round(pct)}%).`,
         when: null,
-        to: `${base}/cost-budget`,
-        cta: 'Adjust',
+        to: `${base}/cost-budget?from=attention&integration=${encodeURIComponent(b.kind)}`,
+        cta: 'Review spend policy',
+        impact: over
+          ? 'New provider activity may be blocked by the project budget.'
+          : 'Current usage is close to the human-defined monthly limit.',
+        ownership: 'A person owns budget and risk policy. Agents operate only inside the configured limit.',
+        after: 'The alert clears after spend falls below the threshold or a person deliberately changes the budget.',
       })
     }
     return out
   }
 
-  async function refresh(id: number): Promise<void> {
+  async function refresh(id: number, options: AttentionRefreshOptions = {}): Promise<void> {
     projectId.value = id
     loading.value = true
     degraded.value = false
@@ -204,7 +236,7 @@ export const useAttentionStore = defineStore('attention', () => {
         source(() => failedRuns(id, base)),
         source(() => questions(id, base)),
         source(() => blocked(id, base)),
-        source(() => connections(id, base)),
+        source(() => connections(id, base, options.authStatus)),
         source(() => budgets(id, base)),
       ])
       const merged = [...a, ...b, ...c, ...d, ...e]

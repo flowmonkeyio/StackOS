@@ -38,6 +38,15 @@ def test_health_does_not_require_bearer_token(client: TestClient) -> None:
     assert resp.status_code == 200
 
 
+def test_health_exposes_request_timing_without_query_data(client: TestClient) -> None:
+    resp = client.get("/api/v1/health?probe=private-value")
+
+    assert resp.status_code == 200
+    assert resp.headers["server-timing"].startswith("stackos-http;dur=")
+    assert float(resp.headers["x-stackos-request-duration-ms"]) >= 0
+    assert "private-value" not in resp.headers["server-timing"]
+
+
 def test_unauthenticated_protected_path_returns_401(client: TestClient) -> None:
     """Protected /api/v1/* paths reject missing bearer with 401.
 

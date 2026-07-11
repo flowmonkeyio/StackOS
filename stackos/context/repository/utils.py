@@ -78,6 +78,7 @@ _DEFAULT_FIELDS: dict[str, tuple[str, ...]] = {
     "experiments": ("name", "domain", "hypothesis", "status", "metric_targets_json", "variants"),
     "decisions": ("title", "decision", "rationale", "status", "tags"),
     "metrics": ("metric_key", "metric_value", "dimensions_json", "captured_at"),
+    "resources": ("resource_key", "title", "status", "data_json", "updated_at"),
 }
 
 _FIELD_MAP: dict[str, frozenset[str]] = {
@@ -117,4 +118,11 @@ _FIELD_MAP: dict[str, frozenset[str]] = {
     | {"experiment_id", "run_id", "evidence_json", "metadata_json", "decided_by"},
     "metrics": frozenset(_DEFAULT_FIELDS["metrics"])
     | {"source_type", "source_id", "metadata_json"},
+    "resources": frozenset(_DEFAULT_FIELDS["resources"])
+    | {
+        "plugin_slug",
+        "external_id",
+        "provenance_json",
+        "created_at",
+    },
 }

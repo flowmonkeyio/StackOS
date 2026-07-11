@@ -33,6 +33,9 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const resources = ref<SchemaResourceOut[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  let pluginRefreshSequence = 0
+  let authRefreshSequence = 0
+  let catalogRefreshSequence = 0
 
   const enabledPlugins = computed(() =>
     plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
@@ -42,11 +45,24 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     projectId?: number,
     options: { silent?: boolean } = {},
   ): Promise<void> {
+    const requestSequence = ++pluginRefreshSequence
     if (!options.silent) loading.value = true
     error.value = null
+    if (!options.silent) {
+      plugins.value = []
+      catalog.value = composeCatalog(
+        [],
+        capabilities.value,
+        providers.value,
+        actions.value,
+        resources.value,
+      )
+    }
     try {
       const pluginQuery = projectId ? `?project_id=${projectId}` : ''
-      const pluginRows = await apiFetch<SchemaPluginOut[]>(`/api/v1/plugins${pluginQuery}`)
+      const compactQuery = projectId ? `${pluginQuery}&compact=true` : '?compact=true'
+      const pluginRows = await apiFetch<SchemaPluginOut[]>(`/api/v1/plugins${compactQuery}`)
+      if (requestSequence !== pluginRefreshSequence) return
       plugins.value = pluginRows
       catalog.value = composeCatalog(
         pluginRows,
@@ -56,26 +72,35 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         resources.value,
       )
     } catch (err) {
-      error.value = formatApiError(err, 'failed to load StackOS plugins')
+      if (requestSequence === pluginRefreshSequence) {
+        error.value = formatApiError(err, 'failed to load StackOS plugins')
+      }
     } finally {
-      if (!options.silent) loading.value = false
+      if (!options.silent && requestSequence === pluginRefreshSequence) loading.value = false
     }
   }
 
   async function refresh(projectId?: number): Promise<void> {
+    const requestSequence = ++catalogRefreshSequence
     loading.value = true
     error.value = null
+    plugins.value = []
+    capabilities.value = []
+    providers.value = []
+    actions.value = []
+    resources.value = []
+    catalog.value = null
     try {
       const pluginQuery = projectId ? `?project_id=${projectId}` : ''
-      const [pluginRows, capabilityRows, providerRows, actionRows, resourceRows] = await Promise.all(
-        [
+      const [pluginRows, capabilityRows, providerRows, actionRows, resourceRows] =
+        await Promise.all([
           apiFetch<SchemaPluginOut[]>(`/api/v1/plugins${pluginQuery}`),
           apiFetch<SchemaCapabilityOut[]>(`/api/v1/capabilities${pluginQuery}`),
           apiFetch<SchemaProviderOut[]>(`/api/v1/providers${pluginQuery}`),
           apiFetch<SchemaActionOut[]>(`/api/v1/actions${pluginQuery}`),
           apiFetch<SchemaResourceOut[]>(`/api/v1/resources${pluginQuery}`),
-        ],
-      )
+        ])
+      if (requestSequence !== catalogRefreshSequence) return
       plugins.value = pluginRows
       capabilities.value = capabilityRows
       providers.value = providerRows
@@ -89,26 +114,40 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         resourceRows,
       )
     } catch (err) {
-      error.value = formatApiError(err, 'failed to load StackOS catalog')
+      if (requestSequence === catalogRefreshSequence) {
+        error.value = formatApiError(err, 'failed to load StackOS catalog')
+      }
     } finally {
-      loading.value = false
+      if (requestSequence === catalogRefreshSequence) loading.value = false
     }
   }
 
   async function refreshAuth(projectId: number, options: { silent?: boolean } = {}): Promise<void> {
+    const requestSequence = ++authRefreshSequence
     if (!options.silent) loading.value = true
     error.value = null
+    if (!options.silent) {
+      authProviders.value = []
+      authStatus.value = null
+    }
     try {
-      const [providerRows, status] = await Promise.all([
-        apiFetch<SchemaAuthProviderOut[]>('/api/v1/auth/providers'),
-        apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${projectId}/auth/status`),
-      ])
-      authProviders.value = providerRows
+      const status = await apiFetch<SchemaAuthStatusOut>(
+        `/api/v1/projects/${projectId}/auth/status`,
+      )
+      // Auth status is the canonical provider inventory. Keep the fallback for
+      // older daemons that returned connections without embedding providers.
+      const nextAuthProviders = status.providers.length
+        ? status.providers
+        : await apiFetch<SchemaAuthProviderOut[]>('/api/v1/auth/providers')
+      if (requestSequence !== authRefreshSequence) return
+      authProviders.value = nextAuthProviders
       authStatus.value = status
     } catch (err) {
-      error.value = formatApiError(err, 'failed to load connections')
+      if (requestSequence === authRefreshSequence) {
+        error.value = formatApiError(err, 'failed to load connections')
+      }
     } finally {
-      if (!options.silent) loading.value = false
+      if (!options.silent && requestSequence === authRefreshSequence) loading.value = false
     }
   }
 

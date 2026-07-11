@@ -61,6 +61,56 @@ _PUBLIC_INGRESS_PREFIXES: tuple[str, ...] = (
     "/api/v1/ingress/telegram",
     "/api/v1/ingress/slack",
 )
+_SLOW_REQUEST_MS = 100
+
+
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    """Expose local request timing and record actionable slow requests.
+
+    Query strings and request bodies are deliberately excluded: timing logs
+    must remain useful without becoming another place that can retain user or
+    provider data.
+    """
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        started = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            get_logger("stackos.http").exception(
+                "http.request.failed",
+                method=request.method,
+                path=request.url.path,
+                duration_ms=duration_ms,
+            )
+            raise
+
+        duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        timing = f"stackos-http;dur={duration_ms:.2f}"
+        existing_timing = response.headers.get("server-timing")
+        response.headers["server-timing"] = (
+            f"{existing_timing}, {timing}" if existing_timing else timing
+        )
+        response.headers["x-stackos-request-duration-ms"] = f"{duration_ms:.2f}"
+
+        if duration_ms >= _SLOW_REQUEST_MS:
+            content_length = response.headers.get("content-length")
+            get_logger("stackos.http").warning(
+                "http.request.slow",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+                response_bytes=(
+                    int(content_length) if content_length and content_length.isdigit() else None
+                ),
+            )
+        return response
 
 
 class HostHeaderMiddleware(BaseHTTPMiddleware):
@@ -266,6 +316,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["authorization", "content-type", "if-match", "x-request-id"],
     )
     app.add_middleware(HostHeaderMiddleware)
+    app.add_middleware(RequestTimingMiddleware)
 
     register_routers(app)
 

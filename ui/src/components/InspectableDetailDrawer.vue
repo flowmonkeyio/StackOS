@@ -6,7 +6,7 @@ withDefaults(
     modelValue: boolean
     title: string
     description?: string
-    size?: 'sm' | 'md' | 'lg' | 'xl'
+    size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
     emptyTitle?: string
     emptyDescription?: string
     hasDetail?: boolean

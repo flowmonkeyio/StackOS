@@ -266,6 +266,12 @@ context_requirements:
 Supported sources should include runs, resources, artifacts, learnings,
 experiments, decisions, action calls, and provider status.
 
+Template-derived run plans keep context grants source-specific: each context
+requirement receives its own `context.query` grant and field allowlist. Do not
+merge resource fields such as `data_json` into a learning grant. Resource-backed
+context supports `plugin_slug` and `resource_keys` filters so agents can reuse a
+bounded prior opportunity set without loading unrelated project records.
+
 ## Steps
 
 Steps are defaults, not a prison. A good step defines:

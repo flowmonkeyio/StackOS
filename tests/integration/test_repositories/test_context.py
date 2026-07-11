@@ -6,6 +6,7 @@ from sqlmodel import Session
 
 from stackos.context import ContextRepository
 from stackos.repositories.base import ValidationError
+from stackos.repositories.resources import ResourceRepository
 
 
 def test_context_query_projects_fields_limits_and_redacts(
@@ -64,6 +65,53 @@ def test_context_query_rejects_unbounded_or_unknown_fields(
         assert exc.data == {"source": "learnings", "fields": ["raw_payload"]}
     else:  # pragma: no cover
         raise AssertionError("expected field validation")
+
+
+def test_context_query_projects_filtered_resource_records(
+    session: Session,
+    project_id: int,
+) -> None:
+    record = (
+        ResourceRepository(session)
+        .upsert_record(
+            project_id=project_id,
+            plugin_slug="core",
+            resource_key="learning",
+            external_id="seo-research-1",
+            title="SEO opportunity set",
+            data_json={
+                "status": "active",
+                "domain": "seo",
+                "tags": ["seo"],
+                "keywords": ["agentic workflow"],
+                "api_key": "should-not-leak",
+            },
+        )
+        .data
+    )
+
+    out = ContextRepository(session).query_context(
+        project_id=project_id,
+        sources=["resources"],
+        fields=["resource_key", "title", "status", "data_json", "updated_at"],
+        plugin_slug="core",
+        resource_keys=["learning"],
+        tags=["seo"],
+        domain="seo",
+        statuses=["active"],
+        limit=10,
+    )
+
+    assert [item.id for item in out.items] == [record.id]
+    assert out.items[0].fields["resource_key"] == "learning"
+    assert out.items[0].fields["status"] == "active"
+    assert out.items[0].fields["data_json"]["api_key"] == "[redacted]"
+    assert out.items[0].provenance == {
+        "table": "resource_records",
+        "id": record.id,
+        "plugin_slug": "core",
+        "resource_key": "learning",
+    }
 
 
 def test_experiment_observations_and_decisions_are_stored_not_interpreted(

@@ -1,9 +1,9 @@
 /**
  * StackOS Console Design System — CSS Variables
  *
- * Visual language: refined operator console. Zinc-based neutrals, indigo
- * accent, a dark sidebar in both themes, tinted status pills, soft radii,
- * layered depth.
+ * Visual language: calm operator console. Neutral working surfaces, a focused
+ * StackOS lime accent, a dark sidebar in both themes, semantic status colors,
+ * restrained radii, and shallow depth.
  *
  * Three layers:
  *   1. Foundational — typography, spacing, radii, shadows, motion, layout.
@@ -57,12 +57,12 @@
   --space-12:   48px;
   --space-16:   64px;
 
-  /* Radius — soft, modern */
+  /* Radius — restrained for dense operational surfaces */
   --radius-xs:  4px;
   --radius-sm:  6px;
   --radius-md:  8px;
-  --radius-lg:  10px;
-  --radius-xl:  14px;
+  --radius-lg:  8px;
+  --radius-xl:  10px;
   --radius-full:9999px;
 
   /* Z-index */
@@ -83,7 +83,7 @@
   --easing-exit:     cubic-bezier(0.4, 0, 1, 1);
 
   /* Brand */
-  --brand-gradient: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+  --brand-gradient: linear-gradient(135deg, #84cc16 0%, #bef264 100%);
 
   /* Layout */
   --layout-content-max:    1280px;
@@ -121,22 +121,22 @@
   --color-fg-subtle:        #71717a;
   --color-fg-disabled:      #a1a1aa;
   --color-fg-inverse:       #fafafa;
-  --color-fg-link:          #4f46e5;
+  --color-fg-link:          #3f6212;
   --color-fg-on-accent:     #ffffff;
 
   /* Borders */
   --color-border-default:   #e4e4e7;
   --color-border-strong:    #d4d4d8;
   --color-border-subtle:    #efeff1;
-  --color-border-focus:     #6366f1;
+  --color-border-focus:     #65a30d;
   --color-border-inverse:   #3f3f46;
 
-  /* Accent — indigo */
-  --color-accent-primary:        #4f46e5;
-  --color-accent-primary-hover:  #4338ca;
-  --color-accent-primary-active: #3730a3;
-  --color-accent-primary-subtle: #eef2ff;
-  --color-accent-primary-fg:     #4f46e5;
+  /* Accent — StackOS lime, used for focus and interaction rather than decoration */
+  --color-accent-primary:        #4d7c0f;
+  --color-accent-primary-hover:  #3f6212;
+  --color-accent-primary-active: #365314;
+  --color-accent-primary-subtle: #f7fee7;
+  --color-accent-primary-fg:     #3f6212;
 
   /* Semantic — success (emerald) */
   --color-success-default: #059669;
@@ -180,13 +180,13 @@
   --sb-bg:          #16161c;
   --sb-bg-elevated: #232329;
   --sb-bg-hover:    rgba(255, 255, 255, 0.06);
-  --sb-bg-active:   rgba(255, 255, 255, 0.1);
+  --sb-bg-active:   rgba(163, 230, 53, 0.12);
   --sb-fg:          #d4d4d8;
   --sb-fg-strong:   #fafafa;
   --sb-fg-muted:    #94949e;
   --sb-border:      rgba(255, 255, 255, 0.08);
-  --sb-accent:      #a5b4fc;
-  --sb-ring:        #818cf8;
+  --sb-accent:      #bef264;
+  --sb-ring:        #a3e635;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -213,8 +213,8 @@
   --color-fg-subtle:        #8a8a94;
   --color-fg-disabled:      #54545d;
   --color-fg-inverse:       #18181b;
-  --color-fg-link:          #a5b4fc;
-  --color-fg-on-accent:     #ffffff;
+  --color-fg-link:          #bef264;
+  --color-fg-on-accent:     #17210a;
 
   /* Borders are quiet hairlines: the tone ramp does the separating, so edges
      stay soft. Kept near-neutral (minimal blue) so they read as gentle gray,
@@ -222,16 +222,15 @@
   --color-border-default:   #242429;
   --color-border-strong:    #313139;
   --color-border-subtle:    #1d1d21;
-  --color-border-focus:     #818cf8;
+  --color-border-focus:     #a3e635;
   --color-border-inverse:   #d4d4d8;
 
-  /* Accent — a clean, luminous indigo (not muddy violet). Interactive states
-     brighten on dark, as they should: hover lighter, active a tactile press. */
-  --color-accent-primary:        #5b5ef0;
-  --color-accent-primary-hover:  #6f72f3;
-  --color-accent-primary-active: #4f52e0;
-  --color-accent-primary-subtle: rgba(99, 102, 241, 0.18);
-  --color-accent-primary-fg:     #a5b4fc;
+  /* Accent remains vivid on dark surfaces without becoming ambient decoration. */
+  --color-accent-primary:        #a3e635;
+  --color-accent-primary-hover:  #bef264;
+  --color-accent-primary-active: #84cc16;
+  --color-accent-primary-subtle: rgba(163, 230, 53, 0.14);
+  --color-accent-primary-fg:     #bef264;
 
   --color-success-default: #10b981;
   --color-success-subtle:  rgba(16, 185, 129, 0.16);
@@ -270,13 +269,13 @@
   --sb-bg:          #0b0b0e;
   --sb-bg-elevated: #1a1a20;
   --sb-bg-hover:    rgba(255, 255, 255, 0.055);
-  --sb-bg-active:   rgba(255, 255, 255, 0.1);
+  --sb-bg-active:   rgba(163, 230, 53, 0.12);
   --sb-fg:          #c8c8cf;
   --sb-fg-strong:   #fafafa;
   --sb-fg-muted:    #92929c;
   --sb-border:      rgba(255, 255, 255, 0.08);
-  --sb-accent:      #a5b4fc;
-  --sb-ring:        #818cf8;
+  --sb-accent:      #bef264;
+  --sb-ring:        #a3e635;
 }
 
 /* ---------------------------------------------------------------------- */

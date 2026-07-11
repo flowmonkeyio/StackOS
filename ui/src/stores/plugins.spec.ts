@@ -135,7 +135,7 @@ describe('StackOS catalog store auth controls', () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
       calls.push(url)
-      if (url === '/api/v1/plugins?project_id=1') {
+      if (url === '/api/v1/plugins?project_id=1&compact=true') {
         return json([plugin('utils', true)])
       }
       return json({})
@@ -144,7 +144,7 @@ describe('StackOS catalog store auth controls', () => {
     const store = useStackOsCatalogStore()
     await store.refreshPlugins(1, { silent: true })
 
-    expect(calls).toEqual(['/api/v1/plugins?project_id=1'])
+    expect(calls).toEqual(['/api/v1/plugins?project_id=1&compact=true'])
     expect(store.loading).toBe(false)
     expect(store.enabledPlugins.map((row) => row.slug)).toEqual(['utils'])
     expect(store.catalog?.plugins[0].plugin.slug).toBe('utils')

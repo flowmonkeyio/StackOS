@@ -9,14 +9,14 @@ import {
 } from './nav'
 
 describe('StackOS nav contributions', () => {
-  it('leads with goal-oriented Operate, then Configure, then demoted Developer', () => {
+  it('leads with the five operator lanes and groups secondary inspection by job', () => {
     const core = coreNavSections(7)
     const labels = core.map((section) => section.label)
 
-    expect(labels).toEqual(['Operate', 'Configure', 'Developer'])
+    expect(labels).toEqual(['Operate', 'Setup tools', 'Execution', 'Catalog', 'Data & evidence'])
     expect(core[0].items.map((item) => item.label)).toEqual([
       'Home',
-      'Inbox',
+      'Attention',
       'Work',
       'Activity',
       'Setup',
@@ -30,10 +30,10 @@ describe('StackOS nav contributions', () => {
       'Spend',
       'Plugins',
     ])
-    // The raw audit/registry surfaces are demoted into Developer.
+    // Execution, catalog, and evidence remain secondary inspection groups.
     expect(core[2].items.map((item) => item.to)).toContain('/projects/7/action-calls')
-    expect(core[2].items.map((item) => item.to)).toContain('/projects/7/operations')
-    expect(core[2].items.map((item) => item.to)).toContain('/projects/7/resources')
+    expect(core[3].items.map((item) => item.to)).toContain('/projects/7/operations')
+    expect(core[4].items.map((item) => item.to)).toContain('/projects/7/resources')
   })
 
   it('loads plugin nav contributions from sanitized manifest UI metadata', () => {
@@ -68,9 +68,9 @@ describe('StackOS nav contributions', () => {
     })
   })
 
-  it('keeps setup-owner surfaces in the Configure group', () => {
+  it('keeps setup-owner surfaces in the Setup tools group', () => {
     const core = coreNavSections(12)
-    const configure = core.find((section) => section.label === 'Configure')
+    const configure = core.find((section) => section.label === 'Setup tools')
 
     expect(configure?.items.map((item) => item.to)).toEqual([
       '/projects/12/connections',
@@ -133,16 +133,17 @@ describe('StackOS nav contributions', () => {
     const sections = projectNavSections(7, [seo, communications, engineering])
 
     expect(sections[0].label).toBe('Operate')
-    expect(sections[1].label).toBe('Configure')
-    expect(sections[2].label).toBe('Engineering')
-    expect(sections[3].label).toBe('Communications')
-    expect(sections[2].items.map((item) => item.to)).toEqual([
+    expect(sections[1].label).toBe('Setup tools')
+    expect(sections[2].label).toBe('Execution')
+    expect(sections[3].label).toBe('Catalog')
+    expect(sections[4].label).toBe('Data & evidence')
+    expect(sections[5].label).toBe('Engineering')
+    expect(sections[6].label).toBe('Communications')
+    expect(sections[5].items.map((item) => item.to)).toEqual([
       '/projects/7/resources?plugin_slug=engineering',
       '/projects/7/workflow-templates?plugin_slug=engineering',
     ])
     expect(sections.map((section) => section.label)).toContain('SEO')
-    // Developer (audit/registry) is demoted to the end.
-    expect(sections[sections.length - 1].label).toBe('Developer')
   })
 
   it('uses manifest display order for plugin tools before falling back to slug defaults', () => {

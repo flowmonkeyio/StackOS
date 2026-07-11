@@ -75,6 +75,25 @@ describe('TrackerTaskDetailDialog', () => {
 
     wrapper.unmount()
   })
+
+  it('renders agent-owned task status as read-only context', async () => {
+    const wrapper = mount(TrackerTaskDetailDialog, {
+      props: {
+        modelValue: true,
+        task: task(),
+      },
+      attachTo: document.body,
+    })
+
+    await nextTick()
+
+    expect(document.body.textContent).toContain(
+      'Status is managed by the originating agent or run-plan lifecycle.',
+    )
+    expect(wrapper.find('[aria-label="Task status"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
 })
 
 function task(): TrackerTask {

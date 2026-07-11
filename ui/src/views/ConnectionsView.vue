@@ -1,87 +1,30 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { storeToRefs } from 'pinia'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import SubNav from '@/components/SubNav.vue'
-import { UiButton, UiCallout, UiPageShell } from '@/components/ui'
-import type { SchemaAuthProviderOut } from '@/api'
-import { useConnectionForm } from '@/composables/useConnectionForm'
-import { formatApiError } from '@/lib/client'
-import { callOperation } from '@/lib/operations'
-import { useStackOsCatalogStore } from '@/stores/plugins'
+import { UiButton, UiCallout, UiConfirmDialog, UiPageShell, UiSkeleton } from '@/components/ui'
 import AddConnectionPanel from './connections/AddConnectionPanel.vue'
 import BotsPanel from './connections/BotsPanel.vue'
 import ChannelsPanel from './connections/ChannelsPanel.vue'
 import ConnectedServicesPanel from './connections/ConnectedServicesPanel.vue'
 import ConnectionDiagnosticsPanel from './connections/ConnectionDiagnosticsPanel.vue'
-import ConnectionsOverviewPanel from './connections/ConnectionsOverviewPanel.vue'
 import ConnectivityPanel from './connections/ConnectivityPanel.vue'
 import ConnectivitySetupPanel from './connections/ConnectivitySetupPanel.vue'
 import DestinationsPanel from './connections/DestinationsPanel.vue'
 import HandoffRulesPanel from './connections/HandoffRulesPanel.vue'
 import SlackBotSidePanel from './connections/SlackBotSidePanel.vue'
 import TelegramProfileSidePanel from './connections/TelegramProfileSidePanel.vue'
-import {
-  botUsernameFromConnection,
-  compareConnections,
-  connectionNeedsAttention,
-  connectionStatusKey,
-  connectionTitle,
-  credentialTestMessage,
-  parseCsv,
-  preferredTelegramConnection,
-  providerGroupLabel,
-  serviceName,
-  slackIdentified,
-  slackProfileAuthKey,
-  telegramConnectionForProfile,
-  telegramFacet,
-  telegramProfileAuthKey,
-  telegramProfileUsername,
-  toCommandDrafts,
-  toCommandSpecs,
-} from './connections/formatters'
-import {
-  applyProviderResultsToIngressStatus,
-  discoveryFailureMessage,
-  endpointHasPublicAddress,
-  summarizeProviderResults,
-} from './connections/ingressResults'
-import {
-  buildSlackProfilePayload,
-  buildTelegramProfilePayload,
-  slackProfileNeedsTestedConnection,
-} from './connections/profilePayloads'
-import type {
-  AuthMethod,
-  CommunicationProfile,
-  CommunicationProfileListOut,
-  CommunicationRoute,
-  CommunicationRouteListOut,
-  CommunicationSurface,
-  CommunicationSurfaceListOut,
-  CommunicationTarget,
-  CommunicationTargetListOut,
-  ConnectionRow,
-  ConnectionSection,
-  IngressEndpointOut,
-  IngressEndpointStatusOut,
-  IngressEndpointSyncOut,
-  IngressProviderResult,
-  IngressForm,
-  MessageMap,
-  MessageTone,
-  OperationWriteEnvelope,
-  ServiceGroup,
-  SlackProfileForm,
-  TelegramCommandSpec,
-  TelegramProfileForm,
-} from './connections/types'
+import { providerLabel } from './connections/formatters'
+import { useCommunicationTopology } from './connections/useCommunicationTopology'
+import { useConnectionCredentials } from './connections/useConnectionCredentials'
+import { useIngressEndpointEditor } from './connections/useIngressEndpointEditor'
+import { useSlackProfileEditor } from './connections/useSlackProfileEditor'
+import { useTelegramProfileEditor } from './connections/useTelegramProfileEditor'
+import type { CommunicationProfile, ConnectionSection } from './connections/types'
 
 const SECTION_KEYS: ConnectionSection[] = [
-  'overview',
   'services',
   'bots',
   'channels',
@@ -93,19 +36,25 @@ const SECTION_KEYS: ConnectionSection[] = [
 
 const route = useRoute()
 const router = useRouter()
-const catalogStore = useStackOsCatalogStore()
-const { authProviders, authStatus, enabledPlugins, loading, error } = storeToRefs(catalogStore)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
-const addPanelOpen = ref(false)
+const initialLoadComplete = ref(false)
 const {
-  selectedProviderKey,
+  authStatus,
+  loading,
+  error,
+  addPanelOpen,
+  busyAction,
+  providerMessages,
+  providerSetupUrls,
+  connectionMessages,
+  fieldErrors,
+  pendingRevoke,
   authMethods,
   selectedMethodKey,
   selectedMethod,
   setSelectedMethod,
   supportsCredential,
-  canAddProvider,
   inputType,
   isSecretField,
   primaryCredentialFields,
@@ -119,188 +68,105 @@ const {
   labelValue,
   setLabelValue,
   setSelectedProvider,
-  clearForm,
-} = useConnectionForm()
-const busyAction = ref<string | null>(null)
-const providerMessages = ref<MessageMap>({})
-const connectionMessages = ref<MessageMap>({})
-const activeSection = ref<ConnectionSection>('overview')
-const telegramProfilePanelOpen = ref(false)
-const telegramProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
-const communicationProfiles = ref<CommunicationProfile[]>([])
-const communicationTargets = ref<CommunicationTarget[]>([])
-const communicationSurfaces = ref<CommunicationSurface[]>([])
-const communicationRoutes = ref<CommunicationRoute[]>([])
-const ingressStatus = ref<IngressEndpointStatusOut | null>(null)
-const lastIngressProviderResults = ref<IngressProviderResult[]>([])
-const communicationSetupLoading = ref(false)
-const communicationSetupMessage = ref<{ tone: MessageTone; text: string } | null>(null)
-const ingressSetupOpen = ref(false)
-const ingressMessage = ref<{ tone: MessageTone; text: string } | null>(null)
-const ingressForm = ref<IngressForm>({
-  driver: 'local-tunnel',
-  public_base_url: '',
-  discovery_url: 'http://127.0.0.1:4040/api/endpoints',
+  visibleAuthProviders,
+  providerOptions,
+  selectedProvider,
+  activeConnections,
+  connectedConnections,
+  attentionConnections,
+  serviceGroups,
+  connectedServiceCount,
+  load: loadCredentials,
+  applyProviderSelection,
+  openAddConnection,
+  saveCredential: saveCredentialAction,
+  startProvider,
+  testConnection,
+  requestRevoke,
+  confirmRevoke,
+  connectionActionKey,
+} = useConnectionCredentials(projectId)
+const activeSection = ref<ConnectionSection>('services')
+const {
+  profiles: communicationProfiles,
+  targets: communicationTargets,
+  surfaces: communicationSurfaces,
+  routes: communicationRoutes,
+  loading: communicationTopologyLoading,
+  message: communicationTopologyMessage,
+  load: loadCommunicationTopology,
+} = useCommunicationTopology(projectId)
+const {
+  status: ingressStatus,
+  loading: ingressLoading,
+  loadMessage: ingressLoadMessage,
+  panelOpen: ingressSetupOpen,
+  message: ingressMessage,
+  form: ingressForm,
+  manualRoutes: manualIngressRoutes,
+  load: loadIngressStatus,
+  reset: resetIngressStatus,
+  openPanel: openIngressSetup,
+  save: saveIngressSetup,
+  sync: syncIngress,
+} = useIngressEndpointEditor({
+  projectId,
+  busyAction,
+  onTopologyChanged: loadCommunicationTopology,
 })
-const telegramProfileForm = ref<TelegramProfileForm>({
-  key: 'ops-bot',
-  auth_profile_key: '',
-  bot_username: '',
-  identity_display_name: 'Ops Bot',
-  identity_purpose: '',
-  identity_voice: 'Clear, concise, and operational.',
-  agent_default_instructions: '',
-  agent_boundaries: '',
-  agent_escalation: '',
-  allowed_chat_refs: '',
-  allowed_user_refs: '',
-  commands: [
-    {
-      command: '/ops',
-      description: 'Handle approved operational requests.',
-      guidance: 'Triage the request, inspect relevant context, and reply with the next clear step.',
-      enabled: true,
-    },
-  ],
-  mention_patterns: '',
-  store_non_trigger_messages: true,
-  origin_required: true,
-  reply_to_source_message: true,
-  same_thread: true,
-})
-const slackProfilePanelOpen = ref(false)
-const slackProfileMessage = ref<{ tone: MessageTone; text: string } | null>(null)
-const isNewSlackProfile = ref(false)
-const slackProfileForm = ref<SlackProfileForm>({
-  key: '',
-  auth_profile_key: '',
-  identity_display_name: '',
-  identity_purpose: '',
-  identity_voice: '',
-  agent_default_instructions: '',
-  agent_boundaries: '',
-  agent_escalation: '',
-  allowed_chat_refs: '',
-  allowed_user_refs: '',
-  mention_patterns: '',
-})
-const slackProfileTeamLabel = computed(() => {
-  const connection = slackConnections.value.find(
-    (item) => item.profile_key === slackProfileForm.value.auth_profile_key,
-  )
-  const meta = connection?.account?.metadata_json as Record<string, unknown> | undefined
-  const team = meta?.team ?? meta?.team_id
-  return typeof team === 'string' ? team : ''
+const communicationSetupLoading = computed(
+  () => communicationTopologyLoading.value || ingressLoading.value,
+)
+const communicationSetupMessage = computed(
+  () => communicationTopologyMessage.value ?? ingressLoadMessage.value,
+)
+const {
+  panelOpen: telegramProfilePanelOpen,
+  message: telegramProfileMessage,
+  form: telegramProfileForm,
+  connections: telegramConnections,
+  connectionOptions: telegramConnectionOptions,
+  openAdd: openAddTelegramProfile,
+  edit: editTelegramProfile,
+  addCommand: addCommandDraft,
+  removeCommand: removeCommandDraft,
+  save: saveTelegramProfile,
+} = useTelegramProfileEditor({
+  projectId,
+  profiles: communicationProfiles,
+  connectedConnections,
+  busyAction,
+  reload: loadCommunicationSetup,
 })
 
-const connections = computed<ConnectionRow[]>(() =>
-  (authStatus.value?.connections ?? []).map((connection) => ({
-    ...connection,
-    id: connection.credential_ref,
-  })),
-)
-
-const providerByKey = computed(() => {
-  const rows = new Map<string, SchemaAuthProviderOut>()
-  for (const provider of authProviders.value) rows.set(provider.key, provider)
-  return rows
+const {
+  panelOpen: slackProfilePanelOpen,
+  message: slackProfileMessage,
+  isNew: isNewSlackProfile,
+  form: slackProfileForm,
+  connections: slackConnections,
+  connectionOptions: slackConnectionOptions,
+  teamLabel: slackProfileTeamLabel,
+  openAdd: openAddSlackProfile,
+  edit: editSlackProfile,
+  save: saveSlackProfile,
+} = useSlackProfileEditor({
+  projectId,
+  profiles: communicationProfiles,
+  connectedConnections,
+  busyAction,
+  reload: loadCommunicationSetup,
 })
-
-const visibleAuthProviders = computed(() => {
-  const enabledPluginSlugs = new Set(enabledPlugins.value.map((plugin) => plugin.slug))
-  if (enabledPluginSlugs.size === 0) return []
-  return authProviders.value.filter(
-    (provider) =>
-      canAddProvider(provider) &&
-      (!provider.plugin_slug || enabledPluginSlugs.has(provider.plugin_slug)),
-  )
-})
-
-const providerOptions = computed(() =>
-  visibleAuthProviders.value.map((provider) => ({
-    value: provider.key,
-    label: provider.name,
-    group: providerGroupLabel(provider),
-  })),
-)
-
-const selectedProvider = computed(() => {
-  if (selectedProviderKey.value) {
-    const provider = providerByKey.value.get(selectedProviderKey.value)
-    if (provider) return provider
-  }
-  return visibleAuthProviders.value[0] ?? null
-})
-
-const activeConnections = computed(() =>
-  connections.value.filter((connection) => connection.revoked_at === null),
-)
-
-const connectedConnections = computed(() =>
-  activeConnections.value.filter((connection) => connectionStatusKey(connection) === 'connected'),
-)
-
-const attentionConnections = computed(() =>
-  activeConnections.value.filter(connectionNeedsAttention),
-)
-
-const telegramConnections = computed(() =>
-  connectedConnections.value.filter((connection) => connection.provider_key === 'telegram-bot'),
-)
-
-const identifiedTelegramConnections = computed(() =>
-  telegramConnections.value.filter((connection) => botUsernameFromConnection(connection)),
-)
-
-const telegramConnectionOptions = computed(() =>
-  telegramConnections.value.map((connection) => ({
-    value: connection.profile_key,
-    label: `${connectionTitle(connection)} (${connection.profile_key})`,
-  })),
-)
-
-const slackConnections = computed(() =>
-  connectedConnections.value.filter((connection) => connection.provider_key === 'slack-bot'),
-)
-
-const slackConnectionOptions = computed(() =>
-  slackConnections.value.map((connection) => ({
-    value: connection.profile_key,
-    label: `${connectionTitle(connection)} (${connection.profile_key})`,
-  })),
-)
-
-const serviceGroups = computed<ServiceGroup[]>(() => {
-  const grouped = new Map<string, ConnectionRow[]>()
-  for (const connection of connections.value) {
-    const rows = grouped.get(connection.provider_key) ?? []
-    rows.push(connection)
-    grouped.set(connection.provider_key, rows)
-  }
-  return Array.from(grouped.entries())
-    .map(([providerKey, rows]) => ({
-      providerKey,
-      provider: providerByKey.value.get(providerKey) ?? null,
-      connections: [...rows].sort(compareConnections),
-    }))
-    .sort((left, right) => serviceName(left).localeCompare(serviceName(right)))
-})
-
-const connectedServiceCount = computed(
-  () => new Set(connectedConnections.value.map((connection) => connection.provider_key)).size,
-)
-
-const overviewLoading = computed(() => loading.value || communicationSetupLoading.value)
 
 const subNavGroups = computed(() => [
   {
+    label: 'Service setup',
     items: [
-      { key: 'overview', label: 'Overview', icon: 'gauge' },
-      { key: 'services', label: 'Services', icon: 'plug', count: connections.value.length },
+      { key: 'services', label: 'Services', icon: 'plug', count: activeConnections.value.length },
     ],
   },
   {
-    label: 'Messaging',
+    label: 'Messaging setup',
     items: [
       { key: 'bots', label: 'Bots', icon: 'chat', count: communicationProfiles.value.length },
       {
@@ -321,6 +187,11 @@ const subNavGroups = computed(() => [
         icon: 'git-branch',
         count: communicationRoutes.value.length,
       },
+    ],
+  },
+  {
+    label: 'Inbound',
+    items: [
       {
         key: 'connectivity',
         label: 'Connectivity',
@@ -330,7 +201,8 @@ const subNavGroups = computed(() => [
     ],
   },
   {
-    items: [{ key: 'diagnostics', label: 'Diagnostics', icon: 'lifebuoy' }],
+    label: 'Advanced',
+    items: [{ key: 'diagnostics', label: 'Technical diagnostics', icon: 'lifebuoy' }],
   },
 ])
 
@@ -350,217 +222,19 @@ function applySectionFromQuery(value: unknown): void {
 
 async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
-  applySectionFromQuery(route.query.section)
-  await catalogStore.refresh(projectId.value)
-  await catalogStore.refreshAuth(projectId.value)
-  await loadCommunicationSetup()
-  applyProviderSelectionFromQuery(route.query.provider_key)
+  initialLoadComplete.value = false
+  try {
+    applySectionFromQuery(route.query.section)
+    await loadCredentials()
+    await loadCommunicationSetup()
+    applyProviderSelection(route.query.provider_key)
+  } finally {
+    initialLoadComplete.value = true
+  }
 }
 
 async function loadCommunicationSetup(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
-  communicationSetupLoading.value = true
-  try {
-    const [profiles, targets, surfaces, routes, ingress] = await Promise.all([
-      callOperation<CommunicationProfileListOut>('communicationProfile.list', {
-        project_id: projectId.value,
-        limit: 50,
-      }),
-      callOperation<CommunicationTargetListOut>('communicationTarget.list', {
-        project_id: projectId.value,
-        limit: 50,
-      }),
-      callOperation<CommunicationSurfaceListOut>('communicationSurface.list', {
-        project_id: projectId.value,
-        limit: 50,
-      }),
-      callOperation<CommunicationRouteListOut>('communicationRoute.list', {
-        project_id: projectId.value,
-        limit: 50,
-      }),
-      callOperation<IngressEndpointStatusOut>('ingressEndpoint.status', {
-        project_id: projectId.value,
-      }),
-    ])
-    communicationProfiles.value = profiles.items ?? []
-    communicationTargets.value = targets.items ?? []
-    communicationSurfaces.value = surfaces.items ?? []
-    communicationRoutes.value = routes.items ?? []
-    ingressStatus.value = applyProviderResultsToIngressStatus(ingress ?? null, lastIngressProviderResults.value)
-    communicationSetupMessage.value = null
-  } catch (err) {
-    communicationSetupMessage.value = {
-      tone: 'danger',
-      text: formatApiError(err, 'failed to load communication setup'),
-    }
-  } finally {
-    communicationSetupLoading.value = false
-  }
-}
-
-function openIngressSetup(): void {
-  const endpoint = ingressStatus.value?.endpoint
-  ingressForm.value = {
-    driver: endpoint?.driver === 'public-url' ? 'public-url' : 'local-tunnel',
-    public_base_url: endpoint?.public_base_url ?? '',
-    discovery_url: ingressForm.value.discovery_url || 'http://127.0.0.1:4040/api/endpoints',
-  }
-  ingressMessage.value = null
-  ingressSetupOpen.value = true
-}
-
-async function saveIngressSetup(): Promise<void> {
-  const form = ingressForm.value
-  if (form.driver === 'public-url' && !form.public_base_url.trim()) {
-    ingressMessage.value = { tone: 'danger', text: 'A public address is required.' }
-    return
-  }
-  const discoveryUrl = form.discovery_url.trim() || 'http://127.0.0.1:4040/api/endpoints'
-  busyAction.value = 'ingress:configure'
-  try {
-    const configured = await callOperation<OperationWriteEnvelope<IngressEndpointOut>>('ingressEndpoint.configure', {
-      project_id: projectId.value,
-      driver: form.driver,
-      enabled: true,
-      ...(form.driver === 'public-url'
-        ? { public_base_url: form.public_base_url.trim() }
-        : { driver_config: { provider: 'ngrok', discovery_url: discoveryUrl } }),
-    })
-    let endpoint = configured.data
-    if (form.driver === 'local-tunnel') {
-      // A local tunnel only has an address once it's discovered — configure
-      // alone leaves it pending, so run the discovery pass before reloading.
-      const refreshed = await callOperation<OperationWriteEnvelope<IngressEndpointSyncOut>>('ingressEndpoint.refresh', {
-        project_id: projectId.value,
-        driver_config: { provider: 'ngrok', discovery_url: discoveryUrl },
-        sync_profiles: true,
-      })
-      endpoint = refreshed.data.endpoint
-    }
-    const discoveryError = discoveryFailureMessage(endpoint)
-    if (form.driver === 'local-tunnel' && discoveryError) {
-      ingressMessage.value = { tone: 'danger', text: discoveryError }
-      await loadCommunicationSetup()
-      return
-    }
-    if (form.driver === 'public-url' && !endpointHasPublicAddress(endpoint)) {
-      ingressMessage.value = {
-        tone: 'danger',
-        text: 'Connectivity was saved, but no public address is configured.',
-      }
-      await loadCommunicationSetup()
-      return
-    }
-    lastIngressProviderResults.value = []
-    ingressMessage.value = { tone: 'success', text: 'Connectivity configured.' }
-    ingressSetupOpen.value = false
-    await loadCommunicationSetup()
-  } catch (err) {
-    ingressMessage.value = {
-      tone: 'danger',
-      text: formatApiError(err, 'failed to configure connectivity'),
-    }
-  } finally {
-    busyAction.value = null
-  }
-}
-
-async function syncIngress(): Promise<void> {
-  busyAction.value = 'ingress:sync'
-  try {
-    const synced = await callOperation<OperationWriteEnvelope<IngressEndpointSyncOut>>('ingressEndpoint.sync', {
-      project_id: projectId.value,
-      apply_provider_webhooks: true,
-      dry_run_provider_webhooks: false,
-    })
-    lastIngressProviderResults.value = synced.data.provider_results ?? []
-    await loadCommunicationSetup()
-    ingressMessage.value = summarizeProviderResults(lastIngressProviderResults.value)
-  } catch (err) {
-    ingressMessage.value = { tone: 'danger', text: formatApiError(err, 'failed to sync webhooks') }
-  } finally {
-    busyAction.value = null
-  }
-}
-
-function ensureSelectableProvider(): void {
-  const providers = visibleAuthProviders.value
-  if (!selectedProviderKey.value && providers[0]) {
-    selectedProviderKey.value = providers[0].key
-    return
-  }
-  if (
-    selectedProviderKey.value &&
-    providers.length > 0 &&
-    !providers.some((provider) => provider.key === selectedProviderKey.value)
-  ) {
-    selectedProviderKey.value = providers[0].key
-  }
-}
-
-function applyProviderSelectionFromQuery(value: unknown): void {
-  ensureSelectableProvider()
-  const providerKey = typeof value === 'string' ? value : ''
-  if (!providerKey) return
-  const provider = providerByKey.value.get(providerKey)
-  if (!provider || !canAddProvider(provider)) return
-  selectedProviderKey.value = providerKey
-  addPanelOpen.value = true
-}
-
-function openAddConnection(providerKey?: string): void {
-  if (providerKey) selectedProviderKey.value = providerKey
-  if (!selectedProviderKey.value && visibleAuthProviders.value[0]) {
-    selectedProviderKey.value = visibleAuthProviders.value[0].key
-  }
-  addPanelOpen.value = true
-}
-
-function openAddTelegramProfile(): void {
-  const preferred = preferredTelegramConnection(
-    identifiedTelegramConnections.value,
-    telegramConnections.value,
-  )
-  if (!telegramProfileForm.value.auth_profile_key && preferred) {
-    telegramProfileForm.value = {
-      ...telegramProfileForm.value,
-      auth_profile_key: preferred.profile_key,
-    }
-  }
-  telegramProfileMessage.value = null
-  telegramProfilePanelOpen.value = true
-}
-
-function editTelegramProfile(profile: CommunicationProfile): void {
-  const facet = telegramFacet(profile)
-  const rawCommands = profile.trigger_policy['commands']
-  const rawMentionPatterns = profile.trigger_policy['mention_patterns']
-  const commands = Array.isArray(rawCommands) ? (rawCommands as TelegramCommandSpec[]) : []
-  const mentionPatterns = Array.isArray(rawMentionPatterns) ? (rawMentionPatterns as string[]) : []
-  telegramProfileForm.value = {
-    key: profile.key,
-    auth_profile_key: telegramProfileAuthKey(profile),
-    bot_username: telegramProfileUsername(profile),
-    identity_display_name: String(profile.identity.display_name ?? profile.key),
-    identity_purpose: String(profile.identity.purpose ?? ''),
-    identity_voice: String(profile.identity.voice ?? ''),
-    agent_default_instructions: String(profile.agent_guidance.default_instructions ?? ''),
-    agent_boundaries: String(profile.agent_guidance.boundaries ?? ''),
-    agent_escalation: String(profile.agent_guidance.escalation ?? ''),
-    allowed_chat_refs: (profile.access_policy.allowed_chat_refs ?? []).join(', '),
-    allowed_user_refs: (profile.access_policy.allowed_user_refs ?? []).join(', '),
-    commands: toCommandDrafts(commands),
-    mention_patterns: mentionPatterns.join(', '),
-    store_non_trigger_messages: profile.visibility_policy.store_non_trigger_messages !== false,
-    origin_required: profile.response_policy.origin_required !== false,
-    reply_to_source_message: profile.response_policy.reply_to_source_message === true,
-    same_thread: profile.response_policy.same_thread === true,
-  }
-  if (typeof facet.bot_username === 'string' && !telegramProfileForm.value.bot_username) {
-    telegramProfileForm.value.bot_username = facet.bot_username.replace(/^@/, '')
-  }
-  telegramProfileMessage.value = null
-  telegramProfilePanelOpen.value = true
+  await Promise.all([loadCommunicationTopology(), loadIngressStatus()])
 }
 
 /** Route the Bots "Configure" action to the right provider editor. */
@@ -572,381 +246,43 @@ function editBot(profile: CommunicationProfile): void {
   }
 }
 
-function editSlackProfile(profile: CommunicationProfile): void {
-  const access = profile.access_policy
-  const rawMentions = profile.trigger_policy['mention_patterns']
-  slackProfileForm.value = {
-    key: profile.key,
-    auth_profile_key: slackProfileAuthKey(profile),
-    identity_display_name: String(profile.identity.display_name ?? profile.key),
-    identity_purpose: String(profile.identity.purpose ?? ''),
-    identity_voice: String(profile.identity.voice ?? ''),
-    agent_default_instructions: String(profile.agent_guidance.default_instructions ?? ''),
-    agent_boundaries: String(profile.agent_guidance.boundaries ?? ''),
-    agent_escalation: String(profile.agent_guidance.escalation ?? ''),
-    allowed_chat_refs: (access.allowed_surface_refs ?? []).join(', '),
-    allowed_user_refs: (access.allowed_user_refs ?? []).join(', '),
-    mention_patterns: (Array.isArray(rawMentions) ? (rawMentions as string[]) : []).join(', '),
-  }
-  isNewSlackProfile.value = false
-  slackProfileMessage.value = null
-  slackProfilePanelOpen.value = true
-}
-
 function openAddBot(provider: string): void {
   if (provider === 'slack-bot') openAddSlackProfile()
   else openAddTelegramProfile()
 }
 
-function openAddSlackProfile(): void {
-  const preferred = slackConnections.value[0]
-  slackProfileForm.value = {
-    key: 'slack-bot',
-    auth_profile_key: preferred?.profile_key ?? '',
-    identity_display_name: 'Slack Bot',
-    identity_purpose: '',
-    identity_voice: 'Clear, concise, and operational.',
-    agent_default_instructions: '',
-    agent_boundaries: '',
-    agent_escalation: '',
-    allowed_chat_refs: '',
-    allowed_user_refs: '',
-    mention_patterns: '',
-  }
-  isNewSlackProfile.value = true
-  slackProfileMessage.value = null
-  slackProfilePanelOpen.value = true
+function clearProviderQuery(): void {
+  if (!route.query.provider_key) return
+  const nextQuery = { ...route.query }
+  delete nextQuery.provider_key
+  void router.replace({ query: nextQuery })
 }
 
-function communicationProfileByKey(key: string): CommunicationProfile | null {
-  return communicationProfiles.value.find((profile) => profile.key === key) ?? null
+function setAddPanelOpen(open: boolean): void {
+  addPanelOpen.value = open
+  if (!open) clearProviderQuery()
 }
 
-function connectionActionKey(credentialRef: string, action: string): string {
-  return `${credentialRef}:${action}`
-}
-
-function providerActionKey(providerKey: string, action: string): string {
-  return `${providerKey}:${action}`
-}
-
-function setProviderMessage(providerKey: string, tone: MessageTone, text: string): void {
-  providerMessages.value = {
-    ...providerMessages.value,
-    [providerKey]: { tone, text },
-  }
-}
-
-function setConnectionMessage(credentialRef: string, tone: MessageTone, text: string): void {
-  connectionMessages.value = {
-    ...connectionMessages.value,
-    [credentialRef]: { tone, text },
-  }
-}
-
-function addCommandDraft(): void {
-  telegramProfileForm.value.commands = [
-    ...telegramProfileForm.value.commands,
-    { command: '', description: '', guidance: '', enabled: true },
-  ]
-}
-
-function removeCommandDraft(index: number): void {
-  telegramProfileForm.value.commands = telegramProfileForm.value.commands.filter((_, itemIndex) => {
-    return itemIndex !== index
-  })
-  if (telegramProfileForm.value.commands.length === 0) addCommandDraft()
-}
-
-function ensureTelegramProfileDefaults(): void {
-  const preferred = preferredTelegramConnection(
-    identifiedTelegramConnections.value,
-    telegramConnections.value,
-  )
-  if (!telegramProfileForm.value.auth_profile_key && preferred) {
-    telegramProfileForm.value = {
-      ...telegramProfileForm.value,
-      auth_profile_key: preferred.profile_key,
-    }
-  }
-}
-
-async function saveTelegramProfile(): Promise<void> {
-  ensureTelegramProfileDefaults()
-  const form = telegramProfileForm.value
-  const key = form.key.trim()
-  const authProfileKey = form.auth_profile_key.trim()
-  const allowedChatRefs = parseCsv(form.allowed_chat_refs)
-  const allowedUserRefs = parseCsv(form.allowed_user_refs)
-  const identityDisplayName = form.identity_display_name.trim()
-  const commands = toCommandSpecs(form.commands)
-  if (!key) {
-    telegramProfileMessage.value = { tone: 'danger', text: 'Telegram profile key is required.' }
-    return
-  }
-  if (!identityDisplayName) {
-    telegramProfileMessage.value = { tone: 'danger', text: 'Bot display name is required.' }
-    return
-  }
-  if (!authProfileKey) {
-    telegramProfileMessage.value = { tone: 'danger', text: 'Choose a Telegram connection.' }
-    return
-  }
-  const selectedTelegramConnection = telegramConnectionForProfile(
-    authProfileKey,
-    telegramConnections.value,
-  )
-  const botUsername = botUsernameFromConnection(selectedTelegramConnection)
-  if (!botUsername) {
-    telegramProfileMessage.value = {
-      tone: 'danger',
-      text: 'Test the Telegram connection first so StackOS can fetch the bot identity from Telegram.',
-    }
-    return
-  }
-  if (allowedUserRefs.length === 0) {
-    telegramProfileMessage.value = {
-      tone: 'danger',
-      text: 'Allowlisted users are required before the bot can trigger agents.',
-    }
-    return
-  }
-  busyAction.value = 'telegram-profile:save'
-  try {
-    const existing = communicationProfileByKey(key)
-    await callOperation('communicationProfile.upsert', buildTelegramProfilePayload({
-      projectId: projectId.value,
-      existing,
-      key,
-      authProfileKey,
-      botUsername,
-      identityDisplayName,
-      identityPurpose: form.identity_purpose.trim(),
-      identityVoice: form.identity_voice.trim(),
-      agentDefaultInstructions: form.agent_default_instructions.trim(),
-      agentBoundaries: form.agent_boundaries.trim(),
-      agentEscalation: form.agent_escalation.trim(),
-      allowedChatRefs,
-      allowedUserRefs,
-      commands,
-      mentionPatterns: parseCsv(form.mention_patterns),
-      storeNonTriggerMessages: form.store_non_trigger_messages,
-      originRequired: form.origin_required,
-      replyToSourceMessage: form.reply_to_source_message,
-      sameThread: form.same_thread,
-    }))
-    telegramProfileMessage.value = { tone: 'success', text: `Saved ${key}.` }
-    telegramProfilePanelOpen.value = false
-    await loadCommunicationSetup()
-  } catch (err) {
-    telegramProfileMessage.value = {
-      tone: 'danger',
-      text: formatApiError(err, 'failed to save Telegram profile'),
-    }
-  } finally {
-    busyAction.value = null
-  }
-}
-
-async function saveSlackProfile(): Promise<void> {
-  const form = slackProfileForm.value
-  const key = form.key.trim()
-  const authProfileKey = form.auth_profile_key.trim()
-  const displayName = form.identity_display_name.trim()
-  const allowedUserRefs = parseCsv(form.allowed_user_refs)
-  const allowedSurfaceRefs = parseCsv(form.allowed_chat_refs)
-  if (!key) {
-    slackProfileMessage.value = { tone: 'danger', text: 'Bot key is required.' }
-    return
-  }
-  if (!displayName) {
-    slackProfileMessage.value = { tone: 'danger', text: 'Bot display name is required.' }
-    return
-  }
-  if (!authProfileKey) {
-    slackProfileMessage.value = { tone: 'danger', text: 'Choose a Slack connection.' }
-    return
-  }
-  if (allowedUserRefs.length === 0) {
-    slackProfileMessage.value = {
-      tone: 'danger',
-      text: 'Allowlisted users are required before the bot can trigger agents.',
-    }
-    return
-  }
-  const existing = communicationProfileByKey(key)
-  const connection =
-    slackConnections.value.find((item) => item.profile_key === authProfileKey) ?? null
-  if (slackProfileNeedsTestedConnection(existing, authProfileKey) && !slackIdentified(connection)) {
-    slackProfileMessage.value = {
-      tone: 'danger',
-      text: 'Test the Slack connection first so StackOS can fetch the workspace identity from Slack.',
-    }
-    return
-  }
-  busyAction.value = 'slack-profile:save'
-  try {
-    await callOperation('communicationProfile.upsert', buildSlackProfilePayload({
-      projectId: projectId.value,
-      existing,
-      selectedConnection: connection,
-      key,
-      authProfileKey,
-      displayName,
-      identityPurpose: form.identity_purpose.trim(),
-      identityVoice: form.identity_voice.trim(),
-      agentDefaultInstructions: form.agent_default_instructions.trim(),
-      agentBoundaries: form.agent_boundaries.trim(),
-      agentEscalation: form.agent_escalation.trim(),
-      allowedUserRefs,
-      allowedSurfaceRefs,
-      mentionPatterns: parseCsv(form.mention_patterns),
-    }))
-    slackProfileMessage.value = { tone: 'success', text: `Saved ${key}.` }
-    slackProfilePanelOpen.value = false
-    await loadCommunicationSetup()
-  } catch (err) {
-    slackProfileMessage.value = {
-      tone: 'danger',
-      text: formatApiError(err, 'failed to save Slack bot'),
-    }
-  } finally {
-    busyAction.value = null
-  }
-}
-
-function credentialFields(
-  provider: SchemaAuthProviderOut,
-  method: AuthMethod,
-): Record<string, string> | null {
-  const fields: Record<string, string> = {}
-  for (const field of method.fields ?? []) {
-    const value = fieldValue(provider.key, method.key, field.key).trim()
-    if (field.required && !value) {
-      setProviderMessage(provider.key, 'danger', `${field.label} is required.`)
-      return null
-    }
-    if (value) fields[field.key] = value
-  }
-  return fields
-}
-
-async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
-  const method = selectedMethod(provider)
-  if (!method || method.payload_format === 'none') return
-  const fields = credentialFields(provider, method)
-  if (fields === null) return
-  const profileKey = profileValue(provider.key, method.key).trim() || 'default'
-  const label = labelValue(provider.key, method.key).trim()
-  if (Object.keys(fields).length === 0 && (method.fields ?? []).some((field) => field.secret)) {
-    setProviderMessage(provider.key, 'danger', 'Credential fields are required.')
-    return
-  }
-  busyAction.value = providerActionKey(provider.key, 'save')
-  try {
-    const response = await catalogStore.storeCredential(projectId.value, provider.key, {
-      auth_method_key: method.key,
-      profile_key: profileKey,
-      label: label || null,
-      fields,
-    })
-    let message = `Stored ${response.data.credential_ref}.`
-    let tone: MessageTone = 'success'
-    if (provider.key === 'telegram-bot' || provider.key === 'slack-bot') {
-      const testResponse = await catalogStore.testCredential(projectId.value, {
-        credential_ref: response.data.credential_ref,
-      })
-      message = testResponse.data.ok
-        ? credentialTestMessage(
-            provider.key,
-            testResponse.data.metadata,
-            `Connected ${response.data.credential_ref}.`,
-          )
-        : testResponse.data.summary
-      tone = testResponse.data.ok ? 'success' : 'danger'
-    }
-    clearForm(provider.key, method.key)
-    setProviderMessage(provider.key, tone, message)
-    addPanelOpen.value = false
-  } catch (err) {
-    setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to store credential'))
-  } finally {
-    busyAction.value = null
-  }
-}
-
-async function startProvider(provider: SchemaAuthProviderOut): Promise<void> {
-  const method = selectedMethod(provider)
-  if (!method) return
-  busyAction.value = providerActionKey(provider.key, 'start')
-  try {
-    const response = await catalogStore.startCredential(projectId.value, provider.key, {
-      auth_method_key: method.key,
-      redirect_uri: null,
-    })
-    const url = response.data.authorization_url ?? response.data.setup_url
-    setProviderMessage(
-      provider.key,
-      'info',
-      url ? `Setup URL ready: ${url}` : `Started ${response.data.status}.`,
-    )
-  } catch (err) {
-    setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to start auth flow'))
-  } finally {
-    busyAction.value = null
-  }
-}
-
-async function testConnection(connection: ConnectionRow): Promise<void> {
-  busyAction.value = connectionActionKey(connection.credential_ref, 'test')
-  try {
-    const response = await catalogStore.testCredential(projectId.value, {
-      credential_ref: connection.credential_ref,
-    })
-    setConnectionMessage(
-      connection.credential_ref,
-      response.data.ok ? 'success' : 'danger',
-      response.data.ok
-        ? credentialTestMessage(
-            response.data.provider_key,
-            response.data.metadata,
-            response.data.summary,
-          )
-        : response.data.summary,
-    )
-  } catch (err) {
-    setConnectionMessage(
-      connection.credential_ref,
-      'danger',
-      formatApiError(err, 'failed to test credential'),
-    )
-  } finally {
-    busyAction.value = null
-  }
-}
-
-async function revokeConnection(connection: ConnectionRow): Promise<void> {
-  busyAction.value = connectionActionKey(connection.credential_ref, 'revoke')
-  try {
-    await catalogStore.revokeCredential(projectId.value, {
-      credential_ref: connection.credential_ref,
-    })
-    setConnectionMessage(connection.credential_ref, 'info', `Revoked ${connection.credential_ref}.`)
-  } catch (err) {
-    setConnectionMessage(
-      connection.credential_ref,
-      'danger',
-      formatApiError(err, 'failed to revoke credential'),
-    )
-  } finally {
-    busyAction.value = null
-  }
+async function saveCredential(...args: Parameters<typeof saveCredentialAction>): Promise<void> {
+  await saveCredentialAction(...args)
+  if (!addPanelOpen.value) clearProviderQuery()
 }
 
 onMounted(load)
 onBeforeRouteUpdate((to) => {
+  const nextProjectId = Number.parseInt(String(to.params.id), 10)
+  if (nextProjectId !== projectId.value) {
+    addPanelOpen.value = false
+    pendingRevoke.value = null
+    telegramProfilePanelOpen.value = false
+    slackProfilePanelOpen.value = false
+    ingressSetupOpen.value = false
+    resetIngressStatus()
+    setTimeout(() => void load(), 0)
+    return
+  }
   applySectionFromQuery(to.query.section)
-  applyProviderSelectionFromQuery(to.query.provider_key)
+  applyProviderSelection(to.query.provider_key)
 })
 </script>
 
@@ -955,26 +291,130 @@ onBeforeRouteUpdate((to) => {
     <ProjectPageHeader
       :project-id="projectId"
       title="Connections"
-      description="Connect the tools and messaging channels your agents use. Secrets stay on this machine — agents only get safe references."
+      description="Add, test, and repair the services connected agents can use. Messaging topology and diagnostics stay secondary."
       :breadcrumbs="[{ label: 'Connections' }]"
     >
       <template #actions>
-        <UiButton
-          variant="primary"
-          size="sm"
-          icon-left="plus"
-          @click="openAddConnection()"
-        >
+        <UiButton variant="primary" size="sm" icon-left="plus" @click="openAddConnection()">
           Add connection
         </UiButton>
       </template>
     </ProjectPageHeader>
 
-    <UiCallout
-      v-if="error"
-      tone="danger"
-    >
+    <UiCallout v-if="error" tone="danger">
       {{ error }}
+    </UiCallout>
+
+    <section
+      v-if="initialLoadComplete && !error"
+      class="overflow-hidden rounded-lg border border-strong bg-bg-surface"
+      aria-labelledby="connection-state-title"
+    >
+      <div class="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div>
+          <p class="t-overline text-fg-subtle">Connection state</p>
+          <h2
+            id="connection-state-title"
+            class="mt-1 text-xl font-semibold tracking-tight text-fg-strong"
+          >
+            {{
+              attentionConnections.length > 0
+                ? `${attentionConnections.length} ${attentionConnections.length === 1 ? 'connection needs' : 'connections need'} repair`
+                : `${connectedServiceCount} ${connectedServiceCount === 1 ? 'service is' : 'services are'} ready`
+            }}
+          </h2>
+          <p class="mt-2 max-w-3xl text-sm leading-6 text-fg-muted">
+            <template v-if="attentionConnections.length > 0">
+              Repair or re-test these accounts before an agent depends on them. Healthy services
+              remain available.
+            </template>
+            <template v-else>
+              Secrets remain in the local daemon. Connected agents receive only safe credential
+              references.
+            </template>
+          </p>
+        </div>
+        <div v-if="attentionConnections.length > 0" class="flex flex-wrap gap-2 lg:justify-end">
+          <UiButton @click="setActiveSection('services')"> Review services </UiButton>
+        </div>
+      </div>
+      <div class="grid border-t border-border-subtle bg-bg-surface-alt sm:grid-cols-4">
+        <button
+          type="button"
+          class="focus-ring-inset border-b border-border-subtle px-4 py-3 text-left transition hover:bg-bg-surface sm:border-b-0 sm:border-r"
+          @click="setActiveSection('services')"
+        >
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
+            >Services</span
+          >
+          <span class="mt-1 block text-sm font-semibold text-fg-strong"
+            >{{ connectedServiceCount }} connected</span
+          >
+        </button>
+        <button
+          type="button"
+          class="focus-ring-inset border-b border-border-subtle px-4 py-3 text-left transition hover:bg-bg-surface sm:border-b-0 sm:border-r"
+          @click="setActiveSection('bots')"
+        >
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
+            >Messaging identities</span
+          >
+          <span class="mt-1 block text-sm font-semibold text-fg-strong"
+            >{{ communicationProfiles.length }} configured</span
+          >
+        </button>
+        <button
+          type="button"
+          class="focus-ring-inset border-b border-border-subtle px-4 py-3 text-left transition hover:bg-bg-surface sm:border-b-0 sm:border-r"
+          @click="setActiveSection('channels')"
+        >
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
+            >Places</span
+          >
+          <span class="mt-1 block text-sm font-semibold text-fg-strong"
+            >{{ communicationSurfaces.length }} visible</span
+          >
+        </button>
+        <button
+          type="button"
+          class="focus-ring-inset px-4 py-3 text-left transition hover:bg-bg-surface"
+          @click="setActiveSection('connectivity')"
+        >
+          <span class="block text-2xs font-medium uppercase tracking-wide text-fg-subtle"
+            >Inbound messaging</span
+          >
+          <span
+            class="mt-1 block text-sm font-semibold"
+            :class="ingressStatus?.ready ? 'text-success-fg' : 'text-warning-fg'"
+          >
+            {{ ingressStatus?.ready ? 'Reachable' : 'Needs setup' }}
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <section
+      v-else-if="!initialLoadComplete"
+      class="grid gap-3 rounded-lg border border-strong bg-bg-surface p-5"
+      aria-label="Loading connection state"
+    >
+      <UiSkeleton class="h-3 w-32" />
+      <UiSkeleton class="h-7 w-72 max-w-full" />
+      <UiSkeleton class="h-4 w-full max-w-2xl" />
+    </section>
+
+    <UiCallout
+      v-if="manualIngressRoutes.length > 0"
+      tone="warning"
+      :title="`${providerLabel(manualIngressRoutes[0].provider_key)} webhook needs manual update`"
+    >
+      {{ manualIngressRoutes[0].profile_key }} needs its webhook URL copied into the provider
+      console.
+      <template #actions>
+        <UiButton variant="secondary" size="sm" @click="setActiveSection('connectivity')">
+          Review connectivity
+        </UiButton>
+      </template>
     </UiCallout>
 
     <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -989,48 +429,22 @@ onBeforeRouteUpdate((to) => {
       <div class="min-w-0 flex-1">
         <div
           role="tabpanel"
-          aria-labelledby="cs-subnav-overview"
-          :hidden="activeSection !== 'overview'"
-        >
-          <ConnectionsOverviewPanel
-            :loading="overviewLoading"
-            :connected-service-count="connectedServiceCount"
-            :active-connections-count="activeConnections.length"
-            :attention-connections="attentionConnections"
-            :service-groups-count="serviceGroups.length"
-            :bots="communicationProfiles"
-            :channels="communicationSurfaces"
-            :destinations="communicationTargets"
-            :ingress-status="ingressStatus"
-            @navigate="setActiveSection"
-            @add-connection="openAddConnection()"
-            @add-bot="openAddTelegramProfile"
-          />
-        </div>
-
-        <div
-          role="tabpanel"
           aria-labelledby="cs-subnav-services"
           :hidden="activeSection !== 'services'"
         >
           <ConnectedServicesPanel
             :loading="loading"
             :service-groups="serviceGroups"
-            :connections-count="connections.length"
+            :connections-count="activeConnections.length"
             :connection-messages="connectionMessages"
             :busy-action="busyAction"
-            :can-add-provider="canAddProvider"
             @add-connection="openAddConnection"
             @test-connection="testConnection"
-            @revoke-connection="revokeConnection"
+            @revoke-connection="requestRevoke"
           />
         </div>
 
-        <div
-          role="tabpanel"
-          aria-labelledby="cs-subnav-bots"
-          :hidden="activeSection !== 'bots'"
-        >
+        <div role="tabpanel" aria-labelledby="cs-subnav-bots" :hidden="activeSection !== 'bots'">
           <BotsPanel
             :bots="communicationProfiles"
             :telegram-connections="telegramConnections"
@@ -1109,11 +523,13 @@ onBeforeRouteUpdate((to) => {
     </div>
 
     <AddConnectionPanel
-      v-model="addPanelOpen"
+      :model-value="addPanelOpen"
       :selected-provider="selectedProvider"
       :visible-auth-providers="visibleAuthProviders"
       :provider-options="providerOptions"
       :provider-messages="providerMessages"
+      :provider-setup-urls="providerSetupUrls"
+      :field-errors="fieldErrors"
       :busy-action="busyAction"
       :auth-methods="authMethods"
       :selected-method-key="selectedMethodKey"
@@ -1131,10 +547,12 @@ onBeforeRouteUpdate((to) => {
       :set-label-value="setLabelValue"
       :field-value="fieldValue"
       :set-field-value="setFieldValue"
+      @update:model-value="setAddPanelOpen"
       @select-provider="setSelectedProvider"
       @select-method="setSelectedMethod"
       @start-provider="startProvider"
       @save-credential="saveCredential"
+      @go-plugins="router.push(`/projects/${projectId}/plugins`)"
     />
 
     <TelegramProfileSidePanel
@@ -1166,6 +584,32 @@ onBeforeRouteUpdate((to) => {
       :busy-action="busyAction"
       :message="ingressMessage"
       @save="saveIngressSetup"
+    />
+
+    <UiConfirmDialog
+      :model-value="Boolean(pendingRevoke)"
+      title="Revoke this connection?"
+      :description="
+        pendingRevoke
+          ? `Agents will immediately lose access to ${providerLabel(pendingRevoke.provider_key)} (${pendingRevoke.label || pendingRevoke.profile_key}).`
+          : undefined
+      "
+      confirm-label="Revoke connection"
+      cancel-label="Keep connection"
+      tone="danger"
+      :loading="
+        Boolean(
+          pendingRevoke &&
+          busyAction === connectionActionKey(pendingRevoke.credential_ref, 'revoke'),
+        )
+      "
+      @update:model-value="
+        (open) => {
+          if (!open) pendingRevoke = null
+        }
+      "
+      @confirm="confirmRevoke"
+      @cancel="pendingRevoke = null"
     />
   </UiPageShell>
 </template>

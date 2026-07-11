@@ -6,8 +6,8 @@ rather than inventing a variation.
 
 ## Identity
 
-A refined operator console: calm zinc neutrals, an indigo accent used
-sparingly, a dark sidebar anchoring the shell in both themes, generous line
+A refined operator console: calm zinc neutrals, the StackOS lime accent used
+only for interaction, a dark sidebar anchoring the shell in both themes, generous line
 heights at operational density. Surfaces are differentiated by *material*
 (app bg vs surface vs sunken), not by stacking borders.
 
@@ -19,7 +19,8 @@ heights at operational density. Surfaces are differentiated by *material*
    Never raw hex, never Tailwind palette colors (`text-slate-500` is banned).
 2. **No Vue watchers** (`watch`, `watchEffect`…) — enforced by
    `src/no-watch-ui.spec.ts`. Use `computed`, event handlers, lifecycle hooks.
-3. **No new write API calls** — enforced by `src/read-only-ui.spec.ts`.
+3. **No unreviewed write operations.** Observer reads and bounded local-admin
+   writes use explicit intent allowlists enforced by `src/read-only-ui.spec.ts`.
 4. **Component APIs stay stable.** Props/emits/slots may gain optional
    additions, never breaking changes, unless every usage is updated in the
    same pass.
@@ -36,8 +37,8 @@ heights at operational density. Surfaces are differentiated by *material*
 
 ## Scale reference
 
-- **Radii:** controls `rounded-sm` (6px) · cards/menus `rounded-lg` (10px) ·
-  dialogs/drawers `rounded-xl` (14px) · status pills `rounded-full` ·
+- **Radii:** controls `rounded-sm` (6px) · cards/menus `rounded-lg` (8px) ·
+  dialogs/drawers `rounded-xl` (10px) · status pills `rounded-full` ·
   tiny chips `rounded-xs` (4px).
 - **Control heights:** sm 28px (`h-7`), md 32px (`h-8`), lg 40px (`h-10`).
   Table rows ~36px. Sidebar nav items 32px.

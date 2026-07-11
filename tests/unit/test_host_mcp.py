@@ -155,6 +155,7 @@ def test_claude_desktop_adapter_preserves_sibling_servers_and_unknown_fields(
     packaged.chmod(0o755)
     monkeypatch.setenv("STACKOS_CLAUDE_DESKTOP_CONFIG", str(config))
     monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "running")
 
     registered = claude_desktop.register(tmp_path)
     registered_payload = json.loads(config.read_text(encoding="utf-8"))
@@ -182,6 +183,7 @@ def test_claude_desktop_inspect_surfaces_pending_restart(tmp_path: Path, monkeyp
     packaged.chmod(0o755)
     monkeypatch.setenv("STACKOS_CLAUDE_DESKTOP_CONFIG", str(config))
     monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "running")
 
     registered = claude_desktop.register(tmp_path)
     inspected = claude_desktop.inspect(tmp_path)

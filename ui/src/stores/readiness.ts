@@ -1,5 +1,5 @@
 /**
- * Readiness derivation — "Is StackOS ready to run agent work?"
+ * Readiness derivation — "Can connected agents use this project safely?"
  *
  * Replaces the 16-row technical checklist with a small set of plain-language
  * checks and a single headline verdict (+ the one thing blocking, if any).
@@ -33,6 +33,12 @@ export interface ReadinessCheck {
   to: string | null
 }
 
+interface ReadinessRefreshOptions {
+  authStatus?: Promise<SchemaAuthStatusOut>
+  includeActions?: boolean
+  refreshActions?: boolean
+}
+
 const STATE_TONE: Record<ReadinessState, Tone> = {
   ready: 'success',
   attention: 'warning',
@@ -57,6 +63,10 @@ export const useReadinessStore = defineStore('readiness', () => {
   const version = ref<string | null>(null)
   const uptimeSeconds = ref<number | null>(null)
   const projectId = ref<number | null>(null)
+  const cachedActionsCheck = ref<ReadinessCheck | null>(null)
+  const actionsCheckedAt = ref(0)
+
+  const ACTIONS_CACHE_MS = 5 * 60_000
 
   const score = computed(() => {
     if (checks.value.length === 0) return 0
@@ -79,59 +89,65 @@ export const useReadinessStore = defineStore('readiness', () => {
 
   const headline = computed(() => {
     if (loading.value && checks.value.length === 0) return 'Checking readiness…'
-    if (ready.value) return 'Ready to run agent work'
+    if (ready.value) return 'Ready for connected agents'
     const b = blocker.value
     if (!b) return 'Almost ready'
-    return b.state === 'blocked' ? 'Not ready to run' : 'Ready, with setup left'
+    return b.state === 'blocked' ? 'Not ready for agents' : 'Available, with setup left'
   })
 
-  async function refresh(id: number): Promise<void> {
-    projectId.value = id
-    loading.value = true
-    const base = `/projects/${id}`
-    const next: ReadinessCheck[] = []
-
-    // Daemon — critical liveness probe.
+  async function loadHealthChecks(base: string): Promise<ReadinessCheck[]> {
     try {
       const health = await apiFetch<SchemaHealthResponse>('/api/v1/health')
       version.value = (health.version as string) ?? null
       uptimeSeconds.value =
         typeof health.daemon_uptime_s === 'number' ? health.daemon_uptime_s : null
       const dbOk = health.db_status === 'ok'
-      next.push({
-        key: 'daemon',
-        label: 'Local service',
-        state: dbOk ? 'ready' : 'blocked',
-        hint: dbOk ? 'Running and connected to local storage.' : 'Local storage is unreachable.',
-        critical: true,
-        to: null,
-      })
-      next.push({
-        key: 'automation',
-        label: 'Background automation',
-        state: health.scheduler_running ? 'ready' : 'attention',
-        hint: health.scheduler_running
-          ? 'Scheduled and triggered work can run.'
-          : 'Scheduler is stopped — scheduled work will not fire.',
-        critical: false,
-        to: `${base}/schedules`,
-      })
+      return [
+        {
+          key: 'daemon',
+          label: 'Local service',
+          state: dbOk ? 'ready' : 'blocked',
+          hint: dbOk
+            ? 'Running and connected to local storage.'
+            : 'Local storage is unreachable.',
+          critical: true,
+          to: null,
+        },
+        {
+          key: 'automation',
+          label: 'Background automation',
+          state: health.scheduler_running ? 'ready' : 'attention',
+          hint: health.scheduler_running
+            ? 'Scheduled and triggered work can run.'
+            : 'Scheduler is stopped — scheduled work will not fire.',
+          critical: false,
+          to: `${base}/schedules`,
+        },
+      ]
     } catch {
       version.value = null
       uptimeSeconds.value = null
-      next.push({
-        key: 'daemon',
-        label: 'Local service',
-        state: 'blocked',
-        hint: 'Could not reach the local service.',
-        critical: true,
-        to: null,
-      })
+      return [
+        {
+          key: 'daemon',
+          label: 'Local service',
+          state: 'blocked',
+          hint: 'Could not reach the local service.',
+          critical: true,
+          to: null,
+        },
+      ]
     }
+  }
 
-    // Connections — agents can call external providers.
+  async function loadConnectionsCheck(
+    id: number,
+    base: string,
+    authStatus?: Promise<SchemaAuthStatusOut>,
+  ): Promise<ReadinessCheck> {
     try {
-      const auth = await apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/auth/status`)
+      const auth = await (authStatus ??
+        apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/auth/status`))
       const providers = auth.providers ?? []
       const active = (auth.connections ?? []).filter((c) => c.revoked_at == null)
       const connected = active.filter((c) => c.status === 'connected' || c.status === 'used')
@@ -148,26 +164,27 @@ export const useReadinessStore = defineStore('readiness', () => {
             ? `${connected.length} connected, ${issues} need attention.`
             : `${connected.length} service${connected.length === 1 ? '' : 's'} connected.`
       }
-      next.push({
+      return {
         key: 'connections',
         label: 'Connections',
         state,
         hint,
         critical: false,
         to: `${base}/connections`,
-      })
+      }
     } catch {
-      next.push({
+      return {
         key: 'connections',
         label: 'Connections',
         state: 'unknown',
         hint: 'Connection status is unavailable right now.',
         critical: false,
         to: `${base}/connections`,
-      })
+      }
     }
+  }
 
-    // Actions — there is something for agents to run.
+  async function loadActionsCheck(id: number, base: string): Promise<ReadinessCheck> {
     try {
       const integ = await callOperation<{
         count?: number | null
@@ -185,26 +202,60 @@ export const useReadinessStore = defineStore('readiness', () => {
         state = 'attention'
         hint = `${hidden} action${hidden === 1 ? '' : 's'} unlock once setup is finished.`
       }
-      next.push({
+      return {
         key: 'actions',
         label: 'Agent actions',
         state,
         hint,
         critical: false,
         to: `${base}/plugins`,
-      })
+      }
     } catch {
-      next.push({
+      return {
         key: 'actions',
         label: 'Agent actions',
         state: 'unknown',
         hint: 'Action availability is unavailable right now.',
         critical: false,
         to: `${base}/plugins`,
-      })
+      }
     }
+  }
 
-    checks.value = next
+  async function refresh(id: number, options: ReadinessRefreshOptions = {}): Promise<void> {
+    if (projectId.value !== id) {
+      cachedActionsCheck.value = null
+      actionsCheckedAt.value = 0
+    }
+    projectId.value = id
+    loading.value = true
+    const base = `/projects/${id}`
+
+    const connectionsPromise = loadConnectionsCheck(id, base, options.authStatus)
+    const includeActions = options.includeActions ?? true
+    const actionsAreFresh =
+      !options.refreshActions &&
+      cachedActionsCheck.value !== null &&
+      Date.now() - actionsCheckedAt.value < ACTIONS_CACHE_MS
+    const actionsPromise = includeActions
+      ? actionsAreFresh
+        ? Promise.resolve(cachedActionsCheck.value!)
+        : loadActionsCheck(id, base).then((check) => {
+            cachedActionsCheck.value = check
+            actionsCheckedAt.value = Date.now()
+            return check
+          })
+      : null
+
+    const healthChecks = await loadHealthChecks(base)
+    checks.value = healthChecks
+    const [connectionsCheck, actionsCheck] = await Promise.all([
+      connectionsPromise,
+      actionsPromise,
+    ])
+    checks.value = actionsCheck
+      ? [...healthChecks, connectionsCheck, actionsCheck]
+      : [...healthChecks, connectionsCheck]
     loading.value = false
   }
 
@@ -213,6 +264,8 @@ export const useReadinessStore = defineStore('readiness', () => {
     version.value = null
     uptimeSeconds.value = null
     projectId.value = null
+    cachedActionsCheck.value = null
+    actionsCheckedAt.value = 0
   }
 
   return {
