@@ -2,14 +2,61 @@
   "key": "communications.customer-feedback-intake",
   "slug": "communications-customer-feedback-intake",
   "name": "Customer Feedback Intake",
-  "description": "Bring customer feedback from chat and email into one clear, investigation-ready thread.",
+  "description": "One route-approved Slack thread containing the complete feedback packet and safe refs for investigation.",
   "domain": "communications",
-  "audience": "Customer and operations teams",
+  "audience": "Support and product teams receiving feedback across communication channels",
   "color": "#7ee2ad",
   "featured": true,
+  "problem": "Customer feedback arriving across chat or email can lose media, privacy context, and ownership before anyone investigates it.",
+  "outcome": "One route-approved Slack thread containing the complete feedback packet and safe refs for investigation.",
+  "whyAi": "AI can normalize several communication formats and preserve context, while StackOS enforces the configured route and delivery boundary.",
+  "operatorPath": [
+    "Choose the approved source-to-Slack route and the canonical support destination.",
+    "Set privacy, redaction, media retention, and task-creation policy.",
+    "Send feedback through an approved surface or provide safe message and media refs."
+  ],
+  "agentPath": [
+    "Verify the source, route, destination, media inventory, and data-sharing boundary.",
+    "Normalize the report without diagnosing it or dropping allowed media.",
+    "Create one complete Slack handoff, add the intake signal, and preserve investigation refs."
+  ],
+  "progressSignals": [
+    "Source and route verified",
+    "Media inventory complete",
+    "Privacy boundary checked",
+    "Slack handoff created",
+    "Investigation refs stored"
+  ],
+  "recovery": [
+    "Stop before sending if any required media cannot be forwarded safely.",
+    "On partial provider failure, avoid duplicate sends and resume from the stored delivery receipt."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a missing-route or privacy question before copying customer content."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "support.issue-investigation",
+      "relationship": "next",
+      "when": "The complete feedback packet exists in the approved Slack thread."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "A named source surface and message or media refs",
+    "An approved cross-surface route and Slack target",
+    "Privacy, redaction, retention, and media policy"
+  ],
+  "proof": [
+    "Complete media inventory",
+    "Route and target resolution",
+    "Slack message or upload receipts",
+    "Linked canonical thread ref"
+  ],
   "whenToUse": [
-    "Use this when you want to bring customer feedback from chat and email into one clear, investigation-ready thread.",
-    "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+    "Customer feedback or a support symptom arrives outside the canonical Slack support thread.",
+    "A project needs a single Slack thread before support investigation starts.",
+    "Source media, reporter context, route context, and safe message refs must be preserved for later agents."
   ],
   "stages": [
     {
@@ -19,13 +66,13 @@
     },
     {
       "id": "establish-canonical-thread",
-      "title": "Establish main Thread",
+      "title": "Establish Canonical Thread",
       "summary": "Reuse a Slack-origin thread or create one route-approved Slack handoff that preserves source context and media."
     },
     {
       "id": "add-intake-reaction",
       "title": "Add Intake Reaction",
-      "summary": "Mark the main Slack message with a reaction that indicates support intake has started."
+      "summary": "Mark the canonical Slack message with a reaction that indicates support intake has started."
     },
     {
       "id": "prepare-investigation-handoff",

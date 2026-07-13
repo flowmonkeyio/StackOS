@@ -6,6 +6,44 @@ description: Reusable template for researching target accounts from bounded proj
 domain: gtm
 owner:
   team: StackOS
+experience:
+  problem: "Account research often becomes a generic company summary that does not help someone make a real go-to-market decision."
+  outcome: "A source-linked account brief focused on fit, timing, risks, and the next useful action."
+  why_ai: "AI can combine stored account context with bounded current research while preserving source and confidence distinctions."
+  operator_path:
+    - "Name the account, offer, audience, and decision the brief should support."
+    - "Choose approved internal and web sources."
+    - "Review uncertain findings before they become outreach claims."
+  agent_path:
+    - "Load existing account and project context before external research."
+    - "Research only the missing decision-relevant facts and retain source refs."
+    - "Separate observations, inferences, gaps, and recommended next actions."
+  progress_signals:
+    - "Decision scoped"
+    - "Existing context reviewed"
+    - "Research gaps filled"
+    - "Account brief ready"
+  recovery:
+    - "If entity identity is ambiguous, stop before merging sources."
+    - "If live research is unavailable, return a useful stored-context brief with explicit gaps."
+  safe_stopping_points:
+    - "Stop after the research brief; outreach requires a separate workflow and approval."
+  handoffs:
+    - workflow_key: gtm.outbound-sequence-preparation
+      relationship: conditional
+      when: "The account is qualified and approved for outreach."
+public:
+  audience: "Sales and go-to-market teams researching target accounts"
+  setup: mixed
+  prerequisites:
+    - "A named account and decision to support"
+    - "Offer and fit criteria"
+    - "Approved internal and external research sources"
+  proof:
+    - "Source-linked findings"
+    - "Fit and risk assessment"
+    - "Open questions and recommended next action"
+  featured: false
 when_to_use:
   - A project needs account or company research before enrichment, outbound, CRM updates, or pipeline review.
   - The agent should reuse prior account context and learnings before collecting more evidence.
@@ -35,6 +73,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -125,6 +167,8 @@ action_contracts:
     provider: jina
     risk_level: read
     auth_ref: jina
+    route_group: research_source
+    route_key: jina
   - key: web_scrape
     action: web.scrape
     capability: web-retrieval
@@ -132,6 +176,8 @@ action_contracts:
     risk_level: read
     auth_ref: firecrawl
     approval_ref: cost_review
+    route_group: research_source
+    route_key: firecrawl
 resource_contracts:
   - key: accounts
     resource: account
@@ -212,13 +258,49 @@ outputs:
   - key: research_plan
     name: Research Plan
     type: object
+    required: true
+    description: Target account, approved research routes, questions, limits, and evidence standard.
+    schema:
+      type: object
+      required: [account_ref, research_questions, selected_route, source_policy, stop_conditions]
+      properties:
+        account_ref: {type: string}
+        research_questions: {type: array}
+        selected_route: {type: string}
+        source_policy: {type: object}
+        stop_conditions: {type: array}
   - key: evidence_summary
     name: Evidence Summary
     type: object
+    required: true
+    description: Source-linked facts, signals, conflicts, inferences, and unresolved gaps.
+    schema:
+      type: object
+      required: [verified_facts, buying_signals, conflicts, inferences, gaps, source_refs]
+      properties:
+        verified_facts: {type: array}
+        buying_signals: {type: array}
+        conflicts: {type: array}
+        inferences: {type: array}
+        gaps: {type: array}
+        source_refs: {type: array, items: {type: string}}
   - key: account_research_summary
     name: Account Research Summary
     type: object
     required: true
+    description: Compact account brief with fit, timing, stakeholders, hypotheses, and evidence confidence.
+    schema:
+      type: object
+      required: [account_ref, firmographics, fit_assessment, timing_signals, stakeholder_hypotheses, outreach_hypotheses, confidence, evidence_refs]
+      properties:
+        account_ref: {type: string}
+        firmographics: {type: object}
+        fit_assessment: {type: object}
+        timing_signals: {type: array}
+        stakeholder_hypotheses: {type: array}
+        outreach_hypotheses: {type: array}
+        confidence: {type: string, enum: [low, medium, high]}
+        evidence_refs: {type: array, items: {type: string}}
 learning_hooks:
   - key: account_research_learning
     prompt: Capture reusable account research lessons with evidence and provenance.

@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Revtrix Advertiser Performance Report - June 2026</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #607086;
+      --paper: #ffffff;
+      --soft: #f4f7f9;
+      --line: #d8e1ea;
+      --teal: #0f766e;
+      --green: #28784f;
+      --blue: #3867a8;
+      --amber: #a76519;
+      --red: #b42318;
+      --charcoal: #263241;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--soft);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+      letter-spacing: 0;
+    }
+    .report { max-width: 1180px; margin: 0 auto; padding: 30px 22px 52px; }
+    header, section.panel, .kpi-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(31, 42, 55, 0.05);
+    }
+    header { padding: 28px; border-top: 5px solid var(--teal); }
+    .eyebrow { color: var(--teal); font-weight: 700; text-transform: uppercase; font-size: 12px; }
+    h1 { margin: 8px 0 8px; font-size: clamp(28px, 5vw, 48px); line-height: 1.04; letter-spacing: 0; }
+    h2 { margin: 0 0 16px; font-size: 22px; letter-spacing: 0; }
+    h3 { margin: 0 0 10px; font-size: 16px; letter-spacing: 0; }
+    p { margin: 0; color: var(--muted); }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--charcoal);
+      background: #f8fafc;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .lead-grid { display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 18px; margin-top: 18px; }
+    .summary-box {
+      border-left: 4px solid var(--green);
+      padding: 16px 18px;
+      background: #f8fbf9;
+      border-radius: 8px;
+    }
+    .summary-box strong { color: var(--ink); }
+    .mini-list { display: grid; gap: 10px; }
+    .mini-item { padding: 12px 14px; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; }
+    .mini-item b { display: block; color: var(--ink); }
+    .grid { display: grid; gap: 18px; margin-top: 18px; }
+    .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .two-col { grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr); }
+    .three-col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .kpi-card { padding: 18px; min-height: 156px; }
+    .kpi-label { color: var(--muted); font-size: 13px; font-weight: 700; text-transform: uppercase; }
+    .kpi-value { margin-top: 8px; font-size: 34px; line-height: 1; font-weight: 800; color: var(--ink); }
+    .kpi-delta { margin-top: 12px; font-size: 13px; font-weight: 800; }
+    .kpi-delta.good { color: var(--green); }
+    .kpi-delta.bad { color: var(--red); }
+    .kpi-delta.neutral { color: var(--muted); }
+    .kpi-card p { margin-top: 8px; font-size: 13px; }
+    section.panel { padding: 22px; overflow: hidden; }
+    .insights { display: grid; gap: 12px; }
+    .insight {
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+    .insight strong { color: var(--ink); }
+    .chart-wrap { width: 100%; overflow-x: auto; }
+    svg { width: 100%; min-width: 620px; height: auto; display: block; }
+    .axis { stroke: #b7c5d4; stroke-width: 1; }
+    .axis-label, .x-labels text { fill: var(--muted); font-size: 11px; }
+    .area { fill: rgba(15, 118, 110, 0.12); }
+    .trend-line { fill: none; stroke: var(--teal); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .chart-dot-best { fill: var(--green); stroke: var(--paper); stroke-width: 2; }
+    .chart-dot-low { fill: var(--amber); stroke: var(--paper); stroke-width: 2; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; color: var(--muted); font-size: 13px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .swatch.best { background: var(--green); }
+    .swatch.low { background: var(--amber); }
+    .rank-list, .week-list { display: grid; gap: 10px; }
+    .rank-row, .week-row {
+      display: grid;
+      grid-template-columns: 28px minmax(90px, 1fr) minmax(110px, 2fr) 92px;
+      gap: 10px;
+      align-items: center;
+      font-size: 13px;
+    }
+    .week-row { grid-template-columns: 78px minmax(120px, 1fr) 82px 72px; }
+    .rank-number {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #e8f3f1;
+      color: var(--teal);
+      font-weight: 800;
+    }
+    .rank-name, .week-label { font-weight: 700; color: var(--ink); }
+    .rank-track, .week-track {
+      height: 11px;
+      background: #e7edf3;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .rank-track span, .week-track span {
+      display: block;
+      height: 100%;
+      background: var(--blue);
+      border-radius: 999px;
+    }
+    .week-track span { background: var(--green); }
+    .rank-value, .week-value { text-align: right; font-weight: 800; }
+    .week-sub { color: var(--muted); font-size: 12px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 900px;
+      font-size: 13px;
+    }
+    th, td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; background: #f8fafc; }
+    td span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .callout {
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid #ead7a8;
+      background: #fffaf0;
+      color: #67430f;
+    }
+    .source-note {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    @media (max-width: 920px) {
+      .lead-grid, .two-col, .three-col, .kpi-grid { grid-template-columns: 1fr; }
+      .report { padding: 18px 14px 36px; }
+      header, section.panel, .kpi-card { padding: 18px; }
+      .rank-row { grid-template-columns: 28px minmax(120px, 1fr) 90px; }
+      .rank-track { grid-column: 2 / 4; }
+      .week-row { grid-template-columns: 76px 1fr 80px; }
+      .week-sub { grid-column: 2 / 4; }
+    }
+    @media print {
+      body { background: #fff; }
+      .report { max-width: none; padding: 0; }
+      header, section.panel, .kpi-card { box-shadow: none; break-inside: avoid; }
+      section.panel, .grid { margin-top: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="report">
+    <header>
+      <div class="eyebrow">Leadership report</div>
+      <h1>Revtrix Advertiser Performance</h1>
+      <p>Advertiser reporting for June 1-30, 2026, compared with May 1-31, 2026.</p>
+      <div class="meta">
+        <span class="pill">Account: Revtrix (rec_revtrix_org_001)</span>
+        <span class="pill">Pulled via StackOS Trackbooth API on July 1, 2026</span>
+        <span class="pill">89 advertisers reviewed</span>
+        <span class="pill">16 advertisers with revenue</span>
+      </div>
+      <div class="lead-grid">
+        <div class="summary-box">
+          <p><strong>Executive readout:</strong> Revenue held essentially flat at $19,644 while margin improved to $17,119. Clicks declined -15.0%, but conversions stayed flat, lifting conversion efficiency and keeping the month profitable.</p>
+        </div>
+        <div class="mini-list">
+          <div class="mini-item"><b>87.1% margin rate</b><span>Margin improved +1.4% while payout fell -9.0%.</span></div>
+          <div class="mini-item"><b>71.3% top-5 revenue share</b><span>Concentration is high and should be actively managed.</span></div>
+        </div>
+      </div>
+    </header>
+
+    <div class="grid kpi-grid">
+      
+    <section class="kpi-card">
+      <div class="kpi-label">Revenue</div>
+      <div class="kpi-value">$19,644</div>
+      <div class="kpi-delta bad">-0.1% vs May</div>
+      <p>$14,010 from top five advertisers.</p>
+    </section>
+      
+    <section class="kpi-card">
+      <div class="kpi-label">Margin</div>
+      <div class="kpi-value">$17,119</div>
+      <div class="kpi-delta good">+1.4% vs May</div>
+      <p>87.1% of revenue retained.</p>
+    </section>
+      
+    <section class="kpi-card">
+      <div class="kpi-label">Conversions</div>
+      <div class="kpi-value">2,014</div>
+      <div class="kpi-delta bad">-0.1% vs May</div>
+      <p>9.3% conversion rate from clicks.</p>
+    </section>
+      
+    <section class="kpi-card">
+      <div class="kpi-label">Clicks</div>
+      <div class="kpi-value">21,745</div>
+      <div class="kpi-delta bad">-15.0% vs May</div>
+      <p>$0.90 revenue per click.</p>
+    </section>
+    </div>
+
+    <div class="grid two-col">
+      <section class="panel">
+        <h2>Daily Revenue Trend</h2>
+        <div class="chart-wrap">
+    <svg viewBox="0 0 780 250" role="img" aria-label="Daily revenue trend for June 2026">
+      <line x1="28" y1="222" x2="752" y2="222" class="axis" />
+      <line x1="28" y1="28" x2="28" y2="222" class="axis" />
+      <text x="28" y="20" class="axis-label">$1,790</text>
+      <text x="28" y="240" class="axis-label">$0</text>
+      <polygon points="28,222 28.0,193.8 53.0,191.7 77.9,90.4 102.9,111.0 127.9,184.7 152.8,166.9 177.8,191.7 202.8,132.0 227.7,191.2 252.7,142.9 277.7,193.4 302.6,191.2 327.6,119.7 352.6,215.5 377.5,163.5 402.5,193.4 427.4,129.4 452.4,193.8 477.4,185.2 502.3,210.7 527.3,191.7 552.3,141.8 577.2,130.5 602.2,99.0 627.2,51.5 652.1,28.0 677.1,171.1 702.1,129.9 727.0,92.1 752.0,103.3 752,222" class="area"></polygon>
+      <polyline points="28.0,193.8 53.0,191.7 77.9,90.4 102.9,111.0 127.9,184.7 152.8,166.9 177.8,191.7 202.8,132.0 227.7,191.2 252.7,142.9 277.7,193.4 302.6,191.2 327.6,119.7 352.6,215.5 377.5,163.5 402.5,193.4 427.4,129.4 452.4,193.8 477.4,185.2 502.3,210.7 527.3,191.7 552.3,141.8 577.2,130.5 602.2,99.0 627.2,51.5 652.1,28.0 677.1,171.1 702.1,129.9 727.0,92.1 752.0,103.3" class="trend-line"></polyline>
+      <circle cx="352.6" cy="215.5" r="4.5" class="chart-dot-low"><title>2026-06-14 $60</title></circle><circle cx="652.1" cy="28.0" r="4.5" class="chart-dot-best"><title>2026-06-26 $1,790</title></circle>
+      <g class="x-labels"><text x="28.0" y="245" text-anchor="middle">06-01</text><text x="177.8" y="245" text-anchor="middle">06-07</text><text x="352.6" y="245" text-anchor="middle">06-14</text><text x="527.3" y="245" text-anchor="middle">06-21</text><text x="752.0" y="245" text-anchor="middle">06-30</text></g>
+    </svg></div>
+        <div class="legend">
+          <span><i class="swatch best"></i> Best day: 2026-06-26 at $1,790</span>
+          <span><i class="swatch low"></i> Low day: 2026-06-14 at $60</span>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Weekly Pace</h2>
+        <div class="week-list">
+        <div class="week-row">
+          <div class="week-label">Jun 1-7</div>
+          <div class="week-track"><span style="width:40.3%"></span></div>
+          <div class="week-value">$3,910</div>
+          <div class="week-sub">414 conv.</div>
+        </div>
+        <div class="week-row">
+          <div class="week-label">Jun 8-14</div>
+          <div class="week-track"><span style="width:35.0%"></span></div>
+          <div class="week-value">$3,396</div>
+          <div class="week-sub">335 conv.</div>
+        </div>
+        <div class="week-row">
+          <div class="week-label">Jun 15-21</div>
+          <div class="week-track"><span style="width:27.2%"></span></div>
+          <div class="week-value">$2,642</div>
+          <div class="week-sub">414 conv.</div>
+        </div>
+        <div class="week-row">
+          <div class="week-label">Jun 22-30</div>
+          <div class="week-track"><span style="width:100.0%"></span></div>
+          <div class="week-value">$9,696</div>
+          <div class="week-sub">851 conv.</div>
+        </div></div>
+        <div class="source-note">Final seven days produced $8,112, 41.3% of monthly revenue. First seven days produced $3,910.</div>
+      </section>
+    </div>
+
+    <div class="grid three-col">
+      <section class="panel">
+        <h2>What Matters</h2>
+        <div class="insights">
+          <div class="insight"><strong>Efficiency improved.</strong> Revenue was flat despite fewer clicks, with EPC at $0.90 and conversion rate at 9.3%.</div>
+          <div class="insight"><strong>Margin expanded.</strong> Payout dropped -9.0%, helping margin rise +1.4% to $17,119.</div>
+          <div class="insight"><strong>Late month was strongest.</strong> 2026-06-23 had 146 conversions, and 2026-06-26 had the highest revenue.</div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Portfolio Shape</h2>
+        <div class="insights">
+          <div class="insight"><strong>33 active advertisers.</strong> 17 active advertisers produced no June revenue.</div>
+          <div class="insight"><strong>91.6% from the top ten.</strong> Leadership should protect the high-contribution relationships.</div>
+          <div class="insight"><strong>73 zero-revenue advertisers.</strong> Good cleanup candidate list for account management.</div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Leadership Asks</h2>
+        <div class="insights">
+          <div class="insight"><strong>Protect the core.</strong> Vegas Legends, Income 88, 50 Partners, Betti Affiliates, and Arzuno Partners drive 71.3% of revenue.</div>
+          <div class="insight"><strong>Scale efficient pockets.</strong> High-EPC advertisers deserve placement and traffic-quality review.</div>
+          <div class="insight"><strong>Audit inactive yield.</strong> Active zero-revenue advertisers should be reviewed for paused offers, caps, or stale routing.</div>
+        </div>
+      </section>
+    </div>
+
+    <div class="grid two-col">
+      <section class="panel">
+        <h2>Top Advertisers by Revenue</h2>
+        <div class="rank-list">
+        <div class="rank-row">
+          <div class="rank-number">1</div>
+          <div class="rank-name">Vegas Legends</div>
+          <div class="rank-track"><span style="width:100.0%"></span></div>
+          <div class="rank-value">$4,670</div>
+        </div>
+        <div class="rank-row">
+          <div class="rank-number">2</div>
+          <div class="rank-name">Income 88</div>
+          <div class="rank-track"><span style="width:63.0%"></span></div>
+          <div class="rank-value">$2,940</div>
+        </div>
+        <div class="rank-row">
+          <div class="rank-number">3</div>
+          <div class="rank-name">50 Partners</div>
+          <div class="rank-track"><span style="width:55.2%"></span></div>
+          <div class="rank-value">$2,580</div>
+        </div>
+        <div class="rank-row">
+          <div class="rank-number">4</div>
+          <div class="rank-name">Betti Affiliates</div>
+          <div class="rank-track"><span style="width:42.8%"></span></div>
+          <div class="rank-value">$2,000</div>
+        </div>
+        <div class="rank-row">
+          <div class="rank-number">5</div>
+          <div class="rank-name">Arzuno Partners</div>
+          <div class="rank-track"><span style="width:39.0%"></span></div>
+          <div class="rank-value">$1,820</div>
+        </div>
+        <div class="rank-row">
+          <div class="rank-number">6</div>
+          <div class="rank-name">WowPartners</div>
+          <div class="rank-track"><span style="width:21.4%"></span></div>
+          <div class="rank-value">$1,000</div>
+        </div>
+        <div class="rank-row">
+          <div class="rank-number">7</div>
+          <div class="rank-name">13Aff</div>
+          <div class="rank-track"><span style="width:20.1%"></span></div>
+          <div class="rank-value">$940</div>
+        </div>
+        <div class="rank-row">
+          <div class="rank-number">8</div>
+          <div class="rank-name">VPartners</div>
+          <div class="rank-track"><span style="width:17.1%"></span></div>
+          <div class="rank-value">$800</div>
+        </div>
+        <div class="rank-row">
+          <div class="rank-number">9</div>
+          <div class="rank-name">Cosmobet</div>
+          <div class="rank-track"><span style="width:14.1%"></span></div>
+          <div class="rank-value">$660</div>
+        </div>
+        <div class="rank-row">
+          <div class="rank-number">10</div>
+          <div class="rank-name">MaxRev</div>
+          <div class="rank-track"><span style="width:12.4%"></span></div>
+          <div class="rank-value">$580</div>
+        </div></div>
+      </section>
+      <section class="panel">
+        <h2>High-EPC Pockets</h2>
+        <div class="chart-wrap">
+          <table>
+            <thead>
+              <tr><th>Advertiser</th><th class="num">EPC</th><th class="num">CVR</th><th class="num">Revenue</th><th class="num">Clicks</th></tr>
+            </thead>
+            <tbody>
+        <tr>
+          <td><strong>Cosmobet</strong></td>
+          <td class="num">$9.57</td>
+          <td class="num">14.5%</td>
+          <td class="num">$660</td>
+          <td class="num">69</td>
+        </tr>
+        <tr>
+          <td><strong>Arzuno Partners</strong></td>
+          <td class="num">$3.91</td>
+          <td class="num">25.4%</td>
+          <td class="num">$1,820</td>
+          <td class="num">465</td>
+        </tr>
+        <tr>
+          <td><strong>13Aff</strong></td>
+          <td class="num">$2.73</td>
+          <td class="num">9.6%</td>
+          <td class="num">$940</td>
+          <td class="num">344</td>
+        </tr>
+        <tr>
+          <td><strong>Vegas Legends</strong></td>
+          <td class="num">$2.43</td>
+          <td class="num">16.0%</td>
+          <td class="num">$4,670</td>
+          <td class="num">1,920</td>
+        </tr>
+        <tr>
+          <td><strong>Betti Affiliates</strong></td>
+          <td class="num">$1.44</td>
+          <td class="num">7.6%</td>
+          <td class="num">$2,000</td>
+          <td class="num">1,389</td>
+        </tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel grid">
+      <div>
+        <h2>Top Advertiser Detail</h2>
+        <p>Revenue-ranked table for the top 15 June contributors.</p>
+      </div>
+      <div class="chart-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Advertiser</th>
+              <th class="num">Revenue</th>
+              <th class="num">Margin</th>
+              <th class="num">Margin %</th>
+              <th class="num">Payout</th>
+              <th class="num">Conv.</th>
+              <th class="num">Clicks</th>
+              <th class="num">EPC</th>
+              <th class="num">CVR</th>
+            </tr>
+          </thead>
+          <tbody>
+        <tr>
+          <td>1</td>
+          <td>
+            <strong>Vegas Legends</strong>
+            <span>active - 112 offers</span>
+          </td>
+          <td class="num">$4,670</td>
+          <td class="num">$4,245</td>
+          <td class="num">90.9%</td>
+          <td class="num">$425</td>
+          <td class="num">307</td>
+          <td class="num">1,920</td>
+          <td class="num">$2.43</td>
+          <td class="num">16.0%</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>
+            <strong>Income 88</strong>
+            <span>active - 11 offers</span>
+          </td>
+          <td class="num">$2,940</td>
+          <td class="num">$1,736</td>
+          <td class="num">59.0%</td>
+          <td class="num">$1,204</td>
+          <td class="num">676</td>
+          <td class="num">3,604</td>
+          <td class="num">$0.82</td>
+          <td class="num">18.8%</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>
+            <strong>50 Partners</strong>
+            <span>active - 7 offers</span>
+          </td>
+          <td class="num">$2,580</td>
+          <td class="num">$2,310</td>
+          <td class="num">89.5%</td>
+          <td class="num">$270</td>
+          <td class="num">224</td>
+          <td class="num">2,585</td>
+          <td class="num">$1.00</td>
+          <td class="num">8.7%</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>
+            <strong>Betti Affiliates</strong>
+            <span>active - 8 offers</span>
+          </td>
+          <td class="num">$2,000</td>
+          <td class="num">$1,910</td>
+          <td class="num">95.5%</td>
+          <td class="num">$90</td>
+          <td class="num">105</td>
+          <td class="num">1,389</td>
+          <td class="num">$1.44</td>
+          <td class="num">7.6%</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>
+            <strong>Arzuno Partners</strong>
+            <span>active - 2 offers</span>
+          </td>
+          <td class="num">$1,820</td>
+          <td class="num">$1,820</td>
+          <td class="num">100.0%</td>
+          <td class="num">$0</td>
+          <td class="num">118</td>
+          <td class="num">465</td>
+          <td class="num">$3.91</td>
+          <td class="num">25.4%</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>
+            <strong>WowPartners</strong>
+            <span>active - 7 offers</span>
+          </td>
+          <td class="num">$1,000</td>
+          <td class="num">$660</td>
+          <td class="num">66.0%</td>
+          <td class="num">$340</td>
+          <td class="num">85</td>
+          <td class="num">1,480</td>
+          <td class="num">$0.68</td>
+          <td class="num">5.7%</td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td>
+            <strong>13Aff</strong>
+            <span>active - 10 offers</span>
+          </td>
+          <td class="num">$940</td>
+          <td class="num">$850</td>
+          <td class="num">90.4%</td>
+          <td class="num">$90</td>
+          <td class="num">33</td>
+          <td class="num">344</td>
+          <td class="num">$2.73</td>
+          <td class="num">9.6%</td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td>
+            <strong>VPartners</strong>
+            <span>active - 7 offers</span>
+          </td>
+          <td class="num">$800</td>
+          <td class="num">$800</td>
+          <td class="num">100.0%</td>
+          <td class="num">$0</td>
+          <td class="num">71</td>
+          <td class="num">911</td>
+          <td class="num">$0.88</td>
+          <td class="num">7.8%</td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td>
+            <strong>Cosmobet</strong>
+            <span>active - 1 offers</span>
+          </td>
+          <td class="num">$660</td>
+          <td class="num">$570</td>
+          <td class="num">86.4%</td>
+          <td class="num">$90</td>
+          <td class="num">10</td>
+          <td class="num">69</td>
+          <td class="num">$9.57</td>
+          <td class="num">14.5%</td>
+        </tr>
+        <tr>
+          <td>10</td>
+          <td>
+            <strong>MaxRev</strong>
+            <span>active - 89 offers</span>
+          </td>
+          <td class="num">$580</td>
+          <td class="num">$580</td>
+          <td class="num">100.0%</td>
+          <td class="num">$0</td>
+          <td class="num">55</td>
+          <td class="num">652</td>
+          <td class="num">$0.89</td>
+          <td class="num">8.4%</td>
+        </tr>
+        <tr>
+          <td>11</td>
+          <td>
+            <strong>247 Partners</strong>
+            <span>active - 2 offers</span>
+          </td>
+          <td class="num">$440</td>
+          <td class="num">$440</td>
+          <td class="num">100.0%</td>
+          <td class="num">$0</td>
+          <td class="num">43</td>
+          <td class="num">564</td>
+          <td class="num">$0.78</td>
+          <td class="num">7.6%</td>
+        </tr>
+        <tr>
+          <td>12</td>
+          <td>
+            <strong>22 Bet Partners</strong>
+            <span>active - 12 offers</span>
+          </td>
+          <td class="num">$440</td>
+          <td class="num">$440</td>
+          <td class="num">100.0%</td>
+          <td class="num">$0</td>
+          <td class="num">111</td>
+          <td class="num">1,439</td>
+          <td class="num">$0.31</td>
+          <td class="num">7.7%</td>
+        </tr>
+        <tr>
+          <td>13</td>
+          <td>
+            <strong>Pink Partners</strong>
+            <span>active - 4 offers</span>
+          </td>
+          <td class="num">$260</td>
+          <td class="num">$260</td>
+          <td class="num">100.0%</td>
+          <td class="num">$0</td>
+          <td class="num">9</td>
+          <td class="num">210</td>
+          <td class="num">$1.24</td>
+          <td class="num">4.3%</td>
+        </tr>
+        <tr>
+          <td>14</td>
+          <td>
+            <strong>Iwild</strong>
+            <span>active - 10 offers</span>
+          </td>
+          <td class="num">$250</td>
+          <td class="num">$250</td>
+          <td class="num">100.0%</td>
+          <td class="num">$0</td>
+          <td class="num">18</td>
+          <td class="num">187</td>
+          <td class="num">$1.34</td>
+          <td class="num">9.6%</td>
+        </tr>
+        <tr>
+          <td>15</td>
+          <td>
+            <strong>HeavyBet</strong>
+            <span>active - 3 offers</span>
+          </td>
+          <td class="num">$200</td>
+          <td class="num">$200</td>
+          <td class="num">100.0%</td>
+          <td class="num">$0</td>
+          <td class="num">20</td>
+          <td class="num">182</td>
+          <td class="num">$1.10</td>
+          <td class="num">11.0%</td>
+        </tr></tbody>
+        </table>
+      </div>
+      <div class="callout"><strong>Note:</strong> Advertiser grouped rows show 1,998 conversions versus 2,014 in headline KPIs; revenue, margin, payout, clicks, and impressions reconcile.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Data Provenance</h2>
+      <p>Source: StackOS Trackbooth connector using the Revtrix account scope. Read-only actions used: account lookup #6576, advertiser list #6577, advertiser metrics #6578, headline KPIs #6579, KPI comparison #6580, and daily time series #6581.</p>
+      <div class="source-note">No API keys or credential values are included in this report. Currency values are reported as returned by Trackbooth.</div>
+    </section>
+  </main>
+</body>
+</html>

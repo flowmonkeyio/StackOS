@@ -8,5 +8,6 @@
   "color": "#7892ff",
   "featured": false,
   "role": "Requirements Flow Definer",
+  "roleClass": "reasoning",
   "workflowKeys": []
 }

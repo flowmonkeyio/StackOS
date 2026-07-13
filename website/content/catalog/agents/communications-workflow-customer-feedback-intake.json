@@ -2,12 +2,13 @@
   "key": "communications.workflow.customer-feedback-intake",
   "slug": "communications-workflow-customer-feedback-intake",
   "name": "Communications Customer Feedback Intake Agent",
-  "description": "Normalizes customer feedback from Slack, Telegram, or another channel into one route-approved main Slack support thread while preserving media and handoff refs.",
+  "description": "Normalizes customer feedback from Slack, Telegram, or another channel into one route-approved canonical Slack support thread while preserving media and handoff refs.",
   "domain": "communications",
   "audience": "Customer and operations teams",
   "color": "#7ee2ad",
   "featured": true,
   "role": "Communications Customer Feedback Intake",
+  "roleClass": "mechanical",
   "workflowKeys": [
     "communications.customer-feedback-intake"
   ]

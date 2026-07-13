@@ -6,6 +6,49 @@ description: Reusable setup for planning and launching paid media campaigns from
 domain: media-buying
 owner:
   team: StackOS
+experience:
+  problem: "Paid campaigns fail at launch when creative, destination, tracking, budget, and provider setup are checked separately or too late."
+  outcome: "A provider-specific campaign plan that passes launch checks and creates external campaign objects only after approval."
+  why_ai: "AI can keep the brief, creative, page, tracking, and provider contracts aligned while explicit actions retain spend and write controls."
+  operator_path:
+    - "Provide the campaign goal, audience, offer, assets, destination, and budget guardrails."
+    - "Select one provider route and resolve its connection."
+    - "Review the launch plan, tracking, and risk before approving external creation."
+  agent_path:
+    - "Validate the brief and dependencies before selecting the concrete provider route."
+    - "Build the provider-specific structure and validate every action payload."
+    - "Hold the launch and budget approvals, then execute only the selected route."
+    - "Record safe provider refs and the first measurement window."
+  progress_signals:
+    - "Brief validated"
+    - "Provider route selected"
+    - "Launch checks complete"
+    - "Approval recorded"
+    - "Campaign objects created"
+    - "Measurement window scheduled"
+  recovery:
+    - "If no provider route is ready, keep the validated launch plan and return one setup path."
+    - "On partial creation, reconcile created objects before repair or rollback."
+  safe_stopping_points:
+    - "Stop with a validated launch plan when external creation or spend is not approved."
+  handoffs:
+    - workflow_key: media-buying.performance-diagnosis
+      relationship: next
+      when: "The first meaningful measurement window has completed."
+public:
+  audience: "Paid-media teams launching campaigns through connected ad platforms"
+  setup: connection-required
+  prerequisites:
+    - "A campaign goal, audience, offer, assets, destination, and budget policy"
+    - "Tracking and naming rules"
+    - "One connected provider route"
+    - "Launch and spend approval owners"
+  proof:
+    - "Dependency and tracking checks"
+    - "Validated provider payloads"
+    - "Launch and budget approvals"
+    - "Provider object receipts and first measurement plan"
+  featured: true
 when_to_use:
   - A project needs to launch a paid media campaign across one or more configured channels.
   - The agent needs history, learnings, approvals, resources, and provider contracts before creating campaign structures.
@@ -37,6 +80,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -165,6 +212,8 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: meta_ads
   - key: meta_ad_set_create
     action: meta.ad_set.create
     capability: campaign-management
@@ -172,6 +221,8 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: meta_ads
   - key: meta_ad_creative_create
     action: meta.ad_creative.create
     capability: creative-operations
@@ -179,6 +230,8 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: meta_ads
   - key: meta_asset_upload
     action: meta.asset.upload
     capability: creative-operations
@@ -186,6 +239,9 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: meta_ads
+    optional: true
   - key: google_campaign_budget_create
     action: google.campaign_budget.create
     capability: campaign-management
@@ -193,6 +249,8 @@ action_contracts:
     risk_level: write
     auth_ref: google_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: google_ads
   - key: google_campaign_create
     action: google.campaign.create
     capability: campaign-management
@@ -200,6 +258,8 @@ action_contracts:
     risk_level: write
     auth_ref: google_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: google_ads
   - key: google_ad_group_create
     action: google.ad_group.create
     capability: campaign-management
@@ -207,6 +267,8 @@ action_contracts:
     risk_level: write
     auth_ref: google_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: google_ads
   - key: google_asset_create
     action: google.asset.create
     capability: creative-operations
@@ -214,6 +276,9 @@ action_contracts:
     risk_level: write
     auth_ref: google_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: google_ads
+    optional: true
   - key: google_ad_group_ad_create
     action: google.ad_group_ad.create
     capability: campaign-management
@@ -221,6 +286,8 @@ action_contracts:
     risk_level: write
     auth_ref: google_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: google_ads
   - key: google_conversion_action_create
     action: google.conversion_action.create
     capability: media-measurement
@@ -228,6 +295,9 @@ action_contracts:
     risk_level: write
     auth_ref: google_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: google_ads
+    optional: true
   - key: meta_conversions_send
     action: meta.conversions.send
     capability: media-measurement
@@ -235,6 +305,9 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: meta_ads
+    optional: true
   - key: taboola_campaign_create
     action: taboola.campaign.create
     capability: campaign-management
@@ -242,6 +315,8 @@ action_contracts:
     risk_level: write
     auth_ref: taboola
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: taboola
   - key: taboola_item_create
     action: taboola.item.create
     capability: creative-operations
@@ -249,6 +324,8 @@ action_contracts:
     risk_level: write
     auth_ref: taboola
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: taboola
   - key: taboola_conversion_rule_create
     action: taboola.conversion_rule.create
     capability: media-measurement
@@ -256,12 +333,17 @@ action_contracts:
     risk_level: write
     auth_ref: taboola
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: taboola
+    optional: true
   - key: custom_media_campaign_create
     action: custom_media.campaign.create
     capability: campaign-management
     provider: custom-media-tool
     risk_level: write
     approval_ref: launch_review
+    route_group: campaign_launch
+    route_key: custom_media_tool
 resource_contracts:
   - key: campaigns
     resource: campaign
@@ -387,12 +469,46 @@ outputs:
     name: Launch Plan
     type: object
     required: true
+    description: Channel-specific campaign objects, budgets, assets, conversion refs, approval, and readiness.
+    schema:
+      type: object
+      required: [objective, selected_channels, campaign_objects, budget, asset_refs, conversion_refs, approval_state, readiness]
+      properties:
+        objective: {type: string}
+        selected_channels: {type: array, items: {type: string}}
+        campaign_objects: {type: array}
+        budget: {type: object}
+        asset_refs: {type: array, items: {type: string}}
+        conversion_refs: {type: array, items: {type: string}}
+        approval_state: {type: string}
+        readiness: {type: object}
   - key: campaign_records
     name: Campaign Records
     type: object
+    required: false
+    description: Created or staged provider campaign refs, statuses, receipts, and blockers by channel.
+    schema:
+      type: object
+      required: [channels, overall_status, receipt_refs]
+      properties:
+        channels: {type: object}
+        overall_status: {type: string, enum: [staged, launched, partial, blocked, failed]}
+        receipt_refs: {type: array, items: {type: string}}
+        blockers: {type: array}
   - key: followup_measurement_plan
     name: Followup Measurement Plan
     type: object
+    required: true
+    description: Launch observation windows, metrics, thresholds, attribution caveats, and next review.
+    schema:
+      type: object
+      required: [windows, metrics, thresholds, attribution_caveats, next_review_at]
+      properties:
+        windows: {type: array}
+        metrics: {type: array}
+        thresholds: {type: object}
+        attribution_caveats: {type: array}
+        next_review_at: {type: string}
 learning_hooks:
   - key: campaign_launch_learning
     prompt: Record durable media launch lessons only when supported by explicit evidence and provenance.

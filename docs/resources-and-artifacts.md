@@ -29,6 +29,10 @@ MCP read tools:
 - `resource.get`
 - `resource.query`
 
+Compact reads keep bounded resource/record summaries, record ids, `data_json`,
+timestamps, counts, and cursors so agents can choose the next call without a
+raw retry.
+
 MCP write tool:
 
 - `resource.upsert`

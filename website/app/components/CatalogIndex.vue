@@ -7,6 +7,7 @@ interface CatalogItem {
   audience: string
   color: string
   role?: string
+  roleClass?: 'reasoning' | 'mechanical' | 'review'
   stages?: unknown[]
   workflowKeys?: string[]
 }
@@ -37,7 +38,7 @@ const visibleItems = computed(() =>
 
 function meta(item: CatalogItem) {
   if (props.kind === 'workflows') return `${item.stages?.length || 0} stages`
-  if (props.kind === 'agents') return item.role
+  if (props.kind === 'agents') return item.roleClass ? `${item.roleClass} role` : item.role
   return `${item.workflowKeys?.length || 0} workflows`
 }
 </script>

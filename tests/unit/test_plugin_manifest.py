@@ -25,6 +25,21 @@ def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) 
     return [field.key for field in methods[0].fields]
 
 
+def test_clone_plugin_manifest_generation_changes_with_editable_source(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    path = tmp_path / "plugin.yaml"
+    path.write_text("slug: first\n", encoding="utf-8")
+    monkeypatch.setattr(manifest_module, "_plugin_manifest_paths", lambda: [path])
+
+    first = manifest_module._clone_plugin_manifest_generation()
+    path.write_text("slug: second-and-longer\n", encoding="utf-8")
+    second = manifest_module._clone_plugin_manifest_generation()
+
+    assert first != second
+
+
 def test_builtin_plugin_manifests_validate() -> None:
     slugs = [manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS]
 
@@ -902,7 +917,7 @@ def test_branding_plugin_yaml_facade_validates() -> None:
         "evidence-checked",
         "voice-checked",
         "sanitized",
-        "approved",
+        "finalized",
         "renditions-ready",
         "published",
         "measured",
@@ -941,6 +956,7 @@ def test_branding_plugin_yaml_facade_validates() -> None:
     ]
     assert content_piece_properties["publication_jobs"]["items"]["required"] == [
         "channel_ref",
+        "execution_intent",
         "publication_mode",
         "publication_bundle_ref",
         "packet_artifact_ref",
@@ -952,7 +968,7 @@ def test_branding_plugin_yaml_facade_validates() -> None:
     ] == ["api", "browser", "admin-ui", "script", "fallback-handoff"]
     content_piece_all_of = resources["content-piece"].schema_data["allOf"]
     assert content_piece_all_of[0]["then"]["required"] == ["channel_plan"]
-    assert {"approval_ref", "review_log", "memory_summary"} <= set(
+    assert {"review_log", "memory_summary", "publication_intent"} <= set(
         content_piece_all_of[3]["then"]["required"]
     )
     assert len(content_piece_all_of[3]["then"]["properties"]["review_log"]["allOf"]) == 3

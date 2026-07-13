@@ -1,0 +1,84 @@
+{
+  "key": "stackos.workflow-orchestrator",
+  "slug": "stackos-workflow-orchestrator",
+  "name": "Workflow Orchestrator",
+  "description": "Main-agent operating loop for workflows that do not need a domain-specific orchestrator.",
+  "domain": "core",
+  "audience": "Every team",
+  "color": "#8ea6ff",
+  "featured": true,
+  "workflowKeys": [
+    "communications.callback-follow-up",
+    "communications.customer-feedback-intake",
+    "communications.inbox-review",
+    "communications.outbound-notification",
+    "communications.rich-telegram-reply",
+    "core.project-memory-review",
+    "gtm.account-research",
+    "gtm.crm-hygiene-pass",
+    "gtm.lead-enrichment-scoring",
+    "gtm.outbound-sequence-preparation",
+    "gtm.pipeline-risk-review",
+    "media-buying.budget-reallocation-review",
+    "media-buying.campaign-launch",
+    "media-buying.creative-variant-generation",
+    "media-buying.landing-page-creative-experiment",
+    "media-buying.performance-diagnosis",
+    "seo.content-refresh",
+    "seo.keyword-research",
+    "support.delivery-task-handoff",
+    "support.issue-investigation"
+  ],
+  "coordinates": [
+    "Communications Inbox Review Agent",
+    "Communications Customer Feedback Intake Agent",
+    "Communications Outbound Notification Agent",
+    "Communications Callback Follow-Up Agent",
+    "Communications Rich Telegram Reply Agent",
+    "Project Memory Review Agent",
+    "GTM Account Research Agent",
+    "GTM Lead Enrichment Scoring Agent"
+  ],
+  "agentRefs": [
+    {
+      "key": "communications.workflow.inbox-review",
+      "slug": "communications-workflow-inbox-review",
+      "name": "Communications Inbox Review Agent"
+    },
+    {
+      "key": "communications.workflow.customer-feedback-intake",
+      "slug": "communications-workflow-customer-feedback-intake",
+      "name": "Communications Customer Feedback Intake Agent"
+    },
+    {
+      "key": "communications.workflow.outbound-notification",
+      "slug": "communications-workflow-outbound-notification",
+      "name": "Communications Outbound Notification Agent"
+    },
+    {
+      "key": "communications.workflow.callback-follow-up",
+      "slug": "communications-workflow-callback-follow-up",
+      "name": "Communications Callback Follow-Up Agent"
+    },
+    {
+      "key": "communications.workflow.rich-telegram-reply",
+      "slug": "communications-workflow-rich-telegram-reply",
+      "name": "Communications Rich Telegram Reply Agent"
+    },
+    {
+      "key": "stackos.workflow.project-memory-review",
+      "slug": "stackos-workflow-project-memory-review",
+      "name": "Project Memory Review Agent"
+    },
+    {
+      "key": "gtm.workflow.account-research",
+      "slug": "gtm-workflow-account-research",
+      "name": "GTM Account Research Agent"
+    },
+    {
+      "key": "gtm.workflow.lead-enrichment-scoring",
+      "slug": "gtm-workflow-lead-enrichment-scoring",
+      "name": "GTM Lead Enrichment Scoring Agent"
+    }
+  ]
+}

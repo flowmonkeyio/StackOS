@@ -17,6 +17,7 @@ from stackos.context import (
     ExperimentOut,
     LearningOut,
 )
+from stackos.context.repository.utils import MAX_CONTEXT_LIMIT
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.server import ToolRegistry
@@ -32,7 +33,7 @@ class ContextQueryInput(MCPInput):
     project_id: int
     sources: list[str] | None = None
     fields: list[str] | None = None
-    limit: int | None = Field(default=None, ge=1)
+    limit: int | None = Field(default=None, ge=1, le=MAX_CONTEXT_LIMIT)
     tags: list[str] | None = None
     domain: str | None = None
     statuses: list[str] | None = None
@@ -46,7 +47,7 @@ class ContextTimelineInput(MCPInput):
     project_id: int
     event_type: str | None = None
     fields: list[str] | None = None
-    limit: int | None = None
+    limit: int | None = Field(default=None, ge=1, le=MAX_CONTEXT_LIMIT)
     after_id: int | None = None
 
 

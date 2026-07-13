@@ -87,6 +87,23 @@ def test_create_run_plan_from_template(session: Session, project_id: int) -> Non
     assert plan.template_snapshot_json["key"] == "core.project-memory-review"
     assert plan.steps
     assert plan.status == "draft"
+    clarify = next(step for step in plan.steps if step.step_id == "clarify-goal")
+    assert clarify.expected_outputs_json["context_summary"]["description"] == (
+        "Compact summary of relevant evidence with provenance."
+    )
+    assert clarify.expected_outputs_json["context_summary"]["schema_json"]["required"] == [
+        "current_facts",
+        "active_work",
+        "stale_candidates",
+        "gaps",
+        "source_refs",
+    ]
+    artifact_grants = [
+        grant
+        for grant in plan.grant_snapshot_json["mcp_tool_grants"]
+        if "artifact.create" in grant.get("tools", [])
+    ]
+    assert artifact_grants == []
 
 
 def test_create_run_plan_requires_template_required_inputs(
@@ -334,6 +351,140 @@ def test_approval_gate_transition_then_step_completion(
         mirrored_ticket.id,
     ]
     assert step_ticket_events[-1].metadata_json["schema_version"] == 1
+
+
+def test_successful_step_result_must_match_frozen_expected_outputs(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "validate-output.run",
+            "title": "Validate output",
+            "steps": [
+                {
+                    "id": "produce-report",
+                    "title": "Produce report",
+                    "output_refs": ["report"],
+                    "expected_outputs": {
+                        "report": {
+                            "key": "report",
+                            "type": "object",
+                            "required": True,
+                            "schema_json": {
+                                "type": "object",
+                                "required": ["count"],
+                                "properties": {"count": {"type": "integer", "minimum": 0}},
+                            },
+                        }
+                    },
+                }
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="produce-report",
+    )
+
+    with pytest.raises(ValidationError, match="expected outputs") as missing:
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="produce-report",
+            status=RunPlanStepStatus.SUCCESS,
+            result_json={},
+        )
+    assert missing.value.data["issues"][0]["path"] == "$.report"
+
+    with pytest.raises(ValidationError, match="expected outputs") as nested_missing:
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="produce-report",
+            status=RunPlanStepStatus.SUCCESS,
+            result_json={"report": {}},
+        )
+    assert nested_missing.value.data["issues"][0]["path"] == "$.report.count"
+
+    with pytest.raises(ValidationError, match="expected outputs") as invalid:
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="produce-report",
+            status=RunPlanStepStatus.SUCCESS,
+            result_json={"report": {"count": -1}},
+        )
+    assert invalid.value.data["issues"][0]["path"] == "$.report.count"
+    running = session.exec(
+        select(RunPlanStep).where(
+            RunPlanStep.run_plan_id == plan.id,
+            RunPlanStep.step_id == "produce-report",
+        )
+    ).one()
+    assert running.status == RunPlanStepStatus.RUNNING
+    assert running.result_json is None
+
+    completed = repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="produce-report",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"report": {"count": 1}},
+    ).data
+
+    assert completed.status == RunPlanStatus.COMPLETED
+
+
+def test_failed_step_does_not_require_success_outputs(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "failed-output.run",
+            "title": "Failed output",
+            "steps": [
+                {
+                    "id": "produce-report",
+                    "title": "Produce report",
+                    "output_refs": ["report"],
+                    "expected_outputs": {
+                        "report": {
+                            "key": "report",
+                            "type": "object",
+                            "required": True,
+                            "schema_json": {"type": "object"},
+                        }
+                    },
+                }
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="produce-report",
+    )
+
+    failed = repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="produce-report",
+        status=RunPlanStepStatus.FAILED,
+        error="provider failed",
+    ).data
+
+    assert failed.status == RunPlanStatus.FAILED
 
 
 def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
@@ -1660,8 +1811,13 @@ def test_explicit_step_claim_enforces_dependencies(session: Session, project_id:
             "key": "ops.dependency.run",
             "title": "Dependency run",
             "steps": [
-                {"id": "first", "title": "First"},
-                {"id": "second", "title": "Second", "depends_on": ["first"]},
+                {"id": "first", "title": "First", "output_refs": ["brief"]},
+                {
+                    "id": "second",
+                    "title": "Second",
+                    "purpose": "Use the first step's reviewed brief.",
+                    "depends_on": ["first"],
+                },
             ],
         },
     ).data
@@ -1676,10 +1832,17 @@ def test_explicit_step_claim_enforces_dependencies(session: Session, project_id:
         run_id=started.run_id,
         step_id="first",
         status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Reviewed brief", "decision": "proceed"},
     )
     second = repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="second").data
 
     assert second.status == RunPlanStepStatus.RUNNING
+    assert len(second.direct_dependency_handoffs) == 1
+    handoff = second.direct_dependency_handoffs[0]
+    assert handoff.step_id == "first"
+    assert handoff.output_refs_json == ["brief"]
+    assert handoff.result_json == {"summary": "Reviewed brief", "decision": "proceed"}
+    assert handoff.truncated is False
 
 
 def test_run_plan_allows_only_one_running_step(session: Session, project_id: int) -> None:

@@ -446,6 +446,48 @@
 
 .article-prose strong { color: var(--ink); }
 
+.article-prose blockquote {
+  position: relative;
+  margin: 36px 0 38px;
+  padding: 30px 34px 30px 70px;
+  color: var(--ink);
+  background: #ebe9df;
+  border: 1px solid var(--paper-border);
+  border-left: 4px solid var(--cobalt);
+  border-radius: 0 14px 14px 0;
+}
+
+.article-prose blockquote::before {
+  position: absolute;
+  top: 8px;
+  left: 21px;
+  color: var(--cobalt);
+  font-size: 54px;
+  font-weight: 760;
+  line-height: 1;
+  content: '“';
+}
+
+.article-prose blockquote p {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 570;
+  line-height: 1.62;
+  letter-spacing: -0.018em;
+}
+
+.article-prose blockquote cite {
+  display: block;
+  margin-top: 16px;
+  color: #65655e;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
 .article-related {
   margin-top: 80px;
   padding-top: 40px;
@@ -519,6 +561,20 @@
     padding: 18px;
     font-size: 18px;
   }
+
+  .article-prose blockquote {
+    margin-block: 30px 34px;
+    padding: 24px 20px 24px 50px;
+    border-radius: 0 11px 11px 0;
+  }
+
+  .article-prose blockquote::before {
+    top: 7px;
+    left: 15px;
+    font-size: 42px;
+  }
+
+  .article-prose blockquote p { font-size: 18px; }
 
   .article-prose h2 {
     margin-top: 48px;

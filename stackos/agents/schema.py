@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import (
@@ -164,6 +164,7 @@ class AgentPresetSpec(BaseModel):
     agent_type: str = Field(default="mcp-tool-consumer", max_length=120)
     generic_preset: bool = True
     role: str = Field(min_length=1, max_length=160)
+    role_class: Literal["reasoning", "mechanical", "review"] = "reasoning"
     prompt_contract: AgentPromptContractSpec
     project_adaptation: AgentProjectAdaptationSpec = Field(
         default_factory=AgentProjectAdaptationSpec

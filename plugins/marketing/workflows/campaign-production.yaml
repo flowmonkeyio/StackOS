@@ -6,6 +6,48 @@ description: Reusable end-to-end campaign production workflow from brand and pro
 domain: marketing
 owner:
   team: StackOS
+experience:
+  problem: "Campaign production fragments the brief, messaging, media, landing pages, and review across disconnected tools and approvals."
+  outcome: "A coherent campaign package with approved messaging, generated assets, landing-page variants, a visual review, and a local evidence gallery."
+  why_ai: "AI can coordinate several creative and mechanical specialties while retaining one brief, shared constraints, and independent visual signoff."
+  operator_path:
+    - "Provide the product, audience, offer, brand constraints, and desired media."
+    - "Confirm the campaign plan and generation budget before production."
+    - "Review the final gallery and approve or reject each deliverable."
+  agent_path:
+    - "Resolve the brief and brand evidence before choosing concepts or tools."
+    - "Plan media and page variants, then produce through explicit provider routes."
+    - "Verify requirements, run independent visual signoff, and assemble the evidence gallery."
+  progress_signals:
+    - "Brief resolved"
+    - "Campaign plan confirmed"
+    - "Media in production"
+    - "Pages assembled"
+    - "Visual signoff complete"
+    - "Gallery ready"
+  recovery:
+    - "If brand or product evidence is missing, pause before creative production."
+    - "Preserve completed assets and provider receipts when one route fails; resume only the blocked branch."
+  safe_stopping_points:
+    - "Stop after the confirmed production plan when generation spend was not approved."
+  handoffs:
+    - workflow_key: media-buying.campaign-launch
+      relationship: conditional
+      when: "The approved campaign package is intended for a paid-media launch."
+public:
+  audience: "Marketing teams producing multi-asset campaigns"
+  setup: mixed
+  prerequisites:
+    - "A product brief, audience, offer, and brand profile"
+    - "Approved product media and disclosure boundaries"
+    - "Generation budget and provider route for selected media"
+  proof:
+    - "Requirement-linked campaign plan"
+    - "Provider generation receipts"
+    - "Landing-page verification"
+    - "Independent visual signoff"
+    - "Complete local gallery"
+  featured: true
 when_to_use:
   - A user asks to produce a marketing campaign from a brand identity, product description, and product photo.
   - Campaign media (images, short videos), landing page variants, and a reviewable gallery should be produced together with durable state and signoff evidence.
@@ -253,6 +295,7 @@ action_contracts:
     provider: openai-images
     risk_level: cost
     auth_ref: openai_images
+    optional: true
     approval_ref: generation_budget_review
   - key: google_video_generate
     action: google.video.generate
@@ -559,34 +602,125 @@ outputs:
     name: Campaign Brief
     type: object
     required: true
+    description: Approved objective, audience, offer, evidence, message, channels, constraints, and success criteria.
+    schema:
+      type: object
+      required: [objective, audience, offer, evidence_refs, message, channels, constraints, success_criteria]
+      properties:
+        objective: {type: string}
+        audience: {type: object}
+        offer: {type: object}
+        evidence_refs: {type: array, items: {type: string}}
+        message: {type: object}
+        channels: {type: array, items: {type: string}}
+        constraints: {type: object}
+        success_criteria: {type: array}
   - key: workspace_summary
     name: Workspace Summary
     type: object
     required: true
+    description: Campaign workspace paths, source refs, naming, ownership, and recovery state.
+    schema:
+      type: object
+      required: [workspace_ref, source_refs, asset_index, page_index, naming_rules, recovery_state]
+      properties:
+        workspace_ref: {type: string}
+        source_refs: {type: array, items: {type: string}}
+        asset_index: {type: object}
+        page_index: {type: object}
+        naming_rules: {type: object}
+        recovery_state: {type: object}
   - key: campaign_plan
     name: Campaign Plan
     type: object
     required: true
+    description: Selected concepts, channel jobs, asset/page plan, approvals, dependencies, and skipped branches.
+    schema:
+      type: object
+      required: [selected_concepts, channel_jobs, asset_plan, page_plan, approvals, dependencies, skipped_branches]
+      properties:
+        selected_concepts: {type: array}
+        channel_jobs: {type: array}
+        asset_plan: {type: array}
+        page_plan: {type: array}
+        approvals: {type: array}
+        dependencies: {type: array}
+        skipped_branches: {type: array}
   - key: media_production_log
     name: Media Production Log
     type: object
     required: true
+    description: Produced, reused, rejected, blocked, and skipped media with prompts, placements, approvals, and refs.
+    schema:
+      type: object
+      required: [produced_assets, reused_assets, rejected_assets, blocked_assets, skipped_assets]
+      properties:
+        produced_assets: {type: array}
+        reused_assets: {type: array}
+        rejected_assets: {type: array}
+        blocked_assets: {type: array}
+        skipped_assets: {type: array}
   - key: pages_summary
     name: Pages Summary
     type: object
     required: true
+    description: Built or adapted page refs, routes, content/assets, validation, and unresolved blockers.
+    schema:
+      type: object
+      required: [pages, routes, content_refs, asset_refs, validation, blockers]
+      properties:
+        pages: {type: array}
+        routes: {type: array}
+        content_refs: {type: array, items: {type: string}}
+        asset_refs: {type: array, items: {type: string}}
+        validation: {type: array}
+        blockers: {type: array}
   - key: signoff_report
     name: Signoff Report
     type: object
     required: true
+    description: Independent brand, claim, visual, functional, accessibility, and sanitization verdicts.
+    schema:
+      type: object
+      required: [verdict, brand_findings, claim_findings, visual_findings, functional_findings, accessibility_findings, sanitization_findings, required_repairs]
+      properties:
+        verdict: {type: string, enum: [approve, repair, block]}
+        brand_findings: {type: array}
+        claim_findings: {type: array}
+        visual_findings: {type: array}
+        functional_findings: {type: array}
+        accessibility_findings: {type: array}
+        sanitization_findings: {type: array}
+        required_repairs: {type: array}
   - key: gallery_summary
     name: Gallery Summary
     type: object
     required: true
+    description: Operator-reviewable index of final assets, pages, variants, and approval status.
+    schema:
+      type: object
+      required: [asset_refs, page_refs, variant_groups, approval_status, review_notes]
+      properties:
+        asset_refs: {type: array, items: {type: string}}
+        page_refs: {type: array, items: {type: string}}
+        variant_groups: {type: array}
+        approval_status: {type: string}
+        review_notes: {type: array}
   - key: closeout_summary
     name: Closeout Summary
     type: object
     required: true
+    description: Final deliverables, verification, approvals, skipped branches, publication state, and residual risk.
+    schema:
+      type: object
+      required: [deliverable_refs, verification, approvals, skipped_branches, publication_state, residual_risk]
+      properties:
+        deliverable_refs: {type: array, items: {type: string}}
+        verification: {type: array}
+        approvals: {type: array}
+        skipped_branches: {type: array}
+        publication_state: {type: object}
+        residual_risk: {type: array}
 learning_hooks:
   - key: campaign_production_learning
     prompt: Record durable campaign production lessons such as prompt patterns, brand adaptation rules, and signoff pitfalls only when supported by explicit evidence and provenance.

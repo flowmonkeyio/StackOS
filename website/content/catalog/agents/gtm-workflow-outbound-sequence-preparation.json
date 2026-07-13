@@ -8,6 +8,7 @@
   "color": "#ff9f73",
   "featured": false,
   "role": "Gtm Outbound Sequence",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "gtm.outbound-sequence-preparation"
   ]

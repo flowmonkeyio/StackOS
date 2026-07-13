@@ -2,14 +2,59 @@
   "key": "seo.keyword-research",
   "slug": "seo-keyword-research",
   "name": "SEO Keyword Research",
-  "description": "Turn a business goal into a prioritized map of search opportunities and content ideas.",
+  "description": "A prioritized opportunity map that separates near-term article ideas, supporting clusters, evidence, and topics to avoid.",
   "domain": "seo",
-  "audience": "SEO and content teams",
+  "audience": "SEO and content teams choosing what to write next",
   "color": "#79dfff",
   "featured": true,
+  "problem": "Keyword research produces broad high-volume lists when it is not anchored to the business, audience, product proximity, and existing authority.",
+  "outcome": "A prioritized opportunity map that separates near-term article ideas, supporting clusters, evidence, and topics to avoid.",
+  "whyAi": "AI can connect keyword data, SERP patterns, competitor evidence, and project context while the operator owns positioning and priority.",
+  "operatorPath": [
+    "State the business goal, audience, product proximity, markets, and topics to avoid.",
+    "Choose approved keyword and competitor data sources.",
+    "Review the opportunity map and select content priorities."
+  ],
+  "agentPath": [
+    "Translate the business brief into explicit opportunity criteria before collecting data.",
+    "Use approved keyword, SERP, and competitor sources and preserve provenance.",
+    "Cluster by intent and business fit, score with transparent tradeoffs, and propose concrete article angles."
+  ],
+  "progressSignals": [
+    "Opportunity criteria set",
+    "Data collected",
+    "Intent clusters built",
+    "Priorities scored",
+    "Article opportunities ready"
+  ],
+  "recovery": [
+    "If a provider is unavailable, use approved exports or stop with the exact missing dataset.",
+    "Do not fill the report with broad terms that fail the product-proximity or authority test."
+  ],
+  "safeStoppingPoints": [
+    "Stop after the prioritized opportunity map; article production is a separate approved job."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "branding.content-production",
+      "relationship": "conditional",
+      "when": "A selected opportunity should become an evidence-backed branded article."
+    }
+  ],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A business goal, audience, market, and product-proximity boundary",
+    "Topics to include and avoid",
+    "Connected keyword and SERP data sources or approved exports"
+  ],
+  "proof": [
+    "Source-linked keyword set",
+    "Intent and business-fit clusters",
+    "Transparent priority scoring",
+    "Concrete article angles and avoidance list"
+  ],
   "whenToUse": [
-    "Use this when you want to turn a business goal into a prioritized map of search opportunities and content ideas.",
-    "Best for seo and content teams that want repeatable work without changing the tools they already use."
+    "A project needs SEO opportunities from seed terms, competitors, or an agent-defined research angle."
   ],
   "stages": [
     {
@@ -20,7 +65,7 @@
     {
       "id": "collect_evidence",
       "title": "Collect Evidence",
-      "summary": "Execute only the connected app calls the plan grants and the agent still needs; preserve returned response-file paths, use schema.get with schema_ref…"
+      "summary": "Execute only the provider calls the run plan grants and the agent still needs; preserve returned response-file paths, use schema.get with schema_ref only…"
     },
     {
       "id": "store_opportunities",

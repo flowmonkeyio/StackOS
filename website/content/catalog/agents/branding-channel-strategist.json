@@ -8,6 +8,7 @@
   "color": "#d8ff63",
   "featured": true,
   "role": "Channel Strategist",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "branding.content-production"
   ]

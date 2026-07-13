@@ -2,12 +2,13 @@
   "key": "branding.brand-orchestrator",
   "slug": "branding-brand-orchestrator",
   "name": "Brand Orchestrator",
-  "description": "Main-agent operating loop for interview-led, evidence-grounded authority content production and automated channel publication.",
+  "description": "Main-agent operating loop for evidence-led brand-foundation setup and voice-consistent content production, review, and optional publication.",
   "domain": "branding",
   "audience": "Content and brand teams",
   "color": "#d8ff63",
   "featured": true,
   "workflowKeys": [
+    "branding.brand-foundation-setup",
     "branding.content-production"
   ],
   "coordinates": [
@@ -16,7 +17,8 @@
     "Branding Channel Strategist",
     "Branding Claim Auditor",
     "Branding Voice Reviewer",
-    "Branding Sanitization Reviewer"
+    "Branding Sanitization Reviewer",
+    "Brand Profile Architect"
   ],
   "agentRefs": [
     {
@@ -48,6 +50,11 @@
       "key": "branding.sanitization-reviewer",
       "slug": "branding-sanitization-reviewer",
       "name": "Branding Sanitization Reviewer"
+    },
+    {
+      "key": "branding.profile-architect",
+      "slug": "branding-profile-architect",
+      "name": "Brand Profile Architect"
     }
   ]
 }

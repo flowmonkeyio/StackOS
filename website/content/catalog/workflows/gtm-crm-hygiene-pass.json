@@ -2,14 +2,52 @@
   "key": "gtm.crm-hygiene-pass",
   "slug": "gtm-crm-hygiene-pass",
   "name": "GTM CRM Hygiene Pass",
-  "description": "Find incomplete or inconsistent CRM records and prepare safe, reviewed corrections.",
+  "description": "A reviewed hygiene report with narrowly approved corrections and an audit of every changed record.",
   "domain": "gtm",
-  "audience": "Sales and go-to-market teams",
+  "audience": "Revenue operations teams maintaining CRM quality",
   "color": "#ff9f73",
   "featured": false,
+  "problem": "Incomplete, duplicated, or inconsistent CRM records make reporting and follow-up unreliable, but broad cleanup can damage good data.",
+  "outcome": "A reviewed hygiene report with narrowly approved corrections and an audit of every changed record.",
+  "whyAi": "",
+  "operatorPath": [
+    "Choose the CRM scope and hygiene rules.",
+    "Set fields that may be changed automatically and fields that require review.",
+    "Approve the proposed correction set before any provider write."
+  ],
+  "agentPath": [
+    "Inspect the bounded record set and identify issues without mutating it.",
+    "Group duplicates, missing fields, stale values, and policy conflicts with evidence.",
+    "Apply only approved corrections and verify the provider result."
+  ],
+  "progressSignals": [
+    "Scope loaded",
+    "Issues classified",
+    "Correction set ready",
+    "Approval recorded",
+    "Changes verified"
+  ],
+  "recovery": [
+    "On ambiguous identity or field authority, leave the record unchanged.",
+    "On partial provider failure, reconcile receipts before retrying remaining records."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a read-only hygiene report when mutation is not authorized."
+  ],
+  "handoffs": [],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A connected CRM or approved record export",
+    "A bounded record scope",
+    "Field ownership, duplicate, and mutation rules"
+  ],
+  "proof": [
+    "Issue inventory",
+    "Reviewed correction set",
+    "Per-record provider receipts and verification"
+  ],
   "whenToUse": [
-    "Use this when you want to find incomplete or inconsistent CRM records and prepare safe, reviewed corrections.",
-    "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+    "CRM records need cleanup, deduping notes, field updates, or task creation."
   ],
   "stages": [
     {
@@ -25,7 +63,7 @@
     {
       "id": "optional_apply_cleanup",
       "title": "Optional Apply Cleanup",
-      "summary": "Execute approved CRM write actions only when granted by the concrete plan."
+      "summary": "Execute approved CRM write actions only when granted by the concrete run plan."
     }
   ],
   "agentNames": [

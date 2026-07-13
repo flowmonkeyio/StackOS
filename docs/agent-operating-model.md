@@ -139,12 +139,32 @@ through `action.execute`.
 Use `readiness.check` when the agent already knows the selected workflow or
 action. It reports only setup gaps for that scope, such as the credential or
 budget needed by `seo.keyword-research`, instead of making the project look
-blocked because unrelated providers are disconnected. Workflow readiness can be
-`ready=true` while `execution_ready=false`: the agent may still create or plan
-the run, but should connect the listed providers before executing affected
-action steps. Missing setup with `required_for:
-optional_action_execution` belongs to a branch the workflow can skip unless the
-operator selected that branch.
+blocked because unrelated providers are disconnected. Read the dimensions
+explicitly:
+
+- `structurally_ready`: the workflow and referenced action contracts exist
+- `context_status`: required project context is ready, missing, or
+  `not_evaluated`
+- `required_providers_ready`: all required actions and every required choose-one route
+  have an executable path; optional routes do not block preparation
+- `execution_ready`: all evaluated dimensions needed to execute are ready
+
+There is no catch-all `ready` alias. Use `execution_ready` for execution and
+`structurally_ready` for planning when context or providers are incomplete.
+Top-level `missing` contains blockers only.
+Missing setup with `required_for: optional_action_execution`,
+`alternative_route_not_selected`, or `optional_route:*` remains on the detailed
+action or route so the agent can explain available branches without treating
+them as prerequisites. `route_groups` describe choose-one provider paths; an
+unavailable alternative does not block a ready route.
+
+When `runPlan.claimStep` returns a running step, it includes the step purpose,
+instructions, policies, approvals, success criteria, allowed tools, resolved
+values for the step's declared input refs, bounded selected context, expected
+output contracts, and bounded `direct_dependency_handoffs`. Use that packet
+before rediscovering prior work. If an input, context, or prior result is
+truncated, follow the included targeted raw `runPlan.getStep` recovery hint rather than
+guessing.
 
 Use `action.list` as the normal "what can I use now?" discovery path. It hides
 external-provider actions whose required integration is not connected, and it

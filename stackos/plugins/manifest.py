@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
+import threading
+from dataclasses import dataclass
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -4369,15 +4372,67 @@ def _combined_builtin_plugin_manifests() -> tuple[PluginManifest, ...]:
     )
 
 
-BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = _combined_builtin_plugin_manifests()
+@dataclass(frozen=True)
+class BuiltinPluginManifestSnapshot:
+    """One internally consistent generation of built-in plugin manifests."""
+
+    generation: str
+    manifests: tuple[PluginManifest, ...]
+
+
+_BUILTIN_PLUGIN_MANIFEST_SNAPSHOT: BuiltinPluginManifestSnapshot | None = None
+_BUILTIN_PLUGIN_MANIFEST_LOCK = threading.Lock()
+
+
+def _clone_plugin_manifest_generation() -> str:
+    """Fingerprint editable clone manifests without reparsing them on every catalog read."""
+    digest = hashlib.sha256()
+    for path in _plugin_manifest_paths():
+        stat = path.stat()
+        for value in (path.resolve(), stat.st_mtime_ns, stat.st_size):
+            digest.update(str(value).encode("utf-8"))
+            digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def get_builtin_plugin_manifest_snapshot() -> BuiltinPluginManifestSnapshot:
+    """Return current manifests, reloading editable sources when their generation changes.
+
+    Code-defined and wheel-bundled manifests change with a process/package restart. Clone
+    ``plugins/*/plugin.yaml`` files are the supported live-edit surface and override bundled
+    manifests, so their file generation is the cache invalidation boundary.
+    """
+    global _BUILTIN_PLUGIN_MANIFEST_SNAPSHOT
+
+    generation = _clone_plugin_manifest_generation()
+    cached = _BUILTIN_PLUGIN_MANIFEST_SNAPSHOT
+    if cached is not None and cached.generation == generation:
+        return cached
+    with _BUILTIN_PLUGIN_MANIFEST_LOCK:
+        cached = _BUILTIN_PLUGIN_MANIFEST_SNAPSHOT
+        if cached is not None and cached.generation == generation:
+            return cached
+        snapshot = BuiltinPluginManifestSnapshot(
+            generation=generation,
+            manifests=_combined_builtin_plugin_manifests(),
+        )
+        _BUILTIN_PLUGIN_MANIFEST_SNAPSHOT = snapshot
+        return snapshot
+
+
+BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
+    get_builtin_plugin_manifest_snapshot().manifests
+)
 
 __all__ = [
     "BUILTIN_PLUGIN_MANIFESTS",
     "ActionManifest",
+    "BuiltinPluginManifestSnapshot",
     "CapabilityManifest",
     "PluginManifest",
     "ProviderManifest",
     "ResourceManifest",
+    "get_builtin_plugin_manifest_snapshot",
     "load_plugin_manifest_file",
     "load_plugin_manifest_files",
     "plugin_sort_key",

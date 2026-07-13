@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const { workflows: items } = useLibraryCatalog()
 
-useLibrarySeo({ title: 'AI workflow automation library — 23 complete workflows | StackOS', description: 'Explore 23 complete AI workflow automation examples for engineering, content, marketing, sales, support, SEO, communications, and paid media.' })
+useLibrarySeo({ title: `AI workflow automation library — ${items.length} complete workflows | StackOS`, description: `Explore ${items.length} complete AI workflow automation examples for engineering, content, marketing, sales, support, SEO, communications, and paid media.` })
 useSchemaOrg([defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Workflow Library' }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Workflows', item: '/library/workflows' }] })])
 useHead({ script: [{ key: 'workflow-library-faq', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: [{ '@type': 'Question', name: 'What is AI workflow automation?', acceptedAnswer: { '@type': 'Answer', text: 'AI workflow automation gives an AI system a repeatable path from a request to a checked result, including the steps, connected tools, dependencies, approvals, and status of the work.' } }] }) }] })
 </script>

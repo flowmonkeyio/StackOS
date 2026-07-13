@@ -9,7 +9,6 @@ only opaque credential refs and the daemon resolves backing credentials.
 from __future__ import annotations
 
 import re
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from pydantic import (
@@ -23,7 +22,7 @@ from pydantic import (
 )
 
 from stackos.artifacts import redact_secret_text
-from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
+from stackos.plugins.manifest import get_builtin_plugin_manifest_snapshot
 from stackos.workflows.run_plan_grants import (
     RunPlanMcpToolGrant,
     parse_run_plan_mcp_tool_grants,
@@ -381,10 +380,9 @@ def _covered_action_refs(grants: list[RunPlanMcpToolGrant]) -> set[str]:
     return refs
 
 
-@lru_cache(maxsize=1)
 def _builtin_action_records() -> tuple[dict[str, str | None], ...]:
     records: list[dict[str, str | None]] = []
-    for manifest in BUILTIN_PLUGIN_MANIFESTS:
+    for manifest in get_builtin_plugin_manifest_snapshot().manifests:
         for action in manifest.actions:
             records.append(
                 {
@@ -398,9 +396,8 @@ def _builtin_action_records() -> tuple[dict[str, str | None], ...]:
     return tuple(records)
 
 
-@lru_cache(maxsize=1)
 def _builtin_plugin_slugs() -> frozenset[str]:
-    return frozenset(manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS)
+    return frozenset(manifest.slug for manifest in get_builtin_plugin_manifest_snapshot().manifests)
 
 
 def _contract_value(contract: ActionContractSpec | dict[str, Any], field: str) -> Any:

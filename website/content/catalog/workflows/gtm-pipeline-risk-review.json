@@ -2,14 +2,57 @@
   "key": "gtm.pipeline-risk-review",
   "slug": "gtm-pipeline-risk-review",
   "name": "GTM Pipeline Risk Review",
-  "description": "Find deals that need attention and turn the risks into clear follow-up actions.",
+  "description": "An evidence-backed risk review with prioritized follow-up, owners, and uncertainty clearly separated from fact.",
   "domain": "gtm",
-  "audience": "Sales and go-to-market teams",
+  "audience": "Sales leaders and revenue operations teams reviewing pipeline risk",
   "color": "#ff9f73",
   "featured": false,
+  "problem": "Pipeline reviews overreact to stale CRM fields or produce a list of vague concerns without owners and evidence.",
+  "outcome": "An evidence-backed risk review with prioritized follow-up, owners, and uncertainty clearly separated from fact.",
+  "whyAi": "",
+  "operatorPath": [
+    "Choose the pipeline segment, review window, and business thresholds.",
+    "Confirm the sources and definitions for stage, value, activity, and risk.",
+    "Review proposed follow-up before any CRM or communication action."
+  ],
+  "agentPath": [
+    "Load the bounded pipeline snapshot and relevant activity context.",
+    "Test each risk signal against the project policy and source freshness.",
+    "Prioritize risks, name evidence and uncertainty, and prepare owner-specific follow-up."
+  ],
+  "progressSignals": [
+    "Pipeline scope loaded",
+    "Risk signals tested",
+    "Priorities set",
+    "Follow-up plan ready"
+  ],
+  "recovery": [
+    "If source freshness is insufficient, mark the conclusion provisional.",
+    "Do not mutate CRM or contact owners without the required approval and route."
+  ],
+  "safeStoppingPoints": [
+    "Stop with the reviewed risk report when follow-up execution was not authorized."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "gtm.account-research",
+      "relationship": "conditional",
+      "when": "A material account risk requires fresh external or internal research."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "A bounded pipeline snapshot",
+    "Freshness and risk definitions",
+    "Ownership and follow-up policy"
+  ],
+  "proof": [
+    "Source-linked risk register",
+    "Priority and confidence rationale",
+    "Owner-specific follow-up plan"
+  ],
   "whenToUse": [
-    "Use this when you want to find deals that need attention and turn the risks into clear follow-up actions.",
-    "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+    "A pipeline, segment, opportunity set, or forecast needs a bounded risk review."
   ],
   "stages": [
     {

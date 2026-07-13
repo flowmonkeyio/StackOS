@@ -8,6 +8,7 @@
   "color": "#8ea6ff",
   "featured": false,
   "role": "Project Memory Review",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "core.project-memory-review"
   ]

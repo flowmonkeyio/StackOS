@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
-    version: 0.1.0
+    version: 0.2.0
     description: Generic main-agent SDLC delivery orchestration preset for project-adapted flow design, planning, tracker/run-plan coordination, reviewer selection, E2E/manual verification matrices, evidence gates, and truthful closeout.
     domain: engineering
     skill_type: main-agent-orchestration
@@ -72,7 +72,7 @@ presets:
         agents or reviewers for depth when risk warrants it, but do not
         delegate away final accountability.
     operating_contract:
-      mission: Give the main agent a calibrated, project-adapted SDLC operating loop that reasons about delivery depth before executing work from intake through final closeout.
+      mission: Give the main agent a calibrated, project-adapted SDLC operating loop that locks the agreed delivery scope, gatekeeps all feedback, and executes only the work needed from intake through final closeout.
       responsibilities:
         - Capture the operator request, constraints, current task/run-plan context, and dirty worktree notes into a delivery ledger.
         - Calibrate the work before execution by classifying changed surfaces, risk, lifecycle depth, required proof, reviewer needs, and skipped ceremony.
@@ -94,6 +94,7 @@ presets:
         - Before final closeout, require or waive independent verification checks for one-brain ownership, cleanup/dead-code risk, architecture/contracts, and business/user/data/system flow regressions.
         - Treat verifier and reviewer findings as advisory claims; subagents can drift, and the orchestrator remains responsible for scope, deliverables, code truth, and final decisions.
         - Adjudicate reviewer findings against the task goal, accepted deliverables, actual diff/code paths, test evidence, and intended outcome before turning them into tickets, fixes, or release blockers.
+        - Be the sole feedback gatekeeper and admit only work required by the agreed outcome or changed-surface correctness and safety.
         - Keep the operator oriented with short ticket-start, ticket-end, and task-end progress reports whose shape is consistent and whose content is synthesized from evidence.
         - Reconcile StackOS state, docs/signoff, changed files, test evidence, reviewer findings, and final user-facing claims.
       must_do:
@@ -106,6 +107,7 @@ presets:
         - Use the smallest convincing proof for the actual changed surface.
         - For micro changes such as wording, docs, metadata, or preset guidance, prefer load/parse/resolve checks over broad test suites unless the change affects generated contracts, parsers, runtime behavior, or release-critical surfaces.
         - Keep the main agent accountable for integration and final decisions.
+        - Defer or reject feedback that does not protect the agreed deliverable; ask the operator before materially expanding the outcome.
         - Before delivery starts, confirm the test design maps each accepted requirement to automated proof or a risk-appropriate manual proof path with steps, expected outcomes, and evidence.
         - Confirm the test design maps each changed or at-risk flow to automated, E2E, or manual proof, and that agent-executed E2E/manual scenarios are closeout-blocking unless explicitly waived.
         - Use quality over speed as the guiding principle when choosing between no manual step, narrow smoke, full manual signoff, browser/user walkthrough, provider live check, migration rehearsal, or operator-owned release gate.
@@ -127,6 +129,7 @@ presets:
         - Do not create a second local tracking system.
         - Do not mechanically run every workflow phase, broad test suite, or reviewer just because the workflow mentions it.
         - Do not implement verifier suggestions without adjudicating them against the task deliverables, code, evidence, and intended outcome.
+        - Do not let reviewers, audits, tests, or "while here" cleanup enlarge delivery.
         - Do not mark work complete because one broad check passed.
         - Do not close non-micro work without flow design, E2E/manual flow proof, and independent verification unless each missing gate is explicitly waived.
         - Do not treat workflow step attachment as dependency order.
@@ -159,6 +162,7 @@ presets:
         - E2E/manual flow proof is executed by the agent before closeout or marked operator-owned/waived with reason.
         - Independent closeout verification is adjudicated before final claims for non-micro work.
         - Reviewer outputs are adjudicated against scope, deliverables, code truth, evidence, and intended outcome; only validated required fixes become new work or release blockers.
+        - Every accepted finding protects the agreed deliverable or changed-surface correctness/safety; everything else is deferred or rejected.
         - Every skipped phase, check, or reviewer has a concrete reason tied to risk, user instruction, or unchanged surfaces.
         - The main agent can explain why each specialist/reviewer was used or not applicable.
         - Final claims match StackOS state, evidence, and reviewed diff.

@@ -12,6 +12,12 @@ export interface WorkflowStage {
   summary: string
 }
 
+export interface WorkflowHandoff {
+  workflowKey: string
+  relationship: 'next' | 'conditional' | 'fallback'
+  when: string
+}
+
 export interface CatalogBase {
   key: string
   slug: string
@@ -24,6 +30,18 @@ export interface CatalogBase {
 }
 
 export interface WorkflowCatalogItem extends CatalogBase {
+  problem: string
+  outcome: string
+  whyAi: string
+  operatorPath: string[]
+  agentPath: string[]
+  progressSignals: string[]
+  recovery: string[]
+  safeStoppingPoints: string[]
+  handoffs: WorkflowHandoff[]
+  setup: 'available' | 'connection-required' | 'project-adapter-required' | 'mixed'
+  prerequisites: string[]
+  proof: string[]
   whenToUse: string[]
   stages: WorkflowStage[]
   agentNames: string[]
@@ -33,6 +51,7 @@ export interface WorkflowCatalogItem extends CatalogBase {
 
 export interface AgentCatalogItem extends CatalogBase {
   role: string
+  roleClass: 'reasoning' | 'mechanical' | 'review'
   workflowKeys: string[]
 }
 

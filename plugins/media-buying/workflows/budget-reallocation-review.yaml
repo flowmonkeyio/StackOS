@@ -6,6 +6,48 @@ description: Reusable template for reviewing paid media budget movement using pr
 domain: media-buying
 owner:
   team: StackOS
+experience:
+  problem: "Budget moves are tempting when performance shifts, but weak comparisons and missing guardrails can turn noise into spend changes."
+  outcome: "An evidence-backed budget recommendation, explicit approval boundary, and observation plan; mutations occur only when separately approved."
+  why_ai: "AI can compare several campaigns and hypotheses consistently while preserving the operator's budget judgment and rollback authority."
+  operator_path:
+    - "Choose campaigns, comparison window, KPI targets, and delivery constraints."
+    - "Set movement limits, approval owner, observation window, and rollback rule."
+    - "Review the recommendation before approving any account change."
+  agent_path:
+    - "Validate measurement comparability before diagnosing allocation."
+    - "Model the proposed movement against performance, constraints, and uncertainty."
+    - "Return a recommendation first; execute only the selected provider route after approval."
+    - "Record the change and post-change observation plan."
+  progress_signals:
+    - "Comparison validated"
+    - "Recommendation modeled"
+    - "Guardrails checked"
+    - "Approval pending"
+    - "Change and observation plan recorded"
+  recovery:
+    - "When evidence is weak, recommend no change and name the missing observation."
+    - "On partial provider failure, reconcile actual account state before retry or rollback."
+  safe_stopping_points:
+    - "Stop after the recommendation when budget mutation was not explicitly approved."
+  handoffs:
+    - workflow_key: media-buying.performance-diagnosis
+      relationship: next
+      when: "The post-change observation window closes or performance diverges from the expected range."
+public:
+  audience: "Growth teams reviewing paid-media budget allocation"
+  setup: mixed
+  prerequisites:
+    - "Comparable campaign performance evidence"
+    - "KPI targets and attribution window"
+    - "Budget, delivery, approval, observation, and rollback guardrails"
+    - "One selected provider route only when mutation is approved"
+  proof:
+    - "Comparison and uncertainty report"
+    - "Budget recommendation with rationale"
+    - "Approval record"
+    - "Provider receipt and observation plan when changed"
+  featured: false
 when_to_use:
   - A project needs to evaluate budget changes across campaigns, channels, audiences, or creative sets.
   - The agent should separate recommendation, approval, and optional external mutation.
@@ -35,6 +77,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -132,6 +178,9 @@ action_contracts:
     provider: meta-ads
     risk_level: read
     auth_ref: meta_ads
+    route_group: budget_provider
+    route_key: meta_ads
+    optional: true
   - key: meta_campaign_budget_update
     action: meta.campaign_budget.update
     capability: campaign-management
@@ -139,6 +188,9 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: budget_change_review
+    route_group: budget_provider
+    route_key: meta_ads
+    optional: true
   - key: meta_ad_set_budget_update
     action: meta.ad_set_budget.update
     capability: campaign-management
@@ -146,12 +198,18 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: budget_change_review
+    route_group: budget_provider
+    route_key: meta_ads
+    optional: true
   - key: google_report_search
     action: google.report.search
     capability: media-measurement
     provider: google-ads
     risk_level: read
     auth_ref: google_ads
+    route_group: budget_provider
+    route_key: google_ads
+    optional: true
   - key: google_campaign_budget_update
     action: google.campaign_budget.update
     capability: campaign-management
@@ -159,23 +217,35 @@ action_contracts:
     risk_level: write
     auth_ref: google_ads
     approval_ref: budget_change_review
+    route_group: budget_provider
+    route_key: google_ads
+    optional: true
   - key: taboola_report
     action: taboola.report.fetch
     capability: media-measurement
     provider: taboola
     risk_level: read
     auth_ref: taboola
+    route_group: budget_provider
+    route_key: taboola
+    optional: true
   - key: custom_media_performance
     action: custom_media.performance.fetch
     capability: media-measurement
     provider: custom-media-tool
     risk_level: read
+    route_group: budget_provider
+    route_key: custom_media_tool
+    optional: true
   - key: custom_media_budget_update
     action: custom_media.budget.update
     capability: campaign-management
     provider: custom-media-tool
     risk_level: write
     approval_ref: budget_change_review
+    route_group: budget_provider
+    route_key: custom_media_tool
+    optional: true
 resource_contracts:
   - key: performance_snapshots
     resource: performance-snapshot
@@ -266,12 +336,45 @@ outputs:
     name: Budget Review
     type: object
     required: true
+    description: Evidence-linked current allocation, performance, recommendation, risk, and approval state.
+    schema:
+      type: object
+      required: [scope, current_allocation, performance_snapshot, recommendations, risks, evidence_refs, approval_required]
+      properties:
+        scope: {type: object}
+        current_allocation: {type: object}
+        performance_snapshot: {type: object}
+        recommendations: {type: array}
+        risks: {type: array}
+        evidence_refs: {type: array, items: {type: string}}
+        approval_required: {type: boolean}
   - key: observation_plan
     name: Observation Plan
     type: object
+    required: true
+    description: Post-decision measurement window, metrics, thresholds, guardrails, and owners.
+    schema:
+      type: object
+      required: [window, metrics, thresholds, guardrails, owners]
+      properties:
+        window: {type: object}
+        metrics: {type: array}
+        thresholds: {type: object}
+        guardrails: {type: array}
+        owners: {type: array}
   - key: applied_change_summary
     name: Applied Change Summary
     type: object
+    required: false
+    description: Exact applied, partially applied, blocked, or failed budget changes and provider receipts.
+    schema:
+      type: object
+      required: [status, changes, receipt_refs, residual_blockers]
+      properties:
+        status: {type: string, enum: [not_requested, applied, partial, blocked, failed]}
+        changes: {type: array}
+        receipt_refs: {type: array, items: {type: string}}
+        residual_blockers: {type: array}
 learning_hooks:
   - key: budget_reallocation_learning
     prompt: Capture reusable budget movement lessons only after evidence and observation notes exist.

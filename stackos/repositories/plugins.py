@@ -25,7 +25,11 @@ from stackos.generated_inventory import (
     generated_action_public_key,
     generated_action_visible_for_project,
 )
-from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS, plugin_sort_key
+from stackos.plugins.manifest import (
+    PluginManifest,
+    get_builtin_plugin_manifest_snapshot,
+    plugin_sort_key,
+)
 from stackos.repositories.base import ConflictError, Envelope, NotFoundError
 from stackos.repositories.plugin_manifest_sync import sync_plugin_manifest
 from stackos.repositories.resources import ResourceOut
@@ -146,25 +150,34 @@ class CatalogOut(BaseModel):
 class PluginRepository:
     """Repository for installed plugin manifests and project enablement."""
 
-    _builtin_sync_engines: ClassVar[weakref.WeakSet[Any]] = weakref.WeakSet()
+    _builtin_sync_generations: ClassVar[weakref.WeakKeyDictionary[Any, str]] = (
+        weakref.WeakKeyDictionary()
+    )
 
     def __init__(self, session: Session) -> None:
         self._s = session
-        self._builtin_plugins_synced = False
+        self._builtin_plugins_generation: str | None = None
         self._disabled_plugin_ids_cache: dict[int | None, set[int]] = {}
         self._connector_keys_cache: set[str] | None = None
 
     def sync_builtin_plugins(self) -> None:
         """Idempotently upsert built-in plugin manifests into catalog tables."""
+        snapshot = get_builtin_plugin_manifest_snapshot()
         engine = self._s.get_bind()
-        if self._builtin_plugins_synced or engine in self._builtin_sync_engines:
-            self._builtin_plugins_synced = True
+        if (
+            self._builtin_plugins_generation == snapshot.generation
+            or self._builtin_sync_generations.get(engine) == snapshot.generation
+        ):
+            self._builtin_plugins_generation = snapshot.generation
             return
-        for manifest in BUILTIN_PLUGIN_MANIFESTS:
-            sync_plugin_manifest(self._s, manifest)
+        for manifest in snapshot.manifests:
+            self._sync_manifest(manifest)
         self._s.commit()
-        self._builtin_plugins_synced = True
-        self._builtin_sync_engines.add(engine)
+        self._builtin_plugins_generation = snapshot.generation
+        self._builtin_sync_generations[engine] = snapshot.generation
+
+    def _sync_manifest(self, manifest: PluginManifest) -> None:
+        sync_plugin_manifest(self._s, manifest)
 
     def list_plugins(
         self,

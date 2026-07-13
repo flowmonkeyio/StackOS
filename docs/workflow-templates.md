@@ -4,6 +4,29 @@ Workflow templates are reusable setup for agent work. They are not hidden
 automation. A template gives the agent a strong starting structure, then the
 agent creates a concrete run plan for the current project and goal.
 
+## Start With The Experience
+
+Workflow authoring starts with the problem AI should help solve, not a list of
+agents or tools. Write the small `experience` contract before designing steps:
+
+- `problem`: the failure, friction, or decision the workflow addresses
+- `outcome`: the useful result and its side-effect boundary
+- `operator_path`: what the person provides, sees, decides, and approves
+- `agent_path`: what the main agent must discover, coordinate, hand off, and
+  verify
+- optional `why_ai`, `progress_signals`, `recovery`,
+  `safe_stopping_points`, and cross-workflow `handoffs`
+
+Built-in public workflows also own a reviewed `public` contract with
+`audience`, `setup`, `prerequisites`, `proof`, and `featured`. The website
+catalog is generated from these fields. Do not maintain separate marketing-copy
+maps or global word-replacement rules; they hide weak source contracts and can
+corrupt legitimate names.
+
+Keep the experience compact. It should remove guessing, not prescribe every
+conversation. The main agent may ask bounded questions and adapt the plan when
+the request or project calls for it.
+
 ## Authoring Source
 
 The canonical workflow authoring guide is the StackOS operation
@@ -69,6 +92,11 @@ Use this reasoning path before authoring files:
    outputs.
 8. Verify against the actual domain source, operator brief, or official
    provider documentation. Do not sign off only against the code just written.
+9. Run a black-box agent audit. Give a fresh agent a realistic vague request,
+   no workflow key, and no design rationale. It should find the intended path,
+   prerequisites, context, tools, outputs, approvals, safe stopping point, and
+   recovery without repository-only hidden knowledge. Record where it searched,
+   guessed, or mistook structural validity for execution readiness.
 
 Workflow identity should follow the engineering pattern: one template represents
 one complete piece of work, not a private chain of reusable stages. A domain may
@@ -106,6 +134,8 @@ A template should be generic across domains and include:
 - `key`, `name`, `version`, `description`
 - `domain` and optional plugin slug
 - `owner`
+- `experience`
+- `public` for built-in public catalog workflows
 - `when_to_use` and `when_not_to_use`
 - `inputs`
 - `context_requirements`
@@ -148,6 +178,13 @@ multiple workflows share the same orchestration loop; add a workflow-specific
 skill preset only when that workflow has distinct sequencing, evidence, safety,
 or closeout mechanics that cannot be expressed by a shared preset plus the
 workflow's agent requirements.
+
+Use `stackos.workflow-orchestrator` when a workflow needs the normal selection,
+readiness, handoff, approval, stopping, verification, and recovery loop. An
+empty `applies_to_steps` means the main-agent contract spans the whole workflow.
+Keep a specialized orchestrator only when the domain has materially different
+sequencing, evidence, safety, or closeout mechanics, as branding, campaign
+production, and tracked engineering delivery do.
 
 The main agent decides whether it can load installed skills. If not, it should
 read the referenced docs and still follow the same tracker/run-plan model.
@@ -286,6 +323,10 @@ Steps are defaults, not a prison. A good step defines:
 - `approval_gate` if needed
 - `completion_criteria`
 
+For execution, the claimed step packet is the brief. Use its resolved inputs,
+bounded context, outputs, criteria, grants, and dependency handoffs; call
+`runPlan.getStep` only when that packet reports truncation.
+
 Agents can adapt a run plan when the project requires it. If a project repeats
 the same setup defaults or extra guidance, the agent should save a workflow
 extension. Save a project-scoped template version only when the reusable
@@ -299,9 +340,24 @@ and MCP grants such as `action.execute` with `action_refs:
 template-derived plan is structurally valid but lacks the grants needed to run.
 Set `optional: true` on an action contract only for a branch the workflow can
 legitimately skip, such as one of several provider-specific video generators.
-Readiness still reports missing setup for optional contracts, but those gaps use
-`required_for: optional_action_execution` so the base workflow can remain
-execution-ready when the optional branch is not selected.
+Readiness keeps missing setup for optional contracts on the detailed action,
+using `required_for: optional_action_execution`; it does not place those items
+in the top-level blocker list.
+
+When several providers are alternatives for the same job, set `route_group`
+and `route_key` on each action contract. Contracts with the same group and key
+form one concrete route. Readiness requires all non-optional actions in one
+route when the group is required. If every action in the group is optional, the
+group describes optional execution choices and does not block preparation.
+Missing alternative routes stay visible on their detailed route/action records
+and do not enter the top-level blocker list; the agent must still validate the
+selected concrete route before a side effect.
+
+Optional interviews use the same principle. `interview_mode: auto` lets the
+agent interview when missing experience, judgment, surprise, stakes, or
+tradeoffs would materially weaken the result. `required` always interviews;
+`skip` records why existing approved evidence is sufficient. Do not make every
+workflow conversational by default.
 
 Workflow templates are inert reusable contracts. They do not act by themselves.
 An agent turns a template into concrete workflow state with `runPlan.create`,
@@ -366,6 +422,10 @@ provide the full desired list rather than a partial fragment. Do not invent a
 new context-sharing field for agent guidance; use `selected_context_json` for
 project context and the existing workflow requirement fields for agent/skill
 contracts.
+
+The optional `source` argument on template and extension operations filters the
+template origin (`plugin`, `project`, `user`, or `repo`). It is not provenance;
+use `created_by` for the extension write actor.
 
 ## Agent Workflow Setup Lifecycle
 

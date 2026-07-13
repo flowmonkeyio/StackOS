@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session
 
+from stackos.context.repository.utils import _FIELD_MAP
 from stackos.repositories.base import ConflictError
 from stackos.workflows.run_plan_schema import run_plan_from_template
 from stackos.workflows.template_loader import WorkflowTemplateLoader
@@ -91,6 +92,10 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         key="media-buying.campaign-launch",
         plugin_slug="media-buying",
     )
+    media_performance_described = repo.describe_template(
+        key="media-buying.performance-diagnosis",
+        plugin_slug="media-buying",
+    )
     communications_listing = repo.list_templates(plugin_slug="communications")
     communications_described = repo.describe_template(
         key="communications.inbox-review",
@@ -99,6 +104,10 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     branding_listing = repo.list_templates(plugin_slug="branding")
     branding_content_described = repo.describe_template(
         key="branding.content-production",
+        plugin_slug="branding",
+    )
+    branding_foundation_described = repo.describe_template(
+        key="branding.brand-foundation-setup",
         plugin_slug="branding",
     )
 
@@ -114,7 +123,37 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "engineering.tracked-delivery",
     ]
     assert [item.key for item in branding_listing.templates] == [
+        "branding.brand-foundation-setup",
         "branding.content-production",
+    ]
+    assert branding_foundation_described.spec.public is not None
+    assert branding_foundation_described.spec.experience is not None
+    assert branding_foundation_described.spec.agent_requirements[0].agent_preset_ref == (
+        "branding.profile-architect"
+    )
+    assert branding_foundation_described.spec.experience.handoffs[0].workflow_key == (
+        "branding.content-production"
+    )
+    foundation_steps = {
+        step.id: step for step in branding_foundation_described.spec.steps
+    }
+    assert foundation_steps["inventory-existing-foundation"].resource_refs == []
+    assert foundation_steps["interview-and-sample-analysis"].resource_refs == []
+    assert foundation_steps["draft-brand-foundation"].resource_refs == []
+    assert foundation_steps["adversarial-voice-review"].resource_refs == []
+    assert foundation_steps["finalize-and-persist"].resource_refs == ["brand_profile"]
+    assert foundation_steps["verify-retrieval"].resource_refs == []
+    foundation_policy_keys = {
+        item.key for item in branding_foundation_described.spec.policies
+    }
+    assert {"orchestrator_gates_feedback", "handoff_is_not_execution"} <= (
+        foundation_policy_keys
+    )
+    foundation_outputs = {
+        item.key: item for item in branding_foundation_described.spec.outputs
+    }
+    assert "out_of_scope" in foundation_outputs["voice_review_report"].schema_data[
+        "required"
     ]
     assert branding_content_described.summary.plugin_slug == "branding"
     assert branding_content_described.spec.metadata_json["default_branding_workflow"] is True
@@ -130,7 +169,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "sanitization-review",
         "produce-optional-images",
         "render-channel-packets",
-        "approve-and-record",
+        "finalize-and-record",
         "execute-publication",
     ]
     branding_content_agent_refs = {
@@ -144,6 +183,11 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "branding.sanitization-reviewer",
         "branding.voice-reviewer",
     }
+    branding_content_requirements = {
+        item.agent_preset_ref: item.requirement
+        for item in branding_content_described.spec.agent_requirements
+    }
+    assert branding_content_requirements["branding.evidence-curator"] == "recommended"
     branding_step_ids = [step.id for step in branding_content_described.spec.steps]
     branding_skill_preset = branding_content_described.spec.skill_preset_requirements[0]
     assert branding_skill_preset.skill_preset_ref == "branding.brand-orchestrator"
@@ -160,11 +204,13 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     }
     assert branding_content_actions["image_generate"].action == "utils.image.generate"
     assert branding_content_actions["image_generate"].optional is True
-    assert branding_content_actions["image_generate"].approval_ref == ("image_generation_approval")
+    assert branding_content_actions["image_generate"].approval_ref is None
     assert branding_content_actions["publish_linkedin"].action == "publish.linkedin"
     assert branding_content_actions["publish_linkedin"].optional is True
     assert branding_content_actions["publish_x"].action == "publish.x"
     assert branding_content_actions["publish_x"].optional is True
+    for action_key in ("publish_git_blog", "publish_x", "publish_linkedin", "publish_email"):
+        assert branding_content_actions[action_key].approval_ref is None
     branding_content_steps = {step.id: step for step in branding_content_described.spec.steps}
     assert branding_content_steps["produce-optional-images"].action_refs == ["image_generate"]
     assert branding_content_steps["angle-and-structure"].depends_on == ["research-fact-collection"]
@@ -177,8 +223,23 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "publication_automation_first" in {
         item.key for item in branding_content_described.spec.policies
     }
+    assert "orchestrator_gates_feedback" in {
+        item.key for item in branding_content_described.spec.policies
+    }
+    assert "intent_scoped_terminal_condition" in {
+        item.key for item in branding_content_described.spec.policies
+    }
+    branding_outputs = {
+        item.key: item for item in branding_content_described.spec.outputs
+    }
+    assert "open_questions" in branding_outputs["research_pack"].schema_data["required"]
+    assert "out_of_scope" in branding_outputs["editorial_review_report"].schema_data[
+        "required"
+    ]
     assert branding_content_steps["produce-optional-images"].approval_refs == []
-    assert branding_content_steps["approve-and-record"].approval_refs == ["content_packet_approval"]
+    assert branding_content_steps["finalize-and-record"].approval_refs == []
+    assert branding_content_steps["execute-publication"].approval_refs == []
+    assert branding_content_described.spec.approval_gates == []
     assert branding_content_described.spec.metadata_json["artifact_grant_policy"] == "explicit"
     assert (
         "durable records, not a scratchpad"
@@ -208,9 +269,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     }
     assert artifact_lifecycle_tools <= branding_template_tool_grants["produce-optional-images"]
     assert artifact_lifecycle_tools <= branding_template_tool_grants["render-channel-packets"]
-    assert artifact_lifecycle_tools <= branding_template_tool_grants["approve-and-record"]
+    assert artifact_lifecycle_tools <= branding_template_tool_grants["finalize-and-record"]
     assert artifact_lifecycle_tools <= branding_template_tool_grants["execute-publication"]
-    assert "decision.record" in branding_template_tool_grants["approve-and-record"]
+    assert "decision.record" in branding_template_tool_grants["finalize-and-record"]
     assert "decision.record" in branding_template_tool_grants["execute-publication"]
     assert {
         "browser.runtime.status",
@@ -239,17 +300,20 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     }
     assert "publication_jobs" in branding_content_steps["render-channel-packets"].output_refs
     assert "publication_bundle_ref" in branding_content_steps["render-channel-packets"].output_refs
-    assert "content_memory_index" in branding_content_steps["approve-and-record"].output_refs
-    assert "publication_jobs" in branding_content_steps["approve-and-record"].output_refs
-    assert "durable_resource_memory" in branding_content_steps["approve-and-record"].policy_refs
-    assert branding_content_steps["execute-publication"].depends_on == ["approve-and-record"]
+    assert "content_memory_index" in branding_content_steps["finalize-and-record"].output_refs
+    assert "publication_jobs" in branding_content_steps["finalize-and-record"].output_refs
+    assert "durable_resource_memory" in branding_content_steps["finalize-and-record"].policy_refs
+    assert branding_content_steps["execute-publication"].depends_on == ["finalize-and-record"]
     assert branding_content_steps["execute-publication"].action_refs == [
         "publish_git_blog",
         "publish_x",
         "publish_linkedin",
         "publish_email",
     ]
-    branding_run_plan = run_plan_from_template(branding_content_described)
+    branding_run_plan = run_plan_from_template(
+        branding_content_described,
+        inputs_json={"operator_intent": "Turn a real operating lesson into content."},
+    )
     execute_publication_grants = [
         grant
         for grant in branding_run_plan.grant_snapshot_json["mcp_tool_grants"]
@@ -298,7 +362,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert all(step.instructions for step in branding_content_described.spec.steps)
     image_step_text = branding_content_steps["produce-optional-images"].model_dump_json()
     assert "operator-supplied images" in image_step_text
-    assert "without requiring image_generation_approval" in image_step_text
+    assert "without provider spend" in image_step_text
     publication_step_text = branding_content_steps["execute-publication"].model_dump_json()
     assert "operator-confirmed manual publication" in publication_step_text
     assert "do not require API or browser publication evidence" in publication_step_text
@@ -455,12 +519,14 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert engineering_described.spec.metadata_json["workflow_selection_invariant"] == (
         "explicit_workflow_intent_requires_run_plan_before_tracker_tickets"
     )
+    assert engineering_described.spec.metadata_json["feedback_gatekeeper"] == "main_orchestrator"
     engineering_text = engineering_described.spec.model_dump_json()
     assert "workflow_selection_precedence" in engineering_text
     assert "quality_over_speed" in engineering_text
     assert "mandatory_flow_design" in engineering_text
     assert "agent_executed_flow_proof" in engineering_text
     assert "independent_closeout_verification" in engineering_text
+    assert "orchestrator_feedback_gate" in engineering_text
     assert "workflow-backed run plan before creating tracker tickets" in engineering_text
     assert "direct tracker task and a later workflow task" in engineering_text
     define_step = next(
@@ -502,7 +568,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     review_text = review_step.model_dump_json()
     assert "one-brain ownership" in review_text
     assert "pre-change behavior or code path" in review_text
-    assert "advisory claims" in review_text
+    assert "feedback as advisory" in review_text
     assert "over-engineer beyond the scoped deliverable" in review_text
     assert "only validated required fixes block closeout" in review_text
     audit_step = next(
@@ -557,6 +623,24 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert media_described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
     assert media_described.spec.action_contracts[0].action == "meta.campaign.create"
     assert all("payload" not in step.model_dump_json() for step in media_described.spec.steps)
+    performance_inputs = {item.key: item for item in media_performance_described.spec.inputs}
+    assert {
+        "goal",
+        "review_scope",
+        "review_window",
+        "metric_targets",
+        "attribution_assumptions",
+    } <= {key for key, item in performance_inputs.items() if item.required}
+    assert performance_inputs["metric_source"].schema_data["default"] == "stored_context"
+    assert {
+        item.approval_ref for item in media_performance_described.spec.action_contracts
+    } == {None}
+    assert media_performance_described.spec.approval_gates == []
+    performance_steps = {
+        step.id: step for step in media_performance_described.spec.steps
+    }
+    assert performance_steps["fetch_additional_metrics"].approval_refs == []
+    assert all(step.success_criteria for step in performance_steps.values())
     assert [item.key for item in communications_listing.templates] == [
         "communications.callback-follow-up",
         "communications.customer-feedback-intake",
@@ -588,8 +672,47 @@ def test_builtin_workflow_preset_requirements_are_step_mapped(session: Session) 
             assert requirement.applies_to_steps, requirement.agent_preset_ref
             assert set(requirement.applies_to_steps) <= step_ids, requirement.agent_preset_ref
         for requirement in described.spec.skill_preset_requirements:
-            assert requirement.applies_to_steps, requirement.skill_preset_ref
-            assert set(requirement.applies_to_steps) <= step_ids, requirement.skill_preset_ref
+            if requirement.applies_to_steps:
+                assert set(requirement.applies_to_steps) <= step_ids, requirement.skill_preset_ref
+            else:
+                assert requirement.skill_preset_ref == "stackos.workflow-orchestrator"
+
+
+def test_builtin_public_workflows_have_reviewed_experience_contracts(session: Session) -> None:
+    repo = WorkflowTemplateLoader(session)
+
+    for summary in repo.list_templates().templates:
+        described = repo.describe_template(
+            key=summary.key,
+            plugin_slug=summary.plugin_slug,
+        )
+        experience = described.spec.experience
+        public = described.spec.public
+
+        assert experience is not None, summary.key
+        assert public is not None, summary.key
+        assert experience.problem.strip(), summary.key
+        assert experience.outcome.strip(), summary.key
+        assert experience.operator_path, summary.key
+        assert experience.agent_path, summary.key
+        assert public.audience.strip(), summary.key
+        assert public.prerequisites, summary.key
+        assert public.proof, summary.key
+        assert described.spec.skill_preset_requirements, summary.key
+        assert described.spec.outputs, summary.key
+        for context_requirement in described.spec.context_requirements:
+            assert context_requirement.source in _FIELD_MAP, (
+                f"{summary.key}:{context_requirement.id}"
+            )
+            assert set(context_requirement.fields) <= _FIELD_MAP[context_requirement.source], (
+                f"{summary.key}:{context_requirement.id}"
+            )
+        for output in described.spec.outputs:
+            assert output.description.strip(), f"{summary.key}:{output.key}"
+            assert output.schema_data, f"{summary.key}:{output.key}"
+            assert output.schema_data.get("type") == output.type, (
+                f"{summary.key}:{output.key}"
+            )
 
 
 def test_repo_templates_override_plugin_templates(session: Session, tmp_path: Path) -> None:

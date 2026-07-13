@@ -2,14 +2,63 @@
   "key": "media-buying.landing-page-creative-experiment",
   "slug": "media-buying-landing-page-creative-experiment",
   "name": "Landing Page And Creative Experiment",
-  "description": "Design a measurable experiment that connects creative, landing pages, and business goals.",
+  "description": "A launch-ready experiment that connects named variants, destination changes, tracking, guardrails, and one approved provider route.",
   "domain": "media-buying",
-  "audience": "Growth and paid media teams",
+  "audience": "Growth teams testing paid creative and landing pages together",
   "color": "#ffbd5c",
   "featured": false,
+  "problem": "Creative and landing-page changes are often tested together without a clean hypothesis, dependency map, or observation plan.",
+  "outcome": "A launch-ready experiment that connects named variants, destination changes, tracking, guardrails, and one approved provider route.",
+  "whyAi": "AI can coordinate page, creative, tracking, and media dependencies while preserving explicit experiment and approval decisions.",
+  "operatorPath": [
+    "State the hypothesis, variants, metric targets, traffic constraints, and observation window.",
+    "Confirm implementation and tracking readiness.",
+    "Approve campaign changes through the selected provider route."
+  ],
+  "agentPath": [
+    "Validate that the proposed variants isolate a useful question.",
+    "Map page, creative, tracking, and campaign dependencies.",
+    "Prepare the experiment and QA plan; mutate the campaign only after approval.",
+    "Store the experiment record and follow-up observation criteria."
+  ],
+  "progressSignals": [
+    "Hypothesis validated",
+    "Dependencies mapped",
+    "QA complete",
+    "Launch approval pending",
+    "Experiment staged",
+    "Observation plan stored"
+  ],
+  "recovery": [
+    "If variants or tracking cannot support the hypothesis, return to design instead of launching.",
+    "If provider launch fails, preserve staged assets and reconcile campaign state before retry."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a launch-ready experiment plan when campaign mutation is not approved."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "media-buying.performance-diagnosis",
+      "relationship": "next",
+      "when": "The experiment observation window has enough data for diagnosis."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "A clear hypothesis and named variants",
+    "Metric targets, traffic policy, and observation window",
+    "Verified page and tracking readiness",
+    "One provider route and approval only for launch"
+  ],
+  "proof": [
+    "Dependency and QA checklist",
+    "Experiment record and guardrails",
+    "Launch approval and provider receipt when executed",
+    "Observation criteria"
+  ],
   "whenToUse": [
-    "Use this when you want to design a measurable experiment that connects creative, landing pages, and business goals.",
-    "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+    "The agent needs to design a paid media experiment involving landing page and creative combinations.",
+    "The project needs a durable experiment record before campaign changes are made."
   ],
   "stages": [
     {
@@ -30,7 +79,7 @@
     {
       "id": "optional_launch_update",
       "title": "Optional Launch Update",
-      "summary": "Execute approved campaign or ad updates only when granted by the concrete plan."
+      "summary": "Execute approved campaign or ad updates only when granted by the concrete run plan."
     }
   ],
   "agentNames": [

@@ -8,6 +8,7 @@
   "color": "#ffbd5c",
   "featured": false,
   "role": "Media Performance Diagnosis",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "media-buying.performance-diagnosis"
   ]

@@ -6,6 +6,7 @@ presets:
     description: Reviews stored inbound communications, triages requests, and prepares safe workflow or reply handoffs.
     domain: communications
     role: communications-inbox-review
+    role_class: reasoning
     workflow_roles: [communications-inbox-review]
     applies_to_workflows: [communications.inbox-review]
     recommended_tools:
@@ -85,6 +86,7 @@ presets:
     description: Normalizes customer feedback from Slack, Telegram, or another channel into one route-approved canonical Slack support thread while preserving media and handoff refs.
     domain: communications
     role: communications-customer-feedback-intake
+    role_class: mechanical
     workflow_roles: [communications-customer-feedback-intake]
     applies_to_workflows: [communications.customer-feedback-intake]
     recommended_tools:
@@ -140,6 +142,7 @@ presets:
     description: Prepares and sends explicit provider-neutral outbound notifications through named targets.
     domain: communications
     role: communications-outbound-notification
+    role_class: mechanical
     workflow_roles: [communications-outbound-notification]
     applies_to_workflows: [communications.outbound-notification]
     recommended_tools:
@@ -184,6 +187,7 @@ presets:
     description: Handles callback or follow-up requests with origin context, route policy, and reply/send safety.
     domain: communications
     role: communications-callback-follow-up
+    role_class: mechanical
     workflow_roles: [communications-callback-follow-up]
     applies_to_workflows: [communications.callback-follow-up]
     recommended_tools:
@@ -228,6 +232,7 @@ presets:
     description: Sends or validates Telegram replies with rich features while preserving exact delivery semantics.
     domain: communications
     role: communications-rich-telegram-reply
+    role_class: mechanical
     workflow_roles: [communications-rich-telegram-reply]
     applies_to_workflows: [communications.rich-telegram-reply]
     recommended_tools:

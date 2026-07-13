@@ -48,6 +48,37 @@ LOCAL_CODEX_AGENT_PRESETS = {
     ),
 }
 
+LOCAL_CODEX_BRANDING_AGENT_PRESETS = {
+    "brand_profile_architect": (
+        "agents/brand-profile-architect.toml",
+        "branding.profile-architect",
+    ),
+    "brand_evidence_curator": (
+        "agents/brand-evidence-curator.toml",
+        "branding.evidence-curator",
+    ),
+    "brand_narrative_writer": (
+        "agents/brand-narrative-writer.toml",
+        "branding.narrative-writer",
+    ),
+    "brand_channel_strategist": (
+        "agents/brand-channel-strategist.toml",
+        "branding.channel-strategist",
+    ),
+    "brand_claim_auditor": (
+        "agents/brand-claim-auditor.toml",
+        "branding.claim-auditor",
+    ),
+    "brand_voice_reviewer": (
+        "agents/brand-voice-reviewer.toml",
+        "branding.voice-reviewer",
+    ),
+    "brand_sanitization_reviewer": (
+        "agents/brand-sanitization-reviewer.toml",
+        "branding.sanitization-reviewer",
+    ),
+}
+
 
 def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     workflow = yaml.safe_load(
@@ -61,7 +92,9 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     assert workflow_refs == expected_refs
 
     config = tomllib.loads((REPO_ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
-    assert set(config["agents"]) == set(LOCAL_CODEX_AGENT_PRESETS)
+    assert set(config["agents"]) == (
+        set(LOCAL_CODEX_AGENT_PRESETS) | set(LOCAL_CODEX_BRANDING_AGENT_PRESETS)
+    )
 
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_AGENT_PRESETS.items():
         assert config["agents"][agent_name]["config_file"] == config_file
@@ -98,11 +131,12 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     assert "planned persistent `profile_key`" in reviewer_text
     assert "include_graph=true" in planning_text
     assert "detached branches" in planning_text
-    assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.1.0" in (orchestrator_text)
+    assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.2.0" in (orchestrator_text)
     assert "not a subagent" in orchestrator_text
     assert "Quality beats speed" in orchestrator_text
     assert "StackOS browser `profile_key`" in orchestrator_text
     assert "Reviewer and verifier outputs are advisory claims" in orchestrator_text
+    assert "sole gatekeeper for all feedback" in orchestrator_text
     assert "Subagents can" in orchestrator_text
     assert "over-engineering risk" in orchestrator_text
     assert "Every non-micro delivery needs an explicit flow design" in orchestrator_text
@@ -110,11 +144,55 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     assert "one-brain ownership" in orchestrator_text
 
 
+def test_codex_local_branding_agents_track_branding_presets() -> None:
+    foundation = yaml.safe_load(
+        (REPO_ROOT / "plugins/branding/workflows/brand-foundation-setup.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    production = yaml.safe_load(
+        (REPO_ROOT / "plugins/branding/workflows/content-production.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    workflow_refs = {
+        item["agent_preset_ref"]
+        for workflow in (foundation, production)
+        for item in workflow["agent_requirements"]
+    }
+    expected_refs = {
+        preset for _config_path, preset in LOCAL_CODEX_BRANDING_AGENT_PRESETS.values()
+    }
+
+    assert workflow_refs == expected_refs
+
+    config = tomllib.loads((REPO_ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
+    for agent_name, (config_file, preset_ref) in LOCAL_CODEX_BRANDING_AGENT_PRESETS.items():
+        assert config["agents"][agent_name]["config_file"] == config_file
+        local_text = (REPO_ROOT / ".codex" / config_file).read_text(encoding="utf-8")
+        preset_version = AgentPresetLoader().describe_preset(key=preset_ref).preset.version
+        assert f"Source preset: {preset_ref} v{preset_version}" in local_text
+        tomllib.loads(local_text)
+
+    orchestrator_text = (
+        REPO_ROOT / ".codex/orchestrator/branding-content-orchestrator.md"
+    ).read_text(encoding="utf-8")
+    assert "Source skill preset: `branding.brand-orchestrator` v0.3.0" in orchestrator_text
+    assert "not a subagent" in orchestrator_text
+    assert "There is no catch-all `ready` alias" in orchestrator_text
+    assert "Do not merge foundation design and article production" in orchestrator_text
+    assert "interview_mode" in orchestrator_text
+    assert "smallest sufficient output depth" in orchestrator_text
+    assert "runPlan.getStep" in orchestrator_text
+    assert "Apply only evidence-backed blockers and repairs" in orchestrator_text
+    assert "handoff does not authorize another workflow" in orchestrator_text
+
+
 def test_agent_preset_loader_lists_bundled_roles() -> None:
     listing = AgentPresetLoader().list_presets()
     keys = {item.key for item in listing.presets}
 
-    assert len(keys) == 41
+    assert len(keys) == 42
     assert "stackos.sdlc.requirements-flow-definer" in keys
     assert "stackos.sdlc.codebase-explorer" in keys
     assert "stackos.sdlc.planning" in keys
@@ -140,6 +218,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert "branding.claim-auditor" in keys
     assert "branding.voice-reviewer" in keys
     assert "branding.sanitization-reviewer" in keys
+    assert "branding.profile-architect" in keys
     assert "trackbooth.workflow-author" not in keys
     assert all(item.generic_preset for item in listing.presets)
     assert all(item.adaptation_required for item in listing.presets)
@@ -156,6 +235,18 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert by_key["trackbooth.agent-api-operator"].plugin_slug == "trackbooth"
     assert by_key["stackos.workflow.workflow-author"].plugin_slug == "core"
     assert by_key["branding.claim-auditor"].plugin_slug == "branding"
+
+
+def test_bundled_agent_presets_explicitly_classify_role_execution_style() -> None:
+    bundles = []
+    for path in sorted((REPO_ROOT / "plugins").glob("*/agent-presets/*.yaml")):
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+        bundles.extend(loaded.get("presets", []))
+
+    assert len(bundles) == 42
+    assert all(item.get("role_class") in {"reasoning", "mechanical", "review"} for item in bundles)
+    role_classes = {item["role_class"] for item in bundles}
+    assert role_classes == {"reasoning", "mechanical", "review"}
 
 
 def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
@@ -263,6 +354,12 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
             *curator.preset.prompt_contract.must_not_do,
         ]
     )
+    voice_text = " ".join(
+        [
+            *voice.preset.prompt_contract.must_do,
+            *voice.preset.prompt_contract.handoff_outputs,
+        ]
+    )
     strategist_text = " ".join(
         [
             strategist.preset.prompt_contract.mission,
@@ -304,6 +401,8 @@ def test_branding_agent_presets_enforce_role_separation_and_adaptation() -> None
     for reviewer in (claim, voice, sanitization):
         assert mutating_tools.isdisjoint(reviewer.preset.recommended_tools)
     assert "artifact clutter" in curator_text
+    assert "stop at the evidence handoff" in curator_text
+    assert "out-of-scope/unsupported" in voice_text
     assert "Do not create a new artifact for each draft revision" in " ".join(
         writer.preset.prompt_contract.must_not_do
     )
@@ -401,7 +500,7 @@ def test_agent_preset_required_refs_do_not_assume_stackos_docs_in_customer_repo(
         )
 
 
-def test_agent_preset_setup_guidance_names_host_and_toolbox_boundaries() -> None:
+def test_agent_preset_setup_guidance_is_scoped_and_names_host_toolbox_boundaries() -> None:
     described = asyncio.run(
         agent_preset_describe(
             AgentPresetDescribeInput(key="stackos.sdlc.planning"),
@@ -412,16 +511,12 @@ def test_agent_preset_setup_guidance_names_host_and_toolbox_boundaries() -> None
     guidance = " ".join(described.setup_guidance).lower()
     action = described.project_adaptation.required_agent_action.lower()
 
-    assert "communications.customer-feedback-intake" in guidance
-    assert "support.issue-investigation" in guidance
-    assert "support.delivery-task-handoff" in guidance
-    assert "engineering.tracked-delivery" in guidance
-    assert "normal workflow path" in guidance
+    assert "communications.customer-feedback-intake" not in guidance
+    assert "support.issue-investigation" not in guidance
     assert "host/project-specific" in guidance
     assert ".codex/config.toml" in guidance
     assert ".codex/agents/*.toml" in guidance
     assert "workspace.updateprofile" in guidance
-    assert "source media forwarding" in guidance
     assert "before tracker.createtask or tracker.createticket" in guidance
     assert "direct tracker tasks only" in guidance
     assert "resource.query" in guidance
@@ -432,6 +527,17 @@ def test_agent_preset_setup_guidance_names_host_and_toolbox_boundaries() -> None
     assert "toolbox.call" in guidance
     assert "toolbox.describe" in action
     assert "contracts, not a daemon registry" in action
+
+    support = asyncio.run(
+        agent_preset_describe(
+            AgentPresetDescribeInput(key="support.workflow.issue-investigator"),
+            None,  # type: ignore[arg-type]
+            None,  # type: ignore[arg-type]
+        )
+    )
+    support_guidance = " ".join(support.setup_guidance).lower()
+    assert "feedback intake to canonical slack thread" in support_guidance
+    assert "same-thread-authorized delivery handoff" in support_guidance
 
 
 def test_agent_preset_bundle_parser_accepts_multi_preset_yaml() -> None:
@@ -451,6 +557,25 @@ presets:
 
     assert [item.key for item in presets] == ["demo.agent"]
     assert presets[0].project_adaptation.required is True
+    assert presets[0].role_class == "reasoning"
+
+
+def test_agent_preset_schema_accepts_explicit_role_classes() -> None:
+    presets = parse_agent_preset_bundle_yaml(
+        """
+presets:
+  - schema_version: stackos.agent-preset.v1
+    key: demo.reviewer
+    name: Demo Reviewer
+    role: reviewer
+    role_class: review
+    workflow_roles: [reviewer]
+    prompt_contract:
+      mission: Review the evidence independently.
+"""
+    )
+
+    assert presets[0].role_class == "review"
 
 
 def test_agent_preset_schema_rejects_secret_looking_values() -> None:

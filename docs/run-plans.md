@@ -54,10 +54,13 @@ workflow-backed delivery.
 linked run active, mirrors the step ticket as an active blocker, and lets the
 same step be claimed again after the blocker is repaired. Use `failed` only
 when the step should terminally fail the run plan. `runPlan.recordStep(success)`
-enforces lifecycle, approvals, and transitive run-plan step dependencies. It
-does not hard-block on tracker graph warnings; agents should use graph warnings
-as planning and audit signals, and only block intentionally when a warning is
-material to the current step's definition of done.
+enforces lifecycle, approvals, transitive run-plan step dependencies, and the
+step's frozen required output keys and JSON schemas before changing state.
+Invalid output packets leave the step running with repair paths.
+`runPlan.recordStep` does not hard-block on tracker graph warnings; agents
+should use graph warnings as planning and audit signals, and only block
+intentionally when a warning is material to the current step's definition of
+done.
 
 `runPlan.recover` is the self-healing path for system-recoverable terminal
 states, not a general history rewrite. Use it after `runPlan.get` or
@@ -114,6 +117,24 @@ status. This is intentionally separate from run-plan structural validation:
 `readiness.check(workflow_key=...)` tells the agent which scoped providers,
 budgets, or connectors are missing, while still allowing `runPlan.create` when
 the workflow can be planned before credentials are connected.
+
+Workflow readiness reports `structurally_ready`, `context_status`,
+`required_providers_ready`, and `execution_ready` separately. `context_status` may be
+`not_evaluated` because provider readiness does not silently query every
+business record. There is no catch-all `ready` alias. Provider alternatives
+appear as required or optional `route_groups`; one complete route satisfies a
+required group, while optional groups do not block preparation. Top-level
+`missing` contains blockers; unavailable optional and unselected routes remain
+visible in their detailed action/route records.
+
+Claimed steps carry their complete active expectations, resolved values for
+declared input refs, bounded selected context, expected output contracts, and
+bounded `direct_dependency_handoffs`. A handoff includes the direct dependency's
+step id, status, declared outputs, and concise `result_json`. Inputs, context, or
+results larger than their context budget retain a key list with a targeted raw
+`runPlan.getStep` recovery hint. This keeps agents from loading an entire plan,
+reconstructing the current
+brief or prior step from chat and repeating discovery.
 
 Common warning codes:
 

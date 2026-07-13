@@ -2,12 +2,13 @@
   "key": "marketing.campaign.brief-analyst",
   "slug": "marketing-campaign-brief-analyst",
   "name": "Campaign Brief Analyst",
-  "description": "Converts raw person inputs into a complete, professional campaign brief resource with persisted input artifacts and a proposed campaign workspace slug.",
+  "description": "Converts raw operator inputs into a complete, professional campaign brief resource with persisted input artifacts and a proposed campaign workspace slug.",
   "domain": "marketing",
   "audience": "Marketing teams",
   "color": "#ff78ac",
   "featured": true,
   "role": "Campaign Brief Analyst",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "marketing.campaign-production"
   ]

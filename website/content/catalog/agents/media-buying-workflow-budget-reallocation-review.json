@@ -8,6 +8,7 @@
   "color": "#ffbd5c",
   "featured": false,
   "role": "Media Budget Reallocation",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "media-buying.budget-reallocation-review"
   ]

@@ -2,14 +2,62 @@
   "key": "media-buying.budget-reallocation-review",
   "slug": "media-buying-budget-reallocation-review",
   "name": "Media Buying Budget Reallocation Review",
-  "description": "Review campaign performance and prepare evidence-backed budget changes for approval.",
+  "description": "An evidence-backed budget recommendation, explicit approval boundary, and observation plan; mutations occur only when separately approved.",
   "domain": "media-buying",
-  "audience": "Growth and paid media teams",
+  "audience": "Growth teams reviewing paid-media budget allocation",
   "color": "#ffbd5c",
   "featured": false,
+  "problem": "Budget moves are tempting when performance shifts, but weak comparisons and missing guardrails can turn noise into spend changes.",
+  "outcome": "An evidence-backed budget recommendation, explicit approval boundary, and observation plan; mutations occur only when separately approved.",
+  "whyAi": "AI can compare several campaigns and hypotheses consistently while preserving the operator's budget judgment and rollback authority.",
+  "operatorPath": [
+    "Choose campaigns, comparison window, KPI targets, and delivery constraints.",
+    "Set movement limits, approval owner, observation window, and rollback rule.",
+    "Review the recommendation before approving any account change."
+  ],
+  "agentPath": [
+    "Validate measurement comparability before diagnosing allocation.",
+    "Model the proposed movement against performance, constraints, and uncertainty.",
+    "Return a recommendation first; execute only the selected provider route after approval.",
+    "Record the change and post-change observation plan."
+  ],
+  "progressSignals": [
+    "Comparison validated",
+    "Recommendation modeled",
+    "Guardrails checked",
+    "Approval pending",
+    "Change and observation plan recorded"
+  ],
+  "recovery": [
+    "When evidence is weak, recommend no change and name the missing observation.",
+    "On partial provider failure, reconcile actual account state before retry or rollback."
+  ],
+  "safeStoppingPoints": [
+    "Stop after the recommendation when budget mutation was not explicitly approved."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "media-buying.performance-diagnosis",
+      "relationship": "next",
+      "when": "The post-change observation window closes or performance diverges from the expected range."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "Comparable campaign performance evidence",
+    "KPI targets and attribution window",
+    "Budget, delivery, approval, observation, and rollback guardrails",
+    "One selected provider route only when mutation is approved"
+  ],
+  "proof": [
+    "Comparison and uncertainty report",
+    "Budget recommendation with rationale",
+    "Approval record",
+    "Provider receipt and observation plan when changed"
+  ],
   "whenToUse": [
-    "Use this when you want to review campaign performance and prepare evidence-backed budget changes for approval.",
-    "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+    "A project needs to evaluate budget changes across campaigns, channels, audiences, or creative sets.",
+    "The agent should separate recommendation, approval, and optional external mutation."
   ],
   "stages": [
     {
@@ -30,7 +78,7 @@
     {
       "id": "optional_apply_changes",
       "title": "Optional Apply Changes",
-      "summary": "Execute approved budget update actions only when granted by the concrete plan."
+      "summary": "Execute approved budget update actions only when granted by the concrete run plan."
     }
   ],
   "agentNames": [

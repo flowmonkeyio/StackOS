@@ -33,6 +33,7 @@ from stackos.context import (
     MetricSnapshotOut,
     ProjectEventOut,
 )
+from stackos.context.repository.utils import MAX_CONTEXT_LIMIT
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["project-memory"])
 
@@ -52,7 +53,7 @@ class ContextQueryRequest(BaseModel):
 
     sources: list[str] | None = None
     fields: list[str] | None = None
-    limit: int | None = Field(default=None, ge=1)
+    limit: int | None = Field(default=None, ge=1, le=MAX_CONTEXT_LIMIT)
     tags: list[str] | None = None
     domain: str | None = None
     statuses: list[str] | None = None

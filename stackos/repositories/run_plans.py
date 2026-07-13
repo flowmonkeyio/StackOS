@@ -8,6 +8,8 @@ import secrets
 from datetime import UTC, datetime
 from typing import Any
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session, col, select
 
@@ -91,6 +93,135 @@ def _ensure_no_secrets(value: Any, *, label: str) -> None:
         )
 
 
+def _output_schema(contract: dict[str, Any]) -> dict[str, Any]:
+    raw_schema = contract.get("schema_json")
+    schema = dict(raw_schema) if isinstance(raw_schema, dict) else {}
+    output_type = contract.get("type")
+    if "type" not in schema and isinstance(output_type, str) and output_type:
+        schema["type"] = output_type
+    return schema
+
+
+def _schema_error_path(output_key: str, error: Any) -> str:
+    path = f"$.{output_key}"
+    for part in error.absolute_path:
+        path += f"[{part}]" if isinstance(part, int) else f".{part}"
+    if (
+        error.validator == "required"
+        and isinstance(error.instance, dict)
+        and isinstance(error.validator_value, list)
+    ):
+        missing = [
+            key
+            for key in error.validator_value
+            if isinstance(key, str) and key not in error.instance
+        ]
+        if len(missing) == 1:
+            path += f".{missing[0]}"
+    return path
+
+
+def _schema_error_message(error: Any) -> str:
+    validator = str(error.validator or "schema")
+    if validator == "required":
+        return "required field is missing"
+    if validator == "type":
+        return f"expected type {error.validator_value!r}"
+    if validator == "enum":
+        return "value is not one of the allowed enum values"
+    if validator == "const":
+        return "value does not match the required constant"
+    return f"value does not satisfy {validator}"
+
+
+def _validate_step_expected_outputs(
+    step: RunPlanStep,
+    result_json: dict[str, Any] | None,
+) -> None:
+    contracts = step.expected_outputs_json or {}
+    if not contracts:
+        return
+    result = result_json or {}
+    issues: list[dict[str, str]] = []
+    required_output_keys: list[str] = []
+    for output_key, raw_contract in contracts.items():
+        if not isinstance(output_key, str) or not isinstance(raw_contract, dict):
+            issues.append(
+                {
+                    "path": f"$.{output_key}",
+                    "code": "invalid_output_contract",
+                    "message": "frozen output contract is invalid",
+                }
+            )
+            continue
+        required = raw_contract.get("required") is True
+        if required:
+            required_output_keys.append(output_key)
+        if output_key not in result:
+            if required:
+                issues.append(
+                    {
+                        "path": f"$.{output_key}",
+                        "code": "required_output",
+                        "message": "required output is missing",
+                    }
+                )
+            continue
+        schema = _output_schema(raw_contract)
+        if not schema:
+            continue
+        try:
+            Draft202012Validator.check_schema(schema)
+        except SchemaError:
+            issues.append(
+                {
+                    "path": f"$.{output_key}",
+                    "code": "invalid_output_schema",
+                    "message": "frozen output schema is invalid",
+                }
+            )
+            continue
+        validator = Draft202012Validator(schema)
+        schema_errors = sorted(
+            validator.iter_errors(result[output_key]),
+            key=lambda item: (_schema_error_path(output_key, item), str(item.validator)),
+        )
+        for schema_error in schema_errors:
+            issues.append(
+                {
+                    "path": _schema_error_path(output_key, schema_error),
+                    "code": f"schema_{schema_error.validator or 'validation'}",
+                    "message": _schema_error_message(schema_error),
+                }
+            )
+            if len(issues) >= 20:
+                break
+        if len(issues) >= 20:
+            break
+    if issues:
+        raise ValidationError(
+            "run plan step result does not satisfy expected outputs",
+            data={
+                "run_plan_id": step.run_plan_id,
+                "step_id": step.step_id,
+                "issues": issues,
+                "required_output_keys": sorted(required_output_keys),
+                "next_operations": ["runPlan.getStep", "runPlan.recordStep"],
+            },
+        )
+
+
+class RunPlanStepHandoffOut(BaseModel):
+    """Bounded result context passed from one direct dependency."""
+
+    step_id: str
+    title: str
+    status: RunPlanStepStatus
+    output_refs_json: list[str] = Field(default_factory=list)
+    result_json: dict[str, Any] | None = None
+    truncated: bool = False
+
+
 class RunPlanStepOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -113,8 +244,12 @@ class RunPlanStepOut(BaseModel):
     success_criteria_json: list[str]
     action_payloads_json: list[dict[str, Any]] | None
     expected_outputs_json: dict[str, Any] | None
+    input_values_json: dict[str, Any] = Field(default_factory=dict)
+    step_context_json: dict[str, Any] | None = None
+    input_context_truncated: bool = False
     result_json: dict[str, Any] | None
     metadata_json: dict[str, Any] | None
+    direct_dependency_handoffs: list[RunPlanStepHandoffOut] = Field(default_factory=list)
     allowed_tools: list[str] = Field(default_factory=list)
     action_execution_guidance: dict[str, Any] = Field(default_factory=dict)
     error: str | None
@@ -533,6 +668,18 @@ class RunPlanRepository:
         self._require_plan_project(row, project_id)
         return self._plan_out(row)
 
+    def get_step(
+        self,
+        run_plan_id: int,
+        step_id: str,
+        *,
+        project_id: int | None = None,
+    ) -> RunPlanStepOut:
+        plan = self._fetch_plan(run_plan_id)
+        self._require_plan_project(plan, project_id)
+        step = self._fetch_step(run_plan_id, step_id)
+        return self._step_out(step, plan)
+
     def check_consistency(
         self,
         run_plan_id: int,
@@ -911,8 +1058,13 @@ class RunPlanRepository:
                 "record_step status must be success, failed, skipped, or blocked",
                 data={"status": status.value},
             )
+        if result_json is not None:
+            _ensure_no_secrets(result_json, label="run plan step result")
+        if error is not None:
+            _ensure_no_secrets({"error": error}, label="run plan step error")
         if status == RunPlanStepStatus.SUCCESS:
             self._ensure_dependencies_complete(run_plan_id, step)
+            _validate_step_expected_outputs(step, result_json)
         validate_transition(
             step.status,
             status,
@@ -920,10 +1072,6 @@ class RunPlanRepository:
             label="run_plan_step.status",
         )
         now = _utcnow()
-        if result_json is not None:
-            _ensure_no_secrets(result_json, label="run plan step result")
-        if error is not None:
-            _ensure_no_secrets({"error": error}, label="run plan step error")
         step.status = status
         step.result_json = _jsonable(result_json) if result_json is not None else None
         step.error = error
@@ -1262,7 +1410,13 @@ class RunPlanRepository:
             ).all()
         )
 
-    def _step_out(self, step: RunPlanStep, plan: RunPlan | None = None) -> RunPlanStepOut:
+    def _step_out(
+        self,
+        step: RunPlanStep,
+        plan: RunPlan | None = None,
+        *,
+        all_steps: builtins.list[RunPlanStep] | None = None,
+    ) -> RunPlanStepOut:
         data = RunPlanStepOut.model_validate(step)
         if plan is None:
             plan = self._s.get(RunPlan, step.run_plan_id)
@@ -1278,16 +1432,116 @@ class RunPlanRepository:
                 plan=plan,
                 allowed_tools=data.allowed_tools,
             )
+            if step.status == "running":
+                input_values = {
+                    input_ref: plan.inputs_json[input_ref]
+                    for input_ref in (step.input_refs_json or [])
+                    if input_ref in plan.inputs_json
+                }
+                bounded_inputs, inputs_truncated = _bounded_step_payload(
+                    input_values,
+                    recovery="Call runPlan.get with response_mode=raw for complete run inputs.",
+                )
+                data.input_values_json = bounded_inputs or {}
+                data.step_context_json, context_truncated = _bounded_step_payload(
+                    plan.selected_context_json,
+                    recovery=(
+                        "Call runPlan.get with response_mode=raw for complete selected context."
+                    ),
+                )
+                data.input_context_truncated = inputs_truncated or context_truncated
+        data.direct_dependency_handoffs = _direct_dependency_handoffs(
+            step,
+            all_steps=all_steps or self._step_rows(step.run_plan_id),
+        )
         return data
 
     def _plan_out(self, row: RunPlan) -> RunPlanOut:
         data = RunPlanOut.model_validate(row)
-        data.steps = [self._step_out(step, row) for step in self._step_rows(row.id)]
+        step_rows = self._step_rows(row.id)
+        data.steps = [self._step_out(step, row, all_steps=step_rows) for step in step_rows]
         data.approval_requests = [
             ApprovalRequestOut.model_validate(item) for item in self._approval_rows(row.id)
         ]
         data.consistency_issues = RunPlanLifecycleReconciler(self._s).consistency_issues(row)
         return data
+
+
+def _direct_dependency_handoffs(
+    step: RunPlanStep,
+    *,
+    all_steps: builtins.list[RunPlanStep],
+) -> list[RunPlanStepHandoffOut]:
+    by_step_id = {item.step_id: item for item in all_steps}
+    handoffs: list[RunPlanStepHandoffOut] = []
+    for dependency_id in (step.depends_on_json or [])[:12]:
+        dependency = by_step_id.get(dependency_id)
+        if dependency is None:
+            continue
+        result, truncated = _bounded_handoff_result(
+            dependency.result_json,
+            run_plan_id=dependency.run_plan_id,
+            step_id=dependency.step_id,
+        )
+        handoffs.append(
+            RunPlanStepHandoffOut(
+                step_id=dependency.step_id,
+                title=dependency.title,
+                status=dependency.status,
+                output_refs_json=list(dependency.output_refs_json or []),
+                result_json=result,
+                truncated=truncated,
+            )
+        )
+    return handoffs
+
+
+def _bounded_handoff_result(
+    result_json: dict[str, Any] | None,
+    *,
+    run_plan_id: int,
+    step_id: str,
+    max_bytes: int = 4096,
+) -> tuple[dict[str, Any] | None, bool]:
+    if result_json is None:
+        return None, False
+    copied = _jsonable(result_json)
+    if len(json.dumps(copied, sort_keys=True).encode("utf-8")) <= max_bytes:
+        return copied, False
+    summary = copied.get("summary")
+    bounded: dict[str, Any] = {
+        "available_keys": sorted(str(key) for key in copied),
+        "handoff_truncated": True,
+        "recovery": (
+            "Call runPlan.getStep with "
+            f"run_plan_id={run_plan_id}, step_id={step_id!r}, and response_mode=raw "
+            "for the complete prior result."
+        ),
+    }
+    if isinstance(summary, str) and summary.strip():
+        bounded["summary"] = summary[:1200]
+    return bounded, True
+
+
+def _bounded_step_payload(
+    value: dict[str, Any] | None,
+    *,
+    recovery: str,
+    max_bytes: int = 4096,
+) -> tuple[dict[str, Any] | None, bool]:
+    if not value:
+        return None, False
+    copied = _jsonable(value)
+    if len(json.dumps(copied, sort_keys=True).encode("utf-8")) <= max_bytes:
+        return copied, False
+    return (
+        {
+            "available_keys": sorted(str(key) for key in copied),
+            "payload_truncated": True,
+            "recovery": recovery,
+        },
+        True,
+    )
 
 
 def _step_action_execution_guidance(
@@ -1354,6 +1608,7 @@ __all__ = [
     "RunPlanReopenOut",
     "RunPlanRepository",
     "RunPlanStartOut",
+    "RunPlanStepHandoffOut",
     "RunPlanStepOut",
     "RunPlanSummaryOut",
 ]

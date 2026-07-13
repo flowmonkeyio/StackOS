@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
+from stackos.workflows import run_plan_schema as run_plan_schema_module
 from stackos.workflows.run_plan_schema import (
     RunPlanSpec,
     run_plan_from_template,
@@ -89,6 +91,22 @@ def test_run_plan_schema_rejects_admin_tool_grant() -> None:
 
     assert result.valid is False
     assert "admin/setup tool" in result.errors[0].message
+
+
+def test_builtin_runtime_refs_follow_current_manifest_snapshot(monkeypatch) -> None:
+    by_slug = {manifest.slug: manifest for manifest in BUILTIN_PLUGIN_MANIFESTS}
+    current = [type("Snapshot", (), {"manifests": (by_slug["core"],)})()]
+    monkeypatch.setattr(
+        run_plan_schema_module,
+        "get_builtin_plugin_manifest_snapshot",
+        lambda: current[0],
+    )
+
+    assert run_plan_schema_module._builtin_plugin_slugs() == {"core"}
+
+    current[0] = type("Snapshot", (), {"manifests": (by_slug["branding"],)})()
+
+    assert run_plan_schema_module._builtin_plugin_slugs() == {"branding"}
 
 
 def test_run_plan_schema_requires_action_execute_refs() -> None:

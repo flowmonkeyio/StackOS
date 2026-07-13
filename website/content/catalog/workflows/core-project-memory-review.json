@@ -2,14 +2,52 @@
   "key": "core.project-memory-review",
   "slug": "core-project-memory-review",
   "name": "Project Memory Review",
-  "description": "Review what the project already knows and recommend the most useful next move.",
+  "description": "A bounded memory review that explains what the project knows, what remains uncertain, and the best next action.",
   "domain": "core",
-  "audience": "Every team",
+  "audience": "Any team resuming or orienting complex project work",
   "color": "#8ea6ff",
   "featured": false,
+  "problem": "Projects accumulate runs, decisions, evidence, and unfinished work faster than an agent can safely reconstruct from chat.",
+  "outcome": "A bounded memory review that explains what the project knows, what remains uncertain, and the best next action.",
+  "whyAi": "AI can connect evidence across several project records while keeping source refs and uncertainty visible.",
+  "operatorPath": [
+    "State the question or decision the memory review should support.",
+    "Confirm the project scope and desired persistence level.",
+    "Review the recommendation before starting any follow-up workflow."
+  ],
+  "agentPath": [
+    "Check active tracker and run-plan state first so the review does not ignore or duplicate current work.",
+    "Query only the relevant project sources and preserve their refs.",
+    "Separate facts, decisions, stale assumptions, contradictions, and gaps.",
+    "Return a recommendation or a concrete run-plan proposal without executing it implicitly."
+  ],
+  "progressSignals": [
+    "Question scoped",
+    "Memory sources reviewed",
+    "Conflicts exposed",
+    "Recommendation ready"
+  ],
+  "recovery": [
+    "If the project scope or source authority is unclear, stop with a bounded clarification.",
+    "If records conflict, present both and name the decision needed."
+  ],
+  "safeStoppingPoints": [
+    "Stop after the recommendation unless the operator explicitly starts follow-up work."
+  ],
+  "handoffs": [],
+  "setup": "available",
+  "prerequisites": [
+    "A clear question or decision",
+    "An existing StackOS project with relevant stored context"
+  ],
+  "proof": [
+    "Source-linked memory summary",
+    "Explicit gaps and conflicts",
+    "Recommended next action with rationale"
+  ],
   "whenToUse": [
-    "Use this when you want to review what the project already knows and recommend the most useful next move.",
-    "Best for every team that want repeatable work without changing the tools they already use."
+    "The agent needs to understand recent project history before planning work.",
+    "A workflow should start from prior runs, learnings, experiments, and decisions."
   ],
   "stages": [
     {

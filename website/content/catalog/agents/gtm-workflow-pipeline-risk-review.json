@@ -8,6 +8,7 @@
   "color": "#ff9f73",
   "featured": false,
   "role": "Gtm Pipeline Risk Review",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "gtm.pipeline-risk-review"
   ]

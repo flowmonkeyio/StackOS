@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlmodel import Session
 
 from stackos.context import ContextRepository
+from stackos.db.models import ActionCall, ActionCallStatus, Run, RunKind, RunStatus
+from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ValidationError
-from stackos.repositories.resources import ResourceRepository
+from stackos.repositories.resources import ArtifactRepository, ResourceRepository
 
 
 def test_context_query_projects_fields_limits_and_redacts(
@@ -112,6 +116,99 @@ def test_context_query_projects_filtered_resource_records(
         "plugin_slug": "core",
         "resource_key": "learning",
     }
+
+
+def test_context_query_executes_every_declared_workflow_source(
+    session: Session,
+    project_id: int,
+) -> None:
+    artifact = ArtifactRepository(session).create(
+        project_id=project_id,
+        plugin_slug="branding",
+        kind="brand-voice-guide",
+        uri="artifact://voice-guide",
+        status="approved",
+        name="Current voice guide",
+        metadata_json={"tags": ["voice"], "api_key": "secret"},
+    ).data
+    request = AgentRequestRepository(session).create(
+        project_id=project_id,
+        request_key="context-source-test",
+        title="Customer feedback",
+        body_preview="The callback failed",
+        source_message_ref="message:1",
+        metadata_json={
+            "attachments": [{"ref": "media:1", "access_token": "secret"}],
+            "tags": ["support"],
+        },
+    ).data
+    call = ActionCall(
+        project_id=project_id,
+        action_key="message.send",
+        plugin_slug="communications",
+        operation="send",
+        status=ActionCallStatus.SUCCESS,
+        response_json={"message_ref": "message:2", "access_token": "secret"},
+        metadata_json={"tags": ["notification"]},
+    )
+    completed_at = datetime.now(UTC).replace(tzinfo=None)
+    run = Run(
+        project_id=project_id,
+        kind=RunKind.RUN_PLAN,
+        status=RunStatus.SUCCESS,
+        ended_at=completed_at,
+    )
+    session.add(call)
+    session.add(run)
+    session.commit()
+    session.refresh(call)
+    session.refresh(run)
+
+    repo = ContextRepository(session)
+    artifacts = repo.query_context(
+        project_id=project_id,
+        sources=["artifacts"],
+        fields=["name", "kind", "status", "uri", "metadata_json", "updated_at"],
+        plugin_slug="branding",
+        statuses=["approved"],
+        tags=["voice"],
+    )
+    requests = repo.query_context(
+        project_id=project_id,
+        sources=["agent_requests"],
+        fields=[
+            "title",
+            "body_preview",
+            "source_message_ref",
+            "attachments",
+            "status",
+            "updated_at",
+        ],
+        tags=["support"],
+    )
+    calls = repo.query_context(
+        project_id=project_id,
+        sources=["action_calls"],
+        fields=["action_key", "status", "response_json", "created_at"],
+        plugin_slug="communications",
+        statuses=["success"],
+        tags=["notification"],
+    )
+    runs = repo.query_context(
+        project_id=project_id,
+        sources=["runs"],
+        fields=["kind", "status", "completed_at"],
+        statuses=["success"],
+    )
+
+    assert [item.id for item in artifacts.items] == [artifact.id]
+    assert artifacts.items[0].fields["metadata_json"]["api_key"] == "[redacted]"
+    assert [item.id for item in requests.items] == [request.id]
+    assert requests.items[0].fields["attachments"][0]["access_token"] == "[redacted]"
+    assert [item.id for item in calls.items] == [call.id]
+    assert calls.items[0].fields["response_json"]["access_token"] == "[redacted]"
+    assert [item.id for item in runs.items] == [run.id]
+    assert runs.items[0].fields["completed_at"] == completed_at
 
 
 def test_experiment_observations_and_decisions_are_stored_not_interpreted(

@@ -6,7 +6,7 @@ test('communicates the product and completes the core evaluation flow', async ({
 
   await expect(page.getByRole('heading', { level: 1 })).toContainText('StackOS keeps it on track')
   await expect(page.getByLabel('StackOS local workflow execution preview')).toBeVisible()
-  await expect(page.getByText('23', { exact: true })).toBeVisible()
+  await expect(page.getByText('24', { exact: true })).toBeVisible()
   await expect(page.getByText('Claude Code connected', { exact: true })).toBeAttached()
 
   const downloadUrl = 'https://flowmonkey.io/StackOS/stackos-2.0.0-mac-arm64.dmg'
@@ -120,7 +120,12 @@ test('library exposes workflows, articles, cross-links, and production metadata'
 
   await page.goto('/library/workflows/branding-content-production')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Branding Content Production')
-  await expect(page.getByText('Watch the work move step by step.')).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: 'The reusable stages of the work.' })).toBeVisible()
+  await expect(page.getByText('What the agent does')).toBeVisible()
+  await expect(page.getByText('Project setup required').first()).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: 'Useful even when the whole path cannot run.' })).toBeVisible()
+  await expect(page.getByText('Live plan')).toHaveCount(0)
+  await expect(page.getByText('Works across connected apps')).toHaveCount(0)
   await expect(page.getByRole('link', { name: /Branding Narrative Writer/ })).toHaveAttribute('href', '/library/agents/branding-narrative-writer')
 
   await page.goto('/library/articles/what-is-an-agentic-workflow')
@@ -138,9 +143,9 @@ test('library exposes workflows, articles, cross-links, and production metadata'
 
 test('catalog indexes render every generated definition on first navigation', async ({ page }) => {
   for (const [path, count, answer, titleTerm] of [
-    ['/library/workflows', 23, 'What is AI workflow automation?', 'AI workflow automation'],
-    ['/library/agents', 41, 'What are AI agents for business?', 'AI agents for business'],
-    ['/library/orchestrators', 3, 'What is AI agent orchestration?', 'AI agent orchestration'],
+    ['/library/workflows', 24, 'What is AI workflow automation?', 'AI workflow automation'],
+    ['/library/agents', 42, 'What are AI agents for business?', 'AI agents for business'],
+    ['/library/orchestrators', 4, 'What is AI agent orchestration?', 'AI agent orchestration'],
   ] as const) {
     await page.goto(path)
     await expect(page.locator('.catalog-card')).toHaveCount(count)

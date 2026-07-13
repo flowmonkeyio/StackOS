@@ -1,28 +1,200 @@
 {
   "workflows": [
     {
+      "key": "branding.brand-foundation-setup",
+      "slug": "branding-brand-foundation-setup",
+      "name": "Brand Foundation Setup",
+      "description": "A current brand profile and durable voice guide that future agents can retrieve, apply, test, and update without guessing.",
+      "domain": "branding",
+      "audience": "Founders, builders, and teams defining a recognizable editorial voice",
+      "color": "#d8ff63",
+      "featured": true,
+      "problem": "A generic tone prompt cannot preserve a real point of view, especially after several agents, drafts, and channels touch the work.",
+      "outcome": "A current brand profile and durable voice guide that future agents can retrieve, apply, test, and update without guessing.",
+      "whyAi": "AI can compare interviews, real writing samples, project experience, and reader reactions at scale, while the operator's expressed intent and supplied evidence remain the authority on identity.",
+      "operatorPath": [
+        "Share the brand goal, audience, representative writing, and any current voice guidance.",
+        "Answer a focused interview when the samples do not explain the judgment behind the writing.",
+        "Review a focused choice only when the evidence leaves a material identity question unresolved.",
+        "Receive a retrieval-tested profile and guide as the content-production baseline."
+      ],
+      "agentPath": [
+        "Inventory existing brand resources, guides, writing samples, and content outcomes before proposing changes.",
+        "Interview for point of view, lived proof, preferred tension, language habits, boundaries, and what the operator refuses to sound like.",
+        "Separate durable voice principles from channel mechanics and brittle phrase blacklists.",
+        "Draft the profile and guide, run independent voice review, then finalize and persist the supported foundation.",
+        "Re-query the stored profile and artifact to prove future agents can retrieve them."
+      ],
+      "progressSignals": [
+        "Existing guidance inventoried",
+        "Interview and sample evidence complete",
+        "Voice system drafted",
+        "Adversarial voice review complete",
+        "Foundation finalized and persisted",
+        "Retrieval verified"
+      ],
+      "recovery": [
+        "If samples conflict, preserve the variants and ask which context each one represents.",
+        "If a material identity choice cannot be resolved from the request or evidence, preserve the reviewed draft and ask one focused question.",
+        "If persistence or retrieval fails, stop before declaring the foundation ready."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a reviewed draft only when missing authority or context would materially change the identity.",
+        "Complete after returning the retrieval-tested content-production handoff; do not start or mutate the next workflow unless the operator separately asks for content production."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "branding.content-production",
+          "relationship": "next",
+          "when": "The active brand profile and voice guide have been finalized and retrieval-tested."
+        }
+      ],
+      "setup": "available",
+      "prerequisites": [
+        "A brand or personal-authority goal and target audience",
+        "Representative writing samples, prior content, or willingness to be interviewed",
+        "Disclosure and sensitive-information boundaries"
+      ],
+      "proof": [
+        "Source and sample inventory",
+        "Voice principles, structure rules, and evidence standard",
+        "Anti-generic kill tests applied to examples",
+        "Independent voice review and durable finalization decision",
+        "Retrieval-tested brand-profile and voice-guide refs"
+      ],
+      "whenToUse": [
+        "A project needs its first durable brand voice and editorial foundation before producing content.",
+        "Existing content sounds generic, inconsistent, promotional, or unlike the operator.",
+        "The project has voice guidance in another project or document that should be adapted without copying it blindly."
+      ],
+      "stages": [
+        {
+          "id": "inventory-existing-foundation",
+          "title": "Inventory Existing Foundation",
+          "summary": "Find current profiles, guides, representative content, outcomes, and conflicting guidance before drafting anything new."
+        },
+        {
+          "id": "interview-and-sample-analysis",
+          "title": "Interview And Sample Analysis",
+          "summary": "Capture the operator's point of view and analyze real writing choices only where the current evidence needs it."
+        },
+        {
+          "id": "draft-brand-foundation",
+          "title": "Draft Brand Foundation",
+          "summary": "Turn the evidence into a compact profile and practical voice guide that agents can use without imitating a caricature."
+        },
+        {
+          "id": "adversarial-voice-review",
+          "title": "Adversarial Voice Review",
+          "summary": "Independently test distinctiveness, fidelity, usability, evidence, and anti-generic quality before activation."
+        },
+        {
+          "id": "finalize-and-persist",
+          "title": "Finalize And Persist",
+          "summary": "Resolve review findings, record the finalization decision, upsert the active brand profile, and create or update the durable voice-guide artifact."
+        },
+        {
+          "id": "verify-retrieval",
+          "title": "Verify Retrieval",
+          "summary": "Re-query the saved profile and artifact and prove a future content run receives the correct active foundation."
+        }
+      ],
+      "agentNames": [
+        "Brand Profile Architect",
+        "Branding Evidence Curator",
+        "Branding Voice Reviewer"
+      ],
+      "agentRefs": [
+        {
+          "key": "branding.profile-architect",
+          "slug": "branding-profile-architect",
+          "name": "Brand Profile Architect"
+        },
+        {
+          "key": "branding.evidence-curator",
+          "slug": "branding-evidence-curator",
+          "name": "Branding Evidence Curator"
+        },
+        {
+          "key": "branding.voice-reviewer",
+          "slug": "branding-voice-reviewer",
+          "name": "Branding Voice Reviewer"
+        }
+      ],
+      "integrations": []
+    },
+    {
       "key": "branding.content-production",
       "slug": "branding-content-production",
       "name": "Branding Content Production",
-      "description": "Turn an idea into a researched, reviewed piece of content, then prepare it for every channel you choose.",
+      "description": "A reviewed, evidence-backed piece in the project voice, with channel versions and publication governed by the request's explicit execution intent.",
       "domain": "branding",
-      "audience": "Content and brand teams",
+      "audience": "Builders, founders, and content teams sharing real operating experience",
       "color": "#d8ff63",
       "featured": true,
+      "problem": "Useful operating experience often gets flattened into generic content or a disguised product pitch.",
+      "outcome": "A reviewed, evidence-backed piece in the project voice, with channel versions and publication governed by the request's explicit execution intent.",
+      "whyAi": "AI can connect interviews, project evidence, prior positions, drafting, independent review, and bounded execution while keeping the operator's judgment visible.",
+      "operatorPath": [
+        "Name the topic, audience, useful lesson, and how prominently the product should appear.",
+        "Share source boundaries or answer a short interview when the missing experience matters.",
+        "Set packet-only, stage, or publish intent and name the target channels when execution is wanted.",
+        "Answer a focused question only when missing context would materially change the piece or destination."
+      ],
+      "agentPath": [
+        "Load the brand foundation, prior positions, cleared sources, and channel rules.",
+        "Decide whether the optional interview is required, useful, or unnecessary; record why when it is skipped.",
+        "Research and draft from traceable evidence, then run claim, voice, and sanitization review.",
+        "Finalize the packet, then stop, stage, or publish according to publication_intent without adding another human checkpoint."
+      ],
+      "progressSignals": [
+        "Prerequisites checked",
+        "Evidence and interview scope set",
+        "Angle selected",
+        "Draft under independent review",
+        "Packet finalized and recorded",
+        "Publication status recorded"
+      ],
+      "recovery": [
+        "If the voice or source boundary is missing, pause for brand-foundation setup.",
+        "If evidence conflicts, expose the conflict and ask one bounded decision question.",
+        "If publication fails, preserve the final packet and record the channel-specific blocker."
+      ],
+      "safeStoppingPoints": [
+        "Stop after a review-ready content packet when publication_intent is packet_only.",
+        "After the intent-specific terminal condition is met, return closeout without creating unrelated follow-up work or changing another workflow."
+      ],
+      "handoffs": [],
+      "setup": "project-adapter-required",
+      "prerequisites": [
+        "An active brand voice profile or representative writing samples",
+        "A topic, audience, useful lesson, and product-mention boundary",
+        "Approved source and disclosure boundaries",
+        "Channel targets only when publication is in scope"
+      ],
+      "proof": [
+        "Claims-to-evidence map",
+        "Independent claim, voice, and sanitization verdicts",
+        "Durable final content-piece ref",
+        "Explicit packet-only, stage, or publish intent",
+        "Publication receipts only for selected channels"
+      ],
       "whenToUse": [
-        "Use this when you want to turn an idea into a researched, reviewed piece of content, then prepare it for every channel you choose.",
-        "Best for content and brand teams that want repeatable work without changing the tools they already use."
+        "A solo operator wants one workflow to interview them, research the facts, pull supporting artifacts, shape the idea, draft, review, generate optional images, and publish or stage selected channels.",
+        "The user says they want to generate content on a topic, with evidence or source material, using the branding workflow.",
+        "The output should include a canonical draft plus X, LinkedIn, website, or email publication without requiring separate workflow runs.",
+        "Website or channel imagery may be needed, but generation should happen only after an explicit image plan."
       ],
       "stages": [
         {
           "id": "interview-capture",
           "title": "Interview Capture",
-          "summary": "Ask journalist-style questions and capture facts, surprises, tradeoffs, hypotheses, and open research questions."
+          "summary": "Decide whether first-hand operator context is needed, then ask only the useful journalist-style questions or record why the interview can be skipped."
         },
         {
           "id": "research-fact-collection",
           "title": "Research And Fact Collection",
-          "summary": "Use the interview pack to collect, verify, and organize supporting facts from the right sources before angle selection."
+          "summary": "Use the operator intent, interview decision, any interview pack, and cleared sources to collect and organize facts before angle selection."
         },
         {
           "id": "angle-and-structure",
@@ -31,8 +203,8 @@
         },
         {
           "id": "draft-canonical",
-          "title": "Draft main",
-          "summary": "Write the main piece in the adapted person voice from the selected angle and evidence pack."
+          "title": "Draft Canonical",
+          "summary": "Write the canonical piece in the adapted operator voice from the selected angle and evidence pack."
         },
         {
           "id": "editorial-review",
@@ -47,22 +219,22 @@
         {
           "id": "produce-optional-images",
           "title": "Produce Optional Images",
-          "summary": "Resolve the selected image set, generating assets only when the image plan requires connected app-generated website or channel media."
+          "summary": "Resolve the selected image set, generating assets only when the image plan requires provider-generated website or channel media."
         },
         {
           "id": "render-channel-packets",
           "title": "Render Channel Publication Jobs",
-          "summary": "Produce executable website, X, LinkedIn, and optional email publication payloads plus one channel-ready publication bundle from the main draft and image…"
+          "summary": "Produce executable website, X, LinkedIn, and optional email publication payloads plus one channel-ready publication bundle from the canonical draft and…"
         },
         {
-          "id": "approve-and-record",
-          "title": "Approve And Record",
-          "summary": "Approve the main draft, channel publication jobs, publication bundle, optional image refs, follow-up hooks, and memory updates together before external…"
+          "id": "finalize-and-record",
+          "title": "Finalize Content And Record",
+          "summary": "Finalize the reviewed canonical packet and durable memory, then prepare only the publication jobs permitted by publication_intent."
         },
         {
           "id": "execute-publication",
           "title": "Execute Publication",
-          "summary": "Publish or stage every approved channel through its selected automation path, then record distribution results."
+          "summary": "Publish or stage only the jobs selected by publication_intent and target_channels, then record distribution results."
         }
       ],
       "agentNames": [
@@ -117,14 +289,52 @@
       "key": "communications.inbox-review",
       "slug": "communications-inbox-review",
       "name": "Communications Inbox Review",
-      "description": "Review incoming messages, identify what needs action, and turn selected items into organized work.",
+      "description": "A bounded inbox review with selected messages summarized, classified, and turned into explicit follow-up only when authorized.",
       "domain": "communications",
-      "audience": "Customer and operations teams",
+      "audience": "Operations and support teams reviewing shared inboxes",
       "color": "#7ee2ad",
       "featured": false,
+      "problem": "A busy mailbox mixes routine messages, sensitive content, and work requests that need different treatment.",
+      "outcome": "A bounded inbox review with selected messages summarized, classified, and turned into explicit follow-up only when authorized.",
+      "whyAi": "",
+      "operatorPath": [
+        "Choose the mailbox, time window, and review rules.",
+        "Define which messages may create work, be marked, or receive a response.",
+        "Review the shortlist and approve any external follow-up."
+      ],
+      "agentPath": [
+        "Fetch only the bounded message set and preserve mailbox privacy rules.",
+        "Summarize and classify with uncertainty visible.",
+        "Prepare or create approved follow-up work and leave unrelated messages untouched."
+      ],
+      "progressSignals": [
+        "Mailbox scope confirmed",
+        "Messages reviewed",
+        "Action shortlist prepared",
+        "Approved follow-up recorded"
+      ],
+      "recovery": [
+        "If mailbox access or UID state is stale, stop and refresh instead of guessing message identity.",
+        "If classification is uncertain, leave the message unchanged and flag it for review."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a read-only shortlist when message mutation or response was not authorized."
+      ],
+      "handoffs": [],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A connected mailbox profile",
+        "A bounded mailbox and time or UID scope",
+        "Rules for privacy, marking, replies, and work creation"
+      ],
+      "proof": [
+        "Reviewed message refs",
+        "Action shortlist with reasons",
+        "Mutation or follow-up receipts only where approved"
+      ],
       "whenToUse": [
-        "Use this when you want to review incoming messages, identify what needs action, and turn selected items into organized work.",
-        "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+        "A project needs an agent to inspect recent email messages and decide which ones need action.",
+        "The agent should reuse existing communication-message resources and prior request history before fetching more."
       ],
       "stages": [
         {
@@ -177,14 +387,53 @@
       "key": "communications.outbound-notification",
       "slug": "communications-outbound-notification",
       "name": "Communications Outbound Notification",
-      "description": "Send an approved update after a task, decision, or result is ready.",
+      "description": "One approved notification delivered to a named destination with an auditable source and receipt.",
       "domain": "communications",
-      "audience": "Customer and operations teams",
+      "audience": "Teams sending operational updates after completed work",
       "color": "#7ee2ad",
       "featured": false,
+      "problem": "Status updates are easy to send to the wrong audience, at the wrong time, or without evidence that the underlying work is complete.",
+      "outcome": "One approved notification delivered to a named destination with an auditable source and receipt.",
+      "whyAi": "AI can turn a completed run or decision into audience-appropriate copy, while route and send policy control delivery.",
+      "operatorPath": [
+        "Name the completed result, audience, destination, and urgency.",
+        "Review the message when policy requires it.",
+        "Approve the send or keep the message as a draft."
+      ],
+      "agentPath": [
+        "Verify the source result and named delivery target.",
+        "Draft only what the evidence supports and resolve the allowed route.",
+        "Send once with idempotency and record the provider receipt."
+      ],
+      "progressSignals": [
+        "Source verified",
+        "Target resolved",
+        "Message ready",
+        "Approval recorded",
+        "Delivery receipt stored"
+      ],
+      "recovery": [
+        "If the target or route is unclear, keep the draft and ask for the missing destination.",
+        "If delivery status is uncertain, inspect the existing action receipt before retrying."
+      ],
+      "safeStoppingPoints": [
+        "Stop with an approved draft when sending was not authorized."
+      ],
+      "handoffs": [],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A completed source result or decision",
+        "A named communication target and allowed route",
+        "Audience and approval policy"
+      ],
+      "proof": [
+        "Source refs",
+        "Approved message packet",
+        "Provider message id and idempotency state"
+      ],
       "whenToUse": [
-        "Use this when you want to send an approved update after a task, decision, or result is ready.",
-        "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+        "A run, decision, or agent action needs a human-facing notification.",
+        "The agent has explicit recipients/channels and approved message content."
       ],
       "stages": [
         {
@@ -221,21 +470,69 @@
       ],
       "integrations": [
         "Smtp",
-        "Telegram Bot"
+        "Telegram Bot",
+        "Slack Bot"
       ]
     },
     {
       "key": "communications.customer-feedback-intake",
       "slug": "communications-customer-feedback-intake",
       "name": "Customer Feedback Intake",
-      "description": "Bring customer feedback from chat and email into one clear, investigation-ready thread.",
+      "description": "One route-approved Slack thread containing the complete feedback packet and safe refs for investigation.",
       "domain": "communications",
-      "audience": "Customer and operations teams",
+      "audience": "Support and product teams receiving feedback across communication channels",
       "color": "#7ee2ad",
       "featured": true,
+      "problem": "Customer feedback arriving across chat or email can lose media, privacy context, and ownership before anyone investigates it.",
+      "outcome": "One route-approved Slack thread containing the complete feedback packet and safe refs for investigation.",
+      "whyAi": "AI can normalize several communication formats and preserve context, while StackOS enforces the configured route and delivery boundary.",
+      "operatorPath": [
+        "Choose the approved source-to-Slack route and the canonical support destination.",
+        "Set privacy, redaction, media retention, and task-creation policy.",
+        "Send feedback through an approved surface or provide safe message and media refs."
+      ],
+      "agentPath": [
+        "Verify the source, route, destination, media inventory, and data-sharing boundary.",
+        "Normalize the report without diagnosing it or dropping allowed media.",
+        "Create one complete Slack handoff, add the intake signal, and preserve investigation refs."
+      ],
+      "progressSignals": [
+        "Source and route verified",
+        "Media inventory complete",
+        "Privacy boundary checked",
+        "Slack handoff created",
+        "Investigation refs stored"
+      ],
+      "recovery": [
+        "Stop before sending if any required media cannot be forwarded safely.",
+        "On partial provider failure, avoid duplicate sends and resume from the stored delivery receipt."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a missing-route or privacy question before copying customer content."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "support.issue-investigation",
+          "relationship": "next",
+          "when": "The complete feedback packet exists in the approved Slack thread."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "A named source surface and message or media refs",
+        "An approved cross-surface route and Slack target",
+        "Privacy, redaction, retention, and media policy"
+      ],
+      "proof": [
+        "Complete media inventory",
+        "Route and target resolution",
+        "Slack message or upload receipts",
+        "Linked canonical thread ref"
+      ],
       "whenToUse": [
-        "Use this when you want to bring customer feedback from chat and email into one clear, investigation-ready thread.",
-        "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+        "Customer feedback or a support symptom arrives outside the canonical Slack support thread.",
+        "A project needs a single Slack thread before support investigation starts.",
+        "Source media, reporter context, route context, and safe message refs must be preserved for later agents."
       ],
       "stages": [
         {
@@ -245,13 +542,13 @@
         },
         {
           "id": "establish-canonical-thread",
-          "title": "Establish main Thread",
+          "title": "Establish Canonical Thread",
           "summary": "Reuse a Slack-origin thread or create one route-approved Slack handoff that preserves source context and media."
         },
         {
           "id": "add-intake-reaction",
           "title": "Add Intake Reaction",
-          "summary": "Mark the main Slack message with a reaction that indicates support intake has started."
+          "summary": "Mark the canonical Slack message with a reaction that indicates support intake has started."
         },
         {
           "id": "prepare-investigation-handoff",
@@ -278,20 +575,67 @@
       "key": "support.delivery-task-handoff",
       "slug": "support-delivery-task-handoff",
       "name": "Delivery Task Handoff",
-      "description": "Turn a completed support investigation into ready-to-start delivery work.",
+      "description": "A delivery-ready tracker task linked back to the approved support thread and handed to engineering without changing the product.",
       "domain": "support",
-      "audience": "Support and success teams",
+      "audience": "Support and engineering teams converting verified issues into delivery work",
       "color": "#a8e37f",
       "featured": false,
+      "problem": "Support conclusions lose evidence or create premature engineering tasks when investigation, operator authorization, and delivery acceptance are mixed together.",
+      "outcome": "A delivery-ready tracker task linked back to the approved support thread and handed to engineering without changing the product.",
+      "whyAi": "AI can translate an evidence-backed conclusion into complete delivery context while the operator retains task-creation authority.",
+      "operatorPath": [
+        "Review the completed support conclusion in the canonical Slack thread.",
+        "Give the required same-thread instruction to create delivery work.",
+        "Inspect the created task link and engineering handoff."
+      ],
+      "agentPath": [
+        "Verify the investigation is complete and the same-thread authorization is current.",
+        "Create the task with reproduction, impact, evidence, acceptance criteria, and dependencies.",
+        "Reply with the task ref, add the task-created signal, and hand off to engineering."
+      ],
+      "progressSignals": [
+        "Conclusion verified",
+        "Authorization found",
+        "Task created",
+        "Thread acknowledged",
+        "Engineering handoff ready"
+      ],
+      "recovery": [
+        "If authorization or required delivery context is missing, ask in the same thread and create nothing.",
+        "If acknowledgement fails after task creation, reuse the existing task ref rather than duplicating work."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a same-thread clarification when task creation was not explicitly authorized."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "engineering.tracked-delivery",
+          "relationship": "next",
+          "when": "The delivery-ready task exists and implementation is authorized."
+        }
+      ],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A completed support conclusion in the canonical Slack thread",
+        "A current same-thread instruction authorizing task creation",
+        "Project workflow and tracker context"
+      ],
+      "proof": [
+        "Linked investigation evidence",
+        "Delivery-ready tracker task",
+        "Slack acknowledgement and task-created signal",
+        "Engineering workflow handoff"
+      ],
       "whenToUse": [
-        "Use this when you want to turn a completed support investigation into ready-to-start delivery work.",
-        "Best for support and success teams that want repeatable work without changing the tools they already use."
+        "A support.issue-investigation conclusion is posted and the operator replies in the same canonical thread asking for delivery work.",
+        "The task must preserve source, thread, media, conclusion, instruction, and handoff refs.",
+        "Engineering delivery should start from tracker state rather than chat-only context."
       ],
       "stages": [
         {
           "id": "confirm-thread-instruction",
           "title": "Confirm Thread Instruction",
-          "summary": "Re-read the main thread and confirm the task instruction belongs to the same thread as the support conclusion."
+          "summary": "Re-read the canonical thread and confirm the task instruction belongs to the same thread as the support conclusion."
         },
         {
           "id": "create-delivery-task",
@@ -301,12 +645,12 @@
         {
           "id": "post-task-handoff",
           "title": "Post Task Handoff",
-          "summary": "Reply in the main thread with the task link/key, scoped delivery summary, and engineering.tracked-delivery handoff."
+          "summary": "Reply in the canonical thread with the task link/key, scoped delivery summary, and engineering.tracked-delivery handoff."
         },
         {
           "id": "add-task-created-reaction",
           "title": "Add Task-Created Reaction",
-          "summary": "Add a semantically matching reaction to the main message only after task creation succeeds."
+          "summary": "Add a semantically matching reaction to the canonical message only after task creation succeeds."
         }
       ],
       "agentNames": [
@@ -333,14 +677,62 @@
       "key": "engineering.tracked-delivery",
       "slug": "engineering-tracked-delivery",
       "name": "Engineering Tracked Delivery",
-      "description": "Turn a request into a clear plan, complete it step by step, check the result, and keep the proof.",
+      "description": "A delivered change with an explicit flow, truthful tracker state, proportionate verification, independent review, and release evidence.",
       "domain": "engineering",
-      "audience": "Product and engineering teams",
+      "audience": "Product and engineering teams delivering repository changes",
       "color": "#7892ff",
       "featured": true,
+      "problem": "Engineering requests fail when requirements, dependencies, verification, and review live only in chat or are compressed into implementation.",
+      "outcome": "A delivered change with an explicit flow, truthful tracker state, proportionate verification, independent review, and release evidence.",
+      "whyAi": "AI can coordinate discovery, implementation, testing, and review across a long-running change while StackOS preserves dependencies and proof.",
+      "operatorPath": [
+        "Describe the desired outcome, constraints, and authority boundary.",
+        "Review material design choices or production-risk gates.",
+        "Inspect verification, review findings, and residual risk before release."
+      ],
+      "agentPath": [
+        "Define requirements and affected flows before planning tickets.",
+        "Discover the real code and system boundaries, then design the approach and proof plan.",
+        "Deliver through dependency-linked tickets, run the planned verification, and adjudicate independent review.",
+        "Audit tracker truth and close only when evidence matches the result."
+      ],
+      "progressSignals": [
+        "Requirements defined",
+        "Impact discovered",
+        "Design reviewed",
+        "Test plan verified",
+        "Delivery in progress",
+        "Verification complete",
+        "Independent review adjudicated",
+        "Release truth recorded"
+      ],
+      "recovery": [
+        "Record blockers in the run and tracker instead of hiding them in chat.",
+        "Use run consistency and recovery operations to resume a blocked step without losing prior handoffs."
+      ],
+      "safeStoppingPoints": [
+        "Stop after a reviewed design or diagnosis when implementation authority was not granted."
+      ],
+      "handoffs": [],
+      "setup": "available",
+      "prerequisites": [
+        "Repository instructions and source access",
+        "A desired outcome and acceptance boundary",
+        "Authority for the requested file or system changes"
+      ],
+      "proof": [
+        "Requirements and flow map",
+        "Dependency-linked delivery tickets",
+        "Automated and risk-appropriate manual verification",
+        "Independent review adjudication",
+        "Tracker and release closeout evidence"
+      ],
       "whenToUse": [
-        "Use this when you want to turn a request into a clear plan, complete it step by step, check the result, and keep the proof.",
-        "Best for product and engineering teams that want repeatable work without changing the tools they already use."
+        "A user asks for engineering work that needs planning, implementation, review, and signoff.",
+        "A user explicitly asks to use a workflow, engineering workflow, StackOS workflow, or \"the workflow\" for engineering delivery.",
+        "Work should be visible as tracker tasks/tickets with dependencies, blockers, evidence, and release state.",
+        "A project wants host-local agents configured from SDLC presets for a concrete delivery flow.",
+        "The change touches contracts, tests, UI, data, provider behavior, MCP/REST/CLI operation surfaces, docs, or release risk."
       ],
       "stages": [
         {
@@ -356,7 +748,7 @@
         {
           "id": "discover-impact",
           "title": "Discover Impact",
-          "summary": "Map affected scopes, real work paths, ownership boundaries, downstream readers, tests, docs, and signoff fallout."
+          "summary": "Map affected scopes, real execution paths, ownership boundaries, downstream readers, tests, docs, and signoff fallout."
         },
         {
           "id": "plan-tickets",
@@ -366,7 +758,7 @@
         {
           "id": "design-approach",
           "title": "Design Approach",
-          "summary": "Identify main ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications."
+          "summary": "Identify canonical ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications."
         },
         {
           "id": "review-design",
@@ -396,7 +788,7 @@
         {
           "id": "audit-tracker",
           "title": "Audit Tracker Truth",
-          "summary": "Confirm tracker state, plan state, docs, tests, evidence, and the actual diff agree before closeout."
+          "summary": "Confirm tracker state, run-plan state, docs, tests, evidence, and the actual diff agree before closeout."
         },
         {
           "id": "release-closeout",
@@ -456,14 +848,58 @@
       "key": "gtm.account-research",
       "slug": "gtm-account-research",
       "name": "GTM Account Research",
-      "description": "Build a useful account brief from your saved context and current research.",
+      "description": "A source-linked account brief focused on fit, timing, risks, and the next useful action.",
       "domain": "gtm",
-      "audience": "Sales and go-to-market teams",
+      "audience": "Sales and go-to-market teams researching target accounts",
       "color": "#ff9f73",
       "featured": false,
+      "problem": "Account research often becomes a generic company summary that does not help someone make a real go-to-market decision.",
+      "outcome": "A source-linked account brief focused on fit, timing, risks, and the next useful action.",
+      "whyAi": "AI can combine stored account context with bounded current research while preserving source and confidence distinctions.",
+      "operatorPath": [
+        "Name the account, offer, audience, and decision the brief should support.",
+        "Choose approved internal and web sources.",
+        "Review uncertain findings before they become outreach claims."
+      ],
+      "agentPath": [
+        "Load existing account and project context before external research.",
+        "Research only the missing decision-relevant facts and retain source refs.",
+        "Separate observations, inferences, gaps, and recommended next actions."
+      ],
+      "progressSignals": [
+        "Decision scoped",
+        "Existing context reviewed",
+        "Research gaps filled",
+        "Account brief ready"
+      ],
+      "recovery": [
+        "If entity identity is ambiguous, stop before merging sources.",
+        "If live research is unavailable, return a useful stored-context brief with explicit gaps."
+      ],
+      "safeStoppingPoints": [
+        "Stop after the research brief; outreach requires a separate workflow and approval."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "gtm.outbound-sequence-preparation",
+          "relationship": "conditional",
+          "when": "The account is qualified and approved for outreach."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "A named account and decision to support",
+        "Offer and fit criteria",
+        "Approved internal and external research sources"
+      ],
+      "proof": [
+        "Source-linked findings",
+        "Fit and risk assessment",
+        "Open questions and recommended next action"
+      ],
       "whenToUse": [
-        "Use this when you want to build a useful account brief from your saved context and current research.",
-        "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+        "A project needs account or company research before enrichment, outbound, CRM updates, or pipeline review.",
+        "The agent should reuse prior account context and learnings before collecting more evidence."
       ],
       "stages": [
         {
@@ -512,14 +948,52 @@
       "key": "gtm.crm-hygiene-pass",
       "slug": "gtm-crm-hygiene-pass",
       "name": "GTM CRM Hygiene Pass",
-      "description": "Find incomplete or inconsistent CRM records and prepare safe, reviewed corrections.",
+      "description": "A reviewed hygiene report with narrowly approved corrections and an audit of every changed record.",
       "domain": "gtm",
-      "audience": "Sales and go-to-market teams",
+      "audience": "Revenue operations teams maintaining CRM quality",
       "color": "#ff9f73",
       "featured": false,
+      "problem": "Incomplete, duplicated, or inconsistent CRM records make reporting and follow-up unreliable, but broad cleanup can damage good data.",
+      "outcome": "A reviewed hygiene report with narrowly approved corrections and an audit of every changed record.",
+      "whyAi": "",
+      "operatorPath": [
+        "Choose the CRM scope and hygiene rules.",
+        "Set fields that may be changed automatically and fields that require review.",
+        "Approve the proposed correction set before any provider write."
+      ],
+      "agentPath": [
+        "Inspect the bounded record set and identify issues without mutating it.",
+        "Group duplicates, missing fields, stale values, and policy conflicts with evidence.",
+        "Apply only approved corrections and verify the provider result."
+      ],
+      "progressSignals": [
+        "Scope loaded",
+        "Issues classified",
+        "Correction set ready",
+        "Approval recorded",
+        "Changes verified"
+      ],
+      "recovery": [
+        "On ambiguous identity or field authority, leave the record unchanged.",
+        "On partial provider failure, reconcile receipts before retrying remaining records."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a read-only hygiene report when mutation is not authorized."
+      ],
+      "handoffs": [],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A connected CRM or approved record export",
+        "A bounded record scope",
+        "Field ownership, duplicate, and mutation rules"
+      ],
+      "proof": [
+        "Issue inventory",
+        "Reviewed correction set",
+        "Per-record provider receipts and verification"
+      ],
       "whenToUse": [
-        "Use this when you want to find incomplete or inconsistent CRM records and prepare safe, reviewed corrections.",
-        "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+        "CRM records need cleanup, deduping notes, field updates, or task creation."
       ],
       "stages": [
         {
@@ -535,7 +1009,7 @@
         {
           "id": "optional_apply_cleanup",
           "title": "Optional Apply Cleanup",
-          "summary": "Execute approved CRM write actions only when granted by the concrete plan."
+          "summary": "Execute approved CRM write actions only when granted by the concrete run plan."
         }
       ],
       "agentNames": [
@@ -563,14 +1037,57 @@
       "key": "gtm.lead-enrichment-scoring",
       "slug": "gtm-lead-enrichment-scoring",
       "name": "GTM Lead Enrichment And Scoring",
-      "description": "Enrich leads with relevant context and score them against your chosen criteria.",
+      "description": "A source-linked enrichment and scoring result with confidence, disqualification reasons, and no silent field invention.",
       "domain": "gtm",
-      "audience": "Sales and go-to-market teams",
+      "audience": "Growth and sales teams enriching and prioritizing leads",
       "color": "#ff9f73",
       "featured": false,
+      "problem": "Lead scoring becomes untrustworthy when enrichment sources, missing values, and scoring assumptions are hidden.",
+      "outcome": "A source-linked enrichment and scoring result with confidence, disqualification reasons, and no silent field invention.",
+      "whyAi": "",
+      "operatorPath": [
+        "Provide the lead set, ideal-customer criteria, and scoring policy.",
+        "Choose approved enrichment sources and how missing data should be treated.",
+        "Review threshold or policy changes before they affect routing."
+      ],
+      "agentPath": [
+        "Validate lead identity and existing fields before enrichment.",
+        "Use approved sources, preserve provenance, and distinguish missing from negative evidence.",
+        "Apply the explicit scoring policy and store reasons, confidence, and follow-up."
+      ],
+      "progressSignals": [
+        "Lead scope validated",
+        "Enrichment complete",
+        "Scores explained",
+        "Exceptions ready for review"
+      ],
+      "recovery": [
+        "Do not merge ambiguous people or companies.",
+        "If a provider is unavailable, score only where the policy permits missing data and flag the rest."
+      ],
+      "safeStoppingPoints": [
+        "Stop with enriched records and proposed scores when routing was not authorized."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "gtm.outbound-sequence-preparation",
+          "relationship": "conditional",
+          "when": "Leads meet the reviewed qualification threshold and outreach is approved."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "A bounded lead set",
+        "Ideal-customer and scoring criteria",
+        "Approved sources and missing-data policy"
+      ],
+      "proof": [
+        "Field-level source provenance",
+        "Score reasons and confidence",
+        "Disqualification and exception report"
+      ],
       "whenToUse": [
-        "Use this when you want to enrich leads with relevant context and score them against your chosen criteria.",
-        "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+        "A lead or account list needs enrichment, qualification, or scoring before CRM or outbound work."
       ],
       "stages": [
         {
@@ -581,7 +1098,7 @@
         {
           "id": "run_enrichment",
           "title": "Run Enrichment",
-          "summary": "Execute only the connected app enrichment actions granted by the concrete plan."
+          "summary": "Execute only the provider enrichment actions granted by the concrete run plan."
         },
         {
           "id": "score_and_store",
@@ -616,14 +1133,53 @@
       "key": "gtm.outbound-sequence-preparation",
       "slug": "gtm-outbound-sequence-preparation",
       "name": "GTM Outbound Sequence Preparation",
-      "description": "Prepare a reviewed outreach sequence from qualified leads and account context.",
+      "description": "A reviewed, project-voiced outreach sequence and send-readiness packet without sending it implicitly.",
       "domain": "gtm",
-      "audience": "Sales and go-to-market teams",
+      "audience": "Go-to-market teams preparing evidence-based outreach",
       "color": "#ff9f73",
       "featured": false,
+      "problem": "Outbound messages become generic or risky when qualification, personalization evidence, compliance, and send authorization are collapsed into one drafting step.",
+      "outcome": "A reviewed, project-voiced outreach sequence and send-readiness packet without sending it implicitly.",
+      "whyAi": "AI can adapt a sequence across qualified accounts while keeping every personalization claim and compliance decision traceable.",
+      "operatorPath": [
+        "Choose the qualified audience, offer, channel, and desired response.",
+        "Set voice, claim, compliance, frequency, and exclusion rules.",
+        "Review representative messages and approve send readiness separately."
+      ],
+      "agentPath": [
+        "Verify qualification and personalization evidence for each recipient.",
+        "Draft within the project voice and channel contract without inventing familiarity.",
+        "Run compliance and claim checks, then return a send-readiness packet."
+      ],
+      "progressSignals": [
+        "Audience verified",
+        "Personalization evidence linked",
+        "Sequence drafted",
+        "Compliance reviewed",
+        "Send-readiness packet complete"
+      ],
+      "recovery": [
+        "Disqualify or hold recipients with insufficient evidence rather than filling gaps.",
+        "Keep the packet staged when a target, route, or send approval is missing."
+      ],
+      "safeStoppingPoints": [
+        "This workflow stops at send readiness; delivery requires explicit authorization."
+      ],
+      "handoffs": [],
+      "setup": "project-adapter-required",
+      "prerequisites": [
+        "A qualified recipient set",
+        "Project voice and approved offer claims",
+        "Compliance, exclusion, cadence, and channel rules"
+      ],
+      "proof": [
+        "Recipient qualification refs",
+        "Personalization evidence map",
+        "Compliance review",
+        "Approved send-readiness packet"
+      ],
       "whenToUse": [
-        "Use this when you want to prepare a reviewed outreach sequence from qualified leads and account context.",
-        "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+        "A reviewed lead or account set should be prepared for Outreach, Salesloft, or user-owned sequence tooling."
       ],
       "stages": [
         {
@@ -639,7 +1195,7 @@
         {
           "id": "optional_sequence_add",
           "title": "Optional Outbound Actions",
-          "summary": "Execute approved connected app sequence, mail, or calendar actions only when granted by the concrete plan."
+          "summary": "Execute approved provider sequence, mail, or calendar actions only when granted by the concrete run plan."
         }
       ],
       "agentNames": [
@@ -670,14 +1226,57 @@
       "key": "gtm.pipeline-risk-review",
       "slug": "gtm-pipeline-risk-review",
       "name": "GTM Pipeline Risk Review",
-      "description": "Find deals that need attention and turn the risks into clear follow-up actions.",
+      "description": "An evidence-backed risk review with prioritized follow-up, owners, and uncertainty clearly separated from fact.",
       "domain": "gtm",
-      "audience": "Sales and go-to-market teams",
+      "audience": "Sales leaders and revenue operations teams reviewing pipeline risk",
       "color": "#ff9f73",
       "featured": false,
+      "problem": "Pipeline reviews overreact to stale CRM fields or produce a list of vague concerns without owners and evidence.",
+      "outcome": "An evidence-backed risk review with prioritized follow-up, owners, and uncertainty clearly separated from fact.",
+      "whyAi": "",
+      "operatorPath": [
+        "Choose the pipeline segment, review window, and business thresholds.",
+        "Confirm the sources and definitions for stage, value, activity, and risk.",
+        "Review proposed follow-up before any CRM or communication action."
+      ],
+      "agentPath": [
+        "Load the bounded pipeline snapshot and relevant activity context.",
+        "Test each risk signal against the project policy and source freshness.",
+        "Prioritize risks, name evidence and uncertainty, and prepare owner-specific follow-up."
+      ],
+      "progressSignals": [
+        "Pipeline scope loaded",
+        "Risk signals tested",
+        "Priorities set",
+        "Follow-up plan ready"
+      ],
+      "recovery": [
+        "If source freshness is insufficient, mark the conclusion provisional.",
+        "Do not mutate CRM or contact owners without the required approval and route."
+      ],
+      "safeStoppingPoints": [
+        "Stop with the reviewed risk report when follow-up execution was not authorized."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "gtm.account-research",
+          "relationship": "conditional",
+          "when": "A material account risk requires fresh external or internal research."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "A bounded pipeline snapshot",
+        "Freshness and risk definitions",
+        "Ownership and follow-up policy"
+      ],
+      "proof": [
+        "Source-linked risk register",
+        "Priority and confidence rationale",
+        "Owner-specific follow-up plan"
+      ],
       "whenToUse": [
-        "Use this when you want to find deals that need attention and turn the risks into clear follow-up actions.",
-        "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+        "A pipeline, segment, opportunity set, or forecast needs a bounded risk review."
       ],
       "stages": [
         {
@@ -723,19 +1322,67 @@
       "key": "support.issue-investigation",
       "slug": "support-issue-investigation",
       "name": "Issue Investigation",
-      "description": "Investigate a reported issue, gather the evidence, and return a clear conclusion in the same conversation.",
+      "description": "An evidence-backed conclusion in the canonical support thread: verified issue, bounded uncertainty, expected behavior, or not a product defect.",
       "domain": "support",
-      "audience": "Support and success teams",
+      "audience": "Support and product teams investigating customer-reported issues",
       "color": "#a8e37f",
       "featured": false,
+      "problem": "Customer reports are either dismissed too early or turned into engineering work before expected behavior, reproduction, and impact are established.",
+      "outcome": "An evidence-backed conclusion in the canonical support thread: verified issue, bounded uncertainty, expected behavior, or not a product defect.",
+      "whyAi": "AI can connect the full conversation, media, product context, and reproduction evidence while keeping task creation outside the investigator's authority.",
+      "operatorPath": [
+        "Provide the canonical thread and safe media refs.",
+        "Answer bounded clarification questions about expected behavior, environment, timing, and impact.",
+        "Review the conclusion and decide whether delivery work should be created."
+      ],
+      "agentPath": [
+        "Read the full thread and media before forming a hypothesis.",
+        "Separate report, expectation, evidence, reproduction, scope, and uncertainty.",
+        "Ask only bounded clarifications, investigate safely, and post the conclusion in the same thread.",
+        "Do not create delivery tasks."
+      ],
+      "progressSignals": [
+        "Thread and media loaded",
+        "Expected behavior clarified",
+        "Reproduction attempted",
+        "Impact bounded",
+        "Conclusion posted"
+      ],
+      "recovery": [
+        "If evidence or access is missing, state exactly what is unverified and ask the smallest useful question.",
+        "If a provider reply fails, preserve the conclusion and retry from the stored thread and action receipt."
+      ],
+      "safeStoppingPoints": [
+        "Stop with bounded uncertainty; task creation requires a separate workflow and operator instruction."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "support.delivery-task-handoff",
+          "relationship": "conditional",
+          "when": "The conclusion supports delivery work and the operator authorizes task creation in the same thread."
+        }
+      ],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A canonical Slack thread with the complete feedback packet",
+        "Expected versus actual behavior, environment, timing, and impact context",
+        "Safe access to relevant media or reproduction evidence"
+      ],
+      "proof": [
+        "Full-thread and media refs",
+        "Reproduction and impact evidence",
+        "Same-thread conclusion with uncertainty",
+        "No task creation by the investigator"
+      ],
       "whenToUse": [
-        "Use this when you want to investigate a reported issue, gather the evidence, and return a clear conclusion in the same conversation.",
-        "Best for support and success teams that want repeatable work without changing the tools they already use."
+        "A canonical Slack support thread exists and the issue needs diagnosis before delivery work is created.",
+        "The agent must read the whole support thread, include media/context, and produce a root-cause or bounded-uncertainty conclusion.",
+        "The operator needs a clear support conclusion before deciding whether to create delivery work."
       ],
       "stages": [
         {
           "id": "read-canonical-thread",
-          "title": "Read main Thread",
+          "title": "Read Canonical Thread",
           "summary": "Read the full stored thread and source context before forming hypotheses."
         },
         {
@@ -751,7 +1398,7 @@
         {
           "id": "post-support-conclusion",
           "title": "Post Support Conclusion",
-          "summary": "Post the evidence-backed conclusion in the main thread and tell the person that task creation is a separate instructed handoff."
+          "summary": "Post the evidence-backed conclusion in the canonical thread and tell the operator that task creation is a separate instructed handoff."
         }
       ],
       "agentNames": [
@@ -778,14 +1425,63 @@
       "key": "media-buying.landing-page-creative-experiment",
       "slug": "media-buying-landing-page-creative-experiment",
       "name": "Landing Page And Creative Experiment",
-      "description": "Design a measurable experiment that connects creative, landing pages, and business goals.",
+      "description": "A launch-ready experiment that connects named variants, destination changes, tracking, guardrails, and one approved provider route.",
       "domain": "media-buying",
-      "audience": "Growth and paid media teams",
+      "audience": "Growth teams testing paid creative and landing pages together",
       "color": "#ffbd5c",
       "featured": false,
+      "problem": "Creative and landing-page changes are often tested together without a clean hypothesis, dependency map, or observation plan.",
+      "outcome": "A launch-ready experiment that connects named variants, destination changes, tracking, guardrails, and one approved provider route.",
+      "whyAi": "AI can coordinate page, creative, tracking, and media dependencies while preserving explicit experiment and approval decisions.",
+      "operatorPath": [
+        "State the hypothesis, variants, metric targets, traffic constraints, and observation window.",
+        "Confirm implementation and tracking readiness.",
+        "Approve campaign changes through the selected provider route."
+      ],
+      "agentPath": [
+        "Validate that the proposed variants isolate a useful question.",
+        "Map page, creative, tracking, and campaign dependencies.",
+        "Prepare the experiment and QA plan; mutate the campaign only after approval.",
+        "Store the experiment record and follow-up observation criteria."
+      ],
+      "progressSignals": [
+        "Hypothesis validated",
+        "Dependencies mapped",
+        "QA complete",
+        "Launch approval pending",
+        "Experiment staged",
+        "Observation plan stored"
+      ],
+      "recovery": [
+        "If variants or tracking cannot support the hypothesis, return to design instead of launching.",
+        "If provider launch fails, preserve staged assets and reconcile campaign state before retry."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a launch-ready experiment plan when campaign mutation is not approved."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "media-buying.performance-diagnosis",
+          "relationship": "next",
+          "when": "The experiment observation window has enough data for diagnosis."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "A clear hypothesis and named variants",
+        "Metric targets, traffic policy, and observation window",
+        "Verified page and tracking readiness",
+        "One provider route and approval only for launch"
+      ],
+      "proof": [
+        "Dependency and QA checklist",
+        "Experiment record and guardrails",
+        "Launch approval and provider receipt when executed",
+        "Observation criteria"
+      ],
       "whenToUse": [
-        "Use this when you want to design a measurable experiment that connects creative, landing pages, and business goals.",
-        "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+        "The agent needs to design a paid media experiment involving landing page and creative combinations.",
+        "The project needs a durable experiment record before campaign changes are made."
       ],
       "stages": [
         {
@@ -806,7 +1502,7 @@
         {
           "id": "optional_launch_update",
           "title": "Optional Launch Update",
-          "summary": "Execute approved campaign or ad updates only when granted by the concrete plan."
+          "summary": "Execute approved campaign or ad updates only when granted by the concrete run plan."
         }
       ],
       "agentNames": [
@@ -841,25 +1537,74 @@
       "key": "marketing.campaign-production",
       "slug": "marketing-campaign-production",
       "name": "Marketing Campaign Production",
-      "description": "Move from a campaign idea to messaging, creative, landing pages, and a complete review gallery.",
+      "description": "A coherent campaign package with approved messaging, generated assets, landing-page variants, a visual review, and a local evidence gallery.",
       "domain": "marketing",
-      "audience": "Marketing teams",
+      "audience": "Marketing teams producing multi-asset campaigns",
       "color": "#ff78ac",
       "featured": true,
+      "problem": "Campaign production fragments the brief, messaging, media, landing pages, and review across disconnected tools and approvals.",
+      "outcome": "A coherent campaign package with approved messaging, generated assets, landing-page variants, a visual review, and a local evidence gallery.",
+      "whyAi": "AI can coordinate several creative and mechanical specialties while retaining one brief, shared constraints, and independent visual signoff.",
+      "operatorPath": [
+        "Provide the product, audience, offer, brand constraints, and desired media.",
+        "Confirm the campaign plan and generation budget before production.",
+        "Review the final gallery and approve or reject each deliverable."
+      ],
+      "agentPath": [
+        "Resolve the brief and brand evidence before choosing concepts or tools.",
+        "Plan media and page variants, then produce through explicit provider routes.",
+        "Verify requirements, run independent visual signoff, and assemble the evidence gallery."
+      ],
+      "progressSignals": [
+        "Brief resolved",
+        "Campaign plan confirmed",
+        "Media in production",
+        "Pages assembled",
+        "Visual signoff complete",
+        "Gallery ready"
+      ],
+      "recovery": [
+        "If brand or product evidence is missing, pause before creative production.",
+        "Preserve completed assets and provider receipts when one route fails; resume only the blocked branch."
+      ],
+      "safeStoppingPoints": [
+        "Stop after the confirmed production plan when generation spend was not approved."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "media-buying.campaign-launch",
+          "relationship": "conditional",
+          "when": "The approved campaign package is intended for a paid-media launch."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "A product brief, audience, offer, and brand profile",
+        "Approved product media and disclosure boundaries",
+        "Generation budget and provider route for selected media"
+      ],
+      "proof": [
+        "Requirement-linked campaign plan",
+        "Provider generation receipts",
+        "Landing-page verification",
+        "Independent visual signoff",
+        "Complete local gallery"
+      ],
       "whenToUse": [
-        "Use this when you want to move from a campaign idea to messaging, creative, landing pages, and a complete review gallery.",
-        "Best for marketing teams that want repeatable work without changing the tools they already use."
+        "A user asks to produce a marketing campaign from a brand identity, product description, and product photo.",
+        "Campaign media (images, short videos), landing page variants, and a reviewable gallery should be produced together with durable state and signoff evidence.",
+        "Landing page A/B variants and their media requirements should be planned and approved before any generation spend."
       ],
       "stages": [
         {
           "id": "intake-brief",
           "title": "Intake Campaign Brief",
-          "summary": "Convert person inputs into a complete structured campaign brief with persisted input artifacts and an explicit media request."
+          "summary": "Convert operator inputs into a complete structured campaign brief with persisted input artifacts and an explicit media request."
         },
         {
           "id": "setup-workspace",
           "title": "Set Up Campaign Workspace",
-          "summary": "Create the repository campaign workspace and scaffold campaign.md as the person-readable campaign ledger."
+          "summary": "Create the repository campaign workspace and scaffold campaign.md as the operator-readable campaign ledger."
         },
         {
           "id": "plan-campaign",
@@ -889,7 +1634,7 @@
         {
           "id": "closeout",
           "title": "Campaign Closeout",
-          "summary": "Reconcile state, finalize the campaign ledger, and hand the person one front door to everything produced."
+          "summary": "Reconcile state, finalize the campaign ledger, and hand the operator one front door to everything produced."
         }
       ],
       "agentNames": [
@@ -939,14 +1684,62 @@
       "key": "media-buying.budget-reallocation-review",
       "slug": "media-buying-budget-reallocation-review",
       "name": "Media Buying Budget Reallocation Review",
-      "description": "Review campaign performance and prepare evidence-backed budget changes for approval.",
+      "description": "An evidence-backed budget recommendation, explicit approval boundary, and observation plan; mutations occur only when separately approved.",
       "domain": "media-buying",
-      "audience": "Growth and paid media teams",
+      "audience": "Growth teams reviewing paid-media budget allocation",
       "color": "#ffbd5c",
       "featured": false,
+      "problem": "Budget moves are tempting when performance shifts, but weak comparisons and missing guardrails can turn noise into spend changes.",
+      "outcome": "An evidence-backed budget recommendation, explicit approval boundary, and observation plan; mutations occur only when separately approved.",
+      "whyAi": "AI can compare several campaigns and hypotheses consistently while preserving the operator's budget judgment and rollback authority.",
+      "operatorPath": [
+        "Choose campaigns, comparison window, KPI targets, and delivery constraints.",
+        "Set movement limits, approval owner, observation window, and rollback rule.",
+        "Review the recommendation before approving any account change."
+      ],
+      "agentPath": [
+        "Validate measurement comparability before diagnosing allocation.",
+        "Model the proposed movement against performance, constraints, and uncertainty.",
+        "Return a recommendation first; execute only the selected provider route after approval.",
+        "Record the change and post-change observation plan."
+      ],
+      "progressSignals": [
+        "Comparison validated",
+        "Recommendation modeled",
+        "Guardrails checked",
+        "Approval pending",
+        "Change and observation plan recorded"
+      ],
+      "recovery": [
+        "When evidence is weak, recommend no change and name the missing observation.",
+        "On partial provider failure, reconcile actual account state before retry or rollback."
+      ],
+      "safeStoppingPoints": [
+        "Stop after the recommendation when budget mutation was not explicitly approved."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "media-buying.performance-diagnosis",
+          "relationship": "next",
+          "when": "The post-change observation window closes or performance diverges from the expected range."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "Comparable campaign performance evidence",
+        "KPI targets and attribution window",
+        "Budget, delivery, approval, observation, and rollback guardrails",
+        "One selected provider route only when mutation is approved"
+      ],
+      "proof": [
+        "Comparison and uncertainty report",
+        "Budget recommendation with rationale",
+        "Approval record",
+        "Provider receipt and observation plan when changed"
+      ],
       "whenToUse": [
-        "Use this when you want to review campaign performance and prepare evidence-backed budget changes for approval.",
-        "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+        "A project needs to evaluate budget changes across campaigns, channels, audiences, or creative sets.",
+        "The agent should separate recommendation, approval, and optional external mutation."
       ],
       "stages": [
         {
@@ -967,7 +1760,7 @@
         {
           "id": "optional_apply_changes",
           "title": "Optional Apply Changes",
-          "summary": "Execute approved budget update actions only when granted by the concrete plan."
+          "summary": "Execute approved budget update actions only when granted by the concrete run plan."
         }
       ],
       "agentNames": [
@@ -997,14 +1790,63 @@
       "key": "media-buying.campaign-launch",
       "slug": "media-buying-campaign-launch",
       "name": "Media Buying Campaign Launch",
-      "description": "Plan and launch a paid campaign through clear checks, approvals, and connected ad tools.",
+      "description": "A provider-specific campaign plan that passes launch checks and creates external campaign objects only after approval.",
       "domain": "media-buying",
-      "audience": "Growth and paid media teams",
+      "audience": "Paid-media teams launching campaigns through connected ad platforms",
       "color": "#ffbd5c",
       "featured": true,
+      "problem": "Paid campaigns fail at launch when creative, destination, tracking, budget, and provider setup are checked separately or too late.",
+      "outcome": "A provider-specific campaign plan that passes launch checks and creates external campaign objects only after approval.",
+      "whyAi": "AI can keep the brief, creative, page, tracking, and provider contracts aligned while explicit actions retain spend and write controls.",
+      "operatorPath": [
+        "Provide the campaign goal, audience, offer, assets, destination, and budget guardrails.",
+        "Select one provider route and resolve its connection.",
+        "Review the launch plan, tracking, and risk before approving external creation."
+      ],
+      "agentPath": [
+        "Validate the brief and dependencies before selecting the concrete provider route.",
+        "Build the provider-specific structure and validate every action payload.",
+        "Hold the launch and budget approvals, then execute only the selected route.",
+        "Record safe provider refs and the first measurement window."
+      ],
+      "progressSignals": [
+        "Brief validated",
+        "Provider route selected",
+        "Launch checks complete",
+        "Approval recorded",
+        "Campaign objects created",
+        "Measurement window scheduled"
+      ],
+      "recovery": [
+        "If no provider route is ready, keep the validated launch plan and return one setup path.",
+        "On partial creation, reconcile created objects before repair or rollback."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a validated launch plan when external creation or spend is not approved."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "media-buying.performance-diagnosis",
+          "relationship": "next",
+          "when": "The first meaningful measurement window has completed."
+        }
+      ],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A campaign goal, audience, offer, assets, destination, and budget policy",
+        "Tracking and naming rules",
+        "One connected provider route",
+        "Launch and spend approval owners"
+      ],
+      "proof": [
+        "Dependency and tracking checks",
+        "Validated provider payloads",
+        "Launch and budget approvals",
+        "Provider object receipts and first measurement plan"
+      ],
       "whenToUse": [
-        "Use this when you want to plan and launch a paid campaign through clear checks, approvals, and connected ad tools.",
-        "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+        "A project needs to launch a paid media campaign across one or more configured channels.",
+        "The agent needs history, learnings, approvals, resources, and provider contracts before creating campaign structures."
       ],
       "stages": [
         {
@@ -1020,7 +1862,7 @@
         {
           "id": "create_external_structures",
           "title": "Create External Structures",
-          "summary": "Execute only approved connected app actions granted by the concrete plan."
+          "summary": "Execute only approved provider actions granted by the concrete run plan."
         },
         {
           "id": "record_launch_state",
@@ -1060,14 +1902,66 @@
       "key": "media-buying.creative-variant-generation",
       "slug": "media-buying-creative-variant-generation",
       "name": "Media Buying Creative Variant Generation",
-      "description": "Create a focused set of ad variations from your offer, brand, and past performance.",
+      "description": "A focused candidate set tied to an experiment hypothesis, with generation and provider upload kept behind separate approvals.",
       "domain": "media-buying",
-      "audience": "Growth and paid media teams",
+      "audience": "Growth and creative teams developing paid-media variants",
       "color": "#ffbd5c",
       "featured": false,
+      "problem": "Ad variants become expensive noise when they are generated without a hypothesis, offer boundary, destination fit, or upload decision.",
+      "outcome": "A focused candidate set tied to an experiment hypothesis, with generation and provider upload kept behind separate approvals.",
+      "whyAi": "AI can explore several evidence-based variants quickly while reviewers preserve brand, claim, and experimental discipline.",
+      "operatorPath": [
+        "Provide the offer, audience hypotheses, destination, brand constraints, and channel preference.",
+        "Approve generation cost when new assets are needed.",
+        "Review the candidate set and approve any provider upload separately."
+      ],
+      "agentPath": [
+        "Read prior creative and performance evidence before setting direction.",
+        "Define the hypothesis and bounded variant dimensions, then generate only the planned assets.",
+        "Review claims and destination fit; upload through one selected route only after approval."
+      ],
+      "progressSignals": [
+        "Direction set",
+        "Variant plan bounded",
+        "Assets generated",
+        "Candidates reviewed",
+        "Upload status recorded"
+      ],
+      "recovery": [
+        "Use operator-supplied assets when generation is unavailable or unnecessary.",
+        "Preserve reviewed candidates and stop when no upload route is ready."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a reviewed candidate set when upload was not requested or approved."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "media-buying.landing-page-creative-experiment",
+          "relationship": "conditional",
+          "when": "The candidates require a measured creative-and-page experiment."
+        },
+        {
+          "workflowKey": "media-buying.campaign-launch",
+          "relationship": "conditional",
+          "when": "The candidates belong to a new approved campaign launch."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "An offer, audience hypothesis, destination, and brand boundary",
+        "A bounded experiment or variation plan",
+        "Generation approval only when new assets are needed",
+        "One provider route only when upload is approved"
+      ],
+      "proof": [
+        "Creative direction and hypothesis",
+        "Generation receipts where used",
+        "Claim and destination-fit review",
+        "Upload receipts only for the selected route"
+      ],
       "whenToUse": [
-        "Use this when you want to create a focused set of ad variations from your offer, brand, and past performance.",
-        "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+        "A campaign needs new candidate creative concepts, copy angles, or generated assets.",
+        "The agent should combine historical learnings with explicit creative constraints."
       ],
       "stages": [
         {
@@ -1093,7 +1987,7 @@
         {
           "id": "optional_external_upload",
           "title": "Optional External Upload",
-          "summary": "Execute approved connected app upload or campaign update actions only when granted by the concrete plan."
+          "summary": "Execute approved provider upload or campaign update actions only when granted by the concrete run plan."
         }
       ],
       "agentNames": [
@@ -1124,14 +2018,71 @@
       "key": "media-buying.performance-diagnosis",
       "slug": "media-buying-performance-diagnosis",
       "name": "Media Buying Performance Diagnosis",
-      "description": "Explain what changed in paid media performance and recommend what to do next.",
+      "description": "A source-linked diagnosis with ranked hypotheses, evidence gaps, and a recommendation for no change, budget review, creative work, or an experiment.",
       "domain": "media-buying",
-      "audience": "Growth and paid media teams",
+      "audience": "Paid-media teams diagnosing performance changes before acting",
       "color": "#ffbd5c",
       "featured": false,
+      "problem": "When paid performance worsens, teams jump to budget or creative changes before separating measurement, audience, channel, page, and market causes.",
+      "outcome": "A source-linked diagnosis with ranked hypotheses, evidence gaps, and a recommendation for no change, budget review, creative work, or an experiment.",
+      "whyAi": "AI can compare multiple causal categories and time windows systematically while keeping uncertainty and business judgment visible.",
+      "operatorPath": [
+        "Name the affected accounts and campaigns, what changed, the KPI, and the comparison window.",
+        "Provide exports or select one read-only provider route.",
+        "Review the diagnosis before starting any mutation workflow."
+      ],
+      "agentPath": [
+        "Validate measurement and comparison quality before explaining performance.",
+        "Use stored evidence or one ready metric-source route; unavailable alternatives stay optional.",
+        "Rank causal hypotheses, name counter-evidence and gaps, and recommend the smallest useful next step.",
+        "Stop after diagnosis unless the operator starts a follow-up workflow."
+      ],
+      "progressSignals": [
+        "Scope confirmed",
+        "Measurement validated",
+        "Evidence collected",
+        "Hypotheses ranked",
+        "Recommendation ready"
+      ],
+      "recovery": [
+        "If evidence is insufficient, recommend no change and list the minimum missing data.",
+        "If a live provider is unavailable, use supplied exports or stored snapshots rather than blocking on every provider."
+      ],
+      "safeStoppingPoints": [
+        "This workflow is recommendation-first and stops before budget, creative, page, or campaign mutation."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "media-buying.budget-reallocation-review",
+          "relationship": "conditional",
+          "when": "Allocation is a supported cause and budget movement should be reviewed."
+        },
+        {
+          "workflowKey": "media-buying.creative-variant-generation",
+          "relationship": "conditional",
+          "when": "Creative fatigue or mismatch is a supported cause."
+        },
+        {
+          "workflowKey": "media-buying.landing-page-creative-experiment",
+          "relationship": "conditional",
+          "when": "The evidence supports a measured creative or destination experiment."
+        }
+      ],
+      "setup": "mixed",
+      "prerequisites": [
+        "Affected accounts and campaigns",
+        "The exact change date, KPI target, comparison window, and attribution assumptions",
+        "Stored snapshots, exports, or one ready read-only provider route"
+      ],
+      "proof": [
+        "Measurement-quality check",
+        "Evidence table and ranked hypotheses",
+        "Counter-evidence and data gaps",
+        "Recommendation with explicit no-mutation boundary"
+      ],
       "whenToUse": [
-        "Use this when you want to explain what changed in paid media performance and recommend what to do next.",
-        "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+        "A campaign, channel, creative set, or audience needs a performance review.",
+        "The agent should retrieve only relevant historical fields before diagnosing."
       ],
       "stages": [
         {
@@ -1142,7 +2093,7 @@
         {
           "id": "fetch_additional_metrics",
           "title": "Fetch Additional Metrics",
-          "summary": "Execute only approved read actions that the concrete plan grants for missing evidence."
+          "summary": "Execute only the selected read action that the concrete run plan grants for missing evidence."
         },
         {
           "id": "diagnose_drivers",
@@ -1152,7 +2103,7 @@
         {
           "id": "record_followups",
           "title": "Record Followups",
-          "summary": "Store recommended follow-up resources, budget review notes, and learning candidates."
+          "summary": "Store recommended follow-up resources, budget review notes, and learning candidates for later review without executing a mutation."
         }
       ],
       "agentNames": [
@@ -1182,14 +2133,52 @@
       "key": "core.project-memory-review",
       "slug": "core-project-memory-review",
       "name": "Project Memory Review",
-      "description": "Review what the project already knows and recommend the most useful next move.",
+      "description": "A bounded memory review that explains what the project knows, what remains uncertain, and the best next action.",
       "domain": "core",
-      "audience": "Every team",
+      "audience": "Any team resuming or orienting complex project work",
       "color": "#8ea6ff",
       "featured": false,
+      "problem": "Projects accumulate runs, decisions, evidence, and unfinished work faster than an agent can safely reconstruct from chat.",
+      "outcome": "A bounded memory review that explains what the project knows, what remains uncertain, and the best next action.",
+      "whyAi": "AI can connect evidence across several project records while keeping source refs and uncertainty visible.",
+      "operatorPath": [
+        "State the question or decision the memory review should support.",
+        "Confirm the project scope and desired persistence level.",
+        "Review the recommendation before starting any follow-up workflow."
+      ],
+      "agentPath": [
+        "Check active tracker and run-plan state first so the review does not ignore or duplicate current work.",
+        "Query only the relevant project sources and preserve their refs.",
+        "Separate facts, decisions, stale assumptions, contradictions, and gaps.",
+        "Return a recommendation or a concrete run-plan proposal without executing it implicitly."
+      ],
+      "progressSignals": [
+        "Question scoped",
+        "Memory sources reviewed",
+        "Conflicts exposed",
+        "Recommendation ready"
+      ],
+      "recovery": [
+        "If the project scope or source authority is unclear, stop with a bounded clarification.",
+        "If records conflict, present both and name the decision needed."
+      ],
+      "safeStoppingPoints": [
+        "Stop after the recommendation unless the operator explicitly starts follow-up work."
+      ],
+      "handoffs": [],
+      "setup": "available",
+      "prerequisites": [
+        "A clear question or decision",
+        "An existing StackOS project with relevant stored context"
+      ],
+      "proof": [
+        "Source-linked memory summary",
+        "Explicit gaps and conflicts",
+        "Recommended next action with rationale"
+      ],
       "whenToUse": [
-        "Use this when you want to review what the project already knows and recommend the most useful next move.",
-        "Best for every team that want repeatable work without changing the tools they already use."
+        "The agent needs to understand recent project history before planning work.",
+        "A workflow should start from prior runs, learnings, experiments, and decisions."
       ],
       "stages": [
         {
@@ -1230,14 +2219,53 @@
       "key": "communications.rich-telegram-reply",
       "slug": "communications-rich-telegram-reply",
       "name": "Rich Telegram Reply",
-      "description": "Reply in Telegram with text, images, and useful actions while keeping the conversation connected.",
+      "description": "One Telegram reply whose text, media, buttons, and thread context match the approved response contract.",
       "domain": "communications",
-      "audience": "Customer and operations teams",
+      "audience": "Teams replying to Telegram requests with media or buttons",
       "color": "#7ee2ad",
       "featured": false,
+      "problem": "Rich replies can silently lose images, buttons, threading, or privacy boundaries when a platform feature is unavailable.",
+      "outcome": "One Telegram reply whose text, media, buttons, and thread context match the approved response contract.",
+      "whyAi": "",
+      "operatorPath": [
+        "Provide the reply intent and approved media or action choices.",
+        "Confirm any button behavior that creates work or changes state.",
+        "Review the sent message and stored interaction refs."
+      ],
+      "agentPath": [
+        "Load the originating request and Telegram surface policy.",
+        "Validate text, every media item, and button payload before any send.",
+        "Send without silent degradation and store message and interaction receipts."
+      ],
+      "progressSignals": [
+        "Origin verified",
+        "Payload validated",
+        "Media complete",
+        "Reply delivered",
+        "Interaction refs stored"
+      ],
+      "recovery": [
+        "Reject unsupported rich features instead of silently dropping them.",
+        "Use provider receipts and idempotency state to avoid duplicate replies after failure."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a validated reply packet when the origin or feature contract is incomplete."
+      ],
+      "handoffs": [],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A connected Telegram profile",
+        "An originating request and approved reply destination",
+        "Safe media refs and defined button behavior"
+      ],
+      "proof": [
+        "Validated payload",
+        "Telegram message and media ids",
+        "Stored button interaction refs"
+      ],
       "whenToUse": [
-        "Use this when you want to reply in Telegram with text, images, and useful actions while keeping the conversation connected.",
-        "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+        "A Telegram message created an agent_request and the response may need buttons or images.",
+        "The agent must respect the originating communication profile, chat, thread, and response policy."
       ],
       "stages": [
         {
@@ -1253,7 +2281,7 @@
         {
           "id": "send",
           "title": "Send Telegram Response",
-          "summary": "Execute the explicit Telegram send action granted by the plan."
+          "summary": "Execute the explicit Telegram send action granted by the run plan."
         }
       ],
       "agentNames": [
@@ -1280,14 +2308,53 @@
       "key": "seo.content-refresh",
       "slug": "seo-content-refresh",
       "name": "SEO Content Refresh",
-      "description": "Find why an existing page is underperforming, improve it, and verify the result.",
+      "description": "A focused page refresh with traceable changes, preserved useful content, and a verification plan.",
       "domain": "seo",
-      "audience": "SEO and content teams",
+      "audience": "SEO and content teams improving existing pages",
       "color": "#79dfff",
       "featured": false,
+      "problem": "Content refreshes turn into broad rewrites when search intent, current performance, technical issues, and conversion purpose are not diagnosed first.",
+      "outcome": "A focused page refresh with traceable changes, preserved useful content, and a verification plan.",
+      "whyAi": "AI can compare search evidence, page structure, project context, and editorial constraints while keeping the final judgment and publication boundary explicit.",
+      "operatorPath": [
+        "Choose the page, business goal, search intent, and performance window.",
+        "Provide approved analytics, query, and content sources.",
+        "Review the proposed changes before publication."
+      ],
+      "agentPath": [
+        "Diagnose intent, performance, technical, content, and conversion gaps before editing.",
+        "Map each proposed change to evidence and preserve what already works.",
+        "Prepare or apply the bounded refresh, then verify content and technical acceptance criteria."
+      ],
+      "progressSignals": [
+        "Page and intent scoped",
+        "Diagnosis complete",
+        "Refresh plan reviewed",
+        "Changes applied",
+        "Verification complete"
+      ],
+      "recovery": [
+        "If query or performance evidence is missing, return a bounded diagnostic and data request.",
+        "If publication is not authorized, stop with a review-ready patch or content packet."
+      ],
+      "safeStoppingPoints": [
+        "Stop with a review-ready refresh plan or patch when publication was not authorized."
+      ],
+      "handoffs": [],
+      "setup": "mixed",
+      "prerequisites": [
+        "A page, business goal, and target search intent",
+        "Approved performance and query evidence",
+        "Editorial, technical, and publication boundaries"
+      ],
+      "proof": [
+        "Evidence-linked diagnosis",
+        "Change map",
+        "Content and technical verification",
+        "Publication receipt only when authorized"
+      ],
       "whenToUse": [
-        "Use this when you want to find why an existing page is underperforming, improve it, and verify the result.",
-        "Best for seo and content teams that want repeatable work without changing the tools they already use."
+        "Existing content needs a refresh diagnosis, evidence gathering, and recorded follow-through."
       ],
       "stages": [
         {
@@ -1335,14 +2402,59 @@
       "key": "seo.keyword-research",
       "slug": "seo-keyword-research",
       "name": "SEO Keyword Research",
-      "description": "Turn a business goal into a prioritized map of search opportunities and content ideas.",
+      "description": "A prioritized opportunity map that separates near-term article ideas, supporting clusters, evidence, and topics to avoid.",
       "domain": "seo",
-      "audience": "SEO and content teams",
+      "audience": "SEO and content teams choosing what to write next",
       "color": "#79dfff",
       "featured": true,
+      "problem": "Keyword research produces broad high-volume lists when it is not anchored to the business, audience, product proximity, and existing authority.",
+      "outcome": "A prioritized opportunity map that separates near-term article ideas, supporting clusters, evidence, and topics to avoid.",
+      "whyAi": "AI can connect keyword data, SERP patterns, competitor evidence, and project context while the operator owns positioning and priority.",
+      "operatorPath": [
+        "State the business goal, audience, product proximity, markets, and topics to avoid.",
+        "Choose approved keyword and competitor data sources.",
+        "Review the opportunity map and select content priorities."
+      ],
+      "agentPath": [
+        "Translate the business brief into explicit opportunity criteria before collecting data.",
+        "Use approved keyword, SERP, and competitor sources and preserve provenance.",
+        "Cluster by intent and business fit, score with transparent tradeoffs, and propose concrete article angles."
+      ],
+      "progressSignals": [
+        "Opportunity criteria set",
+        "Data collected",
+        "Intent clusters built",
+        "Priorities scored",
+        "Article opportunities ready"
+      ],
+      "recovery": [
+        "If a provider is unavailable, use approved exports or stop with the exact missing dataset.",
+        "Do not fill the report with broad terms that fail the product-proximity or authority test."
+      ],
+      "safeStoppingPoints": [
+        "Stop after the prioritized opportunity map; article production is a separate approved job."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "branding.content-production",
+          "relationship": "conditional",
+          "when": "A selected opportunity should become an evidence-backed branded article."
+        }
+      ],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A business goal, audience, market, and product-proximity boundary",
+        "Topics to include and avoid",
+        "Connected keyword and SERP data sources or approved exports"
+      ],
+      "proof": [
+        "Source-linked keyword set",
+        "Intent and business-fit clusters",
+        "Transparent priority scoring",
+        "Concrete article angles and avoidance list"
+      ],
       "whenToUse": [
-        "Use this when you want to turn a business goal into a prioritized map of search opportunities and content ideas.",
-        "Best for seo and content teams that want repeatable work without changing the tools they already use."
+        "A project needs SEO opportunities from seed terms, competitors, or an agent-defined research angle."
       ],
       "stages": [
         {
@@ -1353,7 +2465,7 @@
         {
           "id": "collect_evidence",
           "title": "Collect Evidence",
-          "summary": "Execute only the connected app calls the plan grants and the agent still needs; preserve returned response-file paths, use schema.get with schema_ref…"
+          "summary": "Execute only the provider calls the run plan grants and the agent still needs; preserve returned response-file paths, use schema.get with schema_ref only…"
         },
         {
           "id": "store_opportunities",
@@ -1391,14 +2503,52 @@
       "key": "communications.callback-follow-up",
       "slug": "communications-callback-follow-up",
       "name": "Telegram Callback Follow-Up",
-      "description": "Continue a customer conversation after they choose an option in a message.",
+      "description": "A context-aware follow-up that acknowledges the interaction and performs only the approved next action.",
       "domain": "communications",
-      "audience": "Customer and operations teams",
+      "audience": "Teams using interactive Telegram messages",
       "color": "#7ee2ad",
       "featured": false,
+      "problem": "A button click can lose its original context or trigger an answer that overstates what happened.",
+      "outcome": "A context-aware follow-up that acknowledges the interaction and performs only the approved next action.",
+      "whyAi": "AI can interpret the stored interaction alongside the original request while provider tools remain limited to explicit acknowledgements and sends.",
+      "operatorPath": [
+        "Define the button choices and what each choice is allowed to do.",
+        "Review any choice that can create work or send a material response.",
+        "Inspect the stored outcome when follow-up is complete."
+      ],
+      "agentPath": [
+        "Load the original message, interaction record, and allowed callback policy.",
+        "Resolve the selected choice without treating callback data as an authoritative instruction by itself.",
+        "Acknowledge promptly, complete only the authorized work, and record the result."
+      ],
+      "progressSignals": [
+        "Interaction resolved",
+        "Choice policy checked",
+        "Acknowledgement sent",
+        "Authorized follow-up recorded"
+      ],
+      "recovery": [
+        "If interaction context is missing or expired, acknowledge safely and request a fresh choice.",
+        "If downstream work is blocked, record the blocker without claiming completion."
+      ],
+      "safeStoppingPoints": [
+        "Stop after a safe acknowledgement when the selected action lacks context or approval."
+      ],
+      "handoffs": [],
+      "setup": "connection-required",
+      "prerequisites": [
+        "A connected Telegram profile",
+        "Stored interaction context for each button",
+        "A clear policy for what each choice authorizes"
+      ],
+      "proof": [
+        "Callback acknowledgement receipt",
+        "Linked interaction and source-message refs",
+        "Recorded downstream outcome or blocker"
+      ],
       "whenToUse": [
-        "Use this when you want to continue a customer conversation after they choose an option in a message.",
-        "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+        "A Telegram callback_query created an agent_request.",
+        "The agent needs to verify stored button state before acting on callback_data."
       ],
       "stages": [
         {
@@ -1449,7 +2599,23 @@
       "color": "#7892ff",
       "featured": false,
       "role": "Architecture",
+      "roleClass": "reasoning",
       "workflowKeys": []
+    },
+    {
+      "key": "branding.profile-architect",
+      "slug": "branding-profile-architect",
+      "name": "Brand Profile Architect",
+      "description": "Builds and maintains evidence-led brand profiles and durable voice guides from operator judgment, representative samples, and independent review.",
+      "domain": "branding",
+      "audience": "Content and brand teams",
+      "color": "#d8ff63",
+      "featured": true,
+      "role": "Profile Architect",
+      "roleClass": "reasoning",
+      "workflowKeys": [
+        "branding.brand-foundation-setup"
+      ]
     },
     {
       "key": "branding.channel-strategist",
@@ -1461,6 +2627,7 @@
       "color": "#d8ff63",
       "featured": true,
       "role": "Channel Strategist",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "branding.content-production"
       ]
@@ -1475,6 +2642,7 @@
       "color": "#d8ff63",
       "featured": true,
       "role": "Claim Auditor",
+      "roleClass": "review",
       "workflowKeys": [
         "branding.content-production"
       ]
@@ -1483,26 +2651,29 @@
       "key": "branding.evidence-curator",
       "slug": "branding-evidence-curator",
       "name": "Branding Evidence Curator",
-      "description": "Interviews, researches, harvests, classifies, dedupes, and captures operational receipts as traceable evidence-items.",
+      "description": "Conditionally interviews, researches, and captures operational receipts when dedicated evidence lineage is warranted.",
       "domain": "branding",
       "audience": "Content and brand teams",
       "color": "#d8ff63",
       "featured": true,
       "role": "Evidence Curator",
+      "roleClass": "reasoning",
       "workflowKeys": [
-        "branding.content-production"
+        "branding.content-production",
+        "branding.brand-foundation-setup"
       ]
     },
     {
       "key": "branding.narrative-writer",
       "slug": "branding-narrative-writer",
       "name": "Branding Narrative Writer",
-      "description": "Drafts main pieces and channel renditions from cleared evidence in the project-adapted voice.",
+      "description": "Drafts canonical pieces and channel renditions from cleared evidence in the project-adapted voice.",
       "domain": "branding",
       "audience": "Content and brand teams",
       "color": "#d8ff63",
       "featured": true,
       "role": "Narrative Writer",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "branding.content-production"
       ]
@@ -1517,6 +2688,7 @@
       "color": "#d8ff63",
       "featured": true,
       "role": "Sanitization Reviewer",
+      "roleClass": "review",
       "workflowKeys": [
         "branding.content-production"
       ]
@@ -1531,20 +2703,23 @@
       "color": "#d8ff63",
       "featured": true,
       "role": "Voice Reviewer",
+      "roleClass": "review",
       "workflowKeys": [
-        "branding.content-production"
+        "branding.content-production",
+        "branding.brand-foundation-setup"
       ]
     },
     {
       "key": "marketing.campaign.brief-analyst",
       "slug": "marketing-campaign-brief-analyst",
       "name": "Campaign Brief Analyst",
-      "description": "Converts raw person inputs into a complete, professional campaign brief resource with persisted input artifacts and a proposed campaign workspace slug.",
+      "description": "Converts raw operator inputs into a complete, professional campaign brief resource with persisted input artifacts and a proposed campaign workspace slug.",
       "domain": "marketing",
       "audience": "Marketing teams",
       "color": "#ff78ac",
       "featured": true,
       "role": "Campaign Brief Analyst",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "marketing.campaign-production"
       ]
@@ -1559,6 +2734,7 @@
       "color": "#ff78ac",
       "featured": true,
       "role": "Creative Director",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "marketing.campaign-production"
       ]
@@ -1567,12 +2743,13 @@
       "key": "marketing.campaign.landing-page-builder",
       "slug": "marketing-campaign-landing-page-builder",
       "name": "Campaign Landing Page Builder",
-      "description": "Builds each planned landing page variant as a self-contained static HTML file in the campaign workspace and assembles gallery.html as the person-facing index.",
+      "description": "Builds each planned landing page variant as a self-contained static HTML file in the campaign workspace and assembles gallery.html as the operator-facing index.",
       "domain": "marketing",
       "audience": "Marketing teams",
       "color": "#ff78ac",
       "featured": true,
       "role": "Landing Page Builder",
+      "roleClass": "mechanical",
       "workflowKeys": [
         "marketing.campaign-production"
       ]
@@ -1587,6 +2764,7 @@
       "color": "#ff78ac",
       "featured": true,
       "role": "Media Producer",
+      "roleClass": "mechanical",
       "workflowKeys": [
         "marketing.campaign-production"
       ]
@@ -1601,6 +2779,7 @@
       "color": "#ff78ac",
       "featured": true,
       "role": "Visual Signoff Reviewer",
+      "roleClass": "review",
       "workflowKeys": [
         "marketing.campaign-production"
       ]
@@ -1609,12 +2788,13 @@
       "key": "stackos.sdlc.codebase-explorer",
       "slug": "stackos-sdlc-codebase-explorer",
       "name": "Codebase Explorer",
-      "description": "Read-only mapper for affected scopes, work paths, ownership boundaries, and downstream fallout before code changes.",
+      "description": "Read-only mapper for affected scopes, execution paths, ownership boundaries, and downstream fallout before code changes.",
       "domain": "engineering",
       "audience": "Product and engineering teams",
       "color": "#7892ff",
       "featured": false,
       "role": "Codebase Explorer",
+      "roleClass": "reasoning",
       "workflowKeys": []
     },
     {
@@ -1627,6 +2807,7 @@
       "color": "#7ee2ad",
       "featured": false,
       "role": "Communications Callback Follow Up",
+      "roleClass": "mechanical",
       "workflowKeys": [
         "communications.callback-follow-up"
       ]
@@ -1635,12 +2816,13 @@
       "key": "communications.workflow.customer-feedback-intake",
       "slug": "communications-workflow-customer-feedback-intake",
       "name": "Communications Customer Feedback Intake Agent",
-      "description": "Normalizes customer feedback from Slack, Telegram, or another channel into one route-approved main Slack support thread while preserving media and handoff refs.",
+      "description": "Normalizes customer feedback from Slack, Telegram, or another channel into one route-approved canonical Slack support thread while preserving media and handoff refs.",
       "domain": "communications",
       "audience": "Customer and operations teams",
       "color": "#7ee2ad",
       "featured": true,
       "role": "Communications Customer Feedback Intake",
+      "roleClass": "mechanical",
       "workflowKeys": [
         "communications.customer-feedback-intake"
       ]
@@ -1655,6 +2837,7 @@
       "color": "#7ee2ad",
       "featured": false,
       "role": "Communications Inbox Review",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "communications.inbox-review"
       ]
@@ -1663,12 +2846,13 @@
       "key": "communications.workflow.outbound-notification",
       "slug": "communications-workflow-outbound-notification",
       "name": "Communications Outbound Notification Agent",
-      "description": "Prepares and sends explicit connected app-neutral outbound notifications through named targets.",
+      "description": "Prepares and sends explicit provider-neutral outbound notifications through named targets.",
       "domain": "communications",
       "audience": "Customer and operations teams",
       "color": "#7ee2ad",
       "featured": false,
       "role": "Communications Outbound Notification",
+      "roleClass": "mechanical",
       "workflowKeys": [
         "communications.outbound-notification"
       ]
@@ -1683,6 +2867,7 @@
       "color": "#7ee2ad",
       "featured": false,
       "role": "Communications Rich Telegram Reply",
+      "roleClass": "mechanical",
       "workflowKeys": [
         "communications.rich-telegram-reply"
       ]
@@ -1697,6 +2882,7 @@
       "color": "#7892ff",
       "featured": false,
       "role": "Delivery",
+      "roleClass": "reasoning",
       "workflowKeys": []
     },
     {
@@ -1709,6 +2895,7 @@
       "color": "#ff9f73",
       "featured": false,
       "role": "Gtm Account Research",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "gtm.account-research"
       ]
@@ -1723,6 +2910,7 @@
       "color": "#ff9f73",
       "featured": false,
       "role": "Gtm Crm Hygiene",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "gtm.crm-hygiene-pass"
       ]
@@ -1737,6 +2925,7 @@
       "color": "#ff9f73",
       "featured": false,
       "role": "Gtm Lead Enrichment Scoring",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "gtm.lead-enrichment-scoring"
       ]
@@ -1751,6 +2940,7 @@
       "color": "#ff9f73",
       "featured": false,
       "role": "Gtm Outbound Sequence",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "gtm.outbound-sequence-preparation"
       ]
@@ -1765,6 +2955,7 @@
       "color": "#ff9f73",
       "featured": false,
       "role": "Gtm Pipeline Risk Review",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "gtm.pipeline-risk-review"
       ]
@@ -1779,6 +2970,7 @@
       "color": "#ffbd5c",
       "featured": false,
       "role": "Media Landing Page Creative Experiment",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "media-buying.landing-page-creative-experiment"
       ]
@@ -1793,6 +2985,7 @@
       "color": "#ffbd5c",
       "featured": false,
       "role": "Media Budget Reallocation",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "media-buying.budget-reallocation-review"
       ]
@@ -1801,12 +2994,13 @@
       "key": "media-buying.workflow.campaign-launch",
       "slug": "media-buying-workflow-campaign-launch",
       "name": "Media Campaign Launch Agent",
-      "description": "Prepares paid media campaign launches with explicit assumptions, approvals, and connected app-action boundaries.",
+      "description": "Prepares paid media campaign launches with explicit assumptions, approvals, and provider-action boundaries.",
       "domain": "media-buying",
       "audience": "Growth and paid media teams",
       "color": "#ffbd5c",
       "featured": true,
       "role": "Media Campaign Launch",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "media-buying.campaign-launch"
       ]
@@ -1821,6 +3015,7 @@
       "color": "#ffbd5c",
       "featured": false,
       "role": "Media Creative Variant",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "media-buying.creative-variant-generation"
       ]
@@ -1835,6 +3030,7 @@
       "color": "#ffbd5c",
       "featured": false,
       "role": "Media Performance Diagnosis",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "media-buying.performance-diagnosis"
       ]
@@ -1849,6 +3045,7 @@
       "color": "#7892ff",
       "featured": false,
       "role": "Planning",
+      "roleClass": "reasoning",
       "workflowKeys": []
     },
     {
@@ -1861,6 +3058,7 @@
       "color": "#8ea6ff",
       "featured": false,
       "role": "Project Memory Review",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "core.project-memory-review"
       ]
@@ -1875,6 +3073,7 @@
       "color": "#7892ff",
       "featured": false,
       "role": "Release Ops",
+      "roleClass": "mechanical",
       "workflowKeys": []
     },
     {
@@ -1887,6 +3086,7 @@
       "color": "#7892ff",
       "featured": false,
       "role": "Requirements Flow Definer",
+      "roleClass": "reasoning",
       "workflowKeys": []
     },
     {
@@ -1899,6 +3099,7 @@
       "color": "#7892ff",
       "featured": false,
       "role": "Delivery Reviewer",
+      "roleClass": "review",
       "workflowKeys": []
     },
     {
@@ -1911,6 +3112,7 @@
       "color": "#79dfff",
       "featured": false,
       "role": "Seo Content Refresh",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "seo.content-refresh"
       ]
@@ -1925,6 +3127,7 @@
       "color": "#79dfff",
       "featured": true,
       "role": "Seo Keyword Research",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "seo.keyword-research"
       ]
@@ -1933,12 +3136,13 @@
       "key": "support.workflow.delivery-handoff",
       "slug": "support-workflow-delivery-handoff",
       "name": "Support Delivery Handoff Agent",
-      "description": "Converts a support conclusion and same-thread person instruction into delivery-ready tracker work with durable chat refs.",
+      "description": "Converts a support conclusion and same-thread operator instruction into delivery-ready tracker work with durable chat refs.",
       "domain": "support",
       "audience": "Support and success teams",
       "color": "#a8e37f",
       "featured": false,
       "role": "Support Delivery Handoff",
+      "roleClass": "mechanical",
       "workflowKeys": [
         "support.delivery-task-handoff"
       ]
@@ -1947,12 +3151,13 @@
       "key": "support.workflow.issue-investigator",
       "slug": "support-workflow-issue-investigator",
       "name": "Support Issue Investigator",
-      "description": "Investigates the full main support thread and project evidence, asks bounded clarification questions, and posts a thread-bound conclusion without implementing fixes.",
+      "description": "Investigates the full canonical support thread and project evidence, asks bounded clarification questions, and posts a thread-bound conclusion without implementing fixes.",
       "domain": "support",
       "audience": "Support and success teams",
       "color": "#a8e37f",
       "featured": false,
       "role": "Support Issue Investigator",
+      "roleClass": "reasoning",
       "workflowKeys": [
         "support.issue-investigation"
       ]
@@ -1967,18 +3172,20 @@
       "color": "#7892ff",
       "featured": false,
       "role": "Test Designer",
+      "roleClass": "reasoning",
       "workflowKeys": []
     },
     {
       "key": "trackbooth.agent-api-operator",
       "slug": "trackbooth-agent-api-operator",
-      "name": "Trackbooth Agent API person",
-      "description": "Operates Trackbooth Agent API inventory only through StackOS manual catalog sync, generated actions, and StackOS-held API-key auth.",
+      "name": "Trackbooth Agent API Operator",
+      "description": "Operates Trackbooth Agent API inventory only through StackOS manual catalog sync, generated actions, and daemon-held API-key auth.",
       "domain": "trackbooth",
       "audience": "Operations teams",
       "color": "#8ea6ff",
       "featured": false,
       "role": "Trackbooth Agent Api Operator",
+      "roleClass": "mechanical",
       "workflowKeys": []
     },
     {
@@ -1991,6 +3198,7 @@
       "color": "#8ea6ff",
       "featured": false,
       "role": "Workflow Author",
+      "roleClass": "reasoning",
       "workflowKeys": []
     }
   ],
@@ -1999,12 +3207,13 @@
       "key": "branding.brand-orchestrator",
       "slug": "branding-brand-orchestrator",
       "name": "Brand Orchestrator",
-      "description": "Main-agent operating loop for interview-led, evidence-grounded authority content production and automated channel publication.",
+      "description": "Main-agent operating loop for evidence-led brand-foundation setup and voice-consistent content production, review, and optional publication.",
       "domain": "branding",
       "audience": "Content and brand teams",
       "color": "#d8ff63",
       "featured": true,
       "workflowKeys": [
+        "branding.brand-foundation-setup",
         "branding.content-production"
       ],
       "coordinates": [
@@ -2013,7 +3222,8 @@
         "Branding Channel Strategist",
         "Branding Claim Auditor",
         "Branding Voice Reviewer",
-        "Branding Sanitization Reviewer"
+        "Branding Sanitization Reviewer",
+        "Brand Profile Architect"
       ],
       "agentRefs": [
         {
@@ -2045,6 +3255,11 @@
           "key": "branding.sanitization-reviewer",
           "slug": "branding-sanitization-reviewer",
           "name": "Branding Sanitization Reviewer"
+        },
+        {
+          "key": "branding.profile-architect",
+          "slug": "branding-profile-architect",
+          "name": "Brand Profile Architect"
         }
       ]
     },
@@ -2052,7 +3267,7 @@
       "key": "marketing.campaign-production-orchestrator",
       "slug": "marketing-campaign-production-orchestrator",
       "name": "Campaign Production Orchestrator",
-      "description": "Generic main-agent coordination preset for end-to-end marketing campaign production from intake brief through plan approval, media production, landing pages, visual signoff, and gallery…",
+      "description": "Generic main-agent orchestration preset for end-to-end marketing campaign production from intake brief through plan approval, media production, landing pages, visual signoff, and gallery…",
       "domain": "marketing",
       "audience": "Marketing teams",
       "color": "#ff78ac",
@@ -2099,7 +3314,7 @@
       "key": "stackos.sdlc.delivery-orchestrator",
       "slug": "stackos-sdlc-delivery-orchestrator",
       "name": "Delivery Orchestrator",
-      "description": "Generic main-agent SDLC delivery coordination preset for project-adapted flow design, planning, tracker/plan coordination, reviewer selection, E2E/manual verification matrices, evidence…",
+      "description": "Generic main-agent SDLC delivery orchestration preset for project-adapted flow design, planning, tracker/run-plan coordination, reviewer selection, E2E/manual verification matrices,…",
       "domain": "engineering",
       "audience": "Product and engineering teams",
       "color": "#7892ff",
@@ -2109,6 +3324,90 @@
       ],
       "coordinates": [],
       "agentRefs": []
+    },
+    {
+      "key": "stackos.workflow-orchestrator",
+      "slug": "stackos-workflow-orchestrator",
+      "name": "Workflow Orchestrator",
+      "description": "Main-agent operating loop for workflows that do not need a domain-specific orchestrator.",
+      "domain": "core",
+      "audience": "Every team",
+      "color": "#8ea6ff",
+      "featured": true,
+      "workflowKeys": [
+        "communications.callback-follow-up",
+        "communications.customer-feedback-intake",
+        "communications.inbox-review",
+        "communications.outbound-notification",
+        "communications.rich-telegram-reply",
+        "core.project-memory-review",
+        "gtm.account-research",
+        "gtm.crm-hygiene-pass",
+        "gtm.lead-enrichment-scoring",
+        "gtm.outbound-sequence-preparation",
+        "gtm.pipeline-risk-review",
+        "media-buying.budget-reallocation-review",
+        "media-buying.campaign-launch",
+        "media-buying.creative-variant-generation",
+        "media-buying.landing-page-creative-experiment",
+        "media-buying.performance-diagnosis",
+        "seo.content-refresh",
+        "seo.keyword-research",
+        "support.delivery-task-handoff",
+        "support.issue-investigation"
+      ],
+      "coordinates": [
+        "Communications Inbox Review Agent",
+        "Communications Customer Feedback Intake Agent",
+        "Communications Outbound Notification Agent",
+        "Communications Callback Follow-Up Agent",
+        "Communications Rich Telegram Reply Agent",
+        "Project Memory Review Agent",
+        "GTM Account Research Agent",
+        "GTM Lead Enrichment Scoring Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "communications.workflow.inbox-review",
+          "slug": "communications-workflow-inbox-review",
+          "name": "Communications Inbox Review Agent"
+        },
+        {
+          "key": "communications.workflow.customer-feedback-intake",
+          "slug": "communications-workflow-customer-feedback-intake",
+          "name": "Communications Customer Feedback Intake Agent"
+        },
+        {
+          "key": "communications.workflow.outbound-notification",
+          "slug": "communications-workflow-outbound-notification",
+          "name": "Communications Outbound Notification Agent"
+        },
+        {
+          "key": "communications.workflow.callback-follow-up",
+          "slug": "communications-workflow-callback-follow-up",
+          "name": "Communications Callback Follow-Up Agent"
+        },
+        {
+          "key": "communications.workflow.rich-telegram-reply",
+          "slug": "communications-workflow-rich-telegram-reply",
+          "name": "Communications Rich Telegram Reply Agent"
+        },
+        {
+          "key": "stackos.workflow.project-memory-review",
+          "slug": "stackos-workflow-project-memory-review",
+          "name": "Project Memory Review Agent"
+        },
+        {
+          "key": "gtm.workflow.account-research",
+          "slug": "gtm-workflow-account-research",
+          "name": "GTM Account Research Agent"
+        },
+        {
+          "key": "gtm.workflow.lead-enrichment-scoring",
+          "slug": "gtm-workflow-lead-enrichment-scoring",
+          "name": "GTM Lead Enrichment Scoring Agent"
+        }
+      ]
     }
   ]
 }

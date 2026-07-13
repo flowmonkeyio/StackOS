@@ -54,6 +54,9 @@ ui/test-results/
 manual-*.png
 release-*.png
 
+# Private keyword and SERP research stays local to the operator workspace.
+/reports/seo/
+
 # Note: stackos/ui_dist/ IS committed per D8 (no pnpm at user install)
 
 # Local databases (the canonical DB lives at ~/.local/share/stackos/)

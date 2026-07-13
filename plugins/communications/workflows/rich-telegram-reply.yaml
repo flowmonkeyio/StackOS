@@ -6,6 +6,40 @@ description: Reusable setup for replying to a Telegram-originated agent request 
 domain: communications
 owner:
   team: StackOS
+experience:
+  problem: "Rich replies can silently lose images, buttons, threading, or privacy boundaries when a platform feature is unavailable."
+  outcome: "One Telegram reply whose text, media, buttons, and thread context match the approved response contract."
+  operator_path:
+    - "Provide the reply intent and approved media or action choices."
+    - "Confirm any button behavior that creates work or changes state."
+    - "Review the sent message and stored interaction refs."
+  agent_path:
+    - "Load the originating request and Telegram surface policy."
+    - "Validate text, every media item, and button payload before any send."
+    - "Send without silent degradation and store message and interaction receipts."
+  progress_signals:
+    - "Origin verified"
+    - "Payload validated"
+    - "Media complete"
+    - "Reply delivered"
+    - "Interaction refs stored"
+  recovery:
+    - "Reject unsupported rich features instead of silently dropping them."
+    - "Use provider receipts and idempotency state to avoid duplicate replies after failure."
+  safe_stopping_points:
+    - "Stop with a validated reply packet when the origin or feature contract is incomplete."
+public:
+  audience: "Teams replying to Telegram requests with media or buttons"
+  setup: connection-required
+  prerequisites:
+    - "A connected Telegram profile"
+    - "An originating request and approved reply destination"
+    - "Safe media refs and defined button behavior"
+  proof:
+    - "Validated payload"
+    - "Telegram message and media ids"
+    - "Stored button interaction refs"
+  featured: false
 when_to_use:
   - A Telegram message created an agent_request and the response may need buttons or images.
   - The agent must respect the originating communication profile, chat, thread, and response policy.
@@ -34,6 +68,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: agent_request_id
     name: Agent Request ID
@@ -89,6 +127,7 @@ action_contracts:
     provider: telegram-bot
     risk_level: write
     auth_ref: telegram_bot
+    optional: true
 policies:
   - key: origin_bound_response
     kind: safety
@@ -126,10 +165,34 @@ outputs:
   - key: response_plan
     name: Response Plan
     type: object
+    required: true
+    description: Origin, thread, feature, media, button, and no-degradation plan for the reply.
+    schema:
+      type: object
+      required: [source_request_ref, communication_profile_ref, chat_ref, feature_requirements, delivery_mode]
+      properties:
+        source_request_ref: {type: string}
+        communication_profile_ref: {type: string}
+        chat_ref: {type: string}
+        thread_ref: {type: string}
+        feature_requirements: {type: array}
+        media_refs: {type: array, items: {type: string}}
+        delivery_mode: {type: string, enum: [text, photo, text_and_photo]}
   - key: response_payload
     name: Response Payload
     type: object
     required: true
+    description: Exact origin-bound Telegram text, media, and button payload ready for validation and send.
+    schema:
+      type: object
+      required: [source_request_ref, chat_ref, text]
+      properties:
+        source_request_ref: {type: string}
+        chat_ref: {type: string}
+        thread_ref: {type: string}
+        text: {type: string}
+        media_refs: {type: array, items: {type: string}}
+        buttons: {type: array}
 metadata:
   builtin: true
   run_mode: stackos_run_plan

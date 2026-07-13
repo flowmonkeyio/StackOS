@@ -6,6 +6,49 @@ description: Reusable template for planning a paid media experiment that relates
 domain: media-buying
 owner:
   team: StackOS
+experience:
+  problem: "Creative and landing-page changes are often tested together without a clean hypothesis, dependency map, or observation plan."
+  outcome: "A launch-ready experiment that connects named variants, destination changes, tracking, guardrails, and one approved provider route."
+  why_ai: "AI can coordinate page, creative, tracking, and media dependencies while preserving explicit experiment and approval decisions."
+  operator_path:
+    - "State the hypothesis, variants, metric targets, traffic constraints, and observation window."
+    - "Confirm implementation and tracking readiness."
+    - "Approve campaign changes through the selected provider route."
+  agent_path:
+    - "Validate that the proposed variants isolate a useful question."
+    - "Map page, creative, tracking, and campaign dependencies."
+    - "Prepare the experiment and QA plan; mutate the campaign only after approval."
+    - "Store the experiment record and follow-up observation criteria."
+  progress_signals:
+    - "Hypothesis validated"
+    - "Dependencies mapped"
+    - "QA complete"
+    - "Launch approval pending"
+    - "Experiment staged"
+    - "Observation plan stored"
+  recovery:
+    - "If variants or tracking cannot support the hypothesis, return to design instead of launching."
+    - "If provider launch fails, preserve staged assets and reconcile campaign state before retry."
+  safe_stopping_points:
+    - "Stop with a launch-ready experiment plan when campaign mutation is not approved."
+  handoffs:
+    - workflow_key: media-buying.performance-diagnosis
+      relationship: next
+      when: "The experiment observation window has enough data for diagnosis."
+public:
+  audience: "Growth teams testing paid creative and landing pages together"
+  setup: mixed
+  prerequisites:
+    - "A clear hypothesis and named variants"
+    - "Metric targets, traffic policy, and observation window"
+    - "Verified page and tracking readiness"
+    - "One provider route and approval only for launch"
+  proof:
+    - "Dependency and QA checklist"
+    - "Experiment record and guardrails"
+    - "Launch approval and provider receipt when executed"
+    - "Observation criteria"
+  featured: false
 when_to_use:
   - The agent needs to design a paid media experiment involving landing page and creative combinations.
   - The project needs a durable experiment record before campaign changes are made.
@@ -42,6 +85,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -140,6 +187,9 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: experiment_launch_review
+    route_group: experiment_launch
+    route_key: meta_ads
+    optional: true
   - key: google_ad_group_ad_create
     action: google.ad_group_ad.create
     capability: campaign-management
@@ -147,12 +197,18 @@ action_contracts:
     risk_level: write
     auth_ref: google_ads
     approval_ref: experiment_launch_review
+    route_group: experiment_launch
+    route_key: google_ads
+    optional: true
   - key: custom_media_campaign_update
     action: custom_media.campaign.update
     capability: campaign-management
     provider: custom-media-tool
     risk_level: write
     approval_ref: experiment_launch_review
+    route_group: experiment_launch
+    route_key: custom_media_tool
+    optional: true
 resource_contracts:
   - key: media_experiments
     resource: media-experiment
@@ -239,9 +295,31 @@ outputs:
     name: Experiment Plan
     type: object
     required: true
+    description: Hypothesis, variants, traffic allocation, success metrics, guardrails, sample window, and launch mode.
+    schema:
+      type: object
+      required: [hypothesis, variants, traffic_allocation, success_metrics, guardrails, sample_window, launch_mode]
+      properties:
+        hypothesis: {type: string}
+        variants: {type: array}
+        traffic_allocation: {type: object}
+        success_metrics: {type: array}
+        guardrails: {type: array}
+        sample_window: {type: object}
+        launch_mode: {type: string, enum: [prepare_only, stage, launch]}
   - key: experiment_records
     name: Experiment Records
     type: object
+    required: false
+    description: Created or staged experiment refs, provider status, receipts, and observation boundary.
+    schema:
+      type: object
+      required: [status, experiment_refs, receipt_refs, observation_plan]
+      properties:
+        status: {type: string, enum: [not_requested, staged, launched, partial, blocked, failed]}
+        experiment_refs: {type: array, items: {type: string}}
+        receipt_refs: {type: array, items: {type: string}}
+        observation_plan: {type: object}
 learning_hooks:
   - key: experiment_setup_learning
     prompt: Capture reusable experiment setup lessons after observation evidence exists.

@@ -8,7 +8,9 @@
   "color": "#d8ff63",
   "featured": true,
   "role": "Voice Reviewer",
+  "roleClass": "review",
   "workflowKeys": [
-    "branding.content-production"
+    "branding.content-production",
+    "branding.brand-foundation-setup"
   ]
 }

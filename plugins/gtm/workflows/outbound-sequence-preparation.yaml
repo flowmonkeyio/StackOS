@@ -6,6 +6,42 @@ description: Reusable template for preparing outbound sequences from reviewed le
 domain: gtm
 owner:
   team: StackOS
+experience:
+  problem: "Outbound messages become generic or risky when qualification, personalization evidence, compliance, and send authorization are collapsed into one drafting step."
+  outcome: "A reviewed, project-voiced outreach sequence and send-readiness packet without sending it implicitly."
+  why_ai: "AI can adapt a sequence across qualified accounts while keeping every personalization claim and compliance decision traceable."
+  operator_path:
+    - "Choose the qualified audience, offer, channel, and desired response."
+    - "Set voice, claim, compliance, frequency, and exclusion rules."
+    - "Review representative messages and approve send readiness separately."
+  agent_path:
+    - "Verify qualification and personalization evidence for each recipient."
+    - "Draft within the project voice and channel contract without inventing familiarity."
+    - "Run compliance and claim checks, then return a send-readiness packet."
+  progress_signals:
+    - "Audience verified"
+    - "Personalization evidence linked"
+    - "Sequence drafted"
+    - "Compliance reviewed"
+    - "Send-readiness packet complete"
+  recovery:
+    - "Disqualify or hold recipients with insufficient evidence rather than filling gaps."
+    - "Keep the packet staged when a target, route, or send approval is missing."
+  safe_stopping_points:
+    - "This workflow stops at send readiness; delivery requires explicit authorization."
+public:
+  audience: "Go-to-market teams preparing evidence-based outreach"
+  setup: project-adapter-required
+  prerequisites:
+    - "A qualified recipient set"
+    - "Project voice and approved offer claims"
+    - "Compliance, exclusion, cadence, and channel rules"
+  proof:
+    - "Recipient qualification refs"
+    - "Personalization evidence map"
+    - "Compliance review"
+    - "Approved send-readiness packet"
+  featured: false
 when_to_use:
   - A reviewed lead or account set should be prepared for Outreach, Salesloft, or user-owned sequence tooling.
 when_not_to_use:
@@ -33,6 +69,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -123,6 +163,9 @@ action_contracts:
     risk_level: write
     auth_ref: outreach
     approval_ref: sequence_review
+    optional: true
+    route_group: outbound_execution
+    route_key: outreach
   - key: salesloft_cadence_membership_create
     action: salesloft.cadence_membership.create
     capability: outbound-operations
@@ -130,12 +173,18 @@ action_contracts:
     risk_level: write
     auth_ref: salesloft
     approval_ref: sequence_review
+    optional: true
+    route_group: outbound_execution
+    route_key: salesloft
   - key: custom_gtm_sequence_add
     action: custom_gtm.sequence.add
     capability: outbound-operations
     provider: custom-gtm-tool
     risk_level: write
     approval_ref: sequence_review
+    optional: true
+    route_group: outbound_execution
+    route_key: custom_gtm_tool
   - key: google_workspace_mail_send
     action: google-workspace.gmail.message.send
     capability: outbound-operations
@@ -143,6 +192,9 @@ action_contracts:
     risk_level: write
     auth_ref: google_workspace
     approval_ref: sequence_review
+    optional: true
+    route_group: outbound_execution
+    route_key: google_workspace
   - key: google_workspace_calendar_event_create
     action: google-workspace.calendar.event.create
     capability: outbound-operations
@@ -150,6 +202,9 @@ action_contracts:
     risk_level: write
     auth_ref: google_workspace
     approval_ref: sequence_review
+    optional: true
+    route_group: outbound_execution
+    route_key: google_workspace
   - key: microsoft_365_mail_send
     action: microsoft-365.graph.mail.send
     capability: outbound-operations
@@ -157,6 +212,9 @@ action_contracts:
     risk_level: write
     auth_ref: microsoft_365
     approval_ref: sequence_review
+    optional: true
+    route_group: outbound_execution
+    route_key: microsoft_365
   - key: microsoft_365_calendar_event_create
     action: microsoft-365.graph.calendar.event.create
     capability: outbound-operations
@@ -164,6 +222,9 @@ action_contracts:
     risk_level: write
     auth_ref: microsoft_365
     approval_ref: sequence_review
+    optional: true
+    route_group: outbound_execution
+    route_key: microsoft_365
 resource_contracts:
   - key: sequences
     resource: sequence
@@ -240,9 +301,33 @@ outputs:
     name: Sequence Plan
     type: object
     required: true
+    description: Audience, evidence, messaging, steps, selected provider route, approval, and execution boundary.
+    schema:
+      type: object
+      required: [audience, evidence_refs, message_hypothesis, steps, selected_route, execution_mode, approval_required]
+      properties:
+        audience: {type: object}
+        evidence_refs: {type: array, items: {type: string}}
+        message_hypothesis: {type: string}
+        steps: {type: array}
+        selected_route: {type: string}
+        execution_mode: {type: string, enum: [prepare_only, export, create_draft, activate]}
+        approval_required: {type: boolean}
   - key: sequence_summary
     name: Sequence Summary
     type: object
+    required: true
+    description: Prepared assets, selected leads, validation findings, execution status, and exact blockers or receipts.
+    schema:
+      type: object
+      required: [lead_count, assets, validation_findings, execution_status, blocker, receipt_refs]
+      properties:
+        lead_count: {type: integer, minimum: 0}
+        assets: {type: array}
+        validation_findings: {type: array}
+        execution_status: {type: string, enum: [prepared, exported, drafted, activated, blocked, failed]}
+        blocker: {type: object}
+        receipt_refs: {type: array, items: {type: string}}
 learning_hooks:
   - key: outbound_learning
     prompt: Capture reusable outbound lessons only after evidence or reviewed outcomes exist.

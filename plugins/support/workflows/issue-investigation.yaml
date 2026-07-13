@@ -6,6 +6,47 @@ description: Investigate a customer-reported issue from the canonical support th
 domain: support
 owner:
   team: StackOS
+experience:
+  problem: "Customer reports are either dismissed too early or turned into engineering work before expected behavior, reproduction, and impact are established."
+  outcome: "An evidence-backed conclusion in the canonical support thread: verified issue, bounded uncertainty, expected behavior, or not a product defect."
+  why_ai: "AI can connect the full conversation, media, product context, and reproduction evidence while keeping task creation outside the investigator's authority."
+  operator_path:
+    - "Provide the canonical thread and safe media refs."
+    - "Answer bounded clarification questions about expected behavior, environment, timing, and impact."
+    - "Review the conclusion and decide whether delivery work should be created."
+  agent_path:
+    - "Read the full thread and media before forming a hypothesis."
+    - "Separate report, expectation, evidence, reproduction, scope, and uncertainty."
+    - "Ask only bounded clarifications, investigate safely, and post the conclusion in the same thread."
+    - "Do not create delivery tasks."
+  progress_signals:
+    - "Thread and media loaded"
+    - "Expected behavior clarified"
+    - "Reproduction attempted"
+    - "Impact bounded"
+    - "Conclusion posted"
+  recovery:
+    - "If evidence or access is missing, state exactly what is unverified and ask the smallest useful question."
+    - "If a provider reply fails, preserve the conclusion and retry from the stored thread and action receipt."
+  safe_stopping_points:
+    - "Stop with bounded uncertainty; task creation requires a separate workflow and operator instruction."
+  handoffs:
+    - workflow_key: support.delivery-task-handoff
+      relationship: conditional
+      when: "The conclusion supports delivery work and the operator authorizes task creation in the same thread."
+public:
+  audience: "Support and product teams investigating customer-reported issues"
+  setup: connection-required
+  prerequisites:
+    - "A canonical Slack thread with the complete feedback packet"
+    - "Expected versus actual behavior, environment, timing, and impact context"
+    - "Safe access to relevant media or reproduction evidence"
+  proof:
+    - "Full-thread and media refs"
+    - "Reproduction and impact evidence"
+    - "Same-thread conclusion with uncertainty"
+    - "No task creation by the investigator"
+  featured: false
 when_to_use:
   - A canonical Slack support thread exists and the issue needs diagnosis before delivery work is created.
   - The agent must read the whole support thread, include media/context, and produce a root-cause or bounded-uncertainty conclusion.
@@ -41,6 +82,10 @@ skill_requirements:
       - Post the support conclusion in the canonical thread.
       - This workflow ends after the conclusion. If the operator replies with task instructions, start support.delivery-task-handoff.
       - Preserve source, canonical thread, media, clarification, conclusion, evidence, and recommended delivery refs.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: canonical_thread_ref
     name: Canonical Thread Ref
@@ -245,24 +290,73 @@ outputs:
     name: Thread Context Summary
     type: object
     description: Full-thread facts, reporter context, media refs, and source refs used for investigation.
+    schema:
+      type: object
+      required: [canonical_thread_ref, facts, reporter_context, media_refs, source_refs, unknowns]
+      properties:
+        canonical_thread_ref: {type: string}
+        facts: {type: array}
+        reporter_context: {type: object}
+        media_refs: {type: array, items: {type: string}}
+        source_refs: {type: array, items: {type: string}}
+        unknowns: {type: array}
   - key: clarification_result
     name: Clarification Result
     type: object
     description: Clarification question/reply refs, or explicit reason no clarification was needed.
+    schema:
+      type: object
+      required: [needed, rationale]
+      properties:
+        needed: {type: boolean}
+        rationale: {type: string}
+        question_message_ref: {type: string}
+        reply_message_ref: {type: string}
+        resolved_unknowns: {type: array}
   - key: investigation_conclusion
     name: Investigation Conclusion
     type: object
     required: true
     description: Facts, inferences, eliminated hypotheses, verified cause or bounded uncertainty, affected surfaces, residual risk, and recommended next step.
+    schema:
+      type: object
+      required: [facts, inferences, eliminated_hypotheses, conclusion_status, affected_surfaces, residual_risk, recommended_next_step, evidence_refs]
+      properties:
+        facts: {type: array}
+        inferences: {type: array}
+        eliminated_hypotheses: {type: array}
+        conclusion_status: {type: string, enum: [verified_cause, bounded_uncertainty, no_issue]}
+        cause: {type: string}
+        affected_surfaces: {type: array}
+        residual_risk: {type: array}
+        recommended_next_step: {type: object}
+        evidence_refs: {type: array, items: {type: string}}
   - key: support_conclusion_reply
     name: Support Conclusion Reply
     type: object
     required: true
     description: Evidence that the conclusion was posted in the canonical support thread.
+    schema:
+      type: object
+      required: [thread_ref, message_ref, conclusion_status]
+      properties:
+        thread_ref: {type: string}
+        message_ref: {type: string}
+        conclusion_status: {type: string}
+        receipt_ref: {type: string}
   - key: delivery_handoff_recommendation
     name: Delivery Handoff Recommendation
     type: object
     description: Suggested engineering.tracked-delivery task direction if the operator instructs task creation later.
+    schema:
+      type: object
+      required: [recommended, rationale, proposed_scope, acceptance_evidence, source_refs]
+      properties:
+        recommended: {type: boolean}
+        rationale: {type: string}
+        proposed_scope: {type: object}
+        acceptance_evidence: {type: array}
+        source_refs: {type: array, items: {type: string}}
 failure_handling:
   - If the full thread cannot be read, name the limitation in the thread and do not post a confident cause.
   - If clarification is required, ask in the canonical thread and pause the investigation until the answer is available.

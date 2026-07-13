@@ -1,0 +1,123 @@
+{
+  "key": "branding.brand-foundation-setup",
+  "slug": "branding-brand-foundation-setup",
+  "name": "Brand Foundation Setup",
+  "description": "A current brand profile and durable voice guide that future agents can retrieve, apply, test, and update without guessing.",
+  "domain": "branding",
+  "audience": "Founders, builders, and teams defining a recognizable editorial voice",
+  "color": "#d8ff63",
+  "featured": true,
+  "problem": "A generic tone prompt cannot preserve a real point of view, especially after several agents, drafts, and channels touch the work.",
+  "outcome": "A current brand profile and durable voice guide that future agents can retrieve, apply, test, and update without guessing.",
+  "whyAi": "AI can compare interviews, real writing samples, project experience, and reader reactions at scale, while the operator's expressed intent and supplied evidence remain the authority on identity.",
+  "operatorPath": [
+    "Share the brand goal, audience, representative writing, and any current voice guidance.",
+    "Answer a focused interview when the samples do not explain the judgment behind the writing.",
+    "Review a focused choice only when the evidence leaves a material identity question unresolved.",
+    "Receive a retrieval-tested profile and guide as the content-production baseline."
+  ],
+  "agentPath": [
+    "Inventory existing brand resources, guides, writing samples, and content outcomes before proposing changes.",
+    "Interview for point of view, lived proof, preferred tension, language habits, boundaries, and what the operator refuses to sound like.",
+    "Separate durable voice principles from channel mechanics and brittle phrase blacklists.",
+    "Draft the profile and guide, run independent voice review, then finalize and persist the supported foundation.",
+    "Re-query the stored profile and artifact to prove future agents can retrieve them."
+  ],
+  "progressSignals": [
+    "Existing guidance inventoried",
+    "Interview and sample evidence complete",
+    "Voice system drafted",
+    "Adversarial voice review complete",
+    "Foundation finalized and persisted",
+    "Retrieval verified"
+  ],
+  "recovery": [
+    "If samples conflict, preserve the variants and ask which context each one represents.",
+    "If a material identity choice cannot be resolved from the request or evidence, preserve the reviewed draft and ask one focused question.",
+    "If persistence or retrieval fails, stop before declaring the foundation ready."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a reviewed draft only when missing authority or context would materially change the identity.",
+    "Complete after returning the retrieval-tested content-production handoff; do not start or mutate the next workflow unless the operator separately asks for content production."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "branding.content-production",
+      "relationship": "next",
+      "when": "The active brand profile and voice guide have been finalized and retrieval-tested."
+    }
+  ],
+  "setup": "available",
+  "prerequisites": [
+    "A brand or personal-authority goal and target audience",
+    "Representative writing samples, prior content, or willingness to be interviewed",
+    "Disclosure and sensitive-information boundaries"
+  ],
+  "proof": [
+    "Source and sample inventory",
+    "Voice principles, structure rules, and evidence standard",
+    "Anti-generic kill tests applied to examples",
+    "Independent voice review and durable finalization decision",
+    "Retrieval-tested brand-profile and voice-guide refs"
+  ],
+  "whenToUse": [
+    "A project needs its first durable brand voice and editorial foundation before producing content.",
+    "Existing content sounds generic, inconsistent, promotional, or unlike the operator.",
+    "The project has voice guidance in another project or document that should be adapted without copying it blindly."
+  ],
+  "stages": [
+    {
+      "id": "inventory-existing-foundation",
+      "title": "Inventory Existing Foundation",
+      "summary": "Find current profiles, guides, representative content, outcomes, and conflicting guidance before drafting anything new."
+    },
+    {
+      "id": "interview-and-sample-analysis",
+      "title": "Interview And Sample Analysis",
+      "summary": "Capture the operator's point of view and analyze real writing choices only where the current evidence needs it."
+    },
+    {
+      "id": "draft-brand-foundation",
+      "title": "Draft Brand Foundation",
+      "summary": "Turn the evidence into a compact profile and practical voice guide that agents can use without imitating a caricature."
+    },
+    {
+      "id": "adversarial-voice-review",
+      "title": "Adversarial Voice Review",
+      "summary": "Independently test distinctiveness, fidelity, usability, evidence, and anti-generic quality before activation."
+    },
+    {
+      "id": "finalize-and-persist",
+      "title": "Finalize And Persist",
+      "summary": "Resolve review findings, record the finalization decision, upsert the active brand profile, and create or update the durable voice-guide artifact."
+    },
+    {
+      "id": "verify-retrieval",
+      "title": "Verify Retrieval",
+      "summary": "Re-query the saved profile and artifact and prove a future content run receives the correct active foundation."
+    }
+  ],
+  "agentNames": [
+    "Brand Profile Architect",
+    "Branding Evidence Curator",
+    "Branding Voice Reviewer"
+  ],
+  "agentRefs": [
+    {
+      "key": "branding.profile-architect",
+      "slug": "branding-profile-architect",
+      "name": "Brand Profile Architect"
+    },
+    {
+      "key": "branding.evidence-curator",
+      "slug": "branding-evidence-curator",
+      "name": "Branding Evidence Curator"
+    },
+    {
+      "key": "branding.voice-reviewer",
+      "slug": "branding-voice-reviewer",
+      "name": "Branding Voice Reviewer"
+    }
+  ],
+  "integrations": []
+}

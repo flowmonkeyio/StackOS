@@ -231,11 +231,14 @@ def _is_scalar(value: Any) -> bool:
 
 
 def _find_mismatched_project_id(value: Any, expected: int) -> int | None:
+    """Return a mismatched object owner while treating ``*_json`` as opaque."""
     if isinstance(value, dict):
         raw = value.get("project_id")
         if isinstance(raw, int) and raw != expected:
             return raw
-        for child in value.values():
+        for key, child in value.items():
+            if key == "project_id" or key.endswith("_json"):
+                continue
             found = _find_mismatched_project_id(child, expected)
             if found is not None:
                 return found

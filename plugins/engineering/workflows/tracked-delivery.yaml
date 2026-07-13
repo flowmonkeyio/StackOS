@@ -1,11 +1,52 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.2.3
+version: 0.2.4
 description: Reusable SDLC workflow for requirements, flow design, discovery, design, test planning, delivery, verification, review, and release through StackOS tracker state.
 domain: engineering
 owner:
   team: StackOS
+experience:
+  problem: "Engineering requests fail when requirements, dependencies, verification, and review live only in chat or are compressed into implementation."
+  outcome: "A delivered change with an explicit flow, truthful tracker state, proportionate verification, independent review, and release evidence."
+  why_ai: "AI can coordinate discovery, implementation, testing, and review across a long-running change while StackOS preserves dependencies and proof."
+  operator_path:
+    - "Describe the desired outcome, constraints, and authority boundary."
+    - "Review material design choices or production-risk gates."
+    - "Inspect verification, review findings, and residual risk before release."
+  agent_path:
+    - "Define requirements and affected flows before planning tickets."
+    - "Discover the real code and system boundaries, then design the approach and proof plan."
+    - "Deliver through dependency-linked tickets, run the planned verification, and adjudicate independent review."
+    - "Audit tracker truth and close only when evidence matches the result."
+  progress_signals:
+    - "Requirements defined"
+    - "Impact discovered"
+    - "Design reviewed"
+    - "Test plan verified"
+    - "Delivery in progress"
+    - "Verification complete"
+    - "Independent review adjudicated"
+    - "Release truth recorded"
+  recovery:
+    - "Record blockers in the run and tracker instead of hiding them in chat."
+    - "Use run consistency and recovery operations to resume a blocked step without losing prior handoffs."
+  safe_stopping_points:
+    - "Stop after a reviewed design or diagnosis when implementation authority was not granted."
+public:
+  audience: "Product and engineering teams delivering repository changes"
+  setup: available
+  prerequisites:
+    - "Repository instructions and source access"
+    - "A desired outcome and acceptance boundary"
+    - "Authority for the requested file or system changes"
+  proof:
+    - "Requirements and flow map"
+    - "Dependency-linked delivery tickets"
+    - "Automated and risk-appropriate manual verification"
+    - "Independent review adjudication"
+    - "Tracker and release closeout evidence"
+  featured: true
 when_to_use:
   - A user asks for engineering work that needs planning, implementation, review, and signoff.
   - A user explicitly asks to use a workflow, engineering workflow, StackOS workflow, or "the workflow" for engineering delivery.
@@ -190,6 +231,9 @@ policies:
   - key: main_agent_accountability
     kind: orchestration
     description: The curated SDLC subset supports the work; the main agent remains responsible for integration, final decisions, and user-facing truth.
+  - key: orchestrator_feedback_gate
+    kind: orchestration
+    description: The agreed plan is the delivery contract. Only the main orchestrator may admit feedback as work, and only when it protects the agreed outcome or changed-surface correctness/safety; otherwise defer or reject it and ask the operator before material expansion.
   - key: quality_over_speed
     kind: verification
     description: The orchestrator chooses proof depth from production risk and user/business impact; speed never justifies skipping the evidence needed for a high-quality outcome.
@@ -211,6 +255,7 @@ steps:
       - If the operator explicitly asked to use a workflow, engineering workflow, StackOS workflow, or "the workflow", create or resolve the workflow-backed run plan before creating tracker tasks or tickets.
       - Do not create a direct tracker task first and then create a workflow task for the same work; the workflow task/run plan is canonical when workflow intent was explicit.
       - Confirm which project guidance, local skills, host-agent format, tracker/run-plan state, and release expectations apply.
+      - Lock the agreed outcome, in-scope work, and non-goals as the baseline for all later feedback.
       - Surface missing context before planning if a reasonable project-specific assumption would be risky.
     input_refs:
       - goal
@@ -225,6 +270,7 @@ steps:
       - project_adaptation_required
       - workflow_selection_precedence
       - main_agent_accountability
+      - orchestrator_feedback_gate
     output_refs:
       - scope_summary
     success_criteria:
@@ -282,6 +328,7 @@ steps:
       - When workflow intent was explicit, create every discovery, design, delivery, verification, and closeout ticket under the workflow task/run plan from the start.
       - Use a direct tracker task only when the operator asks for task/dependency tracking without invoking a workflow.
       - Give each ticket dependencies, likely files or operation surfaces, acceptance criteria, and completion evidence expectations.
+      - Create no ticket from feedback unless the main orchestrator traces it to the agreed deliverable or changed-surface correctness/safety.
       - "For workflow-backed child tickets, pass run_plan_id and step_id at creation time; treat them as attachment/provenance only, update child ticket status/evidence with tracker.updateTicket, and reserve runPlan.claimStep/runPlan.recordStep for generated workflow step mirror tickets."
       - Add dependency edges that bridge child tickets into the mirrored workflow step chain.
       - "Keep the workflow graph to one root: the first generated workflow step mirror ticket. Any extra root under a workflow-backed task is detached work that must be repaired before delivery continues."
@@ -295,6 +342,7 @@ steps:
       - workflow_selection_precedence
       - workflow_dependency_spine
       - main_agent_accountability
+      - orchestrator_feedback_gate
     depends_on:
       - discover-impact
     output_refs:
@@ -381,10 +429,12 @@ steps:
       - Claim the next ready ticket, read its brief, implement narrowly, and patch tracker state as facts change.
       - For red-first work, prove the red is trustworthy before production edits and rerun the same slice to green.
       - Keep unrelated user changes intact and record blockers instead of hiding them in chat.
+      - Do not add reviewer suggestions, adjacent cleanup, or "while here" work outside the agreed plan.
     policy_refs:
       - truthful_tracker_state
       - one_brain_delivery
       - main_agent_accountability
+      - orchestrator_feedback_gate
     resource_refs:
       - decisions
       - evidence
@@ -430,13 +480,14 @@ steps:
       - Review tests, fixtures, docs, tracker updates, and implementation together.
       - Compare delivered verification against the approved test design, including manual scenarios and expected evidence.
       - For browser-assisted platform proof, verify the delivered evidence used the planned persistent profile_key or explains why a fresh profile was required.
-      - Treat verifier and reviewer feedback as advisory claims; adjudicate each material claim against the operator request, accepted deliverables, actual diff/code paths, test evidence, and intended outcome before making new work.
+      - Treat verifier and reviewer feedback as advisory; the main orchestrator admits only findings required by the agreed deliverable or changed-surface correctness/safety.
       - Reject, defer, or mark residual feedback that is unsupported, already covered, out of scope, or would over-engineer beyond the scoped deliverable.
       - Lead with confirmed findings ordered by severity; separate false positives, project decisions, and residual gaps.
     policy_refs:
       - evidence_over_assertion
       - one_brain_delivery
       - independent_closeout_verification
+      - orchestrator_feedback_gate
     resource_refs:
       - evidence
     depends_on:
@@ -455,6 +506,7 @@ steps:
       - Compare completed tickets with code, verification, docs, run-plan steps, and evidence.
       - Confirm flow_design, test_plan, E2E/manual flow proof, independent verification, and final claims agree.
       - Mark hidden required work, stale blockers, dangling dependencies, and deferred scope explicitly.
+      - Treat any ticket or edit without a scope trace as delivery drift; remove it from this delivery or defer it.
       - Treat duplicate direct tracker tasks created before a workflow-backed run plan for explicitly requested workflow work as a blocking tracker-truth finding.
       - Treat a detached workflow step ticket versus child-ticket chain as a blocking tracker-truth finding, not a vague missing-dependencies note.
       - Do not let tracker completion override failed or missing verification.
@@ -466,6 +518,7 @@ steps:
       - mandatory_flow_design
       - agent_executed_flow_proof
       - independent_closeout_verification
+      - orchestrator_feedback_gate
     depends_on:
       - review-delivery
     output_refs:
@@ -503,54 +556,199 @@ outputs:
     name: Scope Summary
     type: object
     required: true
+    description: Outcome, boundaries, assumptions, risks, approvals, and proof depth for the delivery.
+    schema:
+      type: object
+      required: [outcome, in_scope, out_of_scope, assumptions, risks, approvals, proof_depth]
+      properties:
+        outcome: {type: string}
+        in_scope: {type: array}
+        out_of_scope: {type: array}
+        assumptions: {type: array}
+        risks: {type: array}
+        approvals: {type: array}
+        proof_depth: {type: string}
   - key: requirements_brief
     name: Requirements Brief
     type: object
     required: true
+    description: User/business goals, acceptance conditions, constraints, edge cases, and unresolved decisions.
+    schema:
+      type: object
+      required: [goals, users, acceptance_conditions, constraints, edge_cases, unresolved_decisions]
+      properties:
+        goals: {type: array}
+        users: {type: array}
+        acceptance_conditions: {type: array}
+        constraints: {type: array}
+        edge_cases: {type: array}
+        unresolved_decisions: {type: array}
   - key: flow_design
     name: Flow Design
     type: object
     required: true
+    description: Current and target user, data, system, agent, and business flows with ownership and failure paths.
+    schema:
+      type: object
+      required: [current_flows, target_flows, ownership, state_transitions, failure_paths, verification_scenarios]
+      properties:
+        current_flows: {type: array}
+        target_flows: {type: array}
+        ownership: {type: object}
+        state_transitions: {type: array}
+        failure_paths: {type: array}
+        verification_scenarios: {type: array}
   - key: impact_map
     name: Impact Map
     type: object
     required: true
+    description: Affected models, operations, adapters, permissions, UI, tests, docs, and removal obligations.
+    schema:
+      type: object
+      required: [data_model, operations, adapters, permissions, ui, tests, docs, removals]
+      properties:
+        data_model: {type: array}
+        operations: {type: array}
+        adapters: {type: array}
+        permissions: {type: array}
+        ui: {type: array}
+        tests: {type: array}
+        docs: {type: array}
+        removals: {type: array}
   - key: tracker_plan
     name: Tracker Plan
     type: object
     required: true
+    description: Dependency-linked implementation, verification, review, and release tickets with evidence expectations.
+    schema:
+      type: object
+      required: [task_ref, tickets, dependencies, evidence_expectations, approval_gates]
+      properties:
+        task_ref: {type: string}
+        tickets: {type: array}
+        dependencies: {type: array}
+        evidence_expectations: {type: object}
+        approval_gates: {type: array}
   - key: design_summary
     name: Design Summary
     type: object
     required: true
+    description: Chosen architecture, alternatives, invariants, interfaces, migration/removal plan, and risk controls.
+    schema:
+      type: object
+      required: [chosen_design, alternatives, invariants, interfaces, migration_or_removal, risk_controls]
+      properties:
+        chosen_design: {type: object}
+        alternatives: {type: array}
+        invariants: {type: array}
+        interfaces: {type: array}
+        migration_or_removal: {type: object}
+        risk_controls: {type: array}
   - key: design_review
     name: Design Review
     type: object
     required: false
+    description: Independent architecture and over-engineering verdict with blockers and repairs.
+    schema:
+      type: object
+      required: [verdict, blockers, repairs, over_engineering_risk, residual_risk]
+      properties:
+        verdict: {type: string, enum: [approve, repair, block]}
+        blockers: {type: array}
+        repairs: {type: array}
+        over_engineering_risk: {type: array}
+        residual_risk: {type: array}
   - key: test_plan
     name: Test Plan
     type: object
     required: true
+    description: Risk-based automated and agent-executed flow scenarios, fixtures, commands, and acceptance evidence.
+    schema:
+      type: object
+      required: [risks, automated_checks, e2e_scenarios, manual_scenarios, fixtures, commands, acceptance_evidence]
+      properties:
+        risks: {type: array}
+        automated_checks: {type: array}
+        e2e_scenarios: {type: array}
+        manual_scenarios: {type: array}
+        fixtures: {type: array}
+        commands: {type: array}
+        acceptance_evidence: {type: object}
   - key: delivery_summary
     name: Delivery Summary
     type: object
     required: true
+    description: Implemented changes, files, decisions, deviations, checks run, and remaining work.
+    schema:
+      type: object
+      required: [changes, file_refs, decisions, deviations, checks, remaining_work]
+      properties:
+        changes: {type: array}
+        file_refs: {type: array, items: {type: string}}
+        decisions: {type: array}
+        deviations: {type: array}
+        checks: {type: array}
+        remaining_work: {type: array}
   - key: verification_summary
     name: Verification Summary
     type: object
     required: true
+    description: Automated and first-hand scenario evidence, failures, repairs, coverage gaps, and validity status.
+    schema:
+      type: object
+      required: [automated_results, scenario_results, failures, repairs, coverage_gaps, validity_status]
+      properties:
+        automated_results: {type: array}
+        scenario_results: {type: array}
+        failures: {type: array}
+        repairs: {type: array}
+        coverage_gaps: {type: array}
+        validity_status: {type: string, enum: [valid, invalid, incomplete]}
   - key: review_summary
     name: Review Summary
     type: object
     required: true
+    description: Independent correctness, security, compatibility-removal, operability, and evidence review.
+    schema:
+      type: object
+      required: [verdict, correctness_findings, security_findings, removal_findings, operability_findings, evidence_findings, required_repairs]
+      properties:
+        verdict: {type: string, enum: [approve, repair, block]}
+        correctness_findings: {type: array}
+        security_findings: {type: array}
+        removal_findings: {type: array}
+        operability_findings: {type: array}
+        evidence_findings: {type: array}
+        required_repairs: {type: array}
   - key: tracker_audit
     name: Tracker Audit
     type: object
     required: false
+    description: Proof that tracker lifecycle, dependencies, evidence, and terminal statuses match the actual delivery.
+    schema:
+      type: object
+      required: [task_ref, ticket_statuses, dependency_check, evidence_check, discrepancies]
+      properties:
+        task_ref: {type: string}
+        ticket_statuses: {type: object}
+        dependency_check: {type: object}
+        evidence_check: {type: object}
+        discrepancies: {type: array}
   - key: release_summary
     name: Release Summary
     type: object
     required: false
+    description: Release decision, changed behavior, verification, deployment state, rollback or recovery, and residual risk.
+    schema:
+      type: object
+      required: [decision, changed_behavior, verification_refs, deployment_state, recovery_plan, residual_risk]
+      properties:
+        decision: {type: string, enum: [released, ready, held, not_applicable]}
+        changed_behavior: {type: array}
+        verification_refs: {type: array, items: {type: string}}
+        deployment_state: {type: object}
+        recovery_plan: {type: object}
+        residual_risk: {type: array}
 learning_hooks:
   - key: engineering_reuse
     prompt: Capture reusable engineering lessons only when the evidence is explicit, project-scoped, and useful for future agent delivery.
@@ -563,6 +761,7 @@ failure_handling:
   - If verification fails, use root-cause debugging before broad reruns or speculative fixes.
   - If flow design, E2E/manual flow proof, or independent closeout verification is missing for non-micro work, return to the earliest affected step instead of closing the delivery.
   - If review finds missing requirements, impact, test, or tracker truth, return to the earliest affected step rather than patching the final report.
+  - If a finding requires material expansion of the agreed outcome, defer it and ask the operator instead of expanding delivery.
 metadata:
   builtin: true
   run_mode: stackos_run_plan
@@ -570,6 +769,7 @@ metadata:
   workflow_family: sdlc
   baseline: requirements_to_release
   workflow_selection_invariant: explicit_workflow_intent_requires_run_plan_before_tracker_tickets
+  feedback_gatekeeper: main_orchestrator
   agent_subset:
     - requirements-flow-definer
     - codebase-explorer

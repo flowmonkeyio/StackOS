@@ -6,6 +6,40 @@ description: Reusable template for reviewing CRM records, identifying hygiene is
 domain: gtm
 owner:
   team: StackOS
+experience:
+  problem: "Incomplete, duplicated, or inconsistent CRM records make reporting and follow-up unreliable, but broad cleanup can damage good data."
+  outcome: "A reviewed hygiene report with narrowly approved corrections and an audit of every changed record."
+  operator_path:
+    - "Choose the CRM scope and hygiene rules."
+    - "Set fields that may be changed automatically and fields that require review."
+    - "Approve the proposed correction set before any provider write."
+  agent_path:
+    - "Inspect the bounded record set and identify issues without mutating it."
+    - "Group duplicates, missing fields, stale values, and policy conflicts with evidence."
+    - "Apply only approved corrections and verify the provider result."
+  progress_signals:
+    - "Scope loaded"
+    - "Issues classified"
+    - "Correction set ready"
+    - "Approval recorded"
+    - "Changes verified"
+  recovery:
+    - "On ambiguous identity or field authority, leave the record unchanged."
+    - "On partial provider failure, reconcile receipts before retrying remaining records."
+  safe_stopping_points:
+    - "Stop with a read-only hygiene report when mutation is not authorized."
+public:
+  audience: "Revenue operations teams maintaining CRM quality"
+  setup: connection-required
+  prerequisites:
+    - "A connected CRM or approved record export"
+    - "A bounded record scope"
+    - "Field ownership, duplicate, and mutation rules"
+  proof:
+    - "Issue inventory"
+    - "Reviewed correction set"
+    - "Per-record provider receipts and verification"
+  featured: false
 when_to_use:
   - CRM records need cleanup, deduping notes, field updates, or task creation.
 when_not_to_use:
@@ -33,6 +67,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -106,6 +144,9 @@ action_contracts:
     risk_level: write
     auth_ref: hubspot
     approval_ref: crm_update_review
+    optional: true
+    route_group: crm_update
+    route_key: hubspot
   - key: hubspot_contacts_batch_upsert
     action: hubspot.crm.contacts.batch_upsert
     capability: crm-operations
@@ -113,6 +154,9 @@ action_contracts:
     risk_level: write
     auth_ref: hubspot
     approval_ref: crm_update_review
+    optional: true
+    route_group: crm_update
+    route_key: hubspot
   - key: hubspot_note_create
     action: hubspot.crm.notes.create
     capability: crm-operations
@@ -120,6 +164,9 @@ action_contracts:
     risk_level: write
     auth_ref: hubspot
     approval_ref: crm_update_review
+    optional: true
+    route_group: crm_update
+    route_key: hubspot
   - key: hubspot_task_create
     action: hubspot.crm.tasks.create
     capability: crm-operations
@@ -127,6 +174,9 @@ action_contracts:
     risk_level: write
     auth_ref: hubspot
     approval_ref: crm_update_review
+    optional: true
+    route_group: crm_update
+    route_key: hubspot
   - key: salesforce_account_upsert_by_external_id
     action: salesforce.account.upsert_by_external_id
     capability: crm-operations
@@ -134,6 +184,9 @@ action_contracts:
     risk_level: write
     auth_ref: salesforce
     approval_ref: crm_update_review
+    optional: true
+    route_group: crm_update
+    route_key: salesforce
   - key: salesforce_contact_upsert_by_external_id
     action: salesforce.contact.upsert_by_external_id
     capability: crm-operations
@@ -141,6 +194,9 @@ action_contracts:
     risk_level: write
     auth_ref: salesforce
     approval_ref: crm_update_review
+    optional: true
+    route_group: crm_update
+    route_key: salesforce
   - key: salesforce_task_create
     action: salesforce.task.create
     capability: crm-operations
@@ -148,6 +204,9 @@ action_contracts:
     risk_level: write
     auth_ref: salesforce
     approval_ref: crm_update_review
+    optional: true
+    route_group: crm_update
+    route_key: salesforce
 resource_contracts:
   - key: accounts
     resource: account
@@ -226,9 +285,33 @@ outputs:
     name: Hygiene Plan
     type: object
     required: true
+    description: CRM scope, selected provider route, field rules, duplicate policy, and write boundary.
+    schema:
+      type: object
+      required: [scope, selected_route, field_rules, duplicate_policy, write_mode, approval_required]
+      properties:
+        scope: {type: object}
+        selected_route: {type: string}
+        field_rules: {type: array}
+        duplicate_policy: {type: object}
+        write_mode: {type: string, enum: [review_only, dry_run, apply]}
+        approval_required: {type: boolean}
   - key: hygiene_summary
     name: Hygiene Summary
     type: object
+    required: true
+    description: Reviewed records, proposed or applied changes, conflicts, skips, errors, and provider receipts.
+    schema:
+      type: object
+      required: [records_reviewed, changes, conflicts, skipped, errors, write_status, receipt_refs]
+      properties:
+        records_reviewed: {type: integer, minimum: 0}
+        changes: {type: array}
+        conflicts: {type: array}
+        skipped: {type: array}
+        errors: {type: array}
+        write_status: {type: string, enum: [not_requested, prepared, applied, partial, blocked, failed]}
+        receipt_refs: {type: array, items: {type: string}}
 learning_hooks:
   - key: crm_hygiene_learning
     prompt: Capture reusable CRM hygiene lessons only with explicit field evidence and provenance.

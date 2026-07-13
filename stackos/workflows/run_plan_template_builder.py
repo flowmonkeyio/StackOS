@@ -190,6 +190,7 @@ def build_run_plan_from_template(
         template_plugin_slug=template_plugin_slug,
     )
     resource_contract_map = {item.key: item.resource for item in spec.resource_contracts}
+    output_contract_map = {item.key: item for item in spec.outputs}
     for index, step in enumerate(spec.steps):
         override = step_overrides.get(step.id) if isinstance(step_overrides, dict) else None
         override = override if isinstance(override, dict) else {}
@@ -217,6 +218,15 @@ def build_run_plan_from_template(
                 step_metadata = _deep_merge(step_metadata, override["metadata"])
             if isinstance(override.get("metadata_json"), dict):
                 step_metadata = _deep_merge(step_metadata, override["metadata_json"])
+        expected_outputs = {
+            output_ref: output_contract_map[output_ref].model_dump(
+                mode="json",
+                exclude_none=True,
+                by_alias=True,
+            )
+            for output_ref in step.output_refs
+            if output_ref in output_contract_map
+        }
         steps.append(
             step_spec_type(
                 id=step.id,
@@ -233,6 +243,7 @@ def build_run_plan_from_template(
                 output_refs=step.output_refs,
                 instructions=[*prepend_instructions, *step.instructions, *append_instructions],
                 success_criteria=[*step.success_criteria, *append_success],
+                expected_outputs_json=expected_outputs or None,
                 metadata_json=step_metadata,
             )
         )

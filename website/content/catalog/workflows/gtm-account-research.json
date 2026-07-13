@@ -2,14 +2,58 @@
   "key": "gtm.account-research",
   "slug": "gtm-account-research",
   "name": "GTM Account Research",
-  "description": "Build a useful account brief from your saved context and current research.",
+  "description": "A source-linked account brief focused on fit, timing, risks, and the next useful action.",
   "domain": "gtm",
-  "audience": "Sales and go-to-market teams",
+  "audience": "Sales and go-to-market teams researching target accounts",
   "color": "#ff9f73",
   "featured": false,
+  "problem": "Account research often becomes a generic company summary that does not help someone make a real go-to-market decision.",
+  "outcome": "A source-linked account brief focused on fit, timing, risks, and the next useful action.",
+  "whyAi": "AI can combine stored account context with bounded current research while preserving source and confidence distinctions.",
+  "operatorPath": [
+    "Name the account, offer, audience, and decision the brief should support.",
+    "Choose approved internal and web sources.",
+    "Review uncertain findings before they become outreach claims."
+  ],
+  "agentPath": [
+    "Load existing account and project context before external research.",
+    "Research only the missing decision-relevant facts and retain source refs.",
+    "Separate observations, inferences, gaps, and recommended next actions."
+  ],
+  "progressSignals": [
+    "Decision scoped",
+    "Existing context reviewed",
+    "Research gaps filled",
+    "Account brief ready"
+  ],
+  "recovery": [
+    "If entity identity is ambiguous, stop before merging sources.",
+    "If live research is unavailable, return a useful stored-context brief with explicit gaps."
+  ],
+  "safeStoppingPoints": [
+    "Stop after the research brief; outreach requires a separate workflow and approval."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "gtm.outbound-sequence-preparation",
+      "relationship": "conditional",
+      "when": "The account is qualified and approved for outreach."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "A named account and decision to support",
+    "Offer and fit criteria",
+    "Approved internal and external research sources"
+  ],
+  "proof": [
+    "Source-linked findings",
+    "Fit and risk assessment",
+    "Open questions and recommended next action"
+  ],
   "whenToUse": [
-    "Use this when you want to build a useful account brief from your saved context and current research.",
-    "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+    "A project needs account or company research before enrichment, outbound, CRM updates, or pipeline review.",
+    "The agent should reuse prior account context and learnings before collecting more evidence."
   ],
   "stages": [
     {

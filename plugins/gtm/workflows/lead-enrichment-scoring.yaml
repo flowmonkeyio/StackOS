@@ -6,6 +6,43 @@ description: Reusable template for enriching and scoring leads from bounded reco
 domain: gtm
 owner:
   team: StackOS
+experience:
+  problem: "Lead scoring becomes untrustworthy when enrichment sources, missing values, and scoring assumptions are hidden."
+  outcome: "A source-linked enrichment and scoring result with confidence, disqualification reasons, and no silent field invention."
+  operator_path:
+    - "Provide the lead set, ideal-customer criteria, and scoring policy."
+    - "Choose approved enrichment sources and how missing data should be treated."
+    - "Review threshold or policy changes before they affect routing."
+  agent_path:
+    - "Validate lead identity and existing fields before enrichment."
+    - "Use approved sources, preserve provenance, and distinguish missing from negative evidence."
+    - "Apply the explicit scoring policy and store reasons, confidence, and follow-up."
+  progress_signals:
+    - "Lead scope validated"
+    - "Enrichment complete"
+    - "Scores explained"
+    - "Exceptions ready for review"
+  recovery:
+    - "Do not merge ambiguous people or companies."
+    - "If a provider is unavailable, score only where the policy permits missing data and flag the rest."
+  safe_stopping_points:
+    - "Stop with enriched records and proposed scores when routing was not authorized."
+  handoffs:
+    - workflow_key: gtm.outbound-sequence-preparation
+      relationship: conditional
+      when: "Leads meet the reviewed qualification threshold and outreach is approved."
+public:
+  audience: "Growth and sales teams enriching and prioritizing leads"
+  setup: mixed
+  prerequisites:
+    - "A bounded lead set"
+    - "Ideal-customer and scoring criteria"
+    - "Approved sources and missing-data policy"
+  proof:
+    - "Field-level source provenance"
+    - "Score reasons and confidence"
+    - "Disqualification and exception report"
+  featured: false
 when_to_use:
   - A lead or account list needs enrichment, qualification, or scoring before CRM or outbound work.
 when_not_to_use:
@@ -32,6 +69,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -115,6 +156,8 @@ action_contracts:
     provider: apollo
     risk_level: cost
     auth_ref: apollo
+    route_group: enrichment_provider
+    route_key: apollo
     approval_ref: cost_review
   - key: apollo_people_bulk_enrich
     action: apollo.people.bulk_enrich
@@ -122,6 +165,8 @@ action_contracts:
     provider: apollo
     risk_level: cost
     auth_ref: apollo
+    route_group: enrichment_provider
+    route_key: apollo
     approval_ref: cost_review
   - key: apollo_organization_enrich
     action: apollo.organization.enrich
@@ -129,6 +174,8 @@ action_contracts:
     provider: apollo
     risk_level: cost
     auth_ref: apollo
+    route_group: enrichment_provider
+    route_key: apollo
     approval_ref: cost_review
   - key: apollo_organization_bulk_enrich
     action: apollo.organization.bulk_enrich
@@ -136,6 +183,8 @@ action_contracts:
     provider: apollo
     risk_level: cost
     auth_ref: apollo
+    route_group: enrichment_provider
+    route_key: apollo
     approval_ref: cost_review
   - key: clay_table_webhook_submit
     action: clay.table.webhook.submit
@@ -143,6 +192,8 @@ action_contracts:
     provider: clay
     risk_level: cost
     auth_ref: clay
+    route_group: enrichment_provider
+    route_key: clay
     approval_ref: cost_review
   - key: clay_workflow_result_ingest
     action: clay.workflow.result.ingest
@@ -150,6 +201,8 @@ action_contracts:
     provider: clay
     risk_level: write
     auth_ref: clay
+    route_group: enrichment_provider
+    route_key: clay
     approval_ref: cost_review
   - key: clearbit_by_hubspot_enrichment
     action: clearbit-by-hubspot.enrichment.run
@@ -157,11 +210,15 @@ action_contracts:
     provider: clearbit-by-hubspot
     risk_level: cost
     auth_ref: clearbit_by_hubspot
+    route_group: enrichment_provider
+    route_key: clearbit_by_hubspot
     approval_ref: cost_review
   - key: custom_gtm_enrichment
     action: custom_gtm.enrichment.run
     capability: enrichment
     provider: custom-gtm-tool
+    route_group: enrichment_provider
+    route_key: custom_gtm_tool
     risk_level: cost
     approval_ref: cost_review
 resource_contracts:
@@ -240,13 +297,57 @@ outputs:
   - key: enrichment_plan
     name: Enrichment Plan
     type: object
+    required: true
+    description: Lead scope, selected enrichment route, allowed fields, scoring model, and cost/write boundary.
+    schema:
+      type: object
+      required: [lead_scope, selected_route, allowed_fields, scoring_model, cost_boundary, write_mode]
+      properties:
+        lead_scope: {type: object}
+        selected_route: {type: string}
+        allowed_fields: {type: array}
+        scoring_model: {type: object}
+        cost_boundary: {type: object}
+        write_mode: {type: string, enum: [review_only, prepare, apply]}
   - key: enrichment_summary
     name: Enrichment Summary
     type: object
+    required: true
+    description: Coverage, source confidence, unresolved fields, provider usage, and errors.
+    schema:
+      type: object
+      required: [leads_reviewed, leads_enriched, coverage, unresolved_fields, conflicts, receipt_refs]
+      properties:
+        leads_reviewed: {type: integer, minimum: 0}
+        leads_enriched: {type: integer, minimum: 0}
+        coverage: {type: object}
+        unresolved_fields: {type: array}
+        conflicts: {type: array}
+        receipt_refs: {type: array, items: {type: string}}
   - key: scored_leads
     name: Scored Leads
     type: object
     required: true
+    description: Scored lead set with explainable components, confidence, evidence, and recommended action.
+    schema:
+      type: object
+      required: [scoring_model, leads, distribution, excluded_leads]
+      properties:
+        scoring_model: {type: object}
+        leads:
+          type: array
+          items:
+            type: object
+            required: [lead_ref, score, confidence, components, evidence_refs, recommended_action]
+            properties:
+              lead_ref: {type: string}
+              score: {type: number}
+              confidence: {type: string, enum: [low, medium, high]}
+              components: {type: object}
+              evidence_refs: {type: array, items: {type: string}}
+              recommended_action: {type: string}
+        distribution: {type: object}
+        excluded_leads: {type: array}
 learning_hooks:
   - key: lead_quality_learning
     prompt: Capture reusable lead quality lessons only with evidence and provenance.

@@ -6,6 +6,39 @@ description: Reusable setup for reviewing bounded mailbox messages and turning s
 domain: communications
 owner:
   team: StackOS
+experience:
+  problem: "A busy mailbox mixes routine messages, sensitive content, and work requests that need different treatment."
+  outcome: "A bounded inbox review with selected messages summarized, classified, and turned into explicit follow-up only when authorized."
+  operator_path:
+    - "Choose the mailbox, time window, and review rules."
+    - "Define which messages may create work, be marked, or receive a response."
+    - "Review the shortlist and approve any external follow-up."
+  agent_path:
+    - "Fetch only the bounded message set and preserve mailbox privacy rules."
+    - "Summarize and classify with uncertainty visible."
+    - "Prepare or create approved follow-up work and leave unrelated messages untouched."
+  progress_signals:
+    - "Mailbox scope confirmed"
+    - "Messages reviewed"
+    - "Action shortlist prepared"
+    - "Approved follow-up recorded"
+  recovery:
+    - "If mailbox access or UID state is stale, stop and refresh instead of guessing message identity."
+    - "If classification is uncertain, leave the message unchanged and flag it for review."
+  safe_stopping_points:
+    - "Stop with a read-only shortlist when message mutation or response was not authorized."
+public:
+  audience: "Operations and support teams reviewing shared inboxes"
+  setup: connection-required
+  prerequisites:
+    - "A connected mailbox profile"
+    - "A bounded mailbox and time or UID scope"
+    - "Rules for privacy, marking, replies, and work creation"
+  proof:
+    - "Reviewed message refs"
+    - "Action shortlist with reasons"
+    - "Mutation or follow-up receipts only where approved"
+  featured: false
 when_to_use:
   - A project needs an agent to inspect recent email messages and decide which ones need action.
   - The agent should reuse existing communication-message resources and prior request history before fetching more.
@@ -36,6 +69,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -107,6 +144,7 @@ action_contracts:
     risk_level: write
     auth_ref: imap
     approval_ref: mailbox_status_review
+    optional: true
 policies:
   - key: no_secret_exposure
     kind: auth
@@ -170,16 +208,58 @@ outputs:
   - key: review_plan
     name: Review Plan
     type: object
+    required: true
+    description: Bounded mailbox query and decision rules for selecting messages that need work.
+    schema:
+      type: object
+      required: [mailbox_ref, criteria, limit, selection_rules, status_update_policy]
+      properties:
+        mailbox_ref: {type: string}
+        criteria: {type: object}
+        limit: {type: integer, minimum: 1}
+        selection_rules: {type: array}
+        status_update_policy: {type: object}
   - key: candidate_uids
     name: Candidate UIDs
     type: array
+    required: true
+    description: Bounded unique message identifiers selected for fetching.
+    schema:
+      type: array
+      uniqueItems: true
+      items: {type: [integer, string]}
   - key: fetched_messages
     name: Fetched Messages
     type: array
+    required: true
+    description: Safe projected message fields used to decide whether follow-up work exists.
+    schema:
+      type: array
+      items:
+        type: object
+        required: [uid, from, subject, received_at, body_preview]
+        properties:
+          uid: {type: [integer, string]}
+          from: {type: string}
+          subject: {type: string}
+          received_at: {type: string}
+          body_preview: {type: string}
+          attachment_refs: {type: array, items: {type: string}}
   - key: created_requests
     name: Created Requests
     type: array
     required: true
+    description: Agent-request refs created or intentionally prepared from selected messages.
+    schema:
+      type: array
+      items:
+        type: object
+        required: [message_uid, status, rationale]
+        properties:
+          message_uid: {type: [integer, string]}
+          status: {type: string, enum: [created, prepared, skipped, blocked]}
+          request_ref: {type: string}
+          rationale: {type: string}
 metadata:
   builtin: true
   run_mode: stackos_run_plan

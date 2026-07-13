@@ -1,11 +1,54 @@
 schema_version: stackos.workflow-template.v1
 key: branding.content-production
 name: Branding Content Production
-version: 0.1.0
+version: 0.4.0
 description: End-to-end journalist-led branding workflow that turns a topic, evidence, research, or current work into a voice-consistent canonical piece, optional generated image set, executable channel publication jobs, automated publishing, and durable content memory.
 domain: branding
 owner:
   team: StackOS
+experience:
+  problem: "Useful operating experience often gets flattened into generic content or a disguised product pitch."
+  outcome: "A reviewed, evidence-backed piece in the project voice, with channel versions and publication governed by the request's explicit execution intent."
+  why_ai: "AI can connect interviews, project evidence, prior positions, drafting, independent review, and bounded execution while keeping the operator's judgment visible."
+  operator_path:
+    - "Name the topic, audience, useful lesson, and how prominently the product should appear."
+    - "Share source boundaries or answer a short interview when the missing experience matters."
+    - "Set packet-only, stage, or publish intent and name the target channels when execution is wanted."
+    - "Answer a focused question only when missing context would materially change the piece or destination."
+  agent_path:
+    - "Load the brand foundation, prior positions, cleared sources, and channel rules."
+    - "Decide whether the optional interview is required, useful, or unnecessary; record why when it is skipped."
+    - "Research and draft from traceable evidence, then run claim, voice, and sanitization review."
+    - "Finalize the packet, then stop, stage, or publish according to publication_intent without adding another human checkpoint."
+  progress_signals:
+    - "Prerequisites checked"
+    - "Evidence and interview scope set"
+    - "Angle selected"
+    - "Draft under independent review"
+    - "Packet finalized and recorded"
+    - "Publication status recorded"
+  recovery:
+    - "If the voice or source boundary is missing, pause for brand-foundation setup."
+    - "If evidence conflicts, expose the conflict and ask one bounded decision question."
+    - "If publication fails, preserve the final packet and record the channel-specific blocker."
+  safe_stopping_points:
+    - "Stop after a review-ready content packet when publication_intent is packet_only."
+    - "After the intent-specific terminal condition is met, return closeout without creating unrelated follow-up work or changing another workflow."
+public:
+  audience: "Builders, founders, and content teams sharing real operating experience"
+  setup: project-adapter-required
+  prerequisites:
+    - "An active brand voice profile or representative writing samples"
+    - "A topic, audience, useful lesson, and product-mention boundary"
+    - "Approved source and disclosure boundaries"
+    - "Channel targets only when publication is in scope"
+  proof:
+    - "Claims-to-evidence map"
+    - "Independent claim, voice, and sanitization verdicts"
+    - "Durable final content-piece ref"
+    - "Explicit packet-only, stage, or publish intent"
+    - "Publication receipts only for selected channels"
+  featured: true
 when_to_use:
   - A solo operator wants one workflow to interview them, research the facts, pull supporting artifacts, shape the idea, draft, review, generate optional images, and publish or stage selected channels.
   - The user says they want to generate content on a topic, with evidence or source material, using the branding workflow.
@@ -17,12 +60,14 @@ when_not_to_use:
   - The operator wants broad brand governance rather than one concrete content deliverable.
 agent_requirements:
   - role: evidence-curator
-    requirement: required
+    requirement: recommended
     agent_preset_ref: branding.evidence-curator
-    purpose: Interview the operator journalist-style, research the facts, pull supporting artifacts, and capture factual receipts without embellishment.
+    purpose: Handle interviews, broad research, or source-lineage work when the evidence scope is too large or ambiguous for the orchestrator's bounded pass.
     applies_to_steps:
       - interview-capture
       - research-fact-collection
+    handoff_notes:
+      - Invoke for a material interview, multi-source research, conflicting evidence, or a large corpus; skip the specialist when existing cleared evidence makes the task mechanical and bounded.
   - role: channel-strategist
     requirement: required
     agent_preset_ref: branding.channel-strategist
@@ -58,7 +103,7 @@ agent_requirements:
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: recommended
-    purpose: Keep evidence, content-piece state, artifacts, optional image actions, decisions, and approvals canonical in StackOS.
+    purpose: Keep evidence, content-piece state, artifacts, optional image actions, decisions, and execution intent canonical in StackOS.
 skill_preset_requirements:
   - skill_preset_ref: branding.brand-orchestrator
     requirement: required
@@ -72,37 +117,66 @@ skill_preset_requirements:
       - sanitization-review
       - produce-optional-images
       - render-channel-packets
-      - approve-and-record
+      - finalize-and-record
       - execute-publication
     setup_notes:
       - Resolve the Level 2 project overlay from workflowExtension.selected_context_json or configured project branding resources before execution.
-      - If sources of record, voice profile, disclosure policy, channel charters, canonical site target, or approval rules are absent, stop for project setup instead of inventing them.
+      - If sources of record, voice profile, disclosure policy, channel charters, canonical site target, or routing policy are absent, stop for project setup instead of inventing them.
 inputs:
   - key: operator_intent
     name: Operator Intent
     type: string
-    required: false
+    required: true
     description: What the operator thinks might be worth turning into content.
+    schema: {type: string, minLength: 1}
+  - key: interview_mode
+    name: Interview Mode
+    type: string
+    required: false
+    default: auto
+    options_json: [auto, required, skip]
+    description: Auto lets the agent interview only when first-hand experience or missing judgment would materially improve the piece; required always interviews; skip requires a recorded reason and sufficient cleared evidence.
+    schema: {type: string, enum: [auto, required, skip]}
   - key: source_scope
     name: Source Scope
     type: object
     required: false
     description: Optional local artifacts, commits, tickets, docs, metrics, screenshots, or prior work to inspect.
+    schema:
+      type: object
+      properties:
+        refs: {type: array, items: {type: string}}
+        allowed_source_types: {type: array, items: {type: string}}
+        excluded_topics: {type: array, items: {type: string}}
   - key: target_channels
     name: Target Channels
     type: array
     required: false
     description: Optional requested surfaces such as website, X, LinkedIn, or email.
+    schema:
+      type: array
+      items: {type: string, minLength: 1}
+      uniqueItems: true
+  - key: publication_intent
+    name: Publication Intent
+    type: string
+    required: false
+    default: packet_only
+    options_json: [packet_only, stage, publish]
+    description: The execution boundary for this run. packet_only performs no external publication write; stage or publish applies only to the named target channels and destinations.
+    schema: {type: string, enum: [packet_only, stage, publish], default: packet_only}
   - key: branding_overlay_ref
     name: Branding Overlay Ref
     type: string
     required: false
     description: Optional safe project overlay ref supplied by workflowExtension.selected_context_json or operator setup.
+    schema: {type: string, minLength: 1}
   - key: image_intent
     name: Image Intent
     type: string
     required: false
     description: Optional operator guidance for generated images, including desired website slots, counts, or no-image preference.
+    schema: {type: string}
 context_requirements:
   - id: brand_profiles
     source: resources
@@ -184,7 +258,7 @@ capability_requirements:
       - openai-images
   - key: content-distribution
     required: true
-    description: Publish or stage approved channel outputs through the selected API, browser, admin UI, or script path.
+    description: Publish or stage selected channel outputs through the selected API, browser, admin UI, or script path.
 auth_requirements:
   - key: openai_images
     provider: openai-images
@@ -219,7 +293,6 @@ action_contracts:
     optional: true
     risk_level: cost
     auth_ref: openai_images
-    approval_ref: image_generation_approval
   - key: publish_git_blog
     action: publish.git-blog
     capability: content-distribution
@@ -227,7 +300,6 @@ action_contracts:
     optional: true
     risk_level: write
     auth_ref: git_remote
-    approval_ref: content_packet_approval
   - key: publish_x
     action: publish.x
     capability: content-distribution
@@ -235,7 +307,6 @@ action_contracts:
     optional: true
     risk_level: write
     auth_ref: x_api
-    approval_ref: content_packet_approval
   - key: publish_linkedin
     action: publish.linkedin
     capability: content-distribution
@@ -243,7 +314,6 @@ action_contracts:
     optional: true
     risk_level: write
     auth_ref: linkedin_api
-    approval_ref: content_packet_approval
   - key: publish_email
     action: publish.email
     capability: content-distribution
@@ -251,7 +321,6 @@ action_contracts:
     optional: true
     risk_level: write
     auth_ref: esp
-    approval_ref: content_packet_approval
 resource_contracts:
   - key: brand_profile
     resource: brand-profile
@@ -278,9 +347,9 @@ resource_contracts:
     purpose: Publication attempt/result records for each channel execution path.
     required: true
 policies:
-  - key: journalist_interview_first
+  - key: interview_when_needed
     kind: evidence
-    description: The agent must interview the operator for why, surprise, tradeoffs, and stakes before reducing work to content.
+    description: The agent decides whether an interview is required, useful, or unnecessary from the topic, cleared evidence, and requested voice. Required mode interviews; skip mode records why existing evidence is sufficient.
   - key: evidence_over_assertion
     kind: evidence
     description: Every public factual claim maps to interview evidence or supporting artifacts, or it is cut.
@@ -292,32 +361,35 @@ policies:
     description: A draft that contradicts prior positions must ask whether the stance changed instead of silently writing around it.
   - key: image_generation_selected_only
     kind: media
-    description: Images are optional. Operator-supplied media can satisfy the image plan without provider-generation approval; provider-generated media requires the image generation action approval before spend.
+    description: Images are optional. Generate only when the image plan selects generation, the asset adds content value, required placement and acceptance details exist, and the configured budget allows it; supplied media can satisfy the plan.
+  - key: publication_by_explicit_intent
+    kind: authority
+    description: publication_intent is the execution authority for the run. packet_only performs no external publication write; stage or publish applies only to named target channels and destinations. Ask only when a missing or ambiguous destination would materially change the action.
   - key: publication_automation_first
     kind: publication
-    description: "Approved outputs should be published or staged through the best available channel mode: API integration, browser-assisted platform UI, site/admin UI, or local script. Operator-confirmed manual publication is valid when the operator explicitly posts after reviewing copy/media; copy-paste handoff is otherwise a fallback only when automation is unavailable or explicitly waived."
+    description: "Selected outputs should be published or staged through the best available channel mode: API integration, browser-assisted platform UI, site/admin UI, or local script. Operator-confirmed manual publication is valid when the operator explicitly posts the copy/media; copy-paste handoff is otherwise a fallback only when automation is unavailable or explicitly waived."
   - key: durable_resource_memory
     kind: memory
-    description: Approved work must be discoverable later through StackOS resources; artifacts hold blobs, but content-piece stores the queryable index and refs.
-approval_gates:
-  - key: image_generation_approval
-    description: Operator approves generation spend and image plan when generated website or channel images are selected.
-    required_when: when image_plan selects generated assets
-    approver: operator
-  - key: content_packet_approval
-    description: Operator approves the final canonical draft, image set when present, channel publication jobs, automation plan, and memory update together before any external publication.
-    required_when: always
-    approver: operator
+    description: Final work must be discoverable later through StackOS resources; artifacts hold blobs, but content-piece stores the queryable index and refs.
+  - key: orchestrator_gates_feedback
+    kind: quality
+    description: Review findings are advisory claims. The orchestrator classifies each as blocker, repair, preference, or out-of-scope/unsupported and changes the deliverable only for evidence-backed blockers and repairs.
+  - key: intent_scoped_terminal_condition
+    kind: boundary
+    description: packet_only completes after the final content-piece and reviewed packet are retrieval-ready with publication skipped; stage or publish completes after only the named jobs are attempted and their distribution state is recorded. Closeout does not authorize unrelated follow-up work.
 steps:
   - id: interview-capture
     title: Interview Capture
-    purpose: Ask journalist-style questions and capture facts, surprises, tradeoffs, hypotheses, and open research questions.
+    purpose: Decide whether first-hand operator context is needed, then ask only the useful journalist-style questions or record why the interview can be skipped.
     instructions:
       - Load the Level 2 overlay or stop for setup when project-specific voice, sources, disclosure policy, or channel rules are missing.
-      - Ask bounded journalist-style follow-up questions before treating the operator's first statement as publishable evidence.
+      - Respect interview_mode. In auto mode, require an interview when experience, judgment, surprise, stakes, or tradeoffs are central and not already captured in cleared evidence.
+      - When interviewing, ask bounded journalist-style follow-up questions before treating the operator's first statement as publishable evidence.
+      - When skipping, record the reason, evidence used instead, and any perspective the piece cannot claim.
       - Preserve receipts that may matter later as evidence-item refs or named content-piece memory-plan entries.
     input_refs:
       - operator_intent
+      - interview_mode
       - source_scope
     context_refs:
       - brand_profiles
@@ -327,20 +399,22 @@ steps:
       - evidence_items
       - content_piece
     policy_refs:
-      - journalist_interview_first
+      - interview_when_needed
       - evidence_over_assertion
       - durable_resource_memory
     output_refs:
+      - interview_decision
       - interview_pack
     success_criteria:
+      - The interview decision is required, useful, or skip with a reason and evidence basis.
       - The pack separates observed facts, operator interpretation, open questions, and supporting artifact refs.
       - Missing facts and research questions are named before angle selection.
       - Interview receipts that may matter later are captured as evidence-items or named in the future content-piece memory plan.
   - id: research-fact-collection
     title: Research And Fact Collection
-    purpose: Use the interview pack to collect, verify, and organize supporting facts from the right sources before angle selection.
+    purpose: Use the operator intent, interview decision, any interview pack, and cleared sources to collect and organize facts before angle selection.
     instructions:
-      - Use only project-approved sources from the overlay, supplied artifacts, local context, or explicit operator direction.
+      - Use only project-designated sources from the overlay, supplied artifacts, local context, or explicit operator direction.
       - Classify facts, inferences, conflicts, and unsupported claims separately.
       - Store durable evidence-items for facts that may support public claims.
     depends_on:
@@ -431,6 +505,7 @@ steps:
     instructions:
       - Review factual support, prior-position consistency, voice fit, and channel form as separate findings.
       - Cut unsupported claims or return them as explicit questions.
+      - Classify every finding as blocker, repair, preference, or out-of-scope/unsupported and cite its evidence, profile, position, or channel-contract basis.
       - Attach review refs to the content-piece review log.
     depends_on:
       - draft-canonical
@@ -450,6 +525,7 @@ steps:
       - evidence_over_assertion
       - position_consistency
       - durable_resource_memory
+      - orchestrator_gates_feedback
     output_refs:
       - editorial_review_report
     success_criteria:
@@ -485,7 +561,7 @@ steps:
     purpose: Resolve the selected image set, generating assets only when the image plan requires provider-generated website or channel media.
     instructions:
       - Skip generation when no-image or operator-supplied media satisfies the plan.
-      - Before provider spend, require placement, prompt, aspect ratio, acceptance criteria, and image-generation approval.
+      - Before provider spend, require placement, prompt, aspect ratio, acceptance criteria, and a within-budget check.
       - Index generated or selected image artifacts in the content-piece image refs.
     depends_on:
       - sanitization-review
@@ -500,8 +576,8 @@ steps:
       - generated_image_artifacts
     success_criteria:
       - If no generated images are selected, the workflow records the no-image rationale and marks the step skipped or complete without provider spend.
-      - If operator-supplied images satisfy the plan, record supplied media refs, placement, rights/usage notes, and operator ownership without requiring image_generation_approval.
-      - If generated images are selected, action.execute for image_generate requires image_generation_approval before provider spend, and every durable artifact maps to a placement, aspect ratio, prompt, acceptance criteria, and approval.
+      - If operator-supplied images satisfy the plan, record supplied media refs, placement, rights/usage notes, and operator ownership without provider spend.
+      - If generated images are selected and the configured budget permits them, every durable artifact maps to a placement, aspect ratio, prompt, and acceptance criteria.
       - Website image needs can include multiple slots, such as hero, inline explainer, diagram, or social preview.
       - Generated or selected image artifacts are indexed in content-piece image_refs with placement and reuse context.
   - id: render-channel-packets
@@ -513,6 +589,9 @@ steps:
       - Write channel packet refs and publication job metadata back to the content-piece.
     depends_on:
       - produce-optional-images
+    input_refs:
+      - target_channels
+      - publication_intent
     context_refs:
       - channel_charters
       - brand_profiles
@@ -520,6 +599,7 @@ steps:
       - content_piece
       - channels
     policy_refs:
+      - publication_by_explicit_intent
       - publication_automation_first
       - image_generation_selected_only
       - durable_resource_memory
@@ -534,17 +614,17 @@ steps:
       - Channel packet artifact refs are written to content-piece renditions so future agents can find prior work by channel.
       - The publication bundle artifact includes one clearly labeled section per selected channel with exact copy blocks, destination hints, image attachment refs, filenames, alt text, and execution notes already formatted for the selected publishing path.
       - Each publication job names the selected mode, such as API, browser automation, site/admin UI, local script, or fallback handoff, plus the action ref, browser/admin target, script command ref, or blocker required to execute it.
-  - id: approve-and-record
-    title: Approve And Record
-    purpose: Approve the canonical draft, channel publication jobs, publication bundle, optional image refs, follow-up hooks, and memory updates together before external publication.
+  - id: finalize-and-record
+    title: Finalize Content And Record
+    purpose: Finalize the reviewed canonical packet and durable memory, then prepare only the publication jobs permitted by publication_intent.
     instructions:
-      - Ask for one content packet approval covering canonical draft, image refs, channel jobs, automation plan, and memory updates.
+      - Adjudicate editorial feedback against the evidence and accepted angle. Resolve supported blockers and repairs; record but do not implement preferences, out-of-scope requests, or unsupported findings.
+      - Resolve sanitization blockers; ask only when missing operator context would materially change the content or disclosure boundary.
+      - Treat the current request, publication_intent, target channels, supplied evidence, and recorded operator decisions as the run's authority without another human checkpoint.
       - Upsert the content-piece memory index before any external publication.
       - Record explicit decisions when positions or brand-profile rules change.
     depends_on:
       - render-channel-packets
-    approval_refs:
-      - content_packet_approval
     resource_refs:
       - brand_profile
       - content_piece
@@ -553,27 +633,36 @@ steps:
     policy_refs:
       - durable_resource_memory
       - position_consistency
+      - orchestrator_gates_feedback
+      - intent_scoped_terminal_condition
     output_refs:
-      - approved_content_piece_ref
+      - content_piece_ref
       - content_memory_index
       - publication_jobs
       - publication_bundle_ref
       - memory_update_refs
     success_criteria:
       - Content-piece state stores memory summary, topic tags, position refs, canonical draft ref, evidence map, review log, channel packet refs, publication bundle ref, publication jobs, optional image refs, and follow-up hooks.
-      - Every selected channel has an approved publication job with publication mode, packet artifact ref, copy artifact ref, image refs when needed, destination hint, execution target, and fallback bundle ref.
+      - Every selected channel has a proposed publication job with publication mode, packet artifact ref, copy artifact ref, image refs when needed, destination hint, execution target, and fallback bundle ref.
       - New or changed positions are recorded explicitly for future consistency checks, with decision refs when a stance changes.
-      - Voice rules or kill tests are updated in brand-profile only with explicit operator approval; otherwise voice learnings stay in the content-piece review log.
-      - No approved work exists only in chat, local files, or artifacts without a resource ref.
+      - Voice rules or kill tests are updated in brand-profile only when the current operator intent explicitly includes a foundation change; otherwise voice learnings stay in the content-piece review log.
+      - No final work exists only in chat, local files, or artifacts without a resource ref.
+      - A packet_only run is terminal once the reviewed packet and content-piece ref are retrieval-ready; no next workflow or unrelated task is created.
   - id: execute-publication
     title: Execute Publication
-    purpose: Publish or stage every approved channel through its selected automation path, then record distribution results.
+    purpose: Publish or stage only the jobs selected by publication_intent and target_channels, then record distribution results.
     instructions:
-      - Execute each approved publication job through its selected API, browser, admin UI, script, or operator-confirmed manual path.
+      - If publication_intent is packet_only or no external publication job was selected, record the step skipped with the final content packet refs and perform no external action.
+      - For stage or publish, execute only jobs for the named target channels and destinations; never infer an additional destination or broaden the requested scope.
+      - If a selected job lacks a destination or schedule choice that materially changes the action, ask one bounded question instead of guessing.
+      - Execute each selected publication job through its selected API, browser, admin UI, script, or operator-confirmed manual path.
       - Record provider, browser, script, URL, schedule, blocked, failed, or manual confirmation evidence per channel.
       - Upsert distribution-record resources and close out with exact refs and residual blockers.
     depends_on:
-      - approve-and-record
+      - finalize-and-record
+    input_refs:
+      - publication_intent
+      - target_channels
     action_refs:
       - publish_git_blog
       - publish_x
@@ -583,71 +672,269 @@ steps:
       - content_piece
       - channels
     policy_refs:
+      - publication_by_explicit_intent
       - publication_automation_first
       - durable_resource_memory
       - position_consistency
+      - intent_scoped_terminal_condition
     output_refs:
       - publication_results
       - distribution_record_refs
       - publication_bundle_ref
     success_criteria:
+      - A packet_only run stops with the final packet and a skipped publication result.
+      - Every attempted external action maps to the explicit publication intent, one named target channel, and one destination.
       - API-capable channels execute through StackOS action.execute with provider responses recorded in distribution-records.
-      - Browser or admin UI channels are operated by the agent in the platform UI using the approved publication bundle and StackOS browser tools; login, MFA, or session setup is the only expected human participation.
+      - Browser or admin UI channels are operated by the agent in the platform UI using the final publication bundle and StackOS browser tools; login, MFA, or session setup is the only expected human participation.
       - Browser publication may use runtime status, profile/session management, public page/context calls, arbitrary script run/injection, snapshots, screenshots, and page refs as needed for the platform UI.
-      - Script channels run the approved project publishing script or local admin command and record commit, deployment, URL, or provider result refs.
-      - If the operator manually publishes after reviewing the final copy and uploading media, record operator-confirmed manual publication with channel, timestamp or URL when available, and the approved publication bundle refs; do not require API or browser publication evidence for that channel.
+      - Script channels run the configured project publishing script or local admin command and record commit, deployment, URL, or provider result refs.
+      - If the operator manually publishes the final copy and media, record operator-confirmed manual publication with channel, timestamp or URL when available, and the final publication bundle refs; do not require API or browser publication evidence for that channel.
       - Fallback handoff mode is used only when automation is unavailable, blocked by platform policy, or explicitly waived, and the blocker is recorded on the publication job and distribution-record.
       - Closeout reports channel status as published, scheduled, staged, blocked, or failed with the exact resource/artifact refs needed for audit and follow-up.
 outputs:
+  - key: interview_decision
+    type: object
+    required: true
+    description: Whether the interview was required, useful, or skipped, with rationale and evidence basis.
+    schema:
+      type: object
+      required: [decision, rationale, evidence_refs, missing_perspective]
+      properties:
+        decision: {type: string, enum: [required, useful, skip]}
+        rationale: {type: string}
+        evidence_refs: {type: array, items: {type: string}}
+        questions: {type: array, items: {type: string}}
+        missing_perspective: {type: array, items: {type: string}}
   - key: interview_pack
     type: object
+    required: false
+    description: First-hand facts, judgment, tradeoffs, and receipts when an interview is used.
+    schema:
+      type: object
+      required: [observed_facts, operator_interpretation, tradeoffs, open_questions, source_refs]
+      properties:
+        observed_facts: {type: array}
+        operator_interpretation: {type: array}
+        tradeoffs: {type: array}
+        surprises: {type: array}
+        open_questions: {type: array}
+        source_refs: {type: array, items: {type: string}}
   - key: research_pack
     type: object
+    required: true
+    description: Source-linked facts, conflicts, inferences, and unsupported claims available for angle selection.
+    schema:
+      type: object
+      required: [verified_facts, conflicts, inferences, unsupported_claims, open_questions, source_refs]
+      properties:
+        verified_facts: {type: array}
+        conflicts: {type: array}
+        inferences: {type: array}
+        unsupported_claims: {type: array}
+        open_questions: {type: array}
+        source_refs: {type: array, items: {type: string}}
   - key: idea_options
     type: array
+    required: true
+    description: Small, evidence-grounded set of candidate article ideas.
+    schema:
+      type: array
+      minItems: 1
+      maxItems: 3
+      items:
+        type: object
+        required: [thesis, audience, evidence_refs, follow_up_potential, risk]
+        properties:
+          thesis: {type: string}
+          audience: {type: string}
+          structure: {type: array}
+          evidence_refs: {type: array, items: {type: string}}
+          follow_up_potential: {type: array}
+          risk: {type: array}
   - key: selected_angle
     type: object
+    required: true
+    description: Selected thesis, reader value, structure, evidence, channels, and risk.
+    schema:
+      type: object
+      required: [thesis, audience, reader_value, structure, evidence_refs, target_channels, risk]
+      properties:
+        thesis: {type: string}
+        audience: {type: string}
+        reader_value: {type: string}
+        structure: {type: array}
+        evidence_refs: {type: array, items: {type: string}}
+        target_channels: {type: array, items: {type: string}}
+        risk: {type: array}
   - key: image_plan
     type: object
+    required: true
+    description: Explicit no-image, supplied-media, or generation plan tied to placements and the configured budget.
+    schema:
+      type: object
+      required: [mode, rationale, placements, budget_check]
+      properties:
+        mode: {type: string, enum: [none, operator_supplied, generate]}
+        rationale: {type: string}
+        placements: {type: array}
+        supplied_media_refs: {type: array, items: {type: string}}
+        budget_check: {type: string, enum: [not_applicable, within_budget, blocked]}
   - key: canonical_draft_artifact
     type: object
+    required: true
+    description: Canonical channel-independent draft and its claim-to-evidence map.
+    schema:
+      type: object
+      required: [draft_ref, title, format, claim_map, evidence_refs]
+      properties:
+        draft_ref: {type: string}
+        title: {type: string}
+        format: {type: string}
+        claim_map: {type: array}
+        evidence_refs: {type: array, items: {type: string}}
+        position_updates: {type: array}
   - key: editorial_review_report
     type: object
+    required: true
+    description: Independent claim, voice, position, and form review with repair status.
+    schema:
+      type: object
+      required: [verdict, claim_findings, voice_findings, position_findings, blockers, repairs, preferences, out_of_scope]
+      properties:
+        verdict: {type: string, enum: [ready, repair, block]}
+        claim_findings: {type: array}
+        voice_findings: {type: array}
+        position_findings: {type: array}
+        form_findings: {type: array}
+        blockers: {type: array}
+        repairs: {type: array}
+        preferences: {type: array}
+        out_of_scope: {type: array}
   - key: sanitization_report
     type: object
+    required: true
+    description: Separate public-use verdict with blocked material and repairs.
+    schema:
+      type: object
+      required: [verdict, blocked_items, repairs, disclosure_basis]
+      properties:
+        verdict: {type: string, enum: [cleared, blocked]}
+        blocked_items: {type: array}
+        repairs: {type: array}
+        disclosure_basis: {type: array}
+        waiver_ref: {type: string}
   - key: generated_image_artifacts
     type: array
+    required: false
+    description: Generated or operator-supplied image refs mapped to selected placements.
+    schema:
+      type: array
+      items:
+        type: object
+        required: [artifact_ref, placement, status]
+        properties:
+          artifact_ref: {type: string}
+          placement: {type: string}
+          status: {type: string}
+          prompt_ref: {type: string}
+          acceptance: {type: object}
   - key: channel_packets
     type: object
+    required: false
+    description: Renditions only for explicitly selected channels, plus recorded skips.
+    schema:
+      type: object
+      required: [selected_channels, packet_refs, skipped_channels]
+      properties:
+        selected_channels: {type: array, items: {type: string}}
+        packet_refs: {type: object}
+        skipped_channels: {type: array}
   - key: publication_jobs
     type: array
+    required: false
+    description: Selected or proposed destination-specific execution jobs.
+    schema:
+      type: array
+      items:
+        type: object
+        required: [channel, execution_intent, mode, packet_ref, status]
+        properties:
+          channel: {type: string}
+          execution_intent: {type: string, enum: [packet_only, stage, publish]}
+          mode: {type: string, enum: [api, browser, admin, script, manual, handoff]}
+          packet_ref: {type: string}
+          destination_ref: {type: string}
+          action_ref: {type: string}
+          status: {type: string, enum: [proposed, ready, staged, blocked, failed, published, scheduled]}
+          blocker: {type: object}
   - key: publication_bundle_ref
     type: string
+    required: false
+    description: Stable artifact ref for the final channel-ready publication bundle.
+    schema: {type: string, minLength: 1}
   - key: publication_results
     type: array
+    required: false
+    description: Per-channel execution receipts or exact blocker state.
+    schema:
+      type: array
+      items:
+        type: object
+        required: [channel, status, evidence_refs]
+        properties:
+          channel: {type: string}
+          status: {type: string, enum: [published, scheduled, staged, blocked, failed]}
+          url: {type: string}
+          provider_ref: {type: string}
+          evidence_refs: {type: array, items: {type: string}}
+          retry_guidance: {type: string}
   - key: distribution_record_refs
     type: array
+    required: false
+    description: Stable distribution-record resource refs created for executed channels.
+    schema: {type: array, items: {type: string, minLength: 1}, uniqueItems: true}
   - key: content_memory_index
     type: object
-  - key: approved_content_piece_ref
+    required: true
+    description: Durable recovery index linking the piece, evidence, reviews, renditions, images, publication jobs, and follow-ups.
+    schema:
+      type: object
+      required: [topic_tags, position_refs, evidence_refs, draft_ref, review_refs, rendition_refs, image_refs, publication_jobs, follow_up_hooks]
+      properties:
+        topic_tags: {type: array, items: {type: string}}
+        position_refs: {type: array, items: {type: string}}
+        evidence_refs: {type: array, items: {type: string}}
+        draft_ref: {type: string}
+        review_refs: {type: array, items: {type: string}}
+        rendition_refs: {type: array, items: {type: string}}
+        image_refs: {type: array, items: {type: string}}
+        publication_jobs: {type: array}
+        follow_up_hooks: {type: array}
+  - key: content_piece_ref
     type: string
+    required: false
+    description: Stable content-piece ref after review and finalization.
+    schema: {type: string, minLength: 1}
   - key: memory_update_refs
     type: array
+    required: false
+    description: Stable refs for durable position, profile, decision, or evidence-memory updates.
+    schema: {type: array, items: {type: string, minLength: 1}, uniqueItems: true}
 failure_handling:
-  - If the interview does not produce enough facts, ask bounded follow-up questions instead of drafting from vibe.
+  - If the selected interview path does not produce enough facts or first-hand perspective, ask bounded follow-up questions instead of drafting from vibe.
   - If research sources conflict, present the conflict and ask whether to narrow the claim, collect more evidence, or change the angle.
   - If prior positions conflict with the selected thesis, stop and ask whether this is an error or a position update.
-  - If image generation is selected but provider setup, budget approval, or acceptance criteria are missing, continue with operator-supplied media or text-only publication jobs only after explicit operator waiver.
+  - If image generation is selected but provider setup, configured budget, or acceptance criteria are missing, continue with operator-supplied media or a text-only packet and record the reason.
   - If sanitization blocks a claim or image brief, repair from cleared evidence or stop before packets.
   - If the final content memory index cannot be written to content-piece, stop before publication; do not treat artifacts alone as durable memory.
-  - If a selected publication mode cannot execute, record the channel as blocked with setup or platform reason instead of silently converting the user to manual copy-paste work; operator-confirmed manual publication is valid only when the operator explicitly confirms they posted the approved copy/media.
+  - If a selected publication mode cannot execute, record the channel as blocked with setup or platform reason instead of silently converting the user to manual copy-paste work; operator-confirmed manual publication is valid only when the operator explicitly confirms they posted the final copy/media.
 metadata:
   plugin_slug: branding
   default_branding_workflow: true
   workflow_family: content-production
   output_mode: automated-publication
   artifact_grant_policy: explicit
-  artifact_lifecycle_guidance: StackOS artifacts are durable records, not a scratchpad; use local project conventions for research notes, angle exploration, and draft iteration before operator-approved or final artifacts are preserved.
+  artifact_lifecycle_guidance: StackOS artifacts are durable records, not a scratchpad; use local project conventions for research notes, angle exploration, and draft iteration before final artifacts are preserved.
   grants:
     - context.query
     - resource.upsert
@@ -689,7 +976,7 @@ metadata:
         - artifact.update
         - artifact.archive
         - artifact.supersede
-    - step_id: approve-and-record
+    - step_id: finalize-and-record
       tools:
         - artifact.create
         - artifact.update

@@ -6,6 +6,46 @@ description: Normalize customer feedback from Slack, Telegram, email, local chat
 domain: communications
 owner:
   team: StackOS
+experience:
+  problem: "Customer feedback arriving across chat or email can lose media, privacy context, and ownership before anyone investigates it."
+  outcome: "One route-approved Slack thread containing the complete feedback packet and safe refs for investigation."
+  why_ai: "AI can normalize several communication formats and preserve context, while StackOS enforces the configured route and delivery boundary."
+  operator_path:
+    - "Choose the approved source-to-Slack route and the canonical support destination."
+    - "Set privacy, redaction, media retention, and task-creation policy."
+    - "Send feedback through an approved surface or provide safe message and media refs."
+  agent_path:
+    - "Verify the source, route, destination, media inventory, and data-sharing boundary."
+    - "Normalize the report without diagnosing it or dropping allowed media."
+    - "Create one complete Slack handoff, add the intake signal, and preserve investigation refs."
+  progress_signals:
+    - "Source and route verified"
+    - "Media inventory complete"
+    - "Privacy boundary checked"
+    - "Slack handoff created"
+    - "Investigation refs stored"
+  recovery:
+    - "Stop before sending if any required media cannot be forwarded safely."
+    - "On partial provider failure, avoid duplicate sends and resume from the stored delivery receipt."
+  safe_stopping_points:
+    - "Stop with a missing-route or privacy question before copying customer content."
+  handoffs:
+    - workflow_key: support.issue-investigation
+      relationship: next
+      when: "The complete feedback packet exists in the approved Slack thread."
+public:
+  audience: "Support and product teams receiving feedback across communication channels"
+  setup: mixed
+  prerequisites:
+    - "A named source surface and message or media refs"
+    - "An approved cross-surface route and Slack target"
+    - "Privacy, redaction, retention, and media policy"
+  proof:
+    - "Complete media inventory"
+    - "Route and target resolution"
+    - "Slack message or upload receipts"
+    - "Linked canonical thread ref"
+  featured: true
 when_to_use:
   - Customer feedback or a support symptom arrives outside the canonical Slack support thread.
   - A project needs a single Slack thread before support investigation starts.
@@ -35,6 +75,10 @@ skill_requirements:
       - Forward every route-approved source media item in the same canonical handoff message when the provider path supports it.
       - If media cannot be carried with the handoff, stop with a visible blocker instead of silently sending a text-only summary.
       - Preserve source, canonical thread, canonical message, media, route, and target refs for support.issue-investigation.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: feedback_summary
     name: Feedback Summary
@@ -138,18 +182,21 @@ action_contracts:
     provider: slack-bot
     risk_level: write
     auth_ref: slack_bot
+    optional: true
   - key: download_source_media
     action: telegram-bot.file.download
     capability: messaging
     provider: telegram-bot
     risk_level: read
     auth_ref: telegram_bot
+    optional: true
   - key: add_intake_reaction
     action: slack-bot.reaction.add
     capability: messaging
     provider: slack-bot
     risk_level: write
     auth_ref: slack_bot
+    optional: true
 policies:
   - key: canonical_slack_thread
     kind: communications
@@ -227,24 +274,72 @@ outputs:
     name: Intake Summary
     type: object
     description: Reporter symptom, source refs, media inventory, route/target refs, and initial severity.
+    schema:
+      type: object
+      required: [feedback_summary, source_refs, media_inventory, route_ref, target_ref, severity, privacy_check]
+      properties:
+        feedback_summary: {type: string}
+        source_refs: {type: array, items: {type: string}}
+        media_inventory: {type: array}
+        route_ref: {type: string}
+        target_ref: {type: string}
+        severity: {type: string}
+        privacy_check: {type: object}
   - key: canonical_thread
     name: Canonical Thread
     type: object
     required: true
     description: Canonical Slack thread and message refs for all later support work.
+    schema:
+      type: object
+      required: [surface_ref, target_ref, message_ref, thread_ref, delivery_receipt_ref]
+      properties:
+        surface_ref: {type: string}
+        target_ref: {type: string}
+        message_ref: {type: string}
+        thread_ref: {type: string}
+        delivery_receipt_ref: {type: string}
   - key: forwarded_media
     name: Forwarded Media
     type: object
     description: Media forwarding result, explicit blocker, or approved waiver.
+    schema:
+      type: object
+      required: [source_media_refs, forwarded_media_refs, blocked_media, waiver_ref]
+      properties:
+        source_media_refs: {type: array, items: {type: string}}
+        forwarded_media_refs: {type: array, items: {type: string}}
+        blocked_media: {type: array}
+        waiver_ref: {type: [string, "null"]}
   - key: intake_reaction
     name: Intake Reaction
     type: object
     description: Evidence that the intake reaction was added to the canonical Slack message.
+    schema:
+      type: object
+      required: [status, message_ref]
+      properties:
+        status: {type: string, enum: [added, skipped, blocked]}
+        message_ref: {type: string}
+        reaction: {type: string}
+        receipt_ref: {type: string}
+        reason: {type: string}
   - key: support_investigation_request
     name: Support Investigation Request
     type: object
     required: true
     description: Compact handoff refs for support.issue-investigation.
+    schema:
+      type: object
+      required: [workflow_key, canonical_thread_ref, source_refs, media_refs, feedback_summary, privacy_boundary]
+      properties:
+        workflow_key: {type: string, const: support.issue-investigation}
+        canonical_thread_ref: {type: string}
+        source_refs: {type: array, items: {type: string}}
+        media_refs: {type: array, items: {type: string}}
+        feedback_summary: {type: string}
+        severity: {type: string}
+        privacy_boundary: {type: object}
 failure_handling:
   - If route, target, auth, or media support is unresolved, stop before cross-surface handoff and report the missing setup.
   - If Slack delivery succeeds but reaction fails, preserve the canonical thread refs and report the reaction blocker.

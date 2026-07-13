@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import weakref
+from types import SimpleNamespace
 
 import pytest
 from sqlmodel import Session, select
@@ -13,6 +14,7 @@ from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import Action, Provider
 from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
+from stackos.repositories import plugins as plugin_repository_module
 from stackos.repositories.base import NotFoundError
 from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import (
@@ -465,11 +467,24 @@ def test_project_catalog_reports_action_availability(session: Session, project_i
     assert scrape.availability.budget_state == "available"
 
 
-def test_catalog_syncs_builtin_manifests_once_per_repository_instance(
+def test_catalog_syncs_builtin_manifests_once_per_engine_generation(
     session: Session,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(PluginRepository, "_builtin_sync_engines", weakref.WeakSet())
+    monkeypatch.setattr(
+        PluginRepository,
+        "_builtin_sync_generations",
+        weakref.WeakKeyDictionary(),
+    )
+    snapshot = SimpleNamespace(
+        generation="generation-1",
+        manifests=BUILTIN_PLUGIN_MANIFESTS,
+    )
+    monkeypatch.setattr(
+        plugin_repository_module,
+        "get_builtin_plugin_manifest_snapshot",
+        lambda: snapshot,
+    )
     repo = PluginRepository(session)
     synced_slugs: list[str] = []
     sync_manifest = repo._sync_manifest
@@ -480,9 +495,14 @@ def test_catalog_syncs_builtin_manifests_once_per_repository_instance(
 
     monkeypatch.setattr(repo, "_sync_manifest", counted_sync_manifest)
 
-    catalog = repo.catalog()
+    first_catalog = repo.catalog()
+    second_catalog = repo.catalog()
 
-    assert {plugin.plugin.slug for plugin in catalog.plugins} >= {
+    second_repo = PluginRepository(session)
+    monkeypatch.setattr(second_repo, "_sync_manifest", counted_sync_manifest)
+    third_catalog = second_repo.catalog()
+
+    assert {plugin.plugin.slug for plugin in first_catalog.plugins} >= {
         "branding",
         "communications",
         "core",
@@ -494,7 +514,52 @@ def test_catalog_syncs_builtin_manifests_once_per_repository_instance(
         "seo",
         "utils",
     }
+    assert second_catalog.plugins
+    assert third_catalog.plugins
     assert synced_slugs == [manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS]
+
+
+def test_catalog_resyncs_builtin_manifests_when_source_generation_changes(
+    session: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        PluginRepository,
+        "_builtin_sync_generations",
+        weakref.WeakKeyDictionary(),
+    )
+    current = [
+        SimpleNamespace(
+            generation="generation-1",
+            manifests=BUILTIN_PLUGIN_MANIFESTS,
+        )
+    ]
+    monkeypatch.setattr(
+        plugin_repository_module,
+        "get_builtin_plugin_manifest_snapshot",
+        lambda: current[0],
+    )
+    repo = PluginRepository(session)
+    synced_slugs: list[str] = []
+    sync_manifest = repo._sync_manifest
+
+    def counted_sync_manifest(manifest):
+        synced_slugs.append(manifest.slug)
+        return sync_manifest(manifest)
+
+    monkeypatch.setattr(repo, "_sync_manifest", counted_sync_manifest)
+
+    repo.sync_builtin_plugins()
+    repo.sync_builtin_plugins()
+    current[0] = SimpleNamespace(
+        generation="generation-2",
+        manifests=BUILTIN_PLUGIN_MANIFESTS,
+    )
+    repo.sync_builtin_plugins()
+    repo.sync_builtin_plugins()
+
+    expected = [manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS]
+    assert synced_slugs == [*expected, *expected]
 
 
 def test_catalog_builds_action_availability_context_once(

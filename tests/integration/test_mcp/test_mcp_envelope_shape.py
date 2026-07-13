@@ -1,6 +1,6 @@
 """Every mutating tool's response carries ``{data, run_id, project_id}``.
 
-Read tools return bare data (no envelope wrapping) per PLAN.md L754-L763.
+Raw read mode returns bare data; compact reads use the operation response envelope.
 """
 
 from __future__ import annotations
@@ -79,7 +79,9 @@ def test_read_resource_returns_bare_data(mcp_client: MCPClient, seeded_project: 
         },
     )
     record_id = env["data"]["id"]
-    bare = mcp_client.call_tool_structured("resource.get", {"record_id": record_id})
+    bare = mcp_client.call_tool_structured(
+        "resource.get", {"record_id": record_id, "response_mode": "raw"}
+    )
     # No 'data'/'run_id'/'project_id' wrapper — just the row.
     assert "data" not in bare
     assert bare["record"]["id"] == record_id
@@ -89,14 +91,15 @@ def test_read_resource_returns_bare_data(mcp_client: MCPClient, seeded_project: 
 def test_list_returns_page_envelope(mcp_client: MCPClient, seeded_project: dict) -> None:
     """List reads return Page = {items, next_cursor, total_estimate}."""
     page = mcp_client.call_tool_structured(
-        "resource.query", {"project_id": seeded_project["data"]["id"]}
+        "resource.query",
+        {"project_id": seeded_project["data"]["id"], "response_mode": "raw"},
     )
     assert set(page.keys()) >= {"records", "resources", "next_cursor", "total_estimate"}
 
 
 def test_meta_enums_returns_bare_data(mcp_client: MCPClient) -> None:
     """meta.enums is a read tool — bare payload, no wrapper."""
-    payload = mcp_client.call_tool_structured("meta.enums", {})
+    payload = mcp_client.call_tool_structured("meta.enums", {"response_mode": "raw"})
     assert "data" not in payload
     assert "runs_status" in payload
     assert "action_calls_status" in payload

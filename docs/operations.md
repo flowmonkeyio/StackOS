@@ -433,6 +433,7 @@ index for common core operations, not a replacement for registry discovery.
 - `runPlan.create`
 - `runPlan.start`
 - `runPlan.get`
+- `runPlan.getStep`
 - `runPlan.checkConsistency`
 - `runPlan.list`
 - `runPlan.update`
@@ -502,6 +503,8 @@ fields, not in a new context mechanism. `workflowTemplate.describe` returns the
 attached `project_extension`, and `runPlan.create` applies enabled extension
 defaults before per-run inputs. Use `workflowTemplate.fork` only when a new
 workflow identity or separately reusable method is needed.
+When supplied, `source` is a template-origin filter (`plugin`, `project`,
+`user`, or `repo`), not audit or workflow-run provenance.
 
 Use `readiness.check` before broad setup scans when the agent already knows a
 workflow key or action ref. It answers the scoped question: is this workflow or
@@ -596,6 +599,9 @@ calls use each operation's response policy default, which is usually compact for
 agent-facing reads and writes; callers that need the full contract must request
 `response_mode=raw` explicitly.
 
+Compact `resource.get` and `resource.query` responses retain bounded resource
+and record summaries, record ids, `data_json`, timestamps, counts, and cursors.
+
 Use `action.execute` when the action belongs to a workflow:
 
 1. A valid `run_token` is required.
@@ -616,7 +622,7 @@ Use `action.execute` when the action belongs to a workflow:
 `runPlan.*` keeps the same boundary everywhere:
 
 1. `runPlan.validate`, `runPlan.create`, `runPlan.start`, `runPlan.get`,
-   `runPlan.checkConsistency`, and `runPlan.list` are bootstrap/setup
+   `runPlan.getStep`, `runPlan.checkConsistency`, and `runPlan.list` are bootstrap/setup
    operations.
 2. `runPlan.claimStep` and `runPlan.recordStep` require the `run_token` returned
    by `runPlan.start`.
@@ -625,8 +631,10 @@ Use `action.execute` when the action belongs to a workflow:
    claiming another.
 5. `runPlan.recordStep(blocked)` records a recoverable blocker and keeps the
    plan started so the same step can be reclaimed after repair.
-6. `runPlan.recordStep(success)` enforces run-plan lifecycle and transitive
-   step dependencies. Tracker graph warnings stay visible through
+6. `runPlan.recordStep(success)` enforces run-plan lifecycle, transitive step
+   dependencies, and the frozen required output keys and JSON schemas before
+   changing state. Validation failures keep the step running and return output
+   repair paths. Tracker graph warnings stay visible through
    `tracker.get(include_graph=true)` and `runPlan.get.consistency_issues`, but
    do not by themselves reject a valid step result.
 7. `runPlan.recordStep(success|failed|skipped)` persists a terminal step result

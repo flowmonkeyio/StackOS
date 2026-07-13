@@ -6,6 +6,7 @@ presets:
     description: Plans and reviews keyword discovery workflows with evidence, constraints, and content opportunity handoff.
     domain: seo
     role: seo-keyword-research
+    role_class: reasoning
     workflow_roles: [seo-keyword-research]
     applies_to_workflows: [seo.keyword-research]
     recommended_tools:
@@ -95,6 +96,7 @@ presets:
     description: Reviews stale or underperforming content and prepares a refresh plan with source-backed changes.
     domain: seo
     role: seo-content-refresh
+    role_class: reasoning
     workflow_roles: [seo-content-refresh]
     applies_to_workflows: [seo.content-refresh]
     recommended_tools:

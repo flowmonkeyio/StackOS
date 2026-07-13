@@ -2,12 +2,13 @@
   "key": "marketing.campaign.landing-page-builder",
   "slug": "marketing-campaign-landing-page-builder",
   "name": "Campaign Landing Page Builder",
-  "description": "Builds each planned landing page variant as a self-contained static HTML file in the campaign workspace and assembles gallery.html as the person-facing index.",
+  "description": "Builds each planned landing page variant as a self-contained static HTML file in the campaign workspace and assembles gallery.html as the operator-facing index.",
   "domain": "marketing",
   "audience": "Marketing teams",
   "color": "#ff78ac",
   "featured": true,
   "role": "Landing Page Builder",
+  "roleClass": "mechanical",
   "workflowKeys": [
     "marketing.campaign-production"
   ]

@@ -2,10 +2,45 @@ schema_version: stackos.workflow-template.v1
 key: communications.outbound-notification
 name: Communications Outbound Notification
 version: 0.1.0
-description: Reusable setup for sending explicit email or Telegram notifications after a run or decision.
+description: Reusable setup for sending explicit email, Telegram, or Slack notifications after a run or decision.
 domain: communications
 owner:
   team: StackOS
+experience:
+  problem: "Status updates are easy to send to the wrong audience, at the wrong time, or without evidence that the underlying work is complete."
+  outcome: "One approved notification delivered to a named destination with an auditable source and receipt."
+  why_ai: "AI can turn a completed run or decision into audience-appropriate copy, while route and send policy control delivery."
+  operator_path:
+    - "Name the completed result, audience, destination, and urgency."
+    - "Review the message when policy requires it."
+    - "Approve the send or keep the message as a draft."
+  agent_path:
+    - "Verify the source result and named delivery target."
+    - "Draft only what the evidence supports and resolve the allowed route."
+    - "Send once with idempotency and record the provider receipt."
+  progress_signals:
+    - "Source verified"
+    - "Target resolved"
+    - "Message ready"
+    - "Approval recorded"
+    - "Delivery receipt stored"
+  recovery:
+    - "If the target or route is unclear, keep the draft and ask for the missing destination."
+    - "If delivery status is uncertain, inspect the existing action receipt before retrying."
+  safe_stopping_points:
+    - "Stop with an approved draft when sending was not authorized."
+public:
+  audience: "Teams sending operational updates after completed work"
+  setup: connection-required
+  prerequisites:
+    - "A completed source result or decision"
+    - "A named communication target and allowed route"
+    - "Audience and approval policy"
+  proof:
+    - "Source refs"
+    - "Approved message packet"
+    - "Provider message id and idempotency state"
+  featured: false
 when_to_use:
   - A run, decision, or agent action needs a human-facing notification.
   - The agent has explicit recipients/channels and approved message content.
@@ -33,6 +68,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: notification_goal
     name: Notification Goal
@@ -73,6 +112,10 @@ auth_requirements:
     provider: telegram-bot
     auth_type: bot-token
     optional: true
+  - key: slack_bot
+    provider: slack-bot
+    auth_type: bot-token
+    optional: true
 action_contracts:
   - key: send_email
     action: smtp.email.send
@@ -80,6 +123,8 @@ action_contracts:
     provider: smtp
     risk_level: write
     auth_ref: smtp
+    route_group: delivery_channel
+    route_key: email
     approval_ref: outbound_review
   - key: send_telegram_message
     action: telegram-bot.message.send
@@ -87,6 +132,17 @@ action_contracts:
     provider: telegram-bot
     risk_level: write
     auth_ref: telegram_bot
+    route_group: delivery_channel
+    route_key: telegram
+    approval_ref: outbound_review
+  - key: send_slack_message
+    action: slack-bot.message.send
+    capability: messaging
+    provider: slack-bot
+    risk_level: write
+    auth_ref: slack_bot
+    route_group: delivery_channel
+    route_key: slack
     approval_ref: outbound_review
 policies:
   - key: no_delivery_claims
@@ -126,6 +182,7 @@ steps:
     action_refs:
       - send_email
       - send_telegram_message
+      - send_slack_message
     approval_refs:
       - outbound_review
     depends_on:
@@ -134,10 +191,33 @@ outputs:
   - key: notification_plan
     name: Notification Plan
     type: object
+    required: true
+    description: Explicit route, recipients, evidence basis, approval need, and non-delivery alternatives.
+    schema:
+      type: object
+      required: [goal, selected_channel, destination_refs, evidence_refs, approval_required]
+      properties:
+        goal: {type: string}
+        selected_channel: {type: string, enum: [email, telegram, slack]}
+        destination_refs: {type: array, items: {type: string}}
+        evidence_refs: {type: array, items: {type: string}}
+        approval_required: {type: boolean}
+        blockers: {type: array}
   - key: notification_payload
     name: Notification Payload
     type: object
     required: true
+    description: Exact provider-neutral notification content and destination contract.
+    schema:
+      type: object
+      required: [channel, destination_refs, body]
+      properties:
+        channel: {type: string, enum: [email, telegram, slack]}
+        destination_refs: {type: array, items: {type: string}, minItems: 1}
+        subject: {type: string}
+        body: {type: string}
+        source_request_ref: {type: string}
+        reply_context_ref: {type: string}
 metadata:
   builtin: true
   run_mode: stackos_run_plan

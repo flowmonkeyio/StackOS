@@ -2,14 +2,53 @@
   "key": "gtm.outbound-sequence-preparation",
   "slug": "gtm-outbound-sequence-preparation",
   "name": "GTM Outbound Sequence Preparation",
-  "description": "Prepare a reviewed outreach sequence from qualified leads and account context.",
+  "description": "A reviewed, project-voiced outreach sequence and send-readiness packet without sending it implicitly.",
   "domain": "gtm",
-  "audience": "Sales and go-to-market teams",
+  "audience": "Go-to-market teams preparing evidence-based outreach",
   "color": "#ff9f73",
   "featured": false,
+  "problem": "Outbound messages become generic or risky when qualification, personalization evidence, compliance, and send authorization are collapsed into one drafting step.",
+  "outcome": "A reviewed, project-voiced outreach sequence and send-readiness packet without sending it implicitly.",
+  "whyAi": "AI can adapt a sequence across qualified accounts while keeping every personalization claim and compliance decision traceable.",
+  "operatorPath": [
+    "Choose the qualified audience, offer, channel, and desired response.",
+    "Set voice, claim, compliance, frequency, and exclusion rules.",
+    "Review representative messages and approve send readiness separately."
+  ],
+  "agentPath": [
+    "Verify qualification and personalization evidence for each recipient.",
+    "Draft within the project voice and channel contract without inventing familiarity.",
+    "Run compliance and claim checks, then return a send-readiness packet."
+  ],
+  "progressSignals": [
+    "Audience verified",
+    "Personalization evidence linked",
+    "Sequence drafted",
+    "Compliance reviewed",
+    "Send-readiness packet complete"
+  ],
+  "recovery": [
+    "Disqualify or hold recipients with insufficient evidence rather than filling gaps.",
+    "Keep the packet staged when a target, route, or send approval is missing."
+  ],
+  "safeStoppingPoints": [
+    "This workflow stops at send readiness; delivery requires explicit authorization."
+  ],
+  "handoffs": [],
+  "setup": "project-adapter-required",
+  "prerequisites": [
+    "A qualified recipient set",
+    "Project voice and approved offer claims",
+    "Compliance, exclusion, cadence, and channel rules"
+  ],
+  "proof": [
+    "Recipient qualification refs",
+    "Personalization evidence map",
+    "Compliance review",
+    "Approved send-readiness packet"
+  ],
   "whenToUse": [
-    "Use this when you want to prepare a reviewed outreach sequence from qualified leads and account context.",
-    "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+    "A reviewed lead or account set should be prepared for Outreach, Salesloft, or user-owned sequence tooling."
   ],
   "stages": [
     {
@@ -25,7 +64,7 @@
     {
       "id": "optional_sequence_add",
       "title": "Optional Outbound Actions",
-      "summary": "Execute approved connected app sequence, mail, or calendar actions only when granted by the concrete plan."
+      "summary": "Execute approved provider sequence, mail, or calendar actions only when granted by the concrete run plan."
     }
   ],
   "agentNames": [

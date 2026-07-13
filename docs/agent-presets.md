@@ -14,6 +14,18 @@ Every bundled preset is generic and must be adapted before use:
 - a prompt assembly order:
   `generic_agent_preset -> project_adaptation_overlay -> workflow_agent_requirements -> current_tracker_or_run_plan_context -> user_request`
 
+Every bundled preset also declares `role_class`:
+
+- `reasoning`: makes bounded judgments and returns the rationale
+- `mechanical`: performs a defined transformation or handoff without taking
+  over strategy
+- `review`: challenges another role's result independently and returns claims
+  for the orchestrator to adjudicate
+
+`role_class` is an expectation signal, not a model selector. The actual
+`prompt_contract` still owns mission, boundaries, handoff inputs, handoff
+outputs, success criteria, and self-checks.
+
 The adapting agent must rewrite the generic role for the current project:
 technology stack, rules, documentation references, available MCP tools,
 workflow/run-plan model, tracker task/ticket conventions, verification
@@ -25,6 +37,13 @@ operations as direct MCP tools, while the StackOS bridge may expose only
 `toolbox.call`. Treat the operation refs as the intent-level tool list: call
 them directly only when the host exposes them, otherwise inspect the exact names
 with `toolbox.describe` and invoke them through `toolbox.call`.
+
+Setup guidance must be scoped to the selected preset or workflow. Generic
+agent responses explain host adaptation, the toolbox boundary, tracker/run-plan
+state, and skill-preset resolution. Domain chains such as feedback intake to
+support investigation appear only for presets or workflows in that chain.
+Agents should not have to filter unrelated support or engineering setup from a
+branding, SEO, media, or GTM handoff.
 
 Provider-action presets should prefer stable `action.list` refs plus
 `action.describe`/`action.validate` before execution. External provider action

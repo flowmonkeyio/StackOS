@@ -6,12 +6,47 @@ description: Review bounded project context and prepare an agent-authored run pl
 domain: core
 owner:
   team: StackOS
+experience:
+  problem: "Projects accumulate runs, decisions, evidence, and unfinished work faster than an agent can safely reconstruct from chat."
+  outcome: "A bounded memory review that explains what the project knows, what remains uncertain, and the best next action."
+  why_ai: "AI can connect evidence across several project records while keeping source refs and uncertainty visible."
+  operator_path:
+    - "State the question or decision the memory review should support."
+    - "Confirm the project scope and desired persistence level."
+    - "Review the recommendation before starting any follow-up workflow."
+  agent_path:
+    - "Check active tracker and run-plan state first so the review does not ignore or duplicate current work."
+    - "Query only the relevant project sources and preserve their refs."
+    - "Separate facts, decisions, stale assumptions, contradictions, and gaps."
+    - "Return a recommendation or a concrete run-plan proposal without executing it implicitly."
+  progress_signals:
+    - "Question scoped"
+    - "Memory sources reviewed"
+    - "Conflicts exposed"
+    - "Recommendation ready"
+  recovery:
+    - "If the project scope or source authority is unclear, stop with a bounded clarification."
+    - "If records conflict, present both and name the decision needed."
+  safe_stopping_points:
+    - "Stop after the recommendation unless the operator explicitly starts follow-up work."
+public:
+  audience: "Any team resuming or orienting complex project work"
+  setup: available
+  prerequisites:
+    - "A clear question or decision"
+    - "An existing StackOS project with relevant stored context"
+  proof:
+    - "Source-linked memory summary"
+    - "Explicit gaps and conflicts"
+    - "Recommended next action with rationale"
+  featured: false
 when_to_use:
   - The agent needs to understand recent project history before planning work.
   - A workflow should start from prior runs, learnings, experiments, and decisions.
 when_not_to_use:
   - The goal already has a concrete run plan ready for execution.
   - The agent needs to call provider actions immediately without reviewing context.
+  - The operator expects automatic bulk cleanup or promotion of memory without reviewing the proposed changes.
 agent_requirements:
   - role: project-memory-review
     requirement: required
@@ -34,6 +69,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -123,8 +162,14 @@ steps:
     input_refs:
       - goal
       - focus_domain
+    instructions:
+      - Check tracker.status and active run plans before treating stored memory as the current operating truth.
+      - Define whether the review covers StackOS durable state, repository guidance, or both.
+      - State whether the requested endpoint is read-only orientation or a reviewed cleanup proposal.
     output_refs:
       - context_summary
+    success_criteria:
+      - The question, source boundary, current-work boundary, and persistence intent are explicit.
   - id: retrieve-context
     title: Retrieve Bounded Context
     purpose: Query only the declared fields and limits before reasoning.
@@ -135,8 +180,15 @@ steps:
       - recent_decisions
     depends_on:
       - clarify-goal
+    instructions:
+      - Read the bounded declared sources and the relevant active tracker brief.
+      - Separate current facts, active work, accepted decisions, stale candidates, contradictions, and missing evidence.
+      - Do not infer that terminal run metadata contains a conclusion when the result evidence is absent.
     output_refs:
       - context_summary
+    success_criteria:
+      - Every material conclusion has a source ref or is labeled as inference or missing evidence.
+      - Active tracker work is not misclassified as stale memory.
   - id: propose-next-plan
     title: Propose Next Plan
     purpose: Draft an agent-authored plan, explicit open questions, and any approval needs.
@@ -146,19 +198,44 @@ steps:
       - human-review
     depends_on:
       - retrieve-context
+    instructions:
+      - Recommend retain, promote, supersede, retire, clarify, or no action for each material memory item.
+      - Name the existing task or run plan to resume when one already owns the work.
+      - Stop with a proposal; do not mutate memory, repository docs, templates, or provider state implicitly.
     output_refs:
       - recommended_plan
+    success_criteria:
+      - The recommendation is bounded, source-linked, non-duplicative, and explicit about approvals and residual uncertainty.
 outputs:
   - key: context_summary
     name: Context Summary
     type: object
     required: true
     description: Compact summary of relevant evidence with provenance.
+    schema:
+      type: object
+      required: [current_facts, active_work, stale_candidates, gaps, source_refs]
+      properties:
+        current_facts: {type: array}
+        active_work: {type: array}
+        stale_candidates: {type: array}
+        contradictions: {type: array}
+        gaps: {type: array}
+        source_refs: {type: array}
   - key: recommended_plan
     name: Recommended Plan
     type: object
     required: true
     description: Agent-authored next plan or rationale for no action.
+    schema:
+      type: object
+      required: [recommendation, proposed_changes, approvals, residual_uncertainty]
+      properties:
+        recommendation: {type: string}
+        proposed_changes: {type: array}
+        existing_work_to_resume: {type: array}
+        approvals: {type: array}
+        residual_uncertainty: {type: array}
 learning_hooks:
   - key: capture-reusable-learning
     prompt: Capture reusable learning candidates only when evidence is explicit and provenance is known.
@@ -168,3 +245,4 @@ failure_handling:
   - If context is insufficient, return missing context requirements instead of inventing facts.
 metadata:
   builtin: true
+  artifact_grant_policy: explicit

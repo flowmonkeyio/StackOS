@@ -8,6 +8,7 @@
   "color": "#ff78ac",
   "featured": true,
   "role": "Creative Director",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "marketing.campaign-production"
   ]

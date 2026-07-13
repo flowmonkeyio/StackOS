@@ -6,6 +6,50 @@ description: Reusable template for creating candidate paid media creative sets f
 domain: media-buying
 owner:
   team: StackOS
+experience:
+  problem: "Ad variants become expensive noise when they are generated without a hypothesis, offer boundary, destination fit, or upload decision."
+  outcome: "A focused candidate set tied to an experiment hypothesis, with generation and provider upload kept behind separate approvals."
+  why_ai: "AI can explore several evidence-based variants quickly while reviewers preserve brand, claim, and experimental discipline."
+  operator_path:
+    - "Provide the offer, audience hypotheses, destination, brand constraints, and channel preference."
+    - "Approve generation cost when new assets are needed."
+    - "Review the candidate set and approve any provider upload separately."
+  agent_path:
+    - "Read prior creative and performance evidence before setting direction."
+    - "Define the hypothesis and bounded variant dimensions, then generate only the planned assets."
+    - "Review claims and destination fit; upload through one selected route only after approval."
+  progress_signals:
+    - "Direction set"
+    - "Variant plan bounded"
+    - "Assets generated"
+    - "Candidates reviewed"
+    - "Upload status recorded"
+  recovery:
+    - "Use operator-supplied assets when generation is unavailable or unnecessary."
+    - "Preserve reviewed candidates and stop when no upload route is ready."
+  safe_stopping_points:
+    - "Stop with a reviewed candidate set when upload was not requested or approved."
+  handoffs:
+    - workflow_key: media-buying.landing-page-creative-experiment
+      relationship: conditional
+      when: "The candidates require a measured creative-and-page experiment."
+    - workflow_key: media-buying.campaign-launch
+      relationship: conditional
+      when: "The candidates belong to a new approved campaign launch."
+public:
+  audience: "Growth and creative teams developing paid-media variants"
+  setup: mixed
+  prerequisites:
+    - "An offer, audience hypothesis, destination, and brand boundary"
+    - "A bounded experiment or variation plan"
+    - "Generation approval only when new assets are needed"
+    - "One provider route only when upload is approved"
+  proof:
+    - "Creative direction and hypothesis"
+    - "Generation receipts where used"
+    - "Claim and destination-fit review"
+    - "Upload receipts only for the selected route"
+  featured: false
 when_to_use:
   - A campaign needs new candidate creative concepts, copy angles, or generated assets.
   - The agent should combine historical learnings with explicit creative constraints.
@@ -37,6 +81,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -153,6 +201,9 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: creative_upload_review
+    route_group: creative_upload
+    route_key: meta_ads
+    optional: true
   - key: meta_asset_upload
     action: meta.asset.upload
     capability: creative-operations
@@ -160,6 +211,9 @@ action_contracts:
     risk_level: write
     auth_ref: meta_ads
     approval_ref: creative_upload_review
+    route_group: creative_upload
+    route_key: meta_ads
+    optional: true
   - key: google_asset_create
     action: google.asset.create
     capability: creative-operations
@@ -167,6 +221,9 @@ action_contracts:
     risk_level: write
     auth_ref: google_ads
     approval_ref: creative_upload_review
+    route_group: creative_upload
+    route_key: google_ads
+    optional: true
   - key: taboola_item_create
     action: taboola.item.create
     capability: creative-operations
@@ -174,12 +231,18 @@ action_contracts:
     risk_level: write
     auth_ref: taboola
     approval_ref: creative_upload_review
+    route_group: creative_upload
+    route_key: taboola
+    optional: true
   - key: custom_media_campaign_update
     action: custom_media.campaign.update
     capability: campaign-management
     provider: custom-media-tool
     risk_level: write
     approval_ref: creative_upload_review
+    route_group: creative_upload
+    route_key: custom_media_tool
+    optional: true
 resource_contracts:
   - key: creatives
     resource: creative
@@ -288,12 +351,54 @@ outputs:
   - key: creative_direction
     name: Creative Direction
     type: object
+    required: true
+    description: Audience, objective, evidence, hypotheses, constraints, and selected generation route.
+    schema:
+      type: object
+      required: [audience, objective, evidence_refs, hypotheses, constraints, selected_route]
+      properties:
+        audience: {type: object}
+        objective: {type: string}
+        evidence_refs: {type: array, items: {type: string}}
+        hypotheses: {type: array}
+        constraints: {type: object}
+        selected_route: {type: string}
   - key: variant_set
     name: Candidate Variant Set
     type: object
+    required: true
+    description: Generated candidate assets mapped to hypotheses, placements, prompts, and acceptance state.
+    schema:
+      type: object
+      required: [variants, selection_criteria, rejected_variants]
+      properties:
+        variants:
+          type: array
+          items:
+            type: object
+            required: [variant_ref, hypothesis_ref, placement, artifact_refs, status]
+            properties:
+              variant_ref: {type: string}
+              hypothesis_ref: {type: string}
+              placement: {type: string}
+              artifact_refs: {type: array, items: {type: string}}
+              status: {type: string, enum: [candidate, selected, rejected, blocked]}
+        selection_criteria: {type: array}
+        rejected_variants: {type: array}
   - key: creative_records
     name: Creative Records
     type: object
+    required: false
+    description: Selected creative refs, provider upload status, receipts, and reuse notes.
+    schema:
+      type: object
+      required: [approved_creative_refs, provider_assets, upload_status, receipt_refs]
+      properties:
+        approved_creative_refs: {type: array, items: {type: string}}
+        provider_assets: {type: object}
+        upload_status: {type: string, enum: [not_requested, staged, uploaded, partial, blocked, failed]}
+        receipt_refs: {type: array, items: {type: string}}
+        reuse_notes: {type: array}
 learning_hooks:
   - key: creative_generation_learning
     prompt: Capture reusable creative lessons only when tied to explicit inputs, artifacts, or later performance evidence.

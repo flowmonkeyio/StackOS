@@ -20,57 +20,8 @@ const domainCopy = {
   support: { audience: 'Support and success teams', color: '#a8e37f' },
 }
 
-const publicDescriptions = {
-  'branding.content-production': 'Turn an idea into a researched, reviewed piece of content, then prepare it for every channel you choose.',
-  'communications.callback-follow-up': 'Continue a customer conversation after they choose an option in a message.',
-  'communications.customer-feedback-intake': 'Bring customer feedback from chat and email into one clear, investigation-ready thread.',
-  'communications.inbox-review': 'Review incoming messages, identify what needs action, and turn selected items into organized work.',
-  'communications.outbound-notification': 'Send an approved update after a task, decision, or result is ready.',
-  'communications.rich-telegram-reply': 'Reply in Telegram with text, images, and useful actions while keeping the conversation connected.',
-  'core.project-memory-review': 'Review what the project already knows and recommend the most useful next move.',
-  'engineering.tracked-delivery': 'Turn a request into a clear plan, complete it step by step, check the result, and keep the proof.',
-  'gtm.account-research': 'Build a useful account brief from your saved context and current research.',
-  'gtm.crm-hygiene-pass': 'Find incomplete or inconsistent CRM records and prepare safe, reviewed corrections.',
-  'gtm.lead-enrichment-scoring': 'Enrich leads with relevant context and score them against your chosen criteria.',
-  'gtm.outbound-sequence-preparation': 'Prepare a reviewed outreach sequence from qualified leads and account context.',
-  'gtm.pipeline-risk-review': 'Find deals that need attention and turn the risks into clear follow-up actions.',
-  'marketing.campaign-production': 'Move from a campaign idea to messaging, creative, landing pages, and a complete review gallery.',
-  'media-buying.budget-reallocation-review': 'Review campaign performance and prepare evidence-backed budget changes for approval.',
-  'media-buying.campaign-launch': 'Plan and launch a paid campaign through clear checks, approvals, and connected ad tools.',
-  'media-buying.creative-variant-generation': 'Create a focused set of ad variations from your offer, brand, and past performance.',
-  'media-buying.landing-page-creative-experiment': 'Design a measurable experiment that connects creative, landing pages, and business goals.',
-  'media-buying.performance-diagnosis': 'Explain what changed in paid media performance and recommend what to do next.',
-  'seo.content-refresh': 'Find why an existing page is underperforming, improve it, and verify the result.',
-  'seo.keyword-research': 'Turn a business goal into a prioritized map of search opportunities and content ideas.',
-  'support.delivery-task-handoff': 'Turn a completed support investigation into ready-to-start delivery work.',
-  'support.issue-investigation': 'Investigate a reported issue, gather the evidence, and return a clear conclusion in the same conversation.',
-}
-
-const featuredWorkflowKeys = new Set([
-  'branding.content-production',
-  'communications.customer-feedback-intake',
-  'engineering.tracked-delivery',
-  'marketing.campaign-production',
-  'media-buying.campaign-launch',
-  'seo.keyword-research',
-])
-
-const jargon = [
-  [/\bcanonical\b/gi, 'main'],
-  [/\boperator\b/gi, 'person'],
-  [/\brun[- ]plan\b/gi, 'plan'],
-  [/\bprovider\b/gi, 'connected app'],
-  [/\bartifact\b/gi, 'saved result'],
-  [/\bcredential\b/gi, 'login'],
-  [/\bdaemon\b/gi, 'StackOS'],
-  [/\bexecution\b/gi, 'work'],
-  [/\borchestration\b/gi, 'coordination'],
-]
-
 function cleanText(value = '') {
-  let text = String(value).replace(/\s+/g, ' ').trim()
-  for (const [pattern, replacement] of jargon) text = text.replace(pattern, replacement)
-  return text
+  return String(value).replace(/\s+/g, ' ').trim()
 }
 
 function shortText(value, max = 170) {
@@ -142,12 +93,40 @@ for (const path of workflowFiles) {
 }
 
 const agentNameByKey = new Map(agentDocs.map((agent) => [agent.key, cleanText(agent.name)]))
+const catalogErrors = []
+
+for (const workflow of workflowDocs) {
+  if (!workflow.experience) catalogErrors.push(`${workflow.key}: missing experience contract`)
+  if (!workflow.public) catalogErrors.push(`${workflow.key}: missing public catalog contract`)
+  for (const field of ['problem', 'outcome']) {
+    if (!cleanText(workflow.experience?.[field])) catalogErrors.push(`${workflow.key}: missing experience.${field}`)
+  }
+  for (const field of ['operator_path', 'agent_path']) {
+    if (!workflow.experience?.[field]?.length) catalogErrors.push(`${workflow.key}: missing experience.${field}`)
+  }
+  if (!cleanText(workflow.public?.audience)) catalogErrors.push(`${workflow.key}: missing public.audience`)
+  if (!workflow.public?.setup) catalogErrors.push(`${workflow.key}: missing public.setup`)
+  if (!workflow.public?.prerequisites?.length) catalogErrors.push(`${workflow.key}: missing public.prerequisites`)
+  if (!workflow.public?.proof?.length) catalogErrors.push(`${workflow.key}: missing public.proof`)
+}
+
+for (const agent of agentDocs) {
+  if (!['reasoning', 'mechanical', 'review'].includes(agent.role_class)) {
+    catalogErrors.push(`${agent.key}: missing or invalid role_class`)
+  }
+}
+
+if (catalogErrors.length) {
+  throw new Error(`Library source contracts are incomplete:\n- ${catalogErrors.join('\n- ')}`)
+}
 
 const workflows = workflowDocs
   .map((workflow) => {
     const domain = workflow.domain || workflow.key.split('.')[0]
     const domainMeta = domainCopy[domain] || { audience: 'Operations teams', color: '#8ea6ff' }
-    const description = publicDescriptions[workflow.key] || shortText(workflow.description, 190)
+    const experience = workflow.experience
+    const publicMeta = workflow.public
+    const description = shortText(experience.outcome, 190)
     const stages = (workflow.steps || []).map((step) => ({
       id: step.id,
       title: cleanText(step.title || humanize(step.id)),
@@ -170,13 +149,26 @@ const workflows = workflowDocs
       name: cleanText(workflow.name),
       description,
       domain,
-      audience: domainMeta.audience,
+      audience: cleanText(publicMeta.audience),
       color: domainMeta.color,
-      featured: featuredWorkflowKeys.has(workflow.key),
-      whenToUse: [
-        `Use this when you want to ${description.charAt(0).toLowerCase()}${description.slice(1).replace(/\.$/, '')}.`,
-        `Best for ${domainMeta.audience.toLowerCase()} that want repeatable work without changing the tools they already use.`,
-      ],
+      featured: Boolean(publicMeta.featured),
+      problem: cleanText(experience.problem),
+      outcome: cleanText(experience.outcome),
+      whyAi: cleanText(experience.why_ai),
+      operatorPath: (experience.operator_path || []).map(cleanText),
+      agentPath: (experience.agent_path || []).map(cleanText),
+      progressSignals: (experience.progress_signals || []).map(cleanText),
+      recovery: (experience.recovery || []).map(cleanText),
+      safeStoppingPoints: (experience.safe_stopping_points || []).map(cleanText),
+      handoffs: (experience.handoffs || []).map((item) => ({
+        workflowKey: item.workflow_key,
+        relationship: item.relationship,
+        when: cleanText(item.when),
+      })),
+      setup: publicMeta.setup,
+      prerequisites: (publicMeta.prerequisites || []).map(cleanText),
+      proof: (publicMeta.proof || []).map(cleanText),
+      whenToUse: (workflow.when_to_use || []).map(cleanText),
       stages,
       agentNames,
       agentRefs,
@@ -198,8 +190,9 @@ const agents = agentDocs
       domain,
       audience: domainMeta.audience,
       color: domainMeta.color,
-      featured: Boolean(agent.applies_to_workflows?.some((key) => featuredWorkflowKeys.has(key))),
+      featured: Boolean(agent.applies_to_workflows?.some((key) => workflows.find((workflow) => workflow.key === key)?.featured)),
       role: humanize(agent.role || agent.key.split('.').at(-1)),
+      roleClass: agent.role_class,
       workflowKeys: agent.applies_to_workflows || [],
     }
   })
@@ -227,7 +220,7 @@ const orchestrators = skillDocs
       domain,
       audience: domainMeta.audience,
       color: domainMeta.color,
-      featured: true,
+      featured: Boolean(workflowKeys.some((key) => workflows.find((workflow) => workflow.key === key)?.featured)),
       workflowKeys,
       coordinates: relatedAgents,
       agentRefs,

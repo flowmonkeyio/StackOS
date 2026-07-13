@@ -221,13 +221,15 @@ def test_branding_content_production_presets_resolve_end_to_end(
         agent["preset"]["summary"]["key"] for agent in resolved["required_agents"]
     }
     assert required_agent_keys == {
-        "branding.evidence-curator",
         "branding.channel-strategist",
         "branding.narrative-writer",
         "branding.claim-auditor",
         "branding.voice-reviewer",
         "branding.sanitization-reviewer",
     }
+    assert {
+        agent["preset"]["summary"]["key"] for agent in resolved["recommended_agents"]
+    } == {"branding.evidence-curator"}
     skill_preset = skill_resolved["required_skill_presets"][0]
     assert skill_preset["preset"]["summary"]["key"] == "branding.brand-orchestrator"
     assert skill_preset["applies_to_steps"] == [
@@ -239,7 +241,7 @@ def test_branding_content_production_presets_resolve_end_to_end(
         "sanitization-review",
         "produce-optional-images",
         "render-channel-packets",
-        "approve-and-record",
+        "finalize-and-record",
         "execute-publication",
     ]
     recommended_tools = set(skill_preset["preset"]["preset"]["recommended_tools"])
@@ -250,6 +252,39 @@ def test_branding_content_production_presets_resolve_end_to_end(
         "agentPreset.resolveForWorkflow",
         "skillPreset.resolveForWorkflow",
     } <= recommended_tools
+
+
+def test_agent_preset_compact_resolution_includes_usable_role_contracts(
+    mcp_client: MCPClient,
+) -> None:
+    resolved = mcp_client.call_tool_structured(
+        "agentPreset.resolveForWorkflow",
+        {
+            "workflow_key": "branding.brand-foundation-setup",
+            "plugin_slug": "branding",
+        },
+    )
+    resolved = resolved.get("data", resolved)
+
+    required = resolved["required_agents"]
+    assert {item["preset"]["key"] for item in required} == {
+        "branding.profile-architect",
+        "branding.voice-reviewer",
+    }
+    architect = next(
+        item
+        for item in required
+        if item["preset"]["key"] == "branding.profile-architect"
+    )
+    assert architect["preset"]["mission"]
+    assert architect["preset"]["handoff_outputs"]
+    assert architect["preset"]["recommended_tools"]
+    assert architect["project_adaptation"]["adaptation_required"] is True
+    assert architect["project_adaptation"]["required_agent_action"]
+    assert resolved["required_skill_presets"][0]["preset"]["key"] == (
+        "branding.brand-orchestrator"
+    )
+    assert "agent_requirements" not in resolved
 
 
 def test_marketing_campaign_production_presets_resolve_end_to_end(

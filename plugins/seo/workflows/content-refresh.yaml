@@ -6,6 +6,42 @@ description: Reusable template for diagnosing and executing a content refresh wi
 domain: seo
 owner:
   team: StackOS
+experience:
+  problem: "Content refreshes turn into broad rewrites when search intent, current performance, technical issues, and conversion purpose are not diagnosed first."
+  outcome: "A focused page refresh with traceable changes, preserved useful content, and a verification plan."
+  why_ai: "AI can compare search evidence, page structure, project context, and editorial constraints while keeping the final judgment and publication boundary explicit."
+  operator_path:
+    - "Choose the page, business goal, search intent, and performance window."
+    - "Provide approved analytics, query, and content sources."
+    - "Review the proposed changes before publication."
+  agent_path:
+    - "Diagnose intent, performance, technical, content, and conversion gaps before editing."
+    - "Map each proposed change to evidence and preserve what already works."
+    - "Prepare or apply the bounded refresh, then verify content and technical acceptance criteria."
+  progress_signals:
+    - "Page and intent scoped"
+    - "Diagnosis complete"
+    - "Refresh plan reviewed"
+    - "Changes applied"
+    - "Verification complete"
+  recovery:
+    - "If query or performance evidence is missing, return a bounded diagnostic and data request."
+    - "If publication is not authorized, stop with a review-ready patch or content packet."
+  safe_stopping_points:
+    - "Stop with a review-ready refresh plan or patch when publication was not authorized."
+public:
+  audience: "SEO and content teams improving existing pages"
+  setup: mixed
+  prerequisites:
+    - "A page, business goal, and target search intent"
+    - "Approved performance and query evidence"
+    - "Editorial, technical, and publication boundaries"
+  proof:
+    - "Evidence-linked diagnosis"
+    - "Change map"
+    - "Content and technical verification"
+    - "Publication receipt only when authorized"
+  featured: false
 when_to_use:
   - Existing content needs a refresh diagnosis, evidence gathering, and recorded follow-through.
 when_not_to_use:
@@ -35,6 +71,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: content_ref
     name: Content Ref
@@ -172,6 +212,20 @@ outputs:
   - key: refresh_summary
     name: Refresh Summary
     type: object
+    required: true
+    description: Source-linked diagnosis, approved changes, verification evidence, and residual SEO risk.
+    schema:
+      type: object
+      required: [content_ref, diagnosis, changes, verification, residual_risk, evidence_refs]
+      properties:
+        content_ref: {type: string}
+        diagnosis: {type: object}
+        changes: {type: array}
+        verification: {type: array}
+        before_metrics: {type: object}
+        after_metrics: {type: object}
+        residual_risk: {type: array}
+        evidence_refs: {type: array, items: {type: string}}
 learning_hooks:
   - key: refresh_learning
     prompt: Record reusable SEO refresh lessons only when supported by evidence.

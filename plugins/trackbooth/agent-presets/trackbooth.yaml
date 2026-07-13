@@ -6,6 +6,7 @@ presets:
     description: Operates Trackbooth Agent API inventory only through StackOS manual catalog sync, generated actions, and daemon-held API-key auth.
     domain: trackbooth
     role: trackbooth-agent-api-operator
+    role_class: mechanical
     workflow_roles: [trackbooth-agent-api-operator]
     applies_to_workflows: []
     recommended_tools:

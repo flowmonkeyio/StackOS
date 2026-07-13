@@ -16,6 +16,7 @@ def test_skill_preset_loader_lists_bundled_presets() -> None:
     keys = {item.key for item in listing.presets}
 
     assert "stackos.sdlc.delivery-orchestrator" in keys
+    assert "stackos.workflow-orchestrator" in keys
     assert "branding.brand-orchestrator" in keys
     assert all(item.generic_preset for item in listing.presets)
     assert all(item.adaptation_required for item in listing.presets)
@@ -23,6 +24,31 @@ def test_skill_preset_loader_lists_bundled_presets() -> None:
     assert by_key["stackos.sdlc.delivery-orchestrator"].plugin_slug == "engineering"
     assert by_key["stackos.sdlc.delivery-orchestrator"].skill_type == ("main-agent-orchestration")
     assert by_key["branding.brand-orchestrator"].plugin_slug == "branding"
+    assert by_key["stackos.workflow-orchestrator"].plugin_slug == "core"
+
+
+def test_generic_workflow_orchestrator_keeps_the_normal_loop_small() -> None:
+    loaded = SkillPresetLoader().describe_preset(key="stackos.workflow-orchestrator")
+    contract = loaded.preset.operating_contract
+    text = " ".join(
+        [
+            contract.mission,
+            *contract.responsibilities,
+            *contract.must_do,
+            *contract.must_not_do,
+            *contract.required_outputs,
+            *contract.success_criteria,
+            *contract.self_check,
+        ]
+    ).lower()
+
+    assert loaded.preset.metadata_json["boundary"]["not_a_subagent"] is True
+    assert len(loaded.preset.applies_to_workflows) == 20
+    assert "structural, context, provider-route, and execution readiness" in text
+    assert "prefer one ready provider route" in text
+    assert "stop at a documented prepare-only or recommendation boundary" in text
+    assert "do not make every optional branch mandatory" in text
+    assert "without rediscovering" in text
 
 
 def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
@@ -56,6 +82,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert "stable stackos browser profile_key" in contract_text
     assert "adjudicate reviewer claims" in contract_text
     assert "subagents can drift" in contract_text
+    assert "sole feedback gatekeeper" in contract_text
     assert "over-engineering risk" in contract_text
     assert "accepted deliverables" in contract_text
     assert "micro, standard, high-risk, or blocked" in contract_text
@@ -121,20 +148,25 @@ def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None
         ]
     )
     refs = [item.ref for item in loaded.preset.project_adaptation.required_context_refs]
+    conditional_refs = [
+        item.ref for item in loaded.preset.project_adaptation.conditional_context_refs
+    ]
 
     assert loaded.summary.plugin_slug == "branding"
     assert loaded.preset.project_adaptation.required is True
     assert "workspace.startSession" in loaded.preset.recommended_tools
     assert "runPlan.start" in loaded.preset.recommended_tools
+    assert "runPlan.getStep" in loaded.preset.recommended_tools
     assert "readiness.check" in loaded.preset.recommended_tools
     assert "agentPreset.resolveForWorkflow" in loaded.preset.recommended_tools
     assert "skillPreset.resolveForWorkflow" in loaded.preset.recommended_tools
     assert "workflow_agent_requirements" in loaded.preset.project_adaptation.prompt_assembly_order
     assert "stackos:stackos" in refs
-    assert "Level 2 branding overlay" in refs
+    assert "Level 2 branding overlay" in conditional_refs
+    assert "branding.brand-foundation-setup" in loaded.preset.applies_to_workflows
     assert "claims-to-evidence map" in contract_text
     assert "canonical-first" in contract_text
-    assert "automation-first after approval" in contract_text
+    assert "publication_intent is stage or publish" in contract_text
     assert (
         "API integration, browser-assisted platform UI, site/admin UI, or local script"
         in contract_text
@@ -151,8 +183,10 @@ def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None
     assert "artifact.archive" in loaded.preset.recommended_tools
     assert "artifact.supersede" in loaded.preset.recommended_tools
     assert "Do not collapse claim, voice, and sanitization review" in contract_text
+    assert "evidence-backed blockers and repairs" in contract_text
+    assert "next-workflow handoff" in contract_text
     assert "current tracker/run-plan context" in " ".join(contract.must_do)
-    assert loaded.preset.metadata_json["evidence_lock"]["required_before_approval"] is True
+    assert loaded.preset.metadata_json["evidence_lock"]["required_before_finalization"] is True
 
 
 def test_skill_preset_loader_reads_bundled_plugin_assets_without_clone_root(

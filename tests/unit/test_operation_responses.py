@@ -165,6 +165,55 @@ def test_context_compact_response_preserves_projected_fields() -> None:
     assert "metadata_json" not in compact["items"][0]
 
 
+def test_resource_compact_responses_preserve_bounded_records() -> None:
+    record = {
+        "id": 247,
+        "project_id": 1,
+        "resource_id": 12,
+        "plugin_slug": "branding",
+        "resource_key": "brand-profile",
+        "external_id": "current-brand",
+        "title": "Operator Brand",
+        "data_json": {"voice_rules": ["Be specific"], "status": "active"},
+        "created_at": "2026-07-12T04:52:05",
+        "updated_at": "2026-07-12T04:58:27",
+    }
+    resource = {
+        "id": 12,
+        "plugin_id": 3,
+        "plugin_slug": "branding",
+        "key": "brand-profile",
+        "name": "Brand Profile",
+        "description": "Current voice profile.",
+        "schema_json": {"type": "object", "required": ["voice_rules"]},
+    }
+
+    queried = shape_operation_response(
+        _spec("resource.query", mutating=False),
+        {
+            "resources": [resource],
+            "records": [record],
+            "next_cursor": None,
+            "total_estimate": 1,
+        },
+        response_mode="compact",
+    )
+    fetched = shape_operation_response(
+        _spec("resource.get", mutating=False),
+        {"resource": resource, "record": record},
+        response_mode="compact",
+    )
+
+    assert queried["data"]["resources_count"] == 1
+    assert queried["data"]["records_count"] == 1
+    assert queried["data"]["total_estimate"] == 1
+    assert queried["data"]["records"][0]["id"] == 247
+    assert queried["data"]["records"][0]["data_json"] == record["data_json"]
+    assert queried["data"]["records"][0]["updated_at"] == record["updated_at"]
+    assert fetched["data"]["resource"]["key"] == "brand-profile"
+    assert fetched["data"]["record"]["data_json"] == record["data_json"]
+
+
 def test_tracker_bulk_compact_keeps_counts_and_refs_without_full_rows() -> None:
     spec = _spec("tracker.createTicket")
     payload = {
@@ -265,8 +314,8 @@ def test_run_plan_compact_keeps_consistency_issues() -> None:
                     "title": "Scope",
                     "status": "running",
                     "position": 0,
-                    "purpose": "Long reasoning guidance belongs in raw mode.",
-                    "success_criteria_json": ["Long criterion belongs in raw mode."],
+                    "purpose": "Give the active agent enough context to execute the step.",
+                    "success_criteria_json": ["The expected scoped result is verified."],
                     "action_refs_json": ["core.catalog.describe"],
                     "allowed_tools": ["context.query"],
                 }
@@ -296,10 +345,10 @@ def test_run_plan_compact_keeps_consistency_issues() -> None:
             "position": 0,
             "action_refs_json": ["core.catalog.describe"],
             "allowed_tools": ["context.query"],
+            "purpose": "Give the active agent enough context to execute the step.",
+            "success_criteria_json": ["The expected scoped result is verified."],
         }
     ]
-    assert "success_criteria" not in str(compact["data"]["steps"])
-    assert "purpose" not in compact["data"]["steps"][0]
     assert compact["data"]["consistency_issues"][0]["code"] == "terminal-run-live-plan"
     assert compact["data"]["consistency_issues"][0]["run_id"] == 9
 
@@ -462,7 +511,23 @@ def test_plain_object_compact_summarizes_schemas_without_full_body() -> None:
                 "query": {
                     "type": "string",
                     "description": "x" * 1000,
-                }
+                    "enum": ["one", "two"],
+                    "minLength": 1,
+                },
+                "limit": {
+                    "anyOf": [
+                        {"type": "integer", "minimum": 1, "maximum": 50},
+                        {"type": "null"},
+                    ]
+                },
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["ref"],
+                        "properties": {"ref": {"type": "string", "minLength": 1}},
+                    },
+                },
             },
             "$defs": {"Nested": {"type": "object", "description": "y" * 1000}},
         },
@@ -482,9 +547,17 @@ def test_plain_object_compact_summarizes_schemas_without_full_body() -> None:
 
     assert compact["operation"] == "operation.describe"
     assert compact["data"]["input_schema"]["required"] == ["query"]
-    assert compact["data"]["input_schema"]["property_count"] == 1
+    assert compact["data"]["input_schema"]["property_count"] == 3
     assert compact["data"]["input_schema"]["definition_count"] == 1
     assert compact["data"]["input_schema"]["properties"]["query"]["description"].endswith("...")
+    assert compact["data"]["input_schema"]["properties"]["query"]["enum"] == ["one", "two"]
+    assert compact["data"]["input_schema"]["properties"]["query"]["minLength"] == 1
+    assert compact["data"]["input_schema"]["properties"]["limit"]["anyOf"][0][
+        "maximum"
+    ] == 50
+    assert compact["data"]["input_schema"]["properties"]["records"]["items"][
+        "properties"
+    ]["ref"]["minLength"] == 1
     assert "raw_payload" not in str(compact)
     assert "hiddenhiddenhidden" not in str(compact)
     assert "x" * 500 not in str(compact)

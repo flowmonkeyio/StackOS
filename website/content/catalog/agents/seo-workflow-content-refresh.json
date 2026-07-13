@@ -8,6 +8,7 @@
   "color": "#79dfff",
   "featured": false,
   "role": "Seo Content Refresh",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "seo.content-refresh"
   ]

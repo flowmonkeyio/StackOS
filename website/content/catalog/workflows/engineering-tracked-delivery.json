@@ -2,14 +2,62 @@
   "key": "engineering.tracked-delivery",
   "slug": "engineering-tracked-delivery",
   "name": "Engineering Tracked Delivery",
-  "description": "Turn a request into a clear plan, complete it step by step, check the result, and keep the proof.",
+  "description": "A delivered change with an explicit flow, truthful tracker state, proportionate verification, independent review, and release evidence.",
   "domain": "engineering",
-  "audience": "Product and engineering teams",
+  "audience": "Product and engineering teams delivering repository changes",
   "color": "#7892ff",
   "featured": true,
+  "problem": "Engineering requests fail when requirements, dependencies, verification, and review live only in chat or are compressed into implementation.",
+  "outcome": "A delivered change with an explicit flow, truthful tracker state, proportionate verification, independent review, and release evidence.",
+  "whyAi": "AI can coordinate discovery, implementation, testing, and review across a long-running change while StackOS preserves dependencies and proof.",
+  "operatorPath": [
+    "Describe the desired outcome, constraints, and authority boundary.",
+    "Review material design choices or production-risk gates.",
+    "Inspect verification, review findings, and residual risk before release."
+  ],
+  "agentPath": [
+    "Define requirements and affected flows before planning tickets.",
+    "Discover the real code and system boundaries, then design the approach and proof plan.",
+    "Deliver through dependency-linked tickets, run the planned verification, and adjudicate independent review.",
+    "Audit tracker truth and close only when evidence matches the result."
+  ],
+  "progressSignals": [
+    "Requirements defined",
+    "Impact discovered",
+    "Design reviewed",
+    "Test plan verified",
+    "Delivery in progress",
+    "Verification complete",
+    "Independent review adjudicated",
+    "Release truth recorded"
+  ],
+  "recovery": [
+    "Record blockers in the run and tracker instead of hiding them in chat.",
+    "Use run consistency and recovery operations to resume a blocked step without losing prior handoffs."
+  ],
+  "safeStoppingPoints": [
+    "Stop after a reviewed design or diagnosis when implementation authority was not granted."
+  ],
+  "handoffs": [],
+  "setup": "available",
+  "prerequisites": [
+    "Repository instructions and source access",
+    "A desired outcome and acceptance boundary",
+    "Authority for the requested file or system changes"
+  ],
+  "proof": [
+    "Requirements and flow map",
+    "Dependency-linked delivery tickets",
+    "Automated and risk-appropriate manual verification",
+    "Independent review adjudication",
+    "Tracker and release closeout evidence"
+  ],
   "whenToUse": [
-    "Use this when you want to turn a request into a clear plan, complete it step by step, check the result, and keep the proof.",
-    "Best for product and engineering teams that want repeatable work without changing the tools they already use."
+    "A user asks for engineering work that needs planning, implementation, review, and signoff.",
+    "A user explicitly asks to use a workflow, engineering workflow, StackOS workflow, or \"the workflow\" for engineering delivery.",
+    "Work should be visible as tracker tasks/tickets with dependencies, blockers, evidence, and release state.",
+    "A project wants host-local agents configured from SDLC presets for a concrete delivery flow.",
+    "The change touches contracts, tests, UI, data, provider behavior, MCP/REST/CLI operation surfaces, docs, or release risk."
   ],
   "stages": [
     {
@@ -25,7 +73,7 @@
     {
       "id": "discover-impact",
       "title": "Discover Impact",
-      "summary": "Map affected scopes, real work paths, ownership boundaries, downstream readers, tests, docs, and signoff fallout."
+      "summary": "Map affected scopes, real execution paths, ownership boundaries, downstream readers, tests, docs, and signoff fallout."
     },
     {
       "id": "plan-tickets",
@@ -35,7 +83,7 @@
     {
       "id": "design-approach",
       "title": "Design Approach",
-      "summary": "Identify main ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications."
+      "summary": "Identify canonical ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications."
     },
     {
       "id": "review-design",
@@ -65,7 +113,7 @@
     {
       "id": "audit-tracker",
       "title": "Audit Tracker Truth",
-      "summary": "Confirm tracker state, plan state, docs, tests, evidence, and the actual diff agree before closeout."
+      "summary": "Confirm tracker state, run-plan state, docs, tests, evidence, and the actual diff agree before closeout."
     },
     {
       "id": "release-closeout",

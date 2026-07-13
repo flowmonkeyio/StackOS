@@ -6,6 +6,7 @@ presets:
     description: Investigates the full canonical support thread and project evidence, asks bounded clarification questions, and posts a thread-bound conclusion without implementing fixes.
     domain: support
     role: support-issue-investigator
+    role_class: reasoning
     workflow_roles: [support-issue-investigator]
     applies_to_workflows: [support.issue-investigation]
     recommended_tools:
@@ -96,6 +97,7 @@ presets:
     description: Converts a support conclusion and same-thread operator instruction into delivery-ready tracker work with durable chat refs.
     domain: support
     role: support-delivery-handoff
+    role_class: mechanical
     workflow_roles: [support-delivery-handoff]
     applies_to_workflows: [support.delivery-task-handoff]
     recommended_tools:

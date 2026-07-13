@@ -2,14 +2,53 @@
   "key": "seo.content-refresh",
   "slug": "seo-content-refresh",
   "name": "SEO Content Refresh",
-  "description": "Find why an existing page is underperforming, improve it, and verify the result.",
+  "description": "A focused page refresh with traceable changes, preserved useful content, and a verification plan.",
   "domain": "seo",
-  "audience": "SEO and content teams",
+  "audience": "SEO and content teams improving existing pages",
   "color": "#79dfff",
   "featured": false,
+  "problem": "Content refreshes turn into broad rewrites when search intent, current performance, technical issues, and conversion purpose are not diagnosed first.",
+  "outcome": "A focused page refresh with traceable changes, preserved useful content, and a verification plan.",
+  "whyAi": "AI can compare search evidence, page structure, project context, and editorial constraints while keeping the final judgment and publication boundary explicit.",
+  "operatorPath": [
+    "Choose the page, business goal, search intent, and performance window.",
+    "Provide approved analytics, query, and content sources.",
+    "Review the proposed changes before publication."
+  ],
+  "agentPath": [
+    "Diagnose intent, performance, technical, content, and conversion gaps before editing.",
+    "Map each proposed change to evidence and preserve what already works.",
+    "Prepare or apply the bounded refresh, then verify content and technical acceptance criteria."
+  ],
+  "progressSignals": [
+    "Page and intent scoped",
+    "Diagnosis complete",
+    "Refresh plan reviewed",
+    "Changes applied",
+    "Verification complete"
+  ],
+  "recovery": [
+    "If query or performance evidence is missing, return a bounded diagnostic and data request.",
+    "If publication is not authorized, stop with a review-ready patch or content packet."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a review-ready refresh plan or patch when publication was not authorized."
+  ],
+  "handoffs": [],
+  "setup": "mixed",
+  "prerequisites": [
+    "A page, business goal, and target search intent",
+    "Approved performance and query evidence",
+    "Editorial, technical, and publication boundaries"
+  ],
+  "proof": [
+    "Evidence-linked diagnosis",
+    "Change map",
+    "Content and technical verification",
+    "Publication receipt only when authorized"
+  ],
   "whenToUse": [
-    "Use this when you want to find why an existing page is underperforming, improve it, and verify the result.",
-    "Best for seo and content teams that want repeatable work without changing the tools they already use."
+    "Existing content needs a refresh diagnosis, evidence gathering, and recorded follow-through."
   ],
   "stages": [
     {

@@ -343,12 +343,20 @@ def _item_to_json(item: Any) -> Any:
 
 
 def _find_mismatched_project_id(value: Any, expected: int) -> int | None:
-    """Return the first project_id in a payload that differs from expected."""
+    """Return a mismatched project owner without interpreting opaque JSON data.
+
+    Fields ending in ``_json`` are user/domain payloads. A ``project_id`` inside
+    one of those payloads can be provenance or a safe external reference; it is
+    not ownership of the enclosing StackOS object. Actual returned objects and
+    envelopes remain recursively checked.
+    """
     if isinstance(value, dict):
         raw = value.get("project_id")
         if isinstance(raw, int) and raw != expected:
             return raw
-        for child in value.values():
+        for key, child in value.items():
+            if key == "project_id" or key.endswith("_json"):
+                continue
             found = _find_mismatched_project_id(child, expected)
             if found is not None:
                 return found

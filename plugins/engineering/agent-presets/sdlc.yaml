@@ -6,6 +6,7 @@ presets:
     description: Turns broad intent into explicit project-adapted user, data, system, and business flows, acceptance criteria, non-goals, and evidence expectations before design begins.
     domain: engineering
     role: requirements-flow-definer
+    role_class: reasoning
     workflow_roles: [requirements-flow-definer]
     recommended_tools:
       - operation.describe
@@ -115,6 +116,7 @@ presets:
     description: Read-only mapper for affected scopes, execution paths, ownership boundaries, and downstream fallout before code changes.
     domain: engineering
     role: codebase-explorer
+    role_class: reasoning
     workflow_roles: [codebase-explorer]
     recommended_tools:
       - operation.describe
@@ -156,6 +158,7 @@ presets:
     description: Turns scoped work into tracker tasks, dependencies, ticket slices, acceptance criteria, and verification strategy.
     domain: engineering
     role: planning
+    role_class: reasoning
     workflow_roles: [planning]
     recommended_tools:
       - operation.describe
@@ -226,6 +229,7 @@ presets:
     description: Designs implementation structure, ownership boundaries, schemas, operation contracts, and one-brain reuse before delivery.
     domain: engineering
     role: architecture
+    role_class: reasoning
     workflow_roles: [architecture]
     recommended_tools:
       - operation.describe
@@ -278,6 +282,7 @@ presets:
     description: Maps flow design, requirements, and design risks to focused tests, proof surfaces, TDD gates, agent-executed E2E/manual proof depth, and signoff evidence.
     domain: engineering
     role: test-designer
+    role_class: reasoning
     workflow_roles: [test-designer]
     recommended_tools:
       - operation.describe
@@ -340,6 +345,7 @@ presets:
     description: Implements tickets one by one, debugs root causes when checks fail, updates tracker state, verifies behavior, and preserves project conventions.
     domain: engineering
     role: delivery
+    role_class: reasoning
     workflow_roles: [delivery]
     recommended_tools:
       - operation.describe
@@ -404,6 +410,7 @@ presets:
     description: Reviews designs and completed delivery across behavior, flow-regression coverage, QA, integration contracts, security, tracker evidence, and release risk.
     domain: engineering
     role: delivery-reviewer
+    role_class: review
     workflow_roles: [delivery-reviewer]
     recommended_tools:
       - operation.describe
@@ -475,6 +482,7 @@ presets:
     description: Handles release readiness, rollout notes, post-release checks, and operational cleanup.
     domain: engineering
     role: release-ops
+    role_class: mechanical
     workflow_roles: [release-ops]
     recommended_tools:
       - operation.list

@@ -2,6 +2,17 @@
 
 Date: 2026-05-26
 
+Status: historical baseline. This document records the live surface observed on
+the date above; it is not the current operating contract. Use
+[`agent-operating-model.md`](./agent-operating-model.md),
+[`workflow-templates.md`](./workflow-templates.md), and
+[`operations.md`](./operations.md) for current behavior. In particular, current
+StackOS exposes scoped operation guidance through the toolbox, accepts workflow
+inputs during run-plan validation, distinguishes structural/context/provider/
+execution readiness, and returns bounded active-step expectations and dependency
+handoffs. Retain the findings below as provenance for regression comparison, not
+as present-tense product guidance.
+
 This audit reviews StackOS as an agent-facing operating surface. The goal is
 not only whether APIs exist, but whether an agent can understand what StackOS
 does, how to choose the right path, which schemas apply, what outputs mean, how

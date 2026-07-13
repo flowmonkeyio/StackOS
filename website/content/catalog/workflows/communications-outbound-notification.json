@@ -2,14 +2,53 @@
   "key": "communications.outbound-notification",
   "slug": "communications-outbound-notification",
   "name": "Communications Outbound Notification",
-  "description": "Send an approved update after a task, decision, or result is ready.",
+  "description": "One approved notification delivered to a named destination with an auditable source and receipt.",
   "domain": "communications",
-  "audience": "Customer and operations teams",
+  "audience": "Teams sending operational updates after completed work",
   "color": "#7ee2ad",
   "featured": false,
+  "problem": "Status updates are easy to send to the wrong audience, at the wrong time, or without evidence that the underlying work is complete.",
+  "outcome": "One approved notification delivered to a named destination with an auditable source and receipt.",
+  "whyAi": "AI can turn a completed run or decision into audience-appropriate copy, while route and send policy control delivery.",
+  "operatorPath": [
+    "Name the completed result, audience, destination, and urgency.",
+    "Review the message when policy requires it.",
+    "Approve the send or keep the message as a draft."
+  ],
+  "agentPath": [
+    "Verify the source result and named delivery target.",
+    "Draft only what the evidence supports and resolve the allowed route.",
+    "Send once with idempotency and record the provider receipt."
+  ],
+  "progressSignals": [
+    "Source verified",
+    "Target resolved",
+    "Message ready",
+    "Approval recorded",
+    "Delivery receipt stored"
+  ],
+  "recovery": [
+    "If the target or route is unclear, keep the draft and ask for the missing destination.",
+    "If delivery status is uncertain, inspect the existing action receipt before retrying."
+  ],
+  "safeStoppingPoints": [
+    "Stop with an approved draft when sending was not authorized."
+  ],
+  "handoffs": [],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A completed source result or decision",
+    "A named communication target and allowed route",
+    "Audience and approval policy"
+  ],
+  "proof": [
+    "Source refs",
+    "Approved message packet",
+    "Provider message id and idempotency state"
+  ],
   "whenToUse": [
-    "Use this when you want to send an approved update after a task, decision, or result is ready.",
-    "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+    "A run, decision, or agent action needs a human-facing notification.",
+    "The agent has explicit recipients/channels and approved message content."
   ],
   "stages": [
     {
@@ -46,6 +85,7 @@
   ],
   "integrations": [
     "Smtp",
-    "Telegram Bot"
+    "Telegram Bot",
+    "Slack Bot"
   ]
 }

@@ -2,13 +2,15 @@
   "key": "branding.evidence-curator",
   "slug": "branding-evidence-curator",
   "name": "Branding Evidence Curator",
-  "description": "Interviews, researches, harvests, classifies, dedupes, and captures operational receipts as traceable evidence-items.",
+  "description": "Conditionally interviews, researches, and captures operational receipts when dedicated evidence lineage is warranted.",
   "domain": "branding",
   "audience": "Content and brand teams",
   "color": "#d8ff63",
   "featured": true,
   "role": "Evidence Curator",
+  "roleClass": "reasoning",
   "workflowKeys": [
-    "branding.content-production"
+    "branding.content-production",
+    "branding.brand-foundation-setup"
   ]
 }

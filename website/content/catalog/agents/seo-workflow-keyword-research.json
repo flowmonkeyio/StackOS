@@ -8,6 +8,7 @@
   "color": "#79dfff",
   "featured": true,
   "role": "Seo Keyword Research",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "seo.keyword-research"
   ]

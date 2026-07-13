@@ -145,6 +145,54 @@ class TemplateOwnerSpec(BaseModel):
     contact: str | None = Field(default=None, max_length=300)
 
 
+class WorkflowHandoffSpec(BaseModel):
+    """Discoverable continuation from one complete workflow to another."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_key: str = Field(min_length=1, max_length=160)
+    relationship: Literal["next", "conditional", "fallback"] = "conditional"
+    when: str = Field(min_length=1)
+
+    @field_validator("workflow_key")
+    @classmethod
+    def _workflow_key(cls, value: str) -> str:
+        return _validate_ref(value)
+
+
+class WorkflowExperienceSpec(BaseModel):
+    """Small human-and-agent experience contract for a workflow."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    problem: str = Field(min_length=1)
+    outcome: str = Field(min_length=1)
+    operator_path: list[str] = Field(min_length=1)
+    agent_path: list[str] = Field(min_length=1)
+    why_ai: str | None = None
+    progress_signals: list[str] = Field(default_factory=list)
+    recovery: list[str] = Field(default_factory=list)
+    safe_stopping_points: list[str] = Field(default_factory=list)
+    handoffs: list[WorkflowHandoffSpec] = Field(default_factory=list)
+
+
+class WorkflowPublicSpec(BaseModel):
+    """Reviewed public-catalog copy owned by the workflow package."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    audience: str = Field(min_length=1)
+    setup: Literal[
+        "available",
+        "connection-required",
+        "project-adapter-required",
+        "mixed",
+    ]
+    prerequisites: list[str] = Field(default_factory=list)
+    proof: list[str] = Field(default_factory=list)
+    featured: bool = False
+
+
 class TemplateBaseSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -336,6 +384,8 @@ class ActionContractSpec(BaseModel):
     action: str | None = Field(default=None, max_length=160)
     provider: str | None = Field(default=None, max_length=160)
     optional: bool = False
+    route_group: str | None = Field(default=None, max_length=160)
+    route_key: str | None = Field(default=None, max_length=160)
     risk_level: str = Field(default="read", max_length=40)
     input_schema_json: dict[str, Any] = Field(
         default_factory=dict,
@@ -352,12 +402,27 @@ class ActionContractSpec(BaseModel):
     auth_ref: str | None = Field(default=None, max_length=160)
     approval_ref: str | None = Field(default=None, max_length=160)
 
-    @field_validator("key", "capability", "action", "provider", "auth_ref", "approval_ref")
+    @field_validator(
+        "key",
+        "capability",
+        "action",
+        "provider",
+        "auth_ref",
+        "approval_ref",
+        "route_group",
+        "route_key",
+    )
     @classmethod
     def _refs(cls, value: str | None) -> str | None:
         if value is None:
             return None
         return _validate_ref(value)
+
+    @model_validator(mode="after")
+    def _route_pair(self) -> ActionContractSpec:
+        if (self.route_group is None) != (self.route_key is None):
+            raise ValueError("route_group and route_key must be set together")
+        return self
 
 
 class ResourceContractSpec(BaseModel):
@@ -484,6 +549,8 @@ class WorkflowTemplateSpec(BaseModel):
     description: str = ""
     domain: str | None = Field(default=None, max_length=120)
     owner: TemplateOwnerSpec | None = None
+    experience: WorkflowExperienceSpec | None = None
+    public: WorkflowPublicSpec | None = None
     based_on: TemplateBaseSpec | None = None
     when_to_use: list[str] = Field(default_factory=list)
     when_not_to_use: list[str] = Field(default_factory=list)
@@ -716,6 +783,9 @@ __all__ = [
     "TemplateBaseSpec",
     "TemplateIOSpec",
     "TemplateOwnerSpec",
+    "WorkflowExperienceSpec",
+    "WorkflowHandoffSpec",
+    "WorkflowPublicSpec",
     "WorkflowAgentRequirementSpec",
     "WorkflowSkillPresetRequirementSpec",
     "WorkflowSkillRequirementSpec",

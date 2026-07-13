@@ -58,6 +58,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "tool",
         "reason",
         "role",
+        "role_class",
         "requirement",
         "label",
         "type",
@@ -68,6 +69,11 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "approver",
         "agent_type",
         "skill_type",
+        "generic_preset",
+        "adaptation_required",
+        "do_not_use_verbatim",
+        "instruction",
+        "required_agent_action",
         "ok",
         "valid",
         "status",
@@ -128,6 +134,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "action_call_id",
         "message_ref",
         "message",
+        "mission",
         "read_instructions",
         "operation",
         "thread_ref",
@@ -164,6 +171,12 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "project_was_created",
         "read_only",
         "ready",
+        "structurally_ready",
+        "context_status",
+        "required_providers_ready",
+        "execution_ready",
+        "route_group",
+        "prerequisite_count",
         "mutating",
         "executable",
         "visible_by_default",
@@ -222,6 +235,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "execution_available",
         "payload_format",
         "interactive",
+        "input_context_truncated",
         "content_omitted",
     }
 )
@@ -236,6 +250,7 @@ _LIST_KEEP_FIELDS = frozenset(
         "applies_to_workflows",
         "approval_gates",
         "approval_refs",
+        "approval_refs_json",
         "attachment_refs",
         "auth_methods",
         "auth_requirements",
@@ -263,6 +278,7 @@ _LIST_KEEP_FIELDS = frozenset(
         "input_refs",
         "input_refs_json",
         "inputs",
+        "instructions_json",
         "learning_hooks",
         "message_refs",
         "mention_patterns",
@@ -271,6 +287,8 @@ _LIST_KEEP_FIELDS = frozenset(
         "must_not_do",
         "issues",
         "next_operations",
+        "optional_agents",
+        "optional_skill_presets",
         "output_refs",
         "output_refs_json",
         "outputs",
@@ -284,15 +302,22 @@ _LIST_KEEP_FIELDS = frozenset(
         "prompt_assembly_order",
         "policy_refs_json",
         "provider_results",
+        "recommended_agents",
+        "recommended_skill_presets",
         "recommended_tools",
+        "required_agents",
         "required_context_refs",
         "required_input_keys",
         "required_outputs",
+        "required_skill_presets",
         "resource_refs",
         "resource_refs_json",
         "resource_contracts",
         "responsibilities",
         "returns",
+        "route_groups",
+        "routes",
+        "safe_stopping_points",
         "scopes",
         "selected_context_keys",
         "self_check",
@@ -304,6 +329,8 @@ _LIST_KEEP_FIELDS = frozenset(
         "success_criteria_json",
         "template_override_keys",
         "ticket_keys",
+        "unresolved_requirements",
+        "unresolved_skill_preset_requirements",
         "warnings",
         "when_not_to_use",
         "when_to_use",
@@ -363,8 +390,14 @@ _VERBATIM_KEEP_FIELDS = frozenset(
         "candidate_workspaces",
         "candidate_projects",
         "content_model_json",
+        "direct_dependency_handoffs",
+        "experience",
         "extension",
+        "expected_outputs_json",
+        "input_values_json",
         "project",
+        "public",
+        "step_context_json",
         "exposure",
         "provenance",
         "setup",
@@ -580,6 +613,58 @@ def _compact_context_field(value: Any) -> Any:
     return _compact_text(value)
 
 
+def _compact_resource_record(record: dict[str, Any]) -> dict[str, Any]:
+    out = _compact_mapping(record)
+    data_json = record.get("data_json")
+    if isinstance(data_json, (dict, list)):
+        out["data_json"] = _compact_context_field(data_json)
+    for key in ("created_at", "updated_at"):
+        if key in record:
+            out[key] = _compact_text(record[key])
+    return out
+
+
+def _compact_resource_get(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    resource = data.get("resource")
+    record = data.get("record")
+    if isinstance(resource, dict):
+        out["resource"] = _compact_mapping(resource)
+    if isinstance(record, dict):
+        out["record"] = _compact_resource_record(record)
+    return out
+
+
+def _compact_resource_query(data: dict[str, Any]) -> dict[str, Any]:
+    raw_resources = data.get("resources")
+    resources = raw_resources if isinstance(raw_resources, list) else []
+    raw_records = data.get("records")
+    records = raw_records if isinstance(raw_records, list) else []
+    compact_resources = [
+        _compact_mapping(item)
+        for item in resources[:_MAX_COMPACT_LIST_ITEMS]
+        if isinstance(item, dict)
+    ]
+    compact_records = [
+        _compact_resource_record(item)
+        for item in records[:_MAX_COMPACT_LIST_ITEMS]
+        if isinstance(item, dict)
+    ]
+    out: dict[str, Any] = {
+        "resources": compact_resources,
+        "resources_count": len(resources),
+        "records": compact_records,
+        "records_count": len(records),
+        "total_estimate": data.get("total_estimate", len(records)),
+        "next_cursor": data.get("next_cursor"),
+    }
+    if len(resources) > _MAX_COMPACT_LIST_ITEMS:
+        out["resources_truncated"] = True
+    if len(records) > _MAX_COMPACT_LIST_ITEMS:
+        out["records_truncated"] = True
+    return out
+
+
 def _compact_operation_list(payload: dict[str, Any]) -> dict[str, Any]:
     items = payload.get("items")
     item_list = items if isinstance(items, list) else []
@@ -651,6 +736,10 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return {"value": data}
     if operation_name in {"action.run", "action.execute"}:
         return _compact_action_execution(data)
+    if operation_name == "resource.get":
+        return _compact_resource_get(data)
+    if operation_name == "resource.query":
+        return _compact_resource_query(data)
     if operation_name == "tracker.get":
         return compact_tracker_snapshot(data)
     if operation_name == "tracker.status":
@@ -677,6 +766,10 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return _compact_workflow_template_describe(data)
     if operation_name == "workflowTemplate.authoringGuide":
         return _compact_workflow_authoring_guide(data)
+    if operation_name == "agentPreset.resolveForWorkflow":
+        return _compact_agent_preset_resolution(data)
+    if operation_name == "skillPreset.resolveForWorkflow":
+        return _compact_skill_preset_resolution(data)
     if operation_name == "agentPreset.list":
         return _compact_agent_preset_list(data)
     if operation_name == "workflowExtension.list":
@@ -807,7 +900,7 @@ def _compact_tracker_task_rollup(task: Any, ticket: Any) -> dict[str, Any]:
 
 
 def _compact_run_plan_step(step: dict[str, Any]) -> dict[str, Any]:
-    keys = (
+    keys: tuple[str, ...] = (
         "id",
         "step_id",
         "title",
@@ -830,6 +923,18 @@ def _compact_run_plan_step(step: dict[str, Any]) -> dict[str, Any]:
         "output_refs_json",
         "allowed_tools",
     )
+    if step.get("status") == "running":
+        keys += (
+            "purpose",
+            "input_refs_json",
+            "policy_refs_json",
+            "approval_refs_json",
+            "instructions_json",
+            "success_criteria_json",
+            "expected_outputs_json",
+            "direct_dependency_handoffs",
+            "action_execution_guidance",
+        )
     return {key: _compact_value(step[key]) for key in keys if step.get(key) is not None}
 
 
@@ -965,6 +1070,184 @@ def _compact_agent_preset_list(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _compact_agent_preset_resolution(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    workflow = data.get("workflow")
+    if isinstance(workflow, dict):
+        out["workflow"] = _compact_mapping(workflow)
+    skill_requirements = _mapping_items(data.get("skill_requirements"))
+    out["skill_requirements"] = [_compact_mapping(item) for item in skill_requirements]
+    out["skill_requirements_count"] = len(skill_requirements)
+    for key in ("required_agents", "recommended_agents", "optional_agents"):
+        items = _mapping_items(data.get(key))
+        out[key] = [_compact_resolved_agent(item) for item in items]
+        out[f"{key}_count"] = len(items)
+    for key in (
+        "required_skill_presets",
+        "recommended_skill_presets",
+        "optional_skill_presets",
+    ):
+        items = _mapping_items(data.get(key))
+        out[key] = [_compact_resolved_skill_preset(item) for item in items]
+        out[f"{key}_count"] = len(items)
+    for key in ("unresolved_requirements", "unresolved_skill_preset_requirements"):
+        items = _mapping_items(data.get(key))
+        out[key] = [_compact_mapping(item) for item in items]
+        out[f"{key}_count"] = len(items)
+    guidance = _string_items(data.get("setup_guidance"))
+    out["setup_guidance"] = guidance[:_MAX_COMPACT_LIST_ITEMS]
+    out["setup_guidance_count"] = len(guidance)
+    if len(guidance) > _MAX_COMPACT_LIST_ITEMS:
+        out["setup_guidance_truncated"] = True
+    return out
+
+
+def _compact_skill_preset_resolution(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    workflow = data.get("workflow")
+    if isinstance(workflow, dict):
+        out["workflow"] = _compact_mapping(workflow)
+    for key in (
+        "required_skill_presets",
+        "recommended_skill_presets",
+        "optional_skill_presets",
+    ):
+        items = _mapping_items(data.get(key))
+        out[key] = [_compact_resolved_skill_preset(item) for item in items]
+        out[f"{key}_count"] = len(items)
+    unresolved = _mapping_items(data.get("unresolved_skill_preset_requirements"))
+    out["unresolved_skill_preset_requirements"] = [
+        _compact_mapping(item) for item in unresolved
+    ]
+    out["unresolved_skill_preset_requirements_count"] = len(unresolved)
+    guidance = _string_items(data.get("setup_guidance"))
+    out["setup_guidance"] = guidance[:_MAX_COMPACT_LIST_ITEMS]
+    out["setup_guidance_count"] = len(guidance)
+    if len(guidance) > _MAX_COMPACT_LIST_ITEMS:
+        out["setup_guidance_truncated"] = True
+    return out
+
+
+def _compact_resolved_agent(item: dict[str, Any]) -> dict[str, Any]:
+    loaded = _safe_dict(item.get("preset"))
+    summary = _safe_dict(loaded.get("summary"))
+    spec = _safe_dict(loaded.get("preset"))
+    contract = _safe_dict(spec.get("prompt_contract"))
+    preset = {
+        key: summary.get(key)
+        for key in (
+            "key",
+            "name",
+            "version",
+            "role",
+            "role_class",
+            "source",
+            "plugin_slug",
+            "generic_preset",
+            "adaptation_required",
+        )
+        if summary.get(key) is not None
+    }
+    for key in (
+        "mission",
+        "responsibilities",
+        "must_do",
+        "must_not_do",
+        "handoff_inputs",
+        "handoff_outputs",
+        "success_criteria",
+        "self_check",
+    ):
+        if contract.get(key) is not None:
+            preset[key] = _compact_value(contract.get(key))
+    tools = _string_items(spec.get("recommended_tools"))
+    preset["recommended_tools"] = tools[:_MAX_COMPACT_LIST_ITEMS]
+    preset["recommended_tools_count"] = len(tools)
+    if len(tools) > _MAX_COMPACT_LIST_ITEMS:
+        preset["recommended_tools_truncated"] = True
+    return {
+        "role": item.get("role"),
+        "requirement": item.get("requirement"),
+        "purpose": item.get("purpose"),
+        "applies_to_steps": _string_items(item.get("applies_to_steps")),
+        "handoff_notes": _string_items(item.get("handoff_notes")),
+        "preset": preset,
+        "project_adaptation": _compact_adaptation(item.get("project_adaptation")),
+    }
+
+
+def _compact_resolved_skill_preset(item: dict[str, Any]) -> dict[str, Any]:
+    loaded = _safe_dict(item.get("preset"))
+    summary = _safe_dict(loaded.get("summary"))
+    spec = _safe_dict(loaded.get("preset"))
+    contract = _safe_dict(spec.get("operating_contract"))
+    preset = {
+        key: summary.get(key)
+        for key in (
+            "key",
+            "name",
+            "version",
+            "skill_type",
+            "source",
+            "plugin_slug",
+            "generic_preset",
+            "adaptation_required",
+        )
+        if summary.get(key) is not None
+    }
+    for key in (
+        "mission",
+        "responsibilities",
+        "must_do",
+        "must_not_do",
+        "required_outputs",
+        "success_criteria",
+        "self_check",
+    ):
+        if contract.get(key) is not None:
+            preset[key] = _compact_value(contract.get(key))
+    tools = _string_items(spec.get("recommended_tools"))
+    preset["recommended_tools"] = tools[:_MAX_COMPACT_LIST_ITEMS]
+    preset["recommended_tools_count"] = len(tools)
+    if len(tools) > _MAX_COMPACT_LIST_ITEMS:
+        preset["recommended_tools_truncated"] = True
+    return {
+        "requirement": item.get("requirement"),
+        "purpose": item.get("purpose"),
+        "applies_to_steps": _string_items(item.get("applies_to_steps")),
+        "setup_notes": _string_items(item.get("setup_notes")),
+        "preset": preset,
+        "project_adaptation": _compact_adaptation(item.get("project_adaptation")),
+    }
+
+
+def _compact_adaptation(value: Any) -> dict[str, Any]:
+    adaptation = _safe_dict(value)
+    return {
+        key: _compact_value(adaptation.get(key))
+        for key in (
+            "generic_preset",
+            "adaptation_required",
+            "do_not_use_verbatim",
+            "adaptation_status",
+            "instruction",
+            "required_agent_action",
+            "prompt_assembly_order",
+            "required_context_refs",
+            "conditional_context_refs",
+        )
+        if adaptation.get(key) is not None
+    }
+
+
+def _mapping_items(value: Any) -> list[dict[str, Any]]:
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _string_items(value: Any) -> list[str]:
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
 def _safe_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
@@ -975,85 +1258,115 @@ def _compact_text(value: Any, *, limit: int = _MAX_COMPACT_STRING_CHARS) -> Any:
     return value
 
 
+_SCHEMA_FRAGMENT_KEYS = (
+    "title",
+    "type",
+    "format",
+    "const",
+    "pattern",
+    "minLength",
+    "maxLength",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "minProperties",
+    "maxProperties",
+)
+_MAX_COMPACT_SCHEMA_DEPTH = 3
+
+
 def _compact_schema(value: Any, *, include_properties: bool = True) -> dict[str, Any]:
+    return _compact_schema_fragment(
+        value,
+        include_properties=include_properties,
+        depth=0,
+    )
+
+
+def _compact_schema_fragment(
+    value: Any,
+    *,
+    include_properties: bool,
+    depth: int,
+) -> dict[str, Any]:
     schema = _safe_dict(value)
     if not schema:
         return {}
     out: dict[str, Any] = {
-        key: schema.get(key)
-        for key in ("title", "type", "description")
-        if schema.get(key) is not None
+        key: schema.get(key) for key in _SCHEMA_FRAGMENT_KEYS if schema.get(key) is not None
     }
-    if isinstance(out.get("description"), str):
+    description = schema.get("description")
+    if isinstance(description, str):
         out["description"] = _compact_text(
-            out["description"],
+            description,
             limit=_MAX_SCHEMA_DESCRIPTION_CHARS,
         )
-    required = schema.get("required")
-    if isinstance(required, list):
-        out["required"] = [str(item) for item in required if isinstance(item, str)]
-    properties = schema.get("properties")
-    if include_properties and isinstance(properties, dict):
-        names = [str(key) for key in properties]
-        out["property_count"] = len(names)
-        out["properties"] = {
-            key: _compact_schema_property(properties.get(key))
-            for key in names[:_MAX_COMPACT_LIST_ITEMS]
-        }
-        if len(names) > _MAX_COMPACT_LIST_ITEMS:
-            out["properties_truncated"] = True
-    elif isinstance(properties, dict):
-        out["property_count"] = len(properties)
-        out["property_names"] = [str(key) for key in list(properties)[:_MAX_COMPACT_LIST_ITEMS]]
-        if len(properties) > _MAX_COMPACT_LIST_ITEMS:
-            out["properties_truncated"] = True
-    defs = schema.get("$defs")
-    if isinstance(defs, dict):
-        out["definition_count"] = len(defs)
-    return {key: value for key, value in out.items() if value not in (None, {}, [])}
-
-
-def _compact_schema_property(value: Any) -> dict[str, Any]:
-    prop = _safe_dict(value)
-    out: dict[str, Any] = {
-        key: prop.get(key) for key in ("type", "format", "title") if prop.get(key) is not None
-    }
-    description = prop.get("description")
-    if isinstance(description, str):
-        out["description"] = _compact_text(description, limit=_MAX_SCHEMA_DESCRIPTION_CHARS)
-    enum = prop.get("enum")
+    default = schema.get("default")
+    if isinstance(default, str | int | float | bool):
+        out["default"] = _compact_text(default)
+    enum = schema.get("enum")
     if isinstance(enum, list):
         out["enum"] = enum[:_MAX_COMPACT_LIST_ITEMS]
         out["enum_count"] = len(enum)
         if len(enum) > _MAX_COMPACT_LIST_ITEMS:
             out["enum_truncated"] = True
-    default = prop.get("default")
-    if isinstance(default, str | int | float | bool) or default is None:
-        out["default"] = _compact_text(default)
-    items = _safe_dict(prop.get("items"))
-    if items:
-        out["items"] = {
-            key: items.get(key) for key in ("type", "format", "title") if items.get(key) is not None
-        }
-    union_types = _schema_union_types(prop)
-    if union_types:
-        out["any_of_types"] = union_types
-    return {key: value for key, value in out.items() if value is not None}
+    required = schema.get("required")
+    if isinstance(required, list):
+        out["required"] = [str(item) for item in required if isinstance(item, str)]
 
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        names = [str(key) for key in properties]
+        out["property_count"] = len(names)
+        if include_properties and depth < _MAX_COMPACT_SCHEMA_DEPTH:
+            out["properties"] = {
+                key: _compact_schema_fragment(
+                    properties.get(key),
+                    include_properties=True,
+                    depth=depth + 1,
+                )
+                for key in names[:_MAX_COMPACT_LIST_ITEMS]
+            }
+        else:
+            out["property_names"] = names[:_MAX_COMPACT_LIST_ITEMS]
+        if len(names) > _MAX_COMPACT_LIST_ITEMS:
+            out["properties_truncated"] = True
 
-def _schema_union_types(prop: dict[str, Any]) -> list[str]:
-    raw = prop.get("anyOf") or prop.get("oneOf")
-    if not isinstance(raw, list):
-        return []
-    types: list[str] = []
-    for item in raw:
-        option = _safe_dict(item)
-        option_type = option.get("type")
-        if isinstance(option_type, str):
-            types.append(option_type)
-        elif isinstance(option.get("$ref"), str):
-            types.append("ref")
-    return types
+    items = schema.get("items")
+    if isinstance(items, dict):
+        out["items"] = _compact_schema_fragment(
+            items,
+            include_properties=include_properties,
+            depth=depth + 1,
+        )
+
+    for union_key in ("anyOf", "oneOf"):
+        raw_union = schema.get(union_key)
+        if not isinstance(raw_union, list):
+            continue
+        out[union_key] = [
+            _compact_schema_fragment(
+                option,
+                include_properties=include_properties,
+                depth=depth + 1,
+            )
+            for option in raw_union[:_MAX_COMPACT_LIST_ITEMS]
+            if isinstance(option, dict)
+        ]
+        if len(raw_union) > _MAX_COMPACT_LIST_ITEMS:
+            out[f"{union_key}_truncated"] = True
+
+    additional_properties = schema.get("additionalProperties")
+    if isinstance(additional_properties, bool):
+        out["additionalProperties"] = additional_properties
+    defs = schema.get("$defs")
+    if isinstance(defs, dict):
+        out["definition_count"] = len(defs)
+    return {key: item for key, item in out.items() if item not in (None, {}, [])}
 
 
 def _compact_mapping(value: dict[str, Any]) -> dict[str, Any]:

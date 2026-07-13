@@ -79,6 +79,16 @@ _DEFAULT_FIELDS: dict[str, tuple[str, ...]] = {
     "decisions": ("title", "decision", "rationale", "status", "tags"),
     "metrics": ("metric_key", "metric_value", "dimensions_json", "captured_at"),
     "resources": ("resource_key", "title", "status", "data_json", "updated_at"),
+    "artifacts": ("name", "kind", "status", "uri", "metadata_json", "updated_at"),
+    "agent_requests": (
+        "title",
+        "body_preview",
+        "source_message_ref",
+        "status",
+        "metadata_json",
+        "updated_at",
+    ),
+    "action_calls": ("action_key", "status", "response_json", "created_at"),
 }
 
 _FIELD_MAP: dict[str, frozenset[str]] = {
@@ -89,6 +99,7 @@ _FIELD_MAP: dict[str, frozenset[str]] = {
             "status",
             "started_at",
             "ended_at",
+            "completed_at",
             "last_step",
             "last_step_at",
             "metadata_json",
@@ -124,5 +135,43 @@ _FIELD_MAP: dict[str, frozenset[str]] = {
         "external_id",
         "provenance_json",
         "created_at",
+    },
+    "artifacts": frozenset(_DEFAULT_FIELDS["artifacts"])
+    | {
+        "plugin_slug",
+        "resource_record_id",
+        "mime_type",
+        "size_bytes",
+        "superseded_by_artifact_id",
+        "provenance_json",
+        "created_at",
+    },
+    "agent_requests": frozenset(_DEFAULT_FIELDS["agent_requests"])
+    | {
+        "request_key",
+        "source_provider",
+        "source_kind",
+        "source_resource_key",
+        "source_resource_record_id",
+        "attachments",
+        "priority",
+        "attention_status",
+        "run_plan_id",
+        "created_at",
+    },
+    "action_calls": frozenset(_DEFAULT_FIELDS["action_calls"])
+    | {
+        "plugin_slug",
+        "provider_key",
+        "connector_key",
+        "operation",
+        "dry_run",
+        "credential_ref",
+        "provider_context_json",
+        "metadata_json",
+        "cost_cents",
+        "duration_ms",
+        "error",
+        "completed_at",
     },
 }

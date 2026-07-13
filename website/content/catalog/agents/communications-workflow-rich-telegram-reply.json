@@ -8,6 +8,7 @@
   "color": "#7ee2ad",
   "featured": false,
   "role": "Communications Rich Telegram Reply",
+  "roleClass": "mechanical",
   "workflowKeys": [
     "communications.rich-telegram-reply"
   ]

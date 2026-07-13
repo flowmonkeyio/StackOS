@@ -2,12 +2,13 @@
   "key": "support.workflow.delivery-handoff",
   "slug": "support-workflow-delivery-handoff",
   "name": "Support Delivery Handoff Agent",
-  "description": "Converts a support conclusion and same-thread person instruction into delivery-ready tracker work with durable chat refs.",
+  "description": "Converts a support conclusion and same-thread operator instruction into delivery-ready tracker work with durable chat refs.",
   "domain": "support",
   "audience": "Support and success teams",
   "color": "#a8e37f",
   "featured": false,
   "role": "Support Delivery Handoff",
+  "roleClass": "mechanical",
   "workflowKeys": [
     "support.delivery-task-handoff"
   ]

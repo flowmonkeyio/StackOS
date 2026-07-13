@@ -2,7 +2,7 @@
   "key": "marketing.campaign-production-orchestrator",
   "slug": "marketing-campaign-production-orchestrator",
   "name": "Campaign Production Orchestrator",
-  "description": "Generic main-agent coordination preset for end-to-end marketing campaign production from intake brief through plan approval, media production, landing pages, visual signoff, and gallery…",
+  "description": "Generic main-agent orchestration preset for end-to-end marketing campaign production from intake brief through plan approval, media production, landing pages, visual signoff, and gallery…",
   "domain": "marketing",
   "audience": "Marketing teams",
   "color": "#ff78ac",

@@ -6,6 +6,46 @@ description: Convert a completed support investigation and same-thread operator 
 domain: support
 owner:
   team: StackOS
+experience:
+  problem: "Support conclusions lose evidence or create premature engineering tasks when investigation, operator authorization, and delivery acceptance are mixed together."
+  outcome: "A delivery-ready tracker task linked back to the approved support thread and handed to engineering without changing the product."
+  why_ai: "AI can translate an evidence-backed conclusion into complete delivery context while the operator retains task-creation authority."
+  operator_path:
+    - "Review the completed support conclusion in the canonical Slack thread."
+    - "Give the required same-thread instruction to create delivery work."
+    - "Inspect the created task link and engineering handoff."
+  agent_path:
+    - "Verify the investigation is complete and the same-thread authorization is current."
+    - "Create the task with reproduction, impact, evidence, acceptance criteria, and dependencies."
+    - "Reply with the task ref, add the task-created signal, and hand off to engineering."
+  progress_signals:
+    - "Conclusion verified"
+    - "Authorization found"
+    - "Task created"
+    - "Thread acknowledged"
+    - "Engineering handoff ready"
+  recovery:
+    - "If authorization or required delivery context is missing, ask in the same thread and create nothing."
+    - "If acknowledgement fails after task creation, reuse the existing task ref rather than duplicating work."
+  safe_stopping_points:
+    - "Stop with a same-thread clarification when task creation was not explicitly authorized."
+  handoffs:
+    - workflow_key: engineering.tracked-delivery
+      relationship: next
+      when: "The delivery-ready task exists and implementation is authorized."
+public:
+  audience: "Support and engineering teams converting verified issues into delivery work"
+  setup: connection-required
+  prerequisites:
+    - "A completed support conclusion in the canonical Slack thread"
+    - "A current same-thread instruction authorizing task creation"
+    - "Project workflow and tracker context"
+  proof:
+    - "Linked investigation evidence"
+    - "Delivery-ready tracker task"
+    - "Slack acknowledgement and task-created signal"
+    - "Engineering workflow handoff"
+  featured: false
 when_to_use:
   - A support.issue-investigation conclusion is posted and the operator replies in the same canonical thread asking for delivery work.
   - The task must preserve source, thread, media, conclusion, instruction, and handoff refs.
@@ -40,6 +80,10 @@ skill_requirements:
       - Store source, canonical thread, conclusion, instruction, handoff, task, and media refs in tracker state.
       - Add a semantically matching task-created reaction only after tracker task creation succeeds.
       - Hand off implementation, verification, review, and release to engineering.tracked-delivery.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: canonical_thread_ref
     name: Canonical Thread Ref
@@ -205,20 +249,55 @@ outputs:
     name: Task Handoff Plan
     type: object
     description: Same-thread instruction check, duplicate-task check, and planned delivery scope.
+    schema:
+      type: object
+      required: [operator_instruction_ref, canonical_thread_ref, duplicate_check, delivery_scope, ticket_plan]
+      properties:
+        operator_instruction_ref: {type: string}
+        canonical_thread_ref: {type: string}
+        duplicate_check: {type: object}
+        delivery_scope: {type: object}
+        ticket_plan: {type: array}
   - key: delivery_task
     name: Delivery Task
     type: object
     required: true
     description: Created tracker task and tickets ready for engineering.tracked-delivery.
+    schema:
+      type: object
+      required: [task_ref, ticket_refs, workflow_key, source_refs]
+      properties:
+        task_ref: {type: string}
+        ticket_refs: {type: array, items: {type: string}}
+        workflow_key: {type: string, const: engineering.tracked-delivery}
+        source_refs: {type: array, items: {type: string}}
   - key: task_handoff_reply
     name: Task Handoff Reply
     type: object
     required: true
     description: Evidence that the canonical thread was updated with task and delivery handoff refs.
+    schema:
+      type: object
+      required: [thread_ref, message_ref, task_ref, delivery_workflow_key]
+      properties:
+        thread_ref: {type: string}
+        message_ref: {type: string}
+        task_ref: {type: string}
+        delivery_workflow_key: {type: string, const: engineering.tracked-delivery}
+        receipt_ref: {type: string}
   - key: task_created_reaction
     name: Task-Created Reaction
     type: object
     description: Evidence that task-created reaction was added after tracker creation succeeded.
+    schema:
+      type: object
+      required: [status, message_ref]
+      properties:
+        status: {type: string, enum: [added, skipped, blocked]}
+        message_ref: {type: string}
+        reaction: {type: string}
+        receipt_ref: {type: string}
+        reason: {type: string}
 failure_handling:
   - If the instruction is not in the canonical thread, ask the operator to confirm in-thread before task creation.
   - If a matching task already exists, reply with the existing task ref instead of creating a duplicate.

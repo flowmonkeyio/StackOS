@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const { agents: items } = useLibraryCatalog()
 
-useLibrarySeo({ title: 'AI agents for business — 41 specialist roles | StackOS', description: 'Explore 41 focused AI agents for business that research, plan, create, review, verify, and coordinate work inside complete StackOS workflows.' })
+useLibrarySeo({ title: `AI agents for business — ${items.length} specialist roles | StackOS`, description: `Explore ${items.length} focused AI agents for business that research, plan, create, review, verify, and coordinate work inside complete StackOS workflows.` })
 useSchemaOrg([defineWebPage({ '@type': 'CollectionPage', name: 'StackOS Agent Library' }), defineBreadcrumb({ itemListElement: [{ name: 'Home', item: '/' }, { name: 'Library', item: '/library' }, { name: 'Agents', item: '/library/agents' }] })])
 useHead({ script: [{ key: 'agent-library-faq', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: [{ '@type': 'Question', name: 'What are AI agents for business?', acceptedAnswer: { '@type': 'Answer', text: 'AI agents for business are focused roles that use a model, instructions, context, and connected tools to complete a clear responsibility inside a larger business workflow.' } }] }) }] })
 </script>

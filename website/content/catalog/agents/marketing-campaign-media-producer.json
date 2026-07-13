@@ -8,6 +8,7 @@
   "color": "#ff78ac",
   "featured": true,
   "role": "Media Producer",
+  "roleClass": "mechanical",
   "workflowKeys": [
     "marketing.campaign-production"
   ]

@@ -2,14 +2,66 @@
   "key": "media-buying.creative-variant-generation",
   "slug": "media-buying-creative-variant-generation",
   "name": "Media Buying Creative Variant Generation",
-  "description": "Create a focused set of ad variations from your offer, brand, and past performance.",
+  "description": "A focused candidate set tied to an experiment hypothesis, with generation and provider upload kept behind separate approvals.",
   "domain": "media-buying",
-  "audience": "Growth and paid media teams",
+  "audience": "Growth and creative teams developing paid-media variants",
   "color": "#ffbd5c",
   "featured": false,
+  "problem": "Ad variants become expensive noise when they are generated without a hypothesis, offer boundary, destination fit, or upload decision.",
+  "outcome": "A focused candidate set tied to an experiment hypothesis, with generation and provider upload kept behind separate approvals.",
+  "whyAi": "AI can explore several evidence-based variants quickly while reviewers preserve brand, claim, and experimental discipline.",
+  "operatorPath": [
+    "Provide the offer, audience hypotheses, destination, brand constraints, and channel preference.",
+    "Approve generation cost when new assets are needed.",
+    "Review the candidate set and approve any provider upload separately."
+  ],
+  "agentPath": [
+    "Read prior creative and performance evidence before setting direction.",
+    "Define the hypothesis and bounded variant dimensions, then generate only the planned assets.",
+    "Review claims and destination fit; upload through one selected route only after approval."
+  ],
+  "progressSignals": [
+    "Direction set",
+    "Variant plan bounded",
+    "Assets generated",
+    "Candidates reviewed",
+    "Upload status recorded"
+  ],
+  "recovery": [
+    "Use operator-supplied assets when generation is unavailable or unnecessary.",
+    "Preserve reviewed candidates and stop when no upload route is ready."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a reviewed candidate set when upload was not requested or approved."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "media-buying.landing-page-creative-experiment",
+      "relationship": "conditional",
+      "when": "The candidates require a measured creative-and-page experiment."
+    },
+    {
+      "workflowKey": "media-buying.campaign-launch",
+      "relationship": "conditional",
+      "when": "The candidates belong to a new approved campaign launch."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "An offer, audience hypothesis, destination, and brand boundary",
+    "A bounded experiment or variation plan",
+    "Generation approval only when new assets are needed",
+    "One provider route only when upload is approved"
+  ],
+  "proof": [
+    "Creative direction and hypothesis",
+    "Generation receipts where used",
+    "Claim and destination-fit review",
+    "Upload receipts only for the selected route"
+  ],
   "whenToUse": [
-    "Use this when you want to create a focused set of ad variations from your offer, brand, and past performance.",
-    "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+    "A campaign needs new candidate creative concepts, copy angles, or generated assets.",
+    "The agent should combine historical learnings with explicit creative constraints."
   ],
   "stages": [
     {
@@ -35,7 +87,7 @@
     {
       "id": "optional_external_upload",
       "title": "Optional External Upload",
-      "summary": "Execute approved connected app upload or campaign update actions only when granted by the concrete plan."
+      "summary": "Execute approved provider upload or campaign update actions only when granted by the concrete run plan."
     }
   ],
   "agentNames": [

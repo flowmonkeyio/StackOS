@@ -8,6 +8,7 @@
   "color": "#ff9f73",
   "featured": false,
   "role": "Gtm Lead Enrichment Scoring",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "gtm.lead-enrichment-scoring"
   ]

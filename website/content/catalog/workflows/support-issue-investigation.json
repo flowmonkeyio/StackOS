@@ -2,19 +2,67 @@
   "key": "support.issue-investigation",
   "slug": "support-issue-investigation",
   "name": "Issue Investigation",
-  "description": "Investigate a reported issue, gather the evidence, and return a clear conclusion in the same conversation.",
+  "description": "An evidence-backed conclusion in the canonical support thread: verified issue, bounded uncertainty, expected behavior, or not a product defect.",
   "domain": "support",
-  "audience": "Support and success teams",
+  "audience": "Support and product teams investigating customer-reported issues",
   "color": "#a8e37f",
   "featured": false,
+  "problem": "Customer reports are either dismissed too early or turned into engineering work before expected behavior, reproduction, and impact are established.",
+  "outcome": "An evidence-backed conclusion in the canonical support thread: verified issue, bounded uncertainty, expected behavior, or not a product defect.",
+  "whyAi": "AI can connect the full conversation, media, product context, and reproduction evidence while keeping task creation outside the investigator's authority.",
+  "operatorPath": [
+    "Provide the canonical thread and safe media refs.",
+    "Answer bounded clarification questions about expected behavior, environment, timing, and impact.",
+    "Review the conclusion and decide whether delivery work should be created."
+  ],
+  "agentPath": [
+    "Read the full thread and media before forming a hypothesis.",
+    "Separate report, expectation, evidence, reproduction, scope, and uncertainty.",
+    "Ask only bounded clarifications, investigate safely, and post the conclusion in the same thread.",
+    "Do not create delivery tasks."
+  ],
+  "progressSignals": [
+    "Thread and media loaded",
+    "Expected behavior clarified",
+    "Reproduction attempted",
+    "Impact bounded",
+    "Conclusion posted"
+  ],
+  "recovery": [
+    "If evidence or access is missing, state exactly what is unverified and ask the smallest useful question.",
+    "If a provider reply fails, preserve the conclusion and retry from the stored thread and action receipt."
+  ],
+  "safeStoppingPoints": [
+    "Stop with bounded uncertainty; task creation requires a separate workflow and operator instruction."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "support.delivery-task-handoff",
+      "relationship": "conditional",
+      "when": "The conclusion supports delivery work and the operator authorizes task creation in the same thread."
+    }
+  ],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A canonical Slack thread with the complete feedback packet",
+    "Expected versus actual behavior, environment, timing, and impact context",
+    "Safe access to relevant media or reproduction evidence"
+  ],
+  "proof": [
+    "Full-thread and media refs",
+    "Reproduction and impact evidence",
+    "Same-thread conclusion with uncertainty",
+    "No task creation by the investigator"
+  ],
   "whenToUse": [
-    "Use this when you want to investigate a reported issue, gather the evidence, and return a clear conclusion in the same conversation.",
-    "Best for support and success teams that want repeatable work without changing the tools they already use."
+    "A canonical Slack support thread exists and the issue needs diagnosis before delivery work is created.",
+    "The agent must read the whole support thread, include media/context, and produce a root-cause or bounded-uncertainty conclusion.",
+    "The operator needs a clear support conclusion before deciding whether to create delivery work."
   ],
   "stages": [
     {
       "id": "read-canonical-thread",
-      "title": "Read main Thread",
+      "title": "Read Canonical Thread",
       "summary": "Read the full stored thread and source context before forming hypotheses."
     },
     {
@@ -30,7 +78,7 @@
     {
       "id": "post-support-conclusion",
       "title": "Post Support Conclusion",
-      "summary": "Post the evidence-backed conclusion in the main thread and tell the person that task creation is a separate instructed handoff."
+      "summary": "Post the evidence-backed conclusion in the canonical thread and tell the operator that task creation is a separate instructed handoff."
     }
   ],
   "agentNames": [

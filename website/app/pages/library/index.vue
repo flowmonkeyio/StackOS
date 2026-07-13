@@ -55,8 +55,8 @@ function articleSlug(stem: string) {
           <p>A request becomes a visible workflow. Focused agents handle each responsibility. An orchestrator keeps the plan, tools, dependencies, and approvals connected until the result is done.</p>
         </div>
         <div class="library-map__links">
-          <NuxtLink to="/library/workflows"><span>01 / Workflow</span><strong>The path the work follows.</strong><small>Explore 23 complete workflows →</small></NuxtLink>
-          <NuxtLink to="/library/agents"><span>02 / Agents</span><strong>The specialists who handle each stage.</strong><small>Meet 41 focused agents →</small></NuxtLink>
+          <NuxtLink to="/library/workflows"><span>01 / Workflow</span><strong>The path the work follows.</strong><small>Explore {{ catalog.workflows.length }} complete workflows →</small></NuxtLink>
+          <NuxtLink to="/library/agents"><span>02 / Agents</span><strong>The specialists who handle each stage.</strong><small>Meet {{ catalog.agents.length }} focused agents →</small></NuxtLink>
           <NuxtLink to="/library/orchestrators"><span>03 / Orchestration</span><strong>The coordination that keeps the job moving.</strong><small>See every coordinator →</small></NuxtLink>
         </div>
       </div>

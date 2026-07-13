@@ -8,6 +8,17 @@ from typing import Any
 from .conftest import MCPClient
 
 
+def test_context_tool_schemas_expose_the_hard_result_limit(mcp_client: MCPClient) -> None:
+    tools = {tool["name"]: tool for tool in mcp_client.list_tools()}
+
+    for tool_name in ("context.query", "context.timeline"):
+        limit_schema = tools[tool_name]["inputSchema"]["properties"]["limit"]
+        integer_schema = next(
+            branch for branch in limit_schema["anyOf"] if branch.get("type") == "integer"
+        )
+        assert integer_schema["maximum"] == 50
+
+
 def _create_learning(mcp: MCPClient, project_id: int) -> dict:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/learnings",

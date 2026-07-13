@@ -2,25 +2,74 @@
   "key": "marketing.campaign-production",
   "slug": "marketing-campaign-production",
   "name": "Marketing Campaign Production",
-  "description": "Move from a campaign idea to messaging, creative, landing pages, and a complete review gallery.",
+  "description": "A coherent campaign package with approved messaging, generated assets, landing-page variants, a visual review, and a local evidence gallery.",
   "domain": "marketing",
-  "audience": "Marketing teams",
+  "audience": "Marketing teams producing multi-asset campaigns",
   "color": "#ff78ac",
   "featured": true,
+  "problem": "Campaign production fragments the brief, messaging, media, landing pages, and review across disconnected tools and approvals.",
+  "outcome": "A coherent campaign package with approved messaging, generated assets, landing-page variants, a visual review, and a local evidence gallery.",
+  "whyAi": "AI can coordinate several creative and mechanical specialties while retaining one brief, shared constraints, and independent visual signoff.",
+  "operatorPath": [
+    "Provide the product, audience, offer, brand constraints, and desired media.",
+    "Confirm the campaign plan and generation budget before production.",
+    "Review the final gallery and approve or reject each deliverable."
+  ],
+  "agentPath": [
+    "Resolve the brief and brand evidence before choosing concepts or tools.",
+    "Plan media and page variants, then produce through explicit provider routes.",
+    "Verify requirements, run independent visual signoff, and assemble the evidence gallery."
+  ],
+  "progressSignals": [
+    "Brief resolved",
+    "Campaign plan confirmed",
+    "Media in production",
+    "Pages assembled",
+    "Visual signoff complete",
+    "Gallery ready"
+  ],
+  "recovery": [
+    "If brand or product evidence is missing, pause before creative production.",
+    "Preserve completed assets and provider receipts when one route fails; resume only the blocked branch."
+  ],
+  "safeStoppingPoints": [
+    "Stop after the confirmed production plan when generation spend was not approved."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "media-buying.campaign-launch",
+      "relationship": "conditional",
+      "when": "The approved campaign package is intended for a paid-media launch."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "A product brief, audience, offer, and brand profile",
+    "Approved product media and disclosure boundaries",
+    "Generation budget and provider route for selected media"
+  ],
+  "proof": [
+    "Requirement-linked campaign plan",
+    "Provider generation receipts",
+    "Landing-page verification",
+    "Independent visual signoff",
+    "Complete local gallery"
+  ],
   "whenToUse": [
-    "Use this when you want to move from a campaign idea to messaging, creative, landing pages, and a complete review gallery.",
-    "Best for marketing teams that want repeatable work without changing the tools they already use."
+    "A user asks to produce a marketing campaign from a brand identity, product description, and product photo.",
+    "Campaign media (images, short videos), landing page variants, and a reviewable gallery should be produced together with durable state and signoff evidence.",
+    "Landing page A/B variants and their media requirements should be planned and approved before any generation spend."
   ],
   "stages": [
     {
       "id": "intake-brief",
       "title": "Intake Campaign Brief",
-      "summary": "Convert person inputs into a complete structured campaign brief with persisted input artifacts and an explicit media request."
+      "summary": "Convert operator inputs into a complete structured campaign brief with persisted input artifacts and an explicit media request."
     },
     {
       "id": "setup-workspace",
       "title": "Set Up Campaign Workspace",
-      "summary": "Create the repository campaign workspace and scaffold campaign.md as the person-readable campaign ledger."
+      "summary": "Create the repository campaign workspace and scaffold campaign.md as the operator-readable campaign ledger."
     },
     {
       "id": "plan-campaign",
@@ -50,7 +99,7 @@
     {
       "id": "closeout",
       "title": "Campaign Closeout",
-      "summary": "Reconcile state, finalize the campaign ledger, and hand the person one front door to everything produced."
+      "summary": "Reconcile state, finalize the campaign ledger, and hand the operator one front door to everything produced."
     }
   ],
   "agentNames": [

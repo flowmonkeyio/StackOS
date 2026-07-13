@@ -2,25 +2,74 @@
   "key": "branding.content-production",
   "slug": "branding-content-production",
   "name": "Branding Content Production",
-  "description": "Turn an idea into a researched, reviewed piece of content, then prepare it for every channel you choose.",
+  "description": "A reviewed, evidence-backed piece in the project voice, with channel versions and publication governed by the request's explicit execution intent.",
   "domain": "branding",
-  "audience": "Content and brand teams",
+  "audience": "Builders, founders, and content teams sharing real operating experience",
   "color": "#d8ff63",
   "featured": true,
+  "problem": "Useful operating experience often gets flattened into generic content or a disguised product pitch.",
+  "outcome": "A reviewed, evidence-backed piece in the project voice, with channel versions and publication governed by the request's explicit execution intent.",
+  "whyAi": "AI can connect interviews, project evidence, prior positions, drafting, independent review, and bounded execution while keeping the operator's judgment visible.",
+  "operatorPath": [
+    "Name the topic, audience, useful lesson, and how prominently the product should appear.",
+    "Share source boundaries or answer a short interview when the missing experience matters.",
+    "Set packet-only, stage, or publish intent and name the target channels when execution is wanted.",
+    "Answer a focused question only when missing context would materially change the piece or destination."
+  ],
+  "agentPath": [
+    "Load the brand foundation, prior positions, cleared sources, and channel rules.",
+    "Decide whether the optional interview is required, useful, or unnecessary; record why when it is skipped.",
+    "Research and draft from traceable evidence, then run claim, voice, and sanitization review.",
+    "Finalize the packet, then stop, stage, or publish according to publication_intent without adding another human checkpoint."
+  ],
+  "progressSignals": [
+    "Prerequisites checked",
+    "Evidence and interview scope set",
+    "Angle selected",
+    "Draft under independent review",
+    "Packet finalized and recorded",
+    "Publication status recorded"
+  ],
+  "recovery": [
+    "If the voice or source boundary is missing, pause for brand-foundation setup.",
+    "If evidence conflicts, expose the conflict and ask one bounded decision question.",
+    "If publication fails, preserve the final packet and record the channel-specific blocker."
+  ],
+  "safeStoppingPoints": [
+    "Stop after a review-ready content packet when publication_intent is packet_only.",
+    "After the intent-specific terminal condition is met, return closeout without creating unrelated follow-up work or changing another workflow."
+  ],
+  "handoffs": [],
+  "setup": "project-adapter-required",
+  "prerequisites": [
+    "An active brand voice profile or representative writing samples",
+    "A topic, audience, useful lesson, and product-mention boundary",
+    "Approved source and disclosure boundaries",
+    "Channel targets only when publication is in scope"
+  ],
+  "proof": [
+    "Claims-to-evidence map",
+    "Independent claim, voice, and sanitization verdicts",
+    "Durable final content-piece ref",
+    "Explicit packet-only, stage, or publish intent",
+    "Publication receipts only for selected channels"
+  ],
   "whenToUse": [
-    "Use this when you want to turn an idea into a researched, reviewed piece of content, then prepare it for every channel you choose.",
-    "Best for content and brand teams that want repeatable work without changing the tools they already use."
+    "A solo operator wants one workflow to interview them, research the facts, pull supporting artifacts, shape the idea, draft, review, generate optional images, and publish or stage selected channels.",
+    "The user says they want to generate content on a topic, with evidence or source material, using the branding workflow.",
+    "The output should include a canonical draft plus X, LinkedIn, website, or email publication without requiring separate workflow runs.",
+    "Website or channel imagery may be needed, but generation should happen only after an explicit image plan."
   ],
   "stages": [
     {
       "id": "interview-capture",
       "title": "Interview Capture",
-      "summary": "Ask journalist-style questions and capture facts, surprises, tradeoffs, hypotheses, and open research questions."
+      "summary": "Decide whether first-hand operator context is needed, then ask only the useful journalist-style questions or record why the interview can be skipped."
     },
     {
       "id": "research-fact-collection",
       "title": "Research And Fact Collection",
-      "summary": "Use the interview pack to collect, verify, and organize supporting facts from the right sources before angle selection."
+      "summary": "Use the operator intent, interview decision, any interview pack, and cleared sources to collect and organize facts before angle selection."
     },
     {
       "id": "angle-and-structure",
@@ -29,8 +78,8 @@
     },
     {
       "id": "draft-canonical",
-      "title": "Draft main",
-      "summary": "Write the main piece in the adapted person voice from the selected angle and evidence pack."
+      "title": "Draft Canonical",
+      "summary": "Write the canonical piece in the adapted operator voice from the selected angle and evidence pack."
     },
     {
       "id": "editorial-review",
@@ -45,22 +94,22 @@
     {
       "id": "produce-optional-images",
       "title": "Produce Optional Images",
-      "summary": "Resolve the selected image set, generating assets only when the image plan requires connected app-generated website or channel media."
+      "summary": "Resolve the selected image set, generating assets only when the image plan requires provider-generated website or channel media."
     },
     {
       "id": "render-channel-packets",
       "title": "Render Channel Publication Jobs",
-      "summary": "Produce executable website, X, LinkedIn, and optional email publication payloads plus one channel-ready publication bundle from the main draft and image…"
+      "summary": "Produce executable website, X, LinkedIn, and optional email publication payloads plus one channel-ready publication bundle from the canonical draft and…"
     },
     {
-      "id": "approve-and-record",
-      "title": "Approve And Record",
-      "summary": "Approve the main draft, channel publication jobs, publication bundle, optional image refs, follow-up hooks, and memory updates together before external…"
+      "id": "finalize-and-record",
+      "title": "Finalize Content And Record",
+      "summary": "Finalize the reviewed canonical packet and durable memory, then prepare only the publication jobs permitted by publication_intent."
     },
     {
       "id": "execute-publication",
       "title": "Execute Publication",
-      "summary": "Publish or stage every approved channel through its selected automation path, then record distribution results."
+      "summary": "Publish or stage only the jobs selected by publication_intent and target_channels, then record distribution results."
     }
   ],
   "agentNames": [

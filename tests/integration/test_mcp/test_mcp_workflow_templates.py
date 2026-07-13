@@ -22,6 +22,25 @@ def _operation_data(payload: dict) -> dict:
     return payload.get("data", payload)
 
 
+def test_compact_workflow_describe_preserves_experience_and_public_contract(
+    mcp_client: MCPClient,
+) -> None:
+    described = _operation_data(
+        mcp_client.call_tool_structured(
+            "workflowTemplate.describe",
+            {"key": "media-buying.performance-diagnosis"},
+        )
+    )
+
+    assert described["spec"]["experience"]["problem"]
+    assert described["spec"]["experience"]["operator_path"]
+    assert described["spec"]["experience"]["safe_stopping_points"]
+    assert described["spec"]["experience"]["handoffs"]
+    assert described["spec"]["public"]["setup"] == "mixed"
+    assert described["spec"]["public"]["prerequisites"]
+    assert described["spec"]["public"]["proof"]
+
+
 def test_workflow_template_read_tools_are_callable(
     mcp_client: MCPClient,
     tmp_path: Path,
@@ -111,7 +130,12 @@ outputs:
         "run_plan_id and step_id at creation time" in item
         for item in authoring_guide["package_authoring_path"]
     )
+    assert any(
+        "cross-workflow handoff" in item
+        for item in authoring_guide["package_authoring_path"]
+    )
     assert any("private workflow chain" in item for item in authoring_guide["reasoning_gates"])
+    assert any("bounded packet" in item for item in authoring_guide["reasoning_gates"])
     assert any("readiness.check" in item for item in authoring_guide["mechanical_gates"])
     assert any("exactly one root" in item for item in authoring_guide["mechanical_gates"])
     assert any("official provider docs" in item for item in authoring_guide["independent_signoff"])

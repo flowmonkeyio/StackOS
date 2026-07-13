@@ -8,5 +8,6 @@
   "color": "#8ea6ff",
   "featured": false,
   "role": "Workflow Author",
+  "roleClass": "reasoning",
   "workflowKeys": []
 }

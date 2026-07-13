@@ -2,14 +2,63 @@
   "key": "media-buying.campaign-launch",
   "slug": "media-buying-campaign-launch",
   "name": "Media Buying Campaign Launch",
-  "description": "Plan and launch a paid campaign through clear checks, approvals, and connected ad tools.",
+  "description": "A provider-specific campaign plan that passes launch checks and creates external campaign objects only after approval.",
   "domain": "media-buying",
-  "audience": "Growth and paid media teams",
+  "audience": "Paid-media teams launching campaigns through connected ad platforms",
   "color": "#ffbd5c",
   "featured": true,
+  "problem": "Paid campaigns fail at launch when creative, destination, tracking, budget, and provider setup are checked separately or too late.",
+  "outcome": "A provider-specific campaign plan that passes launch checks and creates external campaign objects only after approval.",
+  "whyAi": "AI can keep the brief, creative, page, tracking, and provider contracts aligned while explicit actions retain spend and write controls.",
+  "operatorPath": [
+    "Provide the campaign goal, audience, offer, assets, destination, and budget guardrails.",
+    "Select one provider route and resolve its connection.",
+    "Review the launch plan, tracking, and risk before approving external creation."
+  ],
+  "agentPath": [
+    "Validate the brief and dependencies before selecting the concrete provider route.",
+    "Build the provider-specific structure and validate every action payload.",
+    "Hold the launch and budget approvals, then execute only the selected route.",
+    "Record safe provider refs and the first measurement window."
+  ],
+  "progressSignals": [
+    "Brief validated",
+    "Provider route selected",
+    "Launch checks complete",
+    "Approval recorded",
+    "Campaign objects created",
+    "Measurement window scheduled"
+  ],
+  "recovery": [
+    "If no provider route is ready, keep the validated launch plan and return one setup path.",
+    "On partial creation, reconcile created objects before repair or rollback."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a validated launch plan when external creation or spend is not approved."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "media-buying.performance-diagnosis",
+      "relationship": "next",
+      "when": "The first meaningful measurement window has completed."
+    }
+  ],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A campaign goal, audience, offer, assets, destination, and budget policy",
+    "Tracking and naming rules",
+    "One connected provider route",
+    "Launch and spend approval owners"
+  ],
+  "proof": [
+    "Dependency and tracking checks",
+    "Validated provider payloads",
+    "Launch and budget approvals",
+    "Provider object receipts and first measurement plan"
+  ],
   "whenToUse": [
-    "Use this when you want to plan and launch a paid campaign through clear checks, approvals, and connected ad tools.",
-    "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+    "A project needs to launch a paid media campaign across one or more configured channels.",
+    "The agent needs history, learnings, approvals, resources, and provider contracts before creating campaign structures."
   ],
   "stages": [
     {
@@ -25,7 +74,7 @@
     {
       "id": "create_external_structures",
       "title": "Create External Structures",
-      "summary": "Execute only approved connected app actions granted by the concrete plan."
+      "summary": "Execute only approved provider actions granted by the concrete run plan."
     },
     {
       "id": "record_launch_state",

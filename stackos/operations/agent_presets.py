@@ -156,22 +156,9 @@ def _adaptation_packet(preset: AgentPresetSpec) -> AgentProjectAdaptationPacket:
     )
 
 
-def _setup_guidance() -> list[str]:
-    return [
+def _setup_guidance(*, workflow_keys: list[str] | None = None) -> list[str]:
+    guidance = [
         "Agent presets are generic MCP/tool-consumer contracts, not daemon-run agents.",
-        (
-            "Support setup follows the normal workflow path: use "
-            "communications.customer-feedback-intake to create one canonical "
-            "Slack thread from inbound feedback, support.issue-investigation "
-            "to post the evidence-backed conclusion, support.delivery-task-handoff "
-            "when the operator asks for task creation in the same thread, then "
-            "engineering.tracked-delivery for scoped implementation. Describe "
-            "the workflow, resolve its agent presets, create/start a run plan "
-            "when executing, preserve chat/thread/message refs in tracker "
-            "handoffs, preflight non-Slack route approval and all source media "
-            "forwarding in the canonical Slack handoff before proceeding, and mirror or update "
-            "tracker tasks/tickets."
-        ),
         (
             "Do not use a generic preset verbatim; adapt it to project rules, "
             "tech stack, references, tracker workflow, and signoff expectations first."
@@ -226,6 +213,19 @@ def _setup_guidance() -> list[str]:
             "resolution response, then adapt them to the project before use."
         ),
     ]
+    support_workflows = {
+        "communications.customer-feedback-intake",
+        "support.issue-investigation",
+        "support.delivery-task-handoff",
+    }
+    if support_workflows.intersection(workflow_keys or []):
+        guidance.append(
+            "This selected support path is feedback intake to canonical Slack thread, "
+            "then issue investigation, then same-thread-authorized delivery handoff, "
+            "then engineering.tracked-delivery. Preserve route, media, thread, task, "
+            "and approval refs; do not collapse investigation and task creation."
+        )
+    return guidance
 
 
 def _resolved_agent(
@@ -270,7 +270,9 @@ async def agent_preset_describe(
     return AgentPresetDescribeOut(
         preset=preset,
         project_adaptation=_adaptation_packet(preset.preset),
-        setup_guidance=_setup_guidance(),
+        setup_guidance=_setup_guidance(
+            workflow_keys=list(preset.preset.applies_to_workflows)
+        ),
     )
 
 
@@ -340,7 +342,10 @@ async def agent_preset_resolve_for_workflow(
         recommended_skill_presets=recommended_skill_presets,
         optional_skill_presets=optional_skill_presets,
         unresolved_skill_preset_requirements=unresolved_skill_preset_requirements,
-        setup_guidance=[*_setup_guidance(), *skill_preset_setup_guidance()],
+        setup_guidance=[
+            *_setup_guidance(workflow_keys=[workflow.spec.key]),
+            *skill_preset_setup_guidance(),
+        ],
     )
 
 

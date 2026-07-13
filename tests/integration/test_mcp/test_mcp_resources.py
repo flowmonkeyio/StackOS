@@ -41,25 +41,40 @@ def test_resource_and_artifact_read_tools_are_callable(
     artifact_id = artifact_resp.json()["data"]["id"]
 
     schema = mcp_client.call_tool_structured(
-        "resource.get", {"resource_key": "learning", "plugin_slug": "core"}
+        "resource.get",
+        {"resource_key": "learning", "plugin_slug": "core", "response_mode": "raw"},
     )
     assert schema["resource"]["key"] == "learning"
 
-    record = mcp_client.call_tool_structured("resource.get", {"record_id": record_id})
+    record = mcp_client.call_tool_structured(
+        "resource.get", {"record_id": record_id, "response_mode": "raw"}
+    )
     assert record["record"]["data_json"]["body"] == "Previous run context matters."
     assert record["record"]["data_json"]["api_key"] == "[redacted]"
 
     resources = mcp_client.call_tool_structured(
-        "resource.query", {"project_id": pid, "plugin_slug": "core"}
+        "resource.query",
+        {"project_id": pid, "plugin_slug": "core", "response_mode": "raw"},
     )
     assert [item["id"] for item in resources["records"]] == [record_id]
     assert resources["records"][0]["data_json"]["api_key"] == "[redacted]"
 
-    artifact = mcp_client.call_tool_structured("artifact.get", {"artifact_id": artifact_id})
+    compact_resources = mcp_client.call_tool_structured(
+        "resource.query", {"project_id": pid, "plugin_slug": "core"}
+    )["data"]
+    assert compact_resources["records_count"] == 1
+    assert compact_resources["records"][0]["id"] == record_id
+    assert compact_resources["records"][0]["data_json"]["api_key"] == "[redacted]"
+
+    artifact = mcp_client.call_tool_structured(
+        "artifact.get", {"artifact_id": artifact_id, "response_mode": "raw"}
+    )
     assert artifact["uri"] == "/generated-assets/read-tool.png"
     assert artifact["status"] == "draft"
 
-    artifacts = mcp_client.call_tool_structured("artifact.query", {"project_id": pid})
+    artifacts = mcp_client.call_tool_structured(
+        "artifact.query", {"project_id": pid, "response_mode": "raw"}
+    )
     assert [item["id"] for item in artifacts["items"]] == [artifact_id]
 
 

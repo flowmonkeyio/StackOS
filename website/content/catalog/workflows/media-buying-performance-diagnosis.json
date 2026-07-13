@@ -2,14 +2,71 @@
   "key": "media-buying.performance-diagnosis",
   "slug": "media-buying-performance-diagnosis",
   "name": "Media Buying Performance Diagnosis",
-  "description": "Explain what changed in paid media performance and recommend what to do next.",
+  "description": "A source-linked diagnosis with ranked hypotheses, evidence gaps, and a recommendation for no change, budget review, creative work, or an experiment.",
   "domain": "media-buying",
-  "audience": "Growth and paid media teams",
+  "audience": "Paid-media teams diagnosing performance changes before acting",
   "color": "#ffbd5c",
   "featured": false,
+  "problem": "When paid performance worsens, teams jump to budget or creative changes before separating measurement, audience, channel, page, and market causes.",
+  "outcome": "A source-linked diagnosis with ranked hypotheses, evidence gaps, and a recommendation for no change, budget review, creative work, or an experiment.",
+  "whyAi": "AI can compare multiple causal categories and time windows systematically while keeping uncertainty and business judgment visible.",
+  "operatorPath": [
+    "Name the affected accounts and campaigns, what changed, the KPI, and the comparison window.",
+    "Provide exports or select one read-only provider route.",
+    "Review the diagnosis before starting any mutation workflow."
+  ],
+  "agentPath": [
+    "Validate measurement and comparison quality before explaining performance.",
+    "Use stored evidence or one ready metric-source route; unavailable alternatives stay optional.",
+    "Rank causal hypotheses, name counter-evidence and gaps, and recommend the smallest useful next step.",
+    "Stop after diagnosis unless the operator starts a follow-up workflow."
+  ],
+  "progressSignals": [
+    "Scope confirmed",
+    "Measurement validated",
+    "Evidence collected",
+    "Hypotheses ranked",
+    "Recommendation ready"
+  ],
+  "recovery": [
+    "If evidence is insufficient, recommend no change and list the minimum missing data.",
+    "If a live provider is unavailable, use supplied exports or stored snapshots rather than blocking on every provider."
+  ],
+  "safeStoppingPoints": [
+    "This workflow is recommendation-first and stops before budget, creative, page, or campaign mutation."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "media-buying.budget-reallocation-review",
+      "relationship": "conditional",
+      "when": "Allocation is a supported cause and budget movement should be reviewed."
+    },
+    {
+      "workflowKey": "media-buying.creative-variant-generation",
+      "relationship": "conditional",
+      "when": "Creative fatigue or mismatch is a supported cause."
+    },
+    {
+      "workflowKey": "media-buying.landing-page-creative-experiment",
+      "relationship": "conditional",
+      "when": "The evidence supports a measured creative or destination experiment."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "Affected accounts and campaigns",
+    "The exact change date, KPI target, comparison window, and attribution assumptions",
+    "Stored snapshots, exports, or one ready read-only provider route"
+  ],
+  "proof": [
+    "Measurement-quality check",
+    "Evidence table and ranked hypotheses",
+    "Counter-evidence and data gaps",
+    "Recommendation with explicit no-mutation boundary"
+  ],
   "whenToUse": [
-    "Use this when you want to explain what changed in paid media performance and recommend what to do next.",
-    "Best for growth and paid media teams that want repeatable work without changing the tools they already use."
+    "A campaign, channel, creative set, or audience needs a performance review.",
+    "The agent should retrieve only relevant historical fields before diagnosing."
   ],
   "stages": [
     {
@@ -20,7 +77,7 @@
     {
       "id": "fetch_additional_metrics",
       "title": "Fetch Additional Metrics",
-      "summary": "Execute only approved read actions that the concrete plan grants for missing evidence."
+      "summary": "Execute only the selected read action that the concrete run plan grants for missing evidence."
     },
     {
       "id": "diagnose_drivers",
@@ -30,7 +87,7 @@
     {
       "id": "record_followups",
       "title": "Record Followups",
-      "summary": "Store recommended follow-up resources, budget review notes, and learning candidates."
+      "summary": "Store recommended follow-up resources, budget review notes, and learning candidates for later review without executing a mutation."
     }
   ],
   "agentNames": [

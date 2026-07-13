@@ -15,6 +15,23 @@ description: Review bounded project context and produce a next-step plan.
 domain: core
 owner:
   team: StackOS
+experience:
+  problem: Project history is easy to lose or reconstruct incorrectly.
+  outcome: A source-linked memory review and explicit next-step recommendation.
+  operator_path:
+    - State the question and review the recommendation.
+  agent_path:
+    - Read bounded context, expose gaps, and stop before implicit follow-up work.
+  safe_stopping_points:
+    - Stop after the recommendation unless follow-up is explicitly authorized.
+public:
+  audience: Teams resuming complex project work
+  setup: available
+  prerequisites:
+    - A clear question and an existing project
+  proof:
+    - Source-linked summary, gaps, and recommendation
+  featured: false
 when_to_use:
   - A reusable agent workflow should review context before planning.
 when_not_to_use:
@@ -132,6 +149,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "and run plans are concrete execution instances.",
             "Templates are inert contracts. Agents decide strategy; StackOS validates "
             "state, resolves safe refs, executes explicit calls, and records audit.",
+            "Start with the problem AI should help solve, the useful outcome, and the "
+            "operator and agent experience before choosing steps, roles, or tools.",
             "A workflow identity should represent one end-to-end job the operator can "
             "ask for, not a composable stage that must be chained with other workflows "
             "to finish one deliverable.",
@@ -155,7 +174,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "internal operations, or explicit deferred execution_mode/deferred_reason "
             "when a connector is intentionally not executable.",
             "Workflow templates that encode reusable inputs, context, contracts, "
-            "approval gates, grants, ordered steps, outputs, policies, and failure handling.",
+            "approval gates, grants, ordered steps, outputs, policies, failure handling, "
+            "and a compact human-and-agent experience contract.",
             "Agent presets for specialist roles and skill presets for the main-agent "
             "orchestrator loop, all marked for project adaptation when generic.",
             "Provider setup context in manifest provider config when external actions "
@@ -166,6 +186,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
         package_authoring_path=[
             "Define the package boundary first: domain, reusable method, generic vs "
             "project-specific facts, and the level of operator adaptation expected.",
+            "Write experience.problem, experience.outcome, operator_path, agent_path, "
+            "prerequisites, proof, safe stopping, and recovery before designing the run.",
             "Name the operator-facing job and expected closeout first. If one user "
             "request would need several new workflow templates to complete, collapse "
             "those stages into one workflow with ordered steps.",
@@ -190,6 +212,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "clear non-overlapping authority.",
             "Reuse or adapt existing generic presets before inventing new agents. Add "
             "a specialist preset only when it owns a materially distinct boundary.",
+            "Define the terminal condition explicitly. A cross-workflow handoff returns "
+            "the next safe path; it does not authorize starting or mutating that workflow.",
             "Draft the package together: manifest resources/actions, workflow templates, "
             "agent presets, skill presets, docs, and tests should evolve as one contract.",
             "Wire runtime execution explicitly: action refs, resource refs, auth/provider "
@@ -205,6 +229,9 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "and runPlan.validate/create where applicable.",
             "Verify behavior against the real source of truth for the domain, not only "
             "against local docs or the implementation that was just written.",
+            "Run a black-box agent audit with a vague realistic request and no expected "
+            "workflow key. Record discovery burden, guessing, missing context, tool and "
+            "output clarity, approval and recovery understanding, and selected-path confidence.",
             "For engineering delivery, include an explicit test-design gate before "
             "implementation. That gate should own TDD/red-first proof, automated "
             "checks, risk-appropriate manual proof depth, expected outcomes, and "
@@ -234,19 +261,27 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "that proof depth before implementation?",
             "Are reviewer findings treated as claims for orchestrator adjudication "
             "instead of automatically becoming tickets or blockers?",
+            "Can an agent execute each claimed step from its bounded packet without "
+            "loading the full plan, broadening context fields, or guessing outputs?",
             "Can a future agent answer how to register, connect, prepare, run, and recover "
             "the package without reading private implementation notes?",
+            "Can a new agent map a vague operator request to this workflow, distinguish "
+            "structural, context, provider-route, and execution readiness, and find a "
+            "safe stopping point without hidden repository knowledge?",
         ],
         mechanical_gates=[
             "Plugin manifest validates and indexes every declared resource, provider, action, "
             "workflow template, agent preset, and skill preset.",
             "All workflow templates pass workflowTemplate.validate and their referenced "
             "agent/skill presets resolve.",
+            "Every built-in public workflow has reviewed experience and public contracts; "
+            "every bundled agent explicitly declares reasoning, mechanical, or review role_class.",
             "Every executable action has a connector, registry entry, grant path, "
             "auth/no-secret boundary, input/output schemas, docs, and tests; every "
             "non-executable action is explicitly deferred.",
             "readiness.check reports precise missing credentials, connectors, budgets, "
-            "and provider setup URLs for affected workflows or actions.",
+            "provider routes, context evaluation state, and provider setup URLs for "
+            "affected workflows or actions.",
             "runPlan.create/runPlan.validate produce grants that match the workflow's "
             "action, resource, artifact, decision, context, and communication needs.",
             "Workflow-backed tracker graphs have exactly one root workflow step ticket; attached "
@@ -268,6 +303,9 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "run-plan execution paths with focused automated tests or recorded manual evidence.",
             "Documentation/self-service reviewer: confirm future agents can discover "
             "what exists, when to use it, where to connect/register, and how to execute it.",
+            "Black-box agent reviewer: use fresh context and a vague request, then compare "
+            "the selected path, prerequisites, approvals, stopping, and recovery with the "
+            "expected workflow contract.",
         ],
         decision_path=[
             "Choose the workflow identity: new template, project extension, or one-off run plan.",
@@ -297,6 +335,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "description",
             "domain",
             "owner",
+            "experience",
+            "public for built-in public catalog workflows",
             "when_to_use",
             "when_not_to_use",
             "inputs",

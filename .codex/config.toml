@@ -7,6 +7,12 @@
 # `.codex/orchestrator/sdlc-delivery-orchestrator.md`.
 # That file is not a subagent; it is the main Codex/orchestrator operating
 # contract for engineering workflow delivery in this repository.
+#
+# Project-local branding agents are adapted from
+# `plugins/branding/agent-presets/branding.yaml` for
+# `branding.brand-foundation-setup` and `branding.content-production`.
+# Main-agent routing and depth guidance lives at
+# `.codex/orchestrator/branding-content-orchestrator.md`.
 
 [agents.sdlc_requirements_flow_definer]
 config_file = "agents/sdlc-requirements-flow-definer.toml"
@@ -28,6 +34,27 @@ config_file = "agents/sdlc-delivery.toml"
 
 [agents.sdlc_delivery_reviewer]
 config_file = "agents/sdlc-delivery-reviewer.toml"
+
+[agents.brand_profile_architect]
+config_file = "agents/brand-profile-architect.toml"
+
+[agents.brand_evidence_curator]
+config_file = "agents/brand-evidence-curator.toml"
+
+[agents.brand_narrative_writer]
+config_file = "agents/brand-narrative-writer.toml"
+
+[agents.brand_channel_strategist]
+config_file = "agents/brand-channel-strategist.toml"
+
+[agents.brand_claim_auditor]
+config_file = "agents/brand-claim-auditor.toml"
+
+[agents.brand_voice_reviewer]
+config_file = "agents/brand-voice-reviewer.toml"
+
+[agents.brand_sanitization_reviewer]
+config_file = "agents/brand-sanitization-reviewer.toml"
 
 # Repo-local wrapper starts and proxies to one shared Serena Streamable HTTP
 # MCP server for this checkout.

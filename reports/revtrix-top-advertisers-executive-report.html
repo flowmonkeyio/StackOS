@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Revtrix Top Advertisers Executive Report</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f3f5f8;
+      --paper: #ffffff;
+      --ink: #202124;
+      --muted: #667085;
+      --line: #d9dee7;
+      --teal: #0f766e;
+      --teal-soft: #d9f0ed;
+      --coral: #b23b28;
+      --coral-soft: #f7dfd9;
+      --gold: #a15c06;
+      --gold-soft: #f8ead2;
+      --green: #2f6f4e;
+      --green-soft: #e0efe5;
+      --blue: #345f8c;
+      --blue-soft: #dde8f4;
+      --shadow: 0 18px 45px rgba(32, 33, 36, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    .report {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 24px 48px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 24px;
+      align-items: end;
+      padding: 28px 0 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 850px;
+      font-size: clamp(2rem, 4vw, 4rem);
+      line-height: 0.98;
+      letter-spacing: 0;
+      font-weight: 760;
+    }
+
+    h2 {
+      font-size: 1.1rem;
+      letter-spacing: 0;
+      margin-bottom: 14px;
+    }
+
+    h3 {
+      font-size: 0.98rem;
+      letter-spacing: 0;
+      margin-bottom: 8px;
+    }
+
+    .eyebrow {
+      color: var(--teal);
+      font-weight: 760;
+      text-transform: uppercase;
+      font-size: 0.76rem;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.95rem;
+      max-width: 780px;
+      margin-top: 16px;
+    }
+
+    .stamp {
+      min-width: 220px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+
+    .stamp strong {
+      display: block;
+      color: var(--ink);
+      font-size: 1rem;
+      margin-bottom: 2px;
+    }
+
+    section {
+      margin-top: 28px;
+    }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .kpi {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 118px;
+      box-shadow: var(--shadow);
+    }
+
+    .kpi span {
+      color: var(--muted);
+      display: block;
+      font-size: 0.82rem;
+      margin-bottom: 8px;
+    }
+
+    .kpi strong {
+      display: block;
+      font-size: 1.9rem;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .kpi small {
+      display: block;
+      color: var(--muted);
+      margin-top: 8px;
+      font-size: 0.8rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .takeaways {
+      display: grid;
+      gap: 10px;
+    }
+
+    .takeaway {
+      border-left: 4px solid var(--teal);
+      padding: 10px 12px;
+      background: #f8fafc;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .takeaway:nth-child(2) {
+      border-left-color: var(--gold);
+    }
+
+    .takeaway:nth-child(3) {
+      border-left-color: var(--coral);
+    }
+
+    .takeaway:nth-child(4) {
+      border-left-color: var(--blue);
+    }
+
+    .takeaway strong {
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    .takeaway p,
+    .note,
+    .methodology {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .bars {
+      display: grid;
+      gap: 10px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 150px 1fr 86px;
+      gap: 10px;
+      align-items: center;
+      font-size: 0.88rem;
+    }
+
+    .bar-label {
+      font-weight: 690;
+      overflow-wrap: anywhere;
+    }
+
+    .bar-track {
+      height: 12px;
+      background: #edf0f5;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid #dfe4ec;
+    }
+
+    .bar-fill {
+      height: 100%;
+      width: var(--w);
+      min-width: 4px;
+      border-radius: inherit;
+      background: var(--teal);
+    }
+
+    .bar-row:nth-child(2n) .bar-fill {
+      background: var(--blue);
+    }
+
+    .bar-value {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+    }
+
+    .decision-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .decision {
+      border-radius: 8px;
+      padding: 15px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      min-height: 158px;
+    }
+
+    .decision:nth-child(1) {
+      background: var(--green-soft);
+      border-color: #bddbc8;
+    }
+
+    .decision:nth-child(2) {
+      background: var(--blue-soft);
+      border-color: #c3d5e9;
+    }
+
+    .decision:nth-child(3) {
+      background: var(--gold-soft);
+      border-color: #e9cea2;
+    }
+
+    .decision:nth-child(4) {
+      background: var(--coral-soft);
+      border-color: #edc2b8;
+    }
+
+    .decision p {
+      color: #344054;
+      font-size: 0.9rem;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 980px;
+      font-size: 0.88rem;
+    }
+
+    th,
+    td {
+      padding: 12px 13px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #475467;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .rank {
+      width: 54px;
+      font-weight: 760;
+      color: var(--teal);
+    }
+
+    .advertiser {
+      font-weight: 720;
+      min-width: 150px;
+    }
+
+    .quality {
+      min-width: 190px;
+      color: #475467;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 720;
+      margin: 2px 0;
+      white-space: nowrap;
+    }
+
+    .pill.good {
+      color: #175c38;
+      background: var(--green-soft);
+    }
+
+    .pill.watch {
+      color: #8a2c1d;
+      background: var(--coral-soft);
+    }
+
+    .pill.scale {
+      color: #064e48;
+      background: var(--teal-soft);
+    }
+
+    .split-note {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .small-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 13px;
+      background: var(--paper);
+    }
+
+    .small-box strong {
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    footer {
+      margin-top: 26px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    @media (max-width: 900px) {
+      header,
+      .grid-2,
+      .decision-grid,
+      .split-note {
+        grid-template-columns: 1fr;
+      }
+
+      .kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .stamp {
+        min-width: 0;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .report {
+        padding: 22px 14px 36px;
+      }
+
+      .kpis {
+        grid-template-columns: 1fr;
+      }
+
+      .bar-row {
+        grid-template-columns: 110px 1fr 74px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="report">
+    <header>
+      <div>
+        <p class="eyebrow">Executive advertiser performance brief</p>
+        <h1>Revtrix top 10 advertisers</h1>
+        <p class="meta">Ranked by revenue from the Trackbooth advertiser aggregate report. Period covers the trailing 30 completed days: May 27, 2026 through June 25, 2026.</p>
+      </div>
+      <aside class="stamp" aria-label="Report scope">
+        <strong>Generated Jun 26, 2026</strong>
+        Trackbooth via StackOS<br>
+        Scope: Revtrix advertiser report<br>
+        Total advertiser base: 42
+      </aside>
+    </header>
+
+    <section class="kpis" aria-label="Portfolio KPIs">
+      <article class="kpi">
+        <span>Total revenue</span>
+        <strong>18,074</strong>
+        <small>Reported currency units</small>
+      </article>
+      <article class="kpi">
+        <span>Total margin</span>
+        <strong>15,613.5</strong>
+        <small>86.39% portfolio margin rate</small>
+      </article>
+      <article class="kpi">
+        <span>Sales</span>
+        <strong>205</strong>
+        <small>1,693 leads and 22,763 clicks</small>
+      </article>
+      <article class="kpi">
+        <span>Top 10 concentration</span>
+        <strong>94.2%</strong>
+        <small>Share of total revenue</small>
+      </article>
+    </section>
+
+    <section class="grid-2">
+      <article class="panel">
+        <h2>Executive Readout</h2>
+        <div class="takeaways">
+          <div class="takeaway">
+            <strong>Revenue is highly concentrated.</strong>
+            <p>The top 10 advertisers produce 17,020 of 18,074 revenue units and 93.96% of margin. The remaining 32 advertisers contribute 1,054 revenue units.</p>
+          </div>
+          <div class="takeaway">
+            <strong>50 Partners is the clear leader.</strong>
+            <p>It contributes 4,100 revenue units and 3,830 margin units, the highest absolute contribution in the portfolio.</p>
+          </div>
+          <div class="takeaway">
+            <strong>Income 88 is the conversion engine.</strong>
+            <p>Income 88 generated 134 sales, 65.4% of portfolio sales, but carries a lower 58.88% margin rate because payout is materially higher.</p>
+          </div>
+          <div class="takeaway">
+            <strong>Quality risk is isolated but visible.</strong>
+            <p>13Aff, Arzuno Partners, and 50 Partners show elevated proxy or hosting-click rates. These should be monitored before scaling spend.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h2>Revenue Leaderboard</h2>
+        <div class="bars" aria-label="Revenue by top advertiser">
+          <div class="bar-row">
+            <div class="bar-label">50 Partners</div>
+            <div class="bar-track"><div class="bar-fill" style="--w: 100%;"></div></div>
+            <div class="bar-value">4,100</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Betti Affiliates</div>
+            <div class="bar-track"><div class="bar-fill" style="--w: 79.27%;"></div></div>
+            <div class="bar-value">3,250</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Income 88</div>
+            <div class="bar-track"><div class="bar-fill" style="--w: 65.37%;"></div></div>
+            <div class="bar-value">2,680</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Vegas Legends</div>
+            <div class="bar-track"><div class="bar-fill" style="--w: 56.59%;"></div></div>
+            <div class="bar-value">2,320</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Arzuno Partners</div>
+            <div class="bar-track"><div class="bar-fill" style="--w: 31.95%;"></div></div>
+            <div class="bar-value">1,310</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">WowPartners</div>
+            <div class="bar-track"><div class="bar-fill" style="--w: 30.49%;"></div></div>
+            <div class="bar-value">1,250</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">13Aff</div>
+            <div class="bar-track"><div class="bar-fill" style="--w: 16.83%;"></div></div>
+            <div class="bar-value">690</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">VPartners</div>
+            <div class="bar-track"><div class="bar-fill" style="--w: 14.63%;"></div></div>
+            <div class="bar-value">600</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">247 Partners</div>
+            <div class="bar-track"><div class="bar-fill" style="--w: 10.73%;"></div></div>
+            <div class="bar-value">440</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Iwild</div>
+            <div class="bar-track"><div class="bar-fill" style="--w: 9.27%;"></div></div>
+            <div class="bar-value">380</div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section>
+      <h2>Leadership Decisions</h2>
+      <div class="decision-grid">
+        <article class="decision">
+          <h3>Defend the core</h3>
+          <p>Prioritize relationship management and offer access for 50 Partners, Betti Affiliates, Income 88, and Vegas Legends. They represent 68.3% of total revenue.</p>
+        </article>
+        <article class="decision">
+          <h3>Scale controlled tests</h3>
+          <p>Arzuno Partners has high EPC and a 100% reported margin rate at smaller scale. Expand carefully with traffic-quality guardrails.</p>
+        </article>
+        <article class="decision">
+          <h3>Review unit economics</h3>
+          <p>Income 88 is the sales leader, but its payout level compresses margin. Review commission terms and product mix before aggressive expansion.</p>
+        </article>
+        <article class="decision">
+          <h3>Clean the tail</h3>
+          <p>The 32 advertisers outside the top 10 generate only 5.8% of revenue. Segment them into scale, nurture, and deprioritize groups.</p>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>Top 10 Advertisers</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Advertiser</th>
+              <th class="num">Revenue</th>
+              <th class="num">Margin</th>
+              <th class="num">Margin %</th>
+              <th class="num">Sales</th>
+              <th class="num">Leads</th>
+              <th class="num">Clicks</th>
+              <th class="num">EPC</th>
+              <th class="num">Lead CR</th>
+              <th class="num">Sale CR</th>
+              <th>Executive note</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="rank">1</td>
+              <td class="advertiser">50 Partners</td>
+              <td class="num">4,100</td>
+              <td class="num">3,830</td>
+              <td class="num">93.41%</td>
+              <td class="num">19</td>
+              <td class="num">276</td>
+              <td class="num">3,063</td>
+              <td class="num">1.3386</td>
+              <td class="num">9.01%</td>
+              <td class="num">0.62%</td>
+              <td class="quality"><span class="pill scale">Scale leader</span><br>Largest revenue and margin contributor; monitor 12.41% proxy clicks.</td>
+            </tr>
+            <tr>
+              <td class="rank">2</td>
+              <td class="advertiser">Betti Affiliates</td>
+              <td class="num">3,250</td>
+              <td class="num">2,980</td>
+              <td class="num">91.69%</td>
+              <td class="num">13</td>
+              <td class="num">112</td>
+              <td class="num">1,884</td>
+              <td class="num">1.7251</td>
+              <td class="num">5.94%</td>
+              <td class="num">0.69%</td>
+              <td class="quality"><span class="pill good">Efficient earner</span><br>Strong revenue per click and cleanest quality mix among the top three.</td>
+            </tr>
+            <tr>
+              <td class="rank">3</td>
+              <td class="advertiser">Income 88</td>
+              <td class="num">2,680</td>
+              <td class="num">1,578</td>
+              <td class="num">58.88%</td>
+              <td class="num">134</td>
+              <td class="num">547</td>
+              <td class="num">3,529</td>
+              <td class="num">0.7594</td>
+              <td class="num">15.50%</td>
+              <td class="num">3.80%</td>
+              <td class="quality"><span class="pill watch">Economics review</span><br>Best sales output and conversion rate, but materially lower margin rate.</td>
+            </tr>
+            <tr>
+              <td class="rank">4</td>
+              <td class="advertiser">Vegas Legends</td>
+              <td class="num">2,320</td>
+              <td class="num">2,070</td>
+              <td class="num">89.22%</td>
+              <td class="num">11</td>
+              <td class="num">222</td>
+              <td class="num">1,637</td>
+              <td class="num">1.4172</td>
+              <td class="num">13.56%</td>
+              <td class="num">0.67%</td>
+              <td class="quality"><span class="pill scale">Broad reach</span><br>Healthy margin and 27 observed countries; validate offer breadth before scaling further.</td>
+            </tr>
+            <tr>
+              <td class="rank">5</td>
+              <td class="advertiser">Arzuno Partners</td>
+              <td class="num">1,310</td>
+              <td class="num">1,310</td>
+              <td class="num">100.00%</td>
+              <td class="num">5</td>
+              <td class="num">63</td>
+              <td class="num">297</td>
+              <td class="num">4.4108</td>
+              <td class="num">21.21%</td>
+              <td class="num">1.68%</td>
+              <td class="quality"><span class="pill watch">High EPC, quality watch</span><br>Excellent efficiency, but proxy and hosting rates are elevated.</td>
+            </tr>
+            <tr>
+              <td class="rank">6</td>
+              <td class="advertiser">WowPartners</td>
+              <td class="num">1,250</td>
+              <td class="num">882.5</td>
+              <td class="num">70.60%</td>
+              <td class="num">6</td>
+              <td class="num">97</td>
+              <td class="num">1,822</td>
+              <td class="num">0.6861</td>
+              <td class="num">5.32%</td>
+              <td class="num">0.33%</td>
+              <td class="quality"><span class="pill watch">Margin pressure</span><br>Meaningful volume, but weaker conversion and payout drag economics.</td>
+            </tr>
+            <tr>
+              <td class="rank">7</td>
+              <td class="advertiser">13Aff</td>
+              <td class="num">690</td>
+              <td class="num">600</td>
+              <td class="num">86.96%</td>
+              <td class="num">3</td>
+              <td class="num">15</td>
+              <td class="num">236</td>
+              <td class="num">2.9237</td>
+              <td class="num">6.36%</td>
+              <td class="num">1.27%</td>
+              <td class="quality"><span class="pill watch">Traffic audit</span><br>Attractive EPC, but 34.75% proxy and 55.08% hosting-click rates require review.</td>
+            </tr>
+            <tr>
+              <td class="rank">8</td>
+              <td class="advertiser">VPartners</td>
+              <td class="num">600</td>
+              <td class="num">600</td>
+              <td class="num">100.00%</td>
+              <td class="num">3</td>
+              <td class="num">46</td>
+              <td class="num">777</td>
+              <td class="num">0.7722</td>
+              <td class="num">5.92%</td>
+              <td class="num">0.39%</td>
+              <td class="quality"><span class="pill good">Profitable reach</span><br>Broad country reach with full reported margin; conversion is modest.</td>
+            </tr>
+            <tr>
+              <td class="rank">9</td>
+              <td class="advertiser">247 Partners</td>
+              <td class="num">440</td>
+              <td class="num">440</td>
+              <td class="num">100.00%</td>
+              <td class="num">2</td>
+              <td class="num">38</td>
+              <td class="num">614</td>
+              <td class="num">0.7166</td>
+              <td class="num">6.19%</td>
+              <td class="num">0.33%</td>
+              <td class="quality"><span class="pill good">Stable niche</span><br>Positive margin contribution, but scale is still limited.</td>
+            </tr>
+            <tr>
+              <td class="rank">10</td>
+              <td class="advertiser">Iwild</td>
+              <td class="num">380</td>
+              <td class="num">380</td>
+              <td class="num">100.00%</td>
+              <td class="num">2</td>
+              <td class="num">19</td>
+              <td class="num">163</td>
+              <td class="num">2.3313</td>
+              <td class="num">11.66%</td>
+              <td class="num">1.23%</td>
+              <td class="quality"><span class="pill good">Small efficient base</span><br>Good EPC and conversion signal; needs more volume to prove scalability.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="split-note">
+      <article class="small-box">
+        <strong>Definition of best performing</strong>
+        <p class="note">Advertisers are ranked by revenue because Trackbooth's advertiser report default sort metric is revenue.</p>
+      </article>
+      <article class="small-box">
+        <strong>Financial unit note</strong>
+        <p class="note">Trackbooth returned monetary values without an exposed currency code in the report payload, so values are shown as reported currency units.</p>
+      </article>
+      <article class="small-box">
+        <strong>Data completeness</strong>
+        <p class="note">The period excludes June 26, 2026 because it is a partial day at report generation time.</p>
+      </article>
+    </section>
+
+    <footer>
+      Source: StackOS direct action `trackbooth.api.reporting_getaggregate`, Revtrix account context, advertiser report, grouped by advertiser, sorted by revenue descending. Time bounds returned by Trackbooth: 2026-05-27T00:00:00.000Z to 2026-06-25T23:59:59.999Z.
+    </footer>
+  </main>
+</body>
+</html>

@@ -8,6 +8,7 @@
   "color": "#ff9f73",
   "featured": false,
   "role": "Gtm Account Research",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "gtm.account-research"
   ]

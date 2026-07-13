@@ -6,6 +6,7 @@ presets:
     description: Reviews bounded StackOS project memory and prepares a grounded next-step recommendation.
     domain: core
     role: project-memory-review
+    role_class: reasoning
     workflow_roles: [project-memory-review]
     applies_to_workflows: [core.project-memory-review]
     recommended_tools:
@@ -87,6 +88,7 @@ presets:
     description: Designs reusable StackOS workflow contracts, project workflow extensions, and concrete run plans from project-safe context.
     domain: core
     role: workflow-author
+    role_class: reasoning
     workflow_roles: [workflow-author]
     applies_to_workflows: []
     recommended_tools:

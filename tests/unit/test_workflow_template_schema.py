@@ -15,6 +15,27 @@ def _template_dict() -> dict:
         "key": "media.campaign-launch",
         "name": "Campaign Launch",
         "version": "0.1.0",
+        "experience": {
+            "problem": "Campaign work can skip evidence and approval boundaries.",
+            "outcome": "A reviewed launch plan with an explicit execution boundary.",
+            "operator_path": ["State the goal and constraints.", "Review the plan."],
+            "agent_path": ["Read bounded context.", "Prepare the reviewed plan."],
+            "safe_stopping_points": ["Stop after the recommendation when launch is not approved."],
+            "handoffs": [
+                {
+                    "workflow_key": "media.performance-review",
+                    "relationship": "next",
+                    "when": "The launch has enough outcome data to review.",
+                }
+            ],
+        },
+        "public": {
+            "audience": "Growth teams",
+            "setup": "connection-required",
+            "prerequisites": ["A campaign goal and budget boundary"],
+            "proof": ["Approval and validation evidence"],
+            "featured": True,
+        },
         "inputs": [{"key": "goal", "type": "string", "required": True}],
         "context_requirements": [
             {
@@ -33,6 +54,8 @@ def _template_dict() -> dict:
                 "capability": "media-buying",
                 "provider": "meta",
                 "auth_ref": "meta-auth",
+                "route_group": "campaign-write",
+                "route_key": "meta",
                 "input_schema": {"type": "object"},
             }
         ],
@@ -60,6 +83,11 @@ def test_template_schema_accepts_generic_contracts() -> None:
     assert template.key == "media.campaign-launch"
     assert template.context_requirements[0].filters_json == {"tags": ["creative"]}
     assert template.action_contracts[0].input_schema_json == {"type": "object"}
+    assert template.experience is not None
+    assert template.experience.handoffs[0].workflow_key == "media.performance-review"
+    assert template.public is not None
+    assert template.public.setup == "connection-required"
+    assert template.action_contracts[0].route_group == "campaign-write"
 
 
 def test_template_schema_accepts_agent_skill_and_skill_preset_requirements() -> None:
@@ -159,6 +187,16 @@ def test_template_schema_rejects_secret_values() -> None:
 
     assert result.valid is False
     assert "must not contain secrets" in result.errors[0].message
+
+
+def test_template_schema_requires_complete_route_identity() -> None:
+    data = _template_dict()
+    del data["action_contracts"][0]["route_key"]
+
+    result = validate_workflow_template_obj(data)
+
+    assert result.valid is False
+    assert "route_group and route_key" in result.errors[0].message
 
 
 def test_template_schema_rejects_concrete_action_payloads() -> None:

@@ -218,6 +218,7 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "runPlan.checkConsistency",
         "runPlan.create",
         "runPlan.get",
+        "runPlan.getStep",
         "runPlan.list",
         "runPlan.recover",
         "runPlan.reopen",

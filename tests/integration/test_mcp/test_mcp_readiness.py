@@ -21,7 +21,10 @@ def test_readiness_check_reports_ready_no_auth_action(
     )
 
     assert readiness["scope"] == "action"
-    assert readiness["ready"] is True
+    assert "ready" not in readiness
+    assert readiness["structurally_ready"] is True
+    assert readiness["context_status"] == "ready"
+    assert readiness["required_providers_ready"] is True
     assert readiness["execution_ready"] is True
     assert readiness["missing"] == []
     assert readiness["action"]["action_ref"] == "utils.sitemap.fetch"
@@ -47,7 +50,7 @@ def test_readiness_check_accepts_advertised_raw_response_mode(
     )
 
     assert readiness["scope"] == "action"
-    assert readiness["ready"] is True
+    assert "ready" not in readiness
     assert readiness["actions"][0]["action_ref"] == "utils.sitemap.fetch"
 
 
@@ -67,7 +70,7 @@ def test_readiness_check_reports_scoped_action_missing_setup(
     )
 
     assert readiness["scope"] == "action"
-    assert readiness["ready"] is False
+    assert "ready" not in readiness
     assert readiness["execution_ready"] is False
     missing_codes = {item["code"] for item in readiness["missing"]}
     assert {"credential_required", "budget_required"} <= missing_codes
@@ -106,8 +109,11 @@ def test_readiness_check_keeps_engineering_workflow_usable_without_provider_nois
     )
 
     assert readiness["scope"] == "workflow"
-    assert readiness["ready"] is True
-    assert readiness["execution_ready"] is True
+    assert "ready" not in readiness
+    assert readiness["structurally_ready"] is True
+    assert readiness["context_status"] == "not_evaluated"
+    assert readiness["required_providers_ready"] is True
+    assert readiness["execution_ready"] is False
     assert readiness["missing"] == []
     assert readiness["workflow"]["workflow_key"] == "engineering.tracked-delivery"
     assert "planning" in readiness["workflow"]["required_agent_roles"]
@@ -130,16 +136,20 @@ def test_readiness_check_branding_content_optional_image_repair_setup(
     )
 
     assert readiness["scope"] == "workflow"
-    assert readiness["ready"] is True
-    assert readiness["execution_ready"] is True
+    assert "ready" not in readiness
+    assert readiness["context_status"] == "not_evaluated"
+    assert readiness["required_providers_ready"] is True
+    assert readiness["execution_ready"] is False
     assert readiness["workflow"]["workflow_key"] == "branding.content-production"
     refs = {item["action_ref"] for item in readiness["actions"]}
     assert "utils.image.generate" in refs
-    assert {
-        item["required_for"]
-        for item in readiness["missing"]
-        if item["provider_key"] == "openai-images"
-    } == {"optional_action_execution"}
+    assert readiness["missing"] == []
+    image_action = next(
+        item for item in readiness["actions"] if item["provider_key"] == "openai-images"
+    )
+    assert {item["required_for"] for item in image_action["missing"]} == {
+        "optional_action_execution"
+    }
 
 
 def test_readiness_check_deferred_branding_action_points_to_action_describe(
@@ -158,7 +168,7 @@ def test_readiness_check_deferred_branding_action_points_to_action_describe(
     )
 
     assert readiness["scope"] == "action"
-    assert readiness["ready"] is False
+    assert "ready" not in readiness
     assert readiness["execution_ready"] is False
     missing = readiness["missing"][0]
     assert missing["code"] == "execution_mode_not_directly_executable"
@@ -189,11 +199,14 @@ def test_readiness_check_branding_content_optional_image_setup(
         },
     )
 
-    image_missing = [
-        item for item in readiness["missing"] if item.get("action_ref") == "utils.image.generate"
-    ]
-    assert readiness["ready"] is True
-    assert readiness["execution_ready"] is True
+    image_action = next(
+        item for item in readiness["actions"] if item.get("action_ref") == "utils.image.generate"
+    )
+    image_missing = image_action["missing"]
+    assert "ready" not in readiness
+    assert readiness["context_status"] == "not_evaluated"
+    assert readiness["required_providers_ready"] is True
+    assert readiness["execution_ready"] is False
     assert {item["code"] for item in image_missing} == {"credential_required", "budget_required"}
     credential_missing = next(
         item for item in image_missing if item["code"] == "credential_required"
@@ -218,26 +231,26 @@ def test_readiness_check_reports_customer_support_workflow_slack_setup(
     )
 
     assert readiness["scope"] == "workflow"
-    assert readiness["ready"] is True
+    assert "ready" not in readiness
     assert readiness["execution_ready"] is False
     assert readiness["workflow"]["workflow_key"] == "communications.customer-feedback-intake"
     assert (
         "communications-customer-feedback-intake" in readiness["workflow"]["required_agent_roles"]
     )
     providers = {item["provider_key"] for item in readiness["missing"]}
-    assert providers == {"slack-bot", "telegram-bot"}
+    assert providers == {"slack-bot"}
     required_providers = {
         item["provider_key"]
         for item in readiness["missing"]
         if item["required_for"] == "action_execution"
     }
-    optional_providers = {
-        item["provider_key"]
-        for item in readiness["missing"]
-        if item["required_for"] == "action_execution_optional_provider"
-    }
     assert required_providers == {"slack-bot"}
-    assert optional_providers == {"telegram-bot"}
+    telegram_action = next(
+        item for item in readiness["actions"] if item["provider_key"] == "telegram-bot"
+    )
+    assert {item["required_for"] for item in telegram_action["missing"]} == {
+        "optional_action_execution"
+    }
     assert readiness["next_steps"][0]["tool"] == "runPlan.create"
 
 
@@ -257,15 +270,177 @@ def test_readiness_check_reports_only_selected_workflow_provider_gaps(
     )
 
     assert readiness["scope"] == "workflow"
-    assert readiness["ready"] is True
+    assert "ready" not in readiness
     assert readiness["execution_ready"] is False
     providers = {item["provider_key"] for item in readiness["missing"]}
-    assert providers == {"dataforseo", "ahrefs"}
+    assert providers == set()
     assert "openai-images" not in providers
-    dataforseo = next(item for item in readiness["missing"] if item["provider_key"] == "dataforseo")
-    assert {"seo.keyword.research", "seo.serp.analyze"} <= set(dataforseo["action_refs"])
+    dataforseo_actions = [
+        item for item in readiness["actions"] if item["provider_key"] == "dataforseo"
+    ]
+    assert {"seo.keyword.research", "seo.serp.analyze"} == {
+        item["action_ref"] for item in dataforseo_actions
+    }
+    assert {
+        missing["required_for"]
+        for action in dataforseo_actions
+        for missing in action["missing"]
+    } == {"action_execution_optional_provider"}
+    ahrefs_action = next(
+        item for item in readiness["actions"] if item["provider_key"] == "ahrefs"
+    )
+    assert {item["required_for"] for item in ahrefs_action["missing"]} == {
+        "optional_action_execution"
+    }
     assert readiness["next_steps"][0]["tool"] == "runPlan.create"
-    assert readiness["next_steps"][1]["tool"] == "auth.status"
+    assert len(readiness["next_steps"]) == 1
+
+
+def test_readiness_check_treats_media_providers_as_choose_one_routes(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {
+            "project_id": project_id,
+            "workflow_key": "media-buying.campaign-launch",
+            "response_mode": "raw",
+        },
+    )
+    readiness = readiness.get("data", readiness)
+
+    assert "ready" not in readiness
+    assert readiness["required_providers_ready"] is False
+    assert readiness["execution_ready"] is False
+    assert len(readiness["route_groups"]) == 1
+    group = readiness["route_groups"][0]
+    assert group["route_group"] == "campaign_launch"
+    assert group["required"] is True
+    assert group["execution_ready"] is False
+    assert {route["route_key"] for route in group["routes"]} == {
+        "meta_ads",
+        "google_ads",
+        "taboola",
+        "custom_media_tool",
+    }
+    route_blocker = next(
+        item for item in readiness["missing"] if item["code"] == "no_executable_route"
+    )
+    assert "one executable route" in route_blocker["message"]
+    assert [item for item in readiness["missing"] if item.get("provider_key") is not None] == []
+
+
+def test_readiness_compact_response_preserves_dimensions_and_route_choices(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {
+            "project_id": project_id,
+            "workflow_key": "media-buying.campaign-launch",
+        },
+    )
+    readiness = readiness.get("data", readiness)
+
+    assert "ready" not in readiness
+    assert readiness["structurally_ready"] is True
+    assert readiness["context_status"] == "not_evaluated"
+    assert readiness["required_providers_ready"] is False
+    assert readiness["execution_ready"] is False
+    assert readiness["route_groups"][0]["route_group"] == "campaign_launch"
+    assert readiness["route_groups"][0]["required"] is True
+    assert {route["route_key"] for route in readiness["route_groups"][0]["routes"]} == {
+        "meta_ads",
+        "google_ads",
+        "taboola",
+        "custom_media_tool",
+    }
+    assert all(action.get("setup") is None for action in readiness["actions"])
+    assert all(
+        missing.get("setup") is None
+        for action in readiness["actions"]
+        for missing in action["missing"]
+    )
+    assert "docs_url" not in str(readiness)
+
+
+def test_readiness_optional_routes_do_not_block_prepare_only_workflows(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {
+            "project_id": project_id,
+            "workflow_key": "media-buying.performance-diagnosis",
+            "response_mode": "raw",
+        },
+    )
+
+    assert readiness["required_providers_ready"] is True
+    assert readiness["execution_ready"] is False
+    assert readiness["missing"] == []
+    group = readiness["route_groups"][0]
+    assert group["route_group"] == "metric_source"
+    assert group["required"] is False
+    assert group["execution_ready"] is False
+    assert all(
+        missing["required_for"].startswith("optional_route:")
+        for action in readiness["actions"]
+        for missing in action["missing"]
+    )
+
+
+def test_readiness_gtm_and_communications_expose_provider_choices(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    research = mcp_client.call_tool_structured(
+        "readiness.check",
+        {
+            "project_id": project_id,
+            "workflow_key": "gtm.account-research",
+            "response_mode": "raw",
+        },
+    )
+    outbound = mcp_client.call_tool_structured(
+        "readiness.check",
+        {
+            "project_id": project_id,
+            "workflow_key": "communications.outbound-notification",
+            "response_mode": "raw",
+        },
+    )
+
+    research_group = research["route_groups"][0]
+    assert research_group["route_group"] == "research_source"
+    assert research_group["required"] is True
+    assert {route["route_key"] for route in research_group["routes"]} == {
+        "jina",
+        "firecrawl",
+    }
+    assert research_group["execution_ready"] is True
+    assert research["required_providers_ready"] is True
+    assert research["missing"] == []
+
+    outbound_group = outbound["route_groups"][0]
+    assert outbound_group["route_group"] == "delivery_channel"
+    assert outbound_group["required"] is True
+    assert {route["route_key"] for route in outbound_group["routes"]} == {
+        "email",
+        "telegram",
+        "slack",
+    }
 
 
 def test_readiness_check_resolves_cross_plugin_utility_action_contracts(
@@ -328,19 +503,13 @@ def test_readiness_check_marketing_campaign_scopes_concrete_optional_video_actio
         "utils.kling.video.generate",
         "utils.xai.video.generate",
     } <= refs
-    assert providers == {
-        "openai-images",
-        "google-veo",
-        "byteplus-ark",
-        "alibaba-wan",
-        "kling",
-        "xai-imagine",
-    }
+    assert providers == {"openai-images"}
     assert "utils.video.generate" not in refs
     video_missing = [
-        item
-        for item in readiness["missing"]
-        if (item.get("action_ref") or "").endswith(".video.generate")
+        missing
+        for action in readiness["actions"]
+        if (action.get("action_ref") or "").endswith(".video.generate")
+        for missing in action["missing"]
     ]
     assert video_missing
     assert {item["required_for"] for item in video_missing} == {"optional_action_execution"}

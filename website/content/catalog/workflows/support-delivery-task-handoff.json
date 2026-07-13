@@ -2,20 +2,67 @@
   "key": "support.delivery-task-handoff",
   "slug": "support-delivery-task-handoff",
   "name": "Delivery Task Handoff",
-  "description": "Turn a completed support investigation into ready-to-start delivery work.",
+  "description": "A delivery-ready tracker task linked back to the approved support thread and handed to engineering without changing the product.",
   "domain": "support",
-  "audience": "Support and success teams",
+  "audience": "Support and engineering teams converting verified issues into delivery work",
   "color": "#a8e37f",
   "featured": false,
+  "problem": "Support conclusions lose evidence or create premature engineering tasks when investigation, operator authorization, and delivery acceptance are mixed together.",
+  "outcome": "A delivery-ready tracker task linked back to the approved support thread and handed to engineering without changing the product.",
+  "whyAi": "AI can translate an evidence-backed conclusion into complete delivery context while the operator retains task-creation authority.",
+  "operatorPath": [
+    "Review the completed support conclusion in the canonical Slack thread.",
+    "Give the required same-thread instruction to create delivery work.",
+    "Inspect the created task link and engineering handoff."
+  ],
+  "agentPath": [
+    "Verify the investigation is complete and the same-thread authorization is current.",
+    "Create the task with reproduction, impact, evidence, acceptance criteria, and dependencies.",
+    "Reply with the task ref, add the task-created signal, and hand off to engineering."
+  ],
+  "progressSignals": [
+    "Conclusion verified",
+    "Authorization found",
+    "Task created",
+    "Thread acknowledged",
+    "Engineering handoff ready"
+  ],
+  "recovery": [
+    "If authorization or required delivery context is missing, ask in the same thread and create nothing.",
+    "If acknowledgement fails after task creation, reuse the existing task ref rather than duplicating work."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a same-thread clarification when task creation was not explicitly authorized."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "engineering.tracked-delivery",
+      "relationship": "next",
+      "when": "The delivery-ready task exists and implementation is authorized."
+    }
+  ],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A completed support conclusion in the canonical Slack thread",
+    "A current same-thread instruction authorizing task creation",
+    "Project workflow and tracker context"
+  ],
+  "proof": [
+    "Linked investigation evidence",
+    "Delivery-ready tracker task",
+    "Slack acknowledgement and task-created signal",
+    "Engineering workflow handoff"
+  ],
   "whenToUse": [
-    "Use this when you want to turn a completed support investigation into ready-to-start delivery work.",
-    "Best for support and success teams that want repeatable work without changing the tools they already use."
+    "A support.issue-investigation conclusion is posted and the operator replies in the same canonical thread asking for delivery work.",
+    "The task must preserve source, thread, media, conclusion, instruction, and handoff refs.",
+    "Engineering delivery should start from tracker state rather than chat-only context."
   ],
   "stages": [
     {
       "id": "confirm-thread-instruction",
       "title": "Confirm Thread Instruction",
-      "summary": "Re-read the main thread and confirm the task instruction belongs to the same thread as the support conclusion."
+      "summary": "Re-read the canonical thread and confirm the task instruction belongs to the same thread as the support conclusion."
     },
     {
       "id": "create-delivery-task",
@@ -25,12 +72,12 @@
     {
       "id": "post-task-handoff",
       "title": "Post Task Handoff",
-      "summary": "Reply in the main thread with the task link/key, scoped delivery summary, and engineering.tracked-delivery handoff."
+      "summary": "Reply in the canonical thread with the task link/key, scoped delivery summary, and engineering.tracked-delivery handoff."
     },
     {
       "id": "add-task-created-reaction",
       "title": "Add Task-Created Reaction",
-      "summary": "Add a semantically matching reaction to the main message only after task creation succeeds."
+      "summary": "Add a semantically matching reaction to the canonical message only after task creation succeeds."
     }
   ],
   "agentNames": [

@@ -71,6 +71,7 @@ class ReadinessActionOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     action_ref: str
+    contract_key: str | None = None
     name: str | None = None
     provider_key: str | None = None
     capability_key: str | None = None
@@ -80,8 +81,33 @@ class ReadinessActionOut(BaseModel):
     availability_reasons: list[str] = Field(default_factory=list)
     credential_state: str | None = None
     budget_state: str | None = None
+    optional: bool = False
+    route_group: str | None = None
+    route_key: str | None = None
     setup: ProviderSetupOut | None = None
     missing: list[ReadinessMissingItemOut] = Field(default_factory=list)
+
+
+class ReadinessRouteOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_group: str
+    route_key: str
+    executable: bool
+    structurally_ready: bool
+    action_refs: list[str] = Field(default_factory=list)
+    missing: list[ReadinessMissingItemOut] = Field(default_factory=list)
+
+
+class ReadinessRouteGroupOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_group: str
+    required: bool
+    execution_ready: bool
+    structurally_ready: bool
+    available_route_keys: list[str] = Field(default_factory=list)
+    routes: list[ReadinessRouteOut] = Field(default_factory=list)
 
 
 class ReadinessWorkflowOut(BaseModel):
@@ -95,6 +121,9 @@ class ReadinessWorkflowOut(BaseModel):
     required_agent_roles: list[str] = Field(default_factory=list)
     recommended_agent_roles: list[str] = Field(default_factory=list)
     skill_refs: list[str] = Field(default_factory=list)
+    prerequisite_count: int = 0
+    prerequisites: list[str] = Field(default_factory=list)
+    safe_stopping_points: list[str] = Field(default_factory=list)
 
 
 class ReadinessNextStepOut(BaseModel):
@@ -112,7 +141,9 @@ class ReadinessCheckOut(BaseModel):
 
     scope: ReadinessScope
     project_id: int
-    ready: bool
+    structurally_ready: bool
+    context_status: Literal["ready", "not_evaluated", "missing"]
+    required_providers_ready: bool
     execution_ready: bool
     missing: list[ReadinessMissingItemOut] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -120,6 +151,7 @@ class ReadinessCheckOut(BaseModel):
     action: ReadinessActionOut | None = None
     workflow: ReadinessWorkflowOut | None = None
     actions: list[ReadinessActionOut] = Field(default_factory=list)
+    route_groups: list[ReadinessRouteGroupOut] = Field(default_factory=list)
 
 
 async def readiness_check(
@@ -184,7 +216,9 @@ def _action_readiness(
     return ReadinessCheckOut(
         scope="action",
         project_id=project_id,
-        ready=action.executable,
+        structurally_ready=action.availability_status != "action_not_found",
+        context_status="ready",
+        required_providers_ready=action.executable,
         execution_ready=action.executable,
         missing=action.missing,
         next_steps=next_steps,
@@ -222,6 +256,13 @@ def _workflow_readiness(
             if item.requirement == "recommended"
         ],
         skill_refs=[item.skill_ref for item in loaded.spec.skill_requirements],
+        prerequisite_count=len(loaded.spec.public.prerequisites) if loaded.spec.public else 0,
+        prerequisites=list(loaded.spec.public.prerequisites) if loaded.spec.public else [],
+        safe_stopping_points=(
+            list(loaded.spec.experience.safe_stopping_points)
+            if loaded.spec.experience
+            else []
+        ),
     )
     actions, warnings = _workflow_action_readiness(
         ctx,
@@ -232,11 +273,47 @@ def _workflow_readiness(
         auth_requirements=loaded.spec.auth_requirements,
         referenced_contract_keys=_referenced_action_contract_keys(loaded.spec.steps),
     )
-    missing = _dedupe_missing([item for action in actions for item in action.missing])
-    blocking_missing = [
-        item for item in missing if item.required_for != "optional_action_execution"
+    route_groups = _workflow_route_readiness(actions)
+    _annotate_route_missing(actions, route_groups)
+    route_contract_keys = {
+        action.contract_key
+        for action in actions
+        if action.route_group is not None and action.contract_key is not None
+    }
+    required_ungrouped = [
+        action
+        for action in actions
+        if action.contract_key not in route_contract_keys
+        and not _contract_optional(loaded.spec.action_contracts, action.contract_key)
+        and not _contract_optional_auth(
+            loaded.spec.action_contracts,
+            loaded.spec.auth_requirements,
+            action.contract_key,
+        )
     ]
-    contract_blocked = any(item.code == "action_not_found" for item in missing)
+    missing = _dedupe_missing(
+        [item for action in required_ungrouped for item in action.missing]
+    )
+    missing.extend(_route_group_missing(route_groups, workflow_key=loaded.spec.key))
+    required_providers_ready = all(action.executable for action in required_ungrouped) and all(
+        group.execution_ready for group in route_groups if group.required
+    )
+    contract_blocked = any(
+        action.availability_status == "action_not_found" for action in required_ungrouped
+    ) or any(
+        not group.structurally_ready for group in route_groups if group.required
+    )
+    context_status: Literal["ready", "not_evaluated", "missing"] = (
+        "not_evaluated"
+        if loaded.spec.context_requirements or workflow.prerequisites
+        else "ready"
+    )
+    if context_status == "not_evaluated":
+        warnings.append(
+            "Workflow context prerequisites were not evaluated. Readiness here covers the "
+            "template contract and provider routes; inspect the listed prerequisites and "
+            "selected project context before claiming execution readiness."
+        )
     next_steps = [
         ReadinessNextStepOut(
             tool="runPlan.create",
@@ -268,17 +345,25 @@ def _workflow_readiness(
             )
         )
     if mode == "compact":
+        missing = [_compact_missing_item(item) for item in missing]
         actions = [_compact_action_summary(item) for item in actions]
+        route_groups = [_compact_route_group(item) for item in route_groups]
+    execution_ready = (
+        required_providers_ready and not contract_blocked and context_status == "ready"
+    )
     return ReadinessCheckOut(
         scope="workflow",
         project_id=project_id,
-        ready=not contract_blocked,
-        execution_ready=not blocking_missing and not contract_blocked,
+        structurally_ready=not contract_blocked,
+        context_status=context_status,
+        required_providers_ready=required_providers_ready,
+        execution_ready=execution_ready,
         missing=missing,
         warnings=warnings,
         next_steps=next_steps,
         workflow=workflow,
         actions=actions,
+        route_groups=route_groups,
     )
 
 
@@ -332,6 +417,7 @@ def _workflow_action_readiness(
             actions.append(
                 ReadinessActionOut(
                     action_ref=action_ref,
+                    contract_key=contract.key,
                     executable=False,
                     availability_status="action_not_found",
                     availability_reasons=["action_not_found"],
@@ -349,12 +435,16 @@ def _workflow_action_readiness(
                             next_tool="action.list",
                         )
                     ],
+                    route_group=contract.route_group,
+                    route_key=contract.route_key,
+                    optional=contract.optional,
                 )
             )
             continue
         action = _action_out(
             project_id=project_id,
             action_ref=described.manifest.action_ref,
+            contract_key=contract.key,
             name=described.manifest.name,
             provider_key=described.manifest.provider_key,
             capability_key=described.manifest.capability_key,
@@ -369,10 +459,158 @@ def _workflow_action_readiness(
             workflow_key=workflow_key,
             optional_auth=optional_auth,
             optional_action=optional_action,
+            route_group=contract.route_group,
+            route_key=contract.route_key,
             provider_setup=described.provider_setup,
         )
         actions.append(action)
     return actions, warnings
+
+
+def _workflow_route_readiness(
+    actions: list[ReadinessActionOut],
+) -> list[ReadinessRouteGroupOut]:
+    grouped: dict[str, dict[str, list[ReadinessActionOut]]] = {}
+    for action in actions:
+        if action.route_group is None or action.route_key is None:
+            continue
+        grouped.setdefault(action.route_group, {}).setdefault(action.route_key, []).append(action)
+
+    out: list[ReadinessRouteGroupOut] = []
+    for group_key in sorted(grouped):
+        group_required = any(
+            not action.optional
+            for route_actions in grouped[group_key].values()
+            for action in route_actions
+        )
+        routes: list[ReadinessRouteOut] = []
+        for route_key in sorted(grouped[group_key]):
+            route_actions = grouped[group_key][route_key]
+            required_actions = [action for action in route_actions if not action.optional]
+            if required_actions:
+                structurally_ready = all(
+                    action.availability_status != "action_not_found"
+                    for action in required_actions
+                )
+                executable = structurally_ready and all(
+                    action.executable for action in required_actions
+                )
+            else:
+                structurally_ready = any(
+                    action.availability_status != "action_not_found"
+                    for action in route_actions
+                )
+                executable = any(action.executable for action in route_actions)
+            routes.append(
+                ReadinessRouteOut(
+                    route_group=group_key,
+                    route_key=route_key,
+                    executable=executable,
+                    structurally_ready=structurally_ready,
+                    action_refs=[action.action_ref for action in route_actions],
+                    missing=_dedupe_missing(
+                        [item for action in route_actions for item in action.missing]
+                    ),
+                )
+            )
+        out.append(
+            ReadinessRouteGroupOut(
+                route_group=group_key,
+                required=group_required,
+                execution_ready=any(route.executable for route in routes),
+                structurally_ready=any(route.structurally_ready for route in routes),
+                available_route_keys=[
+                    route.route_key for route in routes if route.executable
+                ],
+                routes=routes,
+            )
+        )
+    return out
+
+
+def _annotate_route_missing(
+    actions: list[ReadinessActionOut],
+    route_groups: list[ReadinessRouteGroupOut],
+) -> None:
+    groups = {group.route_group: group for group in route_groups}
+    route_status = {
+        (group.route_group, route.route_key): route.executable
+        for group in route_groups
+        for route in group.routes
+    }
+    for action in actions:
+        if action.route_group is None or action.route_key is None:
+            continue
+        group = groups[action.route_group]
+        selected_ready = route_status[(action.route_group, action.route_key)]
+        for missing in action.missing:
+            if group.execution_ready and not selected_ready:
+                missing.required_for = "alternative_route_not_selected"
+            elif group.required and not group.execution_ready:
+                missing.required_for = (
+                    f"route_option:{action.route_group}:{action.route_key}"
+                )
+            else:
+                missing.required_for = (
+                    f"optional_route:{action.route_group}:{action.route_key}"
+                )
+    by_ref = {action.action_ref: action for action in actions}
+    for group in route_groups:
+        for route in group.routes:
+            route.missing = _dedupe_missing(
+                [
+                    missing
+                    for action_ref in route.action_refs
+                    for missing in by_ref[action_ref].missing
+                ]
+            )
+
+
+def _route_group_missing(
+    route_groups: list[ReadinessRouteGroupOut],
+    *,
+    workflow_key: str,
+) -> list[ReadinessMissingItemOut]:
+    return [
+        ReadinessMissingItemOut(
+            kind="route",
+            code="no_executable_route",
+            message=(
+                f"Choose and configure one executable route for {group.route_group!r}; "
+                "unavailable alternatives do not all need to be connected."
+            ),
+            required_for="execution",
+            action_refs=[
+                action_ref for route in group.routes for action_ref in route.action_refs
+            ],
+            workflow_key=workflow_key,
+            next_tool="readiness.check",
+        )
+        for group in route_groups
+        if group.required and not group.execution_ready
+    ]
+
+
+def _contract_optional(
+    contracts: list[ActionContractSpec],
+    contract_key: str | None,
+) -> bool:
+    return any(item.key == contract_key and item.optional for item in contracts)
+
+
+def _contract_optional_auth(
+    contracts: list[ActionContractSpec],
+    auth_requirements: list[AuthRequirementSpec],
+    contract_key: str | None,
+) -> bool:
+    contract = next((item for item in contracts if item.key == contract_key), None)
+    if contract is None or contract.auth_ref is None:
+        return False
+    auth = next(
+        (item for item in auth_requirements if item.key == contract.auth_ref),
+        None,
+    )
+    return bool(auth and auth.optional)
 
 
 def _referenced_action_contract_keys(steps: Iterable[object]) -> set[str]:
@@ -437,6 +675,7 @@ def _action_out(
     *,
     project_id: int,
     action_ref: str,
+    contract_key: str | None = None,
     name: str | None,
     provider_key: str | None,
     capability_key: str | None,
@@ -451,6 +690,8 @@ def _action_out(
     workflow_key: str | None = None,
     optional_auth: bool = False,
     optional_action: bool = False,
+    route_group: str | None = None,
+    route_key: str | None = None,
     provider_setup: ProviderSetupOut | None = None,
 ) -> ReadinessActionOut:
     missing = [
@@ -470,6 +711,7 @@ def _action_out(
     ]
     return ReadinessActionOut(
         action_ref=action_ref,
+        contract_key=contract_key,
         name=name,
         provider_key=provider_key,
         capability_key=capability_key,
@@ -479,6 +721,9 @@ def _action_out(
         availability_reasons=list(availability_reasons),
         credential_state=credential_state,
         budget_state=budget_state,
+        optional=optional_action,
+        route_group=route_group,
+        route_key=route_key,
         setup=provider_setup,
         missing=[item for item in missing if item is not None],
     )
@@ -523,7 +768,7 @@ def _missing_item(
     if reason == "credential_not_connected":
         required_for = _required_for(
             default="action_execution",
-            optional_auth=False,
+            optional_auth=optional_auth,
             optional_action=optional_action,
         )
         return ReadinessMissingItemOut(
@@ -543,7 +788,7 @@ def _missing_item(
     if reason == "budget_required":
         required_for = _required_for(
             default="action_execution",
-            optional_auth=False,
+            optional_auth=optional_auth,
             optional_action=optional_action,
         )
         return ReadinessMissingItemOut(
@@ -561,7 +806,7 @@ def _missing_item(
     if reason == "budget_exhausted":
         required_for = _required_for(
             default="action_execution",
-            optional_auth=False,
+            optional_auth=optional_auth,
             optional_action=optional_action,
         )
         return ReadinessMissingItemOut(
@@ -579,7 +824,7 @@ def _missing_item(
     if reason in {"plugin_disabled", "provider_disabled", "connector_not_registered"}:
         required_for = _required_for(
             default="action_execution",
-            optional_auth=False,
+            optional_auth=optional_auth,
             optional_action=optional_action,
         )
         return ReadinessMissingItemOut(
@@ -598,7 +843,7 @@ def _missing_item(
     if reason.startswith("execution_mode:"):
         required_for = _required_for(
             default="action_execution",
-            optional_auth=False,
+            optional_auth=optional_auth,
             optional_action=optional_action,
         )
         return ReadinessMissingItemOut(
@@ -738,6 +983,7 @@ def _next_step_arguments(
 def _compact_action_summary(action: ReadinessActionOut) -> ReadinessActionOut:
     return ReadinessActionOut(
         action_ref=action.action_ref,
+        contract_key=action.contract_key,
         name=action.name,
         provider_key=action.provider_key,
         capability_key=action.capability_key,
@@ -747,8 +993,50 @@ def _compact_action_summary(action: ReadinessActionOut) -> ReadinessActionOut:
         availability_reasons=action.availability_reasons,
         credential_state=action.credential_state,
         budget_state=action.budget_state,
-        setup=action.setup,
-        missing=action.missing,
+        optional=action.optional,
+        route_group=action.route_group,
+        route_key=action.route_key,
+        setup=None,
+        missing=[_compact_missing_item(item) for item in action.missing],
+    )
+
+
+def _compact_route_group(group: ReadinessRouteGroupOut) -> ReadinessRouteGroupOut:
+    return ReadinessRouteGroupOut(
+        route_group=group.route_group,
+        required=group.required,
+        execution_ready=group.execution_ready,
+        structurally_ready=group.structurally_ready,
+        available_route_keys=list(group.available_route_keys),
+        routes=[
+            ReadinessRouteOut(
+                route_group=route.route_group,
+                route_key=route.route_key,
+                executable=route.executable,
+                structurally_ready=route.structurally_ready,
+                action_refs=list(route.action_refs),
+                missing=[_compact_missing_item(item) for item in route.missing],
+            )
+            for route in group.routes
+        ],
+    )
+
+
+def _compact_missing_item(item: ReadinessMissingItemOut) -> ReadinessMissingItemOut:
+    return ReadinessMissingItemOut(
+        kind=item.kind,
+        code=item.code,
+        message=item.message,
+        required_for=item.required_for,
+        action_ref=item.action_ref,
+        action_refs=list(item.action_refs),
+        workflow_key=item.workflow_key,
+        provider_key=item.provider_key,
+        credential_refs=list(item.credential_refs),
+        budget_kind=item.budget_kind,
+        next_tool=item.next_tool,
+        ui_url=item.ui_url,
+        setup=None,
     )
 
 
@@ -785,8 +1073,16 @@ def operation_specs() -> list[OperationSpec]:
                 ),
             ),
             returns=(
-                "ready/execution_ready booleans for the selected scope.",
-                "Only missing items tied to that workflow/action, with next tool or UI link.",
+                (
+                    "structurally_ready, context_status, required_providers_ready, and "
+                    "execution_ready for the selected scope. There is no ambiguous "
+                    "catch-all ready alias."
+                ),
+                (
+                    "Only blocking missing items at the top level, with optional and "
+                    "unselected route gaps retained on their action/route details."
+                ),
+                "Required and optional choose-one route groups when providers are alternatives.",
                 (
                     "Workflow responses still allow planning/runPlan.create when provider "
                     "execution setup is incomplete."

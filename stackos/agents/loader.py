@@ -68,6 +68,7 @@ class AgentPresetSummaryOut(BaseModel):
     description: str = ""
     domain: str | None = None
     role: str
+    role_class: str
     agent_type: str
     source: str
     precedence: int
@@ -301,6 +302,7 @@ class AgentPresetLoader:
                 description=preset.description,
                 domain=preset.domain,
                 role=preset.role,
+                role_class=preset.role_class,
                 agent_type=preset.agent_type,
                 source=source,
                 precedence=precedence,

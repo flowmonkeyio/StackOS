@@ -1,16 +1,63 @@
 schema_version: stackos.workflow-template.v1
 key: media-buying.performance-diagnosis
 name: Media Buying Performance Diagnosis
-version: 0.1.0
+version: 0.3.0
 description: Reusable template for diagnosing paid media performance using bounded snapshots, resource history, learnings, and optional provider reads.
 domain: media-buying
 owner:
   team: StackOS
+experience:
+  problem: "When paid performance worsens, teams jump to budget or creative changes before separating measurement, audience, channel, page, and market causes."
+  outcome: "A source-linked diagnosis with ranked hypotheses, evidence gaps, and a recommendation for no change, budget review, creative work, or an experiment."
+  why_ai: "AI can compare multiple causal categories and time windows systematically while keeping uncertainty and business judgment visible."
+  operator_path:
+    - "Name the affected accounts and campaigns, what changed, the KPI, and the comparison window."
+    - "Provide exports or select one read-only provider route."
+    - "Review the diagnosis before starting any mutation workflow."
+  agent_path:
+    - "Validate measurement and comparison quality before explaining performance."
+    - "Use stored evidence or one ready metric-source route; unavailable alternatives stay optional."
+    - "Rank causal hypotheses, name counter-evidence and gaps, and recommend the smallest useful next step."
+    - "Stop after diagnosis unless the operator starts a follow-up workflow."
+  progress_signals:
+    - "Scope confirmed"
+    - "Measurement validated"
+    - "Evidence collected"
+    - "Hypotheses ranked"
+    - "Recommendation ready"
+  recovery:
+    - "If evidence is insufficient, recommend no change and list the minimum missing data."
+    - "If a live provider is unavailable, use supplied exports or stored snapshots rather than blocking on every provider."
+  safe_stopping_points:
+    - "This workflow is recommendation-first and stops before budget, creative, page, or campaign mutation."
+  handoffs:
+    - workflow_key: media-buying.budget-reallocation-review
+      relationship: conditional
+      when: "Allocation is a supported cause and budget movement should be reviewed."
+    - workflow_key: media-buying.creative-variant-generation
+      relationship: conditional
+      when: "Creative fatigue or mismatch is a supported cause."
+    - workflow_key: media-buying.landing-page-creative-experiment
+      relationship: conditional
+      when: "The evidence supports a measured creative or destination experiment."
+public:
+  audience: "Paid-media teams diagnosing performance changes before acting"
+  setup: mixed
+  prerequisites:
+    - "Affected accounts and campaigns"
+    - "The exact change date, KPI target, comparison window, and attribution assumptions"
+    - "Stored snapshots, exports, or one ready read-only provider route"
+  proof:
+    - "Measurement-quality check"
+    - "Evidence table and ranked hypotheses"
+    - "Counter-evidence and data gaps"
+    - "Recommendation with explicit no-mutation boundary"
+  featured: false
 when_to_use:
   - A campaign, channel, creative set, or audience needs a performance review.
   - The agent should retrieve only relevant historical fields before diagnosing.
 when_not_to_use:
-  - The operator already approved a budget or campaign mutation and only needs execution.
+  - The operator already requested a budget or campaign mutation and only needs execution.
 agent_requirements:
   - role: media-performance-diagnosis
     requirement: required
@@ -35,23 +82,64 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
     type: string
     required: true
+    schema: {type: string, minLength: 1}
   - key: review_scope
     name: Review Scope
     type: object
     required: true
+    schema:
+      type: object
+      required: [accounts_or_properties, campaigns_or_scope, change_date]
+      properties:
+        accounts_or_properties: {type: array, minItems: 1, items: {type: string}}
+        campaigns_or_scope: {type: array, minItems: 1, items: {type: string}}
+        change_date: {type: string, minLength: 1}
   - key: review_window
     name: Review Window
     type: object
-    required: false
+    required: true
+    schema:
+      type: object
+      required: [current_period, comparison_period]
+      properties:
+        current_period: {type: string, minLength: 1}
+        comparison_period: {type: string, minLength: 1}
   - key: metric_targets
     name: Metric Targets
     type: object
+    required: true
+    schema:
+      type: object
+      required: [primary_kpi, target]
+      properties:
+        primary_kpi: {type: string, minLength: 1}
+        target: {}
+        supporting_metrics: {type: array, items: {type: string}}
+  - key: attribution_assumptions
+    name: Attribution Assumptions
+    type: string
+    required: true
+    description: Attribution window, model, reporting source, and any known comparability limits.
+    schema: {type: string, minLength: 1}
+  - key: metric_source
+    name: Metric Source
+    type: string
     required: false
+    default: stored_context
+    description: Use stored context by default; select at most one live provider route when a bounded fetch is necessary.
+    schema:
+      type: string
+      enum: [stored_context, meta_ads, google_ads, taboola, custom_media_tool]
+      default: stored_context
 context_requirements:
   - id: recent_performance
     source: resources
@@ -135,23 +223,35 @@ action_contracts:
     provider: meta-ads
     risk_level: read
     auth_ref: meta_ads
+    route_group: metric_source
+    route_key: meta_ads
+    optional: true
   - key: google_report
     action: google.report.search
     capability: media-measurement
     provider: google-ads
     risk_level: read
     auth_ref: google_ads
+    route_group: metric_source
+    route_key: google_ads
+    optional: true
   - key: taboola_report
     action: taboola.report.fetch
     capability: media-measurement
     provider: taboola
     risk_level: read
     auth_ref: taboola
+    route_group: metric_source
+    route_key: taboola
+    optional: true
   - key: custom_media_performance
     action: custom_media.performance.fetch
     capability: media-measurement
     provider: custom-media-tool
     risk_level: read
+    route_group: metric_source
+    route_key: custom_media_tool
+    optional: true
 resource_contracts:
   - key: performance_snapshots
     resource: performance-snapshot
@@ -166,16 +266,15 @@ resource_contracts:
     resource: budget-change
     purpose: Store proposed budget follow-ups without applying them automatically.
 policies:
-  - key: read_only_by_default
+  - key: external_no_mutation
     kind: execution
-    description: Diagnosis should read, summarize, and record recommendations; external writes belong in a separate approved run.
+    description: Provider operations in this workflow are reads only. Declared StackOS artifacts and resources may record evidence and recommendations; a strict read-only request must stop before run creation.
+  - key: one_metric_source_only
+    kind: execution
+    description: Use stored evidence when sufficient. Selecting a live route in metric_source authorizes only that one bounded read for the stated scope and window; no separate human checkpoint is required.
   - key: no_secret_exposure
     kind: auth
     description: Provider credentials remain daemon-side during optional insight fetches.
-approval_gates:
-  - key: cost_review
-    description: Review expected provider cost before high-volume insight retrieval.
-    required_when: estimated_cost_above_project_threshold
 steps:
   - id: orient
     title: Orient From Performance Context
@@ -185,17 +284,27 @@ steps:
       - review_scope
       - review_window
       - metric_targets
+      - attribution_assumptions
+      - metric_source
     context_refs:
       - recent_performance
       - related_learnings
       - related_experiments
     policy_refs:
-      - read_only_by_default
+      - external_no_mutation
+      - one_metric_source_only
+    instructions:
+      - Confirm the affected scope, exact change date, KPI target, comparison periods, and attribution assumptions before interpreting performance.
+      - Validate freshness, comparability, tracking changes, and missing fields before forming causal hypotheses.
+      - Treat stored context as evidence only when its scope and dates match the requested review.
     output_refs:
       - diagnosis_summary
+    success_criteria:
+      - The diagnostic scope and measurement assumptions are explicit and internally comparable.
+      - Missing or contradictory evidence is named before any causal conclusion.
   - id: fetch_additional_metrics
     title: Fetch Additional Metrics
-    purpose: Execute only approved read actions that the concrete run plan grants for missing evidence.
+    purpose: Execute only the selected read action that the concrete run plan grants for missing evidence.
     action_refs:
       - meta_insights
       - google_report
@@ -203,12 +312,19 @@ steps:
       - custom_media_performance
     policy_refs:
       - no_secret_exposure
-    approval_refs:
-      - cost_review
+      - one_metric_source_only
     depends_on:
       - orient
+    instructions:
+      - If stored context is sufficient or metric_source is stored_context, execute no provider action and record the no-fetch rationale.
+      - If a live source is selected, execute only its matching action for the bounded scope and window; never probe every alternative.
+      - Keep fields or query, account scope, and date window to the minimum needed to close the named evidence gap.
     output_refs:
       - metric_gap_report
+    success_criteria:
+      - The step records either one bounded fetch or an explicit no-fetch outcome.
+      - Unavailable alternatives remain optional and do not block diagnosis from supplied exports or stored snapshots.
+      - The metric-gap report states how missing, stale, incomparable, or contradictory data affects confidence.
   - id: diagnose_drivers
     title: Diagnose Drivers
     purpose: Compare evidence against targets and separate likely channel, audience, creative, landing page, and budget drivers.
@@ -218,11 +334,18 @@ steps:
       - creatives
     depends_on:
       - fetch_additional_metrics
+    instructions:
+      - Separate measurement, channel or audience, creative, landing-page, campaign-structure, budget, and external-market hypotheses.
+      - Rank hypotheses from evidence and counter-evidence; do not infer causality from timing alone.
+      - Recommend no change when the available evidence cannot support a mutation.
     output_refs:
       - diagnosis_summary
+    success_criteria:
+      - Each ranked hypothesis cites supporting and counter-evidence with a bounded confidence level.
+      - The recommendation names the smallest justified next step and preserves the no-mutation boundary.
   - id: record_followups
     title: Record Followups
-    purpose: Store recommended follow-up resources, budget review notes, and learning candidates.
+    purpose: Store recommended follow-up resources, budget review notes, and learning candidates for later review without executing a mutation.
     resource_refs:
       - performance_snapshots
       - budget_changes
@@ -232,19 +355,59 @@ steps:
       - related_learnings
     depends_on:
       - diagnose_drivers
+    instructions:
+      - Record only follow-ups supported by the diagnosis, with owner, dependency, verification method, and review timing.
+      - Keep learning candidates in the follow-up output; do not persist a learning without a separate granted learning step.
+      - Link a conditional follow-up workflow only when its trigger is supported by evidence.
     output_refs:
       - followup_plan
+    success_criteria:
+      - Every follow-up is traceable to the diagnosis and has a clear owner and verification condition.
+      - No budget, creative, targeting, page, or campaign mutation occurs in this workflow.
 outputs:
   - key: diagnosis_summary
     name: Diagnosis Summary
     type: object
     required: true
+    description: Time-bounded metric snapshot, verified observations, hypotheses, confidence, and recommended action.
+    schema:
+      type: object
+      required: [scope, metric_snapshot, observations, hypotheses, confidence, recommended_actions, evidence_refs]
+      properties:
+        scope: {type: object}
+        metric_snapshot: {type: object}
+        observations: {type: array}
+        hypotheses: {type: array}
+        confidence: {type: string, enum: [low, medium, high]}
+        recommended_actions: {type: array}
+        evidence_refs: {type: array, items: {type: string}}
   - key: metric_gap_report
     name: Metric Gap Report
     type: object
+    required: true
+    description: Missing, stale, incomparable, or contradictory metrics that bound the diagnosis.
+    schema:
+      type: object
+      required: [missing_metrics, stale_metrics, comparability_issues, contradictions, impact_on_confidence]
+      properties:
+        missing_metrics: {type: array}
+        stale_metrics: {type: array}
+        comparability_issues: {type: array}
+        contradictions: {type: array}
+        impact_on_confidence: {type: string}
   - key: followup_plan
     name: Followup Plan
     type: object
+    required: true
+    description: Prioritized next checks, experiments, owners, and measurement timing.
+    schema:
+      type: object
+      required: [checks, experiments, owners, next_review_at]
+      properties:
+        checks: {type: array}
+        experiments: {type: array}
+        owners: {type: array}
+        next_review_at: {type: string}
 learning_hooks:
   - key: performance_learning
     prompt: Capture only durable performance lessons with metric evidence, scope, and dates.

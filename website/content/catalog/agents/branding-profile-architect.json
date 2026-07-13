@@ -1,0 +1,15 @@
+{
+  "key": "branding.profile-architect",
+  "slug": "branding-profile-architect",
+  "name": "Brand Profile Architect",
+  "description": "Builds and maintains evidence-led brand profiles and durable voice guides from operator judgment, representative samples, and independent review.",
+  "domain": "branding",
+  "audience": "Content and brand teams",
+  "color": "#d8ff63",
+  "featured": true,
+  "role": "Profile Architect",
+  "roleClass": "reasoning",
+  "workflowKeys": [
+    "branding.brand-foundation-setup"
+  ]
+}

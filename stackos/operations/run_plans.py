@@ -97,6 +97,17 @@ class RunPlanGetInput(MCPInput):
     project_id: int | None = None
 
 
+class RunPlanGetStepInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"run_plan_id": 1, "step_id": "review"}},
+    )
+
+    run_plan_id: int
+    step_id: str
+    project_id: int | None = None
+
+
 class RunPlanCheckConsistencyInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
@@ -306,6 +317,18 @@ async def run_plan_get(
     _emitter: ProgressEmitter,
 ) -> RunPlanOut:
     return RunPlanRepository(ctx.session).get(inp.run_plan_id, project_id=inp.project_id)
+
+
+async def run_plan_get_step(
+    inp: RunPlanGetStepInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> RunPlanStepOut:
+    return RunPlanRepository(ctx.session).get_step(
+        inp.run_plan_id,
+        inp.step_id,
+        project_id=inp.project_id,
+    )
 
 
 async def run_plan_check_consistency(
@@ -589,6 +612,39 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=("Pass run_plan_id.",),
             returns=("The full run plan object, including steps and approval requests.",),
             examples=(OperationExample(title="Fetch a run plan", arguments={"run_plan_id": 42}),),
+            mutating=False,
+            grant_policy="direct-read",
+        ),
+        OperationSpec(
+            name="runPlan.getStep",
+            summary="Fetch one run-plan step with its complete persisted result.",
+            input_model=RunPlanGetStepInput,
+            output_model=RunPlanStepOut,
+            handler=run_plan_get_step,
+            surfaces=_surfaces("runPlan.getStep", "run-plans get-step"),
+            purpose=(
+                "Use this to recover one prior step result or inspect one current step without "
+                "loading the full run plan into agent context."
+            ),
+            when_to_use=(
+                "A direct dependency handoff says its result was truncated.",
+                "The agent knows the run_plan_id and step_id and needs only that step.",
+            ),
+            prerequisites=("Pass run_plan_id and step_id.",),
+            returns=(
+                "The selected run-plan step, including its persisted result_json and "
+                "execution metadata.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Fetch one prior step result",
+                    arguments={
+                        "run_plan_id": 42,
+                        "step_id": "prepare",
+                        "response_mode": "raw",
+                    },
+                ),
+            ),
             mutating=False,
             grant_policy="direct-read",
         ),
@@ -895,6 +951,7 @@ __all__ = [
     "RunPlanClaimStepInput",
     "RunPlanCreateInput",
     "RunPlanGetInput",
+    "RunPlanGetStepInput",
     "RunPlanListInput",
     "RunPlanRecordStepInput",
     "RunPlanRecoverInput",
@@ -906,6 +963,7 @@ __all__ = [
     "run_plan_claim_step",
     "run_plan_create",
     "run_plan_get",
+    "run_plan_get_step",
     "run_plan_list",
     "run_plan_record_step",
     "run_plan_recover",

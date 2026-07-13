@@ -6,6 +6,46 @@ description: Reusable research template for turning a business goal into SEO opp
 domain: seo
 owner:
   team: StackOS
+experience:
+  problem: "Keyword research produces broad high-volume lists when it is not anchored to the business, audience, product proximity, and existing authority."
+  outcome: "A prioritized opportunity map that separates near-term article ideas, supporting clusters, evidence, and topics to avoid."
+  why_ai: "AI can connect keyword data, SERP patterns, competitor evidence, and project context while the operator owns positioning and priority."
+  operator_path:
+    - "State the business goal, audience, product proximity, markets, and topics to avoid."
+    - "Choose approved keyword and competitor data sources."
+    - "Review the opportunity map and select content priorities."
+  agent_path:
+    - "Translate the business brief into explicit opportunity criteria before collecting data."
+    - "Use approved keyword, SERP, and competitor sources and preserve provenance."
+    - "Cluster by intent and business fit, score with transparent tradeoffs, and propose concrete article angles."
+  progress_signals:
+    - "Opportunity criteria set"
+    - "Data collected"
+    - "Intent clusters built"
+    - "Priorities scored"
+    - "Article opportunities ready"
+  recovery:
+    - "If a provider is unavailable, use approved exports or stop with the exact missing dataset."
+    - "Do not fill the report with broad terms that fail the product-proximity or authority test."
+  safe_stopping_points:
+    - "Stop after the prioritized opportunity map; article production is a separate approved job."
+  handoffs:
+    - workflow_key: branding.content-production
+      relationship: conditional
+      when: "A selected opportunity should become an evidence-backed branded article."
+public:
+  audience: "SEO and content teams choosing what to write next"
+  setup: connection-required
+  prerequisites:
+    - "A business goal, audience, market, and product-proximity boundary"
+    - "Topics to include and avoid"
+    - "Connected keyword and SERP data sources or approved exports"
+  proof:
+    - "Source-linked keyword set"
+    - "Intent and business-fit clusters"
+    - "Transparent priority scoring"
+    - "Concrete article angles and avoidance list"
+  featured: true
 when_to_use:
   - A project needs SEO opportunities from seed terms, competitors, or an agent-defined research angle.
 when_not_to_use:
@@ -34,6 +74,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -109,6 +153,7 @@ action_contracts:
     provider: ahrefs
     risk_level: cost
     auth_ref: ahrefs
+    optional: true
 resource_contracts:
   - key: opportunities
     resource: keyword-opportunity
@@ -182,14 +227,39 @@ outputs:
     name: Opportunity Summary
     description: Reviewed opportunity set with clusters, metrics, evidence refs, assumptions, and recommended next steps.
     type: object
+    required: true
+    schema:
+      type: object
+      required: [criteria, clusters, prioritized_opportunities, avoidance_list, assumptions, evidence_refs, recommended_next_steps]
+      properties:
+        criteria: {type: object}
+        clusters: {type: array}
+        prioritized_opportunities: {type: array}
+        avoidance_list: {type: array}
+        assumptions: {type: array}
+        evidence_refs: {type: array, items: {type: string}}
+        recommended_next_steps: {type: array}
   - key: raw_provider_data_refs
     name: Raw Provider Data Refs
     description: Response-file paths for preserved provider request/response envelopes, usually schema stackos.action-output.v1, to avoid paid roundtrips.
     type: array
+    required: true
+    schema: {type: array, items: {type: string, minLength: 1}, uniqueItems: true}
   - key: synthesized_keyword_research
     name: Synthesized Keyword Research
     description: Polished research output, normally markdown plus optional CSV-style table, with ranked keyword clusters and raw-data refs.
     type: object
+    required: true
+    schema:
+      type: object
+      required: [brief_ref, ranked_clusters, opportunity_table, raw_data_refs, methodology]
+      properties:
+        brief_ref: {type: string}
+        csv_ref: {type: string}
+        ranked_clusters: {type: array}
+        opportunity_table: {type: array}
+        raw_data_refs: {type: array, items: {type: string}}
+        methodology: {type: object}
 learning_hooks:
   - key: research_reuse
     prompt: Record only durable SEO research lessons with evidence and project provenance.

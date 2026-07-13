@@ -2,12 +2,13 @@
   "key": "branding.narrative-writer",
   "slug": "branding-narrative-writer",
   "name": "Branding Narrative Writer",
-  "description": "Drafts main pieces and channel renditions from cleared evidence in the project-adapted voice.",
+  "description": "Drafts canonical pieces and channel renditions from cleared evidence in the project-adapted voice.",
   "domain": "branding",
   "audience": "Content and brand teams",
   "color": "#d8ff63",
   "featured": true,
   "role": "Narrative Writer",
+  "roleClass": "reasoning",
   "workflowKeys": [
     "branding.content-production"
   ]

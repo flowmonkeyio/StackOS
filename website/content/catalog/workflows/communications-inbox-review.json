@@ -2,14 +2,52 @@
   "key": "communications.inbox-review",
   "slug": "communications-inbox-review",
   "name": "Communications Inbox Review",
-  "description": "Review incoming messages, identify what needs action, and turn selected items into organized work.",
+  "description": "A bounded inbox review with selected messages summarized, classified, and turned into explicit follow-up only when authorized.",
   "domain": "communications",
-  "audience": "Customer and operations teams",
+  "audience": "Operations and support teams reviewing shared inboxes",
   "color": "#7ee2ad",
   "featured": false,
+  "problem": "A busy mailbox mixes routine messages, sensitive content, and work requests that need different treatment.",
+  "outcome": "A bounded inbox review with selected messages summarized, classified, and turned into explicit follow-up only when authorized.",
+  "whyAi": "",
+  "operatorPath": [
+    "Choose the mailbox, time window, and review rules.",
+    "Define which messages may create work, be marked, or receive a response.",
+    "Review the shortlist and approve any external follow-up."
+  ],
+  "agentPath": [
+    "Fetch only the bounded message set and preserve mailbox privacy rules.",
+    "Summarize and classify with uncertainty visible.",
+    "Prepare or create approved follow-up work and leave unrelated messages untouched."
+  ],
+  "progressSignals": [
+    "Mailbox scope confirmed",
+    "Messages reviewed",
+    "Action shortlist prepared",
+    "Approved follow-up recorded"
+  ],
+  "recovery": [
+    "If mailbox access or UID state is stale, stop and refresh instead of guessing message identity.",
+    "If classification is uncertain, leave the message unchanged and flag it for review."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a read-only shortlist when message mutation or response was not authorized."
+  ],
+  "handoffs": [],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A connected mailbox profile",
+    "A bounded mailbox and time or UID scope",
+    "Rules for privacy, marking, replies, and work creation"
+  ],
+  "proof": [
+    "Reviewed message refs",
+    "Action shortlist with reasons",
+    "Mutation or follow-up receipts only where approved"
+  ],
   "whenToUse": [
-    "Use this when you want to review incoming messages, identify what needs action, and turn selected items into organized work.",
-    "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+    "A project needs an agent to inspect recent email messages and decide which ones need action.",
+    "The agent should reuse existing communication-message resources and prior request history before fetching more."
   ],
   "stages": [
     {

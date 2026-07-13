@@ -164,6 +164,166 @@ def test_run_plan_create_start_and_step_with_run_token(
     assert tracker["tickets"][0]["lane_key"] == "done"
 
 
+def test_run_plan_step_allows_project_provenance_inside_opaque_json(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {
+                "schema_version": "stackos.run-plan.v1",
+                "key": "ops.safe-provenance.run",
+                "title": "Safe provenance",
+                "steps": [{"id": "review", "title": "Review provenance"}],
+            },
+            "selected_context_json": {
+                "approved_source": {"project_id": project_id + 1000},
+            },
+        },
+    )
+    run_plan_id = created["data"]["id"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "review", "run_token": run_token},
+    )
+
+    completed = mcp_client.call_tool_structured(
+        "runPlan.recordStep",
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": "review",
+            "status": "success",
+            "result_json": {
+                "source_provenance": {"project_id": project_id + 1000},
+            },
+            "run_token": run_token,
+        },
+    )
+
+    assert completed["data"]["status"] == "completed"
+
+
+def test_claim_step_compact_response_includes_expectations_and_dependency_handoff(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    plan_json = {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "ops.handoff-context.run",
+        "title": "Handoff Context",
+        "inputs": {"brief": "Keep the flow prepare-only", "unused": "do not forward"},
+        "selected_context": {"audience": "operators"},
+        "steps": [
+            {
+                "id": "prepare",
+                "title": "Prepare",
+                "output_refs": ["reviewed_brief"],
+            },
+            {
+                "id": "deliver",
+                "title": "Deliver",
+                "purpose": "Deliver only from the reviewed brief.",
+                "depends_on": ["prepare"],
+                "input_refs": ["brief"],
+                "instructions": ["Use the dependency handoff before editing."],
+                "success_criteria": ["The reviewed constraint remains visible."],
+                "policy_refs": ["reviewed_only"],
+                "expected_outputs": {"summary": "Checked delivery"},
+            },
+        ],
+    }
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": plan_json,
+        },
+    )
+    run_plan_id = created["data"]["id"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "prepare", "run_token": run_token},
+    )
+    mcp_client.call_tool_structured(
+        "runPlan.recordStep",
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": "prepare",
+            "status": "success",
+            "result_json": {
+                "summary": "Brief approved",
+                "constraint": "prepare only",
+                "details": "x" * 5000,
+            },
+            "run_token": run_token,
+        },
+    )
+
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "deliver", "run_token": run_token},
+    )["data"]
+
+    assert claimed["purpose"] == "Deliver only from the reviewed brief."
+    assert claimed["instructions_json"] == ["Use the dependency handoff before editing."]
+    assert claimed["success_criteria_json"] == [
+        "The reviewed constraint remains visible."
+    ]
+    assert claimed["policy_refs_json"] == ["reviewed_only"]
+    assert claimed["expected_outputs_json"] == {"summary": "Checked delivery"}
+    assert claimed["input_values_json"] == {"brief": "Keep the flow prepare-only"}
+    assert claimed["step_context_json"] == {"audience": "operators"}
+    assert claimed["input_context_truncated"] is False
+    assert claimed["direct_dependency_handoffs"] == [
+        {
+            "step_id": "prepare",
+            "title": "Prepare",
+            "status": "success",
+            "output_refs_json": ["reviewed_brief"],
+            "result_json": {
+                "available_keys": ["constraint", "details", "summary"],
+                "handoff_truncated": True,
+                "recovery": (
+                    "Call runPlan.getStep with "
+                    f"run_plan_id={run_plan_id}, step_id='prepare', and response_mode=raw "
+                    "for the complete prior result."
+                ),
+                "summary": "Brief approved",
+            },
+            "truncated": True,
+        }
+    ]
+
+    prior_step = mcp_client.call_tool_structured(
+        "runPlan.getStep",
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": "prepare",
+            "response_mode": "raw",
+        },
+    )
+    assert prior_step["step_id"] == "prepare"
+    assert prior_step["result_json"] == {
+        "summary": "Brief approved",
+        "constraint": "prepare only",
+        "details": "x" * 5000,
+    }
+
+
 def test_run_plan_failed_step_marks_tracker_mirror_failed(
     mcp_client: MCPClient,
     seeded_project: dict,

@@ -8,6 +8,7 @@
   "color": "#d8ff63",
   "featured": true,
   "role": "Claim Auditor",
+  "roleClass": "review",
   "workflowKeys": [
     "branding.content-production"
   ]

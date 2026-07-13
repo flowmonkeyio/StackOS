@@ -6,6 +6,43 @@ description: Reusable template for reviewing pipeline snapshots, opportunity ris
 domain: gtm
 owner:
   team: StackOS
+experience:
+  problem: "Pipeline reviews overreact to stale CRM fields or produce a list of vague concerns without owners and evidence."
+  outcome: "An evidence-backed risk review with prioritized follow-up, owners, and uncertainty clearly separated from fact."
+  operator_path:
+    - "Choose the pipeline segment, review window, and business thresholds."
+    - "Confirm the sources and definitions for stage, value, activity, and risk."
+    - "Review proposed follow-up before any CRM or communication action."
+  agent_path:
+    - "Load the bounded pipeline snapshot and relevant activity context."
+    - "Test each risk signal against the project policy and source freshness."
+    - "Prioritize risks, name evidence and uncertainty, and prepare owner-specific follow-up."
+  progress_signals:
+    - "Pipeline scope loaded"
+    - "Risk signals tested"
+    - "Priorities set"
+    - "Follow-up plan ready"
+  recovery:
+    - "If source freshness is insufficient, mark the conclusion provisional."
+    - "Do not mutate CRM or contact owners without the required approval and route."
+  safe_stopping_points:
+    - "Stop with the reviewed risk report when follow-up execution was not authorized."
+  handoffs:
+    - workflow_key: gtm.account-research
+      relationship: conditional
+      when: "A material account risk requires fresh external or internal research."
+public:
+  audience: "Sales leaders and revenue operations teams reviewing pipeline risk"
+  setup: mixed
+  prerequisites:
+    - "A bounded pipeline snapshot"
+    - "Freshness and risk definitions"
+    - "Ownership and follow-up policy"
+  proof:
+    - "Source-linked risk register"
+    - "Priority and confidence rationale"
+    - "Owner-specific follow-up plan"
+  featured: false
 when_to_use:
   - A pipeline, segment, opportunity set, or forecast needs a bounded risk review.
 when_not_to_use:
@@ -32,6 +69,10 @@ skill_requirements:
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
       - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Coordinate workflow selection, readiness, specialist handoffs, approvals, safe stopping, verification, and recovery without adding domain-specific process.
 inputs:
   - key: goal
     name: Goal
@@ -125,22 +166,34 @@ action_contracts:
     provider: hubspot
     risk_level: read
     auth_ref: hubspot
+    optional: true
+    route_group: pipeline_source
+    route_key: hubspot
   - key: salesforce_pipeline_fetch
     action: salesforce.opportunities.query
     capability: pipeline-management
     provider: salesforce
     risk_level: read
     auth_ref: salesforce
+    optional: true
+    route_group: pipeline_source
+    route_key: salesforce
   - key: pipedrive_deal_fetch
     action: pipedrive.deals.list
     capability: pipeline-management
     provider: pipedrive
     risk_level: read
     auth_ref: pipedrive
+    optional: true
+    route_group: pipeline_source
+    route_key: pipedrive
   - key: custom_gtm_pipeline_fetch
     action: custom_gtm.pipeline.fetch
     capability: pipeline-management
     provider: custom-gtm-tool
+    optional: true
+    route_group: pipeline_source
+    route_key: custom_gtm_tool
     risk_level: read
 resource_contracts:
   - key: pipeline_snapshots
@@ -220,12 +273,42 @@ outputs:
     name: Risk Review
     type: object
     required: true
+    description: Evidence-linked pipeline risk assessment by account, deal, stage, and reason.
+    schema:
+      type: object
+      required: [review_window, source_refs, risk_items, aggregate_risk, confidence]
+      properties:
+        review_window: {type: object}
+        source_refs: {type: array, items: {type: string}}
+        risk_items: {type: array}
+        aggregate_risk: {type: object}
+        confidence: {type: string, enum: [low, medium, high]}
   - key: metric_gap_report
     name: Metric Gap Report
     type: object
+    required: true
+    description: Missing, stale, or contradictory metrics that bound the risk conclusion.
+    schema:
+      type: object
+      required: [missing_metrics, stale_metrics, contradictory_metrics, impact_on_confidence]
+      properties:
+        missing_metrics: {type: array}
+        stale_metrics: {type: array}
+        contradictory_metrics: {type: array}
+        impact_on_confidence: {type: string}
   - key: followup_plan
     name: Followup Plan
     type: object
+    required: true
+    description: Prioritized owner-ready actions, questions, evidence needs, and review timing.
+    schema:
+      type: object
+      required: [actions, owner_questions, evidence_requests, next_review_at]
+      properties:
+        actions: {type: array}
+        owner_questions: {type: array}
+        evidence_requests: {type: array}
+        next_review_at: {type: string}
 learning_hooks:
   - key: pipeline_learning
     prompt: Capture reusable pipeline lessons only with explicit metric or activity evidence.

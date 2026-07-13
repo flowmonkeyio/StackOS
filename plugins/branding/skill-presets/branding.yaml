@@ -1,13 +1,14 @@
 presets:
   - schema_version: stackos.skill-preset.v1
     key: branding.brand-orchestrator
-    name: Branding Brand Orchestrator
-    version: 0.1.0
-    description: Main-agent operating loop for interview-led, evidence-grounded authority content production and automated channel publication.
+    name: Brand Orchestrator
+    version: 0.3.0
+    description: Main-agent operating loop for evidence-led brand-foundation setup and voice-consistent content production, review, and optional publication.
     domain: branding
     skill_type: main-agent-orchestration
     generic_preset: true
     applies_to_workflows:
+      - branding.brand-foundation-setup
       - branding.content-production
     recommended_tools:
       - workspace.startSession
@@ -18,6 +19,7 @@ presets:
       - readiness.check
       - runPlan.create
       - runPlan.start
+      - runPlan.getStep
       - runPlan.claimStep
       - runPlan.recordStep
       - runPlan.checkConsistency
@@ -48,17 +50,18 @@ presets:
     project_adaptation:
       required: true
       do_not_use_verbatim: true
-      instruction: Adapt this generic branding orchestration loop to the current project. Load the Level 2 overlay for sources of record, voice profile, disclosure policy, concrete channel charters, canonical site target, and approval rules before running a workflow.
+      instruction: Adapt this generic branding orchestration loop to the current project. For brand-foundation setup, inventory existing guidance and treat missing voice state as the job to solve. For content production, load the current Level 2 voice, sources, disclosure, channel, site, and routing overlay before drafting.
       required_context_refs:
         - ref: AGENTS.md
           purpose: Project rules, command prefixes, local constraints, and signoff expectations.
         - ref: stackos:stackos
-          purpose: Host-side StackOS skill for MCP, workflows, run plans, resources, artifacts, actions, approvals, and evidence.
+          purpose: Host-side StackOS skill for MCP, workflows, run plans, resources, artifacts, actions, execution intent, and evidence.
         - ref: project-local docs and skills
           purpose: Repository docs, local skills, and operator-specific guidance when present.
+      conditional_context_refs:
         - ref: Level 2 branding overlay
           purpose: Sources of record, voice profile, disclosure policy, concrete channel instances, handles, charters, routing policy values, and canonical site settings.
-      conditional_context_refs:
+          when: Content production is in scope; absence is expected during first-time brand-foundation setup.
         - ref: canonical site repository
           purpose: Content format, path rules, preview process, and publishing target.
           when: Canonical publication or canonical draft formatting is in scope.
@@ -71,64 +74,70 @@ presets:
         - user_request
       required_agent_action: >-
         Before execution, create an adapted operating brief that names the
-        active workflow, content state, interview/source/evidence scope, voice
-        profile, disclosure policy, channel charters, image generation plan
-        when selected, publication modes, approvals, verification evidence, and
-        the content-piece fields that will make the output findable later. Keep
-        StackOS resources canonical; do not create duplicate local truth.
+        active workflow, current foundation state, interview/source/evidence
+        scope, execution intent and verification boundary, and durable records that
+        must remain findable later. For content production, also name the active
+        voice profile, disclosure policy, channels, image plan, and publication
+        modes. Name the intent-specific terminal condition before work begins.
+        Keep StackOS resources canonical; do not create duplicate truth.
     operating_contract:
-      mission: Coordinate evidence-grounded authority content from operator interview and intent through canonical drafts, channel publication jobs, optional generated images, approval, automated publication, and durable content memory.
+      mission: Coordinate an evidence-led brand foundation and use it to produce authority content from operator intent through review, optional publication, and durable memory.
       responsibilities:
-        - Capture operator intent through journalist-style questions and calibrate stream, altitude, evidence depth, image needs, and content scope.
+        - Capture operator intent, decide whether a journalist-style interview is required, useful, or unnecessary, and calibrate evidence depth, image needs, and content scope.
         - Resolve the Level 2 overlay before any specialist handoff.
         - Query brand-profile, positions, prior content-pieces, evidence-items, and channels before drafting so new work stays consistent with previous work.
         - Keep evidence-items, content-pieces, channels, routing policy, artifacts, and decisions canonical in StackOS.
-        - Treat the content-piece record as the future query index for approved work; artifacts store intentional durable outputs and evidence but never replace resource memory.
+        - Treat the content-piece record as the future query index for final work; artifacts store intentional durable outputs and evidence but never replace resource memory.
         - Keep normal interview notes, research exploration, angle options, and draft iteration in project-local working state until the workflow intentionally preserves a durable artifact.
-        - Invoke specialist presets for evidence, routing, writing, claim review, voice review, and sanitization.
-        - Hold the final evidence lock before any approval request.
+        - Invoke specialist presets only when their distinct boundary is needed; evidence curation is conditional, while public-content reviews remain independent.
+        - Hold the final evidence lock before finalization or external execution.
       must_do:
         - "Assemble prompts in this order: generic preset, project overlay, workflow requirements, current tracker/run-plan context, operator request."
-        - Require claims-to-evidence map and channel plan with rationale before asking for piece approval.
+        - In auto interview mode, require first-hand questions only when missing operator experience, judgment, surprise, stakes, or tradeoffs would materially weaken the piece; record the reason and evidence basis for any skip.
+        - Use the claimed step packet and exact context grant; call runPlan.getStep only for reported truncation.
+        - Apply only evidence-backed blockers and repairs, then stop at the workflow's stated terminal condition.
+        - Require claims-to-evidence map and channel plan with rationale before finalizing the piece.
         - Maintain a content memory index throughout the run with memory summary, topic tags, position refs, evidence refs, artifact refs, image refs, rendition refs, publication jobs, distribution refs, and follow-up hooks.
         - Use artifact.update, artifact.archive, or artifact.supersede to refine or clean up intentional durable artifacts instead of creating duplicate artifact rows for each iteration.
-        - Treat generated images as optional but required when the selected structure or website packet needs them; require placement, prompt, acceptance criteria, and approval before provider spend, while operator-supplied media can satisfy the image plan without generation approval.
+        - Treat generated images as optional but required when the selected structure or website packet needs them; require placement, prompt, acceptance criteria, and a within-budget check before provider spend, while operator-supplied media can satisfy the image plan without provider spend.
         - Enforce canonical-first before channel publication, except native-short collection policy.
-        - "Treat publication as automation-first after approval: use API integration, browser-assisted platform UI, site/admin UI, or local script when configured; record operator-confirmed manual publication only when the operator explicitly confirms they posted the approved copy/media."
-        - Upsert the approved content-piece before closeout, and update positions or brand-profile only when the operator explicitly approves the change.
+        - "Treat publication as automation-first when publication_intent is stage or publish: use API integration, browser-assisted platform UI, site/admin UI, or local script when configured; record operator-confirmed manual publication only when the operator explicitly confirms they posted the final copy/media."
+        - Upsert the final content-piece before closeout, and update positions or brand-profile only when the current operator intent explicitly includes that change.
       must_not_do:
         - Do not invent evidence, voice, disclosure policy, channel handles, or publication settings.
         - Do not use StackOS artifacts as a scratchpad for every interview pack, research pack, angle option, draft version, or review report.
-        - Do not leave approved work only in chat, local files, or artifacts without a content-piece resource ref.
+        - Do not leave final work only in chat, local files, or artifacts without a content-piece resource ref.
         - Do not let one role decide and review the same piece.
         - Do not collapse claim, voice, and sanitization review into one reviewer.
+        - Do not turn preferences, unsupported feedback, or a next-workflow handoff into extra delivery.
         - Do not turn branding email into a raw SMTP send path.
       required_outputs:
         - Adapted operating brief for the active workflow.
-        - Evidence pack, claim map, channel plan, approval refs, artifact refs, and resource refs as applicable.
+        - Evidence pack, claim map, channel plan, execution intent, artifact refs, and resource refs as applicable.
         - Interview pack, selected angle, optional image plan, generated image artifact refs, channel packets, publication bundle, publication jobs, distribution records, and follow-up hooks when applicable.
-        - Content memory index and approved content-piece ref that future runs can query.
-        - Closeout that names each channel's publication status, URL/provider refs when published, automation mode used, publication bundle, approved content memory, blockers, and residual risk.
+        - Content memory index and final content-piece ref that future runs can query.
+        - Closeout that names each channel's publication status, URL/provider refs when published, automation mode used, publication bundle, final content memory, blockers, and residual risk.
       success_criteria:
         - Every public claim traces to cleared evidence or is cut.
-        - Every channel publication job has approval, canonical linkage, publication bundle refs, distribution-record refs, and content-memory state.
-        - Future agents can recover the approved piece, artifact refs, image refs, publication jobs, distribution records, channel packets, positions, evidence, and follow-up hooks from StackOS resources without reading this chat.
+        - Every channel publication job has explicit execution intent, canonical linkage, publication bundle refs, distribution-record refs, and content-memory state.
+        - Future agents can recover the final piece, artifact refs, image refs, publication jobs, distribution records, channel packets, positions, evidence, and follow-up hooks from StackOS resources without reading this chat.
         - Level 1 remains generic; Level 2 owns operator-specific values.
       self_check:
-        - Did I verify sources, voice, disclosure policy, channel charters, and approval rules from the overlay?
+        - Did I verify sources, voice, disclosure policy, channel charters, and routing rules from the overlay?
         - Did I interview for why, surprise, tradeoffs, stakes, and follow-up angles instead of relying only on logs?
         - Did I keep StackOS resources as the single source of truth?
         - Did I preserve only intentional durable artifacts, and update/archive/supersede existing artifacts when refining or cleaning up?
         - Did I upsert a content-piece memory index before closeout?
         - Did I separate decision, review, and execution roles?
-        - Did I attach evidence map and channel rationale before approval?
+        - Did I attach evidence map and channel rationale before finalization?
+        - Did I stop at the named terminal condition without turning the handoff or feedback into extra work?
     metadata_json:
       boundary:
         level: 1
         project_adaptation_required: true
         no_operator_specific_values: true
       evidence_lock:
-        required_before_approval: true
+        required_before_finalization: true
         contents:
           - claim_evidence_map
           - cleared_evidence_refs

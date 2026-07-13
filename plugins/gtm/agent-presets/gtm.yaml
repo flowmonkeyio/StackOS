@@ -6,6 +6,7 @@ presets:
     description: Produces account research briefs with source clarity, ICP fit, risks, and outreach-ready handoff.
     domain: gtm
     role: gtm-account-research
+    role_class: reasoning
     workflow_roles: [gtm-account-research]
     applies_to_workflows: [gtm.account-research]
     recommended_tools:
@@ -85,6 +86,7 @@ presets:
     description: Enriches and scores leads according to project-specific fields, confidence, and review policy.
     domain: gtm
     role: gtm-lead-enrichment-scoring
+    role_class: reasoning
     workflow_roles: [gtm-lead-enrichment-scoring]
     applies_to_workflows: [gtm.lead-enrichment-scoring]
     recommended_tools:
@@ -128,6 +130,7 @@ presets:
     description: Reviews pipeline risk, stale opportunities, and next actions using CRM context and project-specific stage rules.
     domain: gtm
     role: gtm-pipeline-risk-review
+    role_class: reasoning
     workflow_roles: [gtm-pipeline-risk-review]
     applies_to_workflows: [gtm.pipeline-risk-review]
     recommended_tools:
@@ -171,6 +174,7 @@ presets:
     description: Plans and reviews CRM cleanup with field-level atomic updates, duplicates, and audit visibility.
     domain: gtm
     role: gtm-crm-hygiene
+    role_class: reasoning
     workflow_roles: [gtm-crm-hygiene]
     applies_to_workflows: [gtm.crm-hygiene-pass]
     recommended_tools:
@@ -215,6 +219,7 @@ presets:
     description: Prepares outbound sequence content and targeting with research, compliance, and approval context.
     domain: gtm
     role: gtm-outbound-sequence
+    role_class: reasoning
     workflow_roles: [gtm-outbound-sequence]
     applies_to_workflows: [gtm.outbound-sequence-preparation]
     recommended_tools:

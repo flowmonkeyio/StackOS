@@ -1,0 +1,485 @@
+schema_version: stackos.workflow-template.v1
+key: branding.brand-foundation-setup
+name: Brand Foundation Setup
+version: 0.3.0
+description: Build or refresh the project brand voice, editorial boundaries, evidence standard, anti-generic writing tests, and durable voice guide before content production.
+domain: branding
+owner:
+  team: StackOS
+experience:
+  problem: A generic tone prompt cannot preserve a real point of view, especially after several agents, drafts, and channels touch the work.
+  outcome: A current brand profile and durable voice guide that future agents can retrieve, apply, test, and update without guessing.
+  why_ai: AI can compare interviews, real writing samples, project experience, and reader reactions at scale, while the operator's expressed intent and supplied evidence remain the authority on identity.
+  operator_path:
+    - Share the brand goal, audience, representative writing, and any current voice guidance.
+    - Answer a focused interview when the samples do not explain the judgment behind the writing.
+    - Review a focused choice only when the evidence leaves a material identity question unresolved.
+    - Receive a retrieval-tested profile and guide as the content-production baseline.
+  agent_path:
+    - Inventory existing brand resources, guides, writing samples, and content outcomes before proposing changes.
+    - Interview for point of view, lived proof, preferred tension, language habits, boundaries, and what the operator refuses to sound like.
+    - Separate durable voice principles from channel mechanics and brittle phrase blacklists.
+    - Draft the profile and guide, run independent voice review, then finalize and persist the supported foundation.
+    - Re-query the stored profile and artifact to prove future agents can retrieve them.
+  progress_signals:
+    - Existing guidance inventoried
+    - Interview and sample evidence complete
+    - Voice system drafted
+    - Adversarial voice review complete
+    - Foundation finalized and persisted
+    - Retrieval verified
+  recovery:
+    - If samples conflict, preserve the variants and ask which context each one represents.
+    - If a material identity choice cannot be resolved from the request or evidence, preserve the reviewed draft and ask one focused question.
+    - If persistence or retrieval fails, stop before declaring the foundation ready.
+  safe_stopping_points:
+    - Stop with a reviewed draft only when missing authority or context would materially change the identity.
+    - Complete after returning the retrieval-tested content-production handoff; do not start or mutate the next workflow unless the operator separately asks for content production.
+  handoffs:
+    - workflow_key: branding.content-production
+      relationship: next
+      when: The active brand profile and voice guide have been finalized and retrieval-tested.
+public:
+  audience: Founders, builders, and teams defining a recognizable editorial voice
+  setup: available
+  prerequisites:
+    - A brand or personal-authority goal and target audience
+    - Representative writing samples, prior content, or willingness to be interviewed
+    - Disclosure and sensitive-information boundaries
+  proof:
+    - Source and sample inventory
+    - Voice principles, structure rules, and evidence standard
+    - Anti-generic kill tests applied to examples
+    - Independent voice review and durable finalization decision
+    - Retrieval-tested brand-profile and voice-guide refs
+  featured: true
+when_to_use:
+  - A project needs its first durable brand voice and editorial foundation before producing content.
+  - Existing content sounds generic, inconsistent, promotional, or unlike the operator.
+  - The project has voice guidance in another project or document that should be adapted without copying it blindly.
+when_not_to_use:
+  - The active brand foundation is already current and the request is to produce one content piece.
+  - The user wants a one-off rewrite with no durable brand setup.
+agent_requirements:
+  - role: profile-architect
+    requirement: required
+    agent_preset_ref: branding.profile-architect
+    purpose: Own the evidence-led brand model, operator interview, voice-system draft, and final persistence boundary.
+    applies_to_steps:
+      - inventory-existing-foundation
+      - interview-and-sample-analysis
+      - draft-brand-foundation
+      - finalize-and-persist
+      - verify-retrieval
+  - role: evidence-curator
+    requirement: recommended
+    agent_preset_ref: branding.evidence-curator
+    purpose: Preserve source, sample, research, and interview traceability when the corpus, external research, or interview lineage is too broad for the profile architect's bounded pass.
+    applies_to_steps:
+      - inventory-existing-foundation
+      - interview-and-sample-analysis
+    handoff_notes:
+      - Invoke this role only when it removes material source-lineage burden; the profile architect may handle a small, already-bounded evidence set directly.
+  - role: voice-reviewer
+    requirement: required
+    agent_preset_ref: branding.voice-reviewer
+    purpose: Challenge whether the draft is distinctive, evidence-grounded, usable by agents, and free of generic AI-polish patterns without caricaturing the operator.
+    applies_to_steps:
+      - adversarial-voice-review
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Keep the active brand profile, voice-guide artifact, decision, and retrieval proof canonical in StackOS.
+skill_preset_requirements:
+  - skill_preset_ref: branding.brand-orchestrator
+    requirement: required
+    purpose: Coordinate brand-foundation evidence, interview judgment, independent review, durable finalization, storage, and later content handoff.
+    applies_to_steps:
+      - inventory-existing-foundation
+      - interview-and-sample-analysis
+      - draft-brand-foundation
+      - adversarial-voice-review
+      - finalize-and-persist
+      - verify-retrieval
+inputs:
+  - key: foundation_goal
+    name: Foundation Goal
+    type: string
+    required: true
+    description: The identity, audience, reputation, or content problem this brand foundation must solve.
+    schema: {type: string, minLength: 1}
+  - key: profile_name
+    name: Profile Name
+    type: string
+    required: false
+    default: Current Brand Profile
+    schema: {type: string, minLength: 1}
+  - key: existing_material_refs
+    name: Existing Material Refs
+    type: array
+    required: false
+    description: Safe refs to prior profiles, voice guides, writing samples, posts, articles, transcripts, or project evidence.
+    schema:
+      type: array
+      items: {type: string, minLength: 1}
+      uniqueItems: true
+  - key: interview_mode
+    name: Interview Mode
+    type: string
+    required: false
+    default: auto
+    options_json: [auto, required, skip]
+    description: Auto interviews when samples do not expose the operator's judgment; required always interviews; skip requires sufficient representative material and a recorded reason.
+    schema: {type: string, enum: [auto, required, skip]}
+  - key: target_channels
+    name: Target Channels
+    type: array
+    required: false
+    description: Channels that should inform examples, not redefine the channel-independent voice.
+    schema:
+      type: array
+      items: {type: string, minLength: 1}
+      uniqueItems: true
+  - key: disclosure_boundaries
+    name: Disclosure Boundaries
+    type: object
+    required: false
+    description: Public/private, customer, metric, implementation, security, and regulatory boundaries.
+    schema:
+      type: object
+      properties:
+        public: {type: array, items: {type: string}}
+        private: {type: array, items: {type: string}}
+        ask_when_ambiguous: {type: array, items: {type: string}}
+context_requirements:
+  - id: current_brand_profiles
+    source: resources
+    purpose: Reuse or deliberately replace existing identity, voice, editorial, and sanitization state.
+    filters:
+      plugin_slug: branding
+      resource_keys: [brand-profile]
+    fields: [title, status, data_json, updated_at]
+    max_items: 10
+    return_mode: compact
+  - id: prior_content
+    source: resources
+    purpose: Learn from current content, recurring positions, outcomes, and prior review findings.
+    filters:
+      plugin_slug: branding
+      resource_keys: [content-piece]
+    fields: [title, status, data_json, updated_at]
+    max_items: 30
+    return_mode: compact
+  - id: existing_voice_artifacts
+    source: artifacts
+    purpose: Inspect current voice guides and explicitly superseded versions before creating another current guide.
+    filters:
+      plugin_slug: branding
+      kinds: [brand-voice-guide]
+    fields: [name, kind, status, uri, metadata_json, updated_at]
+    max_items: 20
+    return_mode: compact
+resource_contracts:
+  - key: brand_profile
+    resource: brand-profile
+    purpose: Store the active identity, voice register, editorial filter, voice rules, kill tests, sanitization policy, and guide ref.
+    required: true
+policies:
+  - key: operator_is_voice_authority
+    kind: authority
+    description: The operator's request, supplied decisions, and corrections define identity and point of view; agents may finalize supported choices and ask only when material ambiguity remains.
+  - key: evidence_before_style_claim
+    kind: evidence
+    description: Every claimed voice trait must trace to representative samples, interview evidence, project experience, or an explicit operator decision.
+  - key: anti_generic_not_detector_gaming
+    kind: quality
+    description: Improve specificity, lived proof, sentence and structure choice, and point of view. Do not optimize for unreliable AI detectors or ban normal language merely because a model sometimes uses it.
+  - key: separate_voice_from_channel_mechanics
+    kind: boundary
+    description: The brand voice guide owns identity, proof, reasoning, structure, and quality tests; channel-specific length, format, and distribution mechanics stay in channel guidance.
+  - key: one_current_foundation
+    kind: memory
+    description: Update or supersede the current profile and guide instead of creating competing current foundations.
+  - key: public_sanitization
+    kind: safety
+    description: Preserve useful operating detail while removing private customer data, credentials, security-sensitive detail, and metrics outside the stated public boundary.
+  - key: orchestrator_gates_feedback
+    kind: quality
+    description: Reviewer findings are advisory claims. The orchestrator classifies each as blocker, repair, preference, or out-of-scope/unsupported and changes the foundation only for evidence-backed blockers and repairs.
+  - key: handoff_is_not_execution
+    kind: boundary
+    description: The content-production handoff returns stable refs and prerequisites. It does not authorize starting content production, updating that workflow's extension, or producing content.
+steps:
+  - id: inventory-existing-foundation
+    title: Inventory Existing Foundation
+    purpose: Find current profiles, guides, representative content, outcomes, and conflicting guidance before drafting anything new.
+    instructions:
+      - Prefer the current project's records, but inspect explicitly selected cross-project or supplied material when referenced.
+      - Separate durable brand voice from image style, channel mechanics, and product messaging.
+      - Name what can be reused, what needs adaptation, and what is missing.
+    input_refs: [foundation_goal, profile_name, existing_material_refs, target_channels]
+    context_refs: [current_brand_profiles, prior_content, existing_voice_artifacts]
+    policy_refs: [evidence_before_style_claim, separate_voice_from_channel_mechanics, one_current_foundation]
+    output_refs: [foundation_inventory]
+    success_criteria:
+      - Existing current and superseded guidance is distinguishable.
+      - Reusable principles, project-specific assumptions, channel rules, and gaps are separated.
+  - id: interview-and-sample-analysis
+    title: Interview And Sample Analysis
+    purpose: Capture the operator's point of view and analyze real writing choices only where the current evidence needs it.
+    instructions:
+      - Respect interview_mode and record why an interview is required, useful, or skipped.
+      - Ask for audience, earned authority, recurring tensions, preferred specificity, disliked postures, natural language habits, endings, and examples that feel right or wrong.
+      - Analyze patterns across several samples; do not mistake one phrase, typo, or channel constraint for the whole voice.
+      - Research reader complaints about generic AI writing only from source-linked material, and translate them into quality tests rather than a brittle word blacklist.
+    depends_on: [inventory-existing-foundation]
+    input_refs: [foundation_goal, existing_material_refs, interview_mode, disclosure_boundaries]
+    context_refs: [prior_content, existing_voice_artifacts]
+    policy_refs: [operator_is_voice_authority, evidence_before_style_claim, anti_generic_not_detector_gaming, public_sanitization]
+    output_refs: [interview_decision, voice_evidence_pack]
+    success_criteria:
+      - Observed sample patterns, operator decisions, external research, and inference are labeled separately.
+      - The evidence explains both what the voice is and why readers should trust it.
+  - id: draft-brand-foundation
+    title: Draft Brand Foundation
+    purpose: Turn the evidence into a compact profile and practical voice guide that agents can use without imitating a caricature.
+    instructions:
+      - Define positioning, base register, point of view, proof style, structure choices, sentence-level tendencies, boundaries, and maintenance rules.
+      - Include positive examples, counterexamples, and repair moves grounded in the selected material.
+      - Use kill tests that catch genericity, unsupported authority, product-pitch drift, and over-smoothed prose.
+      - Keep channel mechanics and image voice linked but separate.
+    depends_on: [interview-and-sample-analysis]
+    input_refs: [profile_name, target_channels, disclosure_boundaries]
+    policy_refs: [operator_is_voice_authority, evidence_before_style_claim, anti_generic_not_detector_gaming, separate_voice_from_channel_mechanics, public_sanitization]
+    output_refs: [brand_profile_draft, voice_guide_draft, example_rewrites]
+    success_criteria:
+      - Every durable voice claim has an evidence or operator-decision basis.
+      - A future writer can make choices from the guide instead of copying stock phrases.
+      - Examples demonstrate specificity, lived proof, natural variation, and honest uncertainty.
+  - id: adversarial-voice-review
+    title: Adversarial Voice Review
+    purpose: Independently test distinctiveness, fidelity, usability, evidence, and anti-generic quality before activation.
+    instructions:
+      - Apply the draft to unseen representative passages and compare the result with representative samples.
+      - Flag generic founder voice, hidden product pitching, mechanical formulas, fake personal experience, ungrounded certainty, and excessive polish.
+      - Reject rules that merely game AI detectors or erase legitimate operator habits.
+      - Classify every finding as blocker, repair, preference, or out-of-scope/unsupported and attach the profile, sample, or evidence basis.
+    depends_on: [draft-brand-foundation]
+    context_refs: [prior_content, existing_voice_artifacts]
+    policy_refs: [evidence_before_style_claim, anti_generic_not_detector_gaming, separate_voice_from_channel_mechanics, orchestrator_gates_feedback]
+    output_refs: [voice_review_report]
+    success_criteria:
+      - Findings distinguish blockers, repairable issues, preferences, and false positives.
+      - The reviewed guide remains compact enough for agent use and specific enough to change output quality.
+  - id: finalize-and-persist
+    title: Finalize And Persist
+    purpose: Resolve review findings, record the finalization decision, upsert the active brand profile, and create or update the durable voice-guide artifact.
+    instructions:
+      - Adjudicate the independent review against the evidence. Resolve supported blockers and repairs; record but do not implement preferences, out-of-scope requests, or unsupported findings.
+      - Ask only when an unresolved choice would materially change the identity.
+      - Treat the current request, supplied evidence, and recorded operator decisions as authority to activate the supported foundation without another human checkpoint.
+      - Update or supersede the current guide when one exists; do not create competing current artifacts.
+      - Link the current guide ref from the brand-profile notes or metadata available to future agents.
+    depends_on: [adversarial-voice-review]
+    resource_refs: [brand_profile]
+    policy_refs: [operator_is_voice_authority, one_current_foundation, public_sanitization, orchestrator_gates_feedback]
+    output_refs: [active_brand_profile_ref, active_voice_guide_ref, foundation_decision_ref]
+    success_criteria:
+      - The active profile and guide refs are durable, linked, and uniquely current.
+      - The finalization basis and any genuinely deferred choices are recorded.
+  - id: verify-retrieval
+    title: Verify Retrieval
+    purpose: Re-query the saved profile and artifact and prove a future content run receives the correct active foundation.
+    instructions:
+      - Query the brand-profile and current artifact by their stable refs.
+      - Check status, version, linkage, voice rules, kill tests, evidence standard, sanitization boundary, and supersession state.
+      - Return exact repair guidance if the foundation is not retrievable or ambiguous.
+      - Return the minimal content-production handoff and stop. Do not update the content workflow extension or start another run.
+    depends_on: [finalize-and-persist]
+    context_refs: [current_brand_profiles, existing_voice_artifacts]
+    policy_refs: [one_current_foundation, handoff_is_not_execution]
+    output_refs: [retrieval_proof, content_production_handoff]
+    success_criteria:
+      - Exactly one active profile and current guide are selected for future branding content work.
+      - The content-production handoff names stable refs and any remaining project prerequisites.
+outputs:
+  - key: foundation_inventory
+    type: object
+    required: true
+    description: Existing guidance, reusable evidence, conflicts, separation boundaries, and gaps.
+    schema:
+      type: object
+      required: [current_guidance, reusable_principles, conflicts, channel_mechanics, gaps, source_refs]
+      properties:
+        current_guidance: {type: array}
+        superseded_guidance: {type: array}
+        reusable_principles: {type: array}
+        conflicts: {type: array}
+        channel_mechanics: {type: array}
+        gaps: {type: array}
+        source_refs: {type: array, items: {type: string}}
+  - key: interview_decision
+    type: object
+    required: true
+    description: Required, useful, or skip with rationale and evidence basis.
+    schema:
+      type: object
+      required: [decision, rationale, evidence_refs, missing_perspective]
+      properties:
+        decision: {type: string, enum: [required, useful, skip]}
+        rationale: {type: string}
+        evidence_refs: {type: array, items: {type: string}}
+        questions: {type: array, items: {type: string}}
+        missing_perspective: {type: array, items: {type: string}}
+  - key: voice_evidence_pack
+    type: object
+    required: true
+    description: Source-linked sample patterns, operator decisions, research, and open questions.
+    schema:
+      type: object
+      required: [sample_observations, operator_decisions, research_findings, inferences, open_questions, source_refs]
+      properties:
+        sample_observations: {type: array}
+        operator_decisions: {type: array}
+        research_findings: {type: array}
+        inferences: {type: array}
+        open_questions: {type: array, items: {type: string}}
+        source_refs: {type: array, items: {type: string}}
+  - key: brand_profile_draft
+    type: object
+    required: true
+    description: Draft identity and editorial profile awaiting independent review and finalization.
+    schema:
+      type: object
+      required: [profile_name, status, audience, point_of_view, voice_register, evidence_standard, editorial_boundaries, kill_tests, disclosure_boundary]
+      properties:
+        profile_name: {type: string}
+        status: {type: string, const: draft}
+        audience: {type: array}
+        point_of_view: {type: array}
+        voice_register: {type: array}
+        evidence_standard: {type: array}
+        editorial_boundaries: {type: array}
+        kill_tests: {type: array}
+        disclosure_boundary: {type: object}
+        evidence_refs: {type: array, items: {type: string}}
+  - key: voice_guide_draft
+    type: object
+    required: true
+    description: Practical draft guide a future agent can use to make writing choices.
+    schema:
+      type: object
+      required: [register, principles, structure, sentence_choices, proof_rules, positive_examples, counterexamples, repair_moves, kill_tests, channel_boundary]
+      properties:
+        register: {type: string}
+        principles: {type: array}
+        structure: {type: array}
+        sentence_choices: {type: array}
+        proof_rules: {type: array}
+        positive_examples: {type: array}
+        counterexamples: {type: array}
+        repair_moves: {type: array}
+        kill_tests: {type: array}
+        channel_boundary: {type: array}
+  - key: example_rewrites
+    type: array
+    required: true
+    description: Evidence-linked before-and-after examples that demonstrate the guide without becoming templates.
+    schema:
+      type: array
+      minItems: 1
+      items:
+        type: object
+        required: [before, after, reason]
+        properties:
+          before: {type: string}
+          after: {type: string}
+          reason: {type: string}
+          source_ref: {type: string}
+  - key: voice_review_report
+    type: object
+    required: true
+    description: Independent fidelity, distinctiveness, usability, and genericity verdict.
+    schema:
+      type: object
+      required: [verdict, blockers, repairs, preferences, out_of_scope, evidence_refs]
+      properties:
+        verdict: {type: string, enum: [ready, repair, block]}
+        blockers: {type: array}
+        repairs: {type: array}
+        preferences: {type: array}
+        out_of_scope: {type: array}
+        false_positives: {type: array}
+        evidence_refs: {type: array, items: {type: string}}
+  - key: active_brand_profile_ref
+    type: string
+    required: true
+    description: Stable ref for the current brand profile.
+    schema: {type: string, minLength: 1}
+  - key: active_voice_guide_ref
+    type: string
+    required: true
+    description: Stable ref for the current voice-guide artifact.
+    schema: {type: string, minLength: 1}
+  - key: foundation_decision_ref
+    type: string
+    required: true
+    description: Stable ref for the finalization and supersession decision.
+    schema: {type: string, minLength: 1}
+  - key: retrieval_proof
+    type: object
+    required: true
+    description: Proof that future agents retrieve exactly one current profile and guide.
+    schema:
+      type: object
+      required: [verified, profile_ref, guide_ref, current_profile_count, current_guide_count, query_basis]
+      properties:
+        verified: {type: boolean}
+        profile_ref: {type: string}
+        guide_ref: {type: string}
+        current_profile_count: {type: integer, minimum: 0}
+        current_guide_count: {type: integer, minimum: 0}
+        query_basis: {type: object}
+        warnings: {type: array}
+  - key: content_production_handoff
+    type: object
+    required: true
+    description: Minimal stable context required to start branded content production without rediscovery.
+    schema:
+      type: object
+      required: [workflow_key, profile_ref, guide_ref, disclosure_boundary, prerequisites, unresolved_choices]
+      properties:
+        workflow_key: {type: string, const: branding.content-production}
+        profile_ref: {type: string}
+        guide_ref: {type: string}
+        disclosure_boundary: {type: object}
+        prerequisites: {type: array}
+        unresolved_choices: {type: array}
+failure_handling:
+  - If the existing project and supplied cross-project guidance conflict, show the conflict and ask which identity is authoritative.
+  - If samples are too sparse or one-dimensional, interview or request more representative material instead of inventing a voice.
+  - If review finds evidence-backed genericity or product-pitch drift, repair and re-review before finalization; do not expand scope for preferences or unsupported findings.
+  - If the request and evidence leave a material identity choice unresolved, preserve the reviewed draft and ask one focused question before activation.
+  - If the current guide cannot be safely updated or superseded, stop before creating another current artifact.
+  - If retrieval verification fails, report the exact missing or ambiguous refs and keep content production blocked.
+metadata:
+  plugin_slug: branding
+  workflow_family: brand-foundation
+  artifact_grant_policy: explicit
+  artifact_lifecycle_guidance: Preserve the current voice guide, evidence-linked examples, and review packet intentionally; keep interview and exploratory drafting in project-local working state.
+  grants:
+    - context.query
+    - resource.upsert
+    - artifact.create
+    - artifact.update
+    - artifact.archive
+    - artifact.supersede
+    - decision.record
+  mcp_tool_grants:
+    - step_id: finalize-and-persist
+      tools:
+        - artifact.create
+        - artifact.update
+        - artifact.archive
+        - artifact.supersede
+        - decision.record

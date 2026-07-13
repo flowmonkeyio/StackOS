@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 188
+    assert len(names) == 189
     assert {
         "action.execute",
         "schema.get",
@@ -309,6 +309,13 @@ def test_operation_registry_documents_core_operations() -> None:
     assert workflow_extension.surfaces["cli"].command == "ops call workflowExtension.upsert"
     assert workflow_extension.grant_policy == "direct-setup-write"
     assert any("base workflow should stay generic" in item for item in [workflow_extension.purpose])
+    extension_source = workflow_extension.input_schema["properties"]["source"]
+    assert "template-origin filter" in extension_source["description"]
+    assert "not workflow provenance" in extension_source["description"]
+    assert extension_source["anyOf"][0]["pattern"] == "^(plugin|project|user|repo)$"
+    assert "not source" in workflow_extension.input_schema["properties"]["created_by"][
+        "description"
+    ]
 
     authoring_guide = registry.get("workflowTemplate.authoringGuide").describe_out()
     assert authoring_guide.category == "workflow"

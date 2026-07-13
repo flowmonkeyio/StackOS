@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.1.0
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.2.0
 Workflow: `engineering.tracked-delivery`
 
 This is project-local main-agent guidance for Codex when orchestrating StackOS
@@ -51,6 +51,16 @@ auth, permissions, provider execution, generated schemas, runtime contracts,
 migrations, UI flows, production data, or release-critical behavior. Do not run
 ceremony only because a workflow mentions it, and do not skip evidence because
 speed is tempting.
+
+## Scope Lock And Feedback Gate
+
+The agreed plan is the delivery contract. The main orchestrator is the sole gatekeeper for all feedback:
+
+- Admit only work required by the agreed outcome or the correctness/safety of a changed surface.
+- Defer or reject nice-to-haves, adjacent cleanup, speculative risks, and audit suggestions.
+- Ask the operator before materially expanding the outcome; never hide drift inside a "fix."
+
+Reviewers and audits provide signal, not backlog authority.
 
 ## Flow Design
 

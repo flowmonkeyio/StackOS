@@ -100,6 +100,7 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("runPlan.abort", SYSTEM_SKILL)
     check_grant("runPlan.checkConsistency", SYSTEM_SKILL)
     check_grant("runPlan.get", SYSTEM_SKILL)
+    check_grant("runPlan.getStep", SYSTEM_SKILL)
     check_grant("runPlan.list", SYSTEM_SKILL)
     check_grant("runPlan.reopen", SYSTEM_SKILL)
     check_grant("tracker.status", SYSTEM_SKILL)

@@ -2,14 +2,53 @@
   "key": "communications.rich-telegram-reply",
   "slug": "communications-rich-telegram-reply",
   "name": "Rich Telegram Reply",
-  "description": "Reply in Telegram with text, images, and useful actions while keeping the conversation connected.",
+  "description": "One Telegram reply whose text, media, buttons, and thread context match the approved response contract.",
   "domain": "communications",
-  "audience": "Customer and operations teams",
+  "audience": "Teams replying to Telegram requests with media or buttons",
   "color": "#7ee2ad",
   "featured": false,
+  "problem": "Rich replies can silently lose images, buttons, threading, or privacy boundaries when a platform feature is unavailable.",
+  "outcome": "One Telegram reply whose text, media, buttons, and thread context match the approved response contract.",
+  "whyAi": "",
+  "operatorPath": [
+    "Provide the reply intent and approved media or action choices.",
+    "Confirm any button behavior that creates work or changes state.",
+    "Review the sent message and stored interaction refs."
+  ],
+  "agentPath": [
+    "Load the originating request and Telegram surface policy.",
+    "Validate text, every media item, and button payload before any send.",
+    "Send without silent degradation and store message and interaction receipts."
+  ],
+  "progressSignals": [
+    "Origin verified",
+    "Payload validated",
+    "Media complete",
+    "Reply delivered",
+    "Interaction refs stored"
+  ],
+  "recovery": [
+    "Reject unsupported rich features instead of silently dropping them.",
+    "Use provider receipts and idempotency state to avoid duplicate replies after failure."
+  ],
+  "safeStoppingPoints": [
+    "Stop with a validated reply packet when the origin or feature contract is incomplete."
+  ],
+  "handoffs": [],
+  "setup": "connection-required",
+  "prerequisites": [
+    "A connected Telegram profile",
+    "An originating request and approved reply destination",
+    "Safe media refs and defined button behavior"
+  ],
+  "proof": [
+    "Validated payload",
+    "Telegram message and media ids",
+    "Stored button interaction refs"
+  ],
   "whenToUse": [
-    "Use this when you want to reply in Telegram with text, images, and useful actions while keeping the conversation connected.",
-    "Best for customer and operations teams that want repeatable work without changing the tools they already use."
+    "A Telegram message created an agent_request and the response may need buttons or images.",
+    "The agent must respect the originating communication profile, chat, thread, and response policy."
   ],
   "stages": [
     {
@@ -25,7 +64,7 @@
     {
       "id": "send",
       "title": "Send Telegram Response",
-      "summary": "Execute the explicit Telegram send action granted by the plan."
+      "summary": "Execute the explicit Telegram send action granted by the run plan."
     }
   ],
   "agentNames": [

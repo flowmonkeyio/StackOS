@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const downloadUrl = useDownloadUrl()
+const { workflows } = useLibraryCatalog()
 
 useSeoMeta({
   title: 'StackOS — Keep AI-powered work organized from start to finish',
@@ -64,7 +65,7 @@ useSeoMeta({
             <span>runs on your Mac</span>
           </div>
           <div>
-            <strong>23</strong>
+            <strong>{{ workflows.length }}</strong>
             <span>ready-made workflows</span>
           </div>
           <div>

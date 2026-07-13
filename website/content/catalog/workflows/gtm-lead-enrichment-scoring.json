@@ -2,14 +2,57 @@
   "key": "gtm.lead-enrichment-scoring",
   "slug": "gtm-lead-enrichment-scoring",
   "name": "GTM Lead Enrichment And Scoring",
-  "description": "Enrich leads with relevant context and score them against your chosen criteria.",
+  "description": "A source-linked enrichment and scoring result with confidence, disqualification reasons, and no silent field invention.",
   "domain": "gtm",
-  "audience": "Sales and go-to-market teams",
+  "audience": "Growth and sales teams enriching and prioritizing leads",
   "color": "#ff9f73",
   "featured": false,
+  "problem": "Lead scoring becomes untrustworthy when enrichment sources, missing values, and scoring assumptions are hidden.",
+  "outcome": "A source-linked enrichment and scoring result with confidence, disqualification reasons, and no silent field invention.",
+  "whyAi": "",
+  "operatorPath": [
+    "Provide the lead set, ideal-customer criteria, and scoring policy.",
+    "Choose approved enrichment sources and how missing data should be treated.",
+    "Review threshold or policy changes before they affect routing."
+  ],
+  "agentPath": [
+    "Validate lead identity and existing fields before enrichment.",
+    "Use approved sources, preserve provenance, and distinguish missing from negative evidence.",
+    "Apply the explicit scoring policy and store reasons, confidence, and follow-up."
+  ],
+  "progressSignals": [
+    "Lead scope validated",
+    "Enrichment complete",
+    "Scores explained",
+    "Exceptions ready for review"
+  ],
+  "recovery": [
+    "Do not merge ambiguous people or companies.",
+    "If a provider is unavailable, score only where the policy permits missing data and flag the rest."
+  ],
+  "safeStoppingPoints": [
+    "Stop with enriched records and proposed scores when routing was not authorized."
+  ],
+  "handoffs": [
+    {
+      "workflowKey": "gtm.outbound-sequence-preparation",
+      "relationship": "conditional",
+      "when": "Leads meet the reviewed qualification threshold and outreach is approved."
+    }
+  ],
+  "setup": "mixed",
+  "prerequisites": [
+    "A bounded lead set",
+    "Ideal-customer and scoring criteria",
+    "Approved sources and missing-data policy"
+  ],
+  "proof": [
+    "Field-level source provenance",
+    "Score reasons and confidence",
+    "Disqualification and exception report"
+  ],
   "whenToUse": [
-    "Use this when you want to enrich leads with relevant context and score them against your chosen criteria.",
-    "Best for sales and go-to-market teams that want repeatable work without changing the tools they already use."
+    "A lead or account list needs enrichment, qualification, or scoring before CRM or outbound work."
   ],
   "stages": [
     {
@@ -20,7 +63,7 @@
     {
       "id": "run_enrichment",
       "title": "Run Enrichment",
-      "summary": "Execute only the connected app enrichment actions granted by the concrete plan."
+      "summary": "Execute only the provider enrichment actions granted by the concrete run plan."
     },
     {
       "id": "score_and_store",

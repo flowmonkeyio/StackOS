@@ -6,6 +6,7 @@ presets:
     description: Prepares paid media campaign launches with explicit assumptions, approvals, and provider-action boundaries.
     domain: media-buying
     role: media-campaign-launch
+    role_class: reasoning
     workflow_roles: [media-campaign-launch]
     applies_to_workflows: [media-buying.campaign-launch]
     recommended_tools:
@@ -86,6 +87,7 @@ presets:
     description: Diagnoses media performance using bounded evidence, live-data caveats, and prioritized next checks.
     domain: media-buying
     role: media-performance-diagnosis
+    role_class: reasoning
     workflow_roles: [media-performance-diagnosis]
     applies_to_workflows: [media-buying.performance-diagnosis]
     recommended_tools:
@@ -129,6 +131,7 @@ presets:
     description: Generates and reviews creative variant plans tied to hypothesis, brand constraints, and measurement.
     domain: media-buying
     role: media-creative-variant
+    role_class: reasoning
     workflow_roles: [media-creative-variant]
     applies_to_workflows: [media-buying.creative-variant-generation]
     recommended_tools:
@@ -172,6 +175,7 @@ presets:
     description: Reviews budget movement proposals with evidence, constraints, and approval awareness.
     domain: media-buying
     role: media-budget-reallocation
+    role_class: reasoning
     workflow_roles: [media-budget-reallocation]
     applies_to_workflows: [media-buying.budget-reallocation-review]
     recommended_tools:
@@ -216,6 +220,7 @@ presets:
     description: Coordinates landing-page and creative experiment planning across UX, media, tracking, and review.
     domain: media-buying
     role: media-landing-page-creative-experiment
+    role_class: reasoning
     workflow_roles: [media-landing-page-creative-experiment]
     applies_to_workflows: [media-buying.landing-page-creative-experiment]
     recommended_tools:

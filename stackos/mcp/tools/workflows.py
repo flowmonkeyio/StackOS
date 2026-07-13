@@ -30,6 +30,12 @@ from stackos.workflows import (
 )
 from stackos.workflows.template_schema import WorkflowTemplateIssue
 
+_TEMPLATE_SOURCE_PATTERN = "^(plugin|project|user|repo)$"
+_TEMPLATE_SOURCE_DESCRIPTION = (
+    "Optional template-origin filter: plugin, project, user, or repo. "
+    "This is not workflow provenance; omit it unless selecting a specific origin."
+)
+
 
 class WorkflowTemplateAuthoringGuideInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {}})
@@ -54,7 +60,11 @@ class WorkflowTemplateDescribeInput(MCPInput):
     project_id: int | None = None
     repo_root: str | None = None
     plugin_slug: str | None = None
-    source: str | None = None
+    source: str | None = Field(
+        default=None,
+        pattern=_TEMPLATE_SOURCE_PATTERN,
+        description=_TEMPLATE_SOURCE_DESCRIPTION,
+    )
 
 
 class WorkflowTemplateValidateInput(MCPInput):
@@ -75,7 +85,11 @@ class WorkflowTemplateValidateInput(MCPInput):
     project_id: int | None = None
     repo_root: str | None = None
     plugin_slug: str | None = None
-    source: str | None = None
+    source: str | None = Field(
+        default=None,
+        pattern=_TEMPLATE_SOURCE_PATTERN,
+        description=_TEMPLATE_SOURCE_DESCRIPTION,
+    )
 
 
 class WorkflowTemplateSaveInput(MCPInput):
@@ -193,7 +207,11 @@ class WorkflowExtensionValidateInput(MCPInput):
     )
     repo_root: str | None = None
     plugin_slug: str | None = None
-    source: str | None = None
+    source: str | None = Field(
+        default=None,
+        pattern=_TEMPLATE_SOURCE_PATTERN,
+        description=_TEMPLATE_SOURCE_DESCRIPTION,
+    )
 
 
 class WorkflowExtensionUpsertInput(WorkflowExtensionValidateInput):
@@ -204,7 +222,13 @@ class WorkflowExtensionUpsertInput(WorkflowExtensionValidateInput):
             "new extensions default to enabled."
         ),
     )
-    created_by: str | None = None
+    created_by: str | None = Field(
+        default=None,
+        description=(
+            "Optional audit actor for the extension write; use this, not source, "
+            "for provenance."
+        ),
+    )
 
 
 async def _template_authoring_guide(
@@ -449,6 +473,7 @@ def _run_plan_operations() -> OperationRegistry:
         "runPlan.create",
         "runPlan.start",
         "runPlan.get",
+        "runPlan.getStep",
         "runPlan.checkConsistency",
         "runPlan.list",
         "runPlan.update",

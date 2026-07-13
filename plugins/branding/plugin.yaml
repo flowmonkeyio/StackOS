@@ -1,7 +1,7 @@
 slug: branding
 name: Branding
 version: 0.1.0
-description: First-party StackOS package for governed, evidence-grounded authority content production and distribution.
+description: First-party StackOS package for evidence-led brand foundations, governed authority content production, and distribution.
 display_order: 36
 source: builtin
 capabilities:
@@ -75,7 +75,7 @@ providers:
           fallback_url: verified
   - key: x-api
     name: X API
-    description: X API publishing provider contract for approved posts or threads.
+    description: X API publishing provider contract for intent-scoped posts or threads.
     auth_type: oauth
     auth_methods:
       - key: oauth2_token
@@ -99,7 +99,7 @@ providers:
             secret: false
             required: false
     config:
-      setup_note: Store X OAuth material and safe account refs only. Channel charter, handle, cadence, and approval policy belong in project resources.
+      setup_note: Store X OAuth material and safe account refs only. Channel charter, handle, cadence, and execution policy belong in project resources.
       setup:
         credential_label: X OAuth token
         setup_note: Create or select an X developer app with posting access, complete the required plan/app review, and store OAuth material in StackOS.
@@ -144,7 +144,7 @@ providers:
             secret: false
             required: false
     config:
-      setup_note: LinkedIn posting APIs require app permissions that may not be available for every account. Charters may use browser automation or another approved execution mode instead.
+      setup_note: LinkedIn posting APIs require app permissions that may not be available for every account. Charters may use browser automation or another selected execution mode instead.
       setup:
         credential_label: LinkedIn OAuth token
         setup_note: Create or select a LinkedIn developer app, request the required posting access, and store OAuth material plus safe author refs in StackOS.
@@ -192,7 +192,7 @@ providers:
       setup_note: Concrete ESP selection is a Level 2 project decision. Do not use raw SMTP for branding distribution.
       setup:
         credential_label: ESP API key
-        setup_note: Select a project-approved ESP that exposes send and metrics APIs, then store only its API key and safe sender/audience refs in StackOS.
+        setup_note: Select a project-designated ESP that exposes send and metrics APIs, then store only its API key and safe sender/audience refs in StackOS.
         homepage_url: https://resend.com/
         signup_url: https://resend.com/signup
         docs_url: https://resend.com/docs
@@ -244,7 +244,7 @@ providers:
 actions:
   - key: publish.git-blog
     name: Publish Git Blog Piece
-    description: Publish an approved canonical piece to a git-backed site repo.
+    description: Publish a final canonical piece to a git-backed site repo within the run's explicit publication intent.
     provider: git-remote
     capability: content-distribution
     risk_level: write
@@ -270,8 +270,6 @@ actions:
           type: string
         decision_ref:
           type: string
-        approval_ref:
-          type: string
     output_schema: &object_schema
       type: object
       additionalProperties: true
@@ -281,7 +279,7 @@ actions:
       deferred_reason: Git-backed canonical publishing needs a dedicated daemon connector for checkout, commit, push, and artifact rendering.
   - key: publish.x
     name: Publish X Post
-    description: Publish an approved X post or thread after an explicit per-send approval gate.
+    description: Publish a final X post or thread within the run's explicit publication intent.
     provider: x-api
     capability: content-distribution
     risk_level: write
@@ -304,8 +302,6 @@ actions:
           type: string
         canonical_url:
           type: string
-        approval_ref:
-          type: string
         scheduled_for:
           type: string
         thread_policy:
@@ -317,7 +313,7 @@ actions:
       deferred_reason: X publishing needs a dedicated connector for OAuth scope validation, post/thread creation, idempotency, and provider response audit.
   - key: publish.linkedin
     name: Publish LinkedIn Post
-    description: Publish an approved LinkedIn member or organization post where API access permits it.
+    description: Publish a final LinkedIn member or organization post where API access permits it.
     provider: linkedin-api
     capability: content-distribution
     risk_level: write
@@ -329,7 +325,7 @@ actions:
       deferred_reason: LinkedIn publishing needs a dedicated connector and may be replaced by browser automation where API access is unavailable.
   - key: publish.email
     name: Publish Email
-    description: Send an approved digest or standalone authority email through a configured ESP API.
+    description: Send a final digest or standalone authority email through a configured ESP API.
     provider: esp
     capability: content-distribution
     risk_level: write
@@ -353,8 +349,6 @@ actions:
         subject:
           type: string
         canonical_url:
-          type: string
-        approval_ref:
           type: string
         scheduled_for:
           type: string
@@ -1033,7 +1027,7 @@ resources:
     config:
       schema_version: stackos.resource.v1
       record_kind: channel
-      agent_guidance: A channel is a charter, not just a destination. Publication mode controls whether the approved output is executed through a StackOS API action, browser automation, admin UI, project script, or a fallback handoff when automation is blocked.
+      agent_guidance: A channel is a charter, not just a destination. Publication mode controls whether the selected output is executed through a StackOS API action, browser automation, admin UI, project script, or a fallback handoff when automation is blocked.
   - key: routing-policy
     name: Routing Policy
     description: Cross-channel routing rules, canonical-first invariant, cadence caps, link conventions, and ratified governance history.
@@ -1145,7 +1139,7 @@ resources:
             - evidence-checked
             - voice-checked
             - sanitized
-            - approved
+            - finalized
             - renditions-ready
             - published
             - measured
@@ -1235,8 +1229,12 @@ resources:
           type: string
         canonical_url:
           type: string
-        approval_ref:
+        publication_intent:
           type: string
+          enum:
+            - packet_only
+            - stage
+            - publish
         image_refs:
           type: array
           description: Generated or selected image artifacts indexed for future reuse and inspection.
@@ -1294,6 +1292,7 @@ resources:
             additionalProperties: false
             required:
               - channel_ref
+              - execution_intent
               - publication_mode
               - publication_bundle_ref
               - packet_artifact_ref
@@ -1304,6 +1303,12 @@ resources:
                 type: string
               channel_name:
                 type: string
+              execution_intent:
+                type: string
+                enum:
+                  - packet_only
+                  - stage
+                  - publish
               destination_hint:
                 type: string
                 description: Human-readable destination such as website path, X handle, LinkedIn page, or email list.
@@ -1362,7 +1367,8 @@ resources:
               status:
                 type: string
                 enum:
-                  - approved
+                  - proposed
+                  - ready
                   - published
                   - scheduled
                   - staged
@@ -1444,7 +1450,7 @@ resources:
                   - evidence-checked
                   - voice-checked
                   - sanitized
-                  - approved
+                  - finalized
                   - renditions-ready
                   - published
                   - measured
@@ -1461,7 +1467,7 @@ resources:
                   - evidence-checked
                   - voice-checked
                   - sanitized
-                  - approved
+                  - finalized
                   - renditions-ready
                   - published
                   - measured
@@ -1478,7 +1484,7 @@ resources:
                   - evidence-checked
                   - voice-checked
                   - sanitized
-                  - approved
+                  - finalized
                   - renditions-ready
                   - published
                   - measured
@@ -1491,7 +1497,7 @@ resources:
             properties:
               status:
                 enum:
-                  - approved
+                  - finalized
                   - renditions-ready
                   - published
                   - measured
@@ -1499,9 +1505,9 @@ resources:
               - status
           then:
             required:
-              - approval_ref
               - review_log
               - memory_summary
+              - publication_intent
             properties:
               review_log:
                 allOf:
@@ -1584,7 +1590,7 @@ resources:
           fields:
             - canonical_artifact_ref
             - canonical_url
-            - approval_ref
+            - publication_intent
             - image_refs
             - renditions
             - publication_bundle_ref
@@ -1606,6 +1612,7 @@ resources:
       required:
         - content_piece_ref
         - channel_ref
+        - execution_intent
         - publication_mode
         - status
         - canonical_mode
@@ -1614,6 +1621,11 @@ resources:
           type: string
         channel_ref:
           type: string
+        execution_intent:
+          type: string
+          enum:
+            - stage
+            - publish
         rendition_form:
           type: string
         rendition_artifact_ref:
@@ -1630,7 +1642,7 @@ resources:
           type: string
           enum:
             - planned
-            - approval-needed
+            - ready
             - scheduled
             - staged
             - blocked
@@ -1663,8 +1675,6 @@ resources:
         execution_log_ref:
           type: string
         blocker_reason:
-          type: string
-        approval_ref:
           type: string
         outcome_snapshots:
           type: object
@@ -1702,7 +1712,7 @@ resources:
             properties:
               status:
                 enum:
-                  - approval-needed
+                  - ready
                   - scheduled
                   - staged
                   - blocked
@@ -1719,7 +1729,7 @@ resources:
                 const: canonical-first
               status:
                 enum:
-                  - approval-needed
+                  - ready
                   - scheduled
                   - staged
                   - published
@@ -1736,7 +1746,7 @@ resources:
                 const: native-short-exception
               status:
                 enum:
-                  - approval-needed
+                  - ready
                   - scheduled
                   - staged
                   - published
@@ -1747,20 +1757,6 @@ resources:
           then:
             required:
               - native_short_collection_ref
-        - if:
-            properties:
-              status:
-                enum:
-                  - scheduled
-                  - staged
-                  - blocked
-                  - published
-                  - measured
-            required:
-              - status
-          then:
-            required:
-              - approval_ref
         - if:
             properties:
               publication_mode:
@@ -1868,6 +1864,7 @@ resources:
           fields:
             - content_piece_ref
             - channel_ref
+            - execution_intent
             - rendition_form
             - publication_mode
             - status
@@ -1886,7 +1883,6 @@ resources:
             - fallback_handoff_ref
             - execution_log_ref
             - blocker_reason
-            - approval_ref
         - title: Outcomes
           fields:
             - outcome_snapshots
