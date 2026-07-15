@@ -59,30 +59,55 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     reload: () => reload({ refocus: false, restartStream: false }),
   })
 
-  const tickets = computed(() => {
+  const focusedGraph = computed(() => {
     const activeKey = activeTaskRow.value?.key
     if (
       activeKey &&
       graphSnapshot.value?.tasks.length === 1 &&
       graphSnapshot.value.tasks[0].key === activeKey
     ) {
-      return graphSnapshot.value.tickets
+      return graphSnapshot.value
     }
+    return null
+  })
+
+  const tickets = computed(() => {
+    if (focusedGraph.value) return focusedGraph.value.tickets
     return activeTaskRow.value?.tickets ?? []
   })
 
-  const statusCounts = computed(() => countStatuses(tickets.value.map((ticket) => ticket.status)))
+  const graphDataAvailable = computed(() => {
+    const row = activeTaskRow.value
+    if (!row) return false
+    return Boolean(focusedGraph.value) || row.tickets.length > 0 || row.totalCount === 0
+  })
+  const statusCounts = computed(() => {
+    if (graphDataAvailable.value) {
+      return countStatuses(tickets.value.map((ticket) => ticket.status))
+    }
+    const counts = countStatuses([])
+    const summary = activeTaskRow.value?.task.ticket_summary
+    for (const status of Object.keys(trackerStatus) as TrackerStatus[]) {
+      counts[status] = summary?.status_counts[status] ?? 0
+    }
+    return counts
+  })
   const statusRows = computed(() =>
     (Object.entries(trackerStatus) as Array<[TrackerStatus, { label: string }]>).map(
       ([key, definition]) => ({ key, label: definition.label, count: statusCounts.value[key] }),
     ),
   )
-  const blockedCount = computed(
-    () => tickets.value.filter((ticket) => isGraphBlockedTicket(ticket)).length,
+  const blockedCount = computed(() =>
+    graphDataAvailable.value
+      ? tickets.value.filter((ticket) => isGraphBlockedTicket(ticket)).length
+      : (activeTaskRow.value?.blockedCount ?? 0),
+  )
+  const graphTicketCount = computed(() =>
+    graphDataAvailable.value ? tickets.value.length : (activeTaskRow.value?.totalCount ?? 0),
   )
   const blockRows = computed<Array<{ key: GraphBlockFilter; label: string; count: number }>>(() => [
     { key: 'blocked', label: 'Blocked', count: blockedCount.value },
-    { key: 'open', label: 'Open', count: Math.max(0, tickets.value.length - blockedCount.value) },
+    { key: 'open', label: 'Open', count: Math.max(0, graphTicketCount.value - blockedCount.value) },
   ])
   const filtersActive = computed(
     () => statusFilters.value.length > 0 || blockFilters.value.length > 0,
@@ -95,17 +120,11 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
   )
   const filteredSnapshot = computed<TrackerSnapshot | null>(() => {
     const activeTask = activeTaskRow.value?.task ?? null
-    const focusedGraph =
-      activeTask &&
-      graphSnapshot.value?.tasks.length === 1 &&
-      graphSnapshot.value.tasks[0].key === activeTask.key
-        ? graphSnapshot.value
-        : null
     return buildFilteredTrackerSnapshot(
       snapshot.value,
       activeTask,
       visibleTickets.value,
-      focusedGraph,
+      focusedGraph.value,
     )
   })
   const selectedTicket = computed(() =>
@@ -194,16 +213,21 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
       : { nodes: [], edges: [] as Edge[], warnings: [] },
   )
   const fitOnInit = computed(() => flow.value.nodes.length > 0 && flow.value.nodes.length <= 12)
-  const ticketStatLabel = computed(() =>
-    filtersActive.value
+  const ticketStatLabel = computed(() => {
+    if (!graphDataAvailable.value) {
+      const count = activeTaskRow.value?.totalCount ?? 0
+      return `${count} indexed ${pluralize('ticket', count)}`
+    }
+    return filtersActive.value
       ? `${visibleTickets.value.length}/${tickets.value.length} tickets visible`
-      : `${tickets.value.length} tickets`,
-  )
-  const edgeStatLabel = computed(() =>
-    filtersActive.value
+      : `${tickets.value.length} ${pluralize('ticket', tickets.value.length)}`
+  })
+  const edgeStatLabel = computed(() => {
+    if (!graphDataAvailable.value) return 'relations pending'
+    return filtersActive.value
       ? `${flow.value.edges.length} visible ${pluralize('relation', flow.value.edges.length)}`
-      : `${flow.value.edges.length} ${pluralize('relation', flow.value.edges.length)}`,
-  )
+      : `${flow.value.edges.length} ${pluralize('relation', flow.value.edges.length)}`
+  })
   const selectedEdge = computed(
     () =>
       filteredSnapshot.value?.graph?.edges.find((edge) => edge.id === selectedEdgeId.value) ?? null,
@@ -343,6 +367,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
   return {
     graphSnapshot,
     loading,
+    graphDataAvailable,
     statusFilters,
     blockFilters,
     viewport,

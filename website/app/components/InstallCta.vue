@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import { useDownloadVersion } from '~/composables/useDownloadVersion'
-
 const downloadUrl = useDownloadUrl()
-const downloadVersion = useDownloadVersion()
 </script>
 
 <template>
@@ -26,7 +23,7 @@ const downloadVersion = useDownloadVersion()
             <img src="/images/apple.webp" alt="" width="28" height="28" />
           </span>
           <span>
-            <small>StackOS {{ downloadVersion }} · Apple silicon</small>
+            <small>Latest release · Apple silicon</small>
             <strong>Download for Mac</strong>
           </span>
           <b>DMG</b>

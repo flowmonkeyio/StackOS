@@ -1,15 +1,15 @@
 ---
 title: How can AI agents use business accounts without seeing the login?
-description: A local action layer can keep private credentials away from the model while still letting AI perform explicit, approved work in connected apps.
+description: The model does not need the password. It needs a safe account reference, a bounded action, and a trusted execution layer that keeps credentials outside its context.
 publishedAt: '2026-07-09'
-updatedAt: '2026-07-09'
+updatedAt: '2026-07-12'
 author: StackOS team
 category: Security
 topics:
   - AI agent security
   - credentials
   - local software
-readingTime: 5 min read
+readingTime: 6 min read
 featured: false
 visual: security
 searchIntent: Understand how AI agents can use connected accounts without receiving credentials
@@ -23,53 +23,70 @@ relatedArticles:
   - what-is-an-agentic-workflow
 ---
 
-AI agents can use business accounts without receiving the password or API key. The secret stays inside a trusted local process, while the model receives only a safe account reference and permission to request a specific action.
+An AI agent does not need a password or API key to use a business account. It needs three things: a safe reference to the account, authority to request a named action, and the result of that action.
 
-This boundary matters because an AI needs the ability to work, not a copy of every login.
+The credential can stay inside a trusted action layer. The agent chooses what to request. The action layer validates the request, uses the credential, and returns a sanitized result.
 
-::article-concept-visual{mode="security" title="The model directs. StackOS performs the approved action." caption="Private account details stay inside the local StackOS process while the AI receives only the safe context and result it needs."}
+This is the boundary we use in StackOS. It lets the agent work without turning its prompt, workflow state, or logs into a credential store.
+
+::article-concept-visual{mode="security" title="The agent requests. The action layer executes." caption="StackOS keeps the credential inside its local daemon, checks the requested action, and returns a sanitized result."}
 ::
 
 ## What should the model receive?
 
-The model needs enough information to make a good decision: which account is available, what it can do, whether it is ready, and what approval is required.
+The model needs enough information to choose the right connection and action:
 
-It does not need the raw token, password, or private key. StackOS provides a safe reference that identifies the connection without exposing the secret.
+- A provider and account profile name, or another safe reference
+- Whether the connection is ready
+- The capabilities and scopes available to it
+- The contract for the action it wants to request
+
+It does not need the raw token, password, private key, or OAuth refresh token. In StackOS, an opaque credential reference identifies the connection without functioning as the credential itself.
 
 ## Where does the secret stay?
 
-StackOS runs locally on the user’s Mac. Connected credentials are resolved inside that local process only when an explicit action is being performed.
+StackOS runs locally on the user’s Mac. The operator enters credentials through the local admin surface, and the daemon owns their storage. When an action runs, StackOS decrypts the credential inside the provider connector. The plaintext value is not serialized into the agent-facing request or response.
 
-The model asks for an intent-level action—such as publishing an approved post to a selected site. StackOS checks the workflow permission, selected account, action contract, and approval before making the call.
+That gives us a practical rule: credentials do not belong in prompts, workflow files, project resources, content artifacts, or repository configuration. All of those can be copied, logged, or shared long after the action finishes.
 
 ## What prevents an agent from doing anything it wants?
 
-Access is scoped to the work. A workflow stage receives only the tools allowed for that stage, and sensitive or costly actions can require approval.
+The useful question is not whether the account is connected. It is whether this agent, in this step, can request this action through this account.
 
-That creates several useful boundaries:
+In StackOS, a call passes through a concrete sequence:
 
-- A research stage can read approved information without receiving publishing access.
-- A writer can prepare content without being allowed to send it.
-- A review stage can inspect the result without changing external systems.
-- A publishing stage can use one approved account for one approved action.
+1. StackOS resolves one provider profile instead of handing the agent a collection of credentials.
+2. The agent names a registered action and supplies a payload that must pass that action’s contract.
+3. Inside a workflow, the current step must have an explicit tool grant and a matching action reference. A research step cannot become a publishing step simply because both use the same connected account.
+4. The daemon resolves the credential and calls the provider. Only the connector sees the plaintext secret.
+5. Writes use idempotency protection, and the result is stored as a redacted action receipt with status, timing, and error context.
 
-Each action is recorded with its result so a person can understand what happened later.
+For a one-off write outside a workflow, the caller must explicitly confirm the named action and state its intent. That is an execution check, not a rule that a human must approve every agent step.
+
+Human approval can still be added when a genuinely consequential action or missing authority calls for it. It is not the main security boundary. A broad token behind an approval click is still a broad token.
 
 ## Is local software enough by itself?
 
-Running locally reduces how far secrets have to travel, but location is only part of the design. Safe agent access also needs narrow permissions, explicit actions, approval gates, useful error handling, and a complete history.
+No. Running locally reduces how far secrets travel, but location is only one part of the design. Safe account access also needs narrow permissions, typed actions, grant enforcement, input validation, idempotency, redaction, revocation, and an audit trail.
 
-The goal is not to claim that an AI agent can never make a mistake. The goal is to make its authority understandable, bounded, and reviewable.
+The general principle is least privilege: give the agent only the resources and authority it needs for the current work. That is the same boundary described by [NIST’s definition of least privilege](https://csrc.nist.gov/glossary/term/least_privilege).
+
+If the action layer is remote, the same boundary has to survive the network. The current [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) uses resource-bound authorization and scope minimization, while the official [MCP security guidance](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices) forbids token passthrough. A server should not accept a broad token intended for something else and simply forward it downstream.
+
+An agent can still make a bad decision. These controls limit what it can reach, leave a receipt, and give the operator a place to revoke access or recover.
 
 ## What should teams ask before connecting an account?
 
-Ask four questions:
+Ask these questions:
 
-1. Which exact actions does this connection allow?
-2. Which workflow stages can request those actions?
-3. Which actions require a person to approve them?
-4. What evidence will be recorded after the action runs?
+1. Where is the credential entered, stored, and decrypted?
+2. Can the model, a tool response, or a log ever receive the raw value?
+3. Which exact account, scopes, and actions does the connection allow?
+4. Which workflow steps can request each action?
+5. What prevents a retry from creating a duplicate external change?
+6. What receipt is recorded, and which fields are redacted?
+7. How is access tested, rotated, and revoked?
 
-If those answers are unclear, the connection is too broad.
+If those answers are vague, the connection is too broad.
 
-StackOS is built around this local trust boundary. The [workflow library](/library/workflows) shows where connected actions fit inside complete, visible work rather than appearing as isolated tool calls.
+We built StackOS around this boundary because hiding a password in the interface is not enough. The important line is where the credential becomes usable, who can ask for which action, and what trace remains afterward. The [workflow library](/library/workflows) shows how those account actions fit into visible work rather than appearing as isolated tool calls.

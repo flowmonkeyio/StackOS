@@ -22,10 +22,9 @@ useHead({ script: [{ key: 'plugin-integrations-list', type: 'application/ld+json
 </script>
 
 <template>
-  <LibraryFrame>
+  <LibraryFrame :breadcrumb-current-label="plugin.name">
     <section class="plugin-detail-hero" :style="{ '--plugin-color': plugin.color }">
       <div class="shell">
-        <div class="plugin-detail-hero__breadcrumb"><NuxtLink to="/library/integrations">← All integrations</NuxtLink></div>
         <p class="library-kicker">StackOS plugin</p>
         <h1>{{ plugin.name }}</h1>
         <p>{{ plugin.description }}</p>
@@ -47,8 +46,6 @@ useHead({ script: [{ key: 'plugin-integrations-list', type: 'application/ld+json
 
 <style scoped>
 .plugin-detail-hero { padding: 76px 0 82px; color: var(--paper); background: radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--plugin-color) 18%, transparent), transparent 34%), var(--ink); }
-.plugin-detail-hero__breadcrumb { display: block; margin-bottom: 52px; }
-.plugin-detail-hero__breadcrumb a { color: var(--ink-soft); font-size: 13px; text-decoration: none; }
 .plugin-detail-hero .library-kicker { display: flex; margin: 0 0 20px; color: color-mix(in srgb, var(--plugin-color) 72%, white); }
 .plugin-detail-hero h1 { max-width: 900px; margin: 0; font-size: clamp(58px, 8vw, 108px); line-height: .92; letter-spacing: -.075em; }
 .plugin-detail-hero > .shell > p:not(.library-kicker) { max-width: 790px; margin: 29px 0 0; color: var(--ink-soft); font-size: clamp(18px, 1.6vw, 21px); line-height: 1.65; }

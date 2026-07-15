@@ -313,9 +313,9 @@ def test_operation_registry_documents_core_operations() -> None:
     assert "template-origin filter" in extension_source["description"]
     assert "not workflow provenance" in extension_source["description"]
     assert extension_source["anyOf"][0]["pattern"] == "^(plugin|project|user|repo)$"
-    assert "not source" in workflow_extension.input_schema["properties"]["created_by"][
-        "description"
-    ]
+    assert (
+        "not source" in workflow_extension.input_schema["properties"]["created_by"]["description"]
+    )
 
     authoring_guide = registry.get("workflowTemplate.authoringGuide").describe_out()
     assert authoring_guide.category == "workflow"

@@ -134,27 +134,17 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert branding_foundation_described.spec.experience.handoffs[0].workflow_key == (
         "branding.content-production"
     )
-    foundation_steps = {
-        step.id: step for step in branding_foundation_described.spec.steps
-    }
+    foundation_steps = {step.id: step for step in branding_foundation_described.spec.steps}
     assert foundation_steps["inventory-existing-foundation"].resource_refs == []
     assert foundation_steps["interview-and-sample-analysis"].resource_refs == []
     assert foundation_steps["draft-brand-foundation"].resource_refs == []
     assert foundation_steps["adversarial-voice-review"].resource_refs == []
     assert foundation_steps["finalize-and-persist"].resource_refs == ["brand_profile"]
     assert foundation_steps["verify-retrieval"].resource_refs == []
-    foundation_policy_keys = {
-        item.key for item in branding_foundation_described.spec.policies
-    }
-    assert {"orchestrator_gates_feedback", "handoff_is_not_execution"} <= (
-        foundation_policy_keys
-    )
-    foundation_outputs = {
-        item.key: item for item in branding_foundation_described.spec.outputs
-    }
-    assert "out_of_scope" in foundation_outputs["voice_review_report"].schema_data[
-        "required"
-    ]
+    foundation_policy_keys = {item.key for item in branding_foundation_described.spec.policies}
+    assert {"orchestrator_gates_feedback", "handoff_is_not_execution"} <= (foundation_policy_keys)
+    foundation_outputs = {item.key: item for item in branding_foundation_described.spec.outputs}
+    assert "out_of_scope" in foundation_outputs["voice_review_report"].schema_data["required"]
     assert branding_content_described.summary.plugin_slug == "branding"
     assert branding_content_described.spec.metadata_json["default_branding_workflow"] is True
     assert branding_content_described.spec.metadata_json["workflow_family"] == (
@@ -229,13 +219,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "intent_scoped_terminal_condition" in {
         item.key for item in branding_content_described.spec.policies
     }
-    branding_outputs = {
-        item.key: item for item in branding_content_described.spec.outputs
-    }
+    branding_outputs = {item.key: item for item in branding_content_described.spec.outputs}
     assert "open_questions" in branding_outputs["research_pack"].schema_data["required"]
-    assert "out_of_scope" in branding_outputs["editorial_review_report"].schema_data[
-        "required"
-    ]
+    assert "out_of_scope" in branding_outputs["editorial_review_report"].schema_data["required"]
     assert branding_content_steps["produce-optional-images"].approval_refs == []
     assert branding_content_steps["finalize-and-record"].approval_refs == []
     assert branding_content_steps["execute-publication"].approval_refs == []
@@ -632,13 +618,11 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "attribution_assumptions",
     } <= {key for key, item in performance_inputs.items() if item.required}
     assert performance_inputs["metric_source"].schema_data["default"] == "stored_context"
-    assert {
-        item.approval_ref for item in media_performance_described.spec.action_contracts
-    } == {None}
-    assert media_performance_described.spec.approval_gates == []
-    performance_steps = {
-        step.id: step for step in media_performance_described.spec.steps
+    assert {item.approval_ref for item in media_performance_described.spec.action_contracts} == {
+        None
     }
+    assert media_performance_described.spec.approval_gates == []
+    performance_steps = {step.id: step for step in media_performance_described.spec.steps}
     assert performance_steps["fetch_additional_metrics"].approval_refs == []
     assert all(step.success_criteria for step in performance_steps.values())
     assert [item.key for item in communications_listing.templates] == [
@@ -710,9 +694,7 @@ def test_builtin_public_workflows_have_reviewed_experience_contracts(session: Se
         for output in described.spec.outputs:
             assert output.description.strip(), f"{summary.key}:{output.key}"
             assert output.schema_data, f"{summary.key}:{output.key}"
-            assert output.schema_data.get("type") == output.type, (
-                f"{summary.key}:{output.key}"
-            )
+            assert output.schema_data.get("type") == output.type, f"{summary.key}:{output.key}"
 
 
 def test_repo_templates_override_plugin_templates(session: Session, tmp_path: Path) -> None:

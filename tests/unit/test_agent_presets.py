@@ -160,9 +160,7 @@ def test_codex_local_branding_agents_track_branding_presets() -> None:
         for workflow in (foundation, production)
         for item in workflow["agent_requirements"]
     }
-    expected_refs = {
-        preset for _config_path, preset in LOCAL_CODEX_BRANDING_AGENT_PRESETS.values()
-    }
+    expected_refs = {preset for _config_path, preset in LOCAL_CODEX_BRANDING_AGENT_PRESETS.values()}
 
     assert workflow_refs == expected_refs
 

@@ -154,6 +154,12 @@ token and no provider secrets. Logs go to:
 ~/.local/state/stackos/daemon.log
 ```
 
+Packaged desktop installs also associate the launchd job with the
+`io.stackos.desktop` app bundle. This lets macOS attribute the background item
+to StackOS in notifications and Login Items instead of falling back to the
+organization name in the Developer ID certificate. Clone-mode CLI installs do
+not declare an app association.
+
 If an existing plist differs, the installer refuses to overwrite it unless
 called with:
 

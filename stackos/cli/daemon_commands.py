@@ -25,7 +25,7 @@ from stackos.workspace_identity import (
 )
 
 from .app import app, autostart_app
-from .constants import _LAUNCHD_LABEL, _LOOPBACK_HOSTS
+from .constants import _DESKTOP_BUNDLE_IDENTIFIER, _LAUNCHD_LABEL, _LOOPBACK_HOSTS
 from .paths import _doctor_home
 
 
@@ -371,6 +371,8 @@ def _launchd_plist_content(
         "StandardErrorPath": str(settings.log_path),
         "EnvironmentVariables": environment,
     }
+    if "STACKOS_PACKAGED_CLI" in environment:
+        payload["AssociatedBundleIdentifiers"] = [_DESKTOP_BUNDLE_IDENTIFIER]
     return plistlib.dumps(payload, sort_keys=False)
 
 

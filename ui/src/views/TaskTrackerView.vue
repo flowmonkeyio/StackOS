@@ -42,7 +42,7 @@ const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const routeFocus = computed(() => (typeof route.query.focus === 'string' ? route.query.focus : ''))
 
 const snapshot = ref<TrackerSnapshot | null>(null)
-const snapshotScope = ref<'active' | 'full'>('active')
+const snapshotScope = ref<'index' | 'full'>('index')
 const loading = ref(false)
 const error = ref<string | null>(null)
 const viewMode = ref<ViewMode>('graph')
@@ -76,10 +76,14 @@ const viewOptions: Array<{ key: ViewMode; label: string; icon: string }> = [
 
 const tasks = computed(() => snapshot.value?.tasks ?? [])
 const tickets = computed(() => snapshot.value?.tickets ?? [])
+const initialLoading = computed(() => loading.value && snapshot.value === null)
+const fullSnapshotLoading = computed(
+  () => loading.value && viewMode.value !== 'graph' && snapshotScope.value !== 'full',
+)
 
 const ticketsByTask = computed(() => groupTicketsByTask(tickets.value))
 const workflowOptions = computed(() => buildWorkflowOptions(tasks.value))
-const assigneeOptions = computed(() => buildAssigneeOptions(tickets.value))
+const assigneeOptions = computed(() => buildAssigneeOptions(tasks.value, tickets.value))
 const controlFilters = computed<TrackerControlFilters>(() => ({
   search: search.value,
   status: statusFilter.value,
@@ -114,6 +118,8 @@ const graphSession = useTrackerGraphSession({
   reload: (options) => load(options),
 })
 const {
+  loading: focusedGraphLoading,
+  graphDataAvailable,
   statusFilters: graphStatusFilters,
   blockFilters: graphBlockFilters,
   viewport: graphViewport,
@@ -153,6 +159,8 @@ const {
   clearFocus: clearGraphFocus,
 } = graphSession
 
+const focusedGraphPending = computed(() => focusedGraphLoading.value && !graphDataAvailable.value)
+
 const executionContexts = useTrackerExecutionContexts({ projectId })
 const {
   contexts: taskContexts,
@@ -174,15 +182,22 @@ const visibleTickets = computed(() => {
   )
 })
 
-const filteredTicketCount = computed(() =>
-  taskRows.value.reduce(
+const ticketCount = computed(() =>
+  snapshotScope.value === 'full'
+    ? tickets.value.length
+    : tasks.value.reduce((sum, task) => sum + (task.ticket_summary?.total_count ?? 0), 0),
+)
+
+const filteredTicketCount = computed<number | null>(() => {
+  if (snapshotScope.value !== 'full') return null
+  return taskRows.value.reduce(
     (sum, row) =>
       sum +
       row.tickets.filter((ticket) => ticketMatchesControls(ticket, row.task, controlFilters.value))
         .length,
     0,
-  ),
-)
+  )
+})
 
 const activeTask = computed(() => activeTaskRow.value?.task ?? null)
 
@@ -196,12 +211,14 @@ const detailPanelDescription = computed(() => {
   return undefined
 })
 
-const blockedCount = computed(
-  () =>
-    tickets.value.filter(
-      (ticket) => isOpenTicket(ticket) && (ticket.blocked_by.length > 0 || ticket.blocker_reason),
-    ).length,
-)
+const blockedCount = computed(() => {
+  if (tasks.value.every((task) => task.ticket_summary)) {
+    return tasks.value.reduce((sum, task) => sum + (task.ticket_summary?.blocked_count ?? 0), 0)
+  }
+  return tickets.value.filter(
+    (ticket) => isOpenTicket(ticket) && (ticket.blocked_by.length > 0 || ticket.blocker_reason),
+  ).length
+})
 const workflowCount = computed(
   () => new Set(tasks.value.map((task) => task.source_json?.run_plan_id).filter(Boolean)).size,
 )
@@ -251,21 +268,24 @@ async function load(options: { refocus?: boolean; restartStream?: boolean } = {}
     const needsFullSnapshot = viewMode.value !== 'graph'
     const nextSnapshot = await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: requestedProjectId,
-      ...(needsFullSnapshot ? {} : { statuses: ['in-progress'] }),
+      ...(needsFullSnapshot ? {} : { task_index_only: true }),
       include_graph: false,
     })
     if (requestSequence !== loadRequestSequence || requestedProjectId !== projectId.value) return
     snapshot.value = nextSnapshot
-    snapshotScope.value = needsFullSnapshot ? 'full' : 'active'
+    snapshotScope.value = needsFullSnapshot ? 'full' : 'index'
     await nextTick()
     const requestedTaskKey = routeTaskKey()
     const nextTaskKey = requestedTaskKey || ensureActiveTask()
-    const restoredViewport =
-      options.refocus === false ? Boolean(graphViewport.value) : restoreGraphViewport()
-    const shouldRefocus = options.refocus ?? !restoredViewport
-    const focused = await loadFocusedGraph(nextTaskKey, { refocus: shouldRefocus })
+    let focused: TrackerSnapshot | null = null
+    if (viewMode.value === 'graph') {
+      const restoredViewport =
+        options.refocus === false ? Boolean(graphViewport.value) : restoreGraphViewport()
+      const shouldRefocus = options.refocus ?? !restoredViewport
+      focused = await loadFocusedGraph(nextTaskKey, { refocus: shouldRefocus })
+    }
     if (requestSequence !== loadRequestSequence || requestedProjectId !== projectId.value) return
-    if (focused && snapshotScope.value === 'active') {
+    if (focused && snapshotScope.value === 'index') {
       snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, focused)
       await nextTick()
       ensureActiveTask()
@@ -284,7 +304,12 @@ async function load(options: { refocus?: boolean; restartStream?: boolean } = {}
 
 function setViewMode(value: ViewMode): void {
   viewMode.value = value
-  if (value !== 'graph' && snapshotScope.value !== 'full') {
+  if (value === 'graph') {
+    const restoredViewport = restoreGraphViewport()
+    void loadFocusedGraph(activeTaskKey.value, { refocus: !restoredViewport })
+    return
+  }
+  if (snapshotScope.value !== 'full') {
     void load({ refocus: false, restartStream: false })
   }
 }
@@ -293,8 +318,10 @@ function onTaskRow(row: TaskProgressRow): void {
   clearGraphFocus()
   activeTaskKey.value = row.key
   syncActiveTaskToUrl(row.key)
-  const restoredViewport = restoreGraphViewport()
-  void loadFocusedGraph(row.key, { refocus: !restoredViewport })
+  if (viewMode.value === 'graph') {
+    const restoredViewport = restoreGraphViewport()
+    void loadFocusedGraph(row.key, { refocus: !restoredViewport })
+  }
   restartTrackerStatusStream()
   if (taskDetailOpen.value) void loadTaskContexts(row.task)
 }
@@ -313,8 +340,6 @@ function onTicketRow(row: TrackerTicket): void {
   activeTaskKey.value = row.task_key
   syncActiveTaskToUrl(row.task_key)
   selectTicket(row)
-  restoreGraphViewport()
-  void loadFocusedGraph(row.task_key, { refocus: false })
   restartTrackerStatusStream()
   if (taskDetailOpen.value) void loadTaskContexts(activeTask.value)
 }
@@ -348,7 +373,12 @@ function ensureActiveTask(): string {
 async function reconcileActiveTask(): Promise<void> {
   const previousTaskKey = activeTaskKey.value
   const nextTaskKey = ensureActiveTask()
-  if (snapshot.value && nextTaskKey && nextTaskKey !== previousTaskKey) {
+  if (
+    viewMode.value === 'graph' &&
+    snapshot.value &&
+    nextTaskKey &&
+    nextTaskKey !== previousTaskKey
+  ) {
     const restoredViewport = restoreGraphViewport()
     await loadFocusedGraph(nextTaskKey, { refocus: !restoredViewport })
     restartTrackerStatusStream()
@@ -475,7 +505,7 @@ onBeforeRouteUpdate((to) => {
       :task-rows-count="taskRows.length"
       :tasks-count="tasks.length"
       :filtered-ticket-count="filteredTicketCount"
-      :tickets-count="tickets.length"
+      :tickets-count="ticketCount"
       :active-terminal-count="activeTaskRow?.terminalCount ?? null"
       :active-total-count="activeTaskRow?.totalCount ?? null"
       :blocked-count="blockedCount"
@@ -491,7 +521,7 @@ onBeforeRouteUpdate((to) => {
     />
 
     <TrackerStoriesPanel
-      v-if="viewMode === 'stories' && !loading"
+      v-if="viewMode === 'stories' && !fullSnapshotLoading"
       :key="routeFocus"
       :project-id="projectId"
       :rows="taskRows"
@@ -505,7 +535,10 @@ onBeforeRouteUpdate((to) => {
 
     <TrackerWarningSummary v-if="viewMode === 'graph'" :warnings="flow.warnings" />
 
-    <UiCallout v-if="viewMode !== 'stories' && loading" tone="neutral">
+    <UiCallout
+      v-if="viewMode !== 'stories' && (initialLoading || fullSnapshotLoading)"
+      tone="neutral"
+    >
       Loading tracker work…
     </UiCallout>
 
@@ -522,6 +555,7 @@ onBeforeRouteUpdate((to) => {
           <TrackerGraphPanel
             v-if="viewMode === 'graph'"
             :flow="flow"
+            :loading="focusedGraphPending"
             :flow-id="graphFlowId"
             :flow-render-key="flowRenderKey"
             :graph-fit-on-init="graphFitOnInit"

@@ -65,6 +65,37 @@ def test_tracker_operations_rest_vertical_slice(api: TestClient, project_id: int
         "ticket:rest-ticket",
     }
 
+    task_index = api.post(
+        "/api/v1/operations/tracker.get/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "task_index_only": True,
+                "task_statuses": ["not-started", "in-progress"],
+                "include_graph": False,
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert task_index.status_code == 200, task_index.text
+    indexed_data = _operation_data(task_index)
+    assert indexed_data["tickets"] == []
+    assert indexed_data["graph"] is None
+    indexed_task = next(task for task in indexed_data["tasks"] if task["key"] == "rest-tracker")
+    assert indexed_task["ticket_summary"]["total_count"] == 1
+
+    invalid_index = api.post(
+        "/api/v1/operations/tracker.get/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "task_index_only": True,
+                "include_graph": True,
+            }
+        },
+    )
+    assert invalid_index.status_code == 422, invalid_index.text
+
 
 def test_tracker_operations_rest_create_ticket_accepts_list(
     api: TestClient, project_id: int

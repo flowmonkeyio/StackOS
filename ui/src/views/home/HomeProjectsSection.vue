@@ -71,11 +71,11 @@ function projectState(project: Project): { label: string; tone: 'info' | 'warnin
   }
   if (insight && (insight.activeTaskCount > 0 || insight.inProgressTicketCount > 0)) {
     return {
-      label: `${insight.activeTaskCount} active task${insight.activeTaskCount === 1 ? '' : 's'}`,
+      label: `${insight.activeTaskCount} open task${insight.activeTaskCount === 1 ? '' : 's'}`,
       tone: 'info',
     }
   }
-  return { label: 'No active work', tone: 'neutral' }
+  return { label: 'No open work', tone: 'neutral' }
 }
 </script>
 
@@ -183,7 +183,7 @@ function projectState(project: Project): { label: string; tone: 'info' | 'warnin
           v-if="insights[featuredProject.id]"
           class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted"
         >
-          <span>{{ insights[featuredProject.id].activeTaskCount }} active tasks</span>
+          <span>{{ insights[featuredProject.id].activeTaskCount }} open tasks</span>
           <span>{{ insights[featuredProject.id].inProgressTicketCount }} delivery steps</span>
           <span>{{ insights[featuredProject.id].completionPercent }}% closed</span>
         </span>

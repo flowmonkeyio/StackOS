@@ -137,6 +137,11 @@ macOS Gatekeeper can still warn or reject a signed-but-not-notarized app on a
 different Mac. When a notarytool credential profile is added, use
 `dist:mac:release` for the smooth public-download path.
 
+Every completed macOS build also refreshes
+`stackos-latest-mac-arm64.dmg` from the finished versioned DMG. Release builds
+create this alias only after notarization and stapling, so the stable website
+download is byte-identical to the verified release artifact.
+
 ### One-time notarization profile setup
 
 Notarization is an automated Apple security scan for Developer ID software
@@ -362,13 +367,16 @@ https://flowmonkey.io/StackOS/latest-mac.yml
 https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.zip
 https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.dmg
 https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.zip.blockmap
+https://flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg
 ```
 
 Set `STACKOS_UPDATE_URL` to the directory URL (`https://flowmonkey.io/StackOS/`),
 not to `latest-mac.yml`, a DMG, a ZIP, or a blockmap file. Electron's macOS
 generic updater checks `latest-mac.yml` at that base URL; the YAML then points
 to the downloadable ZIP artifact. The DMG can live in the same directory for
-manual download and drag-and-drop installation.
+manual download and drag-and-drop installation. The website should link to the
+stable `stackos-latest-mac-arm64.dmg` alias; updater metadata must continue to
+reference the versioned ZIP and checksums from the same release build.
 
 After an app update, the next launch sees a new app version or new packaged
 payload build id and reruns `stackos install --launchd --force`, then restarts

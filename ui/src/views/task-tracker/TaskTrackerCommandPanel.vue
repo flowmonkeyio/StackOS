@@ -36,7 +36,7 @@ const props = defineProps<{
   assigneeOptions: TrackerSelectOption[]
   taskRowsCount: number
   tasksCount: number
-  filteredTicketCount: number
+  filteredTicketCount: number | null
   ticketsCount: number
   activeTerminalCount: number | null
   activeTotalCount: number | null
@@ -73,8 +73,8 @@ const statusSelectOptions = computed(() =>
         <UiSelect
           :model-value="activeTaskKey"
           :options="taskOptions"
-          placeholder="Select active task"
-          aria-label="Active task"
+          placeholder="Select task"
+          aria-label="Selected task"
           @change="$emit('taskSelect', $event)"
         />
       </div>
@@ -114,7 +114,7 @@ const statusSelectOptions = computed(() =>
       <UiFormField label="Search">
         <UiInput
           :model-value="search"
-          placeholder="Ticket, task, owner, outcome"
+          placeholder="Task, ticket, owner, assignee"
           @update:model-value="$emit('update:search', String($event ?? ''))"
         />
       </UiFormField>
@@ -149,9 +149,13 @@ const statusSelectOptions = computed(() =>
         <span class="font-medium tabular-nums text-fg-default">{{ taskRowsCount }}/{{ tasksCount }}</span>
         tasks
       </span>
-      <span>
+      <span v-if="filteredTicketCount !== null">
         <span class="font-medium tabular-nums text-fg-default">{{ filteredTicketCount }}/{{ ticketsCount }}</span>
         tickets
+      </span>
+      <span v-else>
+        <span class="font-medium tabular-nums text-fg-default">{{ ticketsCount }}</span>
+        indexed tickets
       </span>
       <span v-if="activeTerminalCount !== null && activeTotalCount !== null">
         <span class="font-medium tabular-nums text-fg-default">{{ activeTerminalCount }}/{{ activeTotalCount }}</span>

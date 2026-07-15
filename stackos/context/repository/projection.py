@@ -67,14 +67,14 @@ class ContextProjectionMixin(ContextRepositorySupport):
                 plugin_slug=plugin_slug,
             )
         if source == "agent_requests":
-            conditions: list[Any] = []
+            agent_request_conditions: list[Any] = []
             if statuses:
-                conditions.append(col(AgentRequest.status).in_(statuses))
+                agent_request_conditions.append(col(AgentRequest.status).in_(statuses))
             rows = self._project_rows(
                 AgentRequest,
                 project_id=project_id,
                 limit=limit,
-                conditions=conditions,
+                conditions=agent_request_conditions,
                 unbounded=bool(tags or domain),
             )
             return [
@@ -84,16 +84,16 @@ class ContextProjectionMixin(ContextRepositorySupport):
                 and (domain is None or (row.metadata_json or {}).get("domain") == domain)
             ][: limit * _FETCH_MULTIPLIER]
         if source == "action_calls":
-            conditions = []
+            action_call_conditions: list[Any] = []
             if statuses:
-                conditions.append(col(ActionCall.status).in_(statuses))
+                action_call_conditions.append(col(ActionCall.status).in_(statuses))
             if plugin_slug is not None:
-                conditions.append(col(ActionCall.plugin_slug) == plugin_slug)
+                action_call_conditions.append(col(ActionCall.plugin_slug) == plugin_slug)
             rows = self._project_rows(
                 ActionCall,
                 project_id=project_id,
                 limit=limit,
-                conditions=conditions,
+                conditions=action_call_conditions,
                 unbounded=bool(tags or domain),
             )
             return [
@@ -126,16 +126,16 @@ class ContextProjectionMixin(ContextRepositorySupport):
                 if _has_all_tags(row.tags_json, tags)
             ][: limit * _FETCH_MULTIPLIER]
         if source == "index":
-            conditions: list[Any] = []
+            index_conditions: list[Any] = []
             if domain is not None:
-                conditions.append(col(ContextIndexEntry.domain) == domain)
+                index_conditions.append(col(ContextIndexEntry.domain) == domain)
             if statuses:
-                conditions.append(col(ContextIndexEntry.status).in_(statuses))
+                index_conditions.append(col(ContextIndexEntry.status).in_(statuses))
             rows = self._project_rows(
                 ContextIndexEntry,
                 project_id=project_id,
                 limit=limit,
-                conditions=conditions,
+                conditions=index_conditions,
                 unbounded=bool(tags),
             )
             return [
@@ -149,11 +149,11 @@ class ContextProjectionMixin(ContextRepositorySupport):
             rows = self._project_rows(ContextSnapshot, project_id=project_id, limit=limit)
             return [self._item_from_snapshot(row, fields) for row in rows]
         if source == "learnings":
-            conditions = []
+            learning_conditions: list[Any] = []
             if domain is not None:
-                conditions.append(col(Learning.domain) == domain)
+                learning_conditions.append(col(Learning.domain) == domain)
             if statuses:
-                conditions.append(
+                learning_conditions.append(
                     or_(
                         col(Learning.status).in_(statuses),
                         col(Learning.review_state).in_(statuses),
@@ -163,7 +163,7 @@ class ContextProjectionMixin(ContextRepositorySupport):
                 Learning,
                 project_id=project_id,
                 limit=limit,
-                conditions=conditions,
+                conditions=learning_conditions,
                 unbounded=bool(tags),
             )
             return [
@@ -172,16 +172,16 @@ class ContextProjectionMixin(ContextRepositorySupport):
                 if _has_all_tags(row.tags_json, tags)
             ][: limit * _FETCH_MULTIPLIER]
         if source == "experiments":
-            conditions = []
+            experiment_conditions: list[Any] = []
             if domain is not None:
-                conditions.append(Experiment.domain == domain)
+                experiment_conditions.append(col(Experiment.domain) == domain)
             if statuses:
-                conditions.append(Experiment.status.in_(statuses))  # type: ignore[attr-defined]
+                experiment_conditions.append(col(Experiment.status).in_(statuses))
             rows = self._project_rows(
                 Experiment,
                 project_id=project_id,
                 limit=limit,
-                conditions=conditions,
+                conditions=experiment_conditions,
                 unbounded=bool(tags),
             )
             return [
@@ -190,14 +190,14 @@ class ContextProjectionMixin(ContextRepositorySupport):
                 if _has_all_tags((row.metadata_json or {}).get("tags"), tags)
             ][: limit * _FETCH_MULTIPLIER]
         if source == "decisions":
-            conditions = []
+            decision_conditions: list[Any] = []
             if statuses:
-                conditions.append(Decision.status.in_(statuses))  # type: ignore[attr-defined]
+                decision_conditions.append(col(Decision.status).in_(statuses))
             rows = self._project_rows(
                 Decision,
                 project_id=project_id,
                 limit=limit,
-                conditions=conditions,
+                conditions=decision_conditions,
                 unbounded=bool(tags),
             )
             return [

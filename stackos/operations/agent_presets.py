@@ -270,9 +270,7 @@ async def agent_preset_describe(
     return AgentPresetDescribeOut(
         preset=preset,
         project_adaptation=_adaptation_packet(preset.preset),
-        setup_guidance=_setup_guidance(
-            workflow_keys=list(preset.preset.applies_to_workflows)
-        ),
+        setup_guidance=_setup_guidance(workflow_keys=list(preset.preset.applies_to_workflows)),
     )
 
 

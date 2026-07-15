@@ -460,6 +460,17 @@ snapshot by default; request `response_mode: raw` only when the full dependency,
 link, and graph payload is needed for UI/debug/list review audits. Normal agents
 should prefer `tracker.status`, `tracker.next`, `tracker.brief`,
 `tracker.verify`, `tracker.search`, and `tracker.changed` to keep context small.
+Operator task selectors may call `tracker.get` with `task_index_only=true`,
+`include_graph=false`, and `response_mode=raw`. That projection returns all
+matching tasks with `ticket_summary` rollups (status counts, terminal/in-progress/
+blocked totals, assignees, and searchable ticket terms) while omitting ticket rows,
+dependencies, links, and graph data. Ticket-scoped filters are intentionally
+rejected in this mode; load one focused task or a normal filtered snapshot when
+ticket detail is required.
+Bounded overview surfaces that do not need a complete selector may also pass
+`task_statuses` (for example, `not-started` and `in-progress`). This filters the
+top-level task rows while retaining aggregate summaries across each returned
+task's tickets; it is distinct from `statuses`, which filters ticket rows.
 When `include_graph=true`, the graph projection may include advisory warnings.
 These warnings are produced by core tracker analysis. Generic warnings call out
 review issues such as sparse dependency plans, many isolated active tickets,
@@ -477,6 +488,8 @@ The Tasks UI is a generic project work map. It renders:
 - filters by workflow, status, assignee, and search text
 - a task index where each task row shows status, source/workflow, priority,
   done/total ticket count, completion percent, and current detail
+- a complete task selector on first load; terminal tasks remain discoverable
+  while the selected task graph is still loaded on demand
 - one focused Vue Flow graph at a time so large task graphs remain readable
 - dependency-tree graph as the primary visualization, with ticket nodes laid out
   left-to-right by prerequisite/dependent relationships

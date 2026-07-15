@@ -131,8 +131,7 @@ outputs:
         for item in authoring_guide["package_authoring_path"]
     )
     assert any(
-        "cross-workflow handoff" in item
-        for item in authoring_guide["package_authoring_path"]
+        "cross-workflow handoff" in item for item in authoring_guide["package_authoring_path"]
     )
     assert any("private workflow chain" in item for item in authoring_guide["reasoning_gates"])
     assert any("bounded packet" in item for item in authoring_guide["reasoning_gates"])

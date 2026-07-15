@@ -265,6 +265,7 @@ def compact_tracker_history_item(value: Any) -> dict[str, Any]:
 def compact_tracker_task(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
     source = _as_dict(data.get("source_json"))
+    ticket_summary = _as_dict(data.get("ticket_summary"))
     result = _compact_mapping(
         data,
         (
@@ -289,6 +290,18 @@ def compact_tracker_task(value: Any) -> dict[str, Any]:
             }
         )
     )
+    if ticket_summary:
+        result["ticket_summary"] = _compact_mapping(
+            ticket_summary,
+            (
+                "total_count",
+                "terminal_count",
+                "in_progress_count",
+                "blocked_count",
+                "status_counts",
+                "assignees",
+            ),
+        )
     _add_completion_evidence_flag(result, data)
     return result
 
@@ -296,6 +309,7 @@ def compact_tracker_task(value: Any) -> dict[str, Any]:
 def compact_tracker_snapshot_task(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
     source = _as_dict(data.get("source_json"))
+    ticket_summary = _as_dict(data.get("ticket_summary"))
     result = _compact_mapping(
         data,
         (
@@ -318,6 +332,18 @@ def compact_tracker_snapshot_task(value: Any) -> dict[str, Any]:
             }
         )
     )
+    if ticket_summary:
+        result["ticket_summary"] = _compact_mapping(
+            ticket_summary,
+            (
+                "total_count",
+                "terminal_count",
+                "in_progress_count",
+                "blocked_count",
+                "status_counts",
+                "assignees",
+            ),
+        )
     _add_completion_evidence_flag(result, data)
     return result
 

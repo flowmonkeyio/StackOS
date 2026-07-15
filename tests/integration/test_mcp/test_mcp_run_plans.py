@@ -280,9 +280,7 @@ def test_claim_step_compact_response_includes_expectations_and_dependency_handof
 
     assert claimed["purpose"] == "Deliver only from the reviewed brief."
     assert claimed["instructions_json"] == ["Use the dependency handoff before editing."]
-    assert claimed["success_criteria_json"] == [
-        "The reviewed constraint remains visible."
-    ]
+    assert claimed["success_criteria_json"] == ["The reviewed constraint remains visible."]
     assert claimed["policy_refs_json"] == ["reviewed_only"]
     assert claimed["expected_outputs_json"] == {"summary": "Checked delivery"}
     assert claimed["input_values_json"] == {"brief": "Keep the flow prepare-only"}

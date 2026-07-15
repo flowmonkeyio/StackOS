@@ -12,7 +12,7 @@ useSchemaOrg([defineWebPage({ name: item.name, description: item.description }),
 </script>
 
 <template>
-  <LibraryFrame>
+  <LibraryFrame :breadcrumb-current-label="item.name">
     <section class="detail-hero">
       <div class="shell detail-hero__grid">
         <div>

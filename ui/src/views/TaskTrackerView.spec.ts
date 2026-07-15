@@ -107,6 +107,11 @@ describe('TaskTrackerView route integration', () => {
     )
 
     await vi.waitFor(() => {
+      expect(operationMocks.callOperation).toHaveBeenCalledWith('tracker.get', {
+        project_id: 7,
+        task_index_only: true,
+        include_graph: false,
+      })
       expect(operationMocks.callOperation).toHaveBeenCalledWith(
         'tracker.get',
         expect.objectContaining({ project_id: 7, task_key: 'task-b', include_graph: true }),
@@ -200,6 +205,63 @@ describe('TaskTrackerView route integration', () => {
     expect(streamMocks.close).toHaveBeenCalled()
     wrapper.unmount()
   })
+
+  it('shows an honest pending state while the selected graph loads', async () => {
+    const task = trackerTask({
+      key: 'slow-task',
+      ticket_summary: {
+        total_count: 1,
+        terminal_count: 0,
+        in_progress_count: 1,
+        blocked_count: 0,
+        status_counts: {
+          'not-started': 0,
+          'in-progress': 1,
+          complete: 0,
+          deferred: 0,
+          aborted: 0,
+          failed: 0,
+          skipped: 0,
+        },
+        assignees: [],
+        search_text: 'slow-ticket Slow ticket',
+      },
+    })
+    const ticket = trackerTicket({ task_key: 'slow-task', key: 'slow-ticket' })
+    let resolveFocused!: (snapshot: TrackerSnapshot) => void
+    const focused = new Promise<TrackerSnapshot>((resolve) => {
+      resolveFocused = resolve
+    })
+    operationMocks.callOperation.mockImplementation(
+      async (operation: string, args: Record<string, unknown>) => {
+        if (operation !== 'tracker.get') throw new Error(`Unexpected operation: ${operation}`)
+        if (args.include_graph === false) return trackerSnapshot([task], [])
+        return focused
+      },
+    )
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/tasks', component: TaskTrackerView }],
+    })
+    await router.push('/projects/7/tasks?task=slow-task')
+    await router.isReady()
+
+    const wrapper = mount(
+      { template: '<RouterView />' },
+      {
+        global: {
+          plugins: [router, createPinia()],
+          stubs: trackerRouteStubs(),
+        },
+      },
+    )
+
+    await vi.waitFor(() => expect(wrapper.get('[data-test="graph-state"]').text()).toBe('pending'))
+    resolveFocused(trackerSnapshot([task], [ticket], true))
+    await vi.waitFor(() => expect(wrapper.get('[data-test="graph-state"]').text()).toBe('ready'))
+    wrapper.unmount()
+  })
 })
 
 function trackerRouteStubs() {
@@ -211,8 +273,10 @@ function trackerRouteStubs() {
         '<nav><button data-test="select-task-a" @click="$emit(\'task-select\', \'task-a\')">Task A</button></nav>',
     },
     TrackerGraphPanel: {
+      props: ['loading'],
       emits: ['open-task-detail', 'viewport-change-end'],
       template: `<section>
+        <span data-test="graph-state">{{ loading ? 'pending' : 'ready' }}</span>
         <button data-test="open-task-detail" @click="$emit('open-task-detail')">Detail</button>
         <button data-test="persist-viewport" @click="$emit('viewport-change-end', { x: 12, y: 24, zoom: 1.25 })">Viewport</button>
       </section>`,

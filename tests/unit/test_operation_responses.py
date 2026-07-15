@@ -552,12 +552,13 @@ def test_plain_object_compact_summarizes_schemas_without_full_body() -> None:
     assert compact["data"]["input_schema"]["properties"]["query"]["description"].endswith("...")
     assert compact["data"]["input_schema"]["properties"]["query"]["enum"] == ["one", "two"]
     assert compact["data"]["input_schema"]["properties"]["query"]["minLength"] == 1
-    assert compact["data"]["input_schema"]["properties"]["limit"]["anyOf"][0][
-        "maximum"
-    ] == 50
-    assert compact["data"]["input_schema"]["properties"]["records"]["items"][
-        "properties"
-    ]["ref"]["minLength"] == 1
+    assert compact["data"]["input_schema"]["properties"]["limit"]["anyOf"][0]["maximum"] == 50
+    assert (
+        compact["data"]["input_schema"]["properties"]["records"]["items"]["properties"]["ref"][
+            "minLength"
+        ]
+        == 1
+    )
     assert "raw_payload" not in str(compact)
     assert "hiddenhiddenhidden" not in str(compact)
     assert "x" * 500 not in str(compact)

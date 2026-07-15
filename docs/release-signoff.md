@@ -137,6 +137,8 @@ Before public desktop distribution, record the managed-update evidence:
 
 - `latest-mac.yml`, DMG, ZIP, and generated blockmap artifacts are present in
   the website static update directory.
+- `stackos-latest-mac-arm64.dmg` is byte-identical to the signed, notarized,
+  stapled versioned DMG used for the release.
 - The public update endpoint is HTTPS. FTP, if used, is only the upload/deploy
   transport and no FTP credentials are packaged into the app.
 - Artifact URLs referenced by the update metadata are reachable and are not

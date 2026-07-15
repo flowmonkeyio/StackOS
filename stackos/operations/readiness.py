@@ -259,9 +259,7 @@ def _workflow_readiness(
         prerequisite_count=len(loaded.spec.public.prerequisites) if loaded.spec.public else 0,
         prerequisites=list(loaded.spec.public.prerequisites) if loaded.spec.public else [],
         safe_stopping_points=(
-            list(loaded.spec.experience.safe_stopping_points)
-            if loaded.spec.experience
-            else []
+            list(loaded.spec.experience.safe_stopping_points) if loaded.spec.experience else []
         ),
     )
     actions, warnings = _workflow_action_readiness(
@@ -291,22 +289,16 @@ def _workflow_readiness(
             action.contract_key,
         )
     ]
-    missing = _dedupe_missing(
-        [item for action in required_ungrouped for item in action.missing]
-    )
+    missing = _dedupe_missing([item for action in required_ungrouped for item in action.missing])
     missing.extend(_route_group_missing(route_groups, workflow_key=loaded.spec.key))
     required_providers_ready = all(action.executable for action in required_ungrouped) and all(
         group.execution_ready for group in route_groups if group.required
     )
     contract_blocked = any(
         action.availability_status == "action_not_found" for action in required_ungrouped
-    ) or any(
-        not group.structurally_ready for group in route_groups if group.required
-    )
+    ) or any(not group.structurally_ready for group in route_groups if group.required)
     context_status: Literal["ready", "not_evaluated", "missing"] = (
-        "not_evaluated"
-        if loaded.spec.context_requirements or workflow.prerequisites
-        else "ready"
+        "not_evaluated" if loaded.spec.context_requirements or workflow.prerequisites else "ready"
     )
     if context_status == "not_evaluated":
         warnings.append(
@@ -489,16 +481,14 @@ def _workflow_route_readiness(
             required_actions = [action for action in route_actions if not action.optional]
             if required_actions:
                 structurally_ready = all(
-                    action.availability_status != "action_not_found"
-                    for action in required_actions
+                    action.availability_status != "action_not_found" for action in required_actions
                 )
                 executable = structurally_ready and all(
                     action.executable for action in required_actions
                 )
             else:
                 structurally_ready = any(
-                    action.availability_status != "action_not_found"
-                    for action in route_actions
+                    action.availability_status != "action_not_found" for action in route_actions
                 )
                 executable = any(action.executable for action in route_actions)
             routes.append(
@@ -519,9 +509,7 @@ def _workflow_route_readiness(
                 required=group_required,
                 execution_ready=any(route.executable for route in routes),
                 structurally_ready=any(route.structurally_ready for route in routes),
-                available_route_keys=[
-                    route.route_key for route in routes if route.executable
-                ],
+                available_route_keys=[route.route_key for route in routes if route.executable],
                 routes=routes,
             )
         )
@@ -547,13 +535,9 @@ def _annotate_route_missing(
             if group.execution_ready and not selected_ready:
                 missing.required_for = "alternative_route_not_selected"
             elif group.required and not group.execution_ready:
-                missing.required_for = (
-                    f"route_option:{action.route_group}:{action.route_key}"
-                )
+                missing.required_for = f"route_option:{action.route_group}:{action.route_key}"
             else:
-                missing.required_for = (
-                    f"optional_route:{action.route_group}:{action.route_key}"
-                )
+                missing.required_for = f"optional_route:{action.route_group}:{action.route_key}"
     by_ref = {action.action_ref: action for action in actions}
     for group in route_groups:
         for route in group.routes:
@@ -580,9 +564,7 @@ def _route_group_missing(
                 "unavailable alternatives do not all need to be connected."
             ),
             required_for="execution",
-            action_refs=[
-                action_ref for route in group.routes for action_ref in route.action_refs
-            ],
+            action_refs=[action_ref for route in group.routes for action_ref in route.action_refs],
             workflow_key=workflow_key,
             next_tool="readiness.check",
         )

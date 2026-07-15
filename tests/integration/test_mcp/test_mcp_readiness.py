@@ -282,13 +282,9 @@ def test_readiness_check_reports_only_selected_workflow_provider_gaps(
         item["action_ref"] for item in dataforseo_actions
     }
     assert {
-        missing["required_for"]
-        for action in dataforseo_actions
-        for missing in action["missing"]
+        missing["required_for"] for action in dataforseo_actions for missing in action["missing"]
     } == {"action_execution_optional_provider"}
-    ahrefs_action = next(
-        item for item in readiness["actions"] if item["provider_key"] == "ahrefs"
-    )
+    ahrefs_action = next(item for item in readiness["actions"] if item["provider_key"] == "ahrefs")
     assert {item["required_for"] for item in ahrefs_action["missing"]} == {
         "optional_action_execution"
     }

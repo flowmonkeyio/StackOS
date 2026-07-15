@@ -68,11 +68,10 @@ useHead({ script: [
 </script>
 
 <template>
-  <LibraryFrame>
+  <LibraryFrame :breadcrumb-current-label="provider.name">
     <section class="integration-detail-hero" :style="{ '--integration-color': provider.color }">
       <div class="shell integration-detail-hero__grid">
         <div>
-          <NuxtLink class="integration-breadcrumb" to="/library/integrations">← All integrations</NuxtLink>
           <div class="integration-detail-hero__identity">
             <IntegrationMark :name="provider.name" :color="provider.color" :logo="provider.logo" size="large" />
             <div><span>{{ provider.pluginName }} plugin</span><h1>{{ provider.name }}</h1></div>
@@ -146,7 +145,6 @@ useHead({ script: [
 <style scoped>
 .integration-detail-hero { padding: 74px 0 78px; color: var(--paper); background: radial-gradient(circle at 80% 20%, color-mix(in srgb, var(--integration-color) 13%, transparent), transparent 32%), var(--ink); }
 .integration-detail-hero__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, .48fr); gap: 75px; align-items: end; }
-.integration-breadcrumb { display: block; width: fit-content; margin: 0 0 42px; color: var(--ink-soft); font-size: 13px; text-decoration: none; }
 .integration-detail-hero__identity { display: flex; align-items: center; gap: 22px; }
 .integration-detail-hero__identity span { color: color-mix(in srgb, var(--integration-color) 72%, white); font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
 .integration-detail-hero h1 { margin: 4px 0 0; font-size: clamp(48px, 6.5vw, 88px); line-height: .95; letter-spacing: -.07em; }

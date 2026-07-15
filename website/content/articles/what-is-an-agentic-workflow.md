@@ -1,15 +1,15 @@
 ---
 title: What is an agentic workflow? A practical guide to AI-powered work
-description: An agentic workflow turns a goal into visible steps that AI can plan, complete, check, and hand off across the tools your team already uses.
+description: An agentic workflow lets AI choose the next valid action inside a durable contract for state, tools, evidence, verification, recovery, and completion.
 publishedAt: '2026-07-09'
-updatedAt: '2026-07-09'
+updatedAt: '2026-07-12'
 author: StackOS team
 category: Agentic workflows
 topics:
   - agentic workflows
   - AI agents
   - workflow automation
-readingTime: 7 min read
+readingTime: 8 min read
 featured: true
 visual: workflow
 searchIntent: Understand what an agentic workflow is, how it works, and when to use one
@@ -25,66 +25,96 @@ relatedArticles:
   - use-codex-claude-gemini-with-existing-tools
 ---
 
-An agentic workflow is a structured way for an AI agent to move from a goal to a completed, checked result. It gives the AI a sequence of steps, the right context and tools for each step, clear approval points, and a record of what happened.
+An agentic workflow is a durable execution structure in which AI interprets a goal, chooses the next valid action, uses scoped context and tools, and records the result until the acceptance criteria are met.
 
-The important word is not *AI*. It is *workflow*. A capable model can reason about a request, but real work also needs continuity: what is ready, what is waiting, who approved a decision, which app was changed, and what evidence proves the result.
+The workflow becomes agentic at its decision points. The AI may decide which evidence matters, whether a planned step is still necessary, how to recover from a failed check, or which reviewer finding belongs in the work. State storage, grant enforcement, payload validation, and audit records can remain mechanical.
 
-::article-workflow-visual{workflow="branding-content-production" title="A complete content workflow, from request to published result"}
+That separation is useful because adding a model to a fixed chain does not automatically make the work agentic.
+
+::article-workflow-visual{workflow="branding-content-production" title="A complete content workflow, from request to verified result"}
 ::
 
 ## What makes a workflow agentic?
 
-An ordinary automation follows a fixed rule: when this happens, do that. An agentic workflow can interpret the goal, adapt the plan to the situation, use the right specialist for each stage, and respond when new information changes the work.
+Fixed automation follows a known mapping: when this happens, do that. An agentic workflow is useful when the next valid action depends on meaning, evidence, or a changing situation.
 
-The workflow still provides boundaries. The AI does not get a blank check. It works through named stages, uses approved connections, and pauses when a person needs to decide.
+Consider four decisions from a content workflow:
 
-A useful agentic workflow usually includes five parts:
+- Is an operator interview needed, or is the relevant experience already captured?
+- Does the evidence support the proposed angle?
+- Is a reviewer finding a blocker, a useful repair, a preference, or scope drift?
+- Has the article met its terminal condition, or is a material claim still unresolved?
 
-1. **A goal.** The outcome the person actually wants, written in business language.
-2. **A plan.** The steps, relationships, checks, and approval points needed for this particular request.
-3. **Specialists.** Focused AI roles for research, creation, review, or other distinct responsibilities.
-4. **Connected tools.** The apps and accounts where the work already happens.
-5. **A durable work record.** Status, decisions, outputs, dependencies, and evidence that remain available after the chat ends.
+Those decisions need reasoning. The workflow still bounds the reasoning with named state, allowed actions, expected outputs, and a stopping rule. Human input is reserved for materially missing intent, authority, disclosure, or a consequential choice; it is not a checkpoint added to every stage.
+
+## What should the workflow contain?
+
+A practical agentic workflow needs six things:
+
+1. **Problem and outcome.** Name the failure, friction, or decision AI should help with, the useful result, and the side-effect boundary.
+2. **State and dependencies.** Record what is pending, active, accepted, blocked, or complete, and which later work depends on it.
+3. **Context, tools, and authority.** Give each step the information and operations it needs without exposing unrelated history or broader access.
+4. **Decision ownership.** State what the orchestrator decides and which bounded responsibilities belong to specialist agents.
+5. **Outputs, evidence, and acceptance.** Define what each step must return, which claims need support, and how the result will be verified.
+6. **Recovery and a terminal condition.** Provide the next safe action for anticipated failures and a concrete definition of done.
+
+These do not need to become six long prompt sections. Stable rules can stay in the workflow, project state, and tool contracts. The agent should receive the subset that changes its next decision.
 
 ## What happens from request to result?
 
-Imagine a content leader asks Claude Code to turn customer research into a four-week campaign. The conversation is only the starting point.
+Imagine an operator asks a tool-using AI client to turn research and firsthand experience into an article. The conversation is only the starting point.
 
-StackOS recognizes the matching [content production workflow](/library/workflows/branding-content-production), adds the right stages for the request, and presents the complete plan before work begins. A research specialist gathers the source material. A strategist shapes the angle and channel plan. A writer creates the main piece. Separate reviewers check claims, voice, and disclosure risk. Approved work then moves to the connected publishing tools.
+1. The AI interprets the request, selects the relevant workflow, and adapts a concrete run plan for the topic, sources, channel, image intent, and publication boundary.
+2. The orchestrator reads the current state and chooses the next eligible step. It supplies the context and tools that step needs.
+3. Research, writing, and review agents handle bounded responsibilities. They return evidence, drafts, or findings rather than taking over the whole job.
+4. StackOS stores the plan, scopes each tool call, validates execution, and records the result. It does not choose the content strategy.
+5. The orchestrator adjudicates review findings against the accepted angle and evidence. Not every suggestion enters delivery.
+6. The run ends when the requested artifact exists, material claims are supported or explicitly unresolved, blocking findings are repaired, and verification passes. Publication runs only when it was requested and authorized.
 
-Each stage changes state as it moves from waiting to working, review, and done. If the research is incomplete, later work stays blocked. If a reviewer finds an unsupported claim, the piece returns to the right stage with the reason attached.
+The durable state matters as much as the steps. If research is incomplete, later work stays blocked. If a tool call fails, the receipt shows what happened. If the session changes, the next agent can recover the accepted state without replaying the whole conversation.
 
-That visible state is what turns a promising AI conversation into dependable work.
+This is the model we are building and using in StackOS: the AI chooses the next step; StackOS persists the contract and execution record.
 
-## How is this different from a chatbot?
+## Where does the agentic judgment belong?
 
-A chatbot mainly responds inside a conversation. It may produce an excellent answer, but the person still has to carry the result into other apps, remember what remains, and explain the context again next time.
+Our early mistake was to treat “agentic” as a reason to add more agents. Running the workflows exposed a different problem.
 
-An agentic workflow gives the conversation somewhere to go. The request becomes organized work with owners, dependencies, connected actions, approvals, and proof.
+Fresh agents could often work around missing context. They read more files, inspected more tools, and reconstructed earlier decisions. They reached the result, but the workflow was spending their reasoning on state the system already knew.
 
-You can still use the AI interface you prefer. StackOS works with Codex, Claude Code, Gemini, and other tool-using AI clients; it adds the shared work layer around them.
+Reviewers created another signal. They could always propose one more improvement. When the orchestrator accepted each suggestion, the job drifted beyond the agreed plan.
+
+The useful refinements were clearer handoffs and stronger gatekeeping. Agents still reason about the work. The workflow carries known state, and the orchestrator decides which findings belong in delivery.
+
+## How is this different from a chatbot or fixed automation?
+
+| Mode | Best for | How it adapts | What marks completion |
+| --- | --- | --- | --- |
+| Conversation | A question, explanation, or one-off draft | The model responds within the current context | A useful response is returned |
+| Fixed automation | A stable trigger with a known action | Predetermined rules and branches | The configured action finishes |
+| Agentic workflow | Multi-step work where evidence or state changes the next action | An agent reasons within a durable execution contract | Acceptance criteria and verification pass |
+
+A conversation can call tools, and fixed automation can have many branches. The difference is whether the job needs adaptive judgment plus durable state across the run.
 
 ## Where can agentic workflows be used?
 
-The pattern is not limited to software development. Any repeatable outcome with judgment, multiple steps, connected apps, or approval risk can benefit.
+Use an agentic workflow when:
 
-- Engineering teams can move from a feature request through design, delivery, testing, and review.
-- Content teams can research, draft, fact-check, create visuals, and publish.
-- Finance teams can collect data, investigate a variance, prepare a recommendation, and route it for approval.
-- Commerce teams can update product content, review merchandising changes, and coordinate Shopify operations.
-- Sales teams can research accounts, enrich leads, prepare outreach, and keep the CRM accurate.
-- Support teams can investigate an issue and hand confirmed work to the right delivery team.
+- the outcome spans several dependent stages or sessions;
+- the next step depends on evidence rather than a fixed rule;
+- different responsibilities need different context or independent review;
+- connected tools have side effects that require narrow authority and receipts;
+- failure needs recovery and continuation rather than a full restart.
 
-Explore the [workflow library](/library/workflows) to see how the same structure adapts across different kinds of work.
+In engineering, test evidence may change the next implementation step. In content, source quality may change the angle and reviewer feedback must be gated against the brief. In support, an investigation may end in an answer or a structured delivery handoff. The domain changes; the operating problem is the same.
 
 ## When should you use one?
 
-Use an agentic workflow when the work needs more than one answer. Strong signals include handoffs between people or apps, steps that depend on earlier results, sensitive actions, required review, and work that may continue across multiple sessions.
+Do not build one for every request. A normal conversation is enough for a quick question or one-off draft. Fixed automation is usually better for a deterministic transformation. A single explicit tool action does not need a ten-step workflow around it.
 
-For a quick question or one-off draft, a normal conversation may be enough. For work that must finish correctly and remain understandable later, a workflow gives the AI—and the team—the structure it needs.
+The workflow earns its cost when the work needs both judgment and continuity.
 
 ## The shortest useful definition
 
-An agentic workflow is a goal-driven plan that lets AI complete multi-step work through connected tools while keeping progress, approvals, and results visible.
+An agentic workflow is durable, goal-directed work in which AI chooses the next valid action inside explicit boundaries for state, authority, evidence, verification, recovery, and completion.
 
-That is the practical promise: keep the AI tool you already like, and give its work a reliable path from request to result.
+For the surrounding roles, see [AI agent vs. workflow vs. orchestrator](/library/articles/ai-agent-vs-workflow-vs-orchestrator). For the execution experience each agent needs, see [agent experience](/library/articles/ai-agent-experience).

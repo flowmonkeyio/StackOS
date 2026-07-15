@@ -33,7 +33,7 @@ function displayDate(date: string) {
 </script>
 
 <template>
-  <LibraryFrame v-if="article">
+  <LibraryFrame v-if="article" :breadcrumb-current-label="article.title">
     <article>
       <header class="article-hero">
         <div class="shell article-hero__grid">

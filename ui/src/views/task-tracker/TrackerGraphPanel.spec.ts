@@ -48,6 +48,7 @@ describe('TrackerGraphPanel interaction and sizing', () => {
           edges: [],
           warnings: [],
         } as unknown as TrackerFlowModel,
+        loading: false,
         flowId: 'tracker-flow-1',
         flowRenderKey: 'render-1',
         graphFitOnInit: false,
@@ -78,5 +79,9 @@ describe('TrackerGraphPanel interaction and sizing', () => {
     expect(flow.props('zoomOnPinch')).toBe(true)
     expect(flow.props('preventScrolling')).toBe(true)
     expect(wrapper.get('.tracker-flow-frame').attributes('style')).toBeUndefined()
+
+    await wrapper.setProps({ loading: true })
+    expect(wrapper.text()).toContain('Loading selected dependency map…')
+    expect(wrapper.find('[data-test="vue-flow"]').exists()).toBe(false)
   })
 })

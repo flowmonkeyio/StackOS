@@ -446,6 +446,69 @@
 
 .article-prose strong { color: var(--ink); }
 
+.article-table {
+  width: 100%;
+  margin: 32px 0 38px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  background: #f7f5ed;
+  border: 1px solid var(--paper-border);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgb(9 11 16 / 5%);
+  -webkit-overflow-scrolling: touch;
+}
+
+.article-table:focus-visible {
+  outline: 3px solid rgb(75 101 214 / 32%);
+  outline-offset: 3px;
+}
+
+.article-table table {
+  width: 100%;
+  min-width: 720px;
+  border-spacing: 0;
+  border-collapse: separate;
+}
+
+.article-table th,
+.article-table td {
+  padding: 16px 18px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.article-table th {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+  background: #e7e5da;
+  border-bottom: 1px solid #cfcdc2;
+}
+
+.article-table td {
+  color: #42413b;
+  font-size: 16px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--paper-border);
+}
+
+.article-table tbody tr:nth-child(even) td {
+  background: rgb(235 233 223 / 42%);
+}
+
+.article-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.article-table tbody td:first-child {
+  color: var(--ink);
+  font-weight: 650;
+}
+
 .article-prose blockquote {
   position: relative;
   margin: 36px 0 38px;

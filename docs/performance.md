@@ -50,14 +50,28 @@ requests instead.
 
 - Health and local navigation shell: under 100 ms server time.
 - Home's primary supervision data: under 300 ms on the normal local dataset.
-- Work dependency-map index: active work only; load a selected task's graph on
-  demand. Do not fetch the complete tracker archive for the initial graph.
-- Portfolio: one compact status request per active project; fetch task detail
-  only for projects that actually have active work.
+- Work dependency-map index: load the complete task index with
+  `tracker.get(task_index_only=true, include_graph=false)`, including aggregate
+  ticket progress, then load only the selected task's graph. Do not make
+  terminal work disappear to save response bytes, and do not fetch the complete
+  ticket archive for the initial graph.
+- Portfolio: one compact status request per active project with bounded
+  concurrency; fetch only non-terminal task headers and aggregate ticket
+  summaries for projects that actually have open work. Use `task_statuses` with
+  the task index rather than loading full ticket rows. Open means every
+  non-terminal task (`not-started` and `in-progress`), not only work already in
+  progress.
 - Setup may load the complete integration/action inventory. Home must not load
   that inventory during initial render or routine polling.
 - The global project shell requests compact plugin navigation metadata. Full
   plugin manifests belong on catalog/setup surfaces, not every project page.
+
+Response filtering must reduce database work as well as payload size. Tracker
+list reads bulk-hydrate task, parent, dependency, reference, and link state;
+never reintroduce per-ticket relation queries. Synchronous SQLite-backed reads
+used by async operation routes must run outside the event-loop thread so one
+large local read cannot make unrelated health, shell, or status requests queue
+behind it.
 
 These are regression budgets, not permission to make small local datasets wait
 for the full budget.

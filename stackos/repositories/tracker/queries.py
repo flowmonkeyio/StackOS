@@ -10,6 +10,7 @@ from typing import (
 )
 
 from sqlalchemy import or_
+from sqlalchemy import select as sa_select
 from sqlmodel import (
     col,
     select,
@@ -27,6 +28,9 @@ from stackos.db.models import (
     TrackerRevision,
     TrackerTask,
     TrackerTicket,
+    TrackerTicketDependency,
+    TrackerTicketLink,
+    TrackerTicketReference,
 )
 from stackos.repositories.base import (
     NotFoundError,
@@ -48,6 +52,7 @@ from stackos.repositories.tracker.schema import (
     TrackerStatusOut,
     TrackerSummaryOut,
     TrackerTaskOut,
+    TrackerTaskTicketSummaryOut,
     TrackerTicketOut,
     TrackerVerifyOut,
     TrackerWorkflowHandoffOut,
@@ -78,14 +83,13 @@ class TrackerQueryMixin:
             )
         tasks = self._task_rows(tracker.id)
         tickets = self._ticket_rows(tracker.id)
+        blocked_ticket_ids, ready_ticket_ids = self._ticket_activity_sets(tasks, tickets)
         return TrackerStatusOut(
             tracker=self._tracker_out(tracker),
             task_counts=self._count_statuses([task.status for task in tasks]),
             ticket_counts=self._count_statuses([ticket.status for ticket in tickets]),
-            blocked_ticket_count=sum(
-                1 for ticket in tickets if self._ticket_blocks_active_work(tracker.id, ticket)
-            ),
-            ready_ticket_count=len(self._ready_ticket_rows(tracker.id, tickets=tickets)),
+            blocked_ticket_count=len(blocked_ticket_ids),
+            ready_ticket_count=len(ready_ticket_ids),
             in_progress_ticket_count=sum(
                 1 for ticket in tickets if ticket.status == TrackerItemStatus.IN_PROGRESS
             ),
@@ -97,6 +101,7 @@ class TrackerQueryMixin:
         *,
         project_id: int,
         statuses: list[TrackerItemStatus] | None = None,
+        task_statuses: list[TrackerItemStatus] | None = None,
         task_key: str | None = None,
         ticket_keys: list[str] | None = None,
         ticket_ids: list[int] | None = None,
@@ -106,7 +111,26 @@ class TrackerQueryMixin:
         run_plan_id: int | None = None,
         assignee: str | None = None,
         include_graph: bool = True,
+        task_index_only: bool = False,
     ) -> TrackerSnapshotOut:
+        if task_index_only:
+            if include_graph:
+                raise ValidationError("task_index_only requires include_graph=false")
+            ticket_filters = {
+                "statuses": statuses,
+                "ticket_keys": ticket_keys,
+                "ticket_ids": ticket_ids,
+                "block_state": block_state,
+                "dependency_ticket_key": dependency_ticket_key,
+                "run_plan_id": run_plan_id,
+                "assignee": assignee,
+            }
+            unsupported = [key for key, value in ticket_filters.items() if value]
+            if unsupported:
+                raise ValidationError(
+                    "task_index_only does not support ticket-scoped filters",
+                    data={"unsupported_filters": unsupported},
+                )
         tracker = self._tracker_or_none(project_id=project_id)
         if tracker is None:
             return TrackerSnapshotOut(
@@ -119,12 +143,59 @@ class TrackerQueryMixin:
                 links=[],
                 graph=self._graph_out([], [], [], []) if include_graph else None,
             )
-        tasks = self._task_rows(tracker.id)
-        tickets = self._ticket_rows(tracker.id)
+        task_status_set = set(task_statuses or [])
+        tasks = self._task_rows(tracker.id, statuses=task_status_set)
         if task_key is not None:
             task = self._task_by_key(tracker.id, task_key)
-            tasks = [task]
-            tickets = [ticket for ticket in tickets if ticket.task_id == task.id]
+            tasks = [task] if not task_status_set or task.status in task_status_set else []
+        if workflow_key is not None:
+            tasks = [
+                task
+                for task in tasks
+                if (task.source_json or {}).get("template_key") == workflow_key
+                or (task.source_json or {}).get("run_plan_key") == workflow_key
+            ]
+        if task_index_only:
+            task_out = self._task_out_many(tracker.id, tasks)
+            return TrackerSnapshotOut(
+                tracker=self._tracker_out(tracker),
+                lanes=self._lane_out(tracker.id),
+                priorities=self._priority_out(tracker.id),
+                tasks=task_out,
+                tickets=[],
+                dependencies=[],
+                links=[],
+                graph=None,
+            )
+
+        related_ids: set[int | None] = set()
+        if dependency_ticket_key is not None:
+            focus = self._ticket_by_key(tracker.id, dependency_ticket_key)
+            related_ids.add(focus.id)
+            related_ids.update(
+                dep.depends_on_ticket_id for dep in self._dependency_rows_for_ticket(focus.id)
+            )
+            related_ids.update(dep.ticket_id for dep in self._dependent_rows_for_ticket(focus.id))
+
+        if task_key is not None:
+            tickets = self._ticket_rows_for_task_ids(
+                tracker.id,
+                {task.id for task in tasks if task.id is not None},
+            )
+        elif dependency_ticket_key is not None:
+            tickets = self._ticket_rows_filtered(
+                tracker.id,
+                ticket_ids={ticket_id for ticket_id in related_ids if ticket_id is not None},
+            )
+        else:
+            tickets = self._ticket_rows_filtered(
+                tracker.id,
+                statuses=set(statuses or []),
+                ticket_keys={str(key) for key in ticket_keys or []},
+                ticket_ids=set(ticket_ids or []),
+                run_plan_id=run_plan_id,
+                assignee=assignee,
+            )
         if ticket_keys:
             key_set = {str(key) for key in ticket_keys}
             tickets = [ticket for ticket in tickets if ticket.key in key_set]
@@ -136,12 +207,6 @@ class TrackerQueryMixin:
             task_ids = {ticket.task_id for ticket in tickets}
             tasks = [task for task in tasks if task.id in task_ids]
         if dependency_ticket_key is not None:
-            focus = self._ticket_by_key(tracker.id, dependency_ticket_key)
-            related_ids = {focus.id}
-            related_ids.update(
-                dep.depends_on_ticket_id for dep in self._dependency_rows_for_ticket(focus.id)
-            )
-            related_ids.update(dep.ticket_id for dep in self._dependent_rows_for_ticket(focus.id))
             tickets = [ticket for ticket in tickets if ticket.id in related_ids]
             task_ids = {ticket.task_id for ticket in tickets}
             tasks = [task for task in tasks if task.id in task_ids]
@@ -152,20 +217,16 @@ class TrackerQueryMixin:
             tasks = [task for task in tasks if task.id in task_ids or task.status in status_set]
         if block_state:
             want_blocked = block_state == "blocked"
+            blocked_ticket_ids, _ready_ticket_ids = self._ticket_activity_sets(
+                self._task_rows(tracker.id),
+                tickets,
+            )
             tickets = [
-                ticket
-                for ticket in tickets
-                if self._ticket_blocks_active_work(tracker.id, ticket) == want_blocked
+                ticket for ticket in tickets if ((ticket.id in blocked_ticket_ids) == want_blocked)
             ]
             task_ids = {ticket.task_id for ticket in tickets}
             tasks = [task for task in tasks if task.id in task_ids]
         if workflow_key is not None:
-            tasks = [
-                task
-                for task in tasks
-                if (task.source_json or {}).get("template_key") == workflow_key
-                or (task.source_json or {}).get("run_plan_key") == workflow_key
-            ]
             task_ids = {task.id for task in tasks if task.id is not None}
             tickets = [ticket for ticket in tickets if ticket.task_id in task_ids]
         if run_plan_id is not None:
@@ -757,6 +818,121 @@ class TrackerQueryMixin:
     def _task_out(self, row: TrackerTask) -> TrackerTaskOut:
         return TrackerTaskOut.model_validate(row)
 
+    def _task_out_many(
+        self,
+        tracker_id: int | None,
+        rows: list[TrackerTask],
+    ) -> list[TrackerTaskOut]:
+        summaries = self._task_ticket_summaries(tracker_id, rows)
+        return [
+            self._task_out(row).model_copy(update={"ticket_summary": summaries.get(row.id)})
+            for row in rows
+        ]
+
+    def _task_ticket_summaries(
+        self,
+        tracker_id: int | None,
+        tasks: list[TrackerTask],
+    ) -> dict[int | None, TrackerTaskTicketSummaryOut]:
+        tracker_id = _required_id(tracker_id, "tracker")
+        task_ids = {task.id for task in tasks if task.id is not None}
+        if not task_ids:
+            return {}
+
+        rows = list(
+            self._s.exec(
+                # SQLAlchemy's select stubs stop at six explicit columns.
+                sa_select(  # type: ignore[call-overload]
+                    TrackerTicket.id,
+                    TrackerTicket.task_id,
+                    TrackerTicket.status,
+                    TrackerTicket.blocker_reason,
+                    TrackerTicket.assignee,
+                    TrackerTicket.key,
+                    TrackerTicket.title,
+                ).where(
+                    TrackerTicket.tracker_id == tracker_id,
+                    col(TrackerTicket.task_id).in_(task_ids),
+                )
+            )
+        )
+        status_by_ticket_id = {row.id: row.status for row in rows if row.id is not None}
+        open_ticket_ids = {
+            row.id
+            for row in rows
+            if row.id is not None and row.status not in TERMINAL_TRACKER_STATUSES
+        }
+        incomplete_dependency_ticket_ids: set[int] = set()
+        if open_ticket_ids:
+            dependencies = list(
+                self._s.exec(
+                    select(TrackerTicketDependency).where(
+                        col(TrackerTicketDependency.ticket_id).in_(open_ticket_ids)
+                    )
+                )
+            )
+            missing_dependency_ids = {
+                dependency.depends_on_ticket_id
+                for dependency in dependencies
+                if dependency.depends_on_ticket_id not in status_by_ticket_id
+            }
+            if missing_dependency_ids:
+                dependency_status_rows = self._s.exec(
+                    select(TrackerTicket.id, TrackerTicket.status).where(
+                        col(TrackerTicket.id).in_(missing_dependency_ids)
+                    )
+                )
+                status_by_ticket_id.update(
+                    {row.id: row.status for row in dependency_status_rows if row.id is not None}
+                )
+            incomplete_dependency_ticket_ids = {
+                dependency.ticket_id
+                for dependency in dependencies
+                if status_by_ticket_id.get(dependency.depends_on_ticket_id)
+                not in {None, TrackerItemStatus.COMPLETE}
+            }
+
+        rows_by_task: dict[int, list[Any]] = {task_id: [] for task_id in task_ids}
+        for row in rows:
+            rows_by_task.setdefault(row.task_id, []).append(row)
+        task_status_by_id = {task.id: task.status for task in tasks}
+        summaries: dict[int | None, TrackerTaskTicketSummaryOut] = {}
+        for task_id in task_ids:
+            task_tickets = rows_by_task.get(task_id, [])
+            status_counts = self._count_statuses([row.status for row in task_tickets])
+            terminal_count = sum(
+                status_counts.get(status.value, 0) for status in TERMINAL_TRACKER_STATUSES
+            )
+            task_status = task_status_by_id.get(task_id)
+            task_is_terminal = task_status is not None and _is_terminal_tracker_status(task_status)
+            blocked_count = sum(
+                1
+                for row in task_tickets
+                if not task_is_terminal
+                and row.status not in TERMINAL_TRACKER_STATUSES
+                and bool(
+                    row.blocker_reason
+                    or (row.id is not None and row.id in incomplete_dependency_ticket_ids)
+                )
+            )
+            assignees = sorted(
+                {row.assignee for row in task_tickets if isinstance(row.assignee, str)}
+            )
+            search_text = " ".join(
+                " ".join(value for value in (row.key, row.title, row.assignee or "") if value)
+                for row in task_tickets
+            )
+            summaries[task_id] = TrackerTaskTicketSummaryOut(
+                total_count=len(task_tickets),
+                terminal_count=terminal_count,
+                in_progress_count=status_counts.get(TrackerItemStatus.IN_PROGRESS.value, 0),
+                blocked_count=blocked_count,
+                status_counts=status_counts,
+                assignees=assignees,
+                search_text=search_text,
+            )
+        return summaries
+
     def _ticket_out(self, row: TrackerTicket) -> TrackerTicketOut:
         task = self._s.get(TrackerTask, row.task_id)
         parent = self._s.get(TrackerTicket, row.parent_ticket_id) if row.parent_ticket_id else None
@@ -796,27 +972,157 @@ class TrackerQueryMixin:
         )
 
     def _ticket_out_many(self, rows: list[TrackerTicket]) -> list[TrackerTicketOut]:
-        return [self._ticket_out(row) for row in rows]
+        ticket_ids = {row.id for row in rows if row.id is not None}
+        if not ticket_ids:
+            return []
 
-    def _task_rows(self, tracker_id: int | None) -> list[TrackerTask]:
+        dependencies = list(
+            self._s.exec(
+                select(TrackerTicketDependency).where(
+                    col(TrackerTicketDependency.ticket_id).in_(ticket_ids)
+                )
+            )
+        )
+        related_ticket_ids = {
+            related_id
+            for row in rows
+            for related_id in (row.id, row.parent_ticket_id)
+            if related_id is not None
+        }
+        related_ticket_ids.update(dependency.depends_on_ticket_id for dependency in dependencies)
+        related_tickets = list(
+            self._s.exec(select(TrackerTicket).where(col(TrackerTicket.id).in_(related_ticket_ids)))
+        )
+        tickets_by_id = {ticket.id: ticket for ticket in related_tickets if ticket.id is not None}
+        task_ids = {row.task_id for row in rows}
+        tasks_by_id = {
+            task.id: task
+            for task in self._s.exec(select(TrackerTask).where(col(TrackerTask.id).in_(task_ids)))
+            if task.id is not None
+        }
+        dependencies_by_ticket_id: dict[int, list[TrackerTicketDependency]] = {}
+        for dependency in dependencies:
+            dependencies_by_ticket_id.setdefault(dependency.ticket_id, []).append(dependency)
+
+        reference_counts: dict[int, int] = {}
+        for reference in self._s.exec(
+            select(TrackerTicketReference.ticket_id).where(
+                col(TrackerTicketReference.ticket_id).in_(ticket_ids)
+            )
+        ):
+            reference_counts[reference] = reference_counts.get(reference, 0) + 1
+        link_counts: dict[int, int] = {}
+        for link_ticket_id in self._s.exec(
+            select(TrackerTicketLink.ticket_id).where(
+                col(TrackerTicketLink.ticket_id).in_(ticket_ids)
+            )
+        ):
+            if link_ticket_id is not None:
+                link_counts[link_ticket_id] = link_counts.get(link_ticket_id, 0) + 1
+
+        output: list[TrackerTicketOut] = []
+        for row in rows:
+            row_dependencies = dependencies_by_ticket_id.get(row.id or 0, [])
+            dependency_tickets = [
+                tickets_by_id.get(dependency.depends_on_ticket_id)
+                for dependency in row_dependencies
+            ]
+            task = tasks_by_id.get(row.task_id)
+            parent = tickets_by_id.get(row.parent_ticket_id)
+            base = TrackerTicketOut.model_validate(row).model_dump(
+                exclude={
+                    "task_key",
+                    "parent_ticket_key",
+                    "dependency_keys",
+                    "blocked_by",
+                    "reference_count",
+                    "link_count",
+                }
+            )
+            output.append(
+                TrackerTicketOut(
+                    **base,
+                    task_key=task.key if task is not None else "",
+                    parent_ticket_key=parent.key if parent is not None else None,
+                    dependency_keys=[
+                        ticket.key for ticket in dependency_tickets if ticket is not None
+                    ],
+                    blocked_by=[
+                        ticket.key
+                        for ticket in dependency_tickets
+                        if ticket is not None and ticket.status != TrackerItemStatus.COMPLETE
+                    ],
+                    reference_count=reference_counts.get(row.id or 0, 0),
+                    link_count=link_counts.get(row.id or 0, 0),
+                )
+            )
+        return output
+
+    def _task_rows(
+        self,
+        tracker_id: int | None,
+        *,
+        statuses: set[TrackerItemStatus] | None = None,
+    ) -> list[TrackerTask]:
         tracker_id = _required_id(tracker_id, "tracker")
+        statement = select(TrackerTask).where(TrackerTask.tracker_id == tracker_id)
+        if statuses:
+            statement = statement.where(col(TrackerTask.status).in_(statuses))
         return list(
             self._s.exec(
-                select(TrackerTask)
-                .where(TrackerTask.tracker_id == tracker_id)
-                .order_by(col(TrackerTask.order_index).asc(), col(TrackerTask.id).asc())
+                statement.order_by(
+                    col(TrackerTask.order_index).asc(),
+                    col(TrackerTask.id).asc(),
+                )
             )
         )
 
     def _ticket_rows(self, tracker_id: int | None) -> list[TrackerTicket]:
+        return self._ticket_rows_filtered(tracker_id)
+
+    def _ticket_rows_filtered(
+        self,
+        tracker_id: int | None,
+        *,
+        statuses: set[TrackerItemStatus] | None = None,
+        task_ids: set[int] | None = None,
+        ticket_keys: set[str] | None = None,
+        ticket_ids: set[int] | None = None,
+        run_plan_id: int | None = None,
+        assignee: str | None = None,
+    ) -> list[TrackerTicket]:
         tracker_id = _required_id(tracker_id, "tracker")
+        statement = select(TrackerTicket).where(TrackerTicket.tracker_id == tracker_id)
+        if statuses:
+            statement = statement.where(col(TrackerTicket.status).in_(statuses))
+        if task_ids:
+            statement = statement.where(col(TrackerTicket.task_id).in_(task_ids))
+        if ticket_keys:
+            statement = statement.where(col(TrackerTicket.key).in_(ticket_keys))
+        if ticket_ids:
+            statement = statement.where(col(TrackerTicket.id).in_(ticket_ids))
+        if run_plan_id is not None:
+            statement = statement.where(TrackerTicket.run_plan_id == run_plan_id)
+        if assignee is not None:
+            statement = statement.where(TrackerTicket.assignee == assignee)
         return list(
             self._s.exec(
-                select(TrackerTicket)
-                .where(TrackerTicket.tracker_id == tracker_id)
-                .order_by(col(TrackerTicket.order_index).asc(), col(TrackerTicket.id).asc())
+                statement.order_by(
+                    col(TrackerTicket.order_index).asc(),
+                    col(TrackerTicket.id).asc(),
+                )
             )
         )
+
+    def _ticket_rows_for_task_ids(
+        self,
+        tracker_id: int | None,
+        task_ids: set[int],
+    ) -> list[TrackerTicket]:
+        tracker_id = _required_id(tracker_id, "tracker")
+        if not task_ids:
+            return []
+        return self._ticket_rows_filtered(tracker_id, task_ids=task_ids)
 
     def _ticket_rows_for_run_plan(
         self, tracker_id: int | None, run_plan_id: int
@@ -995,6 +1301,64 @@ class TrackerQueryMixin:
             and not ticket.blocker_reason
             and not self._blocked_by_incomplete(tracker_id, ticket)
         ]
+
+    def _ticket_activity_sets(
+        self,
+        tasks: list[TrackerTask],
+        tickets: list[TrackerTicket],
+    ) -> tuple[set[int], set[int]]:
+        """Return blocked and ready ticket ids without per-ticket relation queries."""
+        task_status_by_id = {task.id: task.status for task in tasks}
+        status_by_ticket_id = {
+            ticket.id: ticket.status for ticket in tickets if ticket.id is not None
+        }
+        active_ticket_ids = {
+            ticket.id
+            for ticket in tickets
+            if ticket.id is not None
+            and ticket.status not in TERMINAL_TRACKER_STATUSES
+            and not _is_terminal_tracker_status(task_status_by_id.get(ticket.task_id, ""))
+        }
+        if not active_ticket_ids:
+            return set(), set()
+
+        dependencies = list(
+            self._s.exec(
+                select(TrackerTicketDependency).where(
+                    col(TrackerTicketDependency.ticket_id).in_(active_ticket_ids)
+                )
+            )
+        )
+        missing_dependency_ids = {
+            dependency.depends_on_ticket_id
+            for dependency in dependencies
+            if dependency.depends_on_ticket_id not in status_by_ticket_id
+        }
+        if missing_dependency_ids:
+            dependency_status_rows = self._s.exec(
+                select(TrackerTicket.id, TrackerTicket.status).where(
+                    col(TrackerTicket.id).in_(missing_dependency_ids)
+                )
+            )
+            status_by_ticket_id.update(
+                {row.id: row.status for row in dependency_status_rows if row.id is not None}
+            )
+        incomplete_dependency_ticket_ids = {
+            dependency.ticket_id
+            for dependency in dependencies
+            if status_by_ticket_id.get(dependency.depends_on_ticket_id)
+            not in {None, TrackerItemStatus.COMPLETE}
+        }
+        ticket_by_id = {ticket.id: ticket for ticket in tickets if ticket.id is not None}
+        blocked_ticket_ids = {
+            ticket_id
+            for ticket_id in active_ticket_ids
+            if bool(
+                ticket_by_id[ticket_id].blocker_reason
+                or ticket_id in incomplete_dependency_ticket_ids
+            )
+        }
+        return blocked_ticket_ids, active_ticket_ids - blocked_ticket_ids
 
     def _ticket_blocks_active_work(self, tracker_id: int | None, ticket: TrackerTicket) -> bool:
         if self._ticket_task_is_terminal(ticket):

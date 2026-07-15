@@ -28,12 +28,12 @@ describe('desktop screen composition contract', () => {
 
     expect(home).toContain('<HomePortfolioOverview')
     expect(overview).toContain('Portfolio operations')
-    expect(overview).toContain('Work in progress')
+    expect(overview).toContain('Open work')
     expect(overview).toContain('Workload by project')
     expect(overview).toContain('Portfolio completion')
     expect(directory).toContain("const filter = ref<'active' | 'archived' | 'all'>('active')")
     expect(directory).toContain('Current workspace')
-    expect(directory).toContain('No active work')
+    expect(directory).toContain('No open work')
   })
 
   it('opens Work on the dependency map while keeping one shared control surface', () => {
@@ -44,8 +44,9 @@ describe('desktop screen composition contract', () => {
     expect(view).toContain("{ key: 'graph', label: 'Dependency map'")
     expect(view).toContain('<TaskTrackerCommandPanel')
     expect(view).toContain('<TrackerStoriesPanel')
-    expect(view).toContain("statuses: ['in-progress']")
-    expect(view).toContain("snapshotScope.value = needsFullSnapshot ? 'full' : 'active'")
+    expect(view).toContain('task_index_only: true')
+    expect(view).not.toContain("statuses: ['in-progress']")
+    expect(view).toContain("snapshotScope.value = needsFullSnapshot ? 'full' : 'index'")
     expect(view).toContain('function setViewMode')
     expect(stories).toContain('What is blocking progress')
     expect(stories).toContain('Latest recorded outcome')

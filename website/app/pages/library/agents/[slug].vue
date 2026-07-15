@@ -17,7 +17,7 @@ useSchemaOrg([defineWebPage({ name: `${item.name} AI agent`, description: item.d
 </script>
 
 <template>
-  <LibraryFrame>
+  <LibraryFrame :breadcrumb-current-label="item.name">
     <section class="detail-hero">
       <div class="shell detail-hero__grid">
         <div>

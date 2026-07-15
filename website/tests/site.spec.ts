@@ -9,7 +9,7 @@ test('communicates the product and completes the core evaluation flow', async ({
   await expect(page.getByText('24', { exact: true })).toBeVisible()
   await expect(page.getByText('Claude Code connected', { exact: true })).toBeAttached()
 
-  const downloadUrl = 'https://flowmonkey.io/StackOS/stackos-2.0.0-mac-arm64.dmg'
+  const downloadUrl = 'https://flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg'
   await expect(page.locator('.site-nav--desktop a[data-download="stackos-mac"]')).toHaveAttribute('href', downloadUrl)
 
   await page.getByRole('link', { name: 'See how it works' }).click()
@@ -29,7 +29,7 @@ test('communicates the product and completes the core evaluation flow', async ({
 
   await page.locator('#install').scrollIntoViewIfNeeded()
   await expect(page.locator('#install').getByRole('link', { name: 'Download for Mac' })).toHaveAttribute('href', downloadUrl)
-  await expect(page.locator('#install').getByText('StackOS 2.0.0 · Apple silicon')).toBeVisible()
+  await expect(page.locator('#install').getByText('Latest release · Apple silicon')).toBeVisible()
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(1)
@@ -226,6 +226,42 @@ test('library navigation and editorial visuals are compact, readable, and icon-l
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(1)
+})
+
+test('article tables remain structured and contained at every viewport', async ({ page }) => {
+  await page.goto('/library/articles/ai-workflow-automation')
+
+  const tableRegion = page.getByRole('region', { name: 'Scrollable table' })
+  const table = tableRegion.locator('table')
+  await expect(tableRegion).toBeVisible()
+  await expect(table.getByRole('columnheader')).toHaveCount(3)
+  await expect(table.getByRole('row')).toHaveCount(8)
+
+  const layout = await tableRegion.evaluate((region) => {
+    const tableElement = region.querySelector('table')!
+    const firstCell = tableElement.querySelector('tbody td')!
+    const header = tableElement.querySelector('th')!
+    return {
+      clientWidth: region.clientWidth,
+      scrollWidth: region.scrollWidth,
+      tableWidth: Math.round(tableElement.getBoundingClientRect().width),
+      cellPaddingInline: Number.parseFloat(getComputedStyle(firstCell).paddingInline),
+      headerBorder: getComputedStyle(header).borderBottomWidth,
+    }
+  })
+
+  expect(layout.tableWidth).toBeGreaterThanOrEqual(720)
+  expect(layout.cellPaddingInline).toBeGreaterThanOrEqual(16)
+  expect(layout.headerBorder).toBe('1px')
+
+  if (test.info().project.name.startsWith('mobile')) {
+    expect(layout.scrollWidth).toBeGreaterThan(layout.clientWidth)
+  } else {
+    expect(layout.scrollWidth - layout.clientWidth).toBeLessThanOrEqual(1)
+  }
+
+  const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(pageOverflow).toBeLessThanOrEqual(1)
 })
 
 test('workflow maps keep a readable, connected layout when stage copy is long', async ({ page }) => {

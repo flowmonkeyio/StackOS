@@ -83,7 +83,7 @@ useHead({ script: [
   { key: 'integrations-list', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'ItemList', name: 'StackOS integrations', numberOfItems: catalog.counts.providers, itemListElement: catalog.providers.map((provider, index) => ({ '@type': 'ListItem', position: index + 1, name: provider.name, url: `/library/integrations/${provider.slug}` })) }) },
   { key: 'integrations-faq', type: 'application/ld+json', innerHTML: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: [
     { '@type': 'Question', name: 'What tools can StackOS work with?', acceptedAnswer: { '@type': 'Answer', text: `StackOS currently documents ${catalog.counts.providers} providers across ${catalog.counts.plugins} plugins, including communication, publishing, SEO, commerce, advertising, research, media, and local tools.` } },
-    { '@type': 'Question', name: 'Do I need to replace my existing tools?', acceptedAnswer: { '@type': 'Answer', text: 'No. StackOS organizes the work around the tools your team already uses. Your AI client starts the request, StackOS builds and tracks the plan, and connected tools handle the approved actions.' } },
+    { '@type': 'Question', name: 'Do I need to replace my existing tools?', acceptedAnswer: { '@type': 'Answer', text: 'No. Keep the tools your team already uses. You start the request in your AI. The AI chooses the next step, StackOS scopes and records the call, and the connected provider performs the action.' } },
     { '@type': 'Question', name: 'What is the difference between a plugin and a provider?', acceptedAnswer: { '@type': 'Answer', text: 'A plugin is a StackOS capability pack for a type of work. A provider is the specific external or local tool used by that plugin, such as Slack, Shopify, WordPress, or Trackbooth.' } },
   ] }) },
 ] })
@@ -108,7 +108,7 @@ useHead({ script: [
             <IntegrationMark :name="provider.name" :color="provider.color" :logo="provider.logo" />
             <b>{{ provider.name }}</b>
           </span>
-          <i>StackOS chooses the right tool when the plan reaches it.</i>
+          <i>Your agent chooses the action. StackOS scopes and records the call.</i>
         </div>
       </template>
     </LibraryCollectionHero>
@@ -160,12 +160,12 @@ useHead({ script: [
       <div class="shell">
         <div class="library-section__heading">
           <div><p class="eyebrow">How the catalog fits together</p><h2>Plugins organize the work. Providers connect the tools.</h2></div>
-          <p>A workflow can use several plugins and providers. StackOS keeps the plan, permissions, status, and proof together while each tool does the part it is good at.</p>
+          <p>A workflow can use several plugins and providers. The agent decides what should happen next. StackOS keeps the plan, authority, status, and receipts together while each provider performs its bounded part.</p>
         </div>
         <div class="integration-explainer__steps">
-          <article><span>01</span><h3>Start in your AI</h3><p>Use Codex, Claude Code, or Gemini the way you already do.</p></article>
-          <article><span>02</span><h3>StackOS builds the plan</h3><p>The request expands into visible stages, responsibilities, checks, and approvals.</p></article>
-          <article><span>03</span><h3>Your tools do the work</h3><p>Connected providers are used only when the plan reaches an approved action.</p></article>
+          <article><span>01</span><h3>Start in your AI</h3><p>Describe the job in Codex, Claude Code, Gemini CLI, or another connected client.</p></article>
+          <article><span>02</span><h3>The agent chooses the next step</h3><p>It reads the workflow state, selects the action, and supplies the relevant context.</p></article>
+          <article><span>03</span><h3>Run the bounded action</h3><p>StackOS scopes the call and resolves the configured credential. The provider performs the action, and StackOS records the result.</p></article>
         </div>
       </div>
     </section>

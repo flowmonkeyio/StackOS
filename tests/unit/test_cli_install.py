@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import sqlite3
 import subprocess
 import sys
@@ -1313,7 +1314,33 @@ def test_launchd_autostart_install_writes_python_plist(
     assert "Authorization" not in content
     assert "Bearer" not in content
     assert "STACKOS_TOKEN" not in content
+    assert "AssociatedBundleIdentifiers" not in content
     assert launchctl_calls
+
+
+def test_packaged_launchd_plist_associates_with_stackos_app(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        data_dir=sandbox / ".local" / "share" / "stackos",
+        state_dir=sandbox / ".local" / "state" / "stackos",
+    )
+    monkeypatch.setenv(
+        "STACKOS_PACKAGED_CLI",
+        "/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
+    )
+
+    content = daemon_cli._launchd_plist_content(
+        settings,
+        home=sandbox,
+        host="127.0.0.1",
+        port=5180,
+        log_level="INFO",
+    )
+
+    payload = plistlib.loads(content)
+    assert payload["AssociatedBundleIdentifiers"] == ["io.stackos.desktop"]
 
 
 def test_launchd_autostart_requires_force_for_different_plist(

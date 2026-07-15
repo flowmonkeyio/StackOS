@@ -60,6 +60,17 @@ export interface TrackerTask {
   updated_at: string
   started_at: string | null
   completed_at: string | null
+  ticket_summary?: TrackerTaskTicketSummary | null
+}
+
+export interface TrackerTaskTicketSummary {
+  total_count: number
+  terminal_count: number
+  in_progress_count: number
+  blocked_count: number
+  status_counts: Record<string, number>
+  assignees: string[]
+  search_text: string
 }
 
 export interface TrackerTicket {

@@ -3,6 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import releaseArtifacts from "./release-artifacts.cjs";
+
+const { createLatestDmgAliases } = releaseArtifacts;
 
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packagePath = path.join(desktopDir, "package.json");
@@ -390,4 +393,8 @@ runStep(command, args);
 
 if (releaseIntent && !allowUnsignedRelease && !skipNotarization && notarization.configured) {
   notarizeDmgArtifacts();
+}
+
+for (const aliasPath of createLatestDmgAliases(currentDmgArtifacts())) {
+  console.log(`created stable download alias ${path.basename(aliasPath)}`);
 }

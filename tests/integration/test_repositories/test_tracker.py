@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import event
 from sqlmodel import Session, select
 
 from stackos.context.repository import ContextRepository
@@ -38,6 +39,112 @@ def test_tracker_reads_do_not_create_default_tracker(session: Session, project_i
     assert next_work.tickets == []
     row = session.exec(select(TaskTracker).where(TaskTracker.project_id == project_id)).first()
     assert row is None
+
+
+def test_tracker_task_index_is_complete_and_snapshot_queries_are_bounded(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="indexed-work",
+        title="Indexed work",
+        created_by="codex",
+    )
+    repo.create_task(
+        project_id=project_id,
+        key="closed-work",
+        title="Closed work",
+        created_by="codex",
+    )
+    repo.update_task(
+        project_id=project_id,
+        task_key="closed-work",
+        patch_json={"status": "complete"},
+        actor="codex",
+    )
+    for index in range(20):
+        key = f"indexed-ticket-{index}"
+        repo.create_ticket(
+            project_id=project_id,
+            task_key="indexed-work",
+            key=key,
+            title=f"Indexed ticket {index}",
+            assignee="codex" if index == 0 else None,
+            blocker_reason="Waiting for review." if index == 19 else None,
+            created_by="codex",
+        )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="indexed-ticket-0",
+        patch_json={"status": "complete"},
+        actor="codex",
+    )
+    session.expire_all()
+
+    statements: list[str] = []
+    engine = session.get_bind()
+
+    def record_statement(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: object,
+    ) -> None:
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record_statement)
+    try:
+        task_index = repo.get(
+            project_id=project_id,
+            task_index_only=True,
+            include_graph=False,
+        )
+        index_query_count = len(statements)
+        statements.clear()
+        open_task_index = repo.get(
+            project_id=project_id,
+            task_index_only=True,
+            task_statuses=[TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS],
+            include_graph=False,
+        )
+        filtered_task_index = repo.get(
+            project_id=project_id,
+            task_index_only=True,
+            task_statuses=[TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS],
+            task_key="closed-work",
+            include_graph=False,
+        )
+        statements.clear()
+        snapshot = repo.get(project_id=project_id, include_graph=False)
+        snapshot_query_count = len(statements)
+    finally:
+        event.remove(engine, "before_cursor_execute", record_statement)
+
+    assert {task.key for task in task_index.tasks} == {"indexed-work", "closed-work"}
+    assert [task.key for task in open_task_index.tasks] == ["indexed-work"]
+    assert filtered_task_index.tasks == []
+    assert task_index.tickets == []
+    assert task_index.dependencies == []
+    assert task_index.links == []
+    assert task_index.graph is None
+    summary = next(task for task in task_index.tasks if task.key == "indexed-work").ticket_summary
+    assert summary is not None
+    assert summary.total_count == 20
+    assert summary.terminal_count == 1
+    assert summary.blocked_count == 1
+    assert summary.assignees == ["codex"]
+    assert "indexed-ticket-19" in summary.search_text
+    assert len(snapshot.tickets) == 20
+    assert all(task.ticket_summary is None for task in snapshot.tasks)
+    assert index_query_count <= 8
+    assert snapshot_query_count <= 16
+    with pytest.raises(ValidationError, match="task_index_only requires include_graph=false"):
+        repo.get(project_id=project_id, task_index_only=True)
 
 
 def test_task_status_update_records_timeline_event(

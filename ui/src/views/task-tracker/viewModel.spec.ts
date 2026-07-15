@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type {
-  TrackerSnapshot,
-  TrackerTask,
-  TrackerTicket,
-} from '@/lib/task-tracker/types'
+import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 
 import {
   buildFilteredTrackerSnapshot,
@@ -48,6 +44,33 @@ describe('task tracker view model', () => {
     })
   })
 
+  it('orders tasks by creation date with the newest first', () => {
+    const olderBlocked = makeTask({
+      id: 284,
+      key: 'older-blocked',
+      created_at: '2026-07-10T12:00:00Z',
+      ticket_summary: {
+        total_count: 5,
+        terminal_count: 0,
+        in_progress_count: 1,
+        blocked_count: 4,
+        status_counts: { 'in-progress': 1, 'not-started': 4 },
+        assignees: [],
+        search_text: '',
+      },
+    })
+    const newer = makeTask({
+      id: 329,
+      key: 'newer',
+      status: 'not-started',
+      created_at: '2026-07-12T12:00:00Z',
+    })
+
+    const rows = buildTaskProgressRows([olderBlocked, newer], new Map(), emptyFilters())
+
+    expect(rows.map((row) => row.key)).toEqual(['newer', 'older-blocked'])
+  })
+
   it('applies workflow, assignee, status, and search controls without component state', () => {
     const task = makeTask({ source_json: { template_key: 'engineering.delivery' } })
     const ticket = makeTicket({
@@ -74,6 +97,69 @@ describe('task tracker view model', () => {
     ).toBe(false)
   })
 
+  it('keeps task progress and filters truthful when only the task index is loaded', () => {
+    const task = makeTask({
+      ticket_summary: {
+        total_count: 11,
+        terminal_count: 8,
+        in_progress_count: 1,
+        blocked_count: 2,
+        status_counts: {
+          'not-started': 2,
+          'in-progress': 1,
+          complete: 8,
+        },
+        assignees: ['codex'],
+        search_text: 'verification-ticket Verify release codex',
+      },
+    })
+
+    const rows = buildTaskProgressRows([task], new Map(), {
+      search: 'verification-ticket',
+      status: 'not-started',
+      workflow: '',
+      assignee: 'codex',
+    })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      totalCount: 11,
+      terminalCount: 8,
+      inProgressCount: 1,
+      blockedCount: 2,
+      percent: 73,
+      currentDetail: '2 blocked',
+    })
+  })
+
+  it('prefers newly loaded ticket rows over an older index summary', () => {
+    const task = makeTask({
+      ticket_summary: {
+        total_count: 9,
+        terminal_count: 0,
+        in_progress_count: 0,
+        blocked_count: 0,
+        status_counts: { 'not-started': 9 },
+        assignees: [],
+        search_text: '',
+      },
+    })
+    const complete = makeTicket({ status: 'complete' })
+
+    const rows = buildTaskProgressRows(
+      [task],
+      groupTicketsByTask([complete]),
+      emptyFilters(),
+    )
+    const staleMatches = buildTaskProgressRows([task], groupTicketsByTask([complete]), {
+      ...emptyFilters(),
+      status: 'not-started',
+    })
+
+    expect(rows[0]).toMatchObject({ totalCount: 1, terminalCount: 1, percent: 100 })
+    expect(staleMatches).toEqual([])
+  })
+
   it('keeps blockers visible when the graph is filtered to blocked tickets', () => {
     const blocker = makeTicket({ key: 'scope', status: 'complete' })
     const blocked = makeTicket({ key: 'build', blocked_by: ['scope'] })
@@ -88,7 +174,19 @@ describe('task tracker view model', () => {
   })
 
   it('projects a focused graph and replaces only the focused task during a merge', () => {
-    const task = makeTask({ id: 1, key: 'delivery' })
+    const task = makeTask({
+      id: 1,
+      key: 'delivery',
+      ticket_summary: {
+        total_count: 2,
+        terminal_count: 0,
+        in_progress_count: 0,
+        blocked_count: 0,
+        status_counts: {},
+        assignees: [],
+        search_text: '',
+      },
+    })
     const otherTask = makeTask({ id: 2, key: 'docs', title: 'Docs' })
     const visible = makeTicket({ id: 10, key: 'build', task_key: task.key })
     const hidden = makeTicket({ id: 11, key: 'ship', task_key: task.key })
@@ -98,7 +196,12 @@ describe('task tracker view model', () => {
       tasks: [{ ...task, title: 'Updated delivery' }],
       tickets: [visible, hidden],
       dependencies: [
-        { id: 1, ticket_key: visible.key, depends_on_ticket_key: hidden.key, dependency_type: 'hard' },
+        {
+          id: 1,
+          ticket_key: visible.key,
+          depends_on_ticket_key: hidden.key,
+          dependency_type: 'hard',
+        },
       ],
       links: [
         makeLink({ id: 1, ticket_id: visible.id }),
@@ -131,6 +234,7 @@ describe('task tracker view model', () => {
     expect(projected?.graph?.nodes.map((node) => node.id)).toEqual(['ticket:build'])
     expect(projected?.graph?.edges).toEqual([])
     expect(merged.tasks.map((item) => item.title)).toEqual(['Docs', 'Updated delivery'])
+    expect(merged.tasks[1].ticket_summary?.total_count).toBe(2)
     expect(merged.tickets.map((ticket) => ticket.key)).toEqual(['write', 'build', 'ship'])
   })
 })

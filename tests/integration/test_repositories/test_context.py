@@ -122,26 +122,34 @@ def test_context_query_executes_every_declared_workflow_source(
     session: Session,
     project_id: int,
 ) -> None:
-    artifact = ArtifactRepository(session).create(
-        project_id=project_id,
-        plugin_slug="branding",
-        kind="brand-voice-guide",
-        uri="artifact://voice-guide",
-        status="approved",
-        name="Current voice guide",
-        metadata_json={"tags": ["voice"], "api_key": "secret"},
-    ).data
-    request = AgentRequestRepository(session).create(
-        project_id=project_id,
-        request_key="context-source-test",
-        title="Customer feedback",
-        body_preview="The callback failed",
-        source_message_ref="message:1",
-        metadata_json={
-            "attachments": [{"ref": "media:1", "access_token": "secret"}],
-            "tags": ["support"],
-        },
-    ).data
+    artifact = (
+        ArtifactRepository(session)
+        .create(
+            project_id=project_id,
+            plugin_slug="branding",
+            kind="brand-voice-guide",
+            uri="artifact://voice-guide",
+            status="approved",
+            name="Current voice guide",
+            metadata_json={"tags": ["voice"], "api_key": "secret"},
+        )
+        .data
+    )
+    request = (
+        AgentRequestRepository(session)
+        .create(
+            project_id=project_id,
+            request_key="context-source-test",
+            title="Customer feedback",
+            body_preview="The callback failed",
+            source_message_ref="message:1",
+            metadata_json={
+                "attachments": [{"ref": "media:1", "access_token": "secret"}],
+                "tags": ["support"],
+            },
+        )
+        .data
+    )
     call = ActionCall(
         project_id=project_id,
         action_key="message.send",

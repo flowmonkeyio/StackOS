@@ -1,6 +1,6 @@
 {
   "name": "stackos-desktop",
-  "version": "2.0.0",
+  "version": "2.1.1",
   "private": true,
   "description": "macOS desktop shell for the local StackOS daemon and UI.",
   "main": "src/main.js",
@@ -9,7 +9,7 @@
   "author": "StackOS contributors",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check src/deep-links.js && node --check src/notifications.js && node --check src/menu-template.js && node --check scripts/build-icons.mjs && node --check scripts/build-mac.mjs && node --check scripts/refresh-notarized-update-metadata.cjs && node --check scripts/sign-stackos-runtime-mac.cjs && node --check scripts/release-preflight.mjs && node scripts/doctor.mjs && node scripts/test-service-readiness.cjs && node scripts/test-service-upgrade.cjs && node scripts/test-notifications.cjs && node scripts/test-updates.cjs && node scripts/test-build-mac-config.cjs && node scripts/test-release-metadata-refresh.cjs && node scripts/test-menu.cjs",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/service.js && node --check src/updates.js && node --check src/deep-links.js && node --check src/notifications.js && node --check src/menu-template.js && node --check scripts/build-icons.mjs && node --check scripts/build-mac.mjs && node --check scripts/release-artifacts.cjs && node --check scripts/refresh-notarized-update-metadata.cjs && node --check scripts/sign-stackos-runtime-mac.cjs && node --check scripts/release-preflight.mjs && node scripts/doctor.mjs && node scripts/test-service-readiness.cjs && node scripts/test-service-upgrade.cjs && node scripts/test-notifications.cjs && node scripts/test-updates.cjs && node scripts/test-build-mac-config.cjs && node scripts/test-release-metadata-refresh.cjs && node scripts/test-latest-dmg-alias.cjs && node scripts/test-menu.cjs",
     "doctor": "node scripts/doctor.mjs",
     "icons": "node scripts/build-icons.mjs",
     "payload": "bash scripts/build-stackos-payload.sh",

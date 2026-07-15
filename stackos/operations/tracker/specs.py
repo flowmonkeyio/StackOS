@@ -85,16 +85,36 @@ def operation_specs() -> list[OperationSpec]:
         _read_spec(
             name="tracker.get",
             summary=(
-                "Fetch filtered tasks, tickets, dependencies, links, and optional graph projection."
+                "Fetch a task index or filtered tasks, tickets, relations, and graph projection."
             ),
             input_model=TrackerGetInput,
             output_model=TrackerSnapshotOut,
             handler=tracker_get,
             purpose=(
                 "Use this for UI rendering, list review by task/ticket ids, or when "
-                "the agent needs a bounded project work map."
+                "the agent needs a bounded project work map. Use task_index_only for a "
+                "complete operator task selector before loading one focused graph."
             ),
             examples=(
+                OperationExample(
+                    title="Load the complete operator task index",
+                    arguments={
+                        "project_id": 1,
+                        "task_index_only": True,
+                        "include_graph": False,
+                        "response_mode": "raw",
+                    },
+                ),
+                OperationExample(
+                    title="Load aggregate summaries for open tasks",
+                    arguments={
+                        "project_id": 1,
+                        "task_index_only": True,
+                        "task_statuses": ["not-started", "in-progress"],
+                        "include_graph": False,
+                        "response_mode": "raw",
+                    },
+                ),
                 OperationExample(
                     title="Review selected tickets under one task",
                     arguments={

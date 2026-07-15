@@ -225,8 +225,7 @@ class WorkflowExtensionUpsertInput(WorkflowExtensionValidateInput):
     created_by: str | None = Field(
         default=None,
         description=(
-            "Optional audit actor for the extension write; use this, not source, "
-            "for provenance."
+            "Optional audit actor for the extension write; use this, not source, for provenance."
         ),
     )
 

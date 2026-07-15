@@ -59,7 +59,7 @@ class OperationDispatcher:
         except PydanticValidationError as exc:
             raise ValidationError(
                 "operation input validation failed",
-                data={"operation": name, "errors": exc.errors()},
+                data={"operation": name, "errors": exc.errors(include_context=False)},
             ) from exc
 
         ctx = build_context(arguments, session)

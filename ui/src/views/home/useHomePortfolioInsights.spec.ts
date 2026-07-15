@@ -38,14 +38,32 @@ describe('useHomePortfolioInsights', () => {
             key: 'ship-onboarding',
             title: 'Ship onboarding improvements',
             owner: 'codex',
+            status: 'in-progress',
             priority_key: 'p0',
             updated_at: '2026-07-10T12:00:00Z',
+            ticket_summary: {
+              total_count: 3,
+              terminal_count: 1,
+              in_progress_count: 2,
+              blocked_count: 1,
+            },
+          },
+          {
+            key: 'plan-release',
+            title: 'Plan release',
+            owner: null,
+            status: 'not-started',
+            priority_key: 'p1',
+            updated_at: '2026-07-09T12:00:00Z',
+            ticket_summary: {
+              total_count: 0,
+              terminal_count: 0,
+              in_progress_count: 0,
+              blocked_count: 0,
+            },
           },
         ],
-        tickets: [
-          { task_key: 'ship-onboarding', blocked_by: [], key: 'copy' },
-          { task_key: 'ship-onboarding', blocked_by: ['approval'], key: 'release' },
-        ],
+        tickets: [],
       } as never
     })
 
@@ -54,7 +72,7 @@ describe('useHomePortfolioInsights', () => {
 
     expect(portfolio.totals.value).toEqual({
       activeProjects: 1,
-      activeTasks: 1,
+      activeTasks: 2,
       activeTickets: 2,
       blockers: 1,
     })
@@ -66,12 +84,21 @@ describe('useHomePortfolioInsights', () => {
     expect(portfolio.activeWork.value[0]).toMatchObject({
       title: 'Ship onboarding improvements',
       projectName: 'Customer portal',
-      activeTicketCount: 2,
+      openTicketCount: 2,
       blockerCount: 1,
     })
     expect(callOperation).toHaveBeenCalledWith(
       'tracker.get',
-      expect.objectContaining({ project_id: 7, statuses: ['in-progress'] }),
+      expect.objectContaining({
+        project_id: 7,
+        task_index_only: true,
+        task_statuses: ['not-started', 'in-progress'],
+        include_graph: false,
+      }),
+    )
+    expect(callOperation).toHaveBeenCalledWith(
+      'tracker.status',
+      expect.objectContaining({ project_id: 7, response_mode: 'compact' }),
     )
   })
 
@@ -92,5 +119,37 @@ describe('useHomePortfolioInsights', () => {
       expect.objectContaining({ project_id: 7 }),
     )
     expect(portfolio.activeWork.value).toEqual([])
+  })
+
+  it('publishes project insights as they arrive instead of waiting for the slowest project', async () => {
+    let resolveSlowProject!: (value: unknown) => void
+    const slowProject = new Promise((resolve) => {
+      resolveSlowProject = resolve
+    })
+    vi.mocked(callOperation).mockImplementation(async (_operation, argumentsJson) => {
+      if (argumentsJson?.project_id === 8) return (await slowProject) as never
+      return {
+        summary: { tasks: { total: 4, active: 0, done: 4 }, tickets: {} },
+        task_counts: { complete: 4 },
+      } as never
+    })
+
+    const portfolio = useHomePortfolioInsights()
+    const loading = portfolio.load([
+      project as never,
+      { ...project, id: 8, name: 'Slow project' } as never,
+    ])
+
+    await vi.waitFor(() =>
+      expect(portfolio.insights.value.map((item) => item.projectId)).toEqual([7]),
+    )
+    expect(portfolio.loading.value).toBe(true)
+
+    resolveSlowProject({
+      summary: { tasks: { total: 2, active: 0, done: 2 }, tickets: {} },
+      task_counts: { complete: 2 },
+    })
+    await loading
+    expect(portfolio.insights.value.map((item) => item.projectId)).toEqual([7, 8])
   })
 })

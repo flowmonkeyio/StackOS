@@ -1116,9 +1116,7 @@ def _compact_skill_preset_resolution(data: dict[str, Any]) -> dict[str, Any]:
         out[key] = [_compact_resolved_skill_preset(item) for item in items]
         out[f"{key}_count"] = len(items)
     unresolved = _mapping_items(data.get("unresolved_skill_preset_requirements"))
-    out["unresolved_skill_preset_requirements"] = [
-        _compact_mapping(item) for item in unresolved
-    ]
+    out["unresolved_skill_preset_requirements"] = [_compact_mapping(item) for item in unresolved]
     out["unresolved_skill_preset_requirements_count"] = len(unresolved)
     guidance = _string_items(data.get("setup_guidance"))
     out["setup_guidance"] = guidance[:_MAX_COMPACT_LIST_ITEMS]

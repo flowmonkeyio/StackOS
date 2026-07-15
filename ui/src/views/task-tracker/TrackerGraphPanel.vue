@@ -7,7 +7,7 @@ import { useVueFlow, VueFlow } from '@vue-flow/core'
 import type { EdgeMouseEvent, NodeMouseEvent, ViewportTransform } from '@vue-flow/core'
 
 import StatusBadge from '@/components/StatusBadge.vue'
-import { UiBadge, UiButton } from '@/components/ui'
+import { UiBadge, UiButton, UiLoadingState } from '@/components/ui'
 import { resolveStatus, type Tone } from '@/design/status'
 import {
   TRACKER_TICKET_NODE_HEIGHT,
@@ -30,6 +30,7 @@ const READABLE_FOCUS_ZOOM = 0.82
 
 const props = defineProps<{
   flow: TrackerFlowModel
+  loading: boolean
   flowId: string
   flowRenderKey: string
   graphFitOnInit: boolean
@@ -274,7 +275,12 @@ onMounted(() => {
       </div>
     </div>
 
+    <div v-if="loading" class="tracker-flow-loading">
+      <UiLoadingState label="Loading selected dependency map…" />
+    </div>
+
     <div
+      v-else
       class="tracker-flow-frame"
       :class="{ 'tracker-flow-frame--settled': viewportSettled }"
       @click.capture="$emit('graphCanvasClick', $event)"
@@ -404,6 +410,14 @@ onMounted(() => {
   min-width: 0;
   opacity: 0;
   pointer-events: none;
+}
+
+.tracker-flow-loading {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 520px;
+  align-items: center;
+  background: var(--color-bg-surface-alt);
 }
 
 .tracker-flow-frame--settled {

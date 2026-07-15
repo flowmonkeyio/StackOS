@@ -1,7 +1,8 @@
 import { computed, ref } from 'vue'
 
-import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
+import type { TrackerSnapshot, TrackerTask } from '@/lib/task-tracker/types'
 import { callOperation } from '@/lib/operations'
+import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import type { Project } from '@/stores/projects'
 
 interface TrackerCountSummary {
@@ -30,7 +31,7 @@ export interface PortfolioWorkItem {
   projectName: string
   owner: string | null
   priority: string
-  activeTicketCount: number
+  openTicketCount: number
   blockerCount: number
   updatedAt: string | null
 }
@@ -47,7 +48,7 @@ export interface ProjectPortfolioInsight {
   workItems: PortfolioWorkItem[]
 }
 
-const MAX_CONCURRENT_PROJECTS = 4
+const MAX_CONCURRENT_PROJECTS = 2
 
 function numeric(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
@@ -64,16 +65,8 @@ function countDone(counts: Record<string, number> | undefined): number {
   )
 }
 
-function taskTickets(task: TrackerTask, tickets: TrackerTicket[]): TrackerTicket[] {
-  return tickets.filter((ticket) => ticket.task_key === task.key)
-}
-
-function workItem(
-  project: Project,
-  task: TrackerTask,
-  tickets: TrackerTicket[],
-): PortfolioWorkItem {
-  const children = taskTickets(task, tickets)
+function workItem(project: Project, task: TrackerTask): PortfolioWorkItem {
+  const summary = task.ticket_summary
   return {
     key: task.key,
     title: task.title,
@@ -81,8 +74,8 @@ function workItem(
     projectName: project.name,
     owner: task.owner,
     priority: task.priority_key,
-    activeTicketCount: children.length,
-    blockerCount: children.filter((ticket) => ticket.blocked_by.length > 0).length,
+    openTicketCount: Math.max(0, numeric(summary?.total_count) - numeric(summary?.terminal_count)),
+    blockerCount: numeric(summary?.blocked_count),
     updatedAt: task.updated_at,
   }
 }
@@ -90,14 +83,15 @@ function workItem(
 async function readProjectInsight(project: Project): Promise<ProjectPortfolioInsight> {
   const status = await callOperation<TrackerStatusResponse>('tracker.status', {
     project_id: project.id,
-    response_mode: 'raw',
+    response_mode: 'compact',
   })
   const taskSummary = status.summary?.tasks
   const ticketSummary = status.summary?.tickets
   const totalTaskCount = numeric(taskSummary?.total) || countTotal(status.task_counts)
   const doneTaskCount = numeric(taskSummary?.done) || countDone(status.task_counts)
   const statusActiveTaskCount =
-    numeric(taskSummary?.active) || numeric(status.task_counts?.['in-progress'])
+    numeric(taskSummary?.active) ||
+    numeric(status.task_counts?.['not-started']) + numeric(status.task_counts?.['in-progress'])
   const inProgressTicketCount =
     numeric(status.in_progress_ticket_count) ||
     numeric(ticketSummary?.in_progress) ||
@@ -107,27 +101,24 @@ async function readProjectInsight(project: Project): Promise<ProjectPortfolioIns
   const snapshot = needsWorkDetails
     ? await callOperation<TrackerSnapshot>('tracker.get', {
         project_id: project.id,
-        statuses: ['in-progress'],
+        task_index_only: true,
+        task_statuses: ['not-started', 'in-progress'],
         include_graph: false,
         response_mode: 'raw',
       })
     : { tasks: [], tickets: [] }
-  const workItems = (snapshot.tasks ?? []).map((task) =>
-    workItem(project, task, snapshot.tickets ?? []),
-  )
+  const openTasks = (snapshot.tasks ?? []).filter((task) => !isTerminalTrackerStatus(task.status))
+  const workItems = openTasks.map((task) => workItem(project, task))
 
   return {
     projectId: project.id,
     projectName: project.name,
-    activeTaskCount:
-      workItems.length ||
-      statusActiveTaskCount,
+    activeTaskCount: statusActiveTaskCount,
     inProgressTicketCount,
     blockedTicketCount,
     totalTaskCount,
     doneTaskCount,
-    completionPercent:
-      totalTaskCount > 0 ? Math.round((doneTaskCount / totalTaskCount) * 100) : 0,
+    completionPercent: totalTaskCount > 0 ? Math.round((doneTaskCount / totalTaskCount) * 100) : 0,
     workItems,
   }
 }
@@ -152,9 +143,7 @@ async function mapWithConcurrency<T, R>(
     }
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
-  )
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()))
   return results
 }
 
@@ -182,22 +171,27 @@ export function useHomePortfolioInsights() {
       (insight) => insight.activeTaskCount > 0 || insight.inProgressTicketCount > 0,
     ).length,
     activeTasks: insights.value.reduce((sum, insight) => sum + insight.activeTaskCount, 0),
-    activeTickets: insights.value.reduce(
-      (sum, insight) => sum + insight.inProgressTicketCount,
-      0,
-    ),
+    activeTickets: insights.value.reduce((sum, insight) => sum + insight.inProgressTicketCount, 0),
     blockers: insights.value.reduce((sum, insight) => sum + insight.blockedTicketCount, 0),
   }))
 
   async function load(projects: Project[]): Promise<void> {
     const activeProjects = projects.filter((project) => project.is_active)
+    const projectOrder = new Map(activeProjects.map((project, index) => [project.id, index]))
     loading.value = true
+    insights.value = []
     failedProjectCount.value = 0
     try {
       const results = await mapWithConcurrency(
         activeProjects,
         MAX_CONCURRENT_PROJECTS,
-        readProjectInsight,
+        async (project) => {
+          const insight = await readProjectInsight(project)
+          insights.value = [...insights.value, insight].sort(
+            (a, b) => (projectOrder.get(a.projectId) ?? 0) - (projectOrder.get(b.projectId) ?? 0),
+          )
+          return insight
+        },
       )
       insights.value = results.flatMap((result) =>
         result.status === 'fulfilled' ? [result.value] : [],

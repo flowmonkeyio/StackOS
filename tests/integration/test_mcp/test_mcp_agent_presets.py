@@ -227,9 +227,9 @@ def test_branding_content_production_presets_resolve_end_to_end(
         "branding.voice-reviewer",
         "branding.sanitization-reviewer",
     }
-    assert {
-        agent["preset"]["summary"]["key"] for agent in resolved["recommended_agents"]
-    } == {"branding.evidence-curator"}
+    assert {agent["preset"]["summary"]["key"] for agent in resolved["recommended_agents"]} == {
+        "branding.evidence-curator"
+    }
     skill_preset = skill_resolved["required_skill_presets"][0]
     assert skill_preset["preset"]["summary"]["key"] == "branding.brand-orchestrator"
     assert skill_preset["applies_to_steps"] == [
@@ -272,18 +272,14 @@ def test_agent_preset_compact_resolution_includes_usable_role_contracts(
         "branding.voice-reviewer",
     }
     architect = next(
-        item
-        for item in required
-        if item["preset"]["key"] == "branding.profile-architect"
+        item for item in required if item["preset"]["key"] == "branding.profile-architect"
     )
     assert architect["preset"]["mission"]
     assert architect["preset"]["handoff_outputs"]
     assert architect["preset"]["recommended_tools"]
     assert architect["project_adaptation"]["adaptation_required"] is True
     assert architect["project_adaptation"]["required_agent_action"]
-    assert resolved["required_skill_presets"][0]["preset"]["key"] == (
-        "branding.brand-orchestrator"
-    )
+    assert resolved["required_skill_presets"][0]["preset"]["key"] == ("branding.brand-orchestrator")
     assert "agent_requirements" not in resolved
 
 

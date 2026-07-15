@@ -10,6 +10,7 @@ from typing import (
 from pydantic import (
     ConfigDict,
     Field,
+    model_validator,
 )
 
 from stackos.db.models import (
@@ -62,6 +63,13 @@ class TrackerGetInput(MCPInput):
                 {"project_id": 1, "include_graph": True},
                 {
                     "project_id": 1,
+                    "task_index_only": True,
+                    "task_statuses": ["not-started", "in-progress"],
+                    "include_graph": False,
+                    "response_mode": "raw",
+                },
+                {
+                    "project_id": 1,
                     "task_key": "telegram-comms",
                     "ticket_keys": ["telegram-ingress", "telegram-reply"],
                     "include_graph": False,
@@ -72,6 +80,14 @@ class TrackerGetInput(MCPInput):
 
     project_id: int
     statuses: list[TrackerItemStatus] | None = None
+    task_statuses: list[TrackerItemStatus] | None = Field(
+        default=None,
+        description=(
+            "Filter top-level tasks by their own lifecycle status without filtering "
+            "their ticket summaries. Use this with task_index_only for bounded operator "
+            "views such as open-work portfolios."
+        ),
+    )
     task_key: str | None = None
     ticket_keys: list[str] | None = None
     ticket_ids: list[int] | None = None
@@ -81,6 +97,36 @@ class TrackerGetInput(MCPInput):
     run_plan_id: int | None = None
     assignee: str | None = None
     include_graph: bool = True
+    task_index_only: bool = Field(
+        default=False,
+        description=(
+            "Return every matching task with an aggregate ticket summary while skipping "
+            "ticket, dependency, link, and graph hydration. Pair with include_graph=false. "
+            "This is intended for operator task indexes before one focused graph is loaded."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_task_index_scope(self) -> TrackerGetInput:
+        if not self.task_index_only:
+            return self
+        if self.include_graph:
+            raise ValueError("task_index_only requires include_graph=false")
+        ticket_filters = {
+            "statuses": self.statuses,
+            "ticket_keys": self.ticket_keys,
+            "ticket_ids": self.ticket_ids,
+            "block_state": self.block_state,
+            "dependency_ticket_key": self.dependency_ticket_key,
+            "run_plan_id": self.run_plan_id,
+            "assignee": self.assignee,
+        }
+        unsupported = [key for key, value in ticket_filters.items() if value]
+        if unsupported:
+            raise ValueError(
+                "task_index_only does not support ticket-scoped filters: " + ", ".join(unsupported)
+            )
+        return self
 
 
 class TrackerNextInput(MCPInput):

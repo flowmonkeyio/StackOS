@@ -33,7 +33,9 @@ export function groupTicketsByTask(tickets: TrackerTicket[]): Map<string, Tracke
   return groups
 }
 
-export function buildWorkflowOptions(tasks: TrackerTask[]): Array<{ value: string; label: string }> {
+export function buildWorkflowOptions(
+  tasks: TrackerTask[],
+): Array<{ value: string; label: string }> {
   const values = new Set<string>()
   for (const task of tasks) {
     const source = task.source_json ?? {}
@@ -51,9 +53,13 @@ export function buildWorkflowOptions(tasks: TrackerTask[]): Array<{ value: strin
 }
 
 export function buildAssigneeOptions(
+  tasks: TrackerTask[],
   tickets: TrackerTicket[],
 ): Array<{ value: string; label: string }> {
-  const values = new Set(tickets.flatMap((ticket) => (ticket.assignee ? [ticket.assignee] : [])))
+  const values = new Set([
+    ...tickets.flatMap((ticket) => (ticket.assignee ? [ticket.assignee] : [])),
+    ...tasks.flatMap((task) => task.ticket_summary?.assignees ?? []),
+  ])
   return [
     { value: '', label: 'All assignees' },
     ...Array.from(values)
@@ -70,16 +76,18 @@ export function buildTaskProgressRows(
   return tasks
     .map((task) => {
       const taskTickets = ticketsByTask.get(task.key) ?? []
-      const completedCount = countTicketStatus(taskTickets, 'complete')
-      const deferredCount = countTicketStatus(taskTickets, 'deferred')
-      const abortedCount = countTicketStatus(taskTickets, 'aborted')
-      const failedCount = countTicketStatus(taskTickets, 'failed')
-      const skippedCount = countTicketStatus(taskTickets, 'skipped')
+      const summary = taskTickets.length > 0 ? null : task.ticket_summary
+      const completedCount = summaryCount(summary, taskTickets, 'complete')
+      const deferredCount = summaryCount(summary, taskTickets, 'deferred')
+      const abortedCount = summaryCount(summary, taskTickets, 'aborted')
+      const failedCount = summaryCount(summary, taskTickets, 'failed')
+      const skippedCount = summaryCount(summary, taskTickets, 'skipped')
       const terminalCount =
+        summary?.terminal_count ??
         completedCount + deferredCount + abortedCount + failedCount + skippedCount
-      const inProgressCount = countTicketStatus(taskTickets, 'in-progress')
-      const blockedCount = taskTickets.filter(isGraphBlockedTicket).length
-      const totalCount = taskTickets.length
+      const inProgressCount = summaryCount(summary, taskTickets, 'in-progress')
+      const blockedCount = summary?.blocked_count ?? taskTickets.filter(isGraphBlockedTicket).length
+      const totalCount = summary?.total_count ?? taskTickets.length
       return {
         id: task.id,
         key: task.key,
@@ -96,7 +104,7 @@ export function buildTaskProgressRows(
         blockedCount,
         percent: totalCount > 0 ? Math.round((terminalCount / totalCount) * 100) : 0,
         workflowLabel: taskWorkflowLabel(task),
-        currentDetail: taskCurrentDetail(task, taskTickets, {
+        currentDetail: taskCurrentDetail(task, totalCount, {
           completedCount,
           deferredCount,
           abortedCount,
@@ -135,15 +143,21 @@ export function taskRowMatchesControls(
   filters: TrackerControlFilters,
 ): boolean {
   const { task, tickets } = row
+  const summary = tickets.length > 0 ? null : task.ticket_summary
   const query = normalizedSearch(filters.search)
   if (
     filters.status !== 'all' &&
     task.status !== filters.status &&
-    !tickets.some((ticket) => ticket.status === filters.status)
+    !tickets.some((ticket) => ticket.status === filters.status) &&
+    !summary?.status_counts[filters.status]
   ) {
     return false
   }
-  if (filters.assignee && !tickets.some((ticket) => ticket.assignee === filters.assignee)) {
+  if (
+    filters.assignee &&
+    !tickets.some((ticket) => ticket.assignee === filters.assignee) &&
+    !summary?.assignees.includes(filters.assignee)
+  ) {
     return false
   }
   if (!taskMatchesWorkflow(task, filters.workflow)) return false
@@ -156,6 +170,7 @@ export function taskRowMatchesControls(
       task.description,
       task.owner ?? '',
       row.workflowLabel,
+      summary?.search_text ?? '',
       ...tickets.flatMap((ticket) => [
         ticket.key,
         ticket.title,
@@ -241,9 +256,14 @@ export function mergeFocusedTrackerSnapshot(
 ): TrackerSnapshot {
   const focusedTask = focused.tasks[0]
   if (!focusedTask) return base
+  const existingTask = base.tasks.find((task) => task.key === focusedTask.key)
+  const mergedTask = {
+    ...focusedTask,
+    ticket_summary: focusedTask.ticket_summary ?? existingTask?.ticket_summary,
+  }
   return {
     ...base,
-    tasks: [...base.tasks.filter((task) => task.key !== focusedTask.key), focusedTask],
+    tasks: [...base.tasks.filter((task) => task.key !== focusedTask.key), mergedTask],
     tickets: [
       ...base.tickets.filter((ticket) => ticket.task_key !== focusedTask.key),
       ...focused.tickets,
@@ -260,13 +280,10 @@ export function isGraphBlockedTicket(ticket: TrackerTicket): boolean {
 }
 
 export function countStatuses(statuses: TrackerStatus[]): Record<TrackerStatus, number> {
-  return statuses.reduce(
-    (counts, status) => {
-      counts[status] += 1
-      return counts
-    },
-    emptyStatusCounts(),
-  )
+  return statuses.reduce((counts, status) => {
+    counts[status] += 1
+    return counts
+  }, emptyStatusCounts())
 }
 
 function taskWorkflowLabel(task: TrackerTask): string {
@@ -279,7 +296,7 @@ function taskWorkflowLabel(task: TrackerTask): string {
 
 function taskCurrentDetail(
   task: TrackerTask,
-  tickets: TrackerTicket[],
+  totalCount: number,
   counts: {
     completedCount: number
     deferredCount: number
@@ -292,15 +309,18 @@ function taskCurrentDetail(
 ): string {
   if (counts.blockedCount > 0) return `${counts.blockedCount} blocked`
   if (counts.inProgressCount > 0) return `${counts.inProgressCount} in progress`
-  if (counts.failedCount > 0) return `${counts.completedCount} complete, ${counts.failedCount} failed`
-  if (counts.abortedCount > 0) return `${counts.completedCount} complete, ${counts.abortedCount} aborted`
+  if (counts.failedCount > 0)
+    return `${counts.completedCount} complete, ${counts.failedCount} failed`
+  if (counts.abortedCount > 0)
+    return `${counts.completedCount} complete, ${counts.abortedCount} aborted`
   if (counts.deferredCount > 0) {
     return `${counts.completedCount} complete, ${counts.deferredCount} deferred`
   }
-  if (counts.skippedCount > 0) return `${counts.completedCount} complete, ${counts.skippedCount} skipped`
+  if (counts.skippedCount > 0)
+    return `${counts.completedCount} complete, ${counts.skippedCount} skipped`
   if (task.status === 'complete') return 'complete'
-  if (!tickets.length) return task.status
-  return `${tickets.length} tickets`
+  if (!totalCount) return task.status
+  return `${totalCount} tickets`
 }
 
 function taskMatchesWorkflow(task: TrackerTask, workflow: string): boolean {
@@ -311,6 +331,14 @@ function taskMatchesWorkflow(task: TrackerTask, workflow: string): boolean {
 
 function countTicketStatus(tickets: TrackerTicket[], status: TrackerStatus): number {
   return tickets.filter((ticket) => ticket.status === status).length
+}
+
+function summaryCount(
+  summary: TrackerTask['ticket_summary'],
+  tickets: TrackerTicket[],
+  status: TrackerStatus,
+): number {
+  return summary?.status_counts[status] ?? countTicketStatus(tickets, status)
 }
 
 function normalizedSearch(search: string): string {

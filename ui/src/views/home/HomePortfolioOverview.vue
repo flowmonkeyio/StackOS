@@ -62,9 +62,9 @@ function workMeta(item: PortfolioWorkItem): string {
   const parts = [item.projectName]
   if (item.owner) parts.push(`owned by ${item.owner}`)
   parts.push(
-    item.activeTicketCount === 1
-      ? '1 active child'
-      : `${item.activeTicketCount} active children`,
+    item.openTicketCount === 1
+      ? '1 open delivery step'
+      : `${item.openTicketCount} open delivery steps`,
   )
   return parts.join(' · ')
 }
@@ -91,7 +91,7 @@ function workMeta(item: PortfolioWorkItem): string {
         </UiBadge>
       </div>
       <p class="mt-1 text-xs text-fg-muted">
-        A live view of work agents are carrying out through StackOS, where it is happening, and what needs attention.
+        A live view of work agents have planned or are carrying out through StackOS, where it is happening, and what needs attention.
       </p>
     </div>
 
@@ -119,14 +119,14 @@ function workMeta(item: PortfolioWorkItem): string {
       class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
     >
       <UiMetricCard
-        label="Projects with active work"
+        label="Projects with open work"
         :value="totals.activeProjects"
-        hint="Projects agents are working in now"
+        hint="Projects with non-terminal tracked work"
       />
       <UiMetricCard
-        label="Work streams in progress"
+        label="Open work streams"
         :value="totals.activeTasks"
-        hint="Top-level tracked goals"
+        hint="Top-level goals planned or underway"
       />
       <UiMetricCard
         label="Active delivery steps"
@@ -146,17 +146,17 @@ function workMeta(item: PortfolioWorkItem): string {
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 class="text-sm font-semibold text-fg-strong">
-              Work in progress
+              Open work
             </h3>
             <p class="mt-1 text-xs text-fg-muted">
-              Every active top-level task across the portfolio. Open one to see its delivery steps and evidence.
+              Every non-terminal top-level task across the portfolio. Open one to see its delivery steps and evidence.
             </p>
           </div>
           <UiBadge
             tone="info"
             size="sm"
           >
-            {{ activeWork.length }} active
+            {{ activeWork.length }} open
           </UiBadge>
         </div>
 
@@ -176,8 +176,8 @@ function workMeta(item: PortfolioWorkItem): string {
           v-else-if="activeWork.length === 0"
           class="mt-4"
           icon="check-circle"
-          title="No work is currently in progress"
-          description="When an agent starts tracked work, the task and its project will appear here."
+          title="No open work"
+          description="Planned or in-progress tracked work will appear here."
           size="sm"
         />
 
@@ -224,7 +224,7 @@ function workMeta(item: PortfolioWorkItem): string {
           Workload by project
         </h3>
         <p class="mt-1 text-xs text-fg-muted">
-          Relative active tasks and delivery steps. Exact counts are always shown with each bar.
+          Relative open tasks and active delivery steps. Exact counts are always shown with each bar.
         </p>
 
         <div
@@ -263,8 +263,8 @@ function workMeta(item: PortfolioWorkItem): string {
           v-else
           class="mt-4"
           icon="chart-bar"
-          title="No active workload"
-          description="Project workload appears here as agents start tracked work."
+          title="No open workload"
+          description="Project workload appears here as agents plan or start tracked work."
           size="sm"
         />
 

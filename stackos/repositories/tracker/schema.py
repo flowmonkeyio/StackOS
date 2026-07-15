@@ -88,6 +88,18 @@ class TrackerWorkflowHandoffOut(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class TrackerTaskTicketSummaryOut(BaseModel):
+    """Ticket rollup used by lightweight task-index reads."""
+
+    total_count: int = 0
+    terminal_count: int = 0
+    in_progress_count: int = 0
+    blocked_count: int = 0
+    status_counts: dict[str, int] = Field(default_factory=dict)
+    assignees: list[str] = Field(default_factory=list)
+    search_text: str = ""
+
+
 class TrackerTaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -117,6 +129,7 @@ class TrackerTaskOut(BaseModel):
     updated_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+    ticket_summary: TrackerTaskTicketSummaryOut | None = None
 
 
 class TrackerDependencyOut(BaseModel):
@@ -359,6 +372,7 @@ __all__ = [
     "TrackerStatusOut",
     "TrackerSummaryOut",
     "TrackerTaskOut",
+    "TrackerTaskTicketSummaryOut",
     "TrackerTicketOut",
     "TrackerVerifyOut",
     "TrackerWorkflowHandoffOut",

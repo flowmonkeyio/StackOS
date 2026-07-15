@@ -11,8 +11,8 @@ const { data: articles } = await useAsyncData('library-featured-articles', () =>
 )
 
 useLibrarySeo({
-  title: 'AI workflow library — Agentic workflows, agents, and orchestration | StackOS',
-  description: 'Explore real AI workflow automation examples, specialist agents, orchestration patterns, and practical guides for putting AI to work across your existing tools.',
+  title: 'AI workflow library — Workflows, agents, orchestration, and practical guides | StackOS',
+  description: 'Explore StackOS workflows, specialist agents, orchestrators, integrations, and practical guides grounded in visible state, evidence, and verification.',
 })
 
 useSchemaOrg([
@@ -52,12 +52,12 @@ function articleSlug(stem: string) {
         <div class="library-map__intro">
           <p class="eyebrow">The system in one minute</p>
           <h2 id="library-map-title">Three parts. <em>One complete job.</em></h2>
-          <p>A request becomes a visible workflow. Focused agents handle each responsibility. An orchestrator keeps the plan, tools, dependencies, and approvals connected until the result is done.</p>
+          <p>A request becomes a visible workflow. Focused agents own bounded responsibilities. The orchestrator chooses the next step, gates feedback, and checks the job against its accepted outcome.</p>
         </div>
         <div class="library-map__links">
-          <NuxtLink to="/library/workflows"><span>01 / Workflow</span><strong>The path the work follows.</strong><small>Explore {{ catalog.workflows.length }} complete workflows →</small></NuxtLink>
-          <NuxtLink to="/library/agents"><span>02 / Agents</span><strong>The specialists who handle each stage.</strong><small>Meet {{ catalog.agents.length }} focused agents →</small></NuxtLink>
-          <NuxtLink to="/library/orchestrators"><span>03 / Orchestration</span><strong>The coordination that keeps the job moving.</strong><small>See every coordinator →</small></NuxtLink>
+          <NuxtLink to="/library/workflows"><span>01 / Workflow</span><strong>The contract and state for the work.</strong><small>Explore {{ catalog.workflows.length }} complete workflows →</small></NuxtLink>
+          <NuxtLink to="/library/agents"><span>02 / Agents</span><strong>Bounded responsibilities inside the job.</strong><small>Meet {{ catalog.agents.length }} focused agents →</small></NuxtLink>
+          <NuxtLink to="/library/orchestrators"><span>03 / Orchestration</span><strong>The reasoning that advances and protects the plan.</strong><small>See every coordinator →</small></NuxtLink>
         </div>
       </div>
     </section>
@@ -83,7 +83,7 @@ function articleSlug(stem: string) {
       <div class="shell">
         <div class="library-section__heading">
           <div><p class="eyebrow eyebrow--dark">Ready-made paths</p><h2>Start with a complete workflow.</h2></div>
-          <div><p>See the real stages, specialists, connected apps, and approval points for work across engineering, content, sales, support, SEO, and paid media.</p><NuxtLink to="/library/workflows">Explore all workflows →</NuxtLink></div>
+          <div><p>See the stages, specialist roles, tool boundaries, evidence requirements, recovery paths, and completion checks for work across engineering, content, sales, support, SEO, and paid media.</p><NuxtLink to="/library/workflows">Explore all workflows →</NuxtLink></div>
         </div>
         <div class="library-grid">
           <CatalogCard
@@ -105,8 +105,8 @@ function articleSlug(stem: string) {
     <section class="library-section">
       <div class="shell">
         <div class="library-section__heading">
-          <div><p class="eyebrow">Learn the system</p><h2>Useful answers, not AI filler.</h2></div>
-          <div><p>Each guide starts with the direct answer, then uses real product workflows, interactive visuals, and connected examples to explain the details.</p><NuxtLink to="/library/articles">Read all articles →</NuxtLink></div>
+          <div><p class="eyebrow">From the work</p><h2>Practice, evidence, and direct answers.</h2></div>
+          <div><p>Each guide starts with the answer, then shows the decisions, evidence, failures, and practical methods behind it.</p><NuxtLink to="/library/articles">Read all articles →</NuxtLink></div>
         </div>
         <div class="article-grid">
           <ArticleCard
@@ -127,7 +127,7 @@ function articleSlug(stem: string) {
       <div class="shell">
         <div class="library-section__heading">
           <div><p class="eyebrow eyebrow--dark">Focused responsibilities</p><h2>The right specialist at the right stage.</h2></div>
-          <div><p>Agents research, create, review, and verify. Orchestrators keep the entire job consistent as it moves between them.</p><NuxtLink to="/library/agents">Meet every agent →</NuxtLink></div>
+          <div><p>Agents research, create, review, and verify. Orchestrators choose the next valid step and gate feedback against the accepted plan.</p><NuxtLink to="/library/agents">Meet every agent →</NuxtLink></div>
         </div>
         <div class="library-grid">
           <CatalogCard

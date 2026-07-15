@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from starlette.concurrency import run_in_threadpool
+
 from stackos.mcp.context import MCPContext
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.tracker.schemas import (
@@ -32,7 +34,8 @@ async def tracker_status(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> TrackerStatusOut:
-    return TrackerRepository(ctx.session).status(project_id=inp.project_id)
+    repository = TrackerRepository(ctx.session)
+    return await run_in_threadpool(repository.status, project_id=inp.project_id)
 
 
 async def tracker_get(
@@ -40,9 +43,12 @@ async def tracker_get(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> TrackerSnapshotOut:
-    return TrackerRepository(ctx.session).get(
+    repository = TrackerRepository(ctx.session)
+    return await run_in_threadpool(
+        repository.get,
         project_id=inp.project_id,
         statuses=inp.statuses,
+        task_statuses=inp.task_statuses,
         task_key=inp.task_key,
         ticket_keys=inp.ticket_keys,
         ticket_ids=inp.ticket_ids,
@@ -52,6 +58,7 @@ async def tracker_get(
         run_plan_id=inp.run_plan_id,
         assignee=inp.assignee,
         include_graph=inp.include_graph,
+        task_index_only=inp.task_index_only,
     )
 
 

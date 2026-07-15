@@ -12,7 +12,7 @@ const {
 
 async function main() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-release-metadata-"));
-  const artifactName = "stackos-2.0.0-mac-arm64.dmg";
+  const artifactName = "stackos-2.1.1-mac-arm64.dmg";
   const artifactPath = path.join(tempDir, artifactName);
   const metadataPath = path.join(tempDir, "latest-mac.yml");
   const artifact = Buffer.from("post-staple dmg bytes\n".repeat(1024));
@@ -23,15 +23,15 @@ async function main() {
   fs.writeFileSync(
     metadataPath,
     [
-      "version: 2.0.0",
+      "version: 2.1.1",
       "files:",
-      "  - url: stackos-2.0.0-mac-arm64.zip",
+      "  - url: stackos-2.1.1-mac-arm64.zip",
       `    sha512: ${zipSha512}`,
       "    size: 123",
       `  - url: ${artifactName}`,
       "    sha512: stale-dmg-sha512",
       "    size: 456",
-      "path: stackos-2.0.0-mac-arm64.zip",
+      "path: stackos-2.1.1-mac-arm64.zip",
       `sha512: ${zipSha512}`,
       "releaseDate: '2026-07-11T00:00:00.000Z'",
       ""

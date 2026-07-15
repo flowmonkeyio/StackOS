@@ -3,7 +3,7 @@ export function useDownloadUrl() {
   const downloadUrl = config.public.downloadUrl as string | undefined
 
   if (!downloadUrl) {
-    throw new Error('NUXT_PUBLIC_DOWNLOAD_URL is required')
+    throw new Error('Download URL is not configured')
   }
 
   return downloadUrl
