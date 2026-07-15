@@ -133,6 +133,7 @@ def build_operation_registry() -> OperationRegistry:
         cost,
         discovery,
         execution_contexts,
+        guides,
         integrations,
         project_bootstrap,
         project_setup,
@@ -174,6 +175,8 @@ def build_operation_registry() -> OperationRegistry:
     for spec in actions.operation_specs():
         registry.register(spec)
     for spec in execution_contexts.operation_specs():
+        registry.register(spec)
+    for spec in guides.operation_specs():
         registry.register(spec)
     for spec in cost.operation_specs():
         registry.register(spec)

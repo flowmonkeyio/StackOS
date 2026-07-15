@@ -7,6 +7,7 @@ obvious without loading every document.
 
 | Work | Primary Docs |
 | --- | --- |
+| Helping a person take the first steps after installing StackOS | [Public getting-started guide](https://stackos.flowmonkey.io/getting-started); use [`setup.md`](./setup.md) only for the technical install and repair contract |
 | Installing, starting, repairing, or lifecycle-smoke testing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`lifecycle-smoke-verification.md`](./lifecycle-smoke-verification.md), [`security.md`](./security.md) |
 | Building the macOS desktop app or installer | [`desktop-distribution.md`](./desktop-distribution.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md), [`release-signoff.md`](./release-signoff.md) |
 | Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |
@@ -38,6 +39,11 @@ obvious without loading every document.
   decision-free.
 - Register callable behavior once as an operation or plugin action contract;
   expose it through MCP, REST, CLI, and UI docs from that contract.
+- The public [getting-started guide](https://stackos.flowmonkey.io/getting-started)
+  is the user-facing source of truth after installation. The desktop app links
+  to that page, and agents fetch its Markdown through `guide.gettingStarted`
+  and send people back to the same page. Do not maintain a second onboarding
+  walkthrough in desktop UI, skills, or technical docs.
 - Direct MCP tools are only for generic StackOS primitives. Provider/vendor
   calls belong in plugin actions executed through `toolbox.call` for
   `action.run` on one explicit action, or through `action.execute` inside a

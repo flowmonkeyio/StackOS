@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 189
+    assert len(names) == 190
     assert {
         "action.execute",
         "schema.get",
@@ -56,7 +56,17 @@ def test_operation_registry_documents_core_operations() -> None:
         "browser.script.run",
         "browser.script.inject",
         "browser.page.screenshot",
+        "guide.gettingStarted",
     } <= names
+
+    getting_started = registry.get("guide.gettingStarted").describe_out()
+    assert getting_started.category == "setup"
+    assert getting_started.read_only is True
+    assert getting_started.grant_policy == "direct-read"
+    assert getting_started.response_policy.default_mode == "raw"
+    assert getting_started.response_policy.allowed_modes == ["compact", "raw"]
+    assert getting_started.examples[0].arguments == {}
+    assert any("link guide_url" in item for item in [getting_started.purpose])
 
     described = registry.get("action.execute").describe_out()
 

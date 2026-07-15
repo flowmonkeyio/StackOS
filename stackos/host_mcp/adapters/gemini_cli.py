@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -32,7 +33,6 @@ GEMINI_COMPAT_WARNING = (
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
-    del home
     gemini_bin = resolve_gemini_bin()
     if gemini_bin is None:
         return _absent()
@@ -52,6 +52,21 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
         )
     rows = _stackos_rows(listed.stdout, server_name)
     if not rows:
+        config_entry, config_error = _user_config_entry(home, server_name=server_name)
+        if config_error:
+            return HostMcpResult(
+                host_key=HOST_KEY,
+                surface=SURFACE,
+                status="config_unreadable",
+                message="Gemini CLI user MCP settings could not be inspected safely.",
+                ok=True,
+                available=True,
+                advisory=True,
+                repair="Check ~/.gemini/settings.json, then rerun StackOS Repair.",
+                warnings=[GEMINI_COMPAT_WARNING],
+            )
+        if config_entry is not None:
+            return _inspect_config_entry(config_entry, expected_command=command)
         return HostMcpResult(
             host_key=HOST_KEY,
             surface=SURFACE,
@@ -99,6 +114,83 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
     )
 
 
+def _user_config_entry(
+    home: Path,
+    *,
+    server_name: str,
+) -> tuple[dict[str, object] | None, str | None]:
+    path = home / ".gemini" / "settings.json"
+    if not path.is_file():
+        return None, None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return None, str(exc)
+    if not isinstance(payload, dict):
+        return None, "Gemini settings root is not an object"
+    servers = payload.get("mcpServers")
+    if servers is None:
+        return None, None
+    if not isinstance(servers, dict):
+        return None, "Gemini mcpServers is not an object"
+    entry = servers.get(server_name)
+    if entry is None:
+        return None, None
+    if not isinstance(entry, dict):
+        return None, "Gemini StackOS MCP entry is not an object"
+    return entry, None
+
+
+def _inspect_config_entry(
+    entry: dict[str, object],
+    *,
+    expected_command: list[str],
+) -> HostMcpResult:
+    if looks_secretish(json.dumps(entry, sort_keys=True)):
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="registered_unsafe",
+            message="Gemini CLI has a StackOS MCP entry that appears to contain secret material.",
+            ok=False,
+            available=True,
+            blocking=True,
+            repair="Run `stackos install --mcp-only` or desktop Repair.",
+            warnings=["unsafe Gemini MCP entry redacted"],
+        )
+    command = entry.get("command")
+    args = entry.get("args", [])
+    stored_command = (
+        [command, *args]
+        if isinstance(command, str)
+        and isinstance(args, list)
+        and all(isinstance(value, str) for value in args)
+        else []
+    )
+    if stored_command == expected_command:
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="registered_current",
+            message="Gemini CLI StackOS MCP registration is healthy.",
+            ok=True,
+            available=True,
+            command=expected_command,
+            warnings=[GEMINI_COMPAT_WARNING],
+        )
+    return HostMcpResult(
+        host_key=HOST_KEY,
+        surface=SURFACE,
+        status="registered_stale",
+        message="Gemini CLI has a StackOS MCP entry, but it is not the local stdio bridge.",
+        ok=False,
+        available=True,
+        blocking=True,
+        repair="Run `stackos install --mcp-only` or desktop Repair.",
+        warnings=["stale Gemini MCP entry redacted"],
+    )
+
+
 def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
     gemini_bin = resolve_gemini_bin()
     if gemini_bin is None:
@@ -119,7 +211,10 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
     if current.ok and current.status != "available_unregistered":
         return current
     if current.available and current.status != "available_unregistered":
-        removed = _run_gemini(gemini_bin, ["mcp", "remove", server_name])
+        removed = _run_gemini(
+            gemini_bin,
+            ["mcp", "remove", "--scope", "user", server_name],
+        )
         if removed.returncode != 0:
             return HostMcpResult(
                 host_key=HOST_KEY,
@@ -129,10 +224,16 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
                 ok=False,
                 available=True,
                 blocking=True,
-                repair=(f"Run `gemini mcp remove {server_name}`, then rerun StackOS Repair."),
+                repair=(
+                    f"Run `gemini mcp remove --scope user {server_name}`, "
+                    "then rerun StackOS Repair."
+                ),
             )
     command = resolve_bridge_command(runtime=HOST_KEY)
-    added = _run_gemini(gemini_bin, ["mcp", "add", server_name, *command])
+    added = _run_gemini(
+        gemini_bin,
+        ["mcp", "add", "--scope", "user", server_name, *command],
+    )
     if added.returncode != 0:
         return HostMcpResult(
             host_key=HOST_KEY,
@@ -173,7 +274,10 @@ def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             available=True,
             warnings=[GEMINI_COMPAT_WARNING],
         )
-    removed = _run_gemini(gemini_bin, ["mcp", "remove", server_name])
+    removed = _run_gemini(
+        gemini_bin,
+        ["mcp", "remove", "--scope", "user", server_name],
+    )
     if removed.returncode != 0:
         return HostMcpResult(
             host_key=HOST_KEY,
@@ -183,7 +287,7 @@ def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             ok=False,
             available=True,
             blocking=True,
-            repair=f"Run `gemini mcp remove {server_name}` and retry uninstall.",
+            repair=(f"Run `gemini mcp remove --scope user {server_name}` and retry uninstall."),
         )
     return HostMcpResult(
         host_key=HOST_KEY,

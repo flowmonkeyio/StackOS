@@ -303,6 +303,34 @@ function parseDoctorPayload(result) {
   return null;
 }
 
+function parseMcpHostStatusPayload(result) {
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line.startsWith("{")) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(line);
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        typeof parsed.ok === "boolean" &&
+        Array.isArray(parsed.hosts)
+      ) {
+        return parsed;
+      }
+    } catch (_error) {
+      // Keep scanning for the JSON envelope.
+    }
+  }
+  return null;
+}
+
 function readinessFromDoctor(result) {
   const parsed = result.parsed || parseDoctorPayload(result);
   if (!parsed) {
@@ -762,6 +790,18 @@ async function runDoctor() {
   };
 }
 
+async function inspectMcpHosts() {
+  const result = await runStackos(["mcp-host-status", "--json"], {
+    timeoutMs: 30000
+  });
+  const parsed = parseMcpHostStatusPayload(result);
+  return {
+    ...result,
+    parsed,
+    items: parsed?.hosts || []
+  };
+}
+
 function daemonLogPath() {
   return path.join(os.homedir(), ".local", "state", "stackos", "daemon.log");
 }
@@ -779,8 +819,10 @@ module.exports = {
   installOrRepair,
   installKeyFor,
   installStatePath,
+  inspectMcpHosts,
   prepareInstalledVersion,
   parseDoctorPayload,
+  parseMcpHostStatusPayload,
   readinessFromDoctor,
   readAuthToken,
   readInstallState,

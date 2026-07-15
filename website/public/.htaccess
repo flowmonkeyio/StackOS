@@ -1,0 +1,13 @@
+ErrorDocument 404 /404.html
+
+<IfModule mod_mime.c>
+  AddType text/markdown .md
+  AddCharset UTF-8 .md
+</IfModule>
+
+<IfModule mod_headers.c>
+  <Files "getting-started.md">
+    Header set X-Robots-Tag "noindex"
+    Header set Link "<https://stackos.flowmonkey.io/getting-started>; rel=\"canonical\""
+  </Files>
+</IfModule>

@@ -20,6 +20,7 @@ function closeMenu() {
         <NuxtLink to="/#why" @click="closeMenu">Why StackOS</NuxtLink>
         <NuxtLink to="/#workflow" @click="closeMenu">Workflows</NuxtLink>
         <NuxtLink to="/#proof" @click="closeMenu">Product</NuxtLink>
+        <NuxtLink to="/getting-started" @click="closeMenu">Get started</NuxtLink>
         <NuxtLink to="/library" @click="closeMenu">Library</NuxtLink>
         <NuxtLink to="/#security" @click="closeMenu">Security</NuxtLink>
         <a
@@ -43,6 +44,7 @@ function closeMenu() {
           <NuxtLink to="/#why" @click="closeMenu">Why StackOS</NuxtLink>
           <NuxtLink to="/#workflow" @click="closeMenu">Workflows</NuxtLink>
           <NuxtLink to="/#proof" @click="closeMenu">Product</NuxtLink>
+          <NuxtLink to="/getting-started" @click="closeMenu">Get started</NuxtLink>
           <NuxtLink to="/library" @click="closeMenu">Library</NuxtLink>
           <NuxtLink to="/#security" @click="closeMenu">Security</NuxtLink>
           <a

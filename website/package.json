@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Nuxt 4 business website for StackOS.",
   "scripts": {
-    "content:sync": "node scripts/sync-library-catalog.mjs",
+    "guide:sync": "node scripts/sync-getting-started.mjs",
+    "guide:check": "node scripts/sync-getting-started.mjs --check",
+    "content:sync": "pnpm guide:sync && node scripts/sync-library-catalog.mjs",
     "integrations:sync": "node scripts/sync-integration-catalog.mjs",
     "predev": "pnpm content:sync",
     "prebuild": "pnpm content:sync",

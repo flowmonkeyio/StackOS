@@ -10,6 +10,7 @@ from stackos.mcp.bridge import (
     _AGENT_ADMIN_GATED_TOOL_NAMES,
     _AGENT_BASE_TOOLBOX_NAMES,
     _AGENT_GATED_TOOL_NAMES,
+    _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES,
     _AGENT_RUN_PLAN_GATED_TOOL_NAMES,
     _AGENT_SETUP_TOOLBOX_NAMES,
     _AGENT_STEP_GATED_TOOL_NAMES,
@@ -793,6 +794,8 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "browser.script.run" in _AGENT_VISIBLE_TOOL_NAMES
     assert "operation.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "operation.describe" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "guide.gettingStarted" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "guide.gettingStarted" in _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES
     assert "schema.get" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "workspace.bootstrap" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "project.list" in _AGENT_SETUP_TOOLBOX_NAMES

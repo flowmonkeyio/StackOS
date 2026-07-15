@@ -1,9 +1,8 @@
 """`scripts/register-mcp-codex.sh` upserts the `stackos` MCP entry.
 
-Codex CLI may not be installed on a given machine; the script must
-exit 0 with a notice in that case (audit B-24 — "skipped: codex CLI
-not on PATH" branch). When a stub `codex` is on PATH, two runs must
-produce the same end state.
+Codex may not be available on a given machine; the script must exit 0
+with a notice in that case. When a stub `codex` is on PATH, two runs
+must produce the same end state.
 """
 
 from __future__ import annotations
@@ -59,9 +58,11 @@ def codex_stub(tmp_path: Path) -> Path:
     return bin_dir
 
 
-def test_no_codex_on_path_is_skipped(sandbox_home: Path, scripts_dir: Path, tmp_path: Path) -> None:
-    # Pin PATH to a minimal set that contains `bash` but explicitly NOT `codex`.
-    # We compute a parent-of-bash dir and pair it with a scratch dir.
+def test_codex_not_detected_is_skipped(
+    sandbox_home: Path, scripts_dir: Path, tmp_path: Path
+) -> None:
+    # Pin PATH to a minimal set and override discovery so this remains isolated
+    # even on a developer Mac with Codex.app installed.
     empty_path = tmp_path / "empty"
     empty_path.mkdir()
     bash_dir = "/bin"
@@ -70,6 +71,7 @@ def test_no_codex_on_path_is_skipped(sandbox_home: Path, scripts_dir: Path, tmp_
     env = {
         **os.environ,
         "STACKOS_HOME": str(sandbox_home),
+        "STACKOS_CODEX_BIN": str(empty_path / "codex"),
         "PATH": f"{empty_path}{os.pathsep}{bash_dir}",
     }
     result = subprocess.run(
@@ -79,7 +81,7 @@ def test_no_codex_on_path_is_skipped(sandbox_home: Path, scripts_dir: Path, tmp_
         env=env,
     )
     assert result.returncode == 0, result.stderr
-    assert "Codex CLI not on PATH" in result.stdout
+    assert "Codex was not detected" in result.stdout
 
 
 def test_register_then_idempotent(sandbox_home: Path, scripts_dir: Path, codex_stub: Path) -> None:

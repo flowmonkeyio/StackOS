@@ -23,6 +23,7 @@ import {
   UiSkeleton,
 } from '@/components/ui'
 import { apiFetch } from '@/lib/client'
+import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import type { Tone } from '@/design/status'
 import { useReadinessStore } from '@/stores/readiness'
 import { useAttentionStore } from '@/stores/attention'
@@ -256,6 +257,17 @@ function timelineLink(runId: number | null | undefined): string | null {
         >
           Updated {{ updatedLabel }}
         </span>
+        <UiButton
+          :href="GETTING_STARTED_URL"
+          target="_blank"
+          rel="noopener noreferrer"
+          variant="secondary"
+          size="sm"
+          icon-right="external-link"
+          aria-label="Open the Getting Started guide in your browser"
+        >
+          Getting started
+        </UiButton>
         <UiButton
           variant="secondary"
           size="sm"

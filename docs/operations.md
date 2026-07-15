@@ -106,6 +106,28 @@ Each description includes:
 - return notes
 - examples
 
+## Public Getting-Started Guide
+
+`guide.gettingStarted` is the agent-readable path to the public first-use
+guide. It is a global, read-only operation, so an agent can call it before a
+workspace is bound:
+
+```text
+toolbox.call({
+  "tool_name": "guide.gettingStarted",
+  "arguments": { "response_mode": "raw" }
+})
+```
+
+The raw response returns the current Markdown plus two stable references:
+`guide_url` is the designed page for people, and `markdown_url` is the
+plain-text source for tools. Agents should answer from the fetched content and
+include `guide_url` for the person. They must not turn the skill prompt or MCP
+response into a second maintained guide. If the website fetch is temporarily
+unavailable, the operation still returns both references and a warning;
+share `guide_url` and avoid inventing replacement instructions. Compact mode
+keeps the references and omits the document body.
+
 ## Response Modes
 
 Operation responses are shaped for agent decision-making. The canonical

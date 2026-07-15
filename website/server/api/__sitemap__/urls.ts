@@ -4,9 +4,11 @@ import integrationCatalog from '../../../app/data/integration-catalog.generated.
 
 export default defineEventHandler(async (event) => {
   const articles = await queryCollection(event, 'articles').select('stem', 'updatedAt').all()
+  const gettingStarted = await queryCollection(event, 'guides').select('updatedAt').first()
   const { workflows, agents, orchestrators } = catalog
 
   return [
+    { loc: '/getting-started', lastmod: gettingStarted?.updatedAt, changefreq: 'monthly', priority: 1.0 },
     { loc: '/library', changefreq: 'weekly', priority: 0.9 },
     { loc: '/library/articles', changefreq: 'weekly', priority: 0.8 },
     { loc: '/library/workflows', changefreq: 'weekly', priority: 0.8 },

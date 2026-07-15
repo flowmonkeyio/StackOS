@@ -67,6 +67,49 @@ describe('App', () => {
 
     expect(sidebar.classes()).toContain('-translate-x-full')
   })
+
+  it('shows navigation for the selected project while the user is on StackOS home', async () => {
+    const projects = useProjectsStore()
+    projects.items = [
+      {
+        id: 1,
+        name: 'StackOS Local',
+        slug: 'stackos-local',
+        domain: 'local.stackos',
+        niche: 'platform',
+        locale: 'en-US',
+        is_active: true,
+        schedule_json: null,
+        created_at: '2026-06-01T00:00:00Z',
+        updated_at: '2026-06-01T00:00:00Z',
+      },
+    ] as never
+    projects.activeProjectId = 1
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', component: { template: '<div>StackOS home</div>' } }],
+    })
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(App, {
+      global: {
+        plugins: [router],
+        stubs: {
+          PluginNavRenderer: {
+            props: ['sections'],
+            template: '<nav data-test="project-navigation">{{ sections.length }}</nav>',
+          },
+          ProjectSwitcher: { template: '<div>StackOS Local</div>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="project-navigation"]').text()).not.toBe('0')
+    expect(wrapper.text()).not.toContain('Open a project to see its operating navigation')
+  })
 })
 
 function json(body: unknown): Response {

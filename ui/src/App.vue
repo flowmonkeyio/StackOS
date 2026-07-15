@@ -45,11 +45,11 @@ function parseProjectId(raw: unknown): number | null {
 
 const routeProjectId = computed(() => parseProjectId(route.params.id))
 
-const currentProjectId = computed(() => routeProjectId.value)
+const navigationProjectId = computed(() => routeProjectId.value ?? activeProject.value?.id ?? null)
 
 const currentProject = computed(() => {
-  if (currentProjectId.value === null) return null
-  return projects.getById(currentProjectId.value) ?? activeProject.value
+  if (routeProjectId.value === null) return activeProject.value
+  return projects.getById(routeProjectId.value) ?? activeProject.value
 })
 
 function applyTheme(): void {
@@ -82,11 +82,11 @@ onMounted(() => {
   }
   applyTheme()
   window.addEventListener('keydown', onDrawerKeydown)
-  refreshPluginsForProject(currentProjectId.value)
+  refreshPluginsForProject(navigationProjectId.value)
 })
 
 const removeCatalogRefreshHook = router.afterEach((to) => {
-  refreshPluginsForProject(parseProjectId(to.params.id))
+  refreshPluginsForProject(parseProjectId(to.params.id) ?? activeProject.value?.id ?? null)
 })
 
 onBeforeUnmount(() => {
@@ -95,7 +95,7 @@ onBeforeUnmount(() => {
 })
 
 const projectNavSections = computed<StackOsNavSection[]>(() => {
-  const id = currentProjectId.value
+  const id = navigationProjectId.value
   if (!id) return []
   return buildProjectNavSections(id, enabledPlugins.value)
 })
@@ -239,7 +239,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
             v-if="projectNavSections.length === 0"
             class="rounded-md border border-dashed border-sb-border px-3 py-3 text-sm text-sb-muted"
           >
-            Open a project to see its operating navigation.
+            Connect your first project to see its navigation here.
           </p>
           <PluginNavRenderer
             v-else

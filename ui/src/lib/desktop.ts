@@ -62,6 +62,15 @@ export interface DesktopDoctorResult extends DesktopCommandResult {
   readiness?: unknown
 }
 
+export interface DesktopHostStatusesResult extends DesktopCommandResult {
+  items: DesktopMcpHostStatus[]
+  parsed?: {
+    ok: boolean
+    status: string
+    hosts: DesktopMcpHostStatus[]
+  } | null
+}
+
 export interface DesktopUpdateState {
   enabled?: boolean
   status: string
@@ -84,6 +93,7 @@ interface DesktopBridge {
   installOrRepair(): Promise<DesktopCommandResult>
   restartService(): Promise<DesktopCommandResult>
   runDoctor(): Promise<DesktopDoctorResult>
+  hostStatuses(): Promise<DesktopHostStatusesResult>
   checkForUpdates(): Promise<DesktopUpdateResult>
   downloadUpdate(): Promise<DesktopUpdateResult>
   installUpdate(): Promise<DesktopUpdateResult>
@@ -118,6 +128,7 @@ export const desktop = {
   installOrRepair: () => safe((b) => b.installOrRepair()),
   restartService: () => safe((b) => b.restartService()),
   runDoctor: () => safe((b) => b.runDoctor()),
+  hostStatuses: () => safe((b) => b.hostStatuses()),
   checkForUpdates: () => safe((b) => b.checkForUpdates()),
   downloadUpdate: () => safe((b) => b.downloadUpdate()),
   installUpdate: () => safe((b) => b.installUpdate()),

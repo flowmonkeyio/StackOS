@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added one canonical, user-first getting-started guide: a designed and
+  SEO-ready website page with body diagrams, a public Markdown representation,
+  persistent desktop home/project links plus a Help-menu fallback, and the
+  global `guide.gettingStarted` operation for agents that must read the same
+  source and link people back to it.
+- Made desktop navigation and AI-tool status literal and consistent: StackOS
+  home now shows navigation for the selected project, host checks use the fast
+  `mcp-host-status` path, Codex discovery covers `Codex.app` and common Node
+  managers, Claude Desktop repair no longer asks for a restart when its config
+  was already current, Gemini CLI registration uses user scope and verifies its
+  settings when `mcp list` is silent, and the UI distinguishes connected,
+  restart/repair needed, and not detected without calling optional tools "not
+  installed."
 - Added the `marketing` plugin: `marketing.campaign-production` workflow
   template (brief intake, campaign workspace with `campaign.md`, planned media
   manifest, operator plan approval, media production, landing page variants,

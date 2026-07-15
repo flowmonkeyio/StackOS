@@ -225,6 +225,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "schedule.remove",
         "schedule.set",
         "schedule.toggle",
+        "guide.gettingStarted",
         "sitemap.fetch",
         "workflowExtension.get",
         "workflowExtension.list",

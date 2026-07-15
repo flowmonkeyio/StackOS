@@ -29,36 +29,52 @@ describe('HomeView', () => {
 
     expect(wrapper.text()).toContain('Running')
     expect(wrapper.text()).not.toContain('Agent hosts')
+    const guide = wrapper.get('a[href="https://stackos.flowmonkey.io/getting-started"]')
+    expect(guide.text()).toContain('Getting started')
+    expect(guide.attributes('target')).toBe('_blank')
+    expect(guide.attributes('rel')).toBe('noopener noreferrer')
   })
 
-  it('renders desktop host connection status from doctor mcp_hosts', async () => {
+  it('turns an empty portfolio into a plain-language first step', async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/projects?limit=50') {
+        return json({ items: [], next_cursor: null, total_estimate: 0 })
+      }
+      return defaultFetch(url)
+    }) as typeof fetch
+
+    const wrapper = await mountHome()
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Ready for your first project'))
+
+    expect(wrapper.text()).not.toContain('binds a deliberate workspace')
+    const guides = wrapper.findAll('a[href="https://stackos.flowmonkey.io/getting-started"]')
+    expect(guides).toHaveLength(2)
+    expect(guides.some((guide) => guide.text().includes('Open getting started'))).toBe(true)
+  })
+
+  it('renders fast desktop AI-tool connection status in user-facing language', async () => {
     globalThis.fetch = vi.fn(async (input) => defaultFetch(String(input))) as typeof fetch
-    const runDoctor = vi.fn(async () => ({
+    const hostStatuses = vi.fn(async () => ({
       ok: false,
-      parsed: {
-        ok: false,
-        code: 9,
-        info: {
-          mcp_hosts: [
-            host({ host_key: 'codex', status: 'registered_current', ok: true, available: true }),
-            host({ host_key: 'claude-code', status: 'absent', ok: true, available: false }),
-            host({
-              host_key: 'claude-desktop',
-              status: 'restart_required',
-              ok: true,
-              available: true,
-              needs_restart: true,
-            }),
-            host({
-              host_key: 'gemini-cli',
-              status: 'available_unregistered',
-              ok: false,
-              available: true,
-              blocking: true,
-            }),
-          ],
-        },
-      },
+      items: [
+        host({ host_key: 'codex', status: 'registered_current', ok: true, available: true }),
+        host({ host_key: 'claude-code', status: 'absent', ok: true, available: false }),
+        host({
+          host_key: 'claude-desktop',
+          status: 'restart_required',
+          ok: true,
+          available: true,
+          needs_restart: true,
+        }),
+        host({
+          host_key: 'gemini-cli',
+          status: 'available_unregistered',
+          ok: false,
+          available: true,
+          blocking: true,
+        }),
+      ],
     }))
     Object.defineProperty(window, 'stackosDesktop', {
       configurable: true,
@@ -66,7 +82,8 @@ describe('HomeView', () => {
         status: vi.fn(),
         installOrRepair: vi.fn(),
         restartService: vi.fn(),
-        runDoctor,
+        runDoctor: vi.fn(),
+        hostStatuses,
         checkForUpdates: vi.fn(),
         downloadUpdate: vi.fn(),
         installUpdate: vi.fn(),
@@ -76,15 +93,15 @@ describe('HomeView', () => {
 
     const wrapper = await mountHome()
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Agent hosts'))
-    expect(runDoctor).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('1/3 connected · 1 not installed')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('AI tool connections'))
+    expect(hostStatuses).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('1 connected · 2 need attention · 1 not detected')
     expect(wrapper.text()).toContain('Codex')
     expect(wrapper.text()).toContain('Connected')
     expect(wrapper.text()).toContain('Claude Code')
-    expect(wrapper.text()).toContain('Not installed')
+    expect(wrapper.text()).toContain('Not detected')
     expect(wrapper.text()).toContain('Claude Desktop')
-    expect(wrapper.text()).toContain('Restart required')
+    expect(wrapper.text()).toContain('Restart needed')
     expect(wrapper.text()).toContain('Gemini CLI')
     expect(wrapper.text()).toContain('Not connected')
   })

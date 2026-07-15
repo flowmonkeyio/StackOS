@@ -51,8 +51,12 @@ precompressed sidecar files, and LiteSpeed can prefer an old `index.html.br`
 over a newly uploaded `index.html`. Current builds deliberately omit those
 sidecars because Hostinger compresses responses itself.
 
-Confirm that `index.html`, `_nuxt`, `library`, `robots.txt`, and `sitemap.xml`
-are directly inside the remote document root.
+Confirm that `index.html`, `.htaccess`, `getting-started`,
+`getting-started.md`, `_nuxt`, `library`, `robots.txt`, and `sitemap.xml` are
+directly inside the remote document root. Some FTP clients hide dotfiles;
+explicitly include `.htaccess` because it gives the Markdown guide its content
+type, `noindex` directive, and canonical response header. It also routes missing
+paths to the generated branded `404.html` while preserving the HTTP 404 status.
 
 After replacing an existing release, open Hostinger hPanel → Cache Manager and
 use **Purge All**. If Hostinger CDN is enabled, flush its cache too. Use the
@@ -63,8 +67,12 @@ The deployment must look like this:
 
 ```text
 public_html/
+├── .htaccess
 ├── index.html
 ├── 404.html
+├── getting-started/
+│   └── index.html
+├── getting-started.md
 ├── robots.txt
 ├── sitemap.xml
 ├── feed.xml
@@ -116,6 +124,11 @@ responses and weaken search indexing.
 After deployment, verify:
 
 - `/`
+- `/getting-started` renders the designed guide and has its canonical URL,
+  Article schema, and Breadcrumb schema
+- `/getting-started.md` returns the canonical Markdown as `text/markdown`, an
+  `X-Robots-Tag: noindex` header, and a `Link` header pointing to
+  `/getting-started` as canonical
 - `/library`
 - `/library/integrations`
 - at least one article, workflow, agent, orchestrator, and integration detail

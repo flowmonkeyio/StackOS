@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import glob
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -21,7 +23,7 @@ def resolve_cli_bin(
     common_candidates: Iterable[str] = (),
     app_bundle_candidates: Iterable[str] = (),
 ) -> str | None:
-    """Find a host CLI from terminal PATH, login-shell PATH, or known app bundles."""
+    """Find a host CLI from the current PATH, known installs, or a login shell."""
 
     if explicit is not None:
         return executable_path_or_none(explicit)
@@ -35,10 +37,6 @@ def resolve_cli_bin(
     if from_path:
         return from_path
 
-    from_login_shell = discover_with_login_shell(command_name)
-    if from_login_shell:
-        return from_login_shell
-
     for candidate in expand_candidate_paths(common_candidates):
         resolved = executable_path_or_none(candidate)
         if resolved:
@@ -48,6 +46,10 @@ def resolve_cli_bin(
         resolved = executable_path_or_none(candidate)
         if resolved:
             return resolved
+
+    from_login_shell = discover_with_login_shell(command_name)
+    if from_login_shell:
+        return from_login_shell
     return None
 
 
@@ -86,7 +88,16 @@ def discover_with_login_shell(command_name: str) -> str | None:
 
 
 def expand_candidate_paths(candidates: Iterable[str]) -> list[Path]:
-    return [Path(candidate).expanduser() for candidate in candidates]
+    paths: list[Path] = []
+    for candidate in candidates:
+        expanded = str(Path(candidate).expanduser())
+        matches = glob.glob(expanded) if glob.has_magic(expanded) else [expanded]
+        paths.extend(Path(match) for match in sorted(matches, key=_natural_path_key, reverse=True))
+    return paths
+
+
+def _natural_path_key(value: str) -> str:
+    return re.sub(r"\d+", lambda match: f"{int(match.group()):020d}", value.lower())
 
 
 def executable_path_or_none(candidate: str | Path) -> str | None:

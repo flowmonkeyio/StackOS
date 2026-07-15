@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -81,9 +82,21 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
         )
     expected_command = resolve_bridge_command(runtime=HOST_KEY)
     if command_matches(expected_command, command):
-        if pending_restart(HOST_KEY, config_path=str(path), command=expected_command, home=home):
+        restart_marker = pending_restart(
+            HOST_KEY,
+            config_path=str(path),
+            command=expected_command,
+            home=home,
+        )
+        if restart_marker:
             running_state = _claude_desktop_running()
-            if running_state == "not_running":
+            marked_at = restart_marker.get("marked_at")
+            restarted_after_change = (
+                _claude_desktop_started_after(float(marked_at))
+                if isinstance(marked_at, int | float) and running_state == "running"
+                else False
+            )
+            if running_state == "not_running" or restarted_after_change is True:
                 clear_restart_required(HOST_KEY, home=home)
                 return HostMcpResult(
                     host_key=HOST_KEY,
@@ -153,6 +166,9 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
             config_path=str(path),
             repair="Run `stackos install` or desktop Repair before registering Claude Desktop MCP.",
         )
+    current = inspect(home, server_name=server_name)
+    if current.status in {"registered_current", "restart_required"}:
+        return current
     command = resolve_bridge_command(runtime=HOST_KEY)
     ok, error = upsert_mcp_server(
         path,
@@ -267,6 +283,59 @@ def _claude_desktop_running() -> RunningState:
         if result.returncode != 1:
             return "unknown"
     return "not_running"
+
+
+def _claude_desktop_started_after(marked_at: float) -> bool | None:
+    """Return whether a current Claude app process started after a config write."""
+
+    if sys.platform != "darwin":
+        return None
+    starts: list[float] = []
+    for process_name in ("Claude", "Claude Desktop"):
+        try:
+            found = subprocess.run(
+                ["pgrep", "-x", process_name],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if found.returncode == 1:
+            continue
+        if found.returncode != 0:
+            return None
+        for raw_pid in found.stdout.splitlines():
+            pid = raw_pid.strip()
+            if not pid.isdigit():
+                continue
+            try:
+                started = subprocess.run(
+                    ["ps", "-o", "lstart=", "-p", pid],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=2,
+                    env={**os.environ, "LC_ALL": "C"},
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                return None
+            if started.returncode != 0:
+                continue
+            started_at = _parse_process_start(started.stdout)
+            if started_at is not None:
+                starts.append(started_at)
+    if not starts:
+        return None
+    return any(started_at > marked_at for started_at in starts)
+
+
+def _parse_process_start(value: str) -> float | None:
+    normalized = " ".join(value.split())
+    try:
+        return time.mktime(time.strptime(normalized, "%a %b %d %H:%M:%S %Y"))
+    except (OverflowError, ValueError):
+        return None
 
 
 def _absent(

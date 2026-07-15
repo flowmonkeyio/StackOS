@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import {
   UiBadge,
+  UiButton,
   UiCallout,
   UiCard,
   UiEmptyState,
@@ -11,6 +12,7 @@ import {
   UiSegmentedControl,
   UiSkeleton,
 } from '@/components/ui'
+import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import { formatRelativeDateTime } from '@/lib/stackos/time'
 import type { Project } from '@/stores/projects'
 
@@ -143,9 +145,22 @@ function projectState(project: Project): { label: string; tone: 'info' | 'warnin
     >
       <UiEmptyState
         icon="cube"
-        title="No projects yet"
-        description="A project appears after an agent binds a deliberate workspace to StackOS through MCP."
-      />
+        title="Ready for your first project"
+        description="Open the AI tool you already use. The short guide walks you through choosing a project and planning one useful first job."
+      >
+        <template #actions>
+          <UiButton
+            :href="GETTING_STARTED_URL"
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="primary"
+            icon-right="external-link"
+            aria-label="Open the Getting Started guide in your browser"
+          >
+            Open getting started
+          </UiButton>
+        </template>
+      </UiEmptyState>
     </UiCard>
 
     <UiCard

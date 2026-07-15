@@ -5,8 +5,9 @@
 import { onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
-import { UiConfirmDialog, UiPageHeader, UiPageShell } from '@/components/ui'
+import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell } from '@/components/ui'
 import { isDesktopShell } from '@/lib/desktop'
+import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import { useProjectsStore } from '@/stores/projects'
 
 import HomeProjectsSection from './home/HomeProjectsSection.vue'
@@ -66,7 +67,21 @@ function confirmRepair(): void {
     <UiPageHeader
       title="StackOS"
       description="Local runtime, projects, and agent-client readiness."
-    />
+    >
+      <template #actions>
+        <UiButton
+          :href="GETTING_STARTED_URL"
+          target="_blank"
+          rel="noopener noreferrer"
+          variant="secondary"
+          size="sm"
+          icon-right="external-link"
+          aria-label="Open the Getting Started guide in your browser"
+        >
+          Getting started
+        </UiButton>
+      </template>
+    </UiPageHeader>
 
     <HomeSystemStatusCard
       :health="health"

@@ -10,6 +10,7 @@ function buildApplicationMenuTemplate(options = {}) {
     onRestartService = noop,
     onRunDoctor = noop,
     onOpenDaemonLog = noop,
+    onOpenGettingStarted = noop,
     onCheckForUpdates = noop,
     onDownloadUpdate = noop,
     onInstallUpdate = noop,
@@ -91,6 +92,16 @@ function buildApplicationMenuTemplate(options = {}) {
         { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" }
+      ]
+    },
+    {
+      label: "Help",
+      role: "help",
+      submenu: [
+        {
+          label: "Getting Started",
+          click: onOpenGettingStarted
+        }
       ]
     }
   ];

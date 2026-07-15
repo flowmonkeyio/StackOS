@@ -691,16 +691,16 @@ def test_register_mcp_claude_returns_repair_message_on_failure(
     assert "claude mcp add --help" in msg
 
 
-def test_register_mcp_codex_no_path(
+def test_register_mcp_codex_not_detected(
     sandbox: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """When `codex` is not on PATH, the helper returns a friendly notice."""
-    # Pin PATH to a directory that contains no `codex` binary.
+    """When Codex cannot be found anywhere, the helper returns a friendly notice."""
     empty = tmp_path / "empty-path"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
+    monkeypatch.setenv("STACKOS_CODEX_BIN", str(empty / "codex"))
     msg = installer.register_mcp_codex(home=sandbox, port=5180)
-    assert "not on PATH" in msg
+    assert "was not detected" in msg
 
 
 def test_cli_install_skills_only_subcommand(sandbox: Path) -> None:
@@ -1520,6 +1520,37 @@ def test_doctor_plain_output_reports_claude_absent_without_blocking(
     assert result.exit_code == 0, result.stdout
     assert "claude_mcp_registered: False" in result.stdout
     assert "Claude Code CLI not found" in result.stdout
+
+
+def test_mcp_host_status_reports_connections_without_running_full_doctor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        doctor_cli,
+        "_check_mcp_hosts",
+        lambda home: (
+            True,
+            [
+                {
+                    "host_key": "codex",
+                    "status": "registered_current",
+                    "message": "Codex StackOS MCP registration is healthy.",
+                    "ok": True,
+                    "available": True,
+                    "advisory": False,
+                    "blocking": False,
+                    "needs_restart": False,
+                }
+            ],
+        ),
+    )
+
+    result = CliRunner().invoke(app, ["mcp-host-status", "--json"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ready"
+    assert payload["hosts"][0]["host_key"] == "codex"
 
 
 def test_doctor_exits_9_for_stale_claude_registration(

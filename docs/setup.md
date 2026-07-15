@@ -7,6 +7,13 @@ accounts once, then let agents use the same contracts through the MCP bridge,
 REST API, or CLI. The UI remains a local-admin and observability surface for
 projects, readiness, connections, runs, action calls, resources, and artifacts.
 
+This document is the technical install and repair reference. For the plain,
+user-facing answer to “I installed StackOS—what next?”, use the canonical
+[getting-started guide](https://stackos.flowmonkey.io/getting-started). The
+desktop app opens that page from **Help → Getting Started**, and agents fetch
+the page's Markdown through `guide.gettingStarted`. Keep detailed first-use
+guidance on that website page instead of copying it into this document.
+
 ## Setup Contract
 
 Every supported setup path should land at the same state:
@@ -123,6 +130,39 @@ still runs a lightweight MCP registration reconciliation. This covers late
 Claude Code installs, reset MCP config, and drag-and-drop app replacement
 without reinstalling the full local runtime. Claude Code absence remains
 advisory and does not block startup.
+
+The desktop home and project toolbars keep a visible **Getting started** action,
+and **Help → Getting Started** remains the menu fallback. Every entry opens
+`https://stackos.flowmonkey.io/getting-started` in the default browser. They
+must remain links to the canonical website guide; the desktop package does not
+ship a separate copy of the walkthrough.
+
+Desktop Home reads the narrow connection report rather than running all of
+Doctor just to render AI-tool status:
+
+```bash
+stackos mcp-host-status --json
+```
+
+This reports whether Codex, Claude Code, Claude Desktop, and Gemini CLI can use
+the current StackOS bridge. In the UI, **Connected** means the tool was found
+and its StackOS MCP entry points at the current local bridge. **Not connected**,
+**Restart needed**, and **Repair needed** describe that connection only.
+**Not detected** means the desktop process could not find the tool; it must not
+be presented as an assertion that the app is not installed. Managed skills,
+plugin assets, root instructions, daemon state, and other installation checks
+remain part of full `stackos doctor --json`.
+
+Codex discovery covers the current process path, common Volta/ASDF/mise/NVM/fnm
+locations, the Codex macOS app bundle, and finally the user's login shell. This
+keeps Finder-launched StackOS from misreporting a Codex installation that is
+available only through a Node version manager or `Codex.app`.
+
+Claude Desktop reports **Restart needed** only after StackOS actually changes
+its config while Claude is open; a no-op repair must not renew that state.
+Gemini CLI registration is always user-scoped. When a compatible Gemini CLI
+returns no `mcp list` rows, StackOS verifies the managed entry in the user
+settings file instead of claiming registration from the add command alone.
 
 In packaged macOS mode, launchd owns the daemon after install, repair, and
 upgrade. Verify `stackos autostart status --json` as well as Doctor when
@@ -441,8 +481,8 @@ bash scripts/register-mcp-claude.sh --force
 ```
 
 MCP registration is repaired through the shared host lifecycle service. It
-checks Codex CLI, Claude Code, Claude Desktop, and Gemini CLI when those hosts
-are installed, registers the same local stdio bridge with a host-specific
+checks Codex, Claude Code, Claude Desktop, and Gemini CLI when those hosts are
+detected, registers the same local stdio bridge with a host-specific
 runtime label, and treats entries that point at an old app/package path as
 stale. Hosts installed after StackOS are picked up by rerunning
 `stackos install --mcp-only`, desktop Repair, or the next desktop launch.

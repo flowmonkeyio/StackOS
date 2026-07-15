@@ -99,6 +99,13 @@ run token.
 
 ## Common Flows
 
+- Person asks what to do after installation: call `toolbox.call` for
+  `guide.gettingStarted` with `response_mode=raw`. This global read is allowed
+  before workspace binding. Answer from the returned content and always link
+  the person to `guide_url`, the designed website page. Treat `markdown_url` as
+  the agent/tool source, not the primary human destination. Do not copy the
+  walkthrough into the skill or improvise a parallel guide when the fetch is
+  unavailable; share `guide_url` and use the returned warning.
 - First run in a repo: call `workspace.startSession`. The bridge should create
   or reuse one daemon-owned project binding for that workspace and return UI
   links plus setup/profile state. Treat `workspace_bound=true` as "project tools

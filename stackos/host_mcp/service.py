@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
@@ -51,7 +52,15 @@ class HostMcpAggregate:
 
 def inspect_all(*, home: Path | None = None) -> HostMcpAggregate:
     home_dir = home or default_home()
-    results = [_call_adapter(adapter.inspect, home_dir) for adapter in _adapters()]
+    adapters = _adapters()
+    with ThreadPoolExecutor(
+        max_workers=len(adapters),
+        thread_name_prefix="stackos-host-inspect",
+    ) as executor:
+        futures = [
+            executor.submit(_call_adapter, adapter.inspect, home_dir) for adapter in adapters
+        ]
+        results = [future.result() for future in futures]
     return _aggregate(results)
 
 

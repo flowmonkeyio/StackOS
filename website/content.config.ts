@@ -13,6 +13,23 @@ const catalogBase = {
 
 export default defineContentConfig({
   collections: {
+    guides: defineCollection({
+      type: 'page',
+      source: 'guides/*.md',
+      schema: z.object({
+        title: z.string(),
+        headline: z.string(),
+        description: z.string(),
+        seoTitle: z.string(),
+        publishedAt: z.string(),
+        updatedAt: z.string(),
+        author: z.string(),
+        readingTime: z.string(),
+        estimatedTime: z.string(),
+        canonicalUrl: z.string().url(),
+        markdownUrl: z.string().url(),
+      }),
+    }),
     articles: defineCollection({
       type: 'page',
       source: 'articles/**/*.md',

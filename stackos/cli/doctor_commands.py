@@ -383,6 +383,30 @@ def _check_mcp_hosts(home: Path) -> tuple[bool, list[dict[str, object]]]:
     return aggregate.ok, [result.to_info() for result in aggregate.results]
 
 
+@app.command(name="mcp-host-status")
+def mcp_host_status(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit the safe machine-readable host connection status."),
+    ] = False,
+) -> None:
+    """Inspect only supported AI-tool connections, without running full doctor."""
+
+    ok, hosts = _check_mcp_hosts(_doctor_home())
+    payload = {
+        "ok": ok,
+        "status": "ready" if ok else "needs_attention",
+        "hosts": hosts,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload))
+    else:
+        for host in hosts:
+            typer.echo(f"{host['host_key']}: {host['message']}")
+    if not ok:
+        raise typer.Exit(code=9)
+
+
 def _check_launchd_plist(home: Path) -> tuple[bool, dict[str, object]]:
     """Optional launchd plist presence check; launchd itself is not required."""
     target = _launchd_plist_path(home)

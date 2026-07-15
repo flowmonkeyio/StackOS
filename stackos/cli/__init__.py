@@ -86,6 +86,7 @@ from .doctor_commands import (
     _installed_plugin_count,
     _plugin_marketplace_has_stackos,
     doctor,
+    mcp_host_status,
 )
 from .local_commands import (
     backup,

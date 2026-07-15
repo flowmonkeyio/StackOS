@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -23,8 +24,18 @@ COMMON_CODEX_CLI_CANDIDATES = (
     "~/.local/bin/codex",
     "~/bin/codex",
     "~/.npm-global/bin/codex",
+    "~/.volta/bin/codex",
+    "~/.asdf/shims/codex",
+    "~/.local/share/mise/shims/codex",
+    "~/.nvm/versions/node/*/bin/codex",
+    "~/.local/share/fnm/node-versions/*/installation/bin/codex",
+    "~/Library/Application Support/fnm/node-versions/*/installation/bin/codex",
     "/opt/homebrew/bin/codex",
     "/usr/local/bin/codex",
+)
+MACOS_CODEX_APP_BUNDLE_CANDIDATES = (
+    "/Applications/Codex.app/Contents/Resources/codex",
+    "~/Applications/Codex.app/Contents/Resources/codex",
 )
 
 
@@ -169,7 +180,7 @@ def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
     del home
     codex_bin = resolve_codex_bin()
     if codex_bin is None:
-        return _absent(message="Codex CLI not found; skipped Codex MCP removal.")
+        return _absent(message="Codex was not detected; skipped StackOS MCP removal.")
     current = _run_codex(codex_bin, ["mcp", "list"])
     rows = _stackos_rows(current.stdout, server_name) if current.returncode == 0 else []
     if not rows:
@@ -204,7 +215,7 @@ def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
 
 
 def _absent(
-    message: str = "Codex CLI not on PATH; skipping Codex MCP registration.",
+    message: str = "Codex was not detected; skipped StackOS MCP registration.",
 ) -> HostMcpResult:
     return HostMcpResult(
         host_key=HOST_KEY,
@@ -224,6 +235,9 @@ def resolve_codex_bin(codex_bin: str | None = None) -> str | None:
         explicit=codex_bin,
         env_var=CODEX_BIN_ENV,
         common_candidates=COMMON_CODEX_CLI_CANDIDATES,
+        app_bundle_candidates=(
+            MACOS_CODEX_APP_BUNDLE_CANDIDATES if sys.platform == "darwin" else ()
+        ),
     )
 
 

@@ -14,6 +14,7 @@ const downloadUrl = useDownloadUrl()
         <div>
           <span>Explore</span>
           <NuxtLink to="/#why">Why StackOS</NuxtLink>
+          <NuxtLink to="/getting-started">Getting started</NuxtLink>
           <NuxtLink to="/library">Library</NuxtLink>
           <NuxtLink to="/library/workflows">Workflows</NuxtLink>
           <NuxtLink to="/library/articles">Articles</NuxtLink>

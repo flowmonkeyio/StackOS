@@ -74,6 +74,26 @@ def test_codex_adapter_uses_packaged_bridge_command(tmp_path: Path, monkeypatch)
     assert f"mcp add stackos -- {packaged} mcp-bridge --runtime codex" in calls
 
 
+def test_codex_adapter_finds_gui_app_and_node_manager_installs(tmp_path: Path, monkeypatch) -> None:
+    app_cli = tmp_path / "Codex.app" / "Contents" / "Resources" / "codex"
+    app_cli.parent.mkdir(parents=True)
+    app_cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    app_cli.chmod(0o755)
+    nvm_cli = tmp_path / ".nvm" / "versions" / "node" / "v20.19.2" / "bin" / "codex"
+    nvm_cli.parent.mkdir(parents=True)
+    nvm_cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    nvm_cli.chmod(0o755)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.delenv("SHELL", raising=False)
+    monkeypatch.setattr(codex, "MACOS_CODEX_APP_BUNDLE_CANDIDATES", (str(app_cli),))
+
+    assert codex.resolve_codex_bin() == str(nvm_cli)
+
+    nvm_cli.unlink()
+    assert codex.resolve_codex_bin() == str(app_cli)
+
+
 def test_resolve_bridge_command_accepts_workspace_root(tmp_path: Path, monkeypatch) -> None:
     packaged = tmp_path / "StackOS.app" / "Contents" / "Resources" / "stackos" / "bin" / "stackos"
     packaged.parent.mkdir(parents=True)
@@ -194,6 +214,40 @@ def test_claude_desktop_inspect_surfaces_pending_restart(tmp_path: Path, monkeyp
     assert inspected.needs_restart is True
 
 
+def test_claude_desktop_register_is_noop_when_connection_is_current(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_token(tmp_path)
+    config = tmp_path / "claude_desktop_config.json"
+    packaged = tmp_path / "stackos"
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    config.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "stackos": {
+                        "command": str(packaged),
+                        "args": ["mcp-bridge", "--runtime", "claude-desktop"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STACKOS_CLAUDE_DESKTOP_CONFIG", str(config))
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "running")
+
+    registered = claude_desktop.register(tmp_path)
+
+    assert registered.ok is True
+    assert registered.status == "registered_current"
+    assert registered.needs_restart is False
+    assert not state_path(tmp_path).exists()
+
+
 def test_claude_desktop_inspect_clears_restart_when_app_is_closed(
     tmp_path: Path,
     monkeypatch,
@@ -210,6 +264,37 @@ def test_claude_desktop_inspect_clears_restart_when_app_is_closed(
 
     registered = claude_desktop.register(tmp_path)
     monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "not_running")
+    inspected = claude_desktop.inspect(tmp_path)
+
+    assert registered.status == "restart_required"
+    assert inspected.ok is True
+    assert inspected.status == "registered_current"
+    assert inspected.needs_restart is False
+    assert not state_path(tmp_path).exists() or "claude-desktop" not in json.loads(
+        state_path(tmp_path).read_text(encoding="utf-8")
+    )
+
+
+def test_claude_desktop_inspect_clears_restart_after_app_relaunch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_token(tmp_path)
+    config = tmp_path / "claude_desktop_config.json"
+    config.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+    packaged = tmp_path / "stackos"
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    monkeypatch.setenv("STACKOS_CLAUDE_DESKTOP_CONFIG", str(config))
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(claude_desktop, "_claude_desktop_running", lambda: "running")
+
+    registered = claude_desktop.register(tmp_path)
+    monkeypatch.setattr(
+        claude_desktop,
+        "_claude_desktop_started_after",
+        lambda _marked_at: True,
+    )
     inspected = claude_desktop.inspect(tmp_path)
 
     assert registered.status == "restart_required"
@@ -320,8 +405,45 @@ def test_gemini_adapter_registers_without_project_config(tmp_path: Path, monkeyp
 
     assert result.ok is True
     calls = log.read_text(encoding="utf-8").splitlines()
-    assert any(call.startswith("mcp add stackos ") for call in calls)
+    assert any(call.startswith("mcp add --scope user stackos ") for call in calls)
     assert not (tmp_path / ".gemini").exists()
+
+
+def test_gemini_adapter_inspects_user_config_when_cli_list_is_silent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "gemini.log"
+    _write_fake_cli(bin_dir, "gemini", log)
+    packaged = tmp_path / "StackOS.app" / "Contents" / "Resources" / "stackos" / "bin" / "stackos"
+    packaged.parent.mkdir(parents=True)
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    settings = tmp_path / ".gemini" / "settings.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "stackos": {
+                        "command": str(packaged),
+                        "args": ["mcp-bridge", "--runtime", "gemini-cli"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+
+    result = gemini_cli.inspect(tmp_path)
+
+    assert result.ok is True
+    assert result.status == "registered_current"
+    assert result.command == [str(packaged), "mcp-bridge", "--runtime", "gemini-cli"]
 
 
 def test_gemini_adapter_matches_exact_stackos_server_row(tmp_path: Path, monkeypatch) -> None:

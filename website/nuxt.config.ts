@@ -78,10 +78,19 @@ export default defineNuxtConfig({
     compressPublicAssets: false,
     prerender: {
       crawlLinks: true,
-      routes: ['/', '/library', '/feed.xml'],
+      routes: ['/', '/getting-started', '/getting-started.md', '/library', '/feed.xml'],
     },
   },
   routeRules: {
+    '/getting-started': { prerender: true },
+    '/getting-started.md': {
+      prerender: true,
+      headers: {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'X-Robots-Tag': 'noindex',
+        Link: `<${siteUrl}/getting-started>; rel="canonical"`,
+      },
+    },
     '/library/**': { prerender: true },
   },
   sitemap: {

@@ -188,6 +188,10 @@ Start with [`docs/README.md`](./docs/README.md). It routes architecture,
 operations, auth, plugin, workflow, run-plan, UI, and integration-contract
 questions to the right canonical document.
 
+Installed StackOS and deciding what to do next? Use the public
+[getting-started guide](https://stackos.flowmonkey.io/getting-started). It is
+the same guide linked by the desktop app and fetched by StackOS-aware agents.
+
 Useful technical entrypoints:
 
 - [`docs/setup.md`](./docs/setup.md)

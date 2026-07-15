@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 
 test('communicates the product and completes the core evaluation flow', async ({ page }) => {
   await page.goto('/')
@@ -37,6 +38,182 @@ test('communicates the product and completes the core evaluation flow', async ({
 
 test('has no serious accessibility violations', async ({ page }) => {
   await page.goto('/')
+  await page.waitForLoadState('networkidle')
+
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+
+  const materialViolations = results.violations.filter((violation) =>
+    ['serious', 'critical'].includes(violation.impact ?? ''),
+  )
+  expect(materialViolations).toEqual([])
+})
+
+test('unknown routes return a branded, useful, and accessible 404 page', async ({ page }) => {
+  const response = await page.goto('/this-page-does-not-exist')
+
+  expect(response?.status()).toBe(404)
+  await expect(page).toHaveTitle('Page not found | StackOS')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'This page isn’t here. The rest of StackOS is.',
+  )
+  await expect(page.getByRole('link', { name: 'Go to StackOS home' })).toHaveAttribute('href', '/')
+  await expect(page.getByRole('link', { name: 'Open getting started' })).toHaveAttribute(
+    'href',
+    '/getting-started',
+  )
+  await expect(page.getByRole('navigation', { name: 'Useful destinations' })).toBeVisible()
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow')
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(1)
+
+  const results = await new AxeBuilder({ page })
+    .exclude('nuxt-error-overlay')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  const materialViolations = results.violations.filter((violation) =>
+    ['serious', 'critical'].includes(violation.impact ?? ''),
+  )
+  expect(materialViolations).toEqual([])
+
+  const htaccess = await readFile(new URL('../public/.htaccess', import.meta.url), 'utf8')
+  expect(htaccess).toContain('ErrorDocument 404 /404.html')
+
+  await page.getByRole('link', { name: 'Go to StackOS home' }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+})
+
+test('getting-started is a designed, user-first guide with one canonical Markdown source', async ({ page }) => {
+  await page.goto('/getting-started')
+
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('StackOS is installed')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Turn your first request')
+  await expect(page.getByText('You installed StackOS. Now give it one real piece of work.')).toBeVisible()
+  await expect(page.locator('.guide-hero .guide-start-path')).toHaveCount(0)
+  await expect(page.locator('#guide-content .guide-start-path')).toBeVisible()
+  await expect(page.locator('#guide-content .guide-client-paths')).toBeVisible()
+  await expect(page.locator('#guide-content .guide-system-map')).toBeVisible()
+  await expect(page.locator('.guide-client-paths__desktop-logo')).toHaveAttribute('src', '/images/claude.webp')
+  const providerIcons = page.locator('.guide-system-map__providers img')
+  await expect(providerIcons).toHaveCount(3)
+  expect(await providerIcons.evaluateAll((images) => images.map((image) => image.getAttribute('src')))).toEqual([
+    '/images/integrations/slack-icon.png',
+    '/images/integrations/shopify-icon.png',
+    '/images/integrations/wordpress-icon.png',
+  ])
+  if (test.info().project.name.startsWith('mobile')) {
+    const picker = page.locator('.guide-client-paths__picker')
+    await expect(picker).toBeVisible()
+    await picker.getByRole('button', { name: 'Claude Desktop' }).click()
+    await expect(page.locator('#guide-client-path-desktop')).toBeVisible()
+    await expect(page.locator('#guide-client-path-folder')).toBeHidden()
+  }
+  await expect(page.getByRole('heading', { level: 2, name: '1. Open StackOS once' })).toBeVisible()
+  await expect(page.getByText('Use StackOS for this project. Tell me which project you connected to')).toBeVisible()
+  await expect(page.getByText('workspace.startSession')).toHaveCount(0)
+  await expect(page.getByText('MCP bridge')).toHaveCount(0)
+  await expect(page.locator('.guide-hero [data-download="stackos-mac"]')).toHaveCount(0)
+
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    'https://stackos.flowmonkey.io/getting-started',
+  )
+  await expect(page).toHaveTitle('Getting started with StackOS after installation | StackOS')
+  const structuredData = await page.locator('script[type="application/ld+json"]').allTextContents()
+  expect(structuredData.some((entry) => entry.includes('Article'))).toBe(true)
+  expect(structuredData.some((entry) => entry.includes('BreadcrumbList'))).toBe(true)
+
+  const markdownResponse = await page.request.get('/getting-started.md')
+  expect(markdownResponse.status()).toBe(200)
+  expect(markdownResponse.headers()['content-type']).toContain('text/markdown')
+  expect(markdownResponse.headers()['x-robots-tag']).toBe('noindex')
+  expect(markdownResponse.headers().link).toContain('https://stackos.flowmonkey.io/getting-started')
+  const markdown = await markdownResponse.text()
+  expect(markdown).toContain('title: StackOS is installed. What happens next?')
+  expect(markdown).toContain('::guide-start-path')
+  expect(markdown).not.toContain('toolbox.call')
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(1)
+})
+
+test('getting-started visuals stay contained and aligned at common screen widths', async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.startsWith('desktop'), 'One responsive sweep is sufficient')
+
+  for (const width of [390, 768, 1024, 1280, 1366, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/getting-started')
+
+    const layout = await page.evaluate(() => {
+      const bounds = (selector: string) => {
+        const rect = document.querySelector(selector)!.getBoundingClientRect()
+        return { left: rect.left, right: rect.right, top: rect.top }
+      }
+      const desktopNav = document.querySelector<HTMLElement>('.guide-nav--desktop')!
+      const mobileNav = document.querySelector<HTMLDetailsElement>('.guide-nav--mobile')!
+      const clientPicker = document.querySelector<HTMLElement>('.guide-client-paths__picker')!
+      const visibleClientPanels = Array.from(
+        document.querySelectorAll<HTMLElement>('.guide-client-paths__routes article'),
+      ).filter((panel) => getComputedStyle(panel).display !== 'none').length
+      const chartBounds = ['.guide-start-path', '.guide-client-paths', '.guide-system-map'].map(bounds)
+      const statusStyle = getComputedStyle(document.querySelector<HTMLElement>('.guide-start-path li:first-child code')!)
+      const stepTops = Array.from(document.querySelectorAll<HTMLElement>('.guide-start-path__node')).map(
+        (node) => node.getBoundingClientRect().top,
+      )
+      const targetIds = Array.from(document.querySelectorAll<HTMLAnchorElement>('.guide-nav a[href^="#"]')).map(
+        (link) => link.hash.slice(1),
+      )
+
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        chartBounds,
+        desktopNavDisplay: getComputedStyle(desktopNav).display,
+        desktopNavRight: desktopNav.getBoundingClientRect().right,
+        mobileNavDisplay: getComputedStyle(mobileNav).display,
+        mobileNavOpen: mobileNav.open,
+        clientPickerDisplay: getComputedStyle(clientPicker).display,
+        visibleClientPanels,
+        statusBackground: statusStyle.backgroundColor,
+        statusFontSize: Number.parseFloat(statusStyle.fontSize),
+        stepTopSpread: Math.max(...stepTops) - Math.min(...stepTops),
+        missingTargets: targetIds.filter((id) => !document.getElementById(id)),
+      }
+    })
+
+    expect(layout.overflow, `${width}px page overflow`).toBeLessThanOrEqual(1)
+    for (const chart of layout.chartBounds) {
+      expect(chart.left, `${width}px chart left edge`).toBeGreaterThanOrEqual(-1)
+      expect(chart.right, `${width}px chart right edge`).toBeLessThanOrEqual(layout.clientWidth + 1)
+    }
+    expect(layout.statusBackground).toBe('rgba(0, 0, 0, 0)')
+    expect(layout.statusFontSize).toBeGreaterThanOrEqual(9)
+    expect(layout.missingTargets).toEqual([])
+
+    if (width <= 760) {
+      expect(layout.clientPickerDisplay).not.toBe('none')
+      expect(layout.visibleClientPanels).toBe(1)
+    } else {
+      expect(layout.clientPickerDisplay).toBe('none')
+      expect(layout.visibleClientPanels).toBe(2)
+    }
+
+    if (layout.desktopNavDisplay !== 'none') {
+      expect(layout.chartBounds[1].left - layout.desktopNavRight, `${width}px chart/sidebar gap`).toBeGreaterThanOrEqual(24)
+    } else {
+      expect(layout.mobileNavDisplay).not.toBe('none')
+      expect(layout.mobileNavOpen).toBe(false)
+    }
+
+    if (width > 700) expect(layout.stepTopSpread, `${width}px step alignment`).toBeLessThanOrEqual(1)
+  }
+})
+
+test('getting-started guide has no serious accessibility violations', async ({ page }) => {
+  await page.goto('/getting-started')
   await page.waitForLoadState('networkidle')
 
   const results = await new AxeBuilder({ page })
@@ -130,8 +307,10 @@ test('library exposes workflows, articles, cross-links, and production metadata'
 
   await page.goto('/library/articles/what-is-an-agentic-workflow')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('What is an agentic workflow')
-  await expect(page.getByText('A complete content workflow, from request to published result')).toBeVisible()
-  await expect(page.getByRole('link', { name: /AI agent vs. workflow vs. orchestrator/ })).toBeVisible()
+  await expect(page.getByText('A complete content workflow, from request to verified result')).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: 'AI agent vs. workflow vs. orchestrator', exact: true }),
+  ).toBeVisible()
 
   if (test.info().project.name.startsWith('mobile')) {
     await expect(page.locator('.workflow-map__mobile').getByText('Interview Capture')).toBeVisible()
@@ -345,7 +524,9 @@ test('workflow maps keep a readable, connected layout when stage copy is long', 
 
 test('generated visuals use one readable type system in cards and article heroes', async ({ page }) => {
   await page.goto('/library/articles')
-  const compact = page.locator('.generated-visual.is-compact').first()
+  const compact = page.locator(
+    '.article-card[href="/library/articles/ai-agent-vs-workflow-vs-orchestrator"] .generated-visual.is-compact',
+  )
   await expect(compact).toBeVisible()
 
   const compactVisual = await compact.evaluate((visual) => {

@@ -9,6 +9,8 @@ const { buildApplicationMenuTemplate } = require("./menu-template");
 const { createNotificationController } = require("./notifications");
 const { createUpdateController } = require("./updates");
 
+const GETTING_STARTED_URL = "https://stackos.flowmonkey.io/getting-started";
+
 let mainWindow = null;
 let updateController = null;
 let notificationController = null;
@@ -692,6 +694,9 @@ function createMenu() {
     onOpenDaemonLog: () => {
       shell.openPath(service.daemonLogPath());
     },
+    onOpenGettingStarted: () => {
+      openExternalUrl(GETTING_STARTED_URL);
+    },
     onCheckForUpdates: async () => {
       await showUpdateResult("check", await updateController.checkForUpdates());
     },
@@ -724,6 +729,7 @@ function registerIpc() {
   });
   ipcMain.handle("stackos:restart-service", async () => service.restartDaemon());
   ipcMain.handle("stackos:doctor", async () => service.runDoctor());
+  ipcMain.handle("stackos:mcp-host-status", async () => service.inspectMcpHosts());
   ipcMain.handle("stackos:updates:state", async () => updateController.state);
   ipcMain.handle("stackos:updates:check", async () => updateController.checkForUpdates());
   ipcMain.handle("stackos:updates:download", async () => updateController.downloadUpdate());

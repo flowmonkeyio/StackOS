@@ -50,4 +50,26 @@ assert.equal(unparsed.ok, false);
 assert.equal(unparsed.status, "doctor-unparsed");
 assert.equal(unparsed.code, 9);
 
+const hostStatusResult = {
+  ok: true,
+  exitCode: 0,
+  stdout: JSON.stringify({
+    ok: true,
+    status: "ready",
+    hosts: [
+      {
+        host_key: "codex",
+        status: "registered_current",
+        ok: true,
+        available: true
+      }
+    ]
+  }),
+  stderr: ""
+};
+const hostStatus = service.parseMcpHostStatusPayload(hostStatusResult);
+assert.equal(hostStatus.ok, true);
+assert.equal(hostStatus.hosts.length, 1);
+assert.equal(hostStatus.hosts[0].host_key, "codex");
+
 console.log("desktop service readiness test ok");

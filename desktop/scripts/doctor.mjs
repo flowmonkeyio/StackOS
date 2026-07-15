@@ -155,6 +155,8 @@ if (!fs.existsSync(uiFaviconPath)) {
 mustContain("src/main.js", "contextIsolation: true");
 mustContain("src/main.js", "nodeIntegration: false");
 mustContain("src/main.js", "sandbox: true");
+mustContain("src/main.js", "stackos:mcp-host-status");
+mustContain("src/preload.js", "hostStatuses");
 mustContain("src/main.js", "readPackagedBuildInfo");
 mustContain("src/service.js", "install");
 mustContain("src/service.js", "--launchd");
@@ -164,6 +166,7 @@ mustContain("src/service.js", "build-info.json");
 mustContain("src/service.js", "packaged-missing");
 mustContain("src/service.js", "PYTHONNOUSERSITE");
 mustContain("src/service.js", "PLAYWRIGHT_BROWSERS_PATH");
+mustContain("src/service.js", "mcp-host-status");
 mustContain("src/updates.js", "provider: \"generic\"");
 mustContain("src/updates.js", "update endpoint must use HTTPS unless it is localhost for local testing");
 mustContain("scripts/build-icons.mjs", "stackos-icon.png");
