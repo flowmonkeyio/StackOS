@@ -31,6 +31,7 @@ describe('ConnectionsView credentials and services', () => {
   it('stores, tests, and revokes provider credentials without rendering secrets', async () => {
     let connected = false
     let revoked = false
+    let connectionLabel = 'Primary Firecrawl'
     const postedBodies: unknown[] = []
 
     globalThis.fetch = vi.fn(async (input, init) => {
@@ -59,7 +60,12 @@ describe('ConnectionsView credentials and services', () => {
       }
       if (url === '/api/v1/projects/1/auth/status') {
         const connections = connected
-          ? [authConnection({ revokedAt: revoked ? '2026-05-22T00:02:00Z' : null })]
+          ? [
+              authConnection({
+                revokedAt: revoked ? '2026-05-22T00:02:00Z' : null,
+                label: connectionLabel,
+              }),
+            ]
           : []
         return json({
           project_id: 1,
@@ -71,6 +77,18 @@ describe('ConnectionsView credentials and services', () => {
       if (url === '/api/v1/projects/1/auth/firecrawl/credentials') {
         connected = true
         return json({ data: authConnection({ revokedAt: null }) }, 201)
+      }
+      if (url === '/api/v1/projects/1/auth/credentials/cred_firecrawl' && !init?.method) {
+        return json({
+          connection: authConnection({ revokedAt: null, label: connectionLabel }),
+          values: {},
+          secret_present: { api_key: true },
+        })
+      }
+      if (url === '/api/v1/projects/1/auth/credentials/cred_firecrawl' && init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as { label?: string }
+        connectionLabel = body.label ?? connectionLabel
+        return json({ data: authConnection({ revokedAt: null, label: connectionLabel }) })
       }
       if (url === '/api/v1/projects/1/auth/test') {
         return json({
@@ -144,6 +162,17 @@ describe('ConnectionsView credentials and services', () => {
       label: 'Primary',
       fields: { api_key: 'fc-secret' },
     })
+
+    await clickButton(wrapper, 'Edit')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Edit connection'))
+    expect(wrapper.text()).toContain('Saved — leave blank to keep it.')
+    const savedSecretInput = wrapper.find<HTMLInputElement>('input[placeholder="••••••••"]')
+    expect(savedSecretInput.exists()).toBe(true)
+    expect(savedSecretInput.element.value).toBe('')
+    await wrapper.find('input[placeholder="Primary account"]').setValue('Deployment')
+    await clickButton(wrapper, 'Save changes')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Deployment'))
+    expect(postedBodies).toContainEqual({ label: 'Deployment', fields: {} })
 
     await clickButton(wrapper, 'Test')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Firecrawl credentials are reachable'))

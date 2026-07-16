@@ -251,6 +251,8 @@ cover the migrated clean path for:
 - `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`
 - `jina`: `utils.web.read` with optional credentials
 - `sitemap`: `utils.sitemap.fetch`
+- `ftp`: stateless directory listing plus recursive multi-path upload/download
+- `cloudflare`: zone listing plus individual DNS record list/get/create/edit/replace/delete
 - `reddit`: `utils.reddit.search-subreddit`, `utils.reddit.top-questions`
 - `dataforseo`: `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract`
 - `serper`: `seo.serper.search`

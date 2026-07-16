@@ -121,12 +121,16 @@ The local Connections screen is service/account first:
 
 - primary action: `Add connection`
 - main list: connected services grouped by provider, with multiple named
-  connections per service; revoked history is excluded while failed/expired
-  active connections remain visible for repair
+  connections per service; revoked history is excluded
 - connection rows: safe label, account metadata, profile key, status, last
   tested time, expiry, and opaque `credential_ref`
+- edit action: reuse the selected provider auth method and the same credential
+  form used for create; prefill safe fields, leave secrets blank, and preserve
+  an existing secret unless the operator supplies a replacement
 - setup panel: enabled-plugin providers only, rendered from `auth_methods`
-- diagnostics: raw sanitized auth status only in a disclosure
+- diagnostics: `auth.test` returns a sanitized result and records the same
+  redacted outcome in the existing credential usage audit; a failed test does
+  not disable the stored credential
 
 `GET /projects/{project_id}/auth/status` is the UI's canonical provider and
 connection read model. Its `providers` collection avoids a second provider
@@ -145,11 +149,7 @@ timeout policy, and response contract.
   to a stable provider ref such as `plugin_slug.provider_key` or
   `auth_provider_id`.
 - Multiple credentials are supported through `profile_key`, but account/scopes
-  need richer population from safe setup fields and provider health-check
-  metadata.
-- `auth.test` should distinguish `untested`, `test_unavailable`, and
-  `connected` instead of marking every stored credential connected before a
-  provider health check exists.
+  need richer population from safe setup fields and provider test metadata.
 - Template `auth_ref` is a local requirement label. Execution should document
   or model the binding from template auth requirement to selected
   `credential_ref`, for example `auth_bindings`.

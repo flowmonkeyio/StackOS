@@ -54,7 +54,7 @@ Run the preflight before public release packaging:
 ```bash
 CSC_NAME="Example Org (ABCDE12345)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run release:preflight
 ```
 
@@ -65,7 +65,7 @@ secret values. To also validate notarization credentials with Apple:
 STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 \
 CSC_NAME="Example Org (ABCDE12345)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run release:preflight
 ```
 
@@ -125,7 +125,7 @@ notarized, use:
 
 ```bash
 CSC_NAME="SERGEY RURA (TSHN26FR48)" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run dist:mac:signed
 ```
 
@@ -162,7 +162,7 @@ Validate the stored profile and all release inputs:
 STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 \
 CSC_NAME="SERGEY RURA (TSHN26FR48)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run release:preflight
 ```
 
@@ -172,7 +172,7 @@ release artifacts:
 ```bash
 CSC_NAME="SERGEY RURA (TSHN26FR48)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run dist:mac:release
 ```
 
@@ -181,7 +181,7 @@ Build signed and notarized release artifacts:
 ```bash
 CSC_NAME="Example Org (ABCDE12345)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run dist:mac:release
 ```
 
@@ -274,7 +274,7 @@ STACKOS_REQUIRE_SIGNING=1 \
 STACKOS_REQUIRE_UPDATE_URL=1 \
 CSC_NAME="Example Org (ABCDE12345)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 node desktop/scripts/build-mac.mjs
 ```
 
@@ -286,7 +286,7 @@ STACKOS_ALLOW_UNSIGNED_RELEASE=1 \
 STACKOS_UNSIGNED_DEV=1 \
 STACKOS_SKIP_NOTARIZATION=1 \
 CSC_IDENTITY_AUTO_DISCOVERY=false \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run dist:mac
 ```
 
@@ -337,7 +337,7 @@ generic provider. The endpoint is a static HTTPS URL prefix served by the
 website, for example:
 
 ```text
-https://flowmonkey.io/StackOS/
+https://stackos.flowmonkey.io/StackOS/
 ```
 
 FTP or another deploy tool may upload files into that website directory later,
@@ -363,20 +363,27 @@ The endpoint should serve the generated electron-updater metadata and artifacts,
 for example:
 
 ```text
-https://flowmonkey.io/StackOS/latest-mac.yml
-https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.zip
-https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.dmg
-https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.zip.blockmap
-https://flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg
+https://stackos.flowmonkey.io/StackOS/latest-mac.yml
+https://stackos.flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.zip
+https://stackos.flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.dmg
+https://stackos.flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.zip.blockmap
+https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg
 ```
 
-Set `STACKOS_UPDATE_URL` to the directory URL (`https://flowmonkey.io/StackOS/`),
+Set `STACKOS_UPDATE_URL` to the directory URL (`https://stackos.flowmonkey.io/StackOS/`),
 not to `latest-mac.yml`, a DMG, a ZIP, or a blockmap file. Electron's macOS
 generic updater checks `latest-mac.yml` at that base URL; the YAML then points
 to the downloadable ZIP artifact. The DMG can live in the same directory for
 manual download and drag-and-drop installation. The website should link to the
 stable `stackos-latest-mac-arm64.dmg` alias; updater metadata must continue to
 reference the versioned ZIP and checksums from the same release build.
+
+Releases packaged before this endpoint migration may still read
+`https://flowmonkey.io/StackOS/`. Keep that legacy feed mirrored or redirected
+through at least one higher-version bridge release whose packaged
+`update-config.json` points to `https://stackos.flowmonkey.io/StackOS/`.
+Changing the website link or future build command alone cannot move an already
+installed app away from its packaged endpoint.
 
 After an app update, the next launch sees a new app version or new packaged
 payload build id and reruns `stackos install --launchd --force`, then restarts
@@ -423,11 +430,11 @@ Release checks, once dependencies and signing are configured:
 ```bash
 CSC_NAME="Example Org (ABCDE12345)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run release:preflight
 CSC_NAME="Example Org (ABCDE12345)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run dist:mac:release
 ```
 

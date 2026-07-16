@@ -55,6 +55,7 @@ describe('RunPlanRenderer', () => {
           depends_on_json: [],
           input_refs_json: [],
           context_refs_json: [],
+          input_context_truncated: false,
           action_refs_json: ['utils.image.generate'],
           resource_refs_json: [],
           policy_refs_json: [],

@@ -55,6 +55,7 @@ from stackos.mcp.permissions import check_call_grant
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.base import ConflictError, RepositoryError
 from stackos.repositories.runs import IdempotencyKeyRepository
+from stackos.validation_errors import safe_validation_errors
 
 _log = get_logger(__name__)
 
@@ -598,7 +599,10 @@ class MCPDispatcher:
                 "error": {
                     "code": JSONRPC_VALIDATION,
                     "message": "ValidationError",
-                    "data": {"detail": "input validation failed", "errors": exc.errors()},
+                    "data": {
+                        "detail": "input validation failed",
+                        "errors": safe_validation_errors(exc.errors()),
+                    },
                 }
             },
             is_error=True,

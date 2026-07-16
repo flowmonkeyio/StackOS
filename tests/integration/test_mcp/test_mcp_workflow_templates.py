@@ -66,7 +66,11 @@ outputs:
     listing = _operation_data(
         mcp_client.call_tool_structured(
             "workflowTemplate.list",
-            {"repo_root": str(tmp_path), "include_shadowed": True},
+            {
+                "repo_root": str(tmp_path),
+                "include_shadowed": True,
+                "response_mode": "raw",
+            },
         )
     )
     described = _operation_data(
@@ -88,6 +92,9 @@ outputs:
         )
     )
     authoring_guide = _operation_data(
+        mcp_client.call_tool_structured("workflowTemplate.authoringGuide", {"response_mode": "raw"})
+    )
+    compact_authoring_guide = _operation_data(
         mcp_client.call_tool_structured("workflowTemplate.authoringGuide", {})
     )
 
@@ -113,7 +120,24 @@ outputs:
     assert validation_by_key["valid"] is True
     assert validation_by_key["template"]["key"] == "core.project-memory-review"
     assert validation_by_key["template"]["name"] == "Repo Project Memory Review"
+    assert authoring_guide["schema_version"] == "stackos.workflow-authoring-guide.v2"
     assert authoring_guide["source_of_truth_operation"] == "workflowTemplate.authoringGuide"
+    assert "workflow_setup_protocol" in compact_authoring_guide
+    assert "agent_materialization_policy" in compact_authoring_guide
+    assert "package_authoring_path" not in compact_authoring_guide
+    assert any("response_mode=raw" in item for item in compact_authoring_guide["response_guidance"])
+    assert {item["key"] for item in authoring_guide["intent_modes"]} == {
+        "setup_existing",
+        "customize_existing",
+        "author_project",
+        "publish_plugin",
+        "one_off_run",
+        "execute",
+    }
+    assert any(
+        "Do not add plugin package files" in item
+        for item in authoring_guide["project_workflow_authoring_path"]
+    )
     assert "Plugin manifest entries" in authoring_guide["complete_package_scope"][0]
     assert "standard plugin directories" in authoring_guide["complete_package_scope"][0]
     assert "workflow templates, presets" not in authoring_guide["complete_package_scope"][0]
@@ -138,9 +162,31 @@ outputs:
     assert any("readiness.check" in item for item in authoring_guide["mechanical_gates"])
     assert any("exactly one root" in item for item in authoring_guide["mechanical_gates"])
     assert any("official provider docs" in item for item in authoring_guide["independent_signoff"])
-    assert "workflowTemplate.validate" in {
-        item["name"] for item in authoring_guide["canonical_operations"]
-    }
+    setup_phases = {item["key"]: item for item in authoring_guide["workflow_setup_protocol"]}
+    assert set(setup_phases) == {"infrastructure", "prerequisites", "operation"}
+    assert any(
+        "Do not call runPlan.create" in item
+        for item in setup_phases["infrastructure"]["prohibited_actions"]
+    )
+    assert any(
+        "recommended specialist roles by default" in item
+        for item in authoring_guide["agent_materialization_policy"]
+    )
+    assert any(
+        "deduplicated union by preset key" in item
+        for item in authoring_guide["agent_materialization_policy"]
+    )
+    assert any("no run plan" in item for item in authoring_guide["setup_completion_contract"])
+    canonical_operation_names = {item["name"] for item in authoring_guide["canonical_operations"]}
+    assert {
+        "workflowTemplate.validate",
+        "agentPreset.resolveForWorkflow",
+        "readiness.check",
+        "runPlan.validate",
+        "runPlan.create",
+    } <= canonical_operation_names
+    assert "builtin: true" not in authoring_guide["minimal_template_yaml"]
+    assert "key: custom.example-review" in authoring_guide["minimal_template_yaml"]
 
     gtm_listing = _operation_data(
         mcp_client.call_tool_structured(

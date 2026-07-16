@@ -65,21 +65,7 @@ _TOKEN_BYTES = 32
 _REQUIRED_MODE = 0o600
 _UI_TOKEN_MESSAGE = b"stackos-ui-console-v1"
 _UI_SAFE_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS"})
-_UI_AUTH_SETUP_ACTIONS: frozenset[str] = frozenset({"test", "revoke"})
-_UI_AUTH_PROVIDER_ACTIONS: frozenset[str] = frozenset({"credentials", "start"})
-_UI_SETUP_OPERATION_CALLS: frozenset[str] = frozenset(
-    {
-        "communicationProfile.upsert",
-        "ingressEndpoint.configure",
-        "ingressEndpoint.refresh",
-        "ingressEndpoint.sync",
-    }
-)
-_UI_LOCAL_CONSOLE_OPERATION_CALLS: frozenset[str] = frozenset(
-    {
-        "tracker.updateTask",
-    }
-)
+_UI_WRITE_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 class TokenFileError(RuntimeError):
@@ -193,7 +179,7 @@ def _allows_ui_read_operation_call(path: str, method: str) -> bool:
 
 
 def _allows_ui_console_operation_call(path: str, method: str) -> bool:
-    """Return True for explicitly browser-safe local console operation writes."""
+    """Return True when the operation's REST contract is explicitly browser-safe."""
     if method.upper() != "POST":
         return False
     segments = path.strip("/").split("/")
@@ -204,34 +190,34 @@ def _allows_ui_console_operation_call(path: str, method: str) -> bool:
         or not segments[3]
     ):
         return False
-    return (
-        segments[3] in _UI_SETUP_OPERATION_CALLS or segments[3] in _UI_LOCAL_CONSOLE_OPERATION_CALLS
-    )
+    from stackos.operations.registry import build_operation_registry
+    from stackos.repositories.base import NotFoundError
+
+    try:
+        spec = build_operation_registry().get(segments[3], surface="rest")
+    except NotFoundError:
+        return False
+    return spec.surfaces.rest.browser_safe
 
 
 def _allows_ui_auth_setup(path: str, method: str) -> bool:
     """Return True for the only local-admin writes the browser may perform.
 
     The browser never receives the daemon token and cannot access MCP. The
-    console token can only manage provider credential setup for a concrete
-    project: store a local secret, run a sanitized health probe, start a local
-    setup flow, or revoke an opaque credential ref.
+    console token can manage only provider credential setup routes for a
+    concrete project. FastAPI route definitions remain the source of truth for
+    which methods and paths exist inside that namespace.
     """
-    if method.upper() != "POST":
-        return False
+    method = method.upper()
     segments = path.strip("/").split("/")
-    if (
-        len(segments) < 6
-        or segments[:3] != ["api", "v1", "projects"]
-        or not segments[3].isdigit()
-        or segments[4] != "auth"
-    ):
-        return False
-    if len(segments) == 6:
-        return segments[5] in _UI_AUTH_SETUP_ACTIONS
-    if len(segments) == 7:
-        return bool(segments[5]) and segments[6] in _UI_AUTH_PROVIDER_ACTIONS
-    return False
+    return (
+        method in _UI_WRITE_METHODS
+        and len(segments) >= 6
+        and segments[:3] == ["api", "v1", "projects"]
+        and segments[3].isdigit()
+        and segments[4] == "auth"
+        and all(segments[5:])
+    )
 
 
 def _allows_ui_project_setup(path: str, method: str) -> bool:

@@ -73,10 +73,14 @@ from .schemas import (
 )
 
 
-def _surfaces(name: str, command: str) -> OperationSurfaces:
+def _surfaces(name: str, command: str, *, browser_safe: bool = False) -> OperationSurfaces:
     return OperationSurfaces(
         mcp=OperationSurface(enabled=True),
-        rest=OperationSurface(enabled=True, path=f"/api/v1/operations/{name}/call"),
+        rest=OperationSurface(
+            enabled=True,
+            browser_safe=browser_safe,
+            path=f"/api/v1/operations/{name}/call",
+        ),
         cli=OperationSurface(enabled=True, command=command),
     )
 
@@ -92,6 +96,7 @@ def operation_specs() -> list[OperationSpec]:
             surfaces=_surfaces(
                 "ingressEndpoint.configure",
                 "ops call ingressEndpoint.configure",
+                browser_safe=True,
             ),
             purpose=(
                 "Use this setup operation to define the project public ingress base URL. "
@@ -140,7 +145,11 @@ def operation_specs() -> list[OperationSpec]:
             input_model=IngressEndpointRefreshInput,
             output_model=WriteEnvelope[IngressEndpointSyncOut],
             handler=ingress_endpoint_refresh,
-            surfaces=_surfaces("ingressEndpoint.refresh", "ops call ingressEndpoint.refresh"),
+            surfaces=_surfaces(
+                "ingressEndpoint.refresh",
+                "ops call ingressEndpoint.refresh",
+                browser_safe=True,
+            ),
             purpose=(
                 "Use this after a local tunnel or deployment URL changes. It stores one "
                 "project public_base_url and can sync derived provider routes."
@@ -187,7 +196,11 @@ def operation_specs() -> list[OperationSpec]:
             input_model=IngressEndpointSyncInput,
             output_model=WriteEnvelope[IngressEndpointSyncOut],
             handler=ingress_endpoint_sync,
-            surfaces=_surfaces("ingressEndpoint.sync", "ops call ingressEndpoint.sync"),
+            surfaces=_surfaces(
+                "ingressEndpoint.sync",
+                "ops call ingressEndpoint.sync",
+                browser_safe=True,
+            ),
             purpose=(
                 "Use this after configuring profiles or public_base_url. It updates safe route "
                 "metadata and can apply Telegram setWebhook through daemon-held credentials."
@@ -233,6 +246,7 @@ def operation_specs() -> list[OperationSpec]:
             surfaces=_surfaces(
                 "communicationProfile.upsert",
                 "ops call communicationProfile.upsert",
+                browser_safe=True,
             ),
             purpose=(
                 "Use this setup operation for the agent-facing identity and policy bundle "

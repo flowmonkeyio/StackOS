@@ -9,6 +9,7 @@ const props = defineProps<{
   selectedProvider: SchemaAuthProviderOut
   providers: SchemaAuthProviderOut[]
   options: Array<{ value: string; label: string; group?: string }>
+  disabled?: boolean
 }>()
 
 defineEmits<{
@@ -30,6 +31,7 @@ function providerForOption(value: string | number): SchemaAuthProviderOut | null
         size="lg"
         :aria-describedby="describedBy"
         :invalid="invalid"
+        :disabled="disabled"
         searchable
         search-placeholder="Search services"
         empty-label="No services found"

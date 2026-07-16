@@ -167,8 +167,8 @@ describe('ConnectionsView Telegram profiles', () => {
       .find<HTMLInputElement>('input[placeholder="Primary account"]')
       .setValue('Support Bot')
     await wrapper.find<HTMLInputElement>('input[placeholder="default"]').setValue('support')
-    expect(wrapper.text()).toContain('Advanced connection settings')
-    expect(wrapper.text()).not.toContain('Bot API Base URL')
+    expect(wrapper.text()).not.toContain('Advanced connection settings')
+    expect(wrapper.text()).toContain('Local Bot API URL')
     await clickButton(wrapper, 'Save and verify')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Support Bot'))
 

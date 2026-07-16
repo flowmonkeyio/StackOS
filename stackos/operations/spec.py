@@ -57,6 +57,7 @@ class OperationSurface:
     """One adapter exposure for an operation."""
 
     enabled: bool = False
+    browser_safe: bool = False
     command: str | None = None
     path: str | None = None
     notes: str | None = None
@@ -171,6 +172,7 @@ class OperationSpec:
 
 class OperationSurfaceOut(BaseModel):
     enabled: bool
+    browser_safe: bool = False
     command: str | None = None
     path: str | None = None
     notes: str | None = None
@@ -270,6 +272,7 @@ def _surfaces_out(surfaces: OperationSurfaces) -> dict[str, OperationSurfaceOut]
     return {
         key: OperationSurfaceOut(
             enabled=value.enabled,
+            browser_safe=value.browser_safe,
             command=value.command,
             path=value.path,
             notes=value.notes,

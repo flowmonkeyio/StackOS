@@ -36,12 +36,18 @@ run token.
    global active project concept.
 4. Use `toolbox.describe`/`toolbox.call` for hidden setup tools and the current
    run-plan step grants that are not in the direct list.
-5. Agent presets are contracts, not daemon-run local agents. When asked to set
-   up local agents, adapt presets to the host/project's detected format
+5. Agent presets are contracts, not daemon-run local agents. A request to set
+   up workflow infrastructure or local agents authorizes reviewed project-local
+   host execution contracts when project guidance permits them; ordinary
+   workflow execution does not. Inspect and preserve existing host files, then
+   adapt presets to the host/project's detected format
    (`.codex/agents/*.toml` referenced by `.codex/config.toml`, markdown
    frontmatter, plugin files, or session-only guidance). StackOS does not scan,
-   write, or register host-local agent files; the host agent inspects repository
-   files and adapts presets only when local-agent setup is requested.
+   write, or register host-local agent files. Required roles must be
+   materialized or receive an explicit session-only fallback; recommended roles
+   are materialized by default unless the agent records a project/host/risk
+   reason; optional roles require selection. Skill presets are main-agent
+   guidance, never subagents.
 6. When a workflow or action might need vendor setup, call `toolbox.call` for
    `readiness.check` with the selected `workflow_key` or `action_ref` before
    broad `auth.status`. Do not ask the user to paste secrets into chat. Name
@@ -132,31 +138,37 @@ run token.
   folder names become projects, do not invent cwd/repo anchors, do not call
   `project.create` as a substitute for binding, and do not use
   last-used/global fallback binding.
-- Set up a workflow project in three separate phases, adapted to the selected
-  domain. Phase 1 is workflow infrastructure setup: before creating state,
-  inspect the owning project/workspace, host workspace identity behavior,
-  selected workflow, required orchestrator/skill and agent presets,
-  host-native project-local file support, and StackOS setup-write versus
-  run-plan-step-grant boundaries. Then bind the workspace, describe the selected
-  workflow, resolve required orchestrator/skill presets and agent presets, and
-  adapt those presets into host-native project-local agents, skills, commands,
-  or orchestrator guidance when the host supports those files, check readiness,
-  validate/upsert a workflow extension for durable defaults or guardrails, and
-  prove resumability with `runPlan.validate` or a draft `runPlan.create`.
-  Host-local files are the organic execution layer for future sessions; keep
-  them generic and procedural, and keep project state, prerequisites, and
-  secrets in StackOS. Report binding, extension state, files created, preset
-  mapping, future binding path, prerequisite gate, and run-plan outcome. Do not
-  collect domain prerequisites or produce the workflow output in this phase.
-  Phase 2 is workflow prerequisite setup: bind to the
-  existing project and collect durable inputs the workflow needs before normal
-  operation, such as voice/profile, source policy, route choices, account
-  mappings, approval rules, or other domain-specific setup. Save them through
-  the workflow extension, approved setup operations, or a dedicated onboarding
-  run plan when the state belongs in run-plan-gated resources. Phase 3 is
-  operation: bind to the existing project, create/resume/start the concrete run
-  plan, load the orchestrator/presets, claim/record steps, use only granted
-  tools/actions, and preserve approval gates.
+- Set up a workflow project only after selecting one canonical intent mode:
+  `setup_existing`, `customize_existing`, `author_project`, `publish_plugin`,
+  `one_off_run`, or `execute`. Call `workflowTemplate.authoringGuide` for the
+  structured mode boundaries and completion contract. A setup request does not
+  authorize a new template, plugin change, or workflow execution.
+  Phase 1 is infrastructure setup: bind the authorized workspace, select and
+  describe the effective workflow, inspect the existing extension, save only a
+  reviewed non-empty overlay when needed, and re-describe after any overlay
+  change. Call `agentPreset.resolveForWorkflow` once; it already includes
+  installed skill requirements and resolved main-agent skill presets. Inspect
+  host files, materialize required roles, materialize recommended roles by
+  default unless a reason is recorded, and materialize optional roles only when
+  selected. Keep skill presets as main-agent guidance. Check the full readiness
+  tuple, then run structural `runPlan.validate` with
+  `enforce_required_inputs=false` and strict validation with
+  `enforce_required_inputs=true` to expose exact deferred prerequisite keys.
+  Do not call `runPlan.create`, create tracker work, collect domain
+  prerequisites, or produce workflow output in Phase 1. Report the canonical
+  setup completion contract, including versions and exact preset-to-target
+  mapping.
+  Phase 2 is prerequisite setup: classify every missing value as
+  infrastructure, durable prerequisite, or per-run input; collect only durable
+  prerequisites; and, when the workflow explicitly delegates one to another
+  workflow, return that exact safe handoff instead of silently executing it.
+  For operator-approved workflow-family setup, resolve each selected workflow
+  and materialize the deduplicated union of required and recommended roles.
+  Persist each prerequisite through its declared owner, omit unresolved values
+  instead of storing placeholders, and stop before recurring output.
+  Phase 3 is operation: bind the existing project, collect concrete run inputs,
+  require selected-route execution readiness, strictly validate before
+  `runPlan.create`, then start/claim/record through step grants and approvals.
 - Set up support/engineering/local agents: choose the workflow first. Use
   `communications.customer-feedback-intake` to normalize inbound feedback into
   one route-approved canonical Slack thread with media and refs preserved. Use
@@ -165,14 +177,16 @@ run token.
   `support.delivery-task-handoff` only after a same-thread operator instruction
   asks for task creation, then hand off to `engineering.tracked-delivery` for
   scoped implementation, verification, review, and release. Describe the
-  selected workflow, resolve agents and main-agent skill presets with
-  `agentPreset.resolveForWorkflow` or `skillPreset.resolveForWorkflow`, then
-  create/start a run plan when executing. Treat the referenced communications,
+  selected workflow and resolve agents plus main-agent skill presets once with
+  `agentPreset.resolveForWorkflow`; call `skillPreset.resolveForWorkflow`
+  separately only when a standalone skill packet is specifically needed. Then
+  create/start a run plan only when executing. Treat the referenced communications,
   support, engineering, and skill presets as one curated project-adapted set.
-  Adapt agent presets to the host/project's local agent format only when local
-  agents are requested. Adapt skill presets into session/project guidance for
-  the main agent; they are not installed host skills and they do not create
-  subagent roles. For Codex repos, inspect `.codex/config.toml` and existing
+  Adapt agent presets to the host/project's local agent format when workflow
+  infrastructure or local agents are requested. Adapt skill presets into
+  session/project guidance for the main agent; they are not installed host
+  skills and they do not create subagent roles. For Codex repos, inspect
+  `.codex/config.toml` and existing
   `.codex/agents/*.toml` before proposing file creates or updates. Treat each
   preset's `recommended_tools` as StackOS operation refs. If those refs are not
   mounted as direct host tools, use `toolbox.describe` and `toolbox.call`.
@@ -233,8 +247,13 @@ run token.
   all provider rows.
 - Author workflows from any repo: call `toolbox.call` for
   `workflowTemplate.authoringGuide` and treat that response as the canonical
-  contract. Do not duplicate workflow-authoring rules into repo docs or long
-  skill text.
+  contract. Use the default compact response for mode selection and setup; after
+  selecting `author_project` or `publish_plugin`, request `response_mode=raw`
+  once for the complete authoring contract. Select one returned intent mode
+  before mutation. Use
+  `author_project` for a new no-code project/user template and
+  `publish_plugin` only for distributed package behavior. Do not duplicate
+  workflow-authoring rules into repo docs or long skill text.
 - Plan direct work: use tracker tasks/tickets when the agent is planning or
   delivering scoped work outside a concrete workflow run and the operator did
   not invoke a workflow. Create dependencies, blockers, definition of done, and

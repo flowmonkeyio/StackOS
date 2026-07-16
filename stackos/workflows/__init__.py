@@ -5,7 +5,9 @@ from __future__ import annotations
 from stackos.workflows.authoring_guide import (
     WorkflowAuthoringExample,
     WorkflowAuthoringGuideOut,
+    WorkflowAuthoringMode,
     WorkflowAuthoringOperationRef,
+    WorkflowSetupPhase,
     workflow_authoring_guide,
 )
 from stackos.workflows.run_plan_schema import (
@@ -46,7 +48,9 @@ __all__ = [
     "WorkflowAgentRequirementSpec",
     "WorkflowAuthoringExample",
     "WorkflowAuthoringGuideOut",
+    "WorkflowAuthoringMode",
     "WorkflowAuthoringOperationRef",
+    "WorkflowSetupPhase",
     "WorkflowSkillPresetRequirementSpec",
     "WorkflowSkillRequirementSpec",
     "WorkflowTemplateExtensionDeleteOut",

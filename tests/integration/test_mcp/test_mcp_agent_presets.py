@@ -340,3 +340,27 @@ def test_marketing_campaign_production_presets_resolve_end_to_end(
     ).lower()
     assert "preserve" in producer_text
     assert producer["project_adaptation"]["adaptation_required"] is True
+
+
+def test_website_seo_analysis_presets_resolve_end_to_end(
+    mcp_client: MCPClient,
+) -> None:
+    resolved = mcp_client.call_tool_structured(
+        "agentPreset.resolveForWorkflow",
+        {
+            "workflow_key": "seo.website-analysis",
+            "plugin_slug": "seo",
+            "response_mode": "raw",
+        },
+    )
+
+    assert resolved["workflow"]["key"] == "seo.website-analysis"
+    assert {agent["preset"]["summary"]["key"] for agent in resolved["required_agents"]} == {
+        "seo.workflow.website-analysis",
+        "stackos.sdlc.delivery-reviewer",
+    }
+    assert resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
+        "stackos.workflow-orchestrator"
+    )
+    assert resolved["unresolved_requirements"] == []
+    assert resolved["unresolved_skill_preset_requirements"] == []

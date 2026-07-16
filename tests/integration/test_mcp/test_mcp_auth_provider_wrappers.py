@@ -47,7 +47,11 @@ def _create_integration_credential(
 def _credential_ref(mcp: MCPClient, *, project_id: int, provider_key: str) -> str:
     status = mcp.call_tool_structured(
         "auth.status",
-        {"project_id": project_id, "provider_key": provider_key},
+        {
+            "project_id": project_id,
+            "provider_key": provider_key,
+            "response_mode": "raw",
+        },
     )
     return status["connections"][0]["credential_ref"]
 

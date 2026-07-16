@@ -58,24 +58,8 @@ export function useConnectionForm() {
     return field.secret || ['secret', 'password'].includes(field.type)
   }
 
-  function isAdvancedCredentialField(provider: SchemaAuthProviderOut, field: AuthField): boolean {
-    return provider.key === 'telegram-bot'
-      ? ['api_base_url', 'webhook_secret_token'].includes(field.key)
-      : false
-  }
-
-  function primaryCredentialFields(
-    provider: SchemaAuthProviderOut,
-    method: AuthMethod | null | undefined,
-  ): AuthField[] {
-    return (method?.fields ?? []).filter((field) => !isAdvancedCredentialField(provider, field))
-  }
-
-  function advancedCredentialFields(
-    provider: SchemaAuthProviderOut,
-    method: AuthMethod | null | undefined,
-  ): AuthField[] {
-    return (method?.fields ?? []).filter((field) => isAdvancedCredentialField(provider, field))
+  function methodFields(method: AuthMethod | null | undefined): AuthField[] {
+    return method?.fields ?? []
   }
 
   function fieldOptions(field: AuthField): Array<{ value: string; label: string }> {
@@ -145,6 +129,19 @@ export function useConnectionForm() {
     labelByForm.value = { ...labelByForm.value, [key]: '' }
   }
 
+  function populateForm(
+    providerKey: string,
+    methodKey: string,
+    values: Record<string, string>,
+    profile: string,
+    label: string,
+  ): void {
+    const key = formKey(providerKey, methodKey)
+    fieldsByForm.value = { ...fieldsByForm.value, [key]: { ...values } }
+    profileByForm.value = { ...profileByForm.value, [key]: profile }
+    labelByForm.value = { ...labelByForm.value, [key]: label }
+  }
+
   return {
     selectedProviderKey,
     selectedMethodByProvider,
@@ -160,8 +157,7 @@ export function useConnectionForm() {
     canAddProvider,
     inputType,
     isSecretField,
-    primaryCredentialFields,
-    advancedCredentialFields,
+    methodFields,
     fieldOptions,
     hasFieldOptions,
     fieldValue,
@@ -172,5 +168,6 @@ export function useConnectionForm() {
     setLabelValue,
     setSelectedProvider,
     clearForm,
+    populateForm,
   }
 }

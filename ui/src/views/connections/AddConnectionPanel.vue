@@ -16,20 +16,15 @@ const props = defineProps<{
   providerSetupUrls: Record<string, string>
   fieldErrors: Record<string, string>
   busyAction: string | null
+  editing: boolean
+  secretPresent: Record<string, boolean>
   authMethods: (provider: SchemaAuthProviderOut) => AuthMethod[]
   selectedMethodKey: (provider: SchemaAuthProviderOut) => string
   selectedMethod: (provider: SchemaAuthProviderOut) => AuthMethod | null
   supportsCredential: (provider: SchemaAuthProviderOut) => boolean
   inputType: (field: AuthField) => 'text' | 'url' | 'number' | 'email'
   isSecretField: (field: AuthField) => boolean
-  primaryCredentialFields: (
-    provider: SchemaAuthProviderOut,
-    method: AuthMethod | null | undefined,
-  ) => AuthField[]
-  advancedCredentialFields: (
-    provider: SchemaAuthProviderOut,
-    method: AuthMethod | null | undefined,
-  ) => AuthField[]
+  methodFields: (method: AuthMethod | null | undefined) => AuthField[]
   hasFieldOptions: (field: AuthField) => boolean
   fieldOptions: (field: AuthField) => Array<{ value: string; label: string }>
   profileValue: (providerKey: string, methodKey: string) => string
@@ -75,8 +70,12 @@ function updateCredentialField(
 <template>
   <UiSidePanel
     :model-value="modelValue"
-    title="Add connection"
-    description="Choose a service and store the credential in the local daemon."
+    :title="editing ? 'Edit connection' : 'Add connection'"
+    :description="
+      editing
+        ? 'Update connection settings without exposing the stored secret.'
+        : 'Choose a service and store the credential in the local daemon.'
+    "
     size="lg"
     @update:model-value="$emit('update:modelValue', $event)"
   >
@@ -97,6 +96,7 @@ function updateCredentialField(
           :selected-provider="selectedProvider"
           :providers="visibleAuthProviders"
           :options="providerOptions"
+          :disabled="editing"
           @select="$emit('select-provider', $event)"
         />
 
@@ -115,12 +115,7 @@ function updateCredentialField(
             :label-value="
               labelValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')
             "
-            :primary-fields="
-              primaryCredentialFields(selectedProvider, selectedMethod(selectedProvider))
-            "
-            :advanced-fields="
-              advancedCredentialFields(selectedProvider, selectedMethod(selectedProvider))
-            "
+            :fields="methodFields(selectedMethod(selectedProvider))"
             :input-type="inputType"
             :is-secret-field="isSecretField"
             :has-field-options="hasFieldOptions"
@@ -129,6 +124,8 @@ function updateCredentialField(
               credentialFieldValues(selectedProvider, selectedMethod(selectedProvider)!)
             "
             :field-errors="fieldErrors"
+            :editing="editing"
+            :secret-present="secretPresent"
             @select-method="$emit('select-method', selectedProvider.key, $event)"
             @update:profile="
               setProfileValue(
@@ -201,7 +198,7 @@ function updateCredentialField(
         :disabled="selectedMethod(selectedProvider)?.payload_format === 'none'"
         @click.prevent="$emit('save-credential', selectedProvider)"
       >
-        Save and verify
+        {{ editing ? 'Save changes' : 'Save and verify' }}
       </UiButton>
     </template>
   </UiSidePanel>

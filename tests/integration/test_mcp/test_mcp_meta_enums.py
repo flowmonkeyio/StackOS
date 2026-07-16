@@ -6,7 +6,7 @@ from .conftest import MCPClient
 
 
 def test_meta_enums_returns_core_payload(mcp_client: MCPClient) -> None:
-    payload = mcp_client.call_tool_structured("meta.enums", {})
+    payload = mcp_client.call_tool_structured("meta.enums", {"response_mode": "raw"})
 
     assert {
         "runs_status",
@@ -22,14 +22,14 @@ def test_meta_enums_returns_core_payload(mcp_client: MCPClient) -> None:
 
 
 def test_meta_enums_status_values_are_strings(mcp_client: MCPClient) -> None:
-    payload = mcp_client.call_tool_structured("meta.enums", {})
+    payload = mcp_client.call_tool_structured("meta.enums", {"response_mode": "raw"})
 
     for key in ("runs_status", "run_plans_status", "action_calls_status"):
         assert all(isinstance(value, str) for value in payload[key])
 
 
 def test_meta_enums_transitions_well_formed(mcp_client: MCPClient) -> None:
-    payload = mcp_client.call_tool_structured("meta.enums", {})
+    payload = mcp_client.call_tool_structured("meta.enums", {"response_mode": "raw"})
     transitions = payload["allowed_transitions"]
 
     for table in ("runs", "run_plans", "run_plan_steps", "approval_requests"):

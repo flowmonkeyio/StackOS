@@ -33,7 +33,11 @@ def test_auth_status_and_test_return_sanitized_refs(
 
     status = mcp_client.call_tool_structured(
         "auth.status",
-        {"project_id": project_id, "provider_key": "firecrawl"},
+        {
+            "project_id": project_id,
+            "provider_key": "firecrawl",
+            "response_mode": "raw",
+        },
     )
 
     credential_ref = status["connections"][0]["credential_ref"]
@@ -50,7 +54,11 @@ def test_auth_status_and_test_return_sanitized_refs(
     )
     tested = mcp_client.call_tool_structured(
         "auth.test",
-        {"project_id": project_id, "credential_ref": credential_ref},
+        {
+            "project_id": project_id,
+            "credential_ref": credential_ref,
+            "response_mode": "raw",
+        },
     )
 
     assert tested["data"]["ok"] is True

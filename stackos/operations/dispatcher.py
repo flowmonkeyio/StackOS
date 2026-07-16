@@ -27,6 +27,7 @@ from stackos.repositories.base import (
     ValidationError,
 )
 from stackos.repositories.runs import IdempotencyKeyRepository
+from stackos.validation_errors import safe_validation_errors
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,7 @@ class OperationDispatcher:
         except PydanticValidationError as exc:
             raise ValidationError(
                 "operation input validation failed",
-                data={"operation": name, "errors": exc.errors(include_context=False)},
+                data={"operation": name, "errors": safe_validation_errors(exc.errors())},
             ) from exc
 
         ctx = build_context(arguments, session)

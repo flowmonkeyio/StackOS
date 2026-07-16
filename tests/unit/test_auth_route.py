@@ -184,8 +184,8 @@ def test_ui_token_can_call_ingress_setup_operation(
     assert resp.json()["data"]["public_base_url"] == "https://stackos.example.com"
 
 
-def test_ui_token_can_update_tracker_task_status(client: TestClient, auth_token: str) -> None:
-    """The local console can close or reopen tasks without exposing daemon auth."""
+def test_ui_token_cannot_update_tracker_task_status(client: TestClient, auth_token: str) -> None:
+    """Tracker lifecycle remains agent/controller-owned, not browser-owned."""
     project_id = _create_project(client, auth_token)
     ui_token = derive_ui_token(auth_token)
 
@@ -215,8 +215,8 @@ def test_ui_token_can_update_tracker_task_status(client: TestClient, auth_token:
             }
         },
     )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["task"]["status"] == "complete"
+    assert resp.status_code == 403
+    assert "browser-safe operations" in resp.json()["detail"]
 
 
 def test_ui_token_cannot_call_mutating_operations(client: TestClient, auth_token: str) -> None:
@@ -280,6 +280,24 @@ def test_ui_token_can_manage_provider_auth_setup(client: TestClient, auth_token:
     credential_ref = created.json()["data"]["credential_ref"]
     assert credential_ref.startswith("cred_")
     assert "fc-secret" not in created.text
+
+    updated = client.patch(
+        f"/api/v1/projects/{project_id}/auth/credentials/{credential_ref}",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={"label": "Updated", "fields": {}},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["data"]["credential_ref"] == credential_ref
+    assert "fc-secret" not in updated.text
+
+    edit = client.get(
+        f"/api/v1/projects/{project_id}/auth/credentials/{credential_ref}",
+        headers={"authorization": f"Bearer {ui_token}"},
+    )
+    assert edit.status_code == 200, edit.text
+    assert edit.json()["connection"]["label"] == "Updated"
+    assert edit.json()["secret_present"] == {"api_key": True}
+    assert "fc-secret" not in edit.text
 
     revoked = client.post(
         f"/api/v1/projects/{project_id}/auth/revoke",

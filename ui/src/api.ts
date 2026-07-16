@@ -457,6 +457,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/auth/credentials/{credential_ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Get Credential
+         * @description Return editable non-secret values and secret-presence flags.
+         */
+        get: operations["auth_get_credential_api_v1_projects__project_id__auth_credentials__credential_ref__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Auth Update Credential
+         * @description Update safe fields and explicitly supplied secrets without exposing either.
+         */
+        patch: operations["auth_update_credential_api_v1_projects__project_id__auth_credentials__credential_ref__patch"];
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/auth/revoke": {
         parameters: {
             query?: never;
@@ -1478,6 +1502,10 @@ export interface components {
              * @default read
              */
             risk_level: string;
+            /** Route Group */
+            route_group?: string | null;
+            /** Route Key */
+            route_key?: string | null;
         };
         /**
          * ActionExposureNextActionOut
@@ -1750,6 +1778,21 @@ export interface components {
             uri: string;
         };
         /**
+         * AuthCredentialEditOut
+         * @description Safe stored values for the existing provider-declared credential schema.
+         */
+        AuthCredentialEditOut: {
+            connection: components["schemas"]["CredentialConnectionOut"];
+            /** Secret Present */
+            secret_present: {
+                [key: string]: boolean;
+            };
+            /** Values */
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        /**
          * AuthCredentialSetOut
          * @description Sanitized result for a local-admin credential profile write.
          */
@@ -1816,6 +1859,18 @@ export interface components {
              * @default default
              */
             profile_key: string;
+        };
+        /**
+         * AuthCredentialUpdateRequest
+         * @description Credential fields for the existing provider auth method.
+         */
+        AuthCredentialUpdateRequest: {
+            /** Fields */
+            fields?: {
+                [key: string]: unknown;
+            };
+            /** Label */
+            label: string | null;
         };
         /** AuthFieldOut */
         AuthFieldOut: {
@@ -2168,6 +2223,10 @@ export interface components {
             fields?: string[] | null;
             /** Limit */
             limit?: number | null;
+            /** Plugin Slug */
+            plugin_slug?: string | null;
+            /** Resource Keys */
+            resource_keys?: string[] | null;
             /** Sources */
             sources?: string[] | null;
             /** Statuses */
@@ -3002,6 +3061,11 @@ export interface components {
         };
         /** OperationSurfaceOut */
         OperationSurfaceOut: {
+            /**
+             * Browser Safe
+             * @default false
+             */
+            browser_safe: boolean;
             /** Command */
             command?: string | null;
             /** Enabled */
@@ -3828,6 +3892,28 @@ export interface components {
          * @enum {string}
          */
         RunPlanStatus: RunPlanStatus;
+        /**
+         * RunPlanStepHandoffOut
+         * @description Bounded result context passed from one direct dependency.
+         */
+        RunPlanStepHandoffOut: {
+            /** Output Refs Json */
+            output_refs_json?: string[];
+            /** Result Json */
+            result_json?: {
+                [key: string]: unknown;
+            } | null;
+            status: components["schemas"]["RunPlanStepStatus"];
+            /** Step Id */
+            step_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
         /** RunPlanStepOut */
         RunPlanStepOut: {
             /** Action Execution Guidance */
@@ -3859,6 +3945,8 @@ export interface components {
             created_at: string;
             /** Depends On Json */
             depends_on_json: string[];
+            /** Direct Dependency Handoffs */
+            direct_dependency_handoffs?: components["schemas"]["RunPlanStepHandoffOut"][];
             /** Error */
             error: string | null;
             /** Expected Outputs Json */
@@ -3867,8 +3955,17 @@ export interface components {
             } | null;
             /** Id */
             id: number;
+            /**
+             * Input Context Truncated
+             * @default false
+             */
+            input_context_truncated: boolean;
             /** Input Refs Json */
             input_refs_json: string[];
+            /** Input Values Json */
+            input_values_json?: {
+                [key: string]: unknown;
+            };
             /** Instructions Json */
             instructions_json: string[];
             /** Metadata Json */
@@ -3894,6 +3991,10 @@ export interface components {
             /** Started At */
             started_at: string | null;
             status: components["schemas"]["RunPlanStepStatus"];
+            /** Step Context Json */
+            step_context_json?: {
+                [key: string]: unknown;
+            } | null;
             /** Step Id */
             step_id: string;
             /** Success Criteria Json */
@@ -4138,6 +4239,68 @@ export interface components {
             requirement: WorkflowAgentRequirementSpecRequirement;
             /** Role */
             role: string;
+        };
+        /**
+         * WorkflowExperienceSpec
+         * @description Small human-and-agent experience contract for a workflow.
+         */
+        WorkflowExperienceSpec: {
+            /** Agent Path */
+            agent_path: string[];
+            /** Handoffs */
+            handoffs?: components["schemas"]["WorkflowHandoffSpec"][];
+            /** Operator Path */
+            operator_path: string[];
+            /** Outcome */
+            outcome: string;
+            /** Problem */
+            problem: string;
+            /** Progress Signals */
+            progress_signals?: string[];
+            /** Recovery */
+            recovery?: string[];
+            /** Safe Stopping Points */
+            safe_stopping_points?: string[];
+            /** Why Ai */
+            why_ai?: string | null;
+        };
+        /**
+         * WorkflowHandoffSpec
+         * @description Discoverable continuation from one complete workflow to another.
+         */
+        WorkflowHandoffSpec: {
+            /**
+             * Relationship
+             * @default conditional
+             * @enum {string}
+             */
+            relationship: WorkflowHandoffSpecRelationship;
+            /** When */
+            when: string;
+            /** Workflow Key */
+            workflow_key: string;
+        };
+        /**
+         * WorkflowPublicSpec
+         * @description Reviewed public-catalog copy owned by the workflow package.
+         */
+        WorkflowPublicSpec: {
+            /** Audience */
+            audience: string;
+            /**
+             * Featured
+             * @default false
+             */
+            featured: boolean;
+            /** Prerequisites */
+            prerequisites?: string[];
+            /** Proof */
+            proof?: string[];
+            /**
+             * Setup
+             * @enum {string}
+             */
+            setup: WorkflowPublicSpecSetup;
         };
         /**
          * WorkflowSkillPresetRequirementSpec
@@ -4448,6 +4611,7 @@ export interface components {
             description: string;
             /** Domain */
             domain?: string | null;
+            experience?: components["schemas"]["WorkflowExperienceSpec"] | null;
             /** Extensions Json */
             extensions_json?: {
                 [key: string]: unknown;
@@ -4471,6 +4635,7 @@ export interface components {
             owner?: components["schemas"]["TemplateOwnerSpec"] | null;
             /** Policies */
             policies?: components["schemas"]["PolicySpec"][];
+            public?: components["schemas"]["WorkflowPublicSpec"] | null;
             /** Resource Contracts */
             resource_contracts?: components["schemas"]["ResourceContractSpec"][];
             /**
@@ -4778,8 +4943,10 @@ export type SchemaApprovalGateSpec = components['schemas']['ApprovalGateSpec'];
 export type SchemaApprovalRequestOut = components['schemas']['ApprovalRequestOut'];
 export type SchemaArtifactCreateRequest = components['schemas']['ArtifactCreateRequest'];
 export type SchemaArtifactOut = components['schemas']['ArtifactOut'];
+export type SchemaAuthCredentialEditOut = components['schemas']['AuthCredentialEditOut'];
 export type SchemaAuthCredentialSetOut = components['schemas']['AuthCredentialSetOut'];
 export type SchemaAuthCredentialSetRequest = components['schemas']['AuthCredentialSetRequest'];
+export type SchemaAuthCredentialUpdateRequest = components['schemas']['AuthCredentialUpdateRequest'];
 export type SchemaAuthFieldOut = components['schemas']['AuthFieldOut'];
 export type SchemaAuthMethodOut = components['schemas']['AuthMethodOut'];
 export type SchemaAuthProviderOut = components['schemas']['AuthProviderOut'];
@@ -4863,6 +5030,7 @@ export type SchemaResourceRecordUpsertRequest = components['schemas']['ResourceR
 export type SchemaRunOut = components['schemas']['RunOut'];
 export type SchemaRunPlanConsistencyIssueOut = components['schemas']['RunPlanConsistencyIssueOut'];
 export type SchemaRunPlanOut = components['schemas']['RunPlanOut'];
+export type SchemaRunPlanStepHandoffOut = components['schemas']['RunPlanStepHandoffOut'];
 export type SchemaRunPlanStepOut = components['schemas']['RunPlanStepOut'];
 export type SchemaRunPlanSummaryOut = components['schemas']['RunPlanSummaryOut'];
 export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertRequest'];
@@ -4876,6 +5044,9 @@ export type SchemaTemplateOwnerSpec = components['schemas']['TemplateOwnerSpec']
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWorkflowAgentRequirementSpec = components['schemas']['WorkflowAgentRequirementSpec'];
+export type SchemaWorkflowExperienceSpec = components['schemas']['WorkflowExperienceSpec'];
+export type SchemaWorkflowHandoffSpec = components['schemas']['WorkflowHandoffSpec'];
+export type SchemaWorkflowPublicSpec = components['schemas']['WorkflowPublicSpec'];
 export type SchemaWorkflowSkillPresetRequirementSpec = components['schemas']['WorkflowSkillPresetRequirementSpec'];
 export type SchemaWorkflowSkillRequirementSpec = components['schemas']['WorkflowSkillRequirementSpec'];
 export type SchemaWorkflowStepTemplateSpec = components['schemas']['WorkflowStepTemplateSpec'];
@@ -5409,6 +5580,7 @@ export interface operations {
         parameters: {
             query?: {
                 project_id?: number | null;
+                compact?: boolean;
             };
             header?: never;
             path?: never;
@@ -5735,6 +5907,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WriteResponse_ArtifactOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_get_credential_api_v1_projects__project_id__auth_credentials__credential_ref__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                credential_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthCredentialEditOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_update_credential_api_v1_projects__project_id__auth_credentials__credential_ref__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                credential_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthCredentialUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_AuthCredentialSetOut_"];
                 };
             };
             /** @description Validation Error */
@@ -7683,6 +7923,17 @@ export enum WorkflowAgentRequirementSpecRequirement {
     required = "required",
     recommended = "recommended",
     optional = "optional"
+}
+export enum WorkflowHandoffSpecRelationship {
+    next = "next",
+    conditional = "conditional",
+    fallback = "fallback"
+}
+export enum WorkflowPublicSpecSetup {
+    available = "available",
+    connection_required = "connection-required",
+    project_adapter_required = "project-adapter-required",
+    mixed = "mixed"
 }
 export enum WorkflowSkillPresetRequirementSpecRequirement {
     required = "required",

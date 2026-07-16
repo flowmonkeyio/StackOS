@@ -16,13 +16,17 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
         "branding",
         "media-buying",
         "trackbooth",
+        "shopify",
         "publishing",
         "seo",
         "core",
         "utils",
     ]
 
-    catalog = mcp_client.call_tool_structured("catalog.describe", {"plugin_slug": "utils"})
+    catalog = mcp_client.call_tool_structured(
+        "catalog.describe",
+        {"plugin_slug": "utils", "response_mode": "raw"},
+    )
     assert catalog["plugins"][0]["plugin"]["slug"] == "utils"
     assert {r["key"] for r in catalog["plugins"][0]["resources"]} >= {
         "generated-image",
@@ -36,7 +40,7 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
 
     gtm = mcp_client.call_tool_structured(
         "catalog.describe",
-        {"plugin_slug": "gtm"},
+        {"plugin_slug": "gtm", "response_mode": "raw"},
     )
     assert {a["key"] for a in gtm["plugins"][0]["actions"]} >= {
         "hubspot.crm.companies.batch_upsert",
@@ -53,7 +57,7 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
 
     media = mcp_client.call_tool_structured(
         "catalog.describe",
-        {"plugin_slug": "media-buying"},
+        {"plugin_slug": "media-buying", "response_mode": "raw"},
     )
     assert {a["key"] for a in media["plugins"][0]["actions"]} >= {
         "meta.campaign.create",
@@ -71,13 +75,17 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
 
     provider = mcp_client.call_tool_structured(
         "provider.describe",
-        {"plugin_slug": "utils", "key": "openai-images"},
+        {
+            "plugin_slug": "utils",
+            "key": "openai-images",
+            "response_mode": "raw",
+        },
     )
     assert provider["auth_type"] == "api-key"
 
     publishing = mcp_client.call_tool_structured(
         "catalog.describe",
-        {"plugin_slug": "publishing"},
+        {"plugin_slug": "publishing", "response_mode": "raw"},
     )
     assert {a["key"] for a in publishing["plugins"][0]["actions"]} >= {
         "wordpress.post.create",
@@ -86,7 +94,7 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
 
     branding = mcp_client.call_tool_structured(
         "catalog.describe",
-        {"plugin_slug": "branding"},
+        {"plugin_slug": "branding", "response_mode": "raw"},
     )
     assert {r["key"] for r in branding["plugins"][0]["resources"]} >= {
         "evidence-item",
@@ -101,7 +109,7 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
 
     engineering = mcp_client.call_tool_structured(
         "catalog.describe",
-        {"plugin_slug": "engineering"},
+        {"plugin_slug": "engineering", "response_mode": "raw"},
     )
     assert {r["key"] for r in engineering["plugins"][0]["resources"]} >= {
         "engineering-decision",

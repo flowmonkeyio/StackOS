@@ -217,9 +217,10 @@ def operation_specs():
             output_model=WorkflowAuthoringGuideOut,
             handler=_template_authoring_guide,
             purpose=(
-                "Use this as the single source of truth for creating, extending, "
-                "validating, saving, forking, and executing StackOS workflows from "
-                "any repository."
+                "Use this as the single source of truth for selecting an explicit workflow "
+                "intent mode, creating or extending a reusable method, setting up project-adapted "
+                "agents without creating execution state, and executing only after strict "
+                "validation."
             ),
             when_to_use=(
                 "An agent outside the StackOS source checkout needs to author or "
@@ -230,11 +231,17 @@ def operation_specs():
                 "canonical workflow authoring contract.",
             ),
             returns=(
-                "Structured authoring principles, decision path, contract fields, "
-                "forbidden template content, canonical operations, and a minimal "
-                "template example.",
+                "Compact mode returns intent modes, deterministic setup phases, agent and "
+                "prerequisite policies, completion proof, and canonical operations. Raw mode "
+                "adds complete project/plugin authoring paths, schema/review gates, and examples.",
             ),
-            examples=(OperationExample(title="Read workflow authoring guide", arguments={}),),
+            examples=(
+                OperationExample(title="Read compact setup contract", arguments={}),
+                OperationExample(
+                    title="Read complete project/plugin authoring contract",
+                    arguments={"response_mode": "raw"},
+                ),
+            ),
             mutating=False,
             grant_policy="direct-read",
         ),
@@ -331,7 +338,22 @@ def operation_specs():
             examples=(
                 OperationExample(
                     title="Save project template",
-                    arguments={"project_id": 1, "template_json": {"key": "custom.flow"}},
+                    arguments={
+                        "project_id": 1,
+                        "template_json": {
+                            "schema_version": "stackos.workflow-template.v1",
+                            "key": "custom.flow",
+                            "name": "Custom Flow",
+                            "version": "0.1.0",
+                            "steps": [
+                                {
+                                    "id": "complete-work",
+                                    "title": "Complete Work",
+                                    "purpose": "Complete the bounded request.",
+                                }
+                            ],
+                        },
+                    },
                 ),
             ),
             mutating=True,

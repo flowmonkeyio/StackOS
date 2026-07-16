@@ -32,6 +32,7 @@ from stackos.repositories.base import (
     RepositoryError,
     ValidationError,
 )
+from stackos.validation_errors import safe_validation_errors
 
 _log = get_logger(__name__)
 
@@ -239,7 +240,7 @@ async def request_validation_handler(request: Request, exc: Exception) -> Respon
         detail="request validation failed",
         code=-32602,
         retryable=False,
-        data={"errors": jsonable_encoder(exc.errors())},
+        data={"errors": safe_validation_errors(exc.errors())},
     ).model_dump(mode="json")
     return JSONResponse(status_code=422, content=body)
 

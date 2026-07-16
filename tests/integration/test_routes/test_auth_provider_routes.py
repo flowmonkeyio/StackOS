@@ -261,6 +261,55 @@ def test_auth_test_supports_smtp_without_secret_leak(
     assert "smtp-secret" not in json.dumps(response.json())
 
 
+def test_ftp_credential_can_be_safely_read_and_edited(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    stored = api.post(
+        f"/api/v1/projects/{project_id}/auth/ftp/credentials",
+        json={
+            "auth_method_key": "ftp-password",
+            "profile_key": "primary",
+            "label": "Production FTP",
+            "fields": {
+                "password": "ftp-secret",
+                "host": "old.example.test",
+                "username": "deploy",
+                "tls_mode": "none",
+            },
+        },
+    )
+    assert stored.status_code == 201, stored.text
+    credential_ref = stored.json()["data"]["credential_ref"]
+
+    edit = api.get(f"/api/v1/projects/{project_id}/auth/credentials/{credential_ref}")
+    assert edit.status_code == 200, edit.text
+    assert edit.json()["values"]["host"] == "old.example.test"
+    assert edit.json()["secret_present"] == {"password": True}
+    assert "ftp-secret" not in edit.text
+
+    invalid = api.patch(
+        f"/api/v1/projects/{project_id}/auth/credentials/{credential_ref}",
+        json={
+            "label": "Production FTP",
+            "fields": {"host": "ftp://192.0.2.10/public_html"},
+        },
+    )
+    assert invalid.status_code == 422, invalid.text
+    assert "host" in invalid.text
+
+    updated = api.patch(
+        f"/api/v1/projects/{project_id}/auth/credentials/{credential_ref}",
+        json={"label": "Production FTP", "fields": {"host": "192.0.2.10"}},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["data"]["credential_ref"] == credential_ref
+
+    refreshed = api.get(f"/api/v1/projects/{project_id}/auth/credentials/{credential_ref}")
+    assert refreshed.json()["values"]["host"] == "192.0.2.10"
+    assert refreshed.json()["secret_present"] == {"password": True}
+
+
 def test_auth_test_smtp_failure_redacts_provider_exception(
     api: TestClient,
     project_id: int,
@@ -293,9 +342,10 @@ def test_auth_test_smtp_failure_redacts_provider_exception(
     )
 
     rendered = json.dumps(response.json())
-    assert response.status_code == 502, response.text
-    assert "SMTP credential test failed" in rendered
-    assert "RuntimeError" in rendered
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["ok"] is False
+    assert "smtp credential test failed" in rendered
+    assert "IntegrationDownError" in rendered
     assert "smtp-secret" not in rendered
     assert "provider rejected password" not in rendered
     _AuthSMTP.fail_with_secret = False
@@ -372,9 +422,10 @@ def test_auth_test_imap_failure_redacts_provider_exception(
     )
 
     rendered = json.dumps(response.json())
-    assert response.status_code == 502, response.text
-    assert "IMAP credential test failed" in rendered
-    assert "RuntimeError" in rendered
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["ok"] is False
+    assert "imap credential test failed" in rendered
+    assert "IntegrationDownError" in rendered
     assert "imap-secret" not in rendered
     assert "provider rejected password" not in rendered
     _AuthIMAP.fail_with_secret = False

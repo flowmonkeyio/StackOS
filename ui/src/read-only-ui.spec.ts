@@ -10,31 +10,6 @@ const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
 const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
 const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
 const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
-const OBSERVER_OPERATION_CALLS = [
-  'agentPreset.describe',
-  'agentPreset.list',
-  'agentRequest.list',
-  'communicationProfile.list',
-  'communicationRoute.list',
-  'communicationSurface.list',
-  'communicationTarget.list',
-  'executionContext.artifact.list',
-  'executionContext.list',
-  'ingressEndpoint.status',
-  'integration.list',
-  'tracker.get',
-  'tracker.status',
-]
-const LOCAL_ADMIN_OPERATION_CALLS = [
-  'communicationProfile.upsert',
-  'ingressEndpoint.configure',
-  'ingressEndpoint.refresh',
-  'ingressEndpoint.sync',
-]
-const EXPECTED_OPERATION_CALLS = [
-  ...OBSERVER_OPERATION_CALLS,
-  ...LOCAL_ADMIN_OPERATION_CALLS,
-].sort()
 
 function filesUnder(dir: string): string[] {
   const out: string[] = []
@@ -70,10 +45,17 @@ describe('restricted UI write contract', () => {
       .map((match) => match[0])
       .filter((block) => /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/.test(block))
 
-    expect(methodBlocks.length).toBe(4)
-    expect(methodBlocks.every((block) => /method:\s*'POST'/.test(block))).toBe(true)
+    expect(methodBlocks.length).toBe(5)
+    expect(methodBlocks.map((block) => block.match(/method:\s*'([^']+)'/)?.[1])).toEqual([
+      'POST',
+      'PATCH',
+      'POST',
+      'POST',
+      'POST',
+    ])
     expect(methodBlocks.map((block) => block.match(/`([^`]+)`/)?.[1])).toEqual([
       '/api/v1/projects/${projectId}/auth/${providerKey}/credentials',
+      '/api/v1/projects/${projectId}/auth/credentials/${encodeURIComponent(credentialRef)}',
       '/api/v1/projects/${projectId}/auth/${providerKey}/start',
       '/api/v1/projects/${projectId}/auth/test',
       '/api/v1/projects/${projectId}/auth/revoke',
@@ -94,20 +76,5 @@ describe('restricted UI write contract', () => {
     expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(1)
     expect(text).toContain('`/api/v1/operations/${operationName}/call`')
     expect(text).toContain("method: 'POST'")
-  })
-
-  it('requires every literal operation call to remain in the reviewed observer/admin allowlist', () => {
-    const operationNames = new Set<string>()
-    for (const scope of SCOPES) {
-      for (const file of filesUnder(join(ROOT, scope))) {
-        const text = readFileSync(file, 'utf8')
-        for (const match of text.matchAll(/callOperation(?:<[^)]*?>)?\(\s*['"`]([^'"`]+)['"`]/g)) {
-          operationNames.add(match[1])
-        }
-      }
-    }
-
-    expect([...operationNames].sort()).toEqual(EXPECTED_OPERATION_CALLS)
-    expect(operationNames.has('tracker.updateTask')).toBe(false)
   })
 })

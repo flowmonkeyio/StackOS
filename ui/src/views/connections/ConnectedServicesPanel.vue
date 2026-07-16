@@ -42,6 +42,7 @@ const props = defineProps<{
 
 defineEmits<{
   (e: 'add-connection', providerKey?: string): void
+  (e: 'edit-connection', connection: ConnectionRow): void
   (e: 'test-connection', connection: ConnectionRow): void
   (e: 'revoke-connection', connection: ConnectionRow): void
 }>()
@@ -252,6 +253,15 @@ function statusLabel(connection: ConnectionRow): string {
               <div
                 class="flex shrink-0 items-center gap-1 max-[350px]:ml-5 max-[350px]:w-full max-[350px]:justify-end"
               >
+                <UiButton
+                  size="sm"
+                  variant="ghost"
+                  :loading="busyAction === connectionActionKey(connection.credential_ref, 'edit')"
+                  :disabled="connection.revoked_at !== null"
+                  @click="$emit('edit-connection', connection)"
+                >
+                  Edit
+                </UiButton>
                 <UiButton
                   size="sm"
                   variant="secondary"

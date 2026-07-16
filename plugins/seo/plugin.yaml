@@ -1375,6 +1375,165 @@ resources:
     name: Search Performance Snapshot
     description: Imported or summarized search-performance metrics for agent analysis.
     schema: *object_schema
+  - key: website-seo-analysis
+    name: Website SEO Analysis
+    description: Compact durable index for a completed or partial website SEO analysis and its evidence artifacts.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - site_url
+        - analyzed_at
+        - status
+        - source_ledger
+        - raw_provider_data_refs
+        - executive_summary
+        - finding_counts
+        - prioritized_actions
+        - limitations
+        - artifact_refs
+      properties:
+        site_url:
+          type: string
+          minLength: 1
+        canonical_host:
+          type: string
+        analyzed_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - complete
+            - partial
+            - blocked
+        analysis_scope:
+          type: object
+          additionalProperties: false
+          properties:
+            business_goal: {type: string}
+            target_markets: {type: array, items: {type: string}}
+            included_sections: {type: array, items: {type: string}}
+            excluded_sections: {type: array, items: {type: string}}
+            date_range: {type: object, additionalProperties: true}
+            public_page_count: {type: integer, minimum: 0}
+            sampling_notes: {type: array, items: {type: string}}
+        source_ledger:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - source
+              - status
+              - evidence_class
+              - coverage
+              - limitations
+              - evidence_refs
+            properties:
+              source: {type: string}
+              status:
+                type: string
+                enum: [used, unavailable, skipped, failed]
+              evidence_class:
+                type: string
+                enum: [public-observation, first-party-provider, third-party-provider, operator-supplied]
+              coverage: {type: string}
+              limitations: {type: array, items: {type: string}}
+              evidence_refs: {type: array, items: {type: string}}
+              response_file_refs: {type: array, items: {type: string}}
+              reason: {type: string}
+        executive_summary:
+          type: object
+          additionalProperties: false
+          required: [overall_state, strengths, primary_risks, recommended_sequence, evidence_quality, limitations]
+          properties:
+            overall_state: {type: string}
+            strengths: {type: array, items: {type: string}}
+            primary_risks: {type: array, items: {type: string}}
+            recommended_sequence: {type: array, items: {type: string}}
+            evidence_quality: {type: object, additionalProperties: true}
+            limitations: {type: array, items: {type: string}}
+        finding_counts:
+          type: object
+          additionalProperties: false
+          required: [total, measured, observed, inferred]
+          properties:
+            total: {type: integer, minimum: 0}
+            measured: {type: integer, minimum: 0}
+            observed: {type: integer, minimum: 0}
+            inferred: {type: integer, minimum: 0}
+            by_category: {type: object, additionalProperties: {type: integer, minimum: 0}}
+            by_priority: {type: object, additionalProperties: {type: integer, minimum: 0}}
+        prioritized_actions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [title, priority, finding_refs, impact, effort, confidence, dependencies, owner_handoff, recommended_sequence, validation_path]
+            properties:
+              title: {type: string}
+              priority: {type: string, enum: [critical, high, medium, low]}
+              impact: {type: string}
+              effort: {type: string, enum: [small, medium, large, unknown]}
+              confidence: {type: string, enum: [high, medium, low]}
+              dependencies: {type: array, items: {type: string}}
+              owner_handoff: {type: string}
+              recommended_sequence: {type: integer, minimum: 1}
+              validation_path: {type: string}
+              finding_refs: {type: array, items: {type: string}, minItems: 1}
+        limitations:
+          type: array
+          items: {type: string}
+        raw_provider_data_refs:
+          type: array
+          items: {type: string, minLength: 1}
+          uniqueItems: true
+        artifact_refs:
+          type: object
+          additionalProperties: false
+          required: [final_report, site_inventory, finding_register]
+          properties:
+            final_report: {type: string, minLength: 1}
+            site_inventory: {type: string, minLength: 1}
+            finding_register: {type: string, minLength: 1}
+        follow_up_hooks:
+          type: array
+          items: {type: string}
+    ui_schema:
+      table_columns:
+        - site_url
+        - status
+        - analyzed_at
+      summary_fields:
+        - executive_summary
+        - finding_counts
+        - limitations
+      detail_sections:
+        - title: Analysis
+          fields:
+            - site_url
+            - canonical_host
+            - status
+            - analyzed_at
+            - analysis_scope
+            - executive_summary
+        - title: Evidence And Findings
+          fields:
+            - source_ledger
+            - finding_counts
+            - prioritized_actions
+            - limitations
+        - title: Durable Outputs
+          fields:
+            - artifact_refs
+            - raw_provider_data_refs
+            - follow_up_hooks
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: website-seo-analysis
+      agent_guidance: Keep this record compact and evidence-led. Store bulky URL inventories, raw exports, the full finding register, and the final report as artifacts; never turn unavailable provider data into invented measurements.
 ui:
   nav:
     section: SEO

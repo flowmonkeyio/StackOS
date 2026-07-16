@@ -3,7 +3,9 @@ import { defineStore } from 'pinia'
 
 import type {
   SchemaActionOut,
+  SchemaAuthCredentialEditOut,
   SchemaAuthCredentialSetRequest,
+  SchemaAuthCredentialUpdateRequest,
   SchemaAuthProviderOut,
   SchemaAuthRevokeRequest,
   SchemaAuthStartRequest,
@@ -169,6 +171,34 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     return response
   }
 
+  async function getCredential(
+    projectId: number,
+    credentialRef: string,
+  ): Promise<SchemaAuthCredentialEditOut> {
+    error.value = null
+    return apiFetch<SchemaAuthCredentialEditOut>(
+      `/api/v1/projects/${projectId}/auth/credentials/${encodeURIComponent(credentialRef)}`,
+    )
+  }
+
+  async function updateCredential(
+    projectId: number,
+    credentialRef: string,
+    body: SchemaAuthCredentialUpdateRequest,
+  ): Promise<SchemaWriteResponseAuthCredentialSetOut> {
+    error.value = null
+    const response = await apiFetch<SchemaWriteResponseAuthCredentialSetOut>(
+      `/api/v1/projects/${projectId}/auth/credentials/${encodeURIComponent(credentialRef)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    )
+    await refreshAuth(projectId, { silent: true })
+    return response
+  }
+
   async function startCredential(
     projectId: number,
     providerKey: string,
@@ -253,6 +283,8 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     refresh,
     refreshAuth,
     storeCredential,
+    getCredential,
+    updateCredential,
     startCredential,
     testCredential,
     revokeCredential,

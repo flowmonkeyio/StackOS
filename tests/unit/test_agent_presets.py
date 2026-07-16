@@ -190,7 +190,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     listing = AgentPresetLoader().list_presets()
     keys = {item.key for item in listing.presets}
 
-    assert len(keys) == 42
+    assert len(keys) == 43
     assert "stackos.sdlc.requirements-flow-definer" in keys
     assert "stackos.sdlc.codebase-explorer" in keys
     assert "stackos.sdlc.planning" in keys
@@ -205,6 +205,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert "communications.workflow.customer-feedback-intake" in keys
     assert "stackos.workflow.project-memory-review" in keys
     assert "seo.workflow.keyword-research" in keys
+    assert "seo.workflow.website-analysis" in keys
     assert "media-buying.workflow.campaign-launch" in keys
     assert "gtm.workflow.account-research" in keys
     assert "communications.workflow.rich-telegram-reply" in keys
@@ -233,6 +234,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert by_key["trackbooth.agent-api-operator"].plugin_slug == "trackbooth"
     assert by_key["stackos.workflow.workflow-author"].plugin_slug == "core"
     assert by_key["branding.claim-auditor"].plugin_slug == "branding"
+    assert by_key["seo.workflow.website-analysis"].plugin_slug == "seo"
 
 
 def test_bundled_agent_presets_explicitly_classify_role_execution_style() -> None:
@@ -241,7 +243,7 @@ def test_bundled_agent_presets_explicitly_classify_role_execution_style() -> Non
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
         bundles.extend(loaded.get("presets", []))
 
-    assert len(bundles) == 42
+    assert len(bundles) == 43
     assert all(item.get("role_class") in {"reasoning", "mechanical", "review"} for item in bundles)
     role_classes = {item["role_class"] for item in bundles}
     assert role_classes == {"reasoning", "mechanical", "review"}

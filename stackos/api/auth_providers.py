@@ -12,6 +12,7 @@ from sqlmodel import Session
 from stackos.api.deps import get_session, get_settings
 from stackos.api.envelopes import WriteResponse, write_response
 from stackos.auth_providers import (
+    AuthCredentialEditOut,
     AuthCredentialSetOut,
     AuthProviderOut,
     AuthRepository,
@@ -81,6 +82,15 @@ class AuthCredentialSetRequest(BaseModel):
     expires_at: datetime | None = None
 
 
+class AuthCredentialUpdateRequest(BaseModel):
+    """Credential fields for the existing provider auth method."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fields: dict[str, Any] = Field(default_factory=dict)
+    label: str | None = Field(max_length=200)
+
+
 @router.get("/auth/providers", response_model=list[AuthProviderOut])
 async def list_auth_providers(
     provider_key: str | None = Query(default=None),
@@ -145,6 +155,43 @@ async def auth_store_credential(
             label=body.label,
             fields=body.fields,
             expires_at=body.expires_at,
+        )
+    )
+
+
+@router.get(
+    "/projects/{project_id}/auth/credentials/{credential_ref}",
+    response_model=AuthCredentialEditOut,
+)
+async def auth_get_credential(
+    project_id: int,
+    credential_ref: str,
+    session: Session = Depends(get_session),
+) -> AuthCredentialEditOut:
+    """Return editable non-secret values and secret-presence flags."""
+    return AuthRepository(session).get_credential_edit_state(
+        project_id=project_id,
+        credential_ref=credential_ref,
+    )
+
+
+@router.patch(
+    "/projects/{project_id}/auth/credentials/{credential_ref}",
+    response_model=WriteResponse[AuthCredentialSetOut],
+)
+async def auth_update_credential(
+    project_id: int,
+    credential_ref: str,
+    body: AuthCredentialUpdateRequest,
+    session: Session = Depends(get_session),
+) -> WriteResponse[AuthCredentialSetOut]:
+    """Update safe fields and explicitly supplied secrets without exposing either."""
+    return write_response(
+        AuthRepository(session).update_credential(
+            project_id=project_id,
+            credential_ref=credential_ref,
+            fields=body.fields,
+            label=body.label,
         )
     )
 

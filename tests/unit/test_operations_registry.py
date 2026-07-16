@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from stackos.operations.registry import build_operation_registry
+from stackos.workflows import validate_workflow_template_obj
 
 
 def test_operation_registry_documents_core_operations() -> None:
@@ -157,6 +158,7 @@ def test_operation_registry_documents_core_operations() -> None:
     communication_profile = registry.get("communicationProfile.upsert").describe_out()
     assert communication_profile.surfaces["mcp"].enabled is True
     assert communication_profile.surfaces["rest"].enabled is True
+    assert communication_profile.surfaces["rest"].browser_safe is True
     assert communication_profile.surfaces["cli"].command == "ops call communicationProfile.upsert"
     assert communication_profile.grant_policy == "direct-setup-write"
     assert any("provider_facets" in item for item in communication_profile.prerequisites)
@@ -234,6 +236,7 @@ def test_operation_registry_documents_core_operations() -> None:
     auth_status = registry.get("auth.status").describe_out()
     assert auth_status.surfaces["mcp"].enabled is True
     assert auth_status.surfaces["rest"].enabled is True
+    assert auth_status.surfaces["rest"].path == "/api/v1/projects/{project_id}/auth/status"
     assert auth_status.surfaces["cli"].command == "ops call auth.status"
     assert auth_status.grant_policy == "direct-read"
     assert any("credential_ref" in item for item in auth_status.returns)
@@ -244,6 +247,11 @@ def test_operation_registry_documents_core_operations() -> None:
     assert auth_test.surfaces["cli"].command == "ops call auth.test"
     assert auth_test.grant_policy == "direct-setup-write"
     assert any("auth.status" in item for item in auth_test.prerequisites)
+
+    auth_start = registry.get("auth.start").describe_out()
+    assert auth_start.surfaces["rest"].path == (
+        "/api/v1/projects/{project_id}/auth/{provider_key}/start"
+    )
 
     browser_call = registry.get("browser.page.call").describe_out()
     assert browser_call.category == "browser"
@@ -282,6 +290,7 @@ def test_operation_registry_documents_core_operations() -> None:
     ingress = registry.get("ingressEndpoint.configure").describe_out()
     assert ingress.surfaces["mcp"].enabled is True
     assert ingress.surfaces["rest"].enabled is True
+    assert ingress.surfaces["rest"].browser_safe is True
     assert ingress.surfaces["cli"].command == "ops call ingressEndpoint.configure"
     assert ingress.mutating is True
     assert ingress.grant_policy == "direct-setup-write"
@@ -290,11 +299,13 @@ def test_operation_registry_documents_core_operations() -> None:
     ingress_refresh = registry.get("ingressEndpoint.refresh").describe_out()
     assert ingress_refresh.mutating is True
     assert ingress_refresh.read_only is False
+    assert ingress_refresh.surfaces["rest"].browser_safe is True
     assert ingress_refresh.response_policy.allowed_modes == ["compact", "raw"]
 
     ingress_sync = registry.get("ingressEndpoint.sync").describe_out()
     assert ingress_sync.mutating is True
     assert ingress_sync.read_only is False
+    assert ingress_sync.surfaces["rest"].browser_safe is True
     assert ingress_sync.response_policy.allowed_modes == ["compact", "raw"]
 
     resolver = registry.get("toolProfile.resolve").describe_out()
@@ -334,6 +345,10 @@ def test_operation_registry_documents_core_operations() -> None:
     assert authoring_guide.surfaces["cli"].command == "ops call workflowTemplate.authoringGuide"
     assert authoring_guide.grant_policy == "direct-read"
     assert any("single source of truth" in item for item in [authoring_guide.purpose])
+
+    workflow_save = registry.get("workflowTemplate.save").describe_out()
+    save_example = workflow_save.examples[0].arguments["template_json"]
+    assert validate_workflow_template_obj(save_example).valid is True
 
     run_plan = registry.get("runPlan.claimStep").describe_out()
     assert run_plan.surfaces["mcp"].enabled is True

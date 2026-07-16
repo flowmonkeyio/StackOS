@@ -13,7 +13,7 @@ from sqlmodel import select
 
 from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.db.models import Credential, CredentialAccount, IntegrationCredential
-from stackos.repositories.base import Envelope, ValidationError
+from stackos.repositories.base import Envelope, RepositoryError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 
 from .schema import AuthTestOut
@@ -50,14 +50,32 @@ class CredentialTestingMixin:
         assert row.id is not None
         secret_payload = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
         extra = self._integration_extra(row)
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            integration = integration_cls(
-                payload=secret_payload,
-                project_id=project_id,
-                http=client,
-                **extra,
-            )
-            raw_result = await integration.test_credentials()
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                integration = integration_cls(
+                    payload=secret_payload,
+                    project_id=project_id,
+                    http=client,
+                    **extra,
+                )
+                raw_result = await integration.test_credentials()
+        except RepositoryError as exc:
+            safe = redact_secrets(exc.data)
+            stage = str(safe.get("stage") or "test")[:80]
+            reason_code = str(safe.get("reason_code") or type(exc).__name__)[:120]
+            metadata = {
+                "stage": stage,
+                "reason_code": reason_code,
+            }
+            if safe.get("reply_code") is not None:
+                metadata["reply_code"] = str(safe["reply_code"])[:3]
+            raw_result = {
+                "ok": False,
+                "status": "failed",
+                "summary": f"{row.kind} credential test failed at {stage}",
+                "retryable": bool(exc.retryable),
+                "metadata": metadata,
+            }
         out = self._normalize_test_result(
             credential=credential,
             provider_key=row.kind,
@@ -65,7 +83,9 @@ class CredentialTestingMixin:
         )
         now = utcnow()
         credential.last_tested_at = now
-        credential.status = "connected" if out.ok else "failed"
+        # A test result is diagnostic evidence, not an execution permission.
+        # Keep the stored credential usable and return/audit the real result.
+        credential.status = "connected"
         credential.updated_at = now
         self._s.add(credential)
         self._sync_account_from_test_result(
@@ -210,6 +230,29 @@ class CredentialTestingMixin:
             extra["store_domain"] = str(store_domain)
             if config.get("api_version"):
                 extra["api_version"] = str(config["api_version"])
+        elif row.kind == "ftp":
+            from stackos.integrations.ftp import validate_ftp_credential_config
+
+            try:
+                validate_ftp_credential_config(config)
+            except ValueError as exc:
+                raise ValidationError(str(exc), data={"credential_id": row.id}) from exc
+            passive_value = config.get("passive_mode", True)
+            extra.update(
+                {
+                    "host": str(config["host"]),
+                    "port": int(config.get("port") or 21),
+                    "tls_mode": str(config.get("tls_mode") or "explicit"),
+                    "username": str(config["username"]),
+                    "passive_mode": (
+                        passive_value
+                        if isinstance(passive_value, bool)
+                        else str(passive_value).lower() in {"true", "1", "yes", "on"}
+                    ),
+                    "timeout_s": float(config.get("timeout_s") or 30),
+                    "encoding": str(config.get("encoding") or "utf-8"),
+                }
+            )
         elif row.kind in {"smtp", "imap"}:
             for key in ("host", "port", "tls_mode", "username", "timeout_s"):
                 if key in config and config[key] is not None:

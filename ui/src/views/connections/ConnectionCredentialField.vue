@@ -12,6 +12,8 @@ defineProps<{
   select: boolean
   options: Array<{ value: string; label: string }>
   error?: string
+  editing?: boolean
+  secretPresent?: boolean
 }>()
 
 defineEmits<{
@@ -22,8 +24,13 @@ defineEmits<{
 <template>
   <UiFormField
     :label="field.label"
-    :help="field.description ?? undefined"
-    :required="field.required"
+    :saved="editing && secret && secretPresent && modelValue.trim() === ''"
+    :help="
+      editing && secret && secretPresent
+        ? [field.description, 'Saved — leave blank to keep it.'].filter(Boolean).join(' ')
+        : (field.description ?? undefined)
+    "
+    :required="field.required && !(editing && secret && secretPresent)"
     :input-id="connectionFieldInputId(field.key)"
     :error="error"
   >
@@ -46,7 +53,7 @@ defineEmits<{
         :invalid="invalid"
         no-copy
         no-reveal
-        :placeholder="field.placeholder ?? ''"
+        :placeholder="editing && secretPresent ? '••••••••' : (field.placeholder ?? '')"
         @update:model-value="$emit('update:modelValue', $event)"
       />
       <UiInput

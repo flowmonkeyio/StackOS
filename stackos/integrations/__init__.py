@@ -19,8 +19,10 @@ from stackos.integrations._base import BaseIntegration, IntegrationCallResult
 from stackos.integrations.ahrefs import AhrefsIntegration
 from stackos.integrations.alibaba_wan import AlibabaWanIntegration
 from stackos.integrations.byteplus_ark import BytePlusArkIntegration
+from stackos.integrations.cloudflare import CloudflareIntegration
 from stackos.integrations.dataforseo import DataForSeoIntegration
 from stackos.integrations.firecrawl import FirecrawlIntegration
+from stackos.integrations.ftp import FtpIntegration
 from stackos.integrations.ghost import GhostIntegration
 from stackos.integrations.google_analytics import GoogleAnalyticsIntegration
 from stackos.integrations.google_gemini_image import GoogleGeminiImageIntegration
@@ -55,6 +57,8 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "serper": SerperIntegration,
     "shopify": ShopifyIntegration,
     "firecrawl": FirecrawlIntegration,
+    "ftp": FtpIntegration,
+    "cloudflare": CloudflareIntegration,
     "openai-images": OpenAIImagesIntegration,
     "xai-imagine": XAIImagineIntegration,
     "reve": ReveImagesIntegration,
@@ -98,8 +102,10 @@ __all__ = [
     "AlibabaWanIntegration",
     "BaseIntegration",
     "BytePlusArkIntegration",
+    "CloudflareIntegration",
     "DataForSeoIntegration",
     "FirecrawlIntegration",
+    "FtpIntegration",
     "GhostIntegration",
     "GoogleAnalyticsIntegration",
     "GoogleGeminiImageIntegration",

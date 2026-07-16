@@ -75,10 +75,12 @@ REST mutation routes are local-admin surfaces behind the daemon bearer token.
 The browser UI receives only a derived REST-only console token. That token can
 read REST state, call operation-registry entries whose specs are read-only,
 create projects during local setup, and manage provider auth setup for a
-project (`auth.start`, secret storage, sanitized auth tests, and revoke). It can
-also call explicitly browser-safe local console operations such as
-`tracker.updateTask` for task status changes. It cannot access MCP, arbitrary
-mutating operation calls, or general mutation routes. The
+project (`auth.start`, secret storage and edits, sanitized auth tests, and
+revoke). Provider-auth route definitions own method validity inside that
+namespace. Mutating operation calls are allowed only when the operation's REST
+surface declares `browser_safe=True` for explicit local setup. It cannot access
+MCP, arbitrary mutating operation calls, tracker lifecycle writes, or general
+mutation routes. The
 installable MCP bridge keeps the daemon bearer inside the bridge process rather
 than giving it to the agent. Normal agent workflow writes and external action
 execution go through MCP run-plan grants (`runPlan.claimStep` + step-scoped
@@ -142,9 +144,9 @@ for REST reads, read-only `POST /api/v1/operations/{operation}/call` transport
 calls, `POST /api/v1/projects`, narrow no-secret setup operations such as
 `communicationProfile.upsert` and `ingressEndpoint.*`, and the
 provider-auth setup routes under `/api/v1/projects/{id}/auth/*`. It can also
-call explicitly browser-safe local console operations such as
-`tracker.updateTask`; it cannot access `/mcp` and cannot mutate existing
-projects, resources, runs, action execution, templates, or project data.
+call local setup operations whose REST surface is explicitly marked
+browser-safe; it cannot access `/mcp` and cannot mutate existing projects,
+tracker lifecycle, resources, runs, action execution, templates, or project data.
 Previously, only a process that could read `auth.token` (mode 0600, owned by
 the daemon's user) could obtain any bearer token. On a single-user macOS or
 Linux box that's a near-zero delta (same-user processes already had file

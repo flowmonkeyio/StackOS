@@ -15,6 +15,7 @@ from stackos.actions.branding import BrandingActionConnector
 from stackos.actions.byteplus_seedance import BytePlusSeedanceVideoActionConnector
 from stackos.actions.byteplus_seedream import BytePlusSeedreamImageActionConnector
 from stackos.actions.clay import ClayActionConnector
+from stackos.actions.cloudflare import CloudflareActionConnector
 from stackos.actions.connectors import (
     DEFAULT_ACTION_CONNECTORS,
     ActionConnector,
@@ -26,6 +27,7 @@ from stackos.actions.connectors import (
 )
 from stackos.actions.dataforseo import DataForSeoActionConnector
 from stackos.actions.firecrawl import FirecrawlActionConnector
+from stackos.actions.ftp import FtpActionConnector
 from stackos.actions.ghost import GhostActionConnector
 from stackos.actions.google_ads import GoogleAdsActionConnector
 from stackos.actions.google_analytics import GoogleAnalyticsActionConnector
@@ -85,6 +87,8 @@ DEFAULT_ACTION_CONNECTORS.register(KlingVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedreamImageActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedanceVideoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(FtpActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(CloudflareActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SitemapActionConnector())
@@ -142,9 +146,11 @@ __all__ = [
     "BytePlusSeedanceVideoActionConnector",
     "BytePlusSeedreamImageActionConnector",
     "ClayActionConnector",
+    "CloudflareActionConnector",
     "DataForSeoActionConnector",
     "ExecutableActionManifest",
     "FirecrawlActionConnector",
+    "FtpActionConnector",
     "GhostActionConnector",
     "GoogleAdsActionConnector",
     "GoogleAnalyticsActionConnector",

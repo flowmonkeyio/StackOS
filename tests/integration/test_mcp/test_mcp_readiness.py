@@ -120,6 +120,33 @@ def test_readiness_check_keeps_engineering_workflow_usable_without_provider_nois
     assert readiness["next_steps"][0]["tool"] == "runPlan.create"
 
 
+def test_readiness_check_keeps_website_seo_public_baseline_without_optional_providers(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {
+            "project_id": project_id,
+            "workflow_key": "seo.website-analysis",
+            "response_mode": "raw",
+        },
+    )
+
+    assert readiness["scope"] == "workflow"
+    assert readiness["structurally_ready"] is True
+    assert readiness["required_providers_ready"] is True
+    assert readiness["missing"] == []
+    assert readiness["workflow"]["workflow_key"] == "seo.website-analysis"
+    public_actions = {
+        item["action_ref"]: item for item in readiness["actions"] if item.get("action_ref")
+    }
+    assert public_actions["utils.web.read"]["executable"] is True
+    assert public_actions["utils.sitemap.fetch"]["executable"] is True
+
+
 def test_readiness_check_branding_content_optional_image_repair_setup(
     mcp_client: MCPClient,
     seeded_project: dict,

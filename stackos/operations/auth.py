@@ -34,7 +34,7 @@ def operation_specs() -> list[OperationSpec]:
                 mcp=OperationSurface(enabled=True),
                 rest=OperationSurface(
                     enabled=True,
-                    path="/api/v1/projects/{project_id}/auth",
+                    path="/api/v1/projects/{project_id}/auth/status",
                 ),
                 cli=OperationSurface(enabled=True, command="ops call auth.status"),
             ),
@@ -118,7 +118,7 @@ def operation_specs() -> list[OperationSpec]:
                 mcp=OperationSurface(enabled=True),
                 rest=OperationSurface(
                     enabled=True,
-                    path="/api/v1/projects/{project_id}/auth/start",
+                    path="/api/v1/projects/{project_id}/auth/{provider_key}/start",
                 ),
                 cli=OperationSurface(enabled=True, command="ops call auth.start"),
             ),

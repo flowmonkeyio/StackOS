@@ -1,0 +1,15 @@
+{
+  "key": "seo.workflow.website-analysis",
+  "slug": "seo-workflow-website-analysis",
+  "name": "Website SEO Analysis Agent",
+  "description": "Maps a website, reconciles public and connected evidence, and produces an agency-style finding register and prioritized roadmap without inventing measurements.",
+  "domain": "seo",
+  "audience": "SEO and content teams",
+  "color": "#79dfff",
+  "featured": true,
+  "role": "Seo Website Analysis",
+  "roleClass": "reasoning",
+  "workflowKeys": [
+    "seo.website-analysis"
+  ]
+}

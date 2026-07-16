@@ -17,7 +17,13 @@ import {
   serviceName,
 } from './formatters'
 import { connectionFieldInputId } from './fieldIds'
-import type { AuthMethod, ConnectionRow, MessageMap, MessageTone, ServiceGroup } from './types'
+import type {
+  AuthMethod,
+  ConnectionRow,
+  MessageMap,
+  MessageTone,
+  ServiceGroup,
+} from './types'
 
 export function useConnectionCredentials(projectId: ComputedRef<number>) {
   const catalogStore = useStackOsCatalogStore()
@@ -32,8 +38,7 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     canAddProvider,
     inputType,
     isSecretField,
-    primaryCredentialFields,
-    advancedCredentialFields,
+    methodFields,
     fieldOptions,
     hasFieldOptions,
     fieldValue,
@@ -44,6 +49,7 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     setLabelValue,
     setSelectedProvider: setRawSelectedProvider,
     clearForm,
+    populateForm,
   } = useConnectionForm()
 
   const addPanelOpen = ref(false)
@@ -53,6 +59,9 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
   const connectionMessages = ref<MessageMap>({})
   const fieldErrors = ref<Record<string, string>>({})
   const pendingRevoke = ref<ConnectionRow | null>(null)
+  const editingCredentialRef = ref<string | null>(null)
+  const editingSecretPresent = ref<Record<string, boolean>>({})
+  const editing = computed(() => editingCredentialRef.value !== null)
 
   const connections = computed<ConnectionRow[]>(() =>
     (authStatus.value?.connections ?? []).map((connection) => ({
@@ -156,16 +165,64 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     ensureSelectableProvider()
     const providerKey = typeof value === 'string' ? value : ''
     if (!providerKey || !visibleProviderByKey.value.has(providerKey)) return
-    selectProvider(providerKey)
-    addPanelOpen.value = true
+    openAddConnection(providerKey)
   }
 
   function openAddConnection(providerKey?: string): void {
+    editingCredentialRef.value = null
+    editingSecretPresent.value = {}
     if (providerKey && visibleProviderByKey.value.has(providerKey)) {
       selectProvider(providerKey)
     }
     ensureSelectableProvider()
+    const provider = selectedProvider.value
+    const method = provider ? selectedMethod(provider) : null
+    if (provider && method) clearForm(provider.key, method.key)
     addPanelOpen.value = true
+  }
+
+  async function openEditConnection(connection: ConnectionRow): Promise<void> {
+    busyAction.value = connectionActionKey(connection.credential_ref, 'edit')
+    try {
+      const state = await catalogStore.getCredential(projectId.value, connection.credential_ref)
+      const provider = visibleProviderByKey.value.get(state.connection.provider_key)
+      if (!provider) {
+        throw new Error('The provider plugin must be enabled before this connection can be edited.')
+      }
+      const method = authMethods(provider).find(
+        (candidate) => candidate.key === state.connection.auth_method_key,
+      )
+      if (!method) {
+        throw new Error('The saved authentication method is no longer available.')
+      }
+      setRawSelectedProvider(provider.key)
+      setRawSelectedMethod(provider.key, method.key)
+      const values: Record<string, string> = {}
+      for (const [key, value] of Object.entries(state.values)) {
+        if (value !== null && ['string', 'number', 'boolean'].includes(typeof value)) {
+          values[key] = String(value)
+        }
+      }
+      populateForm(
+        provider.key,
+        method.key,
+        values,
+        state.connection.profile_key,
+        state.connection.label ?? '',
+      )
+      editingCredentialRef.value = connection.credential_ref
+      editingSecretPresent.value = state.secret_present
+      fieldErrors.value = {}
+      addPanelOpen.value = true
+    } catch (err) {
+      setConnectionMessage(
+        connection.credential_ref,
+        'danger',
+        formatApiError(err, 'failed to load credential settings'),
+      )
+    } finally {
+      busyAction.value = null
+    }
   }
 
   function selectProvider(value: string | number | null): void {
@@ -199,9 +256,15 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     const fields: Record<string, string> = {}
     const errors: Record<string, string> = {}
     for (const field of method.fields ?? []) {
-      const value = fieldValue(provider.key, method.key, field.key).trim()
-      if (field.required && !value) errors[field.key] = `${field.label} is required.`
-      if (value) fields[field.key] = value
+      const value = fieldValue(provider.key, method.key, field.key)
+      const blank = value.trim() === ''
+      const preservedSecret = editing.value && field.secret && editingSecretPresent.value[field.key]
+      if (field.required && blank && !preservedSecret) {
+        errors[field.key] = `${field.label} is required.`
+      }
+      if (editing.value && field.secret && blank) continue
+      if (!editing.value && blank) continue
+      fields[field.key] = value
     }
     fieldErrors.value = errors
     const firstInvalidKey = Object.keys(errors)[0]
@@ -220,12 +283,30 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     if (fields === null) return
     const profileKey = profileValue(provider.key, method.key).trim() || 'default'
     const label = labelValue(provider.key, method.key).trim()
-    if (Object.keys(fields).length === 0 && (method.fields ?? []).some((field) => field.secret)) {
+    if (
+      !editing.value &&
+      Object.keys(fields).length === 0 &&
+      (method.fields ?? []).some((field) => field.secret)
+    ) {
       setProviderMessage(provider.key, 'danger', 'Credential fields are required.')
       return
     }
     busyAction.value = providerActionKey(provider.key, 'save')
     try {
+      if (editingCredentialRef.value) {
+        const credentialRef = editingCredentialRef.value
+        await catalogStore.updateCredential(projectId.value, credentialRef, {
+          label: label || null,
+          fields,
+        })
+        clearForm(provider.key, method.key)
+        editingCredentialRef.value = null
+        editingSecretPresent.value = {}
+        fieldErrors.value = {}
+        setConnectionMessage(credentialRef, 'success', 'Connection settings updated.')
+        addPanelOpen.value = false
+        return
+      }
       const response = await catalogStore.storeCredential(projectId.value, provider.key, {
         auth_method_key: method.key,
         profile_key: profileKey,
@@ -376,6 +457,8 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     connectionMessages,
     fieldErrors,
     pendingRevoke,
+    editing,
+    editingSecretPresent,
     authMethods,
     selectedMethodKey,
     selectedMethod,
@@ -383,8 +466,7 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     supportsCredential,
     inputType,
     isSecretField,
-    primaryCredentialFields,
-    advancedCredentialFields,
+    methodFields,
     fieldOptions,
     hasFieldOptions,
     fieldValue,
@@ -406,6 +488,7 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
     load,
     applyProviderSelection,
     openAddConnection,
+    openEditConnection,
     saveCredential,
     startProvider,
     testConnection,

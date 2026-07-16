@@ -404,6 +404,576 @@ _SITEMAP_FETCH_INPUT_SCHEMA = {
         "max_entries": {"type": "integer", "minimum": 1, "maximum": 20000},
     },
 }
+_FTP_DIRECTORY_LIST_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["remote_path"],
+    "properties": {
+        "remote_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": (
+                "Absolute or current-directory-relative remote FTP directory selected "
+                "by the agent. Each call opens a fresh connection."
+            ),
+        }
+    },
+}
+_FTP_TRANSFER_ITEM_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["local_path", "remote_path"],
+    "properties": {
+        "local_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": (
+                "Agent-selected daemon-local file or directory path. StackOS does not "
+                "restrict transfers to generated assets."
+            ),
+        },
+        "remote_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact remote file or directory root for this mapping.",
+        },
+    },
+}
+_FTP_TRANSFER_BASE_PROPERTIES = {
+    "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": _FTP_TRANSFER_ITEM_SCHEMA,
+        "description": "One or more explicit local/remote path mappings.",
+    },
+    "conflict_policy": {
+        "type": "string",
+        "enum": ["overwrite", "skip", "fail"],
+        "description": "Agent-selected handling when the destination already exists.",
+    },
+    "error_policy": {
+        "type": "string",
+        "enum": ["stop", "continue"],
+        "description": "Stop at the first failed path or continue the remaining batch.",
+    },
+}
+_FTP_UPLOAD_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["items", "conflict_policy", "error_policy"],
+    "properties": {
+        **_FTP_TRANSFER_BASE_PROPERTIES,
+        "follow_symlinks": {
+            "type": "boolean",
+            "default": False,
+            "description": (
+                "Follow local symlinks under their link names with cycle detection. "
+                "False skips and reports symlinks."
+            ),
+        },
+    },
+}
+_FTP_DOWNLOAD_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["items", "conflict_policy", "error_policy"],
+    "properties": _FTP_TRANSFER_BASE_PROPERTIES,
+}
+_FTP_DIRECTORY_LIST_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "provider",
+        "operation",
+        "status",
+        "remote_path",
+        "entry_count",
+        "directory_count",
+        "file_count",
+        "symlink_count",
+        "entries",
+    ],
+    "properties": {
+        "provider": {"type": "string", "const": "ftp"},
+        "operation": {"type": "string", "const": "directory.list"},
+        "status": {"type": "string", "const": "success"},
+        "remote_path": {"type": "string"},
+        "entry_count": {"type": "integer", "minimum": 0},
+        "directory_count": {"type": "integer", "minimum": 0},
+        "file_count": {"type": "integer", "minimum": 0},
+        "symlink_count": {"type": "integer", "minimum": 0},
+        "entries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "remote_path", "type", "safe_to_traverse"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "remote_path": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                    "type": {
+                        "type": "string",
+                        "enum": ["directory", "file", "symlink", "unknown"],
+                    },
+                    "safe_to_traverse": {"type": "boolean"},
+                    "size": {"anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
+                    "modified": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                    "unique": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                    "permissions": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                },
+            },
+        },
+    },
+}
+_FTP_TRANSFER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "provider",
+        "operation",
+        "status",
+        "completed_count",
+        "skipped_count",
+        "failed_count",
+        "created_directory_count",
+        "bytes_transferred",
+        "completed",
+        "skipped",
+        "failed",
+        "created_directories",
+        "completed_paths",
+        "skipped_paths",
+        "failed_paths",
+    ],
+    "properties": {
+        "provider": {"type": "string", "const": "ftp"},
+        "operation": {"type": "string", "enum": ["file.upload", "file.download"]},
+        "status": {"type": "string", "enum": ["success", "partial", "failed"]},
+        "completed_count": {"type": "integer", "minimum": 0},
+        "skipped_count": {"type": "integer", "minimum": 0},
+        "failed_count": {"type": "integer", "minimum": 0},
+        "created_directory_count": {"type": "integer", "minimum": 0},
+        "bytes_transferred": {"type": "integer", "minimum": 0},
+        "completed": {"type": "array", "items": {"type": "object"}},
+        "skipped": {"type": "array", "items": {"type": "object"}},
+        "failed": {"type": "array", "items": {"type": "object"}},
+        "created_directories": {"type": "array", "items": {"type": "object"}},
+        "completed_paths": {"type": "array", "items": {"type": "string"}},
+        "skipped_paths": {"type": "array", "items": {"type": "string"}},
+        "failed_paths": {"type": "array", "items": {"type": "string"}},
+    },
+}
+_CLOUDFLARE_RECORD_TYPES = [
+    "A",
+    "AAAA",
+    "CAA",
+    "CERT",
+    "CNAME",
+    "DNSKEY",
+    "DS",
+    "HTTPS",
+    "LOC",
+    "MX",
+    "NAPTR",
+    "NS",
+    "OPENPGPKEY",
+    "PTR",
+    "SMIMEA",
+    "SRV",
+    "SSHFP",
+    "SVCB",
+    "TLSA",
+    "TXT",
+    "URI",
+]
+_CLOUDFLARE_CONTENT_RECORD_TYPES = {
+    "A",
+    "AAAA",
+    "CNAME",
+    "MX",
+    "NS",
+    "OPENPGPKEY",
+    "PTR",
+    "TXT",
+}
+_CLOUDFLARE_NUMBER_255 = {"type": "number", "minimum": 0, "maximum": 255}
+_CLOUDFLARE_NUMBER_65535 = {"type": "number", "minimum": 0, "maximum": 65535}
+_CLOUDFLARE_DATA_SCHEMAS = {
+    "CAA": {
+        "flags": _CLOUDFLARE_NUMBER_255,
+        "tag": {"type": "string"},
+        "value": {"type": "string"},
+    },
+    "CERT": {
+        "algorithm": _CLOUDFLARE_NUMBER_255,
+        "certificate": {"type": "string"},
+        "key_tag": _CLOUDFLARE_NUMBER_65535,
+        "type": _CLOUDFLARE_NUMBER_65535,
+    },
+    "DNSKEY": {
+        "algorithm": _CLOUDFLARE_NUMBER_255,
+        "flags": _CLOUDFLARE_NUMBER_65535,
+        "protocol": _CLOUDFLARE_NUMBER_255,
+        "public_key": {"type": "string"},
+    },
+    "DS": {
+        "algorithm": _CLOUDFLARE_NUMBER_255,
+        "digest": {"type": "string"},
+        "digest_type": _CLOUDFLARE_NUMBER_255,
+        "key_tag": _CLOUDFLARE_NUMBER_65535,
+    },
+    "HTTPS": {
+        "priority": _CLOUDFLARE_NUMBER_65535,
+        "target": {"type": "string"},
+        "value": {"type": "string"},
+    },
+    "LOC": {
+        "altitude": {"type": "number", "minimum": -100000, "maximum": 42849672.95},
+        "lat_degrees": {"type": "number", "minimum": 0, "maximum": 90},
+        "lat_direction": {"type": "string", "enum": ["N", "S"]},
+        "lat_minutes": {"type": "number", "minimum": 0, "maximum": 59},
+        "lat_seconds": {"type": "number", "minimum": 0, "maximum": 59.999},
+        "long_degrees": {"type": "number", "minimum": 0, "maximum": 180},
+        "long_direction": {"type": "string", "enum": ["E", "W"]},
+        "long_minutes": {"type": "number", "minimum": 0, "maximum": 59},
+        "long_seconds": {"type": "number", "minimum": 0, "maximum": 59.999},
+        "precision_horz": {"type": "number", "minimum": 0, "maximum": 90000000},
+        "precision_vert": {"type": "number", "minimum": 0, "maximum": 90000000},
+        "size": {"type": "number", "minimum": 0, "maximum": 90000000},
+    },
+    "NAPTR": {
+        "flags": {"type": "string"},
+        "order": _CLOUDFLARE_NUMBER_65535,
+        "preference": _CLOUDFLARE_NUMBER_65535,
+        "regex": {"type": "string"},
+        "replacement": {"type": "string"},
+        "service": {"type": "string"},
+    },
+    "SMIMEA": {
+        "certificate": {"type": "string"},
+        "matching_type": _CLOUDFLARE_NUMBER_255,
+        "selector": _CLOUDFLARE_NUMBER_255,
+        "usage": _CLOUDFLARE_NUMBER_255,
+    },
+    "SRV": {
+        "port": _CLOUDFLARE_NUMBER_65535,
+        "priority": _CLOUDFLARE_NUMBER_65535,
+        "target": {"type": "string"},
+        "weight": _CLOUDFLARE_NUMBER_65535,
+    },
+    "SSHFP": {
+        "algorithm": _CLOUDFLARE_NUMBER_255,
+        "fingerprint": {"type": "string"},
+        "type": _CLOUDFLARE_NUMBER_255,
+    },
+    "SVCB": {
+        "priority": _CLOUDFLARE_NUMBER_65535,
+        "target": {"type": "string"},
+        "value": {"type": "string"},
+    },
+    "TLSA": {
+        "certificate": {"type": "string"},
+        "matching_type": _CLOUDFLARE_NUMBER_255,
+        "selector": _CLOUDFLARE_NUMBER_255,
+        "usage": _CLOUDFLARE_NUMBER_255,
+    },
+    "URI": {
+        "target": {"type": "string"},
+        "weight": _CLOUDFLARE_NUMBER_65535,
+    },
+}
+_CLOUDFLARE_TTL_SCHEMA = {
+    "anyOf": [
+        {"type": "number", "const": 1},
+        {"type": "number", "minimum": 30, "maximum": 86400},
+    ],
+    "description": (
+        "1 selects Cloudflare automatic TTL; otherwise the current public range is "
+        "30 through 86400 seconds. Cloudflare still enforces plan-specific minimums."
+    ),
+}
+
+
+def _cloudflare_record_schema() -> dict[str, Any]:
+    branches: list[dict[str, Any]] = []
+    for record_type in _CLOUDFLARE_RECORD_TYPES:
+        settings_properties = {
+            "ipv4_only": {"type": "boolean"},
+            "ipv6_only": {"type": "boolean"},
+        }
+        if record_type == "CNAME":
+            settings_properties["flatten_cname"] = {"type": "boolean"}
+        properties: dict[str, Any] = {
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "ttl": _CLOUDFLARE_TTL_SCHEMA,
+            "type": {"type": "string", "const": record_type},
+            "comment": {"type": "string"},
+            "proxied": {"type": "boolean"},
+            "settings": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": settings_properties,
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "uniqueItems": True,
+            },
+        }
+        required = ["name", "ttl", "type"]
+        if record_type in _CLOUDFLARE_CONTENT_RECORD_TYPES:
+            content_schema: dict[str, Any] = {"type": "string"}
+            if record_type == "A":
+                content_schema["format"] = "ipv4"
+            elif record_type == "AAAA":
+                content_schema["format"] = "ipv6"
+            elif record_type == "MX":
+                content_schema["format"] = "hostname"
+            properties["content"] = content_schema
+        else:
+            properties["content"] = {"type": "string"}
+            data_properties = _CLOUDFLARE_DATA_SCHEMAS[record_type]
+            properties["data"] = {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": data_properties,
+            }
+        if record_type in {"MX", "URI"}:
+            properties["priority"] = _CLOUDFLARE_NUMBER_65535
+            required.append("priority")
+        if record_type in {"A", "AAAA"}:
+            properties["private_routing"] = {"type": "boolean"}
+        branches.append(
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "required": required,
+                "properties": properties,
+            }
+        )
+    return {"oneOf": branches}
+
+
+_CLOUDFLARE_ZONE_LIST_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "name": {"type": "string", "maxLength": 253},
+        "status": {
+            "type": "string",
+            "enum": ["initializing", "pending", "active", "moved"],
+        },
+        "type": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["full", "partial", "secondary", "internal"]},
+            "minItems": 1,
+            "uniqueItems": True,
+        },
+        "account.id": {"type": "string"},
+        "account.name": {"type": "string", "maxLength": 253},
+        "page": {"type": "integer", "minimum": 1},
+        "per_page": {"type": "integer", "minimum": 5, "maximum": 50},
+        "order": {
+            "type": "string",
+            "enum": ["name", "status", "account.id", "account.name", "plan.id"],
+        },
+        "direction": {"type": "string", "enum": ["asc", "desc"]},
+        "match": {"type": "string", "enum": ["any", "all"]},
+    },
+}
+_CLOUDFLARE_RECORD_FILTER_PROPERTIES = {
+    key: {"type": "string"}
+    for key in (
+        "name",
+        "name.exact",
+        "name.contains",
+        "name.startswith",
+        "name.endswith",
+        "content",
+        "content.exact",
+        "content.contains",
+        "content.startswith",
+        "content.endswith",
+        "comment",
+        "comment.present",
+        "comment.absent",
+        "comment.exact",
+        "comment.contains",
+        "comment.startswith",
+        "comment.endswith",
+        "tag",
+        "tag.present",
+        "tag.absent",
+        "tag.exact",
+        "tag.contains",
+        "tag.startswith",
+        "tag.endswith",
+        "search",
+        "shadowed_by_name",
+        "shadowing_name",
+    )
+}
+_CLOUDFLARE_RECORD_LIST_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["zone_id"],
+    "properties": {
+        "zone_id": {"type": "string", "minLength": 1, "maxLength": 32},
+        **_CLOUDFLARE_RECORD_FILTER_PROPERTIES,
+        "type": {"type": "string", "enum": _CLOUDFLARE_RECORD_TYPES},
+        "proxied": {"type": "boolean"},
+        "match": {"type": "string", "enum": ["any", "all"]},
+        "tag_match": {"type": "string", "enum": ["any", "all"]},
+        "page": {"type": "integer", "minimum": 1},
+        "per_page": {"type": "integer", "minimum": 1, "maximum": 5_000_000},
+        "order": {
+            "type": "string",
+            "enum": ["type", "name", "content", "ttl", "proxied"],
+        },
+        "direction": {"type": "string", "enum": ["asc", "desc"]},
+        "include_shadow_metadata": {"type": "boolean"},
+    },
+}
+_CLOUDFLARE_RECORD_GET_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["zone_id", "dns_record_id"],
+    "properties": {
+        "zone_id": {"type": "string", "minLength": 1, "maxLength": 32},
+        "dns_record_id": {"type": "string", "minLength": 1, "maxLength": 32},
+        "include_shadow_metadata": {"type": "boolean"},
+    },
+}
+_CLOUDFLARE_RECORD_DELETE_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["zone_id", "dns_record_id"],
+    "properties": {
+        "zone_id": {"type": "string", "minLength": 1, "maxLength": 32},
+        "dns_record_id": {"type": "string", "minLength": 1, "maxLength": 32},
+    },
+}
+_CLOUDFLARE_RECORD_CREATE_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["zone_id", "record"],
+    "properties": {
+        "zone_id": {"type": "string", "minLength": 1, "maxLength": 32},
+        "include_shadow_metadata": {"type": "boolean"},
+        "record": _cloudflare_record_schema(),
+    },
+}
+_CLOUDFLARE_RECORD_EDIT_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["zone_id", "dns_record_id", "record"],
+    "properties": {
+        "zone_id": {"type": "string", "minLength": 1, "maxLength": 32},
+        "dns_record_id": {"type": "string", "minLength": 1, "maxLength": 32},
+        "include_shadow_metadata": {"type": "boolean"},
+        "record": _cloudflare_record_schema(),
+    },
+}
+_CLOUDFLARE_RECORD_REPLACE_INPUT_SCHEMA = {
+    **_CLOUDFLARE_RECORD_EDIT_INPUT_SCHEMA,
+    "properties": {
+        **_CLOUDFLARE_RECORD_EDIT_INPUT_SCHEMA["properties"],
+        "record": _cloudflare_record_schema(),
+    },
+}
+_CLOUDFLARE_PROVIDER_MESSAGE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "code": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+        "message": {"type": "string"},
+        "documentation_url": {"type": "string"},
+        "source": {"type": "object", "additionalProperties": True},
+    },
+}
+_CLOUDFLARE_RESULT_INFO_SCHEMA = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "page": {"type": "integer"},
+        "per_page": {"type": "integer"},
+        "count": {"type": "integer"},
+        "total_count": {"type": "integer"},
+        "total_pages": {"type": "integer"},
+    },
+}
+
+
+def _cloudflare_standard_body_schema(*, list_result: bool) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["success", "errors", "messages", "result"],
+        "properties": {
+            "success": {"type": "boolean", "const": True},
+            "errors": {"type": "array", "items": _CLOUDFLARE_PROVIDER_MESSAGE_SCHEMA},
+            "messages": {"type": "array", "items": _CLOUDFLARE_PROVIDER_MESSAGE_SCHEMA},
+            "result": (
+                {"type": "array", "items": {"type": "object", "additionalProperties": True}}
+                if list_result
+                else {"type": "object", "additionalProperties": True}
+            ),
+            "result_info": _CLOUDFLARE_RESULT_INFO_SCHEMA,
+        },
+        **(
+            {"required": ["success", "errors", "messages", "result", "result_info"]}
+            if list_result
+            else {}
+        ),
+    }
+
+
+def _cloudflare_output_schema(*, result_kind: str) -> dict[str, Any]:
+    if result_kind == "delete":
+        body_schema: dict[str, Any] = {
+            "type": "object",
+            "additionalProperties": True,
+            "required": ["result"],
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["id"],
+                    "properties": {"id": {"type": "string", "maxLength": 32}},
+                }
+            },
+        }
+    else:
+        body_schema = _cloudflare_standard_body_schema(list_result=result_kind == "list")
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["provider", "operation", "status_code", "body"],
+        "properties": {
+            "provider": {"type": "string", "const": "cloudflare"},
+            "operation": {
+                "type": "string",
+                "enum": sorted(
+                    [
+                        "zones.list",
+                        "dns.records.list",
+                        "dns.records.get",
+                        "dns.records.create",
+                        "dns.records.edit",
+                        "dns.records.replace",
+                        "dns.records.delete",
+                    ]
+                ),
+            },
+            "status_code": {"type": "integer", "minimum": 200, "maximum": 299},
+            "body": body_schema,
+        },
+    }
+
+
+_CLOUDFLARE_LIST_OUTPUT_SCHEMA = _cloudflare_output_schema(result_kind="list")
+_CLOUDFLARE_OBJECT_OUTPUT_SCHEMA = _cloudflare_output_schema(result_kind="object")
+_CLOUDFLARE_DELETE_OUTPUT_SCHEMA = _cloudflare_output_schema(result_kind="delete")
 _REDDIT_SEARCH_INPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -562,6 +1132,24 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 key="web-retrieval",
                 name="Web Retrieval",
                 description="Read, scrape, and normalize external web content.",
+                kind="utility",
+            ),
+            CapabilityManifest(
+                key="file-transfer",
+                name="File Transfer",
+                description=(
+                    "Browse remote file trees and transfer agent-selected files or "
+                    "directories through configured providers."
+                ),
+                kind="utility",
+            ),
+            CapabilityManifest(
+                key="dns-management",
+                name="DNS Management",
+                description=(
+                    "Discover zones and execute explicit DNS record reads and writes "
+                    "through configured providers."
+                ),
                 kind="utility",
             ),
             CapabilityManifest(
@@ -1389,6 +1977,197 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             "fallback_url": "directional",
                         },
                     },
+                },
+            ),
+            ProviderManifest(
+                key="ftp",
+                name="FTP / Explicit FTPS",
+                description=(
+                    "Protocol connection for stateless remote browsing and recursive "
+                    "agent-selected uploads or downloads."
+                ),
+                auth_type="ftp-password",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="ftp-password",
+                        label="FTP password",
+                        auth_type="ftp-password",
+                        payload_format="json",
+                        fields=[
+                            AuthFieldManifest(
+                                key="password",
+                                label="Password",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            ),
+                            AuthFieldManifest(
+                                key="host",
+                                label="Host",
+                                type="text",
+                                required=True,
+                                placeholder="ftp.example.com",
+                                description=(
+                                    "Hostname or IP address only; do not include ftp://, "
+                                    "a path, or credentials."
+                                ),
+                            ),
+                            AuthFieldManifest(
+                                key="port",
+                                label="Port",
+                                type="number",
+                                placeholder="21",
+                                description="Defaults to 21 when omitted.",
+                            ),
+                            AuthFieldManifest(
+                                key="tls_mode",
+                                label="Transport security",
+                                type="select",
+                                options=[
+                                    {"value": "explicit", "label": "Explicit FTPS"},
+                                    {"value": "none", "label": "Plain FTP"},
+                                ],
+                                description=(
+                                    "Explicit uses AUTH TLS and protects data transfers "
+                                    "with PROT P. None deliberately selects plain FTP."
+                                ),
+                            ),
+                            AuthFieldManifest(
+                                key="username",
+                                label="Username",
+                                type="text",
+                                required=True,
+                            ),
+                            AuthFieldManifest(
+                                key="passive_mode",
+                                label="Passive mode",
+                                type="select",
+                                options=[
+                                    {"value": "true", "label": "Enabled (default)"},
+                                    {"value": "false", "label": "Disabled"},
+                                ],
+                                description="Defaults to enabled when omitted.",
+                            ),
+                            AuthFieldManifest(
+                                key="timeout_s",
+                                label="Timeout seconds",
+                                type="number",
+                                description="Per-connection timeout; defaults to 30 seconds.",
+                            ),
+                            AuthFieldManifest(
+                                key="encoding",
+                                label="Filename encoding",
+                                type="text",
+                                placeholder="utf-8",
+                                description="Defaults to UTF-8.",
+                            ),
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Use the FTP server's host, username, password, and transport "
+                        "settings. Explicit FTPS is the default; plain FTP is available "
+                        "when deliberately selected."
+                    ),
+                    "setup": {
+                        "credential_label": "FTP host, username, and password",
+                        "setup_note": (
+                            "FTP is a protocol, not one vendor. Obtain connection "
+                            "settings from the server operator and store the password "
+                            "only in StackOS."
+                        ),
+                        "docs_url": "https://www.rfc-editor.org/rfc/rfc4217",
+                        "fallback_url": "https://docs.python.org/3/library/ftplib.html",
+                        "fallback_reason": (
+                            "Server provisioning and credential pages are provider-specific."
+                        ),
+                        "verified_at": "2026-07-15",
+                        "url_confidence": {
+                            "docs_url": "verified",
+                            "fallback_url": "verified",
+                        },
+                    },
+                    "docs": [
+                        "docs/integration-contracts/ftp.md",
+                        "https://www.rfc-editor.org/rfc/rfc959",
+                        "https://www.rfc-editor.org/rfc/rfc3659",
+                        "https://www.rfc-editor.org/rfc/rfc4217",
+                    ],
+                },
+            ),
+            ProviderManifest(
+                key="cloudflare",
+                name="Cloudflare DNS",
+                description=(
+                    "Cloudflare zone discovery and individual DNS record list, get, "
+                    "create, edit, replace, and delete operations."
+                ),
+                auth_type="api-token",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_token",
+                        label="API token",
+                        auth_type="api-token",
+                        payload_format="raw",
+                        payload_field="api_token",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_token",
+                                label="Cloudflare API Token",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                                placeholder="Cloudflare API token",
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Store a Cloudflare API token in StackOS. Zone Read is needed "
+                        "for discovery and DNS Write is needed for record mutations."
+                    ),
+                    "setup": {
+                        "credential_label": "Cloudflare API token",
+                        "setup_note": (
+                            "Create a least-privilege API token with Zone Read and DNS "
+                            "Write for the zones the operator intends the agent to manage."
+                        ),
+                        "homepage_url": "https://www.cloudflare.com/",
+                        "signup_url": "https://dash.cloudflare.com/sign-up",
+                        "console_url": "https://dash.cloudflare.com/",
+                        "api_key_url": "https://dash.cloudflare.com/profile/api-tokens",
+                        "docs_url": (
+                            "https://developers.cloudflare.com/fundamentals/api/"
+                            "get-started/create-token/"
+                        ),
+                        "fallback_url": (
+                            "https://developers.cloudflare.com/fundamentals/api/reference/"
+                            "permissions/"
+                        ),
+                        "fallback_reason": (
+                            "Use Cloudflare's permissions reference when building a "
+                            "custom token for a narrower zone scope."
+                        ),
+                        "verified_at": "2026-07-15",
+                        "url_confidence": {
+                            "homepage_url": "verified",
+                            "signup_url": "verified",
+                            "console_url": "verified",
+                            "api_key_url": "verified",
+                            "docs_url": "verified",
+                            "fallback_url": "verified",
+                        },
+                    },
+                    "docs": [
+                        "docs/integration-contracts/cloudflare-dns.md",
+                        "https://developers.cloudflare.com/api/resources/zones/methods/list/",
+                        (
+                            "https://developers.cloudflare.com/api/resources/dns/"
+                            "subresources/records/"
+                        ),
+                    ],
                 },
             ),
             ProviderManifest(
@@ -4274,6 +5053,243 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "operation": "fetch",
                     "requires_credential": False,
                     "allows_credential": False,
+                },
+            ),
+            ActionManifest(
+                key="ftp.directory.list",
+                name="List FTP Directory",
+                description=(
+                    "List one remote FTP directory without downloading its files; "
+                    "returned child paths can be reused in later actions."
+                ),
+                provider="ftp",
+                capability="file-transfer",
+                risk_level="read",
+                input_schema=_FTP_DIRECTORY_LIST_INPUT_SCHEMA,
+                output_schema=_FTP_DIRECTORY_LIST_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "ftp",
+                    "operation": "directory.list",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "agent_guidance": (
+                        "Pass the remote directory selected by the user or agent. The "
+                        "action opens a fresh connection and returns metadata only; it "
+                        "does not retain a hidden working-directory session or download."
+                    ),
+                    "docs": [
+                        "docs/integration-contracts/ftp.md",
+                        "https://www.rfc-editor.org/rfc/rfc3659",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="ftp.file.upload",
+                name="Upload Files Or Directories To FTP",
+                description=(
+                    "Upload one or more agent-selected local files or directories; "
+                    "directories recurse automatically and preserve their relative tree."
+                ),
+                provider="ftp",
+                capability="file-transfer",
+                risk_level="write",
+                input_schema=_FTP_UPLOAD_INPUT_SCHEMA,
+                output_schema=_FTP_TRANSFER_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "ftp",
+                    "operation": "file.upload",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "agent_guidance": (
+                        "Choose any daemon-readable local path or paths and exact remote "
+                        "targets. StackOS does not require generated assets or another "
+                        "FTP-specific path gate. Select overwrite, skip, or fail and "
+                        "stop or continue explicitly for each call."
+                    ),
+                    "docs": [
+                        "docs/integration-contracts/ftp.md",
+                        "https://www.rfc-editor.org/rfc/rfc959",
+                        "https://www.rfc-editor.org/rfc/rfc4217",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="ftp.file.download",
+                name="Download Files Or Directories From FTP",
+                description=(
+                    "Download one or more remote FTP files or directories to exact "
+                    "agent-selected local destinations with recursive tree preservation."
+                ),
+                provider="ftp",
+                capability="file-transfer",
+                risk_level="write",
+                input_schema=_FTP_DOWNLOAD_INPUT_SCHEMA,
+                output_schema=_FTP_TRANSFER_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "ftp",
+                    "operation": "file.download",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "agent_guidance": (
+                        "Choose any daemon-writable local destination path or paths. "
+                        "Directories recurse automatically; select overwrite, skip, or "
+                        "fail and stop or continue explicitly. Remote child names are "
+                        "kept inside the selected destination tree."
+                    ),
+                    "docs": [
+                        "docs/integration-contracts/ftp.md",
+                        "https://www.rfc-editor.org/rfc/rfc959",
+                        "https://www.rfc-editor.org/rfc/rfc3659",
+                        "https://www.rfc-editor.org/rfc/rfc4217",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="cloudflare.zones.list",
+                name="List Cloudflare Zones",
+                description="List one page of zones visible to the selected Cloudflare token.",
+                provider="cloudflare",
+                capability="dns-management",
+                risk_level="read",
+                input_schema=_CLOUDFLARE_ZONE_LIST_INPUT_SCHEMA,
+                output_schema=_CLOUDFLARE_LIST_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "cloudflare",
+                    "operation": "zones.list",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "docs": [
+                        "docs/integration-contracts/cloudflare-dns.md",
+                        "https://developers.cloudflare.com/api/resources/zones/methods/list/",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="cloudflare.dns.records.list",
+                name="List Cloudflare DNS Records",
+                description=(
+                    "List one page of DNS records in the exact zone selected by the agent."
+                ),
+                provider="cloudflare",
+                capability="dns-management",
+                risk_level="read",
+                input_schema=_CLOUDFLARE_RECORD_LIST_INPUT_SCHEMA,
+                output_schema=_CLOUDFLARE_LIST_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "cloudflare",
+                    "operation": "dns.records.list",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "docs": [
+                        "docs/integration-contracts/cloudflare-dns.md",
+                        (
+                            "https://developers.cloudflare.com/api/resources/dns/"
+                            "subresources/records/methods/list/"
+                        ),
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="cloudflare.dns.records.get",
+                name="Get Cloudflare DNS Record",
+                description="Get one DNS record by the exact zone and record ids selected.",
+                provider="cloudflare",
+                capability="dns-management",
+                risk_level="read",
+                input_schema=_CLOUDFLARE_RECORD_GET_INPUT_SCHEMA,
+                output_schema=_CLOUDFLARE_OBJECT_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "cloudflare",
+                    "operation": "dns.records.get",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "docs": ["docs/integration-contracts/cloudflare-dns.md"],
+                },
+            ),
+            ActionManifest(
+                key="cloudflare.dns.records.create",
+                name="Create Cloudflare DNS Record",
+                description="Create the DNS record explicitly supplied for the selected zone.",
+                provider="cloudflare",
+                capability="dns-management",
+                risk_level="write",
+                input_schema=_CLOUDFLARE_RECORD_CREATE_INPUT_SCHEMA,
+                output_schema=_CLOUDFLARE_OBJECT_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "cloudflare",
+                    "operation": "dns.records.create",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "agent_guidance": (
+                        "Send the exact zone id and documented record body selected by "
+                        "the agent. The connector performs no preliminary zone read."
+                    ),
+                    "docs": ["docs/integration-contracts/cloudflare-dns.md"],
+                },
+            ),
+            ActionManifest(
+                key="cloudflare.dns.records.edit",
+                name="Edit Cloudflare DNS Record",
+                description="PATCH the selected DNS record with the explicitly supplied fields.",
+                provider="cloudflare",
+                capability="dns-management",
+                risk_level="write",
+                input_schema=_CLOUDFLARE_RECORD_EDIT_INPUT_SCHEMA,
+                output_schema=_CLOUDFLARE_OBJECT_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "cloudflare",
+                    "operation": "dns.records.edit",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "docs": ["docs/integration-contracts/cloudflare-dns.md"],
+                },
+            ),
+            ActionManifest(
+                key="cloudflare.dns.records.replace",
+                name="Replace Cloudflare DNS Record",
+                description="PUT a complete replacement for the selected DNS record.",
+                provider="cloudflare",
+                capability="dns-management",
+                risk_level="write",
+                input_schema=_CLOUDFLARE_RECORD_REPLACE_INPUT_SCHEMA,
+                output_schema=_CLOUDFLARE_OBJECT_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "cloudflare",
+                    "operation": "dns.records.replace",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "docs": ["docs/integration-contracts/cloudflare-dns.md"],
+                },
+            ),
+            ActionManifest(
+                key="cloudflare.dns.records.delete",
+                name="Delete Cloudflare DNS Record",
+                description="Delete the exact DNS record selected by zone id and record id.",
+                provider="cloudflare",
+                capability="dns-management",
+                risk_level="write",
+                input_schema=_CLOUDFLARE_RECORD_DELETE_INPUT_SCHEMA,
+                output_schema=_CLOUDFLARE_DELETE_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "cloudflare",
+                    "operation": "dns.records.delete",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "agent_guidance": (
+                        "Delete exactly the supplied record id. The connector does not "
+                        "perform a preliminary record read or impose a zone restriction."
+                    ),
+                    "docs": ["docs/integration-contracts/cloudflare-dns.md"],
                 },
             ),
             ActionManifest(

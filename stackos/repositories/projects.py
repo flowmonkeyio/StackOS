@@ -237,6 +237,7 @@ class IntegrationCredentialRepository:
         profile_key: str = "default",
         config_json: dict[str, Any] | None = None,
         expires_at: datetime | None = None,
+        commit: bool = True,
     ) -> Envelope[IntegrationCredentialOut]:
         from stackos.crypto.aes_gcm import encrypt as _crypto_encrypt
 
@@ -277,8 +278,11 @@ class IntegrationCredentialRepository:
             row.last_refreshed_at = now
             row.updated_at = now
         self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
+        if commit:
+            self._s.commit()
+            self._s.refresh(row)
+        else:
+            self._s.flush()
         return Envelope(data=IntegrationCredentialOut.model_validate(row), project_id=project_id)
 
     def get_decrypted(self, credential_id: int) -> bytes:
@@ -303,13 +307,21 @@ class IntegrationCredentialRepository:
         self._s.add(row)
         self._s.commit()
 
-    def remove(self, credential_id: int) -> Envelope[IntegrationCredentialOut]:
+    def remove(
+        self,
+        credential_id: int,
+        *,
+        commit: bool = True,
+    ) -> Envelope[IntegrationCredentialOut]:
         row = self._s.get(IntegrationCredential, credential_id)
         if row is None:
             raise NotFoundError(f"credential {credential_id} not found")
         out = IntegrationCredentialOut.model_validate(row)
         self._s.delete(row)
-        self._s.commit()
+        if commit:
+            self._s.commit()
+        else:
+            self._s.flush()
         return Envelope(data=out, project_id=out.project_id)
 
     def fetch_row(self, credential_id: int) -> IntegrationCredential:

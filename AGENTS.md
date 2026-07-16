@@ -139,24 +139,40 @@ work, start here:
   clear, call `operation.list` through `toolbox.call` with `mode="grouped"` and
   `response_mode="compact"`, then describe only the exact operations needed.
 - Project workflow setup must follow the workflow contract, not tracker prose,
-  and must keep three phases distinct. First, workflow infrastructure setup:
-  inspect the host identity, binding mechanism, workflow choice,
+  and must select one `workflowTemplate.authoringGuide` intent mode before any
+  mutation. A setup request maps to `setup_existing`; it does not authorize a
+  new template, plugin change, or workflow execution. Keep three phases
+  distinct. First, workflow infrastructure setup: inspect the host identity,
+  binding mechanism, workflow choice, existing extension,
   orchestrator/preset requirements, host-native file support, and StackOS write
-  grant model before creating state. Then bind the workspace, describe the
-  workflow, resolve required orchestrator, skill, and agent presets, adapt them
-  into host-native project-local agents, skills, commands, or orchestrator
-  guidance when the host supports those files, check readiness, validate/upsert
-  the project extension, then prove the path with a run-plan create/validate
-  smoke when resumability matters. Host files are execution contracts only;
-  keep prerequisites, state, and secrets in StackOS. Report proof: binding,
-  extension state, local files, preset mapping, deterministic future binding,
-  prerequisite gate, run-plan outcome, and no produced workflow output.
+  grant model. Bind the workspace, describe the effective workflow, save only a
+  validated non-empty extension when needed, then re-describe. Resolve the
+  final workflow once with `agentPreset.resolveForWorkflow`; materialize
+  required roles, materialize recommended roles by default unless a reason is
+  recorded, and materialize optional roles only when selected. Keep skill
+  presets as main-agent guidance. Check the full readiness tuple, then prove
+  the path with structural and strict read-only `runPlan.validate` calls. Do not
+  call `runPlan.create` or create tracker work in infrastructure setup. Host
+  files are versioned execution contracts only; keep prerequisites, project
+  ids, state, and secrets in StackOS. Report proof: mode, binding, effective
+  workflow version, extension state, local files, exact preset mapping,
+  readiness tuple, deterministic future binding, strict prerequisite gate, both
+  validation outcomes, next safe action, and confirmation that no run plan,
+  workflow tracker state, external side effect, or workflow output was created.
   Second, workflow prerequisite setup: collect durable workflow-specific inputs
   such as voice/profile, sources, route choices, policy, account mappings, or
-  approval rules through the right project state or onboarding run, without
-  producing the workflow output. Third, workflow operation: create, resume, or
-  start the concrete run plan and execute steps through the resolved
-  orchestrator/presets, grants, and approval gates.
+  approval rules only after classifying them as durable prerequisites rather
+  than per-run inputs. Persist them through the declared project owner or an
+  explicitly granted onboarding run. If the workflow explicitly assigns a
+  prerequisite to another workflow, return that exact safe handoff; when the
+  operator authorizes workflow-family setup, resolve each selected workflow and
+  materialize the deduplicated union of required and recommended roles. Omit
+  unresolved values rather than saving placeholders, and do not produce
+  workflow output. Third, workflow operation:
+  collect concrete run inputs, require selected-route execution readiness,
+  strictly validate before creating new state, then create/resume/start the run
+  plan and execute through the resolved orchestrator/presets, grants, and
+  approval gates.
   `workflowExtension.upsert` preserves omitted fields by default; use
   `clear_fields_json` with merge for field-level clearing, or
   `update_mode="replace"` only for reviewed full rewrites.
@@ -238,8 +254,8 @@ fresh install happy path. Verify the lifecycle state machine end to end:
   set a non-localhost HTTPS `STACKOS_UPDATE_URL`, and use the package release
   command:
   ```bash
-  CSC_NAME="Example Org (ABCDE12345)" APPLE_KEYCHAIN_PROFILE="stackos-notary" STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" pnpm --dir desktop run release:preflight
-  CSC_NAME="Example Org (ABCDE12345)" APPLE_KEYCHAIN_PROFILE="stackos-notary" STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" pnpm --dir desktop run dist:mac:release
+  CSC_NAME="Example Org (ABCDE12345)" APPLE_KEYCHAIN_PROFILE="stackos-notary" STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" pnpm --dir desktop run release:preflight
+  CSC_NAME="Example Org (ABCDE12345)" APPLE_KEYCHAIN_PROFILE="stackos-notary" STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" pnpm --dir desktop run dist:mac:release
   ```
 - Optional agent hosts are advisory when absent or unsupported. They should not
   block install/repair unless StackOS owns an unsafe/stale entry that requires

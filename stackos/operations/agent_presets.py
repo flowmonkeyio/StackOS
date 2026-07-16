@@ -176,8 +176,11 @@ def _setup_guidance(*, workflow_keys: list[str] | None = None) -> list[str]:
             "Local agent files are host/project-specific. StackOS does not detect, "
             "write, or register .codex, markdown-frontmatter, or other host agent "
             "formats. The main agent should inspect host-local files such as "
-            ".codex/config.toml and .codex/agents/*.toml, then adapt presets into "
-            "local files only when the host/project guidance calls for it."
+            ".codex/config.toml and .codex/agents/*.toml, preserve unrelated content, "
+            "and adapt presets when workflow infrastructure/local-agent setup is "
+            "requested and host/project guidance permits it. Materialize required "
+            "roles, materialize recommended roles by default unless a reason is "
+            "recorded, and materialize optional roles only when selected."
         ),
         (
             "Incomplete workspace profile fields such as framework or content_model_json "
@@ -209,8 +212,9 @@ def _setup_guidance(*, workflow_keys: list[str] | None = None) -> list[str]:
         ),
         (
             "Workflow skill_preset_requirements are reusable main-agent operating "
-            "contracts. Resolve them with skillPreset.* operations or this workflow "
-            "resolution response, then adapt them to the project before use."
+            "contracts. This workflow resolution response already includes them; use "
+            "skillPreset.* separately only when a standalone skill packet is needed, "
+            "then adapt them to the project before use."
         ),
     ]
     support_workflows = {

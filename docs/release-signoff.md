@@ -118,18 +118,18 @@ endpoint are configured:
 ```bash
 CSC_NAME="Example Org (ABCDE12345)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run release:preflight
 STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
 STACKOS_REQUIRE_SIGNING=1 \
 STACKOS_REQUIRE_UPDATE_URL=1 \
 CSC_NAME="Example Org (ABCDE12345)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 node desktop/scripts/build-mac.mjs
 CSC_NAME="Example Org (ABCDE12345)" \
 APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://flowmonkey.io/StackOS/" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 pnpm --dir desktop run dist:mac:release
 ```
 
@@ -143,6 +143,9 @@ Before public desktop distribution, record the managed-update evidence:
   transport and no FTP credentials are packaged into the app.
 - Artifact URLs referenced by the update metadata are reachable and are not
   stale behind website/CDN cache.
+- When changing the production update origin, the prior endpoint remains
+  mirrored or redirected through one higher-version bridge release so already
+  installed apps can receive the new packaged endpoint.
 - The strict release dry-run passed with signing and notarization env supplied
   through the environment or CI secrets, and no Apple credential values were
   written into generated config files or logs.

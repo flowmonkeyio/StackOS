@@ -61,6 +61,7 @@ def test_sitemap_fetch_returns_entries_and_errors(mcp_client: MCPClient) -> None
                 "https://broken.example/sitemap.xml",
             ],
             "max_entries": 200,
+            "response_mode": "raw",
         },
     )
     assert len(payload["entries"]) == 1

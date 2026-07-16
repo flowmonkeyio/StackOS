@@ -7,10 +7,10 @@ test('communicates the product and completes the core evaluation flow', async ({
 
   await expect(page.getByRole('heading', { level: 1 })).toContainText('StackOS keeps it on track')
   await expect(page.getByLabel('StackOS local workflow execution preview')).toBeVisible()
-  await expect(page.getByText('24', { exact: true })).toBeVisible()
+  await expect(page.getByText('25', { exact: true })).toBeVisible()
   await expect(page.getByText('Claude Code connected', { exact: true })).toBeAttached()
 
-  const downloadUrl = 'https://flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg'
+  const downloadUrl = 'https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg'
   await expect(page.locator('.site-nav--desktop a[data-download="stackos-mac"]')).toHaveAttribute('href', downloadUrl)
 
   await page.getByRole('link', { name: 'See how it works' }).click()
@@ -322,8 +322,8 @@ test('library exposes workflows, articles, cross-links, and production metadata'
 
 test('catalog indexes render every generated definition on first navigation', async ({ page }) => {
   for (const [path, count, answer, titleTerm] of [
-    ['/library/workflows', 24, 'What is AI workflow automation?', 'AI workflow automation'],
-    ['/library/agents', 42, 'What are AI agents for business?', 'AI agents for business'],
+    ['/library/workflows', 25, 'What is AI workflow automation?', 'AI workflow automation'],
+    ['/library/agents', 43, 'What are AI agents for business?', 'AI agents for business'],
     ['/library/orchestrators', 4, 'What is AI agent orchestration?', 'AI agent orchestration'],
   ] as const) {
     await page.goto(path)

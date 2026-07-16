@@ -149,7 +149,9 @@ def setup_guidance() -> list[str]:
         ),
         (
             "Project-local overrides live under .stackos/skill-presets and shadow "
-            "plugin presets the same way agent preset overrides do."
+            "plugin presets the same way agent preset overrides do. They are not "
+            "normal host-agent materialization and require an explicit checked-in "
+            "project override request before the host agent creates them."
         ),
     ]
 

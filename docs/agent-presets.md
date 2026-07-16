@@ -31,6 +31,28 @@ technology stack, rules, documentation references, available MCP tools,
 workflow/run-plan model, tracker task/ticket conventions, verification
 commands, and release expectations.
 
+Workflow infrastructure setup uses one deterministic materialization policy:
+
+- every required role must be materialized when the host supports local agents,
+  or represented by an explicit session-only fallback with the cross-session
+  limitation reported;
+- recommended roles are materialized by default unless the adapting agent
+  records a project, host, or risk reason for omission;
+- optional roles are materialized only when selected by the operator, project
+  extension, or current workflow branch;
+- agent presets become specialist roles, skill presets become main-agent
+  orchestrator guidance, and installed host skills remain skills;
+- every materialized target records the applicable workflow key(s), preset
+  key/version, requirement level, project references used for adaptation, and
+  exact host target; syntax/registration and any reload requirement are verified
+  before setup is reported complete.
+
+A request to set up workflow infrastructure or local agents authorizes reviewed
+host-local execution contracts when project guidance permits them. It does not
+authorize `.stackos/agent-presets` or `.stackos/skill-presets` overrides, global
+domain agents, a new workflow template, or workflow execution. Repository-local
+StackOS preset overrides require an explicit checked-in override request.
+
 `recommended_tools` are StackOS operation references. Some hosts mount those
 operations as direct MCP tools, while the StackOS bridge may expose only
 `workspace.startSession`, `workspace.resolve`, `toolbox.describe`, and
@@ -182,7 +204,8 @@ look for that host's agent convention first. StackOS does not scan, write, or
 register those host-local files; it only provides the generic preset contracts
 and workflow role requirements. If no convention is available, use the resolved
 workflow agents as operating guidance in the current session or ask the
-operator which host format to use.
+operator which host format to use. Preserve unrelated operator-authored content
+and do not create a second competing agent registry.
 
 Missing workspace profile fields such as `framework` or `content_model_json`
 mean the project is under-described for future adaptation. They do not block

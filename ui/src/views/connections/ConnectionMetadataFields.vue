@@ -4,6 +4,7 @@ import { UiFormField, UiInput } from '@/components/ui'
 defineProps<{
   profileValue: string
   labelValue: string
+  profileReadonly?: boolean
 }>()
 
 defineEmits<{
@@ -15,7 +16,11 @@ defineEmits<{
 <template>
   <UiFormField
     label="Connection name"
-    help="Leave blank for the default account. Use a short name like client-a or sandbox when this service has more than one account."
+    :help="
+      profileReadonly
+        ? 'The connection key cannot change while editing.'
+        : 'Leave blank for the default account. Use a short name like client-a or sandbox when this service has more than one account.'
+    "
   >
     <template #default="{ id, describedBy, invalid }">
       <UiInput
@@ -23,6 +28,7 @@ defineEmits<{
         :model-value="profileValue"
         :aria-describedby="describedBy"
         :invalid="invalid"
+        :readonly="profileReadonly"
         placeholder="default"
         @update:model-value="$emit('update:profile', $event)"
       />

@@ -8,6 +8,7 @@ import pytest
 from sqlmodel import Session
 
 from stackos.context.repository.utils import _FIELD_MAP
+from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
 from stackos.repositories.base import ConflictError
 from stackos.workflows.run_plan_schema import run_plan_from_template
 from stackos.workflows.template_loader import WorkflowTemplateLoader
@@ -1044,3 +1045,160 @@ def test_project_template_storage_rejects_runtime_payloads(
 
     assert result.valid is False
     assert "provider object ids" in result.errors[0].message
+
+
+def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
+    session: Session,
+) -> None:
+    described = WorkflowTemplateLoader(session).describe_template(
+        key="seo.website-analysis",
+        plugin_slug="seo",
+    )
+    spec = described.spec
+    assert spec.version == "0.2.0"
+
+    assert [step.id for step in spec.steps] == [
+        "scope-audit",
+        "map-public-site",
+        "collect-connected-evidence",
+        "reconcile-and-diagnose",
+        "review-and-prioritize",
+        "finalize-and-store",
+    ]
+    assert all(step.instructions for step in spec.steps)
+    assert all(step.success_criteria for step in spec.steps)
+    actions = {item.key: item for item in spec.action_contracts}
+    action_refs = {item.action for item in actions.values()}
+    assert actions["public_web_read"].action == "utils.web.read"
+    assert actions["public_web_read"].optional is False
+    assert actions["public_sitemap_fetch"].action == "utils.sitemap.fetch"
+    assert actions["public_sitemap_fetch"].optional is False
+    assert all(
+        actions[key].optional
+        for key in actions
+        if key not in {"public_web_read", "public_sitemap_fetch"}
+    )
+    assert "utils.web.crawl" not in action_refs
+    assert "ga4.properties.run_realtime_report" not in action_refs
+    assert "paa.extract" not in action_refs
+    assert all(item.risk_level in {"read", "cost"} for item in actions.values())
+    assert spec.approval_gates == []
+
+    policies = {item.key for item in spec.policies}
+    assert {
+        "public_baseline_always_available",
+        "use_ready_relevant_sources",
+        "evidence_classification",
+        "no_invented_measurements",
+        "reconcile_provider_semantics",
+        "no_generic_score",
+        "analysis_only",
+        "agent_decides_strategy",
+    } <= policies
+    resources = {item.resource for item in spec.resource_contracts}
+    assert "website-seo-analysis" in resources
+    outputs = {item.key: item for item in spec.outputs}
+    finding_schema = outputs["seo_findings"].schema_data
+    finding_required = set(finding_schema["items"]["required"])
+    assert {
+        "type",
+        "category",
+        "evidence_class",
+        "confidence",
+        "affected_scope",
+        "evidence_refs",
+        "impact",
+        "recommendation",
+        "validation_path",
+    } <= finding_required
+
+    public_map_schema = outputs["public_site_map"].schema_data
+    public_url_required = set(public_map_schema["properties"]["observed_urls"]["items"]["required"])
+    assert {
+        "url",
+        "discovery_sources",
+        "template_type",
+        "response_state",
+        "indexability_state",
+        "canonical_state",
+        "evidence_refs",
+    } <= public_url_required
+    assert (
+        public_map_schema["properties"]["representative_templates"]["items"]["additionalProperties"]
+        is False
+    )
+
+    inventory_schema = outputs["site_inventory"].schema_data
+    assert "url_rows" in inventory_schema["required"]
+    assert (
+        inventory_schema["properties"]["template_types"]["items"]["additionalProperties"] is False
+    )
+    assert inventory_schema["properties"]["url_sets"]["additionalProperties"] == {
+        "type": "array",
+        "items": {"type": "string"},
+    }
+    assert inventory_schema["properties"]["reconciliation"]["additionalProperties"] is False
+
+    seo_plugin = next(item for item in BUILTIN_PLUGIN_MANIFESTS if item.slug == "seo")
+    analysis_resource = next(
+        item for item in seo_plugin.resources if item.key == "website-seo-analysis"
+    ).schema_data
+    resource_properties = analysis_resource["properties"]
+    for output_key, resource_key in (
+        ("source_ledger", "source_ledger"),
+        ("executive_summary", "executive_summary"),
+        ("prioritized_roadmap", "prioritized_actions"),
+    ):
+        assert outputs[output_key].schema_data == resource_properties[resource_key]
+    assert (
+        resource_properties["raw_provider_data_refs"]
+        == outputs["raw_provider_data_refs"].schema_data
+    )
+    assert "raw_provider_data_refs" in analysis_resource["required"]
+
+    run_plan = run_plan_from_template(
+        described,
+        inputs_json={"site_url": "https://example.org"},
+    )
+    assert all(step.instructions for step in run_plan.steps)
+    assert all(step.success_criteria for step in run_plan.steps)
+    grants = run_plan.grant_snapshot_json["mcp_tool_grants"]
+    action_grants = {
+        grant["step_id"]: grant for grant in grants if grant.get("tool") == "action.execute"
+    }
+    assert action_grants["map-public-site"]["action_refs"] == [
+        "utils.web.read",
+        "utils.sitemap.fetch",
+        "utils.web.map",
+        "utils.web.scrape",
+    ]
+    assert (
+        "seo.search-console.search-analytics.query"
+        in action_grants["collect-connected-evidence"]["action_refs"]
+    )
+    final_tools = {
+        tool
+        for grant in grants
+        if grant["step_id"] == "finalize-and-store"
+        for tool in ([grant["tool"]] if "tool" in grant else grant["tools"])
+    }
+    assert {"resource.upsert", "artifact.create"} <= final_tools
+    final_resource_grants = [
+        grant
+        for grant in grants
+        if grant["step_id"] == "finalize-and-store" and grant.get("tool") == "resource.upsert"
+    ]
+    assert final_resource_grants == [
+        {
+            "step_id": "finalize-and-store",
+            "tool": "resource.upsert",
+            "resource_key": "website-seo-analysis",
+        }
+    ]
+    map_tools = {
+        tool
+        for grant in grants
+        if grant["step_id"] == "map-public-site"
+        for tool in ([grant["tool"]] if "tool" in grant else grant["tools"])
+    }
+    assert {"action.execute", "browser.session.start", "browser.page.snapshot"} <= map_tools

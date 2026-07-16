@@ -1,4 +1,4 @@
-"""Compatibility surface for the auth-provider repository package."""
+"""Public auth-provider repository package surface."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from stackos.integrations import integration_class_for
 
 from .repository import AuthRepository
 from .schema import (
+    AuthCredentialEditOut,
     AuthCredentialSetOut,
     AuthFieldOut,
     AuthMethodOut,
@@ -19,6 +20,7 @@ from .schema import (
 )
 
 __all__ = [
+    "AuthCredentialEditOut",
     "AuthCredentialSetOut",
     "AuthFieldOut",
     "AuthMethodOut",

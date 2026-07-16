@@ -17,7 +17,8 @@ from stackos.db.models import (
     CredentialUsageEvent,
     IntegrationCredential,
 )
-from stackos.repositories.base import ConflictError, NotFoundError
+from stackos.mcp.errors import IntegrationDownError
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 
 
@@ -44,6 +45,7 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
     assert connection.credential_ref.startswith("cred_")
     assert connection.provider_key == "firecrawl"
     assert connection.status == "connected"
+    assert connection.last_tested_at is None
     assert connection.setup_required is False
 
     credential = session.exec(
@@ -53,7 +55,42 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
     assert credential.config_json == {"label": "Primary Firecrawl"}
 
 
-def test_failed_credential_requires_operator_setup(
+def test_secret_fields_preserve_significant_whitespace(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = AuthRepository(session)
+    password = "  leading and trailing whitespace\t"
+
+    repo.store_credential(
+        project_id=project_id,
+        provider_key="ftp",
+        auth_method_key="ftp-password",
+        profile_key="primary",
+        fields={
+            "password": password,
+            "host": "ftp.example.com",
+            "port": 21,
+            "tls_mode": "none",
+            "username": "deploy",
+            "passive_mode": True,
+            "timeout_s": 30,
+            "encoding": "utf-8",
+        },
+    )
+
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "ftp",
+        )
+    ).one()
+    assert row.id is not None
+    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
+    assert payload["password"] == password
+
+
+def test_status_normalizes_stale_failed_credential_from_backing_row(
     session: Session,
     project_id: int,
 ) -> None:
@@ -73,8 +110,144 @@ def test_failed_credential_requires_operator_setup(
 
     status = repo.status(project_id=project_id, provider_key="firecrawl")
 
-    assert status.connections[0].status == "failed"
-    assert status.connections[0].setup_required is True
+    assert status.connections[0].status == "connected"
+    assert status.connections[0].setup_required is False
+
+
+def test_credential_edit_preserves_omitted_secret_and_validates_host(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="ftp",
+        auth_method_key="ftp-password",
+        profile_key="primary",
+        label="Production FTP",
+        fields={
+            "password": "  exact password  ",
+            "host": "old.example.test",
+            "username": "deploy",
+            "tls_mode": "none",
+        },
+    ).data
+
+    edit = repo.get_credential_edit_state(
+        project_id=project_id,
+        credential_ref=stored.credential_ref,
+    )
+    assert edit.values["host"] == "old.example.test"
+    assert "password" not in edit.values
+    assert edit.secret_present == {"password": True}
+
+    updated = repo.update_credential(
+        project_id=project_id,
+        credential_ref=stored.credential_ref,
+        label="Production FTP",
+        fields={"host": "192.0.2.10"},
+    ).data
+    assert updated.credential_ref == stored.credential_ref
+
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "ftp",
+            IntegrationCredential.profile_key == "primary",
+        )
+    ).one()
+    assert row.id is not None
+    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))
+    assert payload["password"] == "  exact password  "
+    assert row.config_json is not None
+    assert row.config_json["host"] == "192.0.2.10"
+
+    with pytest.raises(ValidationError):
+        repo.update_credential(
+            project_id=project_id,
+            credential_ref=stored.credential_ref,
+            label="Production FTP",
+            fields={"host": "ftp://192.0.2.10/public_html"},
+        )
+    with pytest.raises(ValidationError):
+        repo.update_credential(
+            project_id=project_id,
+            credential_ref=stored.credential_ref,
+            label="Production FTP",
+            fields={"password": ""},
+        )
+
+    session.refresh(row)
+    assert row.config_json is not None
+    assert row.config_json["host"] == "192.0.2.10"
+    assert (
+        json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id))["password"]
+        == "  exact password  "
+    )
+
+
+def test_thrown_auth_test_failure_is_sanitized_and_persisted(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FailingIntegration:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        async def test_credentials(self) -> dict[str, object]:
+            raise IntegrationDownError(
+                "provider secret=do-not-store",
+                data={
+                    "stage": "connect",
+                    "reason_code": "connection_refused",
+                    "retryable": True,
+                    "password": "do-not-store",
+                },
+            )
+
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="firecrawl",
+        auth_method_key="api_key",
+        profile_key="primary",
+        fields={"api_key": "do-not-store"},
+    ).data
+    monkeypatch.setattr(
+        "stackos.auth_providers.repository.testing._integration_class_for",
+        lambda kind: _FailingIntegration if kind == "firecrawl" else None,
+    )
+
+    tested = asyncio.run(
+        repo.test(project_id=project_id, credential_ref=stored.credential_ref)
+    ).data
+    resolved = repo.resolve_for_execution(
+        project_id=project_id,
+        provider_key="firecrawl",
+        credential_ref=stored.credential_ref,
+        operation="test.after-failed-auth-test",
+    )
+    refreshed = repo.status(project_id=project_id, provider_key="firecrawl").connections[0]
+    event = session.exec(
+        select(CredentialUsageEvent).where(CredentialUsageEvent.operation == "auth.test")
+    ).one()
+
+    assert tested.ok is False
+    assert tested.metadata["stage"] == "connect"
+    assert tested.metadata["reason_code"] == "connection_refused"
+    assert resolved.credential.status == "connected"
+    assert refreshed.status == "connected"
+    assert refreshed.setup_required is False
+    assert refreshed.last_tested_at is not None
+    rendered = json.dumps(
+        {
+            "result": tested.model_dump(mode="json"),
+            "connection": refreshed.model_dump(mode="json"),
+            "event": event.metadata_json,
+        }
+    )
+    assert "do-not-store" not in rendered
 
 
 def test_telegram_bot_store_generates_webhook_secret(
@@ -367,6 +540,56 @@ def test_shopify_auth_test_passes_static_token_and_safe_store_config(
     assert "shpat-secret" not in rendered
 
 
+def test_cloudflare_auth_test_verifies_token_without_zone_permission(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="cloudflare",
+        auth_method_key="api_token",
+        profile_key="primary",
+        fields={"api_token": "cloudflare-secret"},
+    ).data
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "cloudflare",
+        )
+    ).one()
+    assert row.id is not None
+    assert IntegrationCredentialRepository(session).get_decrypted(row.id) == b"cloudflare-secret"
+    assert row.config_json == {
+        "auth_method_key": "api_token",
+        "profile_key": "primary",
+    }
+
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.cloudflare.com/client/v4/user/tokens/verify",
+        json={
+            "success": True,
+            "errors": [],
+            "messages": [],
+            "result": {"id": "token-id", "status": "active"},
+        },
+    )
+
+    tested = asyncio.run(repo.test(project_id=project_id, credential_ref=stored.credential_ref))
+    request = httpx_mock.get_requests()[0]
+    rendered = json.dumps(tested.data.model_dump(mode="json"))
+
+    assert request.headers["Authorization"] == "Bearer cloudflare-secret"
+    assert tested.data.ok is True
+    assert tested.data.metadata["zone_read_verified"] is False
+    assert tested.data.metadata["dns_read_verified"] is False
+    assert tested.data.metadata["dns_write_verified"] is False
+    assert "token-id" not in rendered
+    assert "cloudflare-secret" not in rendered
+
+
 def test_telegram_status_excludes_global_credentials(
     session: Session,
     project_id: int,
@@ -537,4 +760,4 @@ def test_auth_test_redacts_vendor_controlled_text_fields(
     assert out.status == "failed api_key=[redacted]"
     assert out.summary == "Authorization: Bearer [redacted]"
     assert out.next_action == "rotate refresh_token=[redacted]"
-    assert out.metadata == {"access_token": "[redacted]"}
+    assert out.metadata["access_token"] == "[redacted]"

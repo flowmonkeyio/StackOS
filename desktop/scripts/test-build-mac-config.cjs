@@ -108,8 +108,8 @@ try {
   );
 
   cleanup();
-  const httpsUrl = "https://flowmonkey.io/StackOS/";
-  const artifactUrl = "https://flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.dmg";
+  const httpsUrl = "https://stackos.flowmonkey.io/StackOS/";
+  const artifactUrl = "https://stackos.flowmonkey.io/StackOS/stackos-1.1.1-mac-arm64.dmg";
   const artifactUrlBuild = runBuild({ STACKOS_UPDATE_URL: artifactUrl });
   assert.notEqual(artifactUrlBuild.status, 0);
   assert.match(artifactUrlBuild.stderr, /base directory containing latest-mac.yml/);

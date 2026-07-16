@@ -189,8 +189,6 @@ class CredentialStatusMixin:
             credential.profile_key = row.profile_key
             if credential.revoked_at is not None:
                 credential.status = "revoked"
-            elif status is None and credential.status == "failed" and row_status == "connected":
-                credential.status = "failed"
             else:
                 credential.status = resolved_status
             credential.expires_at = row.expires_at

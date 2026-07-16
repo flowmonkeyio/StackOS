@@ -1136,6 +1136,56 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
     assert with_inputs["plan"]["key"] == "core.project-memory-review.run"
 
 
+def test_website_seo_analysis_strict_validation_and_create_preserve_grants(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    inputs = {"site_url": "https://example.org"}
+
+    validation = mcp_client.call_tool_structured(
+        "runPlan.validate",
+        {
+            "project_id": project_id,
+            "workflow_key": "seo.website-analysis",
+            "inputs_json": inputs,
+            "enforce_required_inputs": True,
+            "response_mode": "raw",
+        },
+    )
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "workflow_key": "seo.website-analysis",
+            "inputs_json": inputs,
+        },
+    )
+    fetched = mcp_client.call_tool_structured(
+        "runPlan.get",
+        {"run_plan_id": created["data"]["id"], "response_mode": "raw"},
+    )
+    assert validation["valid"] is True
+    assert validation["warnings"] == []
+    assert created["data"]["template_key"] == "seo.website-analysis"
+    assert fetched["template_snapshot_json"]["version"] == "0.2.0"
+    assert fetched["status"] == "draft"
+    assert all(step["instructions_json"] for step in fetched["steps"])
+    assert all(step["success_criteria_json"] for step in fetched["steps"])
+    assert fetched["grant_snapshot_json"] == validation["plan"]["grant_snapshot_json"]
+    grants = fetched["grant_snapshot_json"]["mcp_tool_grants"]
+    collect_actions = next(
+        grant
+        for grant in grants
+        if grant["step_id"] == "collect-connected-evidence"
+        and grant.get("tool") == "action.execute"
+    )
+    assert "seo.search-console.search-analytics.query" in collect_actions["action_refs"]
+    assert all(
+        grant.get("tool") not in {"communication.send", "communication.reply"} for grant in grants
+    )
+
+
 def test_run_plan_validate_marketing_template_wires_optional_provider_video_flow(
     mcp_client: MCPClient,
     seeded_project: dict,

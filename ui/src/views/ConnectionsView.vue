@@ -50,6 +50,8 @@ const {
   connectionMessages,
   fieldErrors,
   pendingRevoke,
+  editing,
+  editingSecretPresent,
   authMethods,
   selectedMethodKey,
   selectedMethod,
@@ -57,8 +59,7 @@ const {
   supportsCredential,
   inputType,
   isSecretField,
-  primaryCredentialFields,
-  advancedCredentialFields,
+  methodFields,
   fieldOptions,
   hasFieldOptions,
   fieldValue,
@@ -79,6 +80,7 @@ const {
   load: loadCredentials,
   applyProviderSelection,
   openAddConnection,
+  openEditConnection,
   saveCredential: saveCredentialAction,
   startProvider,
   testConnection,
@@ -439,6 +441,7 @@ onBeforeRouteUpdate((to) => {
             :connection-messages="connectionMessages"
             :busy-action="busyAction"
             @add-connection="openAddConnection"
+            @edit-connection="openEditConnection"
             @test-connection="testConnection"
             @revoke-connection="requestRevoke"
           />
@@ -531,14 +534,15 @@ onBeforeRouteUpdate((to) => {
       :provider-setup-urls="providerSetupUrls"
       :field-errors="fieldErrors"
       :busy-action="busyAction"
+      :editing="editing"
+      :secret-present="editingSecretPresent"
       :auth-methods="authMethods"
       :selected-method-key="selectedMethodKey"
       :selected-method="selectedMethod"
       :supports-credential="supportsCredential"
       :input-type="inputType"
       :is-secret-field="isSecretField"
-      :primary-credential-fields="primaryCredentialFields"
-      :advanced-credential-fields="advancedCredentialFields"
+      :method-fields="methodFields"
       :has-field-options="hasFieldOptions"
       :field-options="fieldOptions"
       :profile-value="profileValue"

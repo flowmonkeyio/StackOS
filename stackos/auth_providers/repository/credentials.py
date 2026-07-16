@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
@@ -16,7 +17,13 @@ from stackos.db.models import Credential, IntegrationCredential
 from stackos.repositories.base import ConflictError, Envelope, NotFoundError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 
-from .schema import AuthCredentialSetOut, AuthFieldOut, AuthMethodOut, AuthRevokeOut
+from .schema import (
+    AuthCredentialEditOut,
+    AuthCredentialSetOut,
+    AuthFieldOut,
+    AuthMethodOut,
+    AuthRevokeOut,
+)
 from .utils import (
     is_valid_profile_key,
     telegram_bot_id_from_token,
@@ -47,6 +54,13 @@ class CredentialStorageMixin:
         profile_key = self._normalize_profile_key(profile_key)
         fields = self._with_provider_field_defaults(provider=provider, method=method, fields=fields)
         secret_values, safe_config = self._split_credential_fields(method=method, fields=fields)
+        if provider.key == "ftp":
+            from stackos.integrations.ftp import validate_ftp_credential_config
+
+            try:
+                validate_ftp_credential_config(safe_config)
+            except ValueError as exc:
+                raise ValidationError(str(exc), data={"provider_key": "ftp"}) from exc
         safe_config["auth_method_key"] = method.key
         safe_config["profile_key"] = profile_key
         if provider.key == "telegram-bot" and method.key == "bot-token":
@@ -72,6 +86,7 @@ class CredentialStorageMixin:
             profile_key=profile_key,
             config_json=safe_config,
             expires_at=expires_at,
+            commit=False,
         )
         row = self._s.get(IntegrationCredential, env.data.id)
         if row is None:
@@ -91,6 +106,81 @@ class CredentialStorageMixin:
         )
         self._s.commit()
         return Envelope(data=AuthCredentialSetOut(**out.model_dump()), project_id=project_id)
+
+    def get_credential_edit_state(
+        self,
+        *,
+        project_id: int,
+        credential_ref: str,
+    ) -> AuthCredentialEditOut:
+        credential, row = self._resolve_credential(
+            project_id=project_id,
+            credential_ref=credential_ref,
+        )
+        provider = self._get_provider(row.kind)
+        assert provider is not None
+        method = self._get_auth_method(
+            provider,
+            (row.config_json or {}).get("auth_method_key"),
+        )
+        assert method is not None
+        secret_values = self._deserialize_secret_payload(method=method, row=row)
+        config = row.config_json or {}
+        values = {
+            field.key: config[field.key]
+            for field in method.fields
+            if not field.secret and field.key in config
+        }
+        return AuthCredentialEditOut(
+            connection=self._connection_out(credential, row),
+            values=values,
+            secret_present={
+                field.key: field.key in secret_values for field in method.fields if field.secret
+            },
+        )
+
+    def update_credential(
+        self,
+        *,
+        project_id: int,
+        credential_ref: str,
+        fields: dict[str, Any],
+        label: str | None,
+    ) -> Envelope[AuthCredentialSetOut]:
+        _, row = self._resolve_credential(
+            project_id=project_id,
+            credential_ref=credential_ref,
+        )
+        provider = self._get_provider(row.kind)
+        assert provider is not None
+        method = self._get_auth_method(
+            provider,
+            (row.config_json or {}).get("auth_method_key"),
+        )
+        assert method is not None
+        declared = {field.key: field for field in method.fields}
+        unknown = sorted(set(fields) - set(declared))
+        if unknown:
+            raise ValidationError(
+                "credential fields include keys not declared by the provider auth method",
+                data={"unknown_fields": unknown, "auth_method_key": method.key},
+            )
+        merged: dict[str, Any] = {
+            field.key: (row.config_json or {})[field.key]
+            for field in method.fields
+            if not field.secret and field.key in (row.config_json or {})
+        }
+        merged.update(self._deserialize_secret_payload(method=method, row=row))
+        merged.update(fields)
+        return self.store_credential(
+            project_id=project_id,
+            provider_key=row.kind,
+            auth_method_key=method.key,
+            profile_key=row.profile_key,
+            label=label,
+            fields=merged,
+            expires_at=row.expires_at,
+        )
 
     def _with_provider_field_defaults(
         self,
@@ -181,7 +271,7 @@ class CredentialStorageMixin:
         )
         now = utcnow()
         if row.id is not None:
-            IntegrationCredentialRepository(self._s).remove(int(row.id))
+            IntegrationCredentialRepository(self._s).remove(int(row.id), commit=False)
         credential.integration_credential_id = None
         credential.status = "revoked"
         credential.revoked_at = now
@@ -240,7 +330,9 @@ class CredentialStorageMixin:
         safe_config: dict[str, Any] = {}
         for field in method.fields:
             raw = fields.get(field.key)
-            is_blank = raw is None or (isinstance(raw, str) and not raw.strip())
+            is_blank = raw is None or (
+                isinstance(raw, str) and (raw == "" if field.secret else not raw.strip())
+            )
             if field.required and is_blank:
                 raise ValidationError(
                     f"{method.key} credential missing {field.key}",
@@ -261,13 +353,12 @@ class CredentialStorageMixin:
         return secret_values, safe_config
 
     def _secret_field_value(self, *, field: AuthFieldOut, raw: Any) -> str:
-        value = raw.strip() if isinstance(raw, str) else str(raw).strip()
-        if not value:
+        if not isinstance(raw, str) or raw == "":
             raise ValidationError(
                 f"secret credential field {field.key} must be a non-empty string",
                 data={"field": field.key},
             )
-        return value
+        return raw
 
     def _safe_field_value(self, *, field: AuthFieldOut, raw: Any) -> Any:
         if field.type == "number":
@@ -300,6 +391,43 @@ class CredentialStorageMixin:
                 data={"field": field.key},
             )
         return raw.strip() if isinstance(raw, str) else raw
+
+    def _deserialize_secret_payload(
+        self,
+        *,
+        method: AuthMethodOut,
+        row: IntegrationCredential,
+    ) -> dict[str, str]:
+        assert row.id is not None
+        payload = IntegrationCredentialRepository(self._s).get_decrypted(row.id)
+        if method.payload_format == "none":
+            return {}
+        if method.payload_format == "raw":
+            field_key = method.payload_field
+            if field_key is None:
+                secret_fields = [field.key for field in method.fields if field.secret]
+                if len(secret_fields) != 1:
+                    raise ValidationError(
+                        "raw credential contract must declare one secret payload field",
+                        data={"auth_method_key": method.key},
+                    )
+                field_key = secret_fields[0]
+            return {field_key: payload.decode("utf-8")}
+        try:
+            decoded = json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValidationError(
+                "stored credential payload is invalid",
+                data={"auth_method_key": method.key},
+            ) from exc
+        if not isinstance(decoded, Mapping) or any(
+            not isinstance(key, str) or not isinstance(value, str) for key, value in decoded.items()
+        ):
+            raise ValidationError(
+                "stored credential payload does not match its auth method",
+                data={"auth_method_key": method.key},
+            )
+        return {str(key): str(value) for key, value in decoded.items()}
 
     def _serialize_secret_payload(self, *, method: AuthMethodOut, values: dict[str, str]) -> bytes:
         if method.payload_format == "none":

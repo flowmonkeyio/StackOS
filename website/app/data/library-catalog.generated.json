@@ -2586,6 +2586,136 @@
       "integrations": [
         "Telegram Bot"
       ]
+    },
+    {
+      "key": "seo.website-analysis",
+      "slug": "seo-website-analysis",
+      "name": "Website SEO Analysis",
+      "description": "A source-ledgered site inventory, finding register, and prioritized roadmap that explains coverage and limitations without changing the website.",
+      "domain": "seo",
+      "audience": "Website owners, SEO teams, and agencies diagnosing search visibility and measurement quality",
+      "color": "#79dfff",
+      "featured": true,
+      "problem": "SEO audits become generic checklists or unsupported scores when the analyst does not map the actual site, reconcile public pages with first-party measurement, and distinguish measured facts from observations and inference.",
+      "outcome": "A source-ledgered site inventory, finding register, and prioritized roadmap that explains coverage and limitations without changing the website.",
+      "whyAi": "AI can traverse representative templates, reconcile public, first-party, and third-party evidence, and synthesize a practical agency-style roadmap while keeping claims traceable.",
+      "operatorPath": [
+        "Provide the website, business goal, important markets or sections, and any scope exclusions.",
+        "Connect Search Console, Analytics, Tag Manager, or research providers when available; the public-site analysis remains usable without them.",
+        "Review the evidence classification, limitations, findings, and prioritized roadmap before assigning fixes."
+      ],
+      "agentPath": [
+        "Establish the canonical host, audit boundary, business goal, markets, date window, and sampling plan.",
+        "Map public pages, navigation, robots and sitemap signals, representative templates, links, metadata, structured data, and rendered behavior.",
+        "Use every relevant connected evidence source, preserving response-file refs and recording unavailable sources as explicit gaps.",
+        "Reconcile evidence, challenge unsupported claims, and prioritize actions by impact, confidence, effort, dependencies, and validation path.",
+        "Store a compact analysis index plus durable report, inventory, and finding-register artifacts."
+      ],
+      "progressSignals": [
+        "Scope and sampling plan established",
+        "Public site map and representative templates inspected",
+        "Connected evidence collected or gap-recorded",
+        "Findings reconciled and evidence-classified",
+        "Roadmap independently reviewed",
+        "Durable analysis package stored"
+      ],
+      "recovery": [
+        "If optional providers are unavailable, continue from public pages and record the missing evidence in the source ledger.",
+        "If part of the site is inaccessible, narrow the observed scope and label the limitation instead of claiming a complete crawl.",
+        "If the target itself cannot be reached or validated, stop with the exact access failure and evidence collected so far."
+      ],
+      "safeStoppingPoints": [
+        "Stop after the analysis package; fixes, publishing, tag changes, and indexing requests require separately authorized work."
+      ],
+      "handoffs": [
+        {
+          "workflowKey": "engineering.tracked-delivery",
+          "relationship": "conditional",
+          "when": "A reviewed technical SEO finding should become repository delivery work."
+        },
+        {
+          "workflowKey": "seo.content-refresh",
+          "relationship": "conditional",
+          "when": "A reviewed page-level content finding should become a bounded refresh."
+        }
+      ],
+      "setup": "available",
+      "prerequisites": [
+        "A reachable website URL and the business purpose of the analysis",
+        "Optional target markets, priority sections, exclusions, and performance date window",
+        "Optional connected Search Console, GA4, GTM, Firecrawl, Ahrefs, DataForSEO, or Serper sources"
+      ],
+      "proof": [
+        "Source ledger with used, unavailable, skipped, and failed sources",
+        "Public site inventory and representative-template coverage",
+        "Evidence-classified SEO finding register",
+        "Prioritized roadmap with validation paths",
+        "Durable final report, inventory, and finding-register artifacts"
+      ],
+      "whenToUse": [
+        "A user asks to audit, map, analyze, or diagnose a website's SEO.",
+        "A website needs an agency-style technical, on-page, content, measurement, and optional authority/competitive review.",
+        "Connected Search Console, Analytics, Tag Manager, or research tools should enrich a public-site analysis."
+      ],
+      "stages": [
+        {
+          "id": "scope-audit",
+          "title": "Scope The Audit",
+          "summary": "Establish the canonical host, business goal, markets, priority/excluded sections, date window, robots/access constraints, expected site size, and a…"
+        },
+        {
+          "id": "map-public-site",
+          "title": "Map The Public Site",
+          "summary": "Read the homepage, robots and sitemap signals, primary navigation, representative section/template pages, internal links, redirects/canonicals,…"
+        },
+        {
+          "id": "collect-connected-evidence",
+          "title": "Collect Connected Evidence",
+          "summary": "Use every relevant ready Search Console, GA4, GTM, Ahrefs, DataForSEO, and Serper action with explicit bounded inputs; inspect response files before…"
+        },
+        {
+          "id": "reconcile-and-diagnose",
+          "title": "Reconcile Evidence And Diagnose",
+          "summary": "Reconcile public, first-party, third-party, and operator evidence into the site inventory and finding register across crawl/indexability,…"
+        },
+        {
+          "id": "review-and-prioritize",
+          "title": "Review And Prioritize",
+          "summary": "Independently challenge scope coverage and every unsupported or overstated claim, then prioritize accepted findings by impact, confidence, effort,…"
+        },
+        {
+          "id": "finalize-and-store",
+          "title": "Finalize And Store The Analysis",
+          "summary": "Create durable final-report, site-inventory, and finding-register artifacts, then upsert one compact website-seo-analysis record whose source ledger,…"
+        }
+      ],
+      "agentNames": [
+        "Website SEO Analysis Agent",
+        "Review Agent"
+      ],
+      "agentRefs": [
+        {
+          "key": "seo.workflow.website-analysis",
+          "slug": "seo-workflow-website-analysis",
+          "name": "Website SEO Analysis Agent"
+        },
+        {
+          "key": "stackos.sdlc.delivery-reviewer",
+          "slug": "stackos-sdlc-delivery-reviewer",
+          "name": "Review Agent"
+        }
+      ],
+      "integrations": [
+        "Jina",
+        "Utils Sitemap Fetch",
+        "Firecrawl",
+        "Google Search Console",
+        "Google Analytics",
+        "Google Tag Manager",
+        "Ahrefs",
+        "Dataforseo",
+        "Serper"
+      ]
     }
   ],
   "agents": [
@@ -3187,6 +3317,21 @@
       "role": "Trackbooth Agent Api Operator",
       "roleClass": "mechanical",
       "workflowKeys": []
+    },
+    {
+      "key": "seo.workflow.website-analysis",
+      "slug": "seo-workflow-website-analysis",
+      "name": "Website SEO Analysis Agent",
+      "description": "Maps a website, reconciles public and connected evidence, and produces an agency-style finding register and prioritized roadmap without inventing measurements.",
+      "domain": "seo",
+      "audience": "SEO and content teams",
+      "color": "#79dfff",
+      "featured": true,
+      "role": "Seo Website Analysis",
+      "roleClass": "reasoning",
+      "workflowKeys": [
+        "seo.website-analysis"
+      ]
     },
     {
       "key": "stackos.workflow.workflow-author",

@@ -24,9 +24,10 @@ the active project context, dirty worktree, user constraints, and release risk.
   `docs/agent-presets.md`; add `docs/security.md`,
   `docs/integration-contracts/AGENTS.md`, UI docs, or release docs when the
   changed surface requires them.
-- Resolve `engineering.tracked-delivery` agent and skill preset requirements
-  with `agentPreset.resolveForWorkflow` and `skillPreset.resolveForWorkflow`
-  when setting up or auditing workflow roles.
+- Resolve `engineering.tracked-delivery` agents, installed skill requirements,
+  and main-agent skill presets once with `agentPreset.resolveForWorkflow` when
+  setting up or auditing workflow roles. Call `skillPreset.resolveForWorkflow`
+  separately only when a standalone skill-preset packet is specifically needed.
 - Treat `.codex/config.toml` and `.codex/agents/*.toml` as the host-local
   materialization of the StackOS agent presets.
 - Treat `stackos:stackos` as the managed host skill for MCP mechanics. Do not

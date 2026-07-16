@@ -348,6 +348,7 @@ class BaseIntegration:
         headers: dict[str, str] | None = None,
         auth: httpx.BasicAuth | None = None,
         request_log_body: JsonBody | None = None,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> IntegrationCallResult:
         """Issue one vendor call with budget + retry + audit trail.
 
@@ -361,13 +362,18 @@ class BaseIntegration:
            .record_call`` raises ``BudgetExceededError`` if the
            estimated cost would breach the cap. We catch nothing —
            audit M-25 says the breach must surface to the caller.
-        2. HTTP request with retry/backoff via ``_request_with_retry``.
+        2. HTTP request with retry/backoff via ``_request_with_retry``. Callers
+           may set ``max_retries=0`` when a provider mutation has no safe
+           idempotency contract; existing integrations retain the shared
+           default.
         3. Cost reconciliation: ``_extract_actual_cost_usd`` returns the
            true cost from the response (DataForSEO reports it; others
            use the estimate).
         4. ``RunStepCallRepository.record_call`` if a run-step is bound.
         """
         body_for_cost = json_body if json_body is not None else data_body
+        if max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
         estimated = self._estimate_cost_usd(op, json=body_for_cost, params=params)
 
         if self._budget_repo is not None and estimated > 0:
@@ -393,6 +399,7 @@ class BaseIntegration:
                 params=params,
                 headers=headers,
                 auth=auth,
+                max_retries=max_retries,
             )
         except (IntegrationDownError, RateLimitedError) as exc:
             duration_ms = int((perf_counter() - started) * 1000)

@@ -110,6 +110,14 @@ class AuthCredentialSetOut(CredentialConnectionOut):
     """Sanitized result for a local-admin credential profile write."""
 
 
+class AuthCredentialEditOut(BaseModel):
+    """Safe stored values for the existing provider-declared credential schema."""
+
+    connection: CredentialConnectionOut
+    values: dict[str, Any]
+    secret_present: dict[str, bool]
+
+
 @dataclass(frozen=True)
 class ResolvedCredential:
     """Daemon-internal credential bundle for connector execution.

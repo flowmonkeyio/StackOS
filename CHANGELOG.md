@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Moved the public macOS download and updater feed to
+  `https://stackos.flowmonkey.io/StackOS/`; future packaged releases use that
+  endpoint while the legacy main-domain feed remains a migration bridge for
+  already-installed builds.
+- Added bidirectional FTP/explicit-FTPS directory listing and recursive
+  multi-path upload/download, plus Cloudflare DNS-only zone and record actions.
+- Added the agency-style `seo.website-analysis` workflow with public-site
+  fallback, optional connected Search Console/Analytics/research evidence, and
+  evidence-classified reporting.
+- Added credential editing through the existing provider schema, Connections
+  form, and encrypted storage path; omitted secrets are preserved and failed
+  credential tests remain diagnostic instead of disabling agent actions.
+- Made UI mutation authorization follow the provider-auth REST namespace and
+  operation-owned browser-safety contracts, with a real credential-edit E2E
+  covering the derived browser token boundary.
 - Added one canonical, user-first getting-started guide: a designed and
   SEO-ready website page with body diagrams, a public Markdown representation,
   persistent desktop home/project links plus a Help-menu fallback, and the

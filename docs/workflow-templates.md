@@ -32,8 +32,12 @@ the request or project calls for it.
 The canonical workflow authoring guide is the StackOS operation
 `workflowTemplate.authoringGuide`. Agents should call it through
 `toolbox.call`, REST, or CLI from any repository, then validate drafts with
-`workflowTemplate.validate`. Keep this page as repo-local reference material,
-not a second copy of the authoring path.
+`workflowTemplate.validate`. The guide first requires one explicit intent mode
+and returns the deterministic setup phases, agent materialization policy,
+prerequisite persistence policy, and completion evidence. Use its default
+compact response for mode selection and setup; request `response_mode=raw` once
+after selecting `author_project` or `publish_plugin`. Keep this page as a tested
+repo-local summary, not a competing authoring path.
 
 ## Complete Workflow Package
 
@@ -453,38 +457,49 @@ writes.
 3. Discover hidden operations with `toolbox.call` for `operation.list` using
    `mode="grouped"` and `response_mode="compact"` when exact operation names
    are not known.
-4. Use `toolbox.call` for `workflowTemplate.describe` on the selected workflow.
-5. Resolve the workflow's `skill_preset_requirements` and
-   `agent_requirements` with the matching preset operations. Treat
-   orchestrator/skill presets and agent presets as required execution
-   contracts, not optional documentation.
-6. When the host supports project-local agents, skills, commands, or
-   orchestrator files, adapt the resolved presets into that host-native
-   execution layer during infrastructure setup. For example, a Claude project
-   may need project-scoped `.claude/agents/` and `.claude/skills/` files; a
-   Codex project may need `.codex/agents/` and orchestrator guidance. These
-   files should make future sessions load the workflow brain organically from
-   the project directory. Keep them as execution contracts only: do not copy
-   secrets, run state, voice/profile values, account mappings, or other
-   workflow prerequisites into them. Do not install global domain behavior and
-   do not duplicate canonical plugin presets unless a project-local override is
-   deliberately needed.
-7. Use `toolbox.call` for `readiness.check`.
-8. Validate and save project-specific infrastructure defaults with
-   `workflowExtension.validate` and `workflowExtension.upsert` when the project
-   needs stable route refs, channel refs, guardrails, selected context,
-   default inputs, or adapted preset guidance. Leave prerequisite-specific
-   fields explicitly blank or marked deferred when the operator has not
-   supplied them yet.
-9. Prove the path with `runPlan.validate` or a draft `runPlan.create` from the
-   effective workflow before claiming the setup is resumable.
+4. Use `toolbox.call` for `workflowTemplate.describe` on the selected workflow;
+   its effective detail includes the enabled project extension. Use
+   `workflowExtension.get` only when the standalone extension record is needed.
+   If the same workflow needs a non-empty durable project overlay, validate and save it with
+   `workflowExtension.validate` and `workflowExtension.upsert`, then describe
+   the effective workflow again. Do not create an empty extension.
+5. Resolve the final effective workflow once with
+   `agentPreset.resolveForWorkflow`. That response includes agent requirements,
+   installed skill requirements, and resolved main-agent skill presets; call
+   `skillPreset.resolveForWorkflow` separately only when a standalone skill
+   preset packet is specifically needed.
+6. Inspect existing host-local configuration and choose an exact
+   materialization for every role. Required roles must be materialized when the
+   host supports them or receive an explicit session-only fallback.
+   Recommended roles are materialized by default unless a project/host/risk
+   reason is recorded; optional roles are materialized only when selected.
+   Agent presets become specialist roles, skill presets become main-agent
+   orchestrator guidance, and installed host skills remain skills.
+7. Adapt the selected presets into the host-native execution layer. For
+   example, a Claude project may need project-scoped `.claude/agents/` and
+   `.claude/skills/` files; a Codex project may need `.codex/agents/` and
+   orchestrator guidance. Preserve unrelated operator-authored content. Record
+   the applicable workflow key(s), preset key/version, requirement level, project
+   references, and target mapping in the adapted setup. Keep these files as
+   execution contracts only: do not copy secrets, project ids, run state,
+   voice/profile values, account mappings, or other workflow prerequisites.
+8. Use `toolbox.call` for `readiness.check`. Infrastructure setup requires
+   `structurally_ready=true`; `missing_count=0` does not imply execution
+   readiness when `context_status=not_evaluated`.
+9. Prove the path with two read-only `runPlan.validate` calls: first with
+   `enforce_required_inputs=false` for structural proof, then with
+   `enforce_required_inputs=true` and only known defaults/inputs to expose the
+   exact deferred prerequisite gate. Do not call `runPlan.create` during
+   infrastructure setup.
 
-Before reporting setup complete, the agent must show proof: the StackOS
-project/workspace binding, workflow extension state, required inputs and
-deferred prerequisites, host-local files created with absolute paths, the
-preset-to-file mapping, the deterministic future binding path, run-plan
-validation/create outcome, and confirmation that no workflow output was
-produced.
+Before reporting setup complete, the agent must show proof: the selected setup
+mode, StackOS project/workspace binding, effective workflow key/source/version,
+workflow extension state (`absent`/`not_required` is valid), required inputs and
+deferred prerequisites, required/recommended/optional role decisions,
+host-local files created or updated with absolute paths, preset versions and
+target mapping, deterministic future binding path, the full readiness tuple,
+both run-plan validation outcomes, and confirmation that no run plan, workflow
+tracker task/ticket, external side effect, or workflow output was produced.
 
 Generic operator prompt shape:
 
@@ -505,23 +520,28 @@ Before creating anything, inspect and confirm:
    step grant.
 
 Then create or reuse the dedicated StackOS project/workspace. Use [workflow
-key]. Resolve the workflow orchestrator/skill presets and required agent
-presets. If this host supports project-local agents, skills, commands, or
-orchestrator files, adapt those presets into the host-native project directory
-so future sessions load the workflow brain organically. Keep those files generic
-and procedural; do not store [domain prerequisites], secrets, run state, project
-ids, or StackOS state in them.
+key]. Inspect any existing extension, then persist a reviewed non-empty
+extension only when durable project defaults or overrides are required. Resolve
+the final effective workflow once. Materialize every required role, materialize
+recommended roles by default unless you record a reason, and materialize
+optional roles only when selected. Keep main-agent skill presets separate from
+specialist agents. Adapt those contracts into the host-native project directory
+so future sessions load them organically. Preserve unrelated local content and
+record workflow keys, preset versions, and the exact target mapping. Do not store
+[domain prerequisites], secrets, project ids, run state, or StackOS state in
+those files.
 
-Persist the workflow extension with infrastructure defaults only. Leave
-[domain prerequisites] blank/deferred for a separate prerequisite setup step.
-Validate or create the run-plan path. If run creation is blocked by missing
-prerequisites, report that as the expected gate and identify the next
-prerequisite setup step.
+Leave unresolved [domain prerequisites] omitted and report their exact keys for
+a separate prerequisite setup step; do not persist placeholder values. Run
+structural and strict `runPlan.validate` checks. Do not call `runPlan.create`,
+create tracker work, or produce workflow output during infrastructure setup.
 
-Report the StackOS state saved, local files created with absolute paths,
-preset-to-file mapping, deterministic future binding path, prerequisite gate,
-run-plan validation/create outcome, and confirmation that no workflow output
-was produced.
+Report the selected mode, StackOS state saved, effective workflow version,
+extension state, local files created or updated with absolute paths,
+required/recommended/optional role decisions, preset-to-target mapping,
+deterministic future binding path, readiness tuple, both validation outcomes,
+prerequisite gate, next safe action, and confirmation that no run plan, workflow
+tracker state, external side effect, or workflow output was produced.
 ```
 
 ### 2. Workflow Prerequisite Setup
@@ -534,11 +554,23 @@ domain-specific setup. The agent should:
 1. Bind to the existing project/workspace from the infrastructure setup.
 2. Inspect the effective workflow, extension, orchestrator/skill presets, and
    agent presets so the prerequisite questions match the workflow contract.
-3. Ask only for missing prerequisite data needed by the selected workflow.
-4. Save prerequisite state through the workflow extension, approved project
-   setup operations, or a dedicated onboarding run plan when the state belongs
-   in run-plan-gated resources, artifacts, decisions, or learnings.
-5. Stop before producing the workflow's recurring/business output.
+3. Classify every missing value as infrastructure, `durable_prerequisite`, or
+   `run_input`; ask only for missing durable prerequisites. If ownership is
+   ambiguous, ask instead of persisting a guess.
+4. If the workflow or resolved orchestrator explicitly assigns a prerequisite
+   to another workflow, report that exact workflow as a safe handoff instead of
+   silently running it. When the operator authorizes setup of the workflow
+   family, resolve each selected workflow and materialize the deduplicated union
+   of required and recommended roles; do not install unrelated domain roles.
+5. Save stable safe defaults/refs through the workflow extension, project
+   guidance through selected context, approved setup state through its owning
+   operation, or resources/artifacts/decisions/learnings through a dedicated
+   onboarding run with explicit step grants. Never persist raw secrets or
+   literal placeholders such as `deferred`, `TBD`, or `unknown`.
+6. Keep per-run goals, selected variants, final decisions, and provider object
+   ids out of project defaults. Re-check readiness, report remaining run inputs
+   and operator/provider blockers, and stop before producing the workflow's
+   recurring/business output.
 
 Generic operator prompt shape:
 
@@ -553,13 +585,19 @@ StackOS project state, and do not produce [workflow output] yet.
 This phase executes one concrete instance of the workflow. The agent should:
 
 1. Bind to the existing project/workspace.
-2. Inspect the effective workflow extension and create, resume, or start the
-   concrete run plan for this execution.
+2. Inspect the effective workflow extension and current run state; decide
+   whether this occurrence needs a new run or should resume the intended
+   existing run.
 3. Load or resolve the orchestrator/skill preset and required agent presets for
    the run.
-4. Claim and record run-plan steps, use only granted tools/actions, and preserve
+4. Collect concrete per-run inputs, require selected-route execution readiness,
+   and call `runPlan.validate` with `enforce_required_inputs=true` before
+   creating new state.
+5. Create and start a new run only after strict validation succeeds, or resume
+   the intended existing run after consistency checks.
+6. Claim and record run-plan steps, use only granted tools/actions, and preserve
    approval gates.
-5. Store outputs, evidence, resources, artifacts, decisions, and learnings only
+7. Store outputs, evidence, resources, artifacts, decisions, and learnings only
    through the allowed step-granted operations.
 
 Generic operator prompt shape:
@@ -572,13 +610,25 @@ Use workflow extensions for setup-time context that should be applied to future
 run plans. Use run-plan-gated resources, artifacts, decisions, learnings, and
 actions only after a run exists and the active step grants those writes.
 
-New workflow authoring is available through the contract interface:
-`workflowTemplate.validate`, `workflowTemplate.save`, `workflowTemplate.fork`,
-and `runPlan.create`. Use `workflowTemplate.validate({ "key":
+Before authoring or mutating workflow state, select one explicit mode from the
+canonical guide: `setup_existing`, `customize_existing`, `author_project`,
+`publish_plugin`, `one_off_run`, or `execute`. A custom project workflow does
+not imply plugin source changes. Use `customize_existing` when an extension can
+preserve the workflow identity; use `author_project` only for a genuinely new
+project/user reusable method; use `publish_plugin` only for distributed package
+behavior. Changing modes requires explicit operator intent or a reported safe
+handoff.
+
+New project/user workflow authoring is available through the contract
+interface: `workflowTemplate.validate`, `workflowTemplate.save`, and
+`workflowTemplate.fork`. Use `workflowTemplate.validate({ "key":
 "core.project-memory-review" })` to validate an installed/catalog template by
 key. Use `template_json` or `template_yaml` when validating a draft before
-saving it. The UI can inspect and use templates, but it is not yet a full
-visual workflow-builder.
+saving it. `workflowTemplate.save` requires explicit operator/local-admin
+approval of a complete validated draft. After save, follow infrastructure setup
+and use read-only `runPlan.validate`; `runPlan.create` belongs only to operation
+or an explicitly authorized execution smoke. The UI can inspect and use
+templates, but it is not yet a full visual workflow-builder.
 
 For customer feedback workflows, configure the canonical Slack route and target
 as project extension defaults on `communications.customer-feedback-intake`.

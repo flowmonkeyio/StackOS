@@ -264,8 +264,8 @@ console.log("Commands:");
 console.log("  dev unsigned: pnpm --dir desktop run dist:mac:dev");
 console.log("  signed local: pnpm --dir desktop run dist:mac:signed");
 console.log("  signed local pinned: CSC_NAME='Name (TEAMID)' pnpm --dir desktop run dist:mac:signed");
-console.log("  notarized release: CSC_NAME='Name (TEAMID)' APPLE_KEYCHAIN_PROFILE='profile' STACKOS_UPDATE_URL='https://flowmonkey.io/StackOS/' pnpm --dir desktop run dist:mac:release");
-console.log("  validate notary profile: STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 CSC_NAME='Name (TEAMID)' APPLE_KEYCHAIN_PROFILE='profile' STACKOS_UPDATE_URL='https://flowmonkey.io/StackOS/' pnpm --dir desktop run release:preflight");
+console.log("  notarized release: CSC_NAME='Name (TEAMID)' APPLE_KEYCHAIN_PROFILE='profile' STACKOS_UPDATE_URL='https://stackos.flowmonkey.io/StackOS/' pnpm --dir desktop run dist:mac:release");
+console.log("  validate notary profile: STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 CSC_NAME='Name (TEAMID)' APPLE_KEYCHAIN_PROFILE='profile' STACKOS_UPDATE_URL='https://stackos.flowmonkey.io/StackOS/' pnpm --dir desktop run release:preflight");
 console.log("");
 
 if (issues.length > 0) {

@@ -65,5 +65,8 @@ def test_run_token_resolves_to_correct_run(mcp_client: MCPClient, seeded_project
             "run_token": token,
         },
     )
-    run_row = mcp_client.call_tool_structured("run.get", {"run_id": rid})
+    run_row = mcp_client.call_tool_structured(
+        "run.get",
+        {"run_id": rid, "response_mode": "raw"},
+    )
     assert run_row["client_session_id"] == token

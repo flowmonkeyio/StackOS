@@ -196,6 +196,22 @@ def test_builtin_plugin_manifests_validate() -> None:
         "http_referer",
         "app_title",
     ]
+    ftp_fields = {field.key: field for field in utils_providers["ftp"].auth_methods[0].fields}
+    assert ftp_fields["port"].type == "number"
+    assert ftp_fields["tls_mode"].type == "select"
+    assert ftp_fields["tls_mode"].options == [
+        {"value": "explicit", "label": "Explicit FTPS"},
+        {"value": "none", "label": "Plain FTP"},
+    ]
+    assert ftp_fields["passive_mode"].type == "select"
+    assert ftp_fields["timeout_s"].type == "number"
+    assert ftp_fields["password"].type == "secret"
+    for plugin_manifest in BUILTIN_PLUGIN_MANIFESTS:
+        for provider in plugin_manifest.providers:
+            for method in provider.auth_methods:
+                for field in method.fields:
+                    serialized = field.model_dump(mode="json")
+                    assert "type" in serialized
     assert "Unified model API provider connection" in utils_providers["openrouter"].description
     assert {capability.key for capability in utils.capabilities} >= {"model-access"}
     utils_actions = {action.key: action for action in utils.actions}
@@ -634,7 +650,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 52
+    assert len(providers) == 54
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -648,7 +664,9 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
             f"{plugin_slug}:{provider.key} missing setup note"
         )
         expected_verified_at = (
-            "2026-06-17"
+            "2026-07-15"
+            if plugin_slug == "utils" and provider.key in {"ftp", "cloudflare"}
+            else "2026-06-17"
             if plugin_slug == "seo" and provider.key in google_seo_providers
             else "2026-07-08"
             if plugin_slug == "shopify" and provider.key == "shopify"

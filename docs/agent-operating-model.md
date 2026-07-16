@@ -102,6 +102,15 @@ the resolved workflow and presets in the current session, and ask the operator
 to move durable recurring work into a real host project when they want future
 sessions to resume reliably.
 
+Workflow infrastructure setup is not workflow execution. Select
+`setup_existing` from `workflowTemplate.authoringGuide`, resolve the effective
+workflow and exact role topology, materialize required roles and recommended
+roles by default, check structural readiness, and use structural plus strict
+read-only `runPlan.validate` calls. A strict missing-input result is the named
+prerequisite gate. Do not call `runPlan.create` or create tracker work until a
+concrete operation request supplies the required inputs and passes execution
+readiness.
+
 When a host supports skills, workflow templates may recommend `stackos:stackos`.
 That skill teaches agents how to use StackOS MCP, operations, workflow
 templates, run plans, tracker tasks/tickets, dependencies, and evidence. The

@@ -6,7 +6,7 @@ function requiredPublicEnv(name: string) {
 
 const siteUrl = requiredPublicEnv('NUXT_PUBLIC_SITE_URL')
 const gaMeasurementId = requiredPublicEnv('NUXT_PUBLIC_GA_MEASUREMENT_ID')
-const downloadUrl = 'https://flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg'
+const downloadUrl = 'https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg'
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-07-09',
