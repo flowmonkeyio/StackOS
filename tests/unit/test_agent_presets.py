@@ -79,6 +79,17 @@ LOCAL_CODEX_BRANDING_AGENT_PRESETS = {
     ),
 }
 
+LOCAL_CODEX_SEO_AGENT_PRESETS = {
+    "seo_keyword_research": (
+        "agents/seo-keyword-research.toml",
+        "seo.workflow.keyword-research",
+    ),
+    "seo_website_analysis": (
+        "agents/seo-website-analysis.toml",
+        "seo.workflow.website-analysis",
+    ),
+}
+
 
 def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     workflow = yaml.safe_load(
@@ -97,7 +108,9 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
         "direct_only_tool_namespaces": ["mcp__stackos"],
     }
     assert set(config["agents"]) == (
-        set(LOCAL_CODEX_AGENT_PRESETS) | set(LOCAL_CODEX_BRANDING_AGENT_PRESETS)
+        set(LOCAL_CODEX_AGENT_PRESETS)
+        | set(LOCAL_CODEX_BRANDING_AGENT_PRESETS)
+        | set(LOCAL_CODEX_SEO_AGENT_PRESETS)
     )
 
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_AGENT_PRESETS.items():
@@ -135,6 +148,8 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     assert "planned persistent `profile_key`" in reviewer_text
     assert "include_graph=true" in planning_text
     assert "detached branches" in planning_text
+    assert "Additional workflow: seo.keyword-research" in planning_text
+    assert "Additional workflow: seo.website-analysis" in reviewer_text
     assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.3.0" in (orchestrator_text)
     assert "not a subagent" in orchestrator_text
     assert "Quality beats speed" in orchestrator_text
@@ -192,6 +207,64 @@ def test_codex_local_branding_agents_track_branding_presets() -> None:
     assert "runPlan.getStep" in orchestrator_text
     assert "Apply only evidence-backed blockers and repairs" in orchestrator_text
     assert "handoff does not authorize another workflow" in orchestrator_text
+
+
+def test_codex_local_seo_agents_track_seo_workflows() -> None:
+    keyword_research = yaml.safe_load(
+        (REPO_ROOT / "plugins/seo/workflows/keyword-research.yaml").read_text(encoding="utf-8")
+    )
+    website_analysis = yaml.safe_load(
+        (REPO_ROOT / "plugins/seo/workflows/website-analysis.yaml").read_text(encoding="utf-8")
+    )
+    workflow_refs = {
+        item["agent_preset_ref"]
+        for workflow in (keyword_research, website_analysis)
+        for item in workflow["agent_requirements"]
+    }
+    local_seo_refs = {preset for _config_path, preset in LOCAL_CODEX_SEO_AGENT_PRESETS.values()}
+    reused_sdlc_refs = {preset for _config_path, preset in LOCAL_CODEX_AGENT_PRESETS.values()}
+
+    assert {ref for ref in workflow_refs if ref.startswith("seo.workflow.")} == (local_seo_refs)
+    assert workflow_refs - local_seo_refs == {
+        "stackos.sdlc.planning",
+        "stackos.sdlc.delivery-reviewer",
+    }
+    assert workflow_refs - local_seo_refs <= reused_sdlc_refs
+
+    config = tomllib.loads((REPO_ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
+    for agent_name, (config_file, preset_ref) in LOCAL_CODEX_SEO_AGENT_PRESETS.items():
+        assert config["agents"][agent_name]["config_file"] == config_file
+        local_text = (REPO_ROOT / ".codex" / config_file).read_text(encoding="utf-8")
+        preset_version = AgentPresetLoader().describe_preset(key=preset_ref).preset.version
+        assert f"Source preset: {preset_ref} v{preset_version}" in local_text
+        assert "Keep aligned with plugins/seo/agent-presets/seo.yaml." in local_text
+        tomllib.loads(local_text)
+
+    keyword_text = (REPO_ROOT / ".codex/agents/seo-keyword-research.toml").read_text(
+        encoding="utf-8"
+    )
+    website_text = (REPO_ROOT / ".codex/agents/seo-website-analysis.toml").read_text(
+        encoding="utf-8"
+    )
+    orchestrator_text = (REPO_ROOT / ".codex/orchestrator/workflow-orchestrator.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "executionContext.artifact.read" in keyword_text
+    assert "content-production handoff is a recommendation" in keyword_text
+    assert "one canonical site inventory" in website_text
+    assert "sole canonical finding register" in website_text
+    assert "Additional workflow: seo.keyword-research" in (
+        REPO_ROOT / ".codex/agents/sdlc-planning.toml"
+    ).read_text(encoding="utf-8")
+    assert "Additional workflow: seo.website-analysis" in (
+        REPO_ROOT / ".codex/agents/sdlc-delivery-reviewer.toml"
+    ).read_text(encoding="utf-8")
+    assert "Source skill preset: `stackos.workflow-orchestrator` v0.1.1" in (orchestrator_text)
+    assert "not a subagent" in orchestrator_text
+    assert "unavailable optional providers do not block a ready route" in orchestrator_text
+    assert "parallel planning, review, evidence" in orchestrator_text
+    assert "handoff never authorizes execution by itself" in orchestrator_text
 
 
 def test_agent_preset_loader_lists_bundled_roles() -> None:

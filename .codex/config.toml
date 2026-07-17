@@ -13,6 +13,11 @@
 # `branding.brand-foundation-setup` and `branding.content-production`.
 # Main-agent routing and depth guidance lives at
 # `.codex/orchestrator/branding-content-orchestrator.md`.
+#
+# Project-local SEO agents are adapted from
+# `plugins/seo/agent-presets/seo.yaml` for `seo.keyword-research` and
+# `seo.website-analysis`. Shared planning and review roles reuse the SDLC agents
+# above. Main-agent guidance lives at `.codex/orchestrator/workflow-orchestrator.md`.
 
 # StackOS is the repository's primary workflow and delivery-state runtime.
 # Keep its MCP namespace model-visible even when Codex defers other MCP tools
@@ -63,6 +68,12 @@ config_file = "agents/brand-voice-reviewer.toml"
 
 [agents.brand_sanitization_reviewer]
 config_file = "agents/brand-sanitization-reviewer.toml"
+
+[agents.seo_keyword_research]
+config_file = "agents/seo-keyword-research.toml"
+
+[agents.seo_website_analysis]
+config_file = "agents/seo-website-analysis.toml"
 
 # Repo-local wrapper starts and proxies to one shared Serena Streamable HTTP
 # MCP server for this checkout.
