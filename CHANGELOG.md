@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.1.5 - 2026-07-16
+
 - Moved the public macOS download and updater feed to
   `https://stackos.flowmonkey.io/StackOS/`; future packaged releases use that
   endpoint.
