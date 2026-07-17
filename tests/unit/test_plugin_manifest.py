@@ -232,6 +232,40 @@ def test_builtin_plugin_manifests_validate() -> None:
         "requires_credential": False,
         "allows_credential": False,
     }
+    ftp_actions = {key: action for key, action in utils_actions.items() if key.startswith("ftp.")}
+    assert set(ftp_actions) == {
+        "ftp.directory.list",
+        "ftp.file.upload",
+        "ftp.file.download",
+        "ftp.file.delete",
+        "ftp.directory.create",
+        "ftp.directory.delete",
+        "ftp.path.rename",
+    }
+    for key in (
+        "ftp.file.delete",
+        "ftp.directory.create",
+        "ftp.directory.delete",
+        "ftp.path.rename",
+    ):
+        action = ftp_actions[key]
+        assert action.provider == "ftp"
+        assert action.risk_level == "write"
+        assert action.config["connector"] == "ftp"
+        assert action.config["operation"] == key.removeprefix("ftp.")
+        assert action.config["requires_credential"] is True
+        assert action.input_schema["additionalProperties"] is False
+        assert "docs/integration-contracts/ftp.md" in action.config["docs"]
+    assert ftp_actions["ftp.file.delete"].input_schema["required"] == ["remote_path"]
+    assert ftp_actions["ftp.directory.create"].input_schema["required"] == ["remote_path"]
+    assert ftp_actions["ftp.directory.delete"].input_schema["required"] == [
+        "remote_path",
+        "recursive",
+    ]
+    assert ftp_actions["ftp.path.rename"].input_schema["required"] == [
+        "source_path",
+        "destination_path",
+    ]
     assert utils_actions["reddit.search-subreddit"].config["connector"] == "reddit"
     assert all(action.provider != "openrouter" for action in utils.actions)
     assert {capability.key for capability in utils.capabilities} >= {

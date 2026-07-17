@@ -729,7 +729,8 @@
       ],
       "whenToUse": [
         "A user asks for engineering work that needs planning, implementation, review, and signoff.",
-        "A user explicitly asks to use a workflow, engineering workflow, StackOS workflow, or \"the workflow\" for engineering delivery.",
+        "A user explicitly asks to use a workflow, engineering workflow, StackOS workflow, \"the workflow\", or to follow the SDLC for engineering delivery.",
+        "A user asks for release-grade delivery or equivalent lifecycle language that implies requirements-to-release enforcement.",
         "Work should be visible as tracker tasks/tickets with dependencies, blockers, evidence, and release state.",
         "A project wants host-local agents configured from SDLC presets for a concrete delivery flow.",
         "The change touches contracts, tests, UI, data, provider behavior, MCP/REST/CLI operation surfaces, docs, or release risk."
@@ -2607,7 +2608,7 @@
       "agentPath": [
         "Establish the canonical host, audit boundary, business goal, markets, date window, and sampling plan.",
         "Map public pages, navigation, robots and sitemap signals, representative templates, links, metadata, structured data, and rendered behavior.",
-        "Use every relevant connected evidence source, preserving response-file refs and recording unavailable sources as explicit gaps.",
+        "Select the smallest useful connected evidence set, preserving durable action receipts and recording unavailable, skipped, or failed sources as explicit gaps.",
         "Reconcile evidence, challenge unsupported claims, and prioritize actions by impact, confidence, effort, dependencies, and validation path.",
         "Store a compact analysis index plus durable report, inventory, and finding-register artifacts."
       ],
@@ -2648,9 +2649,9 @@
       "proof": [
         "Source ledger with used, unavailable, skipped, and failed sources",
         "Public site inventory and representative-template coverage",
-        "Evidence-classified SEO finding register",
+        "Typed evidence index and independently reviewed SEO finding register",
         "Prioritized roadmap with validation paths",
-        "Durable final report, inventory, and finding-register artifacts"
+        "Durable final report plus completeness-appropriate inventory, finding-register, and evidence artifacts"
       ],
       "whenToUse": [
         "A user asks to audit, map, analyze, or diagnose a website's SEO.",
@@ -2671,7 +2672,7 @@
         {
           "id": "collect-connected-evidence",
           "title": "Collect Connected Evidence",
-          "summary": "Use every relevant ready Search Console, GA4, GTM, Ahrefs, DataForSEO, and Serper action with explicit bounded inputs; inspect response files before…"
+          "summary": "Select the smallest useful set of ready Search Console, GA4, GTM, Ahrefs, DataForSEO, and Serper actions with explicit bounded inputs; inspect response…"
         },
         {
           "id": "reconcile-and-diagnose",
@@ -2686,7 +2687,7 @@
         {
           "id": "finalize-and-store",
           "title": "Finalize And Store The Analysis",
-          "summary": "Create durable final-report, site-inventory, and finding-register artifacts, then upsert one compact website-seo-analysis record whose source ledger,…"
+          "summary": "Store the reviewed analysis package and one compact website-seo-analysis record whose evidence index, review summary, executive summary, counts,…"
         }
       ],
       "agentNames": [
@@ -3322,7 +3323,7 @@
       "key": "seo.workflow.website-analysis",
       "slug": "seo-workflow-website-analysis",
       "name": "Website SEO Analysis Agent",
-      "description": "Maps a website, reconciles public and connected evidence, and produces an agency-style finding register and prioritized roadmap without inventing measurements.",
+      "description": "Maps a website, reconciles public and connected evidence, and produces one independently reviewed finding register and prioritized roadmap without inventing measurements.",
       "domain": "seo",
       "audience": "SEO and content teams",
       "color": "#79dfff",
@@ -3498,6 +3499,7 @@
         "media-buying.performance-diagnosis",
         "seo.content-refresh",
         "seo.keyword-research",
+        "seo.website-analysis",
         "support.delivery-task-handoff",
         "support.issue-investigation"
       ],

@@ -128,16 +128,19 @@ def operation_specs():
             input_model=ResourceUpsertInput,
             output_model=WriteEnvelope[ResourceRecordOut],
             handler=_resource_upsert,
-            purpose="Use this inside a workflow step to persist explicit evidence or output data.",
+            purpose=(
+                "Use this inside a workflow step to persist explicit evidence or output data. "
+                "The redacted payload must satisfy the plugin-declared resource schema."
+            ),
             prerequisites=_run_step_prerequisites(),
             examples=(
                 OperationExample(
-                    title="Write evidence record",
+                    title="Write resource record",
                     arguments={
                         "project_id": 1,
-                        "plugin_slug": "engineering",
-                        "resource_key": "engineering-evidence",
-                        "data_json": {"summary": "Tests passed"},
+                        "plugin_slug": "core",
+                        "resource_key": "learning",
+                        "data_json": {"body": "Validate resource payloads before persistence."},
                     },
                 ),
             ),

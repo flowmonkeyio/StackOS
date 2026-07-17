@@ -1,8 +1,8 @@
 schema_version: stackos.workflow-template.v1
 key: seo.website-analysis
 name: Website SEO Analysis
-version: 0.2.0
-description: Agency-style, evidence-led website mapping and SEO analysis that uses connected first-party and research tools when available and always retains a public-site fallback.
+version: 0.3.0
+description: Agency-style, evidence-led website mapping and SEO analysis that keeps one reviewed finding register, uses connected first-party and research tools when useful, and retains a public-site fallback.
 domain: seo
 owner:
   team: StackOS
@@ -17,7 +17,7 @@ experience:
   agent_path:
     - Establish the canonical host, audit boundary, business goal, markets, date window, and sampling plan.
     - Map public pages, navigation, robots and sitemap signals, representative templates, links, metadata, structured data, and rendered behavior.
-    - Use every relevant connected evidence source, preserving response-file refs and recording unavailable sources as explicit gaps.
+    - Select the smallest useful connected evidence set, preserving durable action receipts and recording unavailable, skipped, or failed sources as explicit gaps.
     - Reconcile evidence, challenge unsupported claims, and prioritize actions by impact, confidence, effort, dependencies, and validation path.
     - Store a compact analysis index plus durable report, inventory, and finding-register artifacts.
   progress_signals:
@@ -50,9 +50,9 @@ public:
   proof:
     - Source ledger with used, unavailable, skipped, and failed sources
     - Public site inventory and representative-template coverage
-    - Evidence-classified SEO finding register
+    - Typed evidence index and independently reviewed SEO finding register
     - Prioritized roadmap with validation paths
-    - Durable final report, inventory, and finding-register artifacts
+    - Durable final report plus completeness-appropriate inventory, finding-register, and evidence artifacts
   featured: true
 when_to_use:
   - A user asks to audit, map, analyze, or diagnose a website's SEO.
@@ -65,7 +65,7 @@ when_not_to_use:
 inputs:
   - key: site_url
     name: Website URL
-    description: Public or operator-accessible website root to map and analyze.
+    description: Public website root to map and analyze. Authenticated or private targets require an explicit access boundary.
     type: string
     required: true
     schema:
@@ -73,6 +73,21 @@ inputs:
       minLength: 1
       format: uri
       pattern: '^[Hh][Tt][Tt][Pp][Ss]?://[^\s]+$'
+  - key: access_boundary
+    name: Access Boundary
+    description: Optional authorization and data-sharing boundary for authenticated, private-network, staging, or otherwise non-public targets. Absence means public-only analysis.
+    type: object
+    required: false
+    schema:
+      type: object
+      additionalProperties: false
+      required: [mode, external_provider_sharing]
+      properties:
+        mode: {type: string, enum: [public, authenticated, private-network]}
+        external_provider_sharing: {type: string, enum: [allowed, prohibited]}
+        browser_profile_ref: {type: string}
+        authorized_scope: {type: string}
+        storage_limitations: {type: array, items: {type: string}}
   - key: business_goal
     name: Business Goal
     description: Search, audience, conversion, or business outcome the analysis should support.
@@ -174,7 +189,7 @@ agent_requirements:
   - role: delivery-reviewer
     requirement: required
     agent_preset_ref: stackos.sdlc.delivery-reviewer
-    purpose: Independently challenge unsupported claims, missing flow coverage, evidence quality, prioritization, and durable closeout.
+    purpose: Independently challenge SEO claim support, evidence freshness and coverage, prioritization, and durable closeout; return findings for main-agent adjudication rather than engineering-release boilerplate.
     applies_to_steps:
       - review-and-prioritize
       - finalize-and-store
@@ -391,10 +406,16 @@ resource_contracts:
 policies:
   - key: public_baseline_always_available
     kind: readiness
-    description: Missing optional provider connections never block public-site mapping and content analysis; record them as source-ledger gaps.
+    description: Missing optional provider connections never block public-site mapping and content analysis; record them as source-ledger gaps. Non-public targets require an explicit access and sharing boundary before collection.
   - key: use_ready_relevant_sources
     kind: evidence
-    description: Use every relevant connected executable source unless it is redundant or out of scope, and record the reason for every skipped, unavailable, or failed source.
+    description: Use the smallest set of ready sources that materially improves the audit. Paid or redundant sources are optional and must fit the operator or project budget; record the reason for every skipped, unavailable, or failed source.
+  - key: canonical_evidence_index
+    kind: evidence
+    description: Every cited evidence_ref resolves through one typed evidence index with capture time, lifecycle, scope, and a durable receipt or artifact reference. Temporary response-file paths are execution hints, not durable proof.
+  - key: canonical_reviewed_findings
+    kind: review
+    description: Diagnosis produces draft findings. Independent review plus main-agent adjudication produces the sole canonical seo_findings register used by the roadmap, report, counts, and resource record.
   - key: evidence_classification
     kind: evidence
     description: Every finding is measured, observed, or inferred, has confidence and affected scope, and cites evidence refs plus a validation path.
@@ -409,7 +430,7 @@ policies:
     description: Do not collapse findings into an uncalibrated health score or fixed word-count threshold. Prioritize specific evidence-backed work.
   - key: analysis_only
     kind: boundary
-    description: This workflow reads, analyzes, and stores evidence. It does not publish fixes, change tags, request indexing, mutate provider state, or alter the website.
+    description: This workflow reads, analyzes, and stores evidence. It does not publish fixes, submit forms, click state-changing controls, change tags, request indexing, mutate provider state, or alter the website.
   - key: agent_decides_strategy
     kind: execution
     description: The workflow supplies evidence and closeout contracts; the agent decides crawl sampling, provider queries, representative templates, and analysis depth from the site and request.
@@ -421,6 +442,7 @@ steps:
     instructions:
       - Validate site_url as an HTTP(S) website root, follow its public redirect/canonical signals, and record the canonical host without silently changing the requested scope.
       - Turn the business goal, markets, included and excluded sections, date window, expected site size, and access constraints into a bounded page/template sampling plan.
+      - Treat an omitted access_boundary as public-only. For authenticated or private-network targets, require an explicit authorized scope and external-provider-sharing decision before collection; never send prohibited private content or URLs to Jina, Firecrawl, or another external retrieval provider.
       - Record missing context, blocked access, robots constraints, and unresolved scope questions as limitations before evidence collection.
     success_criteria:
       - audit_scope satisfies its output schema and names the canonical target, business goal, boundaries, dates, sampling plan, and limitations.
@@ -434,6 +456,7 @@ steps:
       - performance_start_date
       - performance_end_date
       - scope_notes
+      - access_boundary
     context_refs:
       - prior_website_analyses
       - relevant_seo_decisions
@@ -449,11 +472,12 @@ steps:
     purpose: Read the homepage, robots and sitemap signals, primary navigation, representative section/template pages, internal links, redirects/canonicals, raw-versus-rendered behavior, metadata, headings, structured data, media, and obvious content patterns. Use optional Firecrawl map/scrape only when ready; do not use submit-only crawl as completed evidence.
     instructions:
       - Discover pages from the website root, robots.txt, declared sitemaps, navigation, and bounded internal-link traversal; inspect representative raw, rendered, and mobile views when they materially differ.
-      - For sampled pages, capture response and redirect state, canonicals, indexability observations, metadata, headings, content/media patterns, structured data, template type, and evidence refs.
+      - Capture detailed response, redirect, canonical, indexability, metadata, heading, content/media, structured-data, and template evidence in the working inventory; keep public_site_map as a bounded discovery and coverage summary rather than a second URL ledger.
+      - Use the browser only for observation. Do not submit forms, activate state-changing controls, or reuse an authenticated profile outside the explicit access boundary.
       - State the mapping methods, sampled coverage, exclusions, and limitations; claim bounded completeness only when the collected evidence proves it.
       - Use optional Firecrawl reads only when ready and useful; its absence or a submit-only crawl response does not block the public map.
     success_criteria:
-      - public_site_map satisfies its output schema and every observed URL and representative template carries evidence refs.
+      - public_site_map satisfies its output schema and every representative template and material observation carries evidence refs.
       - Coverage distinguishes sampled, bounded-complete, and unknown honestly and records every material limitation.
     action_refs:
       - public_web_read
@@ -463,6 +487,7 @@ steps:
     policy_refs:
       - public_baseline_always_available
       - evidence_classification
+      - canonical_evidence_index
       - no_invented_measurements
       - analysis_only
     output_refs:
@@ -471,14 +496,16 @@ steps:
       - scope-audit
   - id: collect-connected-evidence
     title: Collect Connected Evidence
-    purpose: Use every relevant ready Search Console, GA4, GTM, Ahrefs, DataForSEO, and Serper action with explicit bounded inputs; inspect response files before rerunning provider calls and record unavailable, skipped, failed, and used sources in the ledger.
+    purpose: Select the smallest useful set of ready Search Console, GA4, GTM, Ahrefs, DataForSEO, and Serper actions with explicit bounded inputs; inspect response files before rerunning provider calls and record unavailable, skipped, failed, and used sources in the ledger.
     instructions:
       - For each relevant connected source, select the correct property, site, account, container, date range, dimensions, filters, and bounded row limit from the audit scope.
-      - Inspect each provider response file before deciding whether another call is necessary and preserve its response ref instead of repeating the request.
-      - Mark every relevant source used, unavailable, skipped, or failed with its coverage, limitations, evidence class, and reason; optional sources never block the public analysis.
+      - Inspect each provider response file before deciding whether another call is necessary. Preserve its action_call_id and, when file-backed, checksum; promote only claim-supporting raw output that must remain readable to an intentional artifact.
+      - Use paid sources only when they materially improve a scoped decision and fit the available operator or project budget. Prefer existing evidence and avoid redundant provider calls.
+      - Mark every considered source used, unavailable, skipped, or failed with evaluation time, coverage, limitations, evidence class, and reason; include public and operator-supplied sources as well as connected providers.
+      - Build one typed evidence_index for evidence actually used by findings. Prior analyses remain historical until current evidence revalidates them, and every current entry must point to a durable action receipt, browser receipt, operator ref, or artifact ref.
       - Keep Search Console, GA4, GTM, and third-party semantics distinct and do not turn inventory or indexed-version data into live behavior claims.
     success_criteria:
-      - source_ledger covers every relevant connected source considered and raw_provider_data_refs preserves every response used for findings.
+      - source_ledger covers every source considered and evidence_index resolves every evidence ref used by public observations, inventory rows, and later findings without treating temporary response paths as durable proof.
       - All provider queries are bounded by the declared scope and no optional provider is treated as a prerequisite.
     action_refs:
       - gsc_sites
@@ -501,12 +528,13 @@ steps:
       - serper_search
     policy_refs:
       - use_ready_relevant_sources
+      - canonical_evidence_index
       - no_invented_measurements
       - reconcile_provider_semantics
       - analysis_only
     output_refs:
       - source_ledger
-      - raw_provider_data_refs
+      - evidence_index
     depends_on:
       - map-public-site
   - id: reconcile-and-diagnose
@@ -515,56 +543,66 @@ steps:
     instructions:
       - Reconcile public URL/template observations with sitemap, Search Console, analytics, tag, and optional third-party sets without erasing differences in canonicalization or measurement scope.
       - Diagnose technical, on-page, content, performance, measurement, international/local, and optional authority issues only where the available evidence supports them.
-      - Classify every finding as measured, observed, or inferred and attach affected scope, confidence, evidence refs, limitations, and a concrete validation path.
+      - Classify every draft finding as measured, observed, or inferred and attach affected scope, confidence, resolvable evidence refs, limitations, and a concrete validation path.
       - When performance is not measured, record it as unmeasured with a handoff for validation rather than estimating Core Web Vitals.
     success_criteria:
-      - site_inventory and seo_findings satisfy their output schemas and reconcile material source disagreements explicitly.
-      - Every finding is evidence-backed, classified, scoped, confidence-rated, and actionable without a generic health score.
+      - site_inventory and draft_findings satisfy their output schemas and reconcile material source disagreements explicitly.
+      - Every draft finding is evidence-backed, classified, scoped, confidence-rated, and actionable without a generic health score.
     policy_refs:
       - evidence_classification
+      - canonical_evidence_index
       - no_invented_measurements
       - reconcile_provider_semantics
       - no_generic_score
       - analysis_only
     output_refs:
       - site_inventory
-      - seo_findings
+      - draft_findings
     depends_on:
       - collect-connected-evidence
   - id: review-and-prioritize
     title: Review And Prioritize
     purpose: Independently challenge scope coverage and every unsupported or overstated claim, then prioritize accepted findings by impact, confidence, effort, dependencies, owner handoff, recommended sequence, and validation path.
     instructions:
-      - Review the audit scope, source ledger, inventory, and every finding as a skeptical independent reviewer; remove, downgrade, or qualify claims whose evidence does not support them.
-      - Convert accepted findings into a sequenced roadmap using impact, confidence, effort, dependencies, owner handoff, and validation path rather than a generic score.
+      - Have the required independent reviewer challenge the audit scope, evidence index, inventory, and every draft finding; the main agent must adjudicate that review rather than copying it automatically.
+      - Record an accepted, revised, or rejected disposition for every draft finding, including rationale and evidence refs. Produce one canonical seo_findings register containing only accepted or revised findings.
+      - Convert only canonical findings into a sequenced roadmap using impact, confidence, effort, dependencies, owner handoff, and validation path rather than a generic score.
       - Write the executive summary from the reviewed evidence, including strengths, primary risks, evidence quality, recommended sequence, and limitations.
     success_criteria:
-      - prioritized_roadmap and executive_summary satisfy their output schemas and contain no unsupported ranking, traffic, conversion, index, authority, or performance claims.
-      - Every roadmap item references accepted finding refs and includes dependencies, effort, confidence, owner handoff, sequence, and validation.
+      - review_summary, seo_findings, prioritized_roadmap, and executive_summary satisfy their output schemas and contain no unsupported ranking, traffic, conversion, index, authority, or performance claims.
+      - Every draft finding has exactly one disposition, rejected findings do not remain canonical, and every roadmap item references an existing canonical finding with dependencies, effort, confidence, owner handoff, sequence, and validation.
     policy_refs:
       - evidence_classification
+      - canonical_evidence_index
+      - canonical_reviewed_findings
       - no_invented_measurements
       - no_generic_score
       - analysis_only
     output_refs:
+      - review_summary
+      - seo_findings
       - prioritized_roadmap
       - executive_summary
     depends_on:
       - reconcile-and-diagnose
   - id: finalize-and-store
     title: Finalize And Store The Analysis
-    purpose: Create durable final-report, site-inventory, and finding-register artifacts, then upsert one compact website-seo-analysis record whose source ledger, executive summary, prioritized actions, limitations, raw provider refs, and artifact refs preserve the declared output fields without an undocumented lossy projection.
+    purpose: Store the reviewed analysis package and one compact website-seo-analysis record whose evidence index, review summary, executive summary, counts, prioritized actions, limitations, and artifact refs preserve the canonical outputs without an undocumented lossy projection.
     instructions:
-      - Create exactly three durable artifacts—the final report, full site inventory, and full finding register—and preserve their evidence refs and limitations.
-      - Upsert one schema-valid website-seo-analysis resource containing the compact source ledger, executive summary, finding counts, prioritized actions, limitations, raw provider refs, and the three artifact refs.
+      - For a complete analysis, create the final report, full site inventory, and canonical finding-register artifacts. For a truthful partial analysis, require the final report and create only the additional artifacts supported by collected evidence; a run blocked before usable analysis remains blocked run state and must not manufacture a resource record.
+      - Promote only claim-supporting provider outputs that must remain readable to evidence artifacts, and include those refs alongside the core report artifacts.
+      - Upsert one schema-valid website-seo-analysis resource containing the compact source ledger, typed evidence index, review summary, executive summary, canonical finding counts, prioritized actions, limitations, and artifact refs.
+      - Verify every finding_ref in counts and prioritized actions resolves to the canonical seo_findings register, and verify counts exactly match that register.
       - Read back or otherwise verify every returned ref before closeout; if any durable write fails, stop without claiming completion.
     success_criteria:
-      - analysis_artifact_refs contains nonempty final_report, site_inventory, and finding_register refs and analysis_record_ref identifies the stored resource.
+      - analysis_artifact_refs contains a nonempty final_report, complete analyses also contain site_inventory and finding_register, and analysis_record_ref identifies the stored resource.
       - The durable resource and artifacts preserve the declared outputs without unsupported claims or an undocumented lossy projection.
     resource_refs:
       - analysis_record
     policy_refs:
       - evidence_classification
+      - canonical_evidence_index
+      - canonical_reviewed_findings
       - no_invented_measurements
       - analysis_only
     output_refs:
@@ -581,11 +619,21 @@ outputs:
     schema:
       type: object
       additionalProperties: false
-      required: [site_url, canonical_host, business_goal, included_sections, excluded_sections, date_range, sampling_plan, limitations]
+      required: [site_url, canonical_host, business_goal, access_boundary, included_sections, excluded_sections, date_range, sampling_plan, limitations]
       properties:
         site_url: {type: string}
         canonical_host: {type: string}
         business_goal: {type: string}
+        access_boundary:
+          type: object
+          additionalProperties: false
+          required: [mode, external_provider_sharing]
+          properties:
+            mode: {type: string, enum: [public, authenticated, private-network]}
+            external_provider_sharing: {type: string, enum: [allowed, prohibited]}
+            browser_profile_ref: {type: string}
+            authorized_scope: {type: string}
+            storage_limitations: {type: array, items: {type: string}}
         target_markets: {type: array, items: {type: string}}
         included_sections: {type: array, items: {type: string}}
         excluded_sections: {type: array, items: {type: string}}
@@ -594,31 +642,14 @@ outputs:
         limitations: {type: array, items: {type: string}}
   - key: public_site_map
     name: Public Site Map
-    description: Publicly observed pages, navigation, sitemap/robots signals, representative templates, traversal coverage, and raw/rendered inspection notes.
+    description: Bounded public discovery, navigation, sitemap/robots signals, representative templates, traversal coverage, and raw/rendered inspection notes; the reconciled site inventory owns URL rows.
     type: object
     required: true
     schema:
       type: object
       additionalProperties: false
-      required: [observed_urls, representative_templates, navigation, sitemap_and_robots, rendered_behavior, coverage, limitations, evidence_refs]
+      required: [representative_templates, navigation, sitemap_and_robots, rendered_behavior, coverage, limitations, evidence_refs]
       properties:
-        observed_urls:
-          type: array
-          items:
-            type: object
-            additionalProperties: false
-            required: [url, discovery_sources, template_type, response_state, indexability_state, canonical_state, evidence_refs]
-            properties:
-              url: {type: string, minLength: 1}
-              discovery_sources: {type: array, items: {type: string}, minItems: 1}
-              template_type: {type: string, minLength: 1}
-              response_state: {type: string, enum: [success, redirect, client-error, server-error, blocked, unknown]}
-              status_code: {anyOf: [{type: integer, minimum: 100, maximum: 599}, {type: 'null'}]}
-              indexability_state: {type: string, enum: [observed-indexable, observed-blocked, measured-indexed, measured-not-indexed, inferred, unknown]}
-              canonical_state: {type: string, enum: [self, other, missing, multiple, unknown]}
-              canonical_url: {anyOf: [{type: string}, {type: 'null'}]}
-              evidence_refs: {type: array, items: {type: string}, minItems: 1}
-              limitations: {type: array, items: {type: string}}
         representative_templates:
           type: array
           items:
@@ -649,7 +680,7 @@ outputs:
         evidence_refs: {type: array, items: {type: string}}
   - key: source_ledger
     name: Source Ledger
-    description: Every relevant source considered, whether it was used, unavailable, skipped, or failed, its evidence class, coverage, limitations, and response refs.
+    description: Every source considered, when it was evaluated, whether it was used, unavailable, skipped, or failed, and its evidence class, coverage, limitations, and typed evidence refs.
     type: array
     required: true
     schema:
@@ -658,34 +689,65 @@ outputs:
       items:
         type: object
         additionalProperties: false
-        required: [source, status, evidence_class, coverage, limitations, evidence_refs]
+        required: [source, evaluated_at, status, evidence_class, coverage, limitations, evidence_refs]
         properties:
           source: {type: string}
+          evaluated_at: {type: string, format: date-time}
           status: {type: string, enum: [used, unavailable, skipped, failed]}
           evidence_class: {type: string, enum: [public-observation, first-party-provider, third-party-provider, operator-supplied]}
           coverage: {type: string}
+          reporting_window: {type: object, additionalProperties: true}
           limitations: {type: array, items: {type: string}}
           evidence_refs: {type: array, items: {type: string}}
-          response_file_refs: {type: array, items: {type: string}}
           reason: {type: string}
-  - key: raw_provider_data_refs
-    name: Raw Provider Data Refs
-    description: Sanitized response-file paths retained from connected provider actions.
+  - key: evidence_index
+    name: Evidence Index
+    description: Typed, timestamped evidence receipts used by observations and findings. Temporary response-file paths are not durable evidence refs.
     type: array
     required: true
     schema:
       type: array
-      items: {type: string, minLength: 1}
-      uniqueItems: true
+      minItems: 1
+      items:
+        type: object
+        additionalProperties: false
+        required: [evidence_ref, kind, source, captured_at, lifecycle_state, scope, receipt_ref, limitations]
+        properties:
+          evidence_ref: {type: string, minLength: 1}
+          kind: {type: string, enum: [action-receipt, browser-receipt, operator-context, prior-analysis, artifact]}
+          source: {type: string, minLength: 1}
+          captured_at: {type: string, format: date-time}
+          lifecycle_state: {type: string, enum: [current, historical, superseded]}
+          scope: {type: object, additionalProperties: true}
+          receipt_ref: {type: string, minLength: 1}
+          action_call_id: {type: integer, minimum: 1}
+          action_ref: {type: string}
+          output_sha256: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+          artifact_ref: {type: string}
+          reporting_window: {type: object, additionalProperties: true}
+          limitations: {type: array, items: {type: string}}
+        allOf:
+          - if:
+              properties:
+                kind: {const: action-receipt}
+              required: [kind]
+            then:
+              required: [action_call_id, action_ref]
+          - if:
+              properties:
+                kind: {const: artifact}
+              required: [kind]
+            then:
+              required: [artifact_ref]
   - key: site_inventory
     name: Site Inventory
-    description: Reconciled URL/template inventory and coverage sets; bulky row data belongs in the final inventory artifact.
+    description: Canonical reconciled URL/template summary with bounded representative rows and set counts; the complete row ledger belongs only in the inventory artifact.
     type: object
     required: true
     schema:
       type: object
       additionalProperties: false
-      required: [canonical_host, observed_scope, template_types, url_rows, url_sets, reconciliation, coverage, limitations]
+      required: [canonical_host, observed_scope, template_types, representative_url_rows, url_set_counts, reconciliation, coverage, limitations]
       properties:
         canonical_host: {type: string}
         observed_scope:
@@ -707,7 +769,7 @@ outputs:
               example_urls: {type: array, items: {type: string}, minItems: 1}
               observed_url_count: {type: integer, minimum: 0}
               evidence_refs: {type: array, items: {type: string}, minItems: 1}
-        url_rows:
+        representative_url_rows:
           type: array
           items:
             type: object
@@ -724,19 +786,18 @@ outputs:
               canonical_url: {anyOf: [{type: string}, {type: 'null'}]}
               evidence_refs: {type: array, items: {type: string}, minItems: 1}
               limitations: {type: array, items: {type: string}}
-        url_sets:
+        url_set_counts:
           type: object
           minProperties: 1
-          additionalProperties:
-            type: array
-            items: {type: string}
+          additionalProperties: {type: integer, minimum: 0}
         reconciliation:
           type: object
           additionalProperties: false
-          required: [sets_compared, differences]
+          required: [sets_compared, summary, representative_differences]
           properties:
             sets_compared: {type: array, items: {type: string}, minItems: 1}
-            differences:
+            summary: {type: string}
+            representative_differences:
               type: array
               items:
                 type: object
@@ -759,12 +820,12 @@ outputs:
             representative_template_count: {type: integer, minimum: 0}
             limitations: {type: array, items: {type: string}}
         limitations: {type: array, items: {type: string}}
-  - key: seo_findings
-    name: SEO Findings
-    description: Normalized finding register with evidence class, confidence, affected scope, impact, recommendation, and validation path.
+  - key: draft_findings
+    name: Draft SEO Findings
+    description: Diagnostic findings awaiting independent review and main-agent adjudication.
     type: array
     required: true
-    schema:
+    schema: &seo_findings_schema
       type: array
       items:
         type: object
@@ -785,6 +846,46 @@ outputs:
           recommendation: {type: string}
           validation_path: {type: string}
           limitations: {type: array, items: {type: string}}
+  - key: review_summary
+    name: Review Summary
+    description: Independent review receipt and adjudicated disposition for every draft finding.
+    type: object
+    required: true
+    schema:
+      type: object
+      additionalProperties: false
+      required: [reviewer_role, reviewed_at, dispositions, unresolved_evidence_gaps, residual_limitations]
+      properties:
+        reviewer_role: {type: string, const: delivery-reviewer}
+        reviewer_ref: {type: string}
+        reviewed_at: {type: string, format: date-time}
+        dispositions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [draft_finding_ref, disposition, rationale, evidence_refs]
+            properties:
+              draft_finding_ref: {type: string, minLength: 1}
+              disposition: {type: string, enum: [accepted, revised, rejected]}
+              final_finding_ref: {type: string}
+              rationale: {type: string}
+              evidence_refs: {type: array, items: {type: string}}
+            allOf:
+              - if:
+                  properties:
+                    disposition: {enum: [accepted, revised]}
+                  required: [disposition]
+                then:
+                  required: [final_finding_ref]
+        unresolved_evidence_gaps: {type: array, items: {type: string}}
+        residual_limitations: {type: array, items: {type: string}}
+  - key: seo_findings
+    name: Canonical SEO Findings
+    description: Sole reviewed finding register used by the roadmap, report, counts, and resource record.
+    type: array
+    required: true
+    schema: *seo_findings_schema
   - key: prioritized_roadmap
     name: Prioritized Roadmap
     description: Reviewed actions ordered by priority, impact, confidence, effort, dependencies, owner handoff, and proof.
@@ -825,20 +926,24 @@ outputs:
         limitations: {type: array, items: {type: string}}
   - key: analysis_artifact_refs
     name: Analysis Artifact Refs
-    description: Durable refs for the final report, full site inventory, and full finding register.
+    description: Durable refs for the final report, optional completeness-dependent inventory/register, and claim-supporting evidence artifacts.
     type: object
     required: true
     schema:
       type: object
       additionalProperties: false
-      required: [final_report, site_inventory, finding_register]
+      required: [final_report]
       properties:
         final_report: {type: string, minLength: 1}
         site_inventory: {type: string, minLength: 1}
         finding_register: {type: string, minLength: 1}
+        evidence_artifacts:
+          type: array
+          items: {type: string, minLength: 1}
+          uniqueItems: true
   - key: analysis_record_ref
     name: Analysis Record Ref
-    description: Stable website-seo-analysis resource record ref indexing the completed package.
+    description: Stable website-seo-analysis resource record ref indexing the complete or partial package.
     type: string
     required: true
     schema: {type: string, minLength: 1}
@@ -847,11 +952,12 @@ learning_hooks:
     prompt: Record only durable project-specific SEO lessons that are supported by this analysis evidence and useful to later runs.
 failure_handling:
   - Missing optional provider credentials or unavailable optional actions are source-ledger gaps, not blockers for public-site analysis.
-  - If the target cannot be reached or validated at all, record the access evidence and stop rather than manufacturing an audit.
+  - If the target cannot be reached or validated at all, record the access evidence in run state and stop rather than manufacturing an analysis resource.
+  - If a non-public target lacks an explicit access or external-provider-sharing boundary, stop before collection and request only that decision.
   - If mapping is partial, state the page/template sample and never describe it as a complete crawl.
   - If Search Console, GA4, or third-party figures conflict, preserve both sources and explain their differing scope and semantics.
   - If no measured performance source exists, describe performance checks as unmeasured and provide a validation path; never invent Core Web Vitals.
-  - If durable final artifacts or the website-seo-analysis record cannot be written, stop before claiming closeout because chat-only output is not the workflow result.
+  - If the durable final report or website-seo-analysis record cannot be written, stop before claiming closeout because chat-only output is not the workflow result.
 metadata:
   builtin: true
   plugin_slug: seo

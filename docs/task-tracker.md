@@ -41,12 +41,14 @@ Statuses are intentionally small and generic:
 - `failed`
 - `skipped`
 
-The same status vocabulary applies to tasks and tickets. `deferred` means
-postponed and still potentially relevant later. `aborted` means intentionally
-stopped, cancelled, or rejected. `failed` means attempted and unsuccessful.
-`skipped` means intentionally not executed. Supersession is a relationship or
-disposition in metadata/links, not a lifecycle status; do not use `deferred` as
-a generic replacement for "moved elsewhere."
+The same status vocabulary applies to tasks and tickets. `deferred` means the
+work was not executed because of an explicit instruction or external
+prerequisite and requires a named resume condition. `aborted` means
+intentionally stopped, cancelled, or rejected. `failed` means attempted and
+unsuccessful; a failed attempt cannot be relabeled deferred. `skipped` means
+intentionally not executed. Supersession is a relationship or disposition in
+metadata/links, not a lifecycle status; do not use `deferred` as a generic
+replacement for "moved elsewhere."
 
 ## Workflow Mirroring
 
@@ -54,8 +56,9 @@ a generic replacement for "moved elsewhere."
 run-plan step. Step dependencies become ticket dependencies.
 
 Workflow selection happens before ticket creation. When an operator explicitly
-asks to use a workflow, engineering workflow, StackOS workflow, or "the
-workflow", agents must create or resolve the workflow-backed run plan before
+asks to use a workflow, engineering workflow, StackOS workflow, "the
+workflow", to follow the SDLC, for release-grade delivery, or equivalent
+lifecycle enforcement, agents must create or resolve the workflow-backed run plan before
 creating tracker tickets. All discovery, design, delivery, verification, and
 closeout tickets for that work should be created under the workflow task/run
 plan from the start. Direct tracker tasks are valid only when the operator asks
@@ -114,21 +117,34 @@ ticket under the mirrored workflow step but does not add dependency edges.
 Agents must still add `dependency_keys` or `dependencies_json` so
 workflow-backed tickets are dependency-bridged into the workflow spine.
 
+Dependency rows use two readiness meanings:
+
+- `activates`: the child is ready while its attached parent workflow step is
+  `in-progress` or `complete`;
+- `blocks`: the dependent remains blocked until the prerequisite is
+  `complete`.
+
+Containment remains parentage, not a readiness edge. Evidence invalidation and
+supersession are recorded in workflow/evidence contracts rather than overloaded
+onto blocking readiness.
+
 For workflow-backed delivery, graph readiness should be visible:
 
-- the first executable child ticket for a workflow step depends on the mirrored
-  step ticket
-- the next mirrored workflow step depends on the terminal child ticket or
+- the first executable child ticket for a workflow step has an `activates`
+  edge from the mirrored step ticket
+- the next mirrored workflow step has `blocks` edges from the terminal child ticket or
   tickets from the prior step
 - delivery verification, docs, signoff, and release tickets sit inside the
   dependency graph, not beside it
 - no detached delivery, test, docs, or signoff branch can become ready
   independently of the workflow order
-- completing a mirrored workflow step while attached child tickets remain open
-  is an important tracker-truth signal, not an automatic execution blocker
+- completing a mirrored workflow step while required attached child work remains
+  unfinished is a blocking tracker-truth finding; optional, skipped, waived, or
+  not-applicable child work must be explained rather than silently hidden
 
 `runPlan.claimStep` and `runPlan.recordStep(success)` enforce run-plan
-lifecycle, approvals, and transitive step dependencies. They do not hard-block
+lifecycle, approvals, transitive step dependencies, and frozen output schemas.
+They do not hard-block
 on tracker graph warnings. Agents should use graph warnings to improve
 sequencing, record follow-up cleanup, or block intentionally when the warning
 is material to the current step's definition of done.

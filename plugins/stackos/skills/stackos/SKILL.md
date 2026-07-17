@@ -262,10 +262,12 @@ run token.
   independent tasks. If an independent task has tickets, prefer updating the
   tickets and let StackOS aggregate the parent task. Terminal tracker statuses
   are `complete`, `deferred`, `aborted`, `failed`, and `skipped`; any terminal
-  status moves the item to the done lane. Use `deferred` only for postponed
-  resumable work, `aborted` for stopped/rejected/cancelled work, `failed` for
-  attempted unsuccessful work, and `skipped` for intentionally not executed
-  work. Terminal child-ticket updates can aggregate the parent task status, but
+  status moves the item to the done lane. Use `deferred` only when work was not
+  executed because of an explicit instruction or external prerequisite, and
+  record a named resume condition. Use `aborted` for
+  stopped/rejected/cancelled work, `failed` for attempted unsuccessful work,
+  and `skipped` for intentionally not executed work. An attempted failure
+  cannot be converted to deferred. Terminal child-ticket updates can aggregate the parent task status, but
   ticket evidence is not copied to the task; read compact `task_rollup` and
   `completion_evidence_present` fields and patch task-level evidence explicitly
   when task closeout evidence matters. `tracker.rejectTask` is an operator
@@ -280,7 +282,7 @@ run token.
   `in-progress`; `runPlan.claimStep` marks the step ticket `in-progress`;
   `runPlan.recordStep` marks the step ticket `complete`, `failed`, `skipped`,
   or `blocked`. `runPlan.recordStep(success)` enforces lifecycle, approvals,
-  and transitive run-plan step dependencies. It does not hard-block on tracker
+  transitive run-plan step dependencies, and frozen output schemas. It does not hard-block on unrelated tracker
   graph warnings. Treat graph warnings as planning/audit signals: repair them
   when they hide required work or affect the current definition of done, record
   them as follow-up cleanup when they do not, and keep moving. `blocked` is
@@ -300,7 +302,8 @@ run token.
   ownership from tracker to run plan.
 - Execute workflow work: use a workflow template when work should follow a
   reusable contract or when the operator explicitly asks to use a workflow,
-  engineering workflow, StackOS workflow, or "the workflow". Create or resolve
+  engineering workflow, StackOS workflow, "the workflow", to follow the SDLC,
+  for release-grade delivery, or equivalent lifecycle enforcement. Create or resolve
   the workflow-backed run plan before creating tracker tasks or tickets, then
   create discovery, design, delivery, verification, and closeout tickets under
   the workflow task/run plan from the start. Check the attached workflow
@@ -315,8 +318,9 @@ run token.
   graph should have exactly one root: the first generated workflow step mirror
   ticket. Use `tracker.updateTicket` for those child tickets;
   use `runPlan.claimStep`/`runPlan.recordStep` only for the generated workflow
-  step mirror tickets. Add dependency edges into the mirrored workflow
-  spine, then immediately call `tracker.get` with `run_plan_id` and
+  step mirror tickets. Use an `activates` edge from an active parent step to
+  its first executable child and `blocks` edges for prerequisites that must
+  complete. Add those dependency edges into the mirrored workflow spine, then immediately call `tracker.get` with `run_plan_id` and
   `include_graph=true`. Review workflow-spine warnings, repair material issues,
   and record non-blocking cleanup explicitly instead of treating every warning
   as an execution blocker.
@@ -343,4 +347,11 @@ run token.
 - Use engineering evidence/resources: read existing `engineering-decision` and
   `engineering-evidence` records with `resource.query`. Create durable evidence
   only inside a run-plan step with explicit grants such as `resource.upsert`
-  or `decision.record`.
+  or `decision.record`. Engineering evidence v2 distinguishes authored records
+  from executed proof. Executed records always include an execution receipt;
+  repository-bound proof additionally includes the exact repository
+  fingerprint. `scope.covered_paths` owns path scope; authored reviews or
+  limitations do not fabricate execution fields. Treat pre-v2 records as
+  historical context.
+  Mark prior proof invalidated, superseded, or historical when its covered state
+  changes; do not mix it with current proof.

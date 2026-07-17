@@ -14,6 +14,14 @@
 # Main-agent routing and depth guidance lives at
 # `.codex/orchestrator/branding-content-orchestrator.md`.
 
+# StackOS is the repository's primary workflow and delivery-state runtime.
+# Keep its MCP namespace model-visible even when Codex defers other MCP tools
+# behind tool_search. This also preserves StackOS access if the host omits the
+# tool_search loader from a resumed or compacted thread.
+[features.code_mode]
+enabled = false
+direct_only_tool_namespaces = ["mcp__stackos"]
+
 [agents.sdlc_requirements_flow_definer]
 config_file = "agents/sdlc-requirements-flow-definer.toml"
 

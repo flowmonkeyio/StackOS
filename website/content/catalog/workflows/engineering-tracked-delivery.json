@@ -54,7 +54,8 @@
   ],
   "whenToUse": [
     "A user asks for engineering work that needs planning, implementation, review, and signoff.",
-    "A user explicitly asks to use a workflow, engineering workflow, StackOS workflow, or \"the workflow\" for engineering delivery.",
+    "A user explicitly asks to use a workflow, engineering workflow, StackOS workflow, \"the workflow\", or to follow the SDLC for engineering delivery.",
+    "A user asks for release-grade delivery or equivalent lifecycle language that implies requirements-to-release enforcement.",
     "Work should be visible as tracker tasks/tickets with dependencies, blockers, evidence, and release state.",
     "A project wants host-local agents configured from SDLC presets for a concrete delivery flow.",
     "The change touches contracts, tests, UI, data, provider behavior, MCP/REST/CLI operation surfaces, docs, or release risk."

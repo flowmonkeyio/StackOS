@@ -1,8 +1,8 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.2.4
-description: Reusable SDLC workflow for requirements, flow design, discovery, design, test planning, delivery, verification, review, and release through StackOS tracker state.
+version: 0.3.0
+description: Reusable SDLC workflow for requirements, flow design, discovery, project-native design, test planning, delivery, verification, review, and truthful release closeout.
 domain: engineering
 owner:
   team: StackOS
@@ -49,7 +49,8 @@ public:
   featured: true
 when_to_use:
   - A user asks for engineering work that needs planning, implementation, review, and signoff.
-  - A user explicitly asks to use a workflow, engineering workflow, StackOS workflow, or "the workflow" for engineering delivery.
+  - A user explicitly asks to use a workflow, engineering workflow, StackOS workflow, "the workflow", or to follow the SDLC for engineering delivery.
+  - A user asks for release-grade delivery or equivalent lifecycle language that implies requirements-to-release enforcement.
   - Work should be visible as tracker tasks/tickets with dependencies, blockers, evidence, and release state.
   - A project wants host-local agents configured from SDLC presets for a concrete delivery flow.
   - The change touches contracts, tests, UI, data, provider behavior, MCP/REST/CLI operation surfaces, docs, or release risk.
@@ -78,16 +79,16 @@ agent_requirements:
       - scope-work
       - plan-tickets
   - role: architecture
-    requirement: required
+    requirement: recommended
     agent_preset_ref: stackos.sdlc.architecture
-    purpose: Design and review implementation structure, ownership boundaries, operation contracts, data contracts, and one-brain reuse before build.
+    purpose: Use when architectural, ownership, contract, data, permission, migration, or cross-surface risk benefits from independent design depth; otherwise the main agent applies the same project-native contract.
     applies_to_steps:
       - design-approach
       - review-design
   - role: test-designer
-    requirement: required
+    requirement: recommended
     agent_preset_ref: stackos.sdlc.test-designer
-    purpose: Map flow design, acceptance criteria, and design risks to TDD/red-first proof, automated checks, agent-executed E2E/manual scenarios, expected outcomes, and signoff evidence.
+    purpose: Use when behavior, scoping, contracts, migrations, UI, providers, or release risk benefits from independent proof design; otherwise the main agent owns proportionate test design.
     applies_to_steps:
       - design-tests
   - role: delivery
@@ -98,16 +99,16 @@ agent_requirements:
       - deliver-tickets
       - verify-delivery
   - role: delivery-reviewer
-    requirement: required
+    requirement: recommended
     agent_preset_ref: stackos.sdlc.delivery-reviewer
-    purpose: Review design, completed delivery, flow-regression coverage, independent verification, tracker truth, docs, security, and release risk.
+    purpose: Use for non-micro, high-risk, cross-boundary, or independently reviewed delivery; otherwise the main agent records why specialist review was unnecessary and still produces the review disposition.
     applies_to_steps:
       - review-design
       - review-delivery
       - audit-tracker
 skill_requirements:
   - skill_ref: stackos:stackos
-    requirement: recommended
+    requirement: required
     purpose: Teach the main agent how to operate StackOS MCP, engineering workflows, run plans, tracker tasks/tickets, dependencies, and evidence.
     setup_notes:
       - Use this skill before planning or executing the workflow when the host supports skills.
@@ -224,10 +225,25 @@ policies:
     description: Tracker tasks and tickets must reflect actual progress, blockers, dependencies, deferred scope, and evidence.
   - key: workflow_selection_precedence
     kind: selection
-    description: When the operator explicitly asks to use a workflow, engineering workflow, StackOS workflow, or "the workflow", agents must create or resolve the workflow-backed run plan before creating tracker tickets; direct tracker tasks are valid only when the operator asks for task/dependency tracking without invoking a workflow.
+    description: When the operator explicitly asks to use a workflow, engineering workflow, StackOS workflow, "the workflow", to follow the SDLC, for release-grade delivery, or equivalent lifecycle enforcement, agents must create or resolve the workflow-backed run plan before creating tracker tickets; direct tracker tasks are valid only when the operator asks for task/dependency tracking without invoking lifecycle intent.
   - key: workflow_dependency_spine
     kind: delivery
-    description: run_plan_id and step_id attachment is containment/linkage only; workflow-backed delivery tickets must be dependency-bridged into the mirrored workflow step chain.
+    description: run_plan_id and step_id attachment is containment/linkage only; an activates edge connects an executable child to its active parent step, while blocks edges connect work to prerequisites that must complete.
+  - key: effective_delivery_contract
+    kind: requirements
+    description: Material operator input and accepted decisions compile into one precedence-aware current contract; retired decisions remain auditable and unresolved material contradictions block implementation.
+  - key: release_candidate_lock
+    kind: verification
+    description: For repository-bound delivery, verification and review identify the integrated candidate they cover; a material covered change makes affected downstream proof stale and returns the workflow to the earliest affected gate.
+  - key: finding_lifecycle
+    kind: review
+    description: Confirmed feedback is adjudicated as a finding; when evidence suggests a repeated or shared pattern, the agent expands investigation and re-verification to that affected pattern instead of applying an isolated patch.
+  - key: scope_drift_control
+    kind: delivery
+    description: Agents compare actual changed paths and contract deltas with planned ownership at useful integration points; material undeclared scope reopens impact, architecture, and test design.
+  - key: status_semantics
+    kind: delivery
+    description: Failed means an attempted check or action failed; deferred means work was not executed because of an explicit instruction or external prerequisite and requires a named resume condition.
   - key: main_agent_accountability
     kind: orchestration
     description: The curated SDLC subset supports the work; the main agent remains responsible for integration, final decisions, and user-facing truth.
@@ -252,10 +268,11 @@ steps:
     purpose: Restate the engineering goal, delivery mode, constraints, project setup, host-agent format, and missing context.
     instructions:
       - Classify the work as small fix, tracked delivery, or team delivery; keep the workflow compact for small fixes but do not skip evidence.
-      - If the operator explicitly asked to use a workflow, engineering workflow, StackOS workflow, or "the workflow", create or resolve the workflow-backed run plan before creating tracker tasks or tickets.
+      - If the operator explicitly asked to use a workflow, engineering workflow, StackOS workflow, "the workflow", to follow the SDLC, for release-grade delivery, or equivalent lifecycle enforcement, create or resolve the workflow-backed run plan before creating tracker tasks or tickets.
       - Do not create a direct tracker task first and then create a workflow task for the same work; the workflow task/run plan is canonical when workflow intent was explicit.
       - Confirm which project guidance, local skills, host-agent format, tracker/run-plan state, and release expectations apply.
-      - Lock the agreed outcome, in-scope work, and non-goals as the baseline for all later feedback.
+      - Lock the delivery mode, typed operator constraints, forbidden environments/actions, deferrals, release authority, outcome, in-scope work, and non-goals under one constraint revision.
+      - When scope or authority changes, increment constraint_revision, identify affected downstream outputs/evidence, mark them superseded or invalidated, and reopen the earliest affected gate.
       - Surface missing context before planning if a reasonable project-specific assumption would be risky.
     input_refs:
       - goal
@@ -269,6 +286,7 @@ steps:
       - agent_decides_strategy
       - project_adaptation_required
       - workflow_selection_precedence
+      - effective_delivery_contract
       - main_agent_accountability
       - orchestrator_feedback_gate
     output_refs:
@@ -284,10 +302,14 @@ steps:
       - Define actors, entry points, allowed outcomes, denied/error outcomes, empty/legacy states, and operator-visible behavior.
       - Design the relevant user flows, data flows, system flows, and business-rule flows for the task; for micro work, record why these flows are unchanged or not applicable.
       - For changed flows, capture the pre-change behavior or code path, intended change, expected current behavior after delivery, and why the change is safe.
+      - Compile material current operator input and accepted decisions into typed contract entries; retain source, scope, precedence, supersession, and verification ownership when they affect delivery truth.
+      - Keep retired or superseded requirements auditable but exclude them from the effective current contract supplied to delivery work.
+      - Treat contradictory current contract entries as blocking unresolved decisions; do not ask implementation to reconcile them implicitly.
       - Keep the brief project-adapted and implementation-aware, but avoid importing domain assumptions from another project.
       - Name the proof surface expected for each acceptance criterion.
     policy_refs:
       - evidence_over_assertion
+      - effective_delivery_contract
       - project_adaptation_required
       - mandatory_flow_design
     depends_on:
@@ -304,6 +326,8 @@ steps:
     purpose: Map affected scopes, real execution paths, ownership boundaries, downstream readers, tests, docs, and signoff fallout.
     instructions:
       - Trace the live path through the project's actual code, operations, adapters, schemas, UI, docs, and tests.
+      - Identify the canonical owner, existing project pattern, active consumers, keep/extend/replace/remove intent, forbidden parallel owners, planned deletions, justified new abstractions, and relevant contract, permission, scope, or database deltas.
+      - For bug fixes, trace the producer or writer where bad state originated, assess persisted data, define the repair boundary, name any compatibility exception, and state the condition under which defensive compatibility code can be deleted.
       - Distinguish evidence from inference and list adjacent systems that may need updates.
       - Use project-preferred navigation tools and narrow reads before broad scans.
     context_refs:
@@ -311,6 +335,7 @@ steps:
       - recent_decisions
     policy_refs:
       - one_brain_delivery
+      - finding_lifecycle
       - project_adaptation_required
     depends_on:
       - define-requirements
@@ -330,9 +355,9 @@ steps:
       - Give each ticket dependencies, likely files or operation surfaces, acceptance criteria, and completion evidence expectations.
       - Create no ticket from feedback unless the main orchestrator traces it to the agreed deliverable or changed-surface correctness/safety.
       - "For workflow-backed child tickets, pass run_plan_id and step_id at creation time; treat them as attachment/provenance only, update child ticket status/evidence with tracker.updateTicket, and reserve runPlan.claimStep/runPlan.recordStep for generated workflow step mirror tickets."
-      - Add dependency edges that bridge child tickets into the mirrored workflow step chain.
+      - Add an activates edge from the active workflow step mirror to the first executable child; use blocks edges only for prerequisites that must complete.
       - "Keep the workflow graph to one root: the first generated workflow step mirror ticket. Any extra root under a workflow-backed task is detached work that must be repaired before delivery continues."
-      - Make the first executable child of a workflow step depend on the workflow step ticket, and make the next workflow step depend on the terminal child tickets from the prior step.
+      - Make the first executable child of a workflow step activate from the workflow step ticket, and make the next workflow step block on the terminal child tickets from the prior step.
       - Keep delivery verification, docs, signoff, and release tickets inside the delivery graph so they cannot become ready independently of the workflow spine.
       - Keep independent verification tickets inside the graph before closeout so one-brain, cleanup, architecture/contracts, and business-flow findings cannot be bypassed.
       - After creating or updating workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true; review graph warnings, repair material sequencing issues, and record non-blocking cleanup instead of freezing progress.
@@ -341,6 +366,7 @@ steps:
       - truthful_tracker_state
       - workflow_selection_precedence
       - workflow_dependency_spine
+      - status_semantics
       - main_agent_accountability
       - orchestrator_feedback_gate
     depends_on:
@@ -359,7 +385,9 @@ steps:
     title: Design Approach
     purpose: Identify canonical ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications.
     instructions:
-      - Choose the simplest project-native design that satisfies the requirements and preserves existing contracts.
+      - First establish the current canonical owner and project pattern, then choose the simplest project-native design that satisfies the requirements and preserves intended contracts and flows.
+      - Extend an existing owner or abstraction when it fits. Introduce a new layer, helper, type, service, repository, or policy only when investigation shows the existing architecture cannot own the behavior cleanly; record that evidence and the new canonical owner.
+      - Prefer one source of truth with multiple consumers or adapters. Avoid pass-through aliases, duplicate helpers, parallel repositories/services, compatibility layers without a need, and logic copied between surfaces.
       - Name alternatives rejected, contract boundaries touched, and required migration or compatibility handling.
       - For StackOS work, keep one operation/spec/source of truth and expose it through adapters rather than duplicating logic.
     policy_refs:
@@ -379,8 +407,9 @@ steps:
     purpose: Challenge the requirements, impact map, ticket plan, and design before implementation.
     instructions:
       - Review from behavior, contract, security, grant, migration, UI, docs, tracker, and release perspectives.
+      - Confirm the effective contract has no unresolved contradictions and that high-risk classifications have proportionate architecture, data, permission, test, independent-review, and release-authority gates.
       - Lead with blocking issues and distinguish non-blocking risks from preferences.
-      - Do not begin implementation until blocking design gaps are resolved or explicitly deferred.
+      - Do not begin implementation until blocking design gaps are resolved, or explicitly waived/deferred with an owner, reason, and resume condition.
     policy_refs:
       - evidence_over_assertion
       - main_agent_accountability
@@ -400,6 +429,7 @@ steps:
       - "Let the orchestrator reason about the manual proof depth needed for the risk profile: no manual step, narrow smoke, full manual signoff, browser/user walkthrough, provider live check, migration rehearsal, or operator-owned release gate."
       - Treat E2E/manual flow scenarios as agent-executed and closeout-blocking by default; mark a scenario operator-owned, residual, skipped, or not applicable only with an explicit reason.
       - For risky behavior, define the one narrow failing proof that should be locked before runtime edits.
+      - A TDD claim requires an immutable red receipt captured before runtime implementation and a later green receipt for the same command; without the red receipt, classify the result as tests added rather than TDD completed.
       - For manual scenarios, name preconditions, exact user/agent steps, expected outcomes, evidence links, screenshots, or logs, and whether the scenario is required for closeout or residual/operator-owned.
       - For browser-assisted platform flows that depend on login state, name the stable StackOS browser profile_key, operator login precondition, cookie/session reuse expectation, and whether that precondition blocks closeout.
       - Prefer targeted checks first and broaden based on blast radius.
@@ -428,6 +458,8 @@ steps:
     instructions:
       - Claim the next ready ticket, read its brief, implement narrowly, and patch tracker state as facts change.
       - For red-first work, prove the red is trustworthy before production edits and rerun the same slice to green.
+      - At integration points, compare actual changed paths, migrations, generated contracts, cross-package imports, and test layers with planned ticket ownership; material drift reopens impact, design, and test planning.
+      - When the delivery changes repository state, identify the integrated release candidate and capture the repository fingerprint needed to keep later verification truthful.
       - Keep unrelated user changes intact and record blockers instead of hiding them in chat.
       - Do not add reviewer suggestions, adjacent cleanup, or "while here" work outside the agreed plan.
     policy_refs:
@@ -435,6 +467,8 @@ steps:
       - one_brain_delivery
       - main_agent_accountability
       - orchestrator_feedback_gate
+      - release_candidate_lock
+      - scope_drift_control
     resource_refs:
       - decisions
       - evidence
@@ -450,15 +484,19 @@ steps:
     purpose: Run and report the mandatory verification stack for the actual diff and risk profile.
     instructions:
       - Classify changed surfaces and choose the smallest convincing checks first.
+      - Record enough structured evidence to reproduce and judge each check. Repository-bound executed checks identify the covered candidate; other checks identify their exact run, environment, scope, time, result, and lifecycle.
       - Execute, update, or explicitly mark every automated and manual proof item from the test plan; do not silently replace the test design with ad hoc checks.
       - Execute the agent-owned E2E/manual flow scenarios from the test plan before signoff, capturing evidence for changed user, data, system, and business flows.
       - For browser-assisted platform proof, reuse the profile_key specified by the test plan so persisted cookies/session state is tested intentionally.
       - Widen to project signoff when contracts, grants, adapters, migrations, UI, provider, or release behavior crosses boundaries.
-      - Report pass, fail, blocked, and not-run checks truthfully.
+      - Derive passed status only when failed checks are empty and every required check executed; an attempted failure stays failed and cannot be relabeled deferred.
+      - If material covered state changes after a check, treat that evidence as stale, return to the earliest affected gate, and rerun the proof whose validity changed.
     policy_refs:
       - evidence_over_assertion
       - truthful_tracker_state
       - agent_executed_flow_proof
+      - release_candidate_lock
+      - status_semantics
     resource_refs:
       - evidence
     depends_on:
@@ -481,6 +519,8 @@ steps:
       - Compare delivered verification against the approved test design, including manual scenarios and expected evidence.
       - For browser-assisted platform proof, verify the delivered evidence used the planned persistent profile_key or explains why a fresh profile was required.
       - Treat verifier and reviewer feedback as advisory; the main orchestrator admits only findings required by the agreed deliverable or changed-surface correctness/safety.
+      - Classify each confirmed finding, identify affected tickets and evidence, and invalidate stale proof. Run a horizontal pattern audit only when the finding indicates shared ownership, repeated behavior, or a delivery-wide pattern risk.
+      - Escalate repeated findings in the same category to a delivery-level root-cause finding when the evidence points to a common cause, rather than applying another isolated patch.
       - Reject, defer, or mark residual feedback that is unsupported, already covered, out of scope, or would over-engineer beyond the scoped deliverable.
       - Lead with confirmed findings ordered by severity; separate false positives, project decisions, and residual gaps.
     policy_refs:
@@ -488,6 +528,8 @@ steps:
       - one_brain_delivery
       - independent_closeout_verification
       - orchestrator_feedback_gate
+      - finding_lifecycle
+      - release_candidate_lock
     resource_refs:
       - evidence
     depends_on:
@@ -504,8 +546,10 @@ steps:
     purpose: Confirm tracker state, run-plan state, docs, tests, evidence, and the actual diff agree before closeout.
     instructions:
       - Compare completed tickets with code, verification, docs, run-plan steps, and evidence.
+      - Reconcile workflow/ticket state, repository evidence, review findings, browser artifacts, verification counts, operator gates, and release authorization as one closeout state.
       - Confirm flow_design, test_plan, E2E/manual flow proof, independent verification, and final claims agree.
-      - Mark hidden required work, stale blockers, dangling dependencies, and deferred scope explicitly.
+      - Mark hidden required work, stale blockers, dangling dependencies, stale repository fingerprints, and deferred scope explicitly.
+      - "Interpret lifecycle diagnostics in context: an in-progress parent with no active work needs explanation, deferred items need a named resume condition, and completed work cannot hide required deferred definition-of-done items. Warnings block closeout only when they contradict the delivery truth."
       - Treat any ticket or edit without a scope trace as delivery drift; remove it from this delivery or defer it.
       - Treat duplicate direct tracker tasks created before a workflow-backed run plan for explicitly requested workflow work as a blocking tracker-truth finding.
       - Treat a detached workflow step ticket versus child-ticket chain as a blocking tracker-truth finding, not a vague missing-dependencies note.
@@ -519,6 +563,8 @@ steps:
       - agent_executed_flow_proof
       - independent_closeout_verification
       - orchestrator_feedback_gate
+      - release_candidate_lock
+      - status_semantics
     depends_on:
       - review-delivery
     output_refs:
@@ -534,14 +580,17 @@ steps:
     purpose: Confirm final signoff, docs, known limitations, commit/release state, rollback/watch notes, and post-release checks.
     instructions:
       - Compare final release claims to tracker audit and verification evidence.
+      - Require explicit release, deployment, production-write, and external-write authority; never infer authority from technical readiness.
       - Summarize the before/change/now/why flow-regression evidence for non-micro work.
       - Name limitations, deferred work, rollback/watch notes, and post-release checks for externally visible changes.
+      - Capture delivery-process failures, missed existing rules, local-rule candidates, workflow-change candidates, and the owning layer in this closeout instead of adding another workflow step.
       - Keep release messaging provider-neutral and evidence-bound.
     input_refs:
       - release_intent
     policy_refs:
       - truthful_tracker_state
       - evidence_over_assertion
+      - release_candidate_lock
     resource_refs:
       - evidence
     depends_on:
@@ -556,11 +605,28 @@ outputs:
     name: Scope Summary
     type: object
     required: true
-    description: Outcome, boundaries, assumptions, risks, approvals, and proof depth for the delivery.
+    description: Current delivery mode, outcome, boundaries, operator constraints, authority, deferrals, and proof depth.
     schema:
       type: object
-      required: [outcome, in_scope, out_of_scope, assumptions, risks, approvals, proof_depth]
+      required:
+        - delivery_mode
+        - risk_classification
+        - outcome
+        - in_scope
+        - out_of_scope
+        - assumptions
+        - risks
+        - approvals
+        - proof_depth
+        - operator_constraints
+        - forbidden_environments
+        - forbidden_actions
+        - deferred_gates
+        - release_authority
+        - constraint_revision
       properties:
+        delivery_mode: {type: string, minLength: 1}
+        risk_classification: {type: string, minLength: 1}
         outcome: {type: string}
         in_scope: {type: array}
         out_of_scope: {type: array}
@@ -568,14 +634,33 @@ outputs:
         risks: {type: array}
         approvals: {type: array}
         proof_depth: {type: string}
+        operator_constraints:
+          type: object
+          required: [must, must_not]
+          properties:
+            must: {type: array}
+            must_not: {type: array}
+        forbidden_environments: {type: array}
+        forbidden_actions: {type: array}
+        deferred_gates: {type: array}
+        release_authority: {type: object}
+        constraint_revision: {type: integer, minimum: 1}
   - key: requirements_brief
     name: Requirements Brief
     type: object
     required: true
-    description: User/business goals, acceptance conditions, constraints, edge cases, and unresolved decisions.
+    description: User and business goals plus the effective current delivery contract and any unresolved contradictions.
     schema:
       type: object
-      required: [goals, users, acceptance_conditions, constraints, edge_cases, unresolved_decisions]
+      required:
+        - goals
+        - users
+        - acceptance_conditions
+        - constraints
+        - edge_cases
+        - unresolved_decisions
+        - effective_contract
+        - contradictions
       properties:
         goals: {type: array}
         users: {type: array}
@@ -583,6 +668,34 @@ outputs:
         constraints: {type: array}
         edge_cases: {type: array}
         unresolved_decisions: {type: array}
+        effective_contract:
+          type: array
+          items:
+            type: object
+            required: [id, kind, statement, status]
+            properties:
+              id: {type: string}
+              kind:
+                type: string
+                enum:
+                  - invariant
+                  - product_decision
+                  - implementation_constraint
+                  - prohibition
+                  - authorization
+                  - deferral
+                  - supersession
+                  - acceptance_case
+              statement: {type: string}
+              status: {type: string, enum: [current, retired]}
+              source: {type: string}
+              recorded_at: {type: string}
+              affected_scopes: {type: array}
+              precedence: {type: integer}
+              supersedes: {type: array}
+              verification_surfaces: {type: array}
+        contradictions: {type: array}
+        retired_contract_refs: {type: array}
   - key: flow_design
     name: Flow Design
     type: object
@@ -602,10 +715,20 @@ outputs:
     name: Impact Map
     type: object
     required: true
-    description: Affected models, operations, adapters, permissions, UI, tests, docs, and removal obligations.
+    description: Affected surfaces, canonical ownership, active consumers, scope deltas, and conditional bug root-cause evidence.
     schema:
       type: object
-      required: [data_model, operations, adapters, permissions, ui, tests, docs, removals]
+      required:
+        - data_model
+        - operations
+        - adapters
+        - permissions
+        - ui
+        - tests
+        - docs
+        - removals
+        - ownership
+        - scope_deltas
       properties:
         data_model: {type: array}
         operations: {type: array}
@@ -615,6 +738,40 @@ outputs:
         tests: {type: array}
         docs: {type: array}
         removals: {type: array}
+        ownership:
+          type: object
+          required: [canonical_owner, existing_pattern, active_consumers, intended_change]
+          properties:
+            canonical_owner: {type: string}
+            existing_pattern: {type: string}
+            active_consumers: {type: array}
+            intended_change: {type: string, enum: [keep, extend, replace, remove]}
+            forbidden_parallel_owners: {type: array}
+            planned_deletions: {type: array}
+            new_abstractions: {type: array}
+        scope_deltas:
+          type: object
+          properties:
+            public_contract: {type: array}
+            permission_or_scope: {type: array}
+            database_structure: {type: array}
+        root_cause_analysis:
+          type: object
+          description: Required by workflow guidance for bug fixes; omit when the work is not a bug investigation.
+          required:
+            - root_cause_owner
+            - bad_state_origin
+            - persisted_data_assessment
+            - repair_boundary
+            - compatibility_exception
+            - deletion_condition
+          properties:
+            root_cause_owner: {type: string}
+            bad_state_origin: {type: string}
+            persisted_data_assessment: {type: string}
+            repair_boundary: {type: string}
+            compatibility_exception: {type: string}
+            deletion_condition: {type: string}
   - key: tracker_plan
     name: Tracker Plan
     type: object
@@ -633,12 +790,20 @@ outputs:
     name: Design Summary
     type: object
     required: true
-    description: Chosen architecture, alternatives, invariants, interfaces, migration/removal plan, and risk controls.
+    description: Project-native architecture, canonical ownership, alternatives, invariants, migration or removal, and risk controls.
     schema:
       type: object
-      required: [chosen_design, alternatives, invariants, interfaces, migration_or_removal, risk_controls]
+      required:
+        - chosen_design
+        - canonical_owner
+        - alternatives
+        - invariants
+        - interfaces
+        - migration_or_removal
+        - risk_controls
       properties:
         chosen_design: {type: object}
+        canonical_owner: {type: string}
         alternatives: {type: array}
         invariants: {type: array}
         interfaces: {type: array}
@@ -647,25 +812,35 @@ outputs:
   - key: design_review
     name: Design Review
     type: object
-    required: false
-    description: Independent architecture and over-engineering verdict with blockers and repairs.
+    required: true
+    description: Explicit architecture disposition, including a reason when review is waived or not applicable.
     schema:
       type: object
-      required: [verdict, blockers, repairs, over_engineering_risk, residual_risk]
+      required: [disposition, reason, blockers, repairs, residual_risk, evidence_refs]
       properties:
-        verdict: {type: string, enum: [approve, repair, block]}
+        disposition:
+          type: string
+          enum: [approve, repair, block, waived, not_applicable]
+        reason: {type: string, minLength: 1}
         blockers: {type: array}
         repairs: {type: array}
-        over_engineering_risk: {type: array}
         residual_risk: {type: array}
+        evidence_refs: {type: array}
   - key: test_plan
     name: Test Plan
     type: object
     required: true
-    description: Risk-based automated and agent-executed flow scenarios, fixtures, commands, and acceptance evidence.
+    description: Risk-based automated and agent-executed scenarios, fixtures, commands, TDD expectations, and acceptance evidence.
     schema:
       type: object
-      required: [risks, automated_checks, e2e_scenarios, manual_scenarios, fixtures, commands, acceptance_evidence]
+      required:
+        - risks
+        - automated_checks
+        - e2e_scenarios
+        - manual_scenarios
+        - fixtures
+        - commands
+        - acceptance_evidence
       properties:
         risks: {type: array}
         automated_checks: {type: array}
@@ -674,11 +849,12 @@ outputs:
         fixtures: {type: array}
         commands: {type: array}
         acceptance_evidence: {type: object}
+        tdd_expectations: {type: array}
   - key: delivery_summary
     name: Delivery Summary
     type: object
     required: true
-    description: Implemented changes, files, decisions, deviations, checks run, and remaining work.
+    description: Implemented changes, files, decisions, deviations, checks, remaining work, and contextual release-candidate evidence.
     schema:
       type: object
       required: [changes, file_refs, decisions, deviations, checks, remaining_work]
@@ -689,69 +865,175 @@ outputs:
         deviations: {type: array}
         checks: {type: array}
         remaining_work: {type: array}
+        scope_comparison: {type: object}
+        tdd_receipts: {type: array}
+        release_candidate: {type: object}
   - key: verification_summary
     name: Verification Summary
     type: object
     required: true
-    description: Automated and first-hand scenario evidence, failures, repairs, coverage gaps, and validity status.
+    description: Structured current proof with executed state, failures, required unexecuted checks, and evidence lifecycle.
     schema:
       type: object
-      required: [automated_results, scenario_results, failures, repairs, coverage_gaps, validity_status]
+      required:
+        - checks
+        - failed_checks
+        - required_unexecuted
+        - coverage_gaps
+        - validity_status
       properties:
-        automated_results: {type: array}
-        scenario_results: {type: array}
-        failures: {type: array}
-        repairs: {type: array}
+        checks:
+          type: array
+          items:
+            type: object
+            required: [check_id, kind, required, status, executed, scope, checked_at, evidence_refs]
+            properties:
+              check_id: {type: string}
+              kind: {type: string}
+              required: {type: boolean}
+              status:
+                type: string
+                enum: [passed, failed, skipped, blocked, not_applicable]
+              executed: {type: boolean}
+              scope: {type: array}
+              checked_at: {type: string}
+              evidence_refs: {type: array}
+              repository_fingerprint: {type: object}
+              environment_snapshot: {type: object}
+              command_or_run_ref: {type: string}
+              counts:
+                type: object
+                properties:
+                  passed: {type: integer, minimum: 0}
+                  failed: {type: integer, minimum: 0}
+                  skipped: {type: integer, minimum: 0}
+              flow_refs: {type: array}
+              output_checksum: {type: string}
+              lifecycle_state:
+                type: string
+                enum: [current, invalidated, superseded, historical]
+              superseded_by: {type: string}
+            allOf:
+              - if:
+                  properties:
+                    status: {const: passed}
+                  required: [status]
+                then:
+                  properties:
+                    executed: {const: true}
+                    counts:
+                      properties:
+                        failed: {const: 0}
+        failed_checks: {type: array}
+        required_unexecuted: {type: array}
         coverage_gaps: {type: array}
         validity_status: {type: string, enum: [valid, invalid, incomplete]}
+      allOf:
+        - if:
+            properties:
+              validity_status: {const: valid}
+            required: [validity_status]
+          then:
+            properties:
+              failed_checks: {maxItems: 0}
+              required_unexecuted: {maxItems: 0}
+              checks:
+                items:
+                  allOf:
+                    - not:
+                        properties:
+                          status: {const: failed}
+                        required: [status]
+                    - if:
+                        properties:
+                          required: {const: true}
+                        required: [required]
+                      then:
+                        required: [lifecycle_state]
+                        properties:
+                          status: {const: passed}
+                          executed: {const: true}
+                          lifecycle_state: {const: current}
   - key: review_summary
     name: Review Summary
     type: object
     required: true
-    description: Independent correctness, security, compatibility-removal, operability, and evidence review.
+    description: Independent delivery findings, contextual pattern audits, repairs, residual risk, and evidence.
     schema:
       type: object
-      required: [verdict, correctness_findings, security_findings, removal_findings, operability_findings, evidence_findings, required_repairs]
+      required: [verdict, findings, required_repairs, residual_risks, evidence_refs]
       properties:
         verdict: {type: string, enum: [approve, repair, block]}
-        correctness_findings: {type: array}
-        security_findings: {type: array}
-        removal_findings: {type: array}
-        operability_findings: {type: array}
-        evidence_findings: {type: array}
+        findings: {type: array}
         required_repairs: {type: array}
+        residual_risks: {type: array}
+        evidence_refs: {type: array}
+        pattern_audits: {type: array}
+        delivery_root_cause: {type: object}
   - key: tracker_audit
     name: Tracker Audit
     type: object
-    required: false
-    description: Proof that tracker lifecycle, dependencies, evidence, and terminal statuses match the actual delivery.
+    required: true
+    description: Explicit tracker-truth disposition, including a reason when the audit is waived or not applicable.
     schema:
       type: object
-      required: [task_ref, ticket_statuses, dependency_check, evidence_check, discrepancies]
+      required:
+        - disposition
+        - reason
+        - task_ref
+        - ticket_statuses
+        - dependency_check
+        - evidence_check
+        - discrepancies
+        - deferred_items
       properties:
+        disposition:
+          type: string
+          enum: [pass, repair, block, waived, not_applicable]
+        reason: {type: string, minLength: 1}
         task_ref: {type: string}
         ticket_statuses: {type: object}
         dependency_check: {type: object}
         evidence_check: {type: object}
         discrepancies: {type: array}
+        deferred_items: {type: array}
   - key: release_summary
     name: Release Summary
     type: object
-    required: false
-    description: Release decision, changed behavior, verification, deployment state, rollback or recovery, and residual risk.
+    required: true
+    description: Release decision, authority, changed behavior, verification, deployment state, recovery, residual risk, and process learning.
     schema:
       type: object
-      required: [decision, changed_behavior, verification_refs, deployment_state, recovery_plan, residual_risk]
+      required:
+        - decision
+        - reason
+        - authority
+        - changed_behavior
+        - verification_refs
+        - deployment_state
+        - recovery_plan
+        - residual_risk
       properties:
         decision: {type: string, enum: [released, ready, held, not_applicable]}
+        reason: {type: string, minLength: 1}
+        authority: {type: object}
         changed_behavior: {type: array}
         verification_refs: {type: array, items: {type: string}}
         deployment_state: {type: object}
         recovery_plan: {type: object}
         residual_risk: {type: array}
+        process_learning:
+          type: object
+          properties:
+            process_failure: {type: array}
+            missed_existing_rule: {type: array}
+            local_rule_candidate: {type: array}
+            workflow_change_candidate: {type: array}
+            owning_layer: {type: array}
+
 learning_hooks:
   - key: engineering_reuse
-    prompt: Capture reusable engineering lessons only when the evidence is explicit, project-scoped, and useful for future agent delivery.
+    prompt: During release closeout, capture reusable engineering lessons only when evidence is explicit and useful for future delivery; classify process_failure, missed_existing_rule, local_rule_candidate, workflow_change_candidate, and owning layer without adding another workflow step.
     tags:
       - engineering
       - sdlc
@@ -759,6 +1041,8 @@ failure_handling:
   - If project guidance or host-agent format is missing, record the exact gap and ask for it before writing local agent files.
   - If tracker dependencies reveal blocked work, update ticket blockers instead of continuing with invisible chat-only state.
   - If verification fails, use root-cause debugging before broad reruns or speculative fixes.
+  - If actual changed scope materially exceeds the plan, return to impact discovery, architecture, and test design before continuing.
+  - If material covered repository state changes after verification, reopen the earliest affected gate and invalidate only the proof whose validity changed.
   - If flow design, E2E/manual flow proof, or independent closeout verification is missing for non-micro work, return to the earliest affected step instead of closing the delivery.
   - If review finds missing requirements, impact, test, or tracker truth, return to the earliest affected step rather than patching the final report.
   - If a finding requires material expansion of the agreed outcome, defer it and ask the operator instead of expanding delivery.
@@ -768,7 +1052,7 @@ metadata:
   artifact_grant_policy: explicit
   workflow_family: sdlc
   baseline: requirements_to_release
-  workflow_selection_invariant: explicit_workflow_intent_requires_run_plan_before_tracker_tickets
+  workflow_selection_invariant: lifecycle_intent_requires_run_plan_before_tracker_tickets
   feedback_gatekeeper: main_orchestrator
   agent_subset:
     - requirements-flow-definer

@@ -31,6 +31,8 @@ from stackos.repositories.tracker.schema import (
     TrackerLinkOut,
 )
 from stackos.repositories.tracker.utils import (
+    ACTIVATES_DEPENDENCY_TYPE,
+    BLOCKS_DEPENDENCY_TYPE,
     _clean_text,
     _required_id,
     _utcnow,
@@ -135,6 +137,16 @@ class TrackerRelationsMixin:
     ) -> None:
         if ticket.id == dependency_ticket.id:
             raise ValidationError("ticket cannot depend on itself", data={"ticket_key": ticket.key})
+        dependency_type = (
+            ACTIVATES_DEPENDENCY_TYPE
+            if ticket.parent_ticket_id == dependency_ticket.id
+            and ticket.run_plan_id is not None
+            and ticket.run_plan_id == dependency_ticket.run_plan_id
+            and ticket.run_plan_step_id is not None
+            and ticket.run_plan_step_id == dependency_ticket.run_plan_step_id
+            and dependency_ticket.parent_ticket_id is None
+            else BLOCKS_DEPENDENCY_TYPE
+        )
         existing = self._s.exec(
             select(TrackerTicketDependency).where(
                 TrackerTicketDependency.ticket_id == ticket.id,
@@ -142,6 +154,9 @@ class TrackerRelationsMixin:
             )
         ).first()
         if existing is not None:
+            if existing.dependency_type != dependency_type:
+                existing.dependency_type = dependency_type
+                self._s.add(existing)
             return
         if self._would_create_dependency_cycle(ticket, dependency_ticket):
             raise ConflictError(
@@ -154,7 +169,7 @@ class TrackerRelationsMixin:
                 project_id=tracker.project_id,
                 ticket_id=ticket.id,
                 depends_on_ticket_id=dependency_ticket.id,
-                dependency_type="blocks",
+                dependency_type=dependency_type,
                 created_at=_utcnow(),
             )
         )

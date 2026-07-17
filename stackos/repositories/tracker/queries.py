@@ -26,6 +26,7 @@ from stackos.db.models import (
     TaskTrackerPriority,
     TrackerItemStatus,
     TrackerRevision,
+    TrackerSourceKind,
     TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
@@ -58,8 +59,10 @@ from stackos.repositories.tracker.schema import (
     TrackerWorkflowHandoffOut,
 )
 from stackos.repositories.tracker.utils import (
+    ACTIVATES_DEPENDENCY_TYPE,
     TERMINAL_TRACKER_STATUSES,
     _is_closed_tracker_scope,
+    _is_dependency_satisfied,
     _is_terminal_tracker_status,
     _required_id,
 )
@@ -377,10 +380,8 @@ class TrackerQueryMixin:
         checks.append(
             {
                 "key": "dependencies-complete",
-                "passed": all(
-                    dep.status == TrackerItemStatus.COMPLETE for dep in brief.dependencies
-                ),
-                "detail": "All dependency tickets are complete.",
+                "passed": not self._blocked_by_incomplete(ticket_row.tracker_id, ticket_row),
+                "detail": "All blocking dependencies are complete and activation edges are active.",
             }
         )
         checks.append(
@@ -422,7 +423,13 @@ class TrackerQueryMixin:
             siblings = self._workflow_child_rows(parent)
             if not _is_closed_tracker_scope(parent.status, [child.status for child in siblings]):
                 directly_bridged = [
-                    child.key for child in siblings if self._ticket_depends_on(child, parent)
+                    child.key
+                    for child in siblings
+                    if self._ticket_depends_on(
+                        child,
+                        parent,
+                        dependency_type=ACTIVATES_DEPENDENCY_TYPE,
+                    )
                 ]
                 checks.append(
                     {
@@ -479,7 +486,13 @@ class TrackerQueryMixin:
                     [child.status for child in children],
                 ):
                     directly_bridged = [
-                        child.key for child in children if self._ticket_depends_on(child, ticket)
+                        child.key
+                        for child in children
+                        if self._ticket_depends_on(
+                            child,
+                            ticket,
+                            dependency_type=ACTIVATES_DEPENDENCY_TYPE,
+                        )
                     ]
                     checks.append(
                         {
@@ -659,9 +672,12 @@ class TrackerQueryMixin:
         self,
         ticket: TrackerTicket,
         dependency_ticket: TrackerTicket,
+        *,
+        dependency_type: str | None = None,
     ) -> bool:
         return any(
             dep.depends_on_ticket_id == dependency_ticket.id
+            and (dependency_type is None or dep.dependency_type == dependency_type)
             for dep in self._dependency_rows_for_ticket(ticket.id)
         )
 
@@ -888,8 +904,13 @@ class TrackerQueryMixin:
             incomplete_dependency_ticket_ids = {
                 dependency.ticket_id
                 for dependency in dependencies
-                if status_by_ticket_id.get(dependency.depends_on_ticket_id)
-                not in {None, TrackerItemStatus.COMPLETE}
+                if (
+                    status_by_ticket_id.get(dependency.depends_on_ticket_id) is not None
+                    and not _is_dependency_satisfied(
+                        dependency.dependency_type,
+                        status_by_ticket_id[dependency.depends_on_ticket_id],
+                    )
+                )
             }
 
         rows_by_task: dict[int, list[Any]] = {task_id: [] for task_id in task_ids}
@@ -944,13 +965,14 @@ class TrackerQueryMixin:
             ]
             if item is not None
         ]
-        blocked_by = [
-            item.key
-            for item in [
-                self._s.get(TrackerTicket, dep.depends_on_ticket_id) for dep in dependencies
-            ]
-            if item is not None and item.status != TrackerItemStatus.COMPLETE
-        ]
+        blocked_by = []
+        for dependency in dependencies:
+            item = self._s.get(TrackerTicket, dependency.depends_on_ticket_id)
+            if item is not None and not _is_dependency_satisfied(
+                dependency.dependency_type,
+                item.status,
+            ):
+                blocked_by.append(item.key)
         base = TrackerTicketOut.model_validate(row).model_dump(
             exclude={
                 "task_key",
@@ -1049,8 +1071,16 @@ class TrackerQueryMixin:
                     ],
                     blocked_by=[
                         ticket.key
-                        for ticket in dependency_tickets
-                        if ticket is not None and ticket.status != TrackerItemStatus.COMPLETE
+                        for dependency, ticket in zip(
+                            row_dependencies,
+                            dependency_tickets,
+                            strict=True,
+                        )
+                        if ticket is not None
+                        and not _is_dependency_satisfied(
+                            dependency.dependency_type,
+                            ticket.status,
+                        )
                     ],
                     reference_count=reference_counts.get(row.id or 0, 0),
                     link_count=link_counts.get(row.id or 0, 0),
@@ -1297,10 +1327,24 @@ class TrackerQueryMixin:
             ticket
             for ticket in rows
             if ticket.status not in TERMINAL_TRACKER_STATUSES
+            and not self._is_workflow_step_mirror_ticket(ticket)
             and not self._ticket_task_is_terminal(ticket)
             and not ticket.blocker_reason
             and not self._blocked_by_incomplete(tracker_id, ticket)
         ]
+
+    def _is_workflow_step_mirror_ticket(self, ticket: TrackerTicket) -> bool:
+        return (
+            ticket.source_kind == TrackerSourceKind.WORKFLOW
+            and ticket.parent_ticket_id is None
+            and ticket.run_plan_id is not None
+            and ticket.run_plan_step_id is not None
+            and ticket.key
+            == workflow_step_ticket_key(
+                ticket.run_plan_id,
+                str((ticket.source_json or {}).get("step_id") or ""),
+            )
+        )
 
     def _ticket_activity_sets(
         self,
@@ -1317,6 +1361,7 @@ class TrackerQueryMixin:
             for ticket in tickets
             if ticket.id is not None
             and ticket.status not in TERMINAL_TRACKER_STATUSES
+            and not self._is_workflow_step_mirror_ticket(ticket)
             and not _is_terminal_tracker_status(task_status_by_id.get(ticket.task_id, ""))
         }
         if not active_ticket_ids:
@@ -1346,8 +1391,13 @@ class TrackerQueryMixin:
         incomplete_dependency_ticket_ids = {
             dependency.ticket_id
             for dependency in dependencies
-            if status_by_ticket_id.get(dependency.depends_on_ticket_id)
-            not in {None, TrackerItemStatus.COMPLETE}
+            if (
+                status_by_ticket_id.get(dependency.depends_on_ticket_id) is not None
+                and not _is_dependency_satisfied(
+                    dependency.dependency_type,
+                    status_by_ticket_id[dependency.depends_on_ticket_id],
+                )
+            )
         }
         ticket_by_id = {ticket.id: ticket for ticket in tickets if ticket.id is not None}
         blocked_ticket_ids = {
@@ -1375,7 +1425,10 @@ class TrackerQueryMixin:
         blockers: list[str] = []
         for dep in self._dependency_rows_for_ticket(ticket.id):
             dependency = self._s.get(TrackerTicket, dep.depends_on_ticket_id)
-            if dependency is not None and dependency.status != TrackerItemStatus.COMPLETE:
+            if dependency is not None and not _is_dependency_satisfied(
+                dep.dependency_type,
+                dependency.status,
+            ):
                 blockers.append(dependency.key)
         return blockers
 

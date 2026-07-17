@@ -89,8 +89,92 @@ class _FakeFTP:
         parent = posixpath.dirname(resolved) or "/"
         if parent not in self.__class__.server_dirs:
             raise ftplib.error_perm("550 parent unavailable")
+        if (
+            resolved in self.__class__.server_dirs
+            or resolved in self.__class__.server_files
+            or resolved in self.__class__.server_symlinks
+        ):
+            raise ftplib.error_perm("550 path already exists")
         self.__class__.server_dirs.add(resolved)
         return resolved
+
+    def delete(self, path: str) -> str:
+        resolved = self._path(path)
+        self.calls.append(("delete", resolved))
+        if resolved in self.__class__.server_files:
+            del self.__class__.server_files[resolved]
+            return "250 deleted"
+        if resolved in self.__class__.server_symlinks:
+            self.__class__.server_symlinks.remove(resolved)
+            return "250 deleted"
+        raise ftplib.error_perm("550 file unavailable")
+
+    def rmd(self, path: str) -> str:
+        resolved = self._path(path)
+        self.calls.append(("rmd", resolved))
+        if resolved == "/" or resolved not in self.__class__.server_dirs:
+            raise ftplib.error_perm("550 directory unavailable")
+        prefix = resolved.rstrip("/") + "/"
+        if any(
+            item.startswith(prefix)
+            for item in (
+                *self.__class__.server_dirs,
+                *self.__class__.server_files,
+                *self.__class__.server_symlinks,
+            )
+        ):
+            raise ftplib.error_perm("550 directory not empty")
+        self.__class__.server_dirs.remove(resolved)
+        return "250 removed"
+
+    def rename(self, fromname: str, toname: str) -> str:
+        source = self._path(fromname)
+        destination = self._path(toname)
+        self.calls.extend([("rnfr", source), ("rnto", destination)])
+        destination_parent = posixpath.dirname(destination) or "/"
+        if destination_parent not in self.__class__.server_dirs:
+            raise ftplib.error_perm("550 destination parent unavailable")
+        if (
+            destination in self.__class__.server_dirs
+            or destination in self.__class__.server_files
+            or destination in self.__class__.server_symlinks
+        ):
+            raise ftplib.error_perm("550 destination exists")
+        if source in self.__class__.server_files:
+            self.__class__.server_files[destination] = self.__class__.server_files.pop(source)
+            return "250 renamed"
+        if source in self.__class__.server_symlinks:
+            self.__class__.server_symlinks.remove(source)
+            self.__class__.server_symlinks.add(destination)
+            return "250 renamed"
+        if source not in self.__class__.server_dirs or source == "/":
+            raise ftplib.error_perm("550 source unavailable")
+
+        source_prefix = source.rstrip("/") + "/"
+        directory_moves = {
+            path: destination + path[len(source) :]
+            for path in self.__class__.server_dirs
+            if path == source or path.startswith(source_prefix)
+        }
+        file_moves = {
+            path: destination + path[len(source) :]
+            for path in self.__class__.server_files
+            if path.startswith(source_prefix)
+        }
+        symlink_moves = {
+            path: destination + path[len(source) :]
+            for path in self.__class__.server_symlinks
+            if path.startswith(source_prefix)
+        }
+        for path in directory_moves:
+            self.__class__.server_dirs.remove(path)
+        self.__class__.server_dirs.update(directory_moves.values())
+        for path, target in file_moves.items():
+            self.__class__.server_files[target] = self.__class__.server_files.pop(path)
+        for path in symlink_moves:
+            self.__class__.server_symlinks.remove(path)
+        self.__class__.server_symlinks.update(symlink_moves.values())
+        return "250 renamed"
 
     def storbinary(
         self,
@@ -244,6 +328,37 @@ class _FallbackFTPTLS(_FakeFTPTLS):
         raise AssertionError("LIST must never be used or parsed")
 
 
+class _MlstFallbackFTPTLS(_FakeFTPTLS):
+    instances: ClassVar[list[_MlstFallbackFTPTLS]] = []
+    server_dirs: ClassVar[set[str]] = {"/"}
+    server_files: ClassVar[dict[str, bytes]] = {}
+    server_symlinks: ClassVar[set[str]] = set()
+    malicious_children: ClassVar[dict[str, list[str]]] = {}
+
+    def mlsd(
+        self,
+        path: str = "",
+        facts: list[str] | None = None,
+    ) -> Iterator[tuple[str, dict[str, str]]]:
+        del path, facts
+        raise ftplib.error_perm("500 MLSD unsupported")
+
+    def nlst(self, path: str = "") -> list[str]:
+        resolved = self._path(path or self.cwd_path)
+        self.calls.append(("nlst", resolved))
+        prefix = resolved.rstrip("/") + "/"
+        children = {
+            item
+            for item in (
+                *self.__class__.server_dirs,
+                *self.__class__.server_files,
+                *self.__class__.server_symlinks,
+            )
+            if item != resolved and item.startswith(prefix) and "/" not in item[len(prefix) :]
+        }
+        return sorted(children)
+
+
 class _FallbackCycleFTPTLS(_FallbackFTPTLS):
     instances: ClassVar[list[_FallbackCycleFTPTLS]] = []
     server_dirs: ClassVar[set[str]] = {"/", "/cycle"}
@@ -395,6 +510,536 @@ def test_ftp_browse_upload_and_download_recursive_arbitrary_paths(
     assert downloaded.output_json["completed_count"] == 2
     rendered = json.dumps(downloaded.model_dump(mode="json"))
     assert "ftp-secret" not in rendered
+
+
+def test_ftp_remote_management_primitives_use_exact_server_operations(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_ftps(monkeypatch)
+    credential_ref = _credential_ref(session, project_id)
+    repo = ActionRepository(session)
+    _FakeFTPTLS.server_dirs = {
+        "/",
+        "/archive",
+        "/workspace",
+        "/workspace/empty",
+        "/workspace/source",
+        "/workspace/source/nested",
+    }
+    _FakeFTPTLS.server_files = {
+        "/workspace/remove.txt": b"remove",
+        "/workspace/old.txt": b"rename",
+        "/workspace/source/nested/file.txt": b"nested",
+    }
+
+    created = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="utils.ftp.directory.create",
+            input_json={"remote_path": "/workspace/new"},
+            credential_ref=credential_ref,
+        )
+    ).data
+    deleted_file = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="utils.ftp.file.delete",
+            input_json={"remote_path": "/workspace/remove.txt"},
+            credential_ref=credential_ref,
+        )
+    ).data
+    renamed_file = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="utils.ftp.path.rename",
+            input_json={
+                "source_path": "/workspace/old.txt",
+                "destination_path": "/archive/renamed.txt",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+    renamed_directory = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="utils.ftp.path.rename",
+            input_json={
+                "source_path": "/workspace/source",
+                "destination_path": "/archive/moved",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+    deleted_directory = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="utils.ftp.directory.delete",
+            input_json={"remote_path": "/workspace/empty", "recursive": False},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert created.output_json == {
+        "provider": "ftp",
+        "operation": "directory.create",
+        "status": "success",
+        "remote_path": "/workspace/new",
+    }
+    assert deleted_file.output_json == {
+        "provider": "ftp",
+        "operation": "file.delete",
+        "status": "success",
+        "remote_path": "/workspace/remove.txt",
+    }
+    assert renamed_file.output_json["source_path"] == "/workspace/old.txt"
+    assert renamed_file.output_json["destination_path"] == "/archive/renamed.txt"
+    assert renamed_directory.output_json["source_path"] == "/workspace/source"
+    assert renamed_directory.output_json["destination_path"] == "/archive/moved"
+    assert deleted_directory.output_json["deleted_paths"] == [
+        {"remote_path": "/workspace/empty", "type": "directory"}
+    ]
+
+    assert "/workspace/new" in _FakeFTPTLS.server_dirs
+    assert "/workspace/remove.txt" not in _FakeFTPTLS.server_files
+    assert _FakeFTPTLS.server_files["/archive/renamed.txt"] == b"rename"
+    assert "/workspace/old.txt" not in _FakeFTPTLS.server_files
+    assert "/archive/moved" in _FakeFTPTLS.server_dirs
+    assert _FakeFTPTLS.server_files["/archive/moved/nested/file.txt"] == b"nested"
+    assert "/workspace/source" not in _FakeFTPTLS.server_dirs
+    assert "/workspace/empty" not in _FakeFTPTLS.server_dirs
+
+    calls = [call for instance in _FakeFTPTLS.instances for call in instance.calls]
+    assert ("mkd", "/workspace/new") in calls
+    assert ("delete", "/workspace/remove.txt") in calls
+    assert ("rnfr", "/workspace/old.txt") in calls
+    assert ("rnto", "/archive/renamed.txt") in calls
+    assert ("rnfr", "/workspace/source") in calls
+    assert ("rnto", "/archive/moved") in calls
+    assert ("rmd", "/workspace/empty") in calls
+
+
+def test_ftp_management_does_not_create_parents_or_replace_rename_targets(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_ftps(monkeypatch)
+    credential_ref = _credential_ref(session, project_id)
+    repo = ActionRepository(session)
+    _FakeFTPTLS.server_dirs = {"/", "/existing", "/workspace"}
+    _FakeFTPTLS.server_files = {
+        "/workspace/source.txt": b"source",
+        "/workspace/destination.txt": b"destination",
+    }
+
+    with pytest.raises(ConflictError):
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="utils.ftp.directory.create",
+                input_json={"remote_path": "/missing/child"},
+                credential_ref=credential_ref,
+            )
+        )
+    with pytest.raises(ConflictError):
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="utils.ftp.directory.create",
+                input_json={"remote_path": "/existing"},
+                credential_ref=credential_ref,
+            )
+        )
+    with pytest.raises(ConflictError):
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="utils.ftp.path.rename",
+                input_json={
+                    "source_path": "/workspace/source.txt",
+                    "destination_path": "/workspace/destination.txt",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "/missing" not in _FakeFTPTLS.server_dirs
+    assert "/missing/child" not in _FakeFTPTLS.server_dirs
+    assert "/existing" in _FakeFTPTLS.server_dirs
+    assert _FakeFTPTLS.server_files["/workspace/source.txt"] == b"source"
+    assert _FakeFTPTLS.server_files["/workspace/destination.txt"] == b"destination"
+    rename_calls = _FakeFTPTLS.instances[-1].calls
+    assert ("rnfr", "/workspace/source.txt") in rename_calls
+    assert ("rnto", "/workspace/destination.txt") in rename_calls
+    assert all(call[0] not in {"delete", "mkd"} for call in rename_calls)
+
+
+def test_ftp_recursive_directory_delete_is_machine_readable_and_postorder(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_ftps(monkeypatch)
+    credential_ref = _credential_ref(session, project_id)
+    _FakeFTPTLS.server_dirs = {"/", "/tree", "/tree/empty", "/tree/nested"}
+    _FakeFTPTLS.server_files = {
+        "/tree/root.txt": b"root",
+        "/tree/nested/child.txt": b"child",
+    }
+    _FakeFTPTLS.server_symlinks = {"/tree/link"}
+
+    result = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="utils.ftp.directory.delete",
+            input_json={"remote_path": "/tree", "recursive": True},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert result.output_json["status"] == "success"
+    assert result.output_json["recursive"] is True
+    assert result.output_json["deleted_count"] == 6
+    assert result.output_json["file_count"] == 2
+    assert result.output_json["directory_count"] == 3
+    assert result.output_json["symlink_count"] == 1
+    assert result.output_json["deleted_paths"][-1] == {
+        "remote_path": "/tree",
+        "type": "directory",
+    }
+    assert not any(path.startswith("/tree") for path in _FakeFTPTLS.server_dirs if path != "/")
+    assert not any(path.startswith("/tree") for path in _FakeFTPTLS.server_files)
+    assert not any(path.startswith("/tree") for path in _FakeFTPTLS.server_symlinks)
+
+    calls = _FakeFTPTLS.instances[0].calls
+    assert calls.index(("delete", "/tree/nested/child.txt")) < calls.index(("rmd", "/tree/nested"))
+    assert calls.index(("delete", "/tree/link")) < calls.index(("rmd", "/tree"))
+    assert calls.index(("rmd", "/tree/empty")) < calls.index(("rmd", "/tree"))
+    assert calls[-3:] == [("rmd", "/tree"), ("quit",), ("close",)]
+
+
+def test_ftp_nonrecursive_directory_delete_preserves_nonempty_tree(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_ftps(monkeypatch)
+    credential_ref = _credential_ref(session, project_id)
+    _FakeFTPTLS.server_dirs = {"/", "/tree"}
+    _FakeFTPTLS.server_files = {"/tree/file.txt": b"keep"}
+
+    with pytest.raises(ConflictError):
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="utils.ftp.directory.delete",
+                input_json={"remote_path": "/tree", "recursive": False},
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "/tree" in _FakeFTPTLS.server_dirs
+    assert _FakeFTPTLS.server_files["/tree/file.txt"] == b"keep"
+    calls = _FakeFTPTLS.instances[0].calls
+    assert ("rmd", "/tree") in calls
+    assert all(call[0] != "delete" for call in calls)
+
+
+def test_ftp_recursive_delete_fails_before_mutation_without_mlsx_types(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.actions.ftp as ftp_module
+
+    _FallbackFTPTLS.reset()
+    _FallbackFTPTLS.server_dirs = {"/", "/tree"}
+    _FallbackFTPTLS.server_files = {"/tree/file.txt": b"keep"}
+    monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _FallbackFTPTLS)
+    credential_ref = _credential_ref(session, project_id)
+
+    with pytest.raises(ConflictError) as excinfo:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="utils.ftp.directory.delete",
+                input_json={"remote_path": "/tree", "recursive": True},
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "machine-readable MLSD or MLST" in json.dumps(excinfo.value.data)
+    assert _FallbackFTPTLS.server_files["/tree/file.txt"] == b"keep"
+    calls = _FallbackFTPTLS.instances[0].calls
+    assert all(call[0] not in {"delete", "rmd"} for call in calls)
+
+
+def test_ftp_recursive_delete_uses_nlst_with_mlst_types_when_mlsd_is_unavailable(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.actions.ftp as ftp_module
+
+    _MlstFallbackFTPTLS.reset()
+    _MlstFallbackFTPTLS.server_dirs = {"/", "/tree", "/tree/nested"}
+    _MlstFallbackFTPTLS.server_files = {
+        "/tree/root.txt": b"root",
+        "/tree/nested/child.txt": b"child",
+    }
+    monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _MlstFallbackFTPTLS)
+    credential_ref = _credential_ref(session, project_id)
+
+    result = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="utils.ftp.directory.delete",
+            input_json={"remote_path": "/tree", "recursive": True},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    assert result.output_json["deleted_count"] == 4
+    assert not any(path.startswith("/tree") for path in _MlstFallbackFTPTLS.server_dirs)
+    assert not _MlstFallbackFTPTLS.server_files
+    calls = _MlstFallbackFTPTLS.instances[0].calls
+    assert ("nlst", "/tree") in calls
+    assert ("mlst", "/tree/nested") in calls
+    assert ("mlst", "/tree/root.txt") in calls
+
+
+def test_ftp_recursive_delete_rejects_directory_alias_outside_selected_root(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.actions.ftp as ftp_module
+
+    class _EscapingDirectoryFTPTLS(_FakeFTPTLS):
+        instances: ClassVar[list[_EscapingDirectoryFTPTLS]] = []
+
+        def cwd(self, path: str) -> str:
+            resolved = self._path(path)
+            if resolved == "/tree/escape":
+                self.calls.append(("cwd", resolved))
+                self.cwd_path = "/outside"
+                return "250 changed"
+            return super().cwd(path)
+
+        def mlsd(
+            self,
+            path: str = "",
+            facts: list[str] | None = None,
+        ) -> Iterator[tuple[str, dict[str, str]]]:
+            resolved = self._path(path or self.cwd_path)
+            if resolved == "/tree":
+                del facts
+                self.calls.append(("mlsd", resolved))
+                yield "escape", {"type": "dir"}
+                return
+            yield from super().mlsd(path, facts=facts)
+
+    _EscapingDirectoryFTPTLS.reset()
+    _EscapingDirectoryFTPTLS.server_dirs = {"/", "/tree", "/outside"}
+    _EscapingDirectoryFTPTLS.server_files = {"/outside/keep.txt": b"keep"}
+    monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _EscapingDirectoryFTPTLS)
+    credential_ref = _credential_ref(session, project_id)
+
+    with pytest.raises(ConflictError) as excinfo:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="utils.ftp.directory.delete",
+                input_json={"remote_path": "/tree", "recursive": True},
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "resolves outside the selected root" in json.dumps(excinfo.value.data)
+    assert _EscapingDirectoryFTPTLS.server_files["/outside/keep.txt"] == b"keep"
+    calls = _EscapingDirectoryFTPTLS.instances[0].calls
+    assert all(call[0] not in {"delete", "rmd"} for call in calls)
+
+
+def test_ftp_relative_mutation_fails_if_pwd_is_unavailable(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.actions.ftp as ftp_module
+
+    class _NoPwdFTPTLS(_FakeFTPTLS):
+        instances: ClassVar[list[_NoPwdFTPTLS]] = []
+
+        def pwd(self) -> str:
+            self.calls.append(("pwd",))
+            raise ftplib.error_perm("500 PWD unavailable")
+
+    _NoPwdFTPTLS.reset()
+    _NoPwdFTPTLS.server_files = {"/relative.txt": b"keep"}
+    monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _NoPwdFTPTLS)
+    credential_ref = _credential_ref(session, project_id)
+
+    with pytest.raises(ConflictError) as excinfo:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="utils.ftp.file.delete",
+                input_json={"remote_path": "relative.txt"},
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "PWD is required to resolve relative remote paths" in json.dumps(excinfo.value.data)
+    assert _NoPwdFTPTLS.server_files["/relative.txt"] == b"keep"
+    assert all(call[0] != "delete" for call in _NoPwdFTPTLS.instances[0].calls)
+
+
+def test_ftp_recursive_delete_fails_if_directory_identity_pwd_is_unavailable(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.actions.ftp as ftp_module
+
+    class _NoIdentityPwdFTPTLS(_FakeFTPTLS):
+        instances: ClassVar[list[_NoIdentityPwdFTPTLS]] = []
+
+        def pwd(self) -> str:
+            self.calls.append(("pwd",))
+            if self.cwd_path == "/tree":
+                raise ftplib.error_perm("500 PWD unavailable")
+            return self.cwd_path
+
+    _NoIdentityPwdFTPTLS.reset()
+    _NoIdentityPwdFTPTLS.server_dirs = {"/", "/tree"}
+    _NoIdentityPwdFTPTLS.server_files = {"/tree/keep.txt": b"keep"}
+    monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _NoIdentityPwdFTPTLS)
+    credential_ref = _credential_ref(session, project_id)
+
+    with pytest.raises(ConflictError) as excinfo:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="utils.ftp.directory.delete",
+                input_json={"remote_path": "/tree", "recursive": True},
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "PWD is required to verify recursive directory identity" in json.dumps(
+        excinfo.value.data
+    )
+    assert _NoIdentityPwdFTPTLS.server_files["/tree/keep.txt"] == b"keep"
+    calls = _NoIdentityPwdFTPTLS.instances[0].calls
+    assert all(call[0] not in {"delete", "rmd"} for call in calls)
+
+
+def test_ftp_recursive_delete_reports_confirmed_partial_effects_and_unknown_outcome(
+    session: Session,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.actions.ftp as ftp_module
+
+    class _PartialDeleteFTPTLS(_FakeFTPTLS):
+        instances: ClassVar[list[_PartialDeleteFTPTLS]] = []
+
+        def delete(self, path: str) -> str:
+            resolved = self._path(path)
+            if resolved == "/tree/z-fail.txt":
+                self.calls.append(("delete", resolved))
+                raise ftplib.error_perm("550 ftp-secret cannot delete")
+            return super().delete(path)
+
+    _PartialDeleteFTPTLS.reset()
+    _PartialDeleteFTPTLS.server_dirs = {"/", "/tree"}
+    _PartialDeleteFTPTLS.server_files = {
+        "/tree/a-deleted.txt": b"deleted",
+        "/tree/z-fail.txt": b"keep",
+    }
+    monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _PartialDeleteFTPTLS)
+    credential_ref = _credential_ref(session, project_id)
+
+    with pytest.raises(ConflictError) as partial_exc:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="utils.ftp.directory.delete",
+                input_json={"remote_path": "/tree", "recursive": True},
+                credential_ref=credential_ref,
+            )
+        )
+
+    partial = partial_exc.value.data["provider_error"]["partial_result"]
+    assert partial["status"] == "failed"
+    assert partial["deleted_paths"] == [{"remote_path": "/tree/a-deleted.txt", "type": "file"}]
+    assert "ftp-secret" not in json.dumps(partial_exc.value.data)
+    assert "/tree/a-deleted.txt" not in _PartialDeleteFTPTLS.server_files
+    assert _PartialDeleteFTPTLS.server_files["/tree/z-fail.txt"] == b"keep"
+
+    class _UnknownDeleteFTPTLS(_FakeFTPTLS):
+        instances: ClassVar[list[_UnknownDeleteFTPTLS]] = []
+
+        def delete(self, path: str) -> str:
+            resolved = self._path(path)
+            self.calls.append(("delete", resolved))
+            del self.__class__.server_files[resolved]
+            raise EOFError("ftp-secret connection closed")
+
+    _UnknownDeleteFTPTLS.reset()
+    _UnknownDeleteFTPTLS.server_files = {"/unknown.txt": b"gone"}
+    monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _UnknownDeleteFTPTLS)
+
+    with pytest.raises(ConflictError) as unknown_exc:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="utils.ftp.file.delete",
+                input_json={"remote_path": "/unknown.txt"},
+                credential_ref=credential_ref,
+            )
+        )
+
+    provider_error = unknown_exc.value.data["provider_error"]
+    assert provider_error["outcome_unknown"] is True
+    assert provider_error["retry_safe"] is False
+    assert provider_error["target_path"] == "/unknown.txt"
+    assert "Inspect or list the selected remote path" in provider_error["reconciliation_guidance"]
+    assert "ftp-secret" not in json.dumps(unknown_exc.value.data)
+    assert "/unknown.txt" not in _UnknownDeleteFTPTLS.server_files
+
+    class _UnexpectedReplyFTPTLS(_FakeFTPTLS):
+        instances: ClassVar[list[_UnexpectedReplyFTPTLS]] = []
+
+        def delete(self, path: str) -> str:
+            resolved = self._path(path)
+            self.calls.append(("delete", resolved))
+            del self.__class__.server_files[resolved]
+            raise ftplib.error_reply("257 ftp-secret unexpected success reply")
+
+    _UnexpectedReplyFTPTLS.reset()
+    _UnexpectedReplyFTPTLS.server_files = {"/unexpected.txt": b"gone"}
+    monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _UnexpectedReplyFTPTLS)
+
+    with pytest.raises(ConflictError) as reply_exc:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="utils.ftp.file.delete",
+                input_json={"remote_path": "/unexpected.txt"},
+                credential_ref=credential_ref,
+            )
+        )
+
+    reply_error = reply_exc.value.data["provider_error"]
+    assert reply_error["outcome_unknown"] is True
+    assert reply_error["retry_safe"] is False
+    assert reply_error["target_path"] == "/unexpected.txt"
+    assert "ftp-secret" not in json.dumps(reply_exc.value.data)
+    assert "/unexpected.txt" not in _UnexpectedReplyFTPTLS.server_files
 
 
 def test_ftp_plain_mode_and_conflict_policies_are_agent_selected(
@@ -554,9 +1199,33 @@ def test_ftp_validation_rejects_control_characters_and_empty_batches(
         },
         credential_ref=credential_ref,
     )
+    delete_file = repo.validate(
+        project_id=project_id,
+        action_ref="utils.ftp.file.delete",
+        input_json={"remote_path": "/safe\r\nDELE secret"},
+        credential_ref=credential_ref,
+    )
+    delete_directory = repo.validate(
+        project_id=project_id,
+        action_ref="utils.ftp.directory.delete",
+        input_json={"remote_path": "/safe", "recursive": "yes"},
+        credential_ref=credential_ref,
+    )
+    rename = repo.validate(
+        project_id=project_id,
+        action_ref="utils.ftp.path.rename",
+        input_json={
+            "source_path": "/safe",
+            "destination_path": "/unsafe\nRNTO target",
+        },
+        credential_ref=credential_ref,
+    )
 
     assert {item.code for item in browse.issues} >= {"format"}
     assert {item.code for item in upload.issues} >= {"required"}
+    assert {item.code for item in delete_file.issues} >= {"format"}
+    assert {item.code for item in delete_directory.issues} >= {"type_error"}
+    assert {item.code for item in rename.issues} >= {"format"}
 
 
 def test_ftp_supports_multiple_mappings_and_all_download_conflict_policies(

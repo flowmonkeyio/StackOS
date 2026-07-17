@@ -18,7 +18,7 @@
   "agentPath": [
     "Establish the canonical host, audit boundary, business goal, markets, date window, and sampling plan.",
     "Map public pages, navigation, robots and sitemap signals, representative templates, links, metadata, structured data, and rendered behavior.",
-    "Use every relevant connected evidence source, preserving response-file refs and recording unavailable sources as explicit gaps.",
+    "Select the smallest useful connected evidence set, preserving durable action receipts and recording unavailable, skipped, or failed sources as explicit gaps.",
     "Reconcile evidence, challenge unsupported claims, and prioritize actions by impact, confidence, effort, dependencies, and validation path.",
     "Store a compact analysis index plus durable report, inventory, and finding-register artifacts."
   ],
@@ -59,9 +59,9 @@
   "proof": [
     "Source ledger with used, unavailable, skipped, and failed sources",
     "Public site inventory and representative-template coverage",
-    "Evidence-classified SEO finding register",
+    "Typed evidence index and independently reviewed SEO finding register",
     "Prioritized roadmap with validation paths",
-    "Durable final report, inventory, and finding-register artifacts"
+    "Durable final report plus completeness-appropriate inventory, finding-register, and evidence artifacts"
   ],
   "whenToUse": [
     "A user asks to audit, map, analyze, or diagnose a website's SEO.",
@@ -82,7 +82,7 @@
     {
       "id": "collect-connected-evidence",
       "title": "Collect Connected Evidence",
-      "summary": "Use every relevant ready Search Console, GA4, GTM, Ahrefs, DataForSEO, and Serper action with explicit bounded inputs; inspect response files before…"
+      "summary": "Select the smallest useful set of ready Search Console, GA4, GTM, Ahrefs, DataForSEO, and Serper actions with explicit bounded inputs; inspect response…"
     },
     {
       "id": "reconcile-and-diagnose",
@@ -97,7 +97,7 @@
     {
       "id": "finalize-and-store",
       "title": "Finalize And Store The Analysis",
-      "summary": "Create durable final-report, site-inventory, and finding-register artifacts, then upsert one compact website-seo-analysis record whose source ledger,…"
+      "summary": "Store the reviewed analysis package and one compact website-seo-analysis record whose evidence index, review summary, executive summary, counts,…"
     }
   ],
   "agentNames": [

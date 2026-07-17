@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.workflow-orchestrator
     name: Workflow Orchestrator
-    version: 0.1.0
+    version: 0.1.1
     description: Main-agent operating loop for workflows that do not need a domain-specific orchestrator.
     domain: core
     skill_type: main-agent-orchestration
@@ -26,6 +26,7 @@ presets:
       - media-buying.performance-diagnosis
       - seo.content-refresh
       - seo.keyword-research
+      - seo.website-analysis
       - support.delivery-task-handoff
       - support.issue-investigation
     recommended_tools:

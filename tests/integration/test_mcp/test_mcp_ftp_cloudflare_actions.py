@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from pytest_httpx import HTTPXMock
@@ -15,6 +15,8 @@ _RECORD_ID = "372e67954025e0ba6aaa6d586b9e0b59"
 
 
 class _FakeFTP:
+    deleted_paths: ClassVar[list[str]] = []
+
     def __init__(
         self,
         *,
@@ -49,6 +51,10 @@ class _FakeFTP:
             ("assets", {"type": "dir", "modify": "20260715120000"}),
             ("index.html", {"type": "file", "size": "4"}),
         ]
+
+    def delete(self, path: str) -> str:
+        self.__class__.deleted_paths.append(path)
+        return "250 deleted"
 
     def quit(self) -> str:
         return "221 bye"
@@ -251,6 +257,59 @@ def test_ftp_directory_list_executes_with_step_grant_and_audit_linkage(
         expected_call_id=data["action_call"]["id"],
     )
     assert audit["response_json"]["entry_count"] == 2
+    assert "ftp-secret" not in json.dumps({"result": data, "audit": audit})
+
+
+def test_ftp_file_delete_executes_with_step_grant_and_audit_linkage(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.actions.ftp as ftp_module
+
+    _FakeFTP.deleted_paths = []
+    monkeypatch.setattr(ftp_module.ftplib, "FTP", _FakeFTP)
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_ftp_credential(mcp_client, project_id)
+    step_id = "delete-ftp-file"
+    created, started, claimed = _start_and_claim(
+        mcp_client,
+        project_id,
+        _run_plan(
+            "utils.ftp.file.delete",
+            key="utils.ftp-file-delete.audit",
+            step_id=step_id,
+        ),
+        step_id=step_id,
+    )
+
+    data = _execute(
+        mcp_client,
+        project_id=project_id,
+        action_ref="utils.ftp.file.delete",
+        input_json={"remote_path": "/public/obsolete.txt"},
+        credential_ref=credential_ref,
+        run_token=started["data"]["run_token"],
+    )
+
+    assert _FakeFTP.deleted_paths == ["/public/obsolete.txt"]
+    assert data["action_call"]["connector_key"] == "ftp"
+    assert data["output_json"] == {
+        "provider": "ftp",
+        "operation": "file.delete",
+        "status": "success",
+        "remote_path": "/public/obsolete.txt",
+    }
+    audit = _assert_action_call_audit(
+        mcp_client,
+        project_id=project_id,
+        created=created,
+        started=started,
+        claimed=claimed,
+        action_key="ftp.file.delete",
+        expected_call_id=data["action_call"]["id"],
+    )
+    assert audit["response_json"]["remote_path"] == "/public/obsolete.txt"
     assert "ftp-secret" not in json.dumps({"result": data, "audit": audit})
 
 

@@ -1386,7 +1386,8 @@ resources:
         - analyzed_at
         - status
         - source_ledger
-        - raw_provider_data_refs
+        - evidence_index
+        - review_summary
         - executive_summary
         - finding_counts
         - prioritized_actions
@@ -1406,12 +1407,21 @@ resources:
           enum:
             - complete
             - partial
-            - blocked
         analysis_scope:
           type: object
           additionalProperties: false
           properties:
             business_goal: {type: string}
+            access_boundary:
+              type: object
+              additionalProperties: false
+              required: [mode, external_provider_sharing]
+              properties:
+                mode: {type: string, enum: [public, authenticated, private-network]}
+                external_provider_sharing: {type: string, enum: [allowed, prohibited]}
+                browser_profile_ref: {type: string}
+                authorized_scope: {type: string}
+                storage_limitations: {type: array, items: {type: string}}
             target_markets: {type: array, items: {type: string}}
             included_sections: {type: array, items: {type: string}}
             excluded_sections: {type: array, items: {type: string}}
@@ -1426,6 +1436,7 @@ resources:
             additionalProperties: false
             required:
               - source
+              - evaluated_at
               - status
               - evidence_class
               - coverage
@@ -1433,6 +1444,7 @@ resources:
               - evidence_refs
             properties:
               source: {type: string}
+              evaluated_at: {type: string, format: date-time}
               status:
                 type: string
                 enum: [used, unavailable, skipped, failed]
@@ -1440,10 +1452,73 @@ resources:
                 type: string
                 enum: [public-observation, first-party-provider, third-party-provider, operator-supplied]
               coverage: {type: string}
+              reporting_window: {type: object, additionalProperties: true}
               limitations: {type: array, items: {type: string}}
               evidence_refs: {type: array, items: {type: string}}
-              response_file_refs: {type: array, items: {type: string}}
               reason: {type: string}
+        evidence_index:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [evidence_ref, kind, source, captured_at, lifecycle_state, scope, receipt_ref, limitations]
+            properties:
+              evidence_ref: {type: string, minLength: 1}
+              kind: {type: string, enum: [action-receipt, browser-receipt, operator-context, prior-analysis, artifact]}
+              source: {type: string, minLength: 1}
+              captured_at: {type: string, format: date-time}
+              lifecycle_state: {type: string, enum: [current, historical, superseded]}
+              scope: {type: object, additionalProperties: true}
+              receipt_ref: {type: string, minLength: 1}
+              action_call_id: {type: integer, minimum: 1}
+              action_ref: {type: string}
+              output_sha256: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+              artifact_ref: {type: string}
+              reporting_window: {type: object, additionalProperties: true}
+              limitations: {type: array, items: {type: string}}
+            allOf:
+              - if:
+                  properties:
+                    kind: {const: action-receipt}
+                  required: [kind]
+                then:
+                  required: [action_call_id, action_ref]
+              - if:
+                  properties:
+                    kind: {const: artifact}
+                  required: [kind]
+                then:
+                  required: [artifact_ref]
+        review_summary:
+          type: object
+          additionalProperties: false
+          required: [reviewer_role, reviewed_at, dispositions, unresolved_evidence_gaps, residual_limitations]
+          properties:
+            reviewer_role: {type: string, const: delivery-reviewer}
+            reviewer_ref: {type: string}
+            reviewed_at: {type: string, format: date-time}
+            dispositions:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [draft_finding_ref, disposition, rationale, evidence_refs]
+                properties:
+                  draft_finding_ref: {type: string, minLength: 1}
+                  disposition: {type: string, enum: [accepted, revised, rejected]}
+                  final_finding_ref: {type: string}
+                  rationale: {type: string}
+                  evidence_refs: {type: array, items: {type: string}}
+                allOf:
+                  - if:
+                      properties:
+                        disposition: {enum: [accepted, revised]}
+                      required: [disposition]
+                    then:
+                      required: [final_finding_ref]
+            unresolved_evidence_gaps: {type: array, items: {type: string}}
+            residual_limitations: {type: array, items: {type: string}}
         executive_summary:
           type: object
           additionalProperties: false
@@ -1486,21 +1561,30 @@ resources:
         limitations:
           type: array
           items: {type: string}
-        raw_provider_data_refs:
-          type: array
-          items: {type: string, minLength: 1}
-          uniqueItems: true
         artifact_refs:
           type: object
           additionalProperties: false
-          required: [final_report, site_inventory, finding_register]
+          required: [final_report]
           properties:
             final_report: {type: string, minLength: 1}
             site_inventory: {type: string, minLength: 1}
             finding_register: {type: string, minLength: 1}
+            evidence_artifacts:
+              type: array
+              items: {type: string, minLength: 1}
+              uniqueItems: true
         follow_up_hooks:
           type: array
           items: {type: string}
+      allOf:
+        - if:
+            properties:
+              status: {const: complete}
+            required: [status]
+          then:
+            properties:
+              artifact_refs:
+                required: [final_report, site_inventory, finding_register]
     ui_schema:
       table_columns:
         - site_url
@@ -1522,18 +1606,19 @@ resources:
         - title: Evidence And Findings
           fields:
             - source_ledger
+            - evidence_index
+            - review_summary
             - finding_counts
             - prioritized_actions
             - limitations
         - title: Durable Outputs
           fields:
             - artifact_refs
-            - raw_provider_data_refs
             - follow_up_hooks
     config:
       schema_version: stackos.resource.v1
       record_kind: website-seo-analysis
-      agent_guidance: Keep this record compact and evidence-led. Store bulky URL inventories, raw exports, the full finding register, and the final report as artifacts; never turn unavailable provider data into invented measurements.
+      agent_guidance: Keep this record compact and evidence-led. Use the typed evidence index and review summary as the durable claim trail; temporary response-file paths are not evidence refs. Store bulky URL inventories, claim-supporting raw exports, the canonical finding register, and the final report as artifacts; never turn unavailable provider data into invented measurements.
 ui:
   nav:
     section: SEO

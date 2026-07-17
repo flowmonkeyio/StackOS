@@ -40,6 +40,31 @@ def _resource_grant_plan_json(key: str = "ops.resource-write.run") -> dict:
     }
 
 
+def _engineering_evidence_grant_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "engineering.evidence-write.run",
+        "title": "Engineering Evidence Write",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "write-evidence",
+                    "tool": "resource.upsert",
+                    "plugin_slug": "engineering",
+                    "resource_key": "engineering-evidence",
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "write-evidence",
+                "title": "Write evidence",
+                "resource_refs": ["engineering.engineering-evidence"],
+            }
+        ],
+    }
+
+
 def _context_query_grant_plan_json(key: str = "ops.context-read.run") -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",
@@ -516,6 +541,53 @@ def test_run_plan_grant_allows_only_active_claimed_step_tool(
     assert written["data"]["data_json"] == {"body": "active step can write"}
     assert completed["data"]["status"] == "completed"
     assert after_completion["code"] == -32007
+
+
+def test_resource_upsert_schema_validation_surfaces_through_mcp(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": _engineering_evidence_grant_plan_json(),
+        },
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "write-evidence",
+            "run_token": run_token,
+        },
+    )
+
+    invalid = mcp_client.call_tool_error(
+        "resource.upsert",
+        {
+            "project_id": project_id,
+            "plugin_slug": "engineering",
+            "resource_key": "engineering-evidence",
+            "data_json": {"title": "Unsupported assertion"},
+            "run_token": run_token,
+        },
+    )
+
+    assert invalid["code"] == -32602
+    assert invalid["message"] == "ValidationError"
+    assert invalid["data"]["resource_key"] == "engineering-evidence"
+    assert {issue["path"] for issue in invalid["data"]["issues"]} >= {
+        "$.schema_version",
+        "$.evidence_mode",
+        "$.scope",
+    }
 
 
 def test_run_plan_claim_step_guides_provider_action_context_flow(
@@ -1168,7 +1240,7 @@ def test_website_seo_analysis_strict_validation_and_create_preserve_grants(
     assert validation["valid"] is True
     assert validation["warnings"] == []
     assert created["data"]["template_key"] == "seo.website-analysis"
-    assert fetched["template_snapshot_json"]["version"] == "0.2.0"
+    assert fetched["template_snapshot_json"]["version"] == "0.3.0"
     assert fetched["status"] == "draft"
     assert all(step["instructions_json"] for step in fetched["steps"])
     assert all(step["success_criteria_json"] for step in fetched["steps"])

@@ -42,7 +42,15 @@ from stackos.integrations.ftp import (
 from stackos.mcp.errors import IntegrationDownError
 from stackos.repositories.base import ValidationError
 
-_OPERATIONS = {"directory.list", "file.upload", "file.download"}
+_OPERATIONS = {
+    "directory.list",
+    "file.upload",
+    "file.download",
+    "file.delete",
+    "directory.create",
+    "directory.delete",
+    "path.rename",
+}
 _CONFLICT_POLICIES = {"overwrite", "skip", "fail"}
 _ERROR_POLICIES = {"stop", "continue"}
 _TLS_MODES = {"explicit", "none"}
@@ -50,7 +58,7 @@ _MLSD_FACTS = ["type", "size", "modify", "unique", "perm"]
 
 
 class FtpActionConnector:
-    """Decision-free adapter for remote browsing and bidirectional transfer."""
+    """Decision-free adapter for remote browsing, transfer, and path management."""
 
     key = "ftp"
 
@@ -59,8 +67,21 @@ class FtpActionConnector:
             return unknown_operation(request)
         payload = request.input_json
         issues: list[ActionValidationIssue] = []
-        if request.operation == "directory.list":
+        if request.operation in {"directory.list", "file.delete", "directory.create"}:
             _validate_remote_path(payload.get("remote_path"), "$.remote_path", issues)
+            return issues
+        if request.operation == "directory.delete":
+            _validate_remote_path(payload.get("remote_path"), "$.remote_path", issues)
+            if not isinstance(payload.get("recursive"), bool):
+                issues.append(issue("$.recursive", "recursive must be a boolean", "type_error"))
+            return issues
+        if request.operation == "path.rename":
+            _validate_remote_path(payload.get("source_path"), "$.source_path", issues)
+            _validate_remote_path(
+                payload.get("destination_path"),
+                "$.destination_path",
+                issues,
+            )
             return issues
 
         _validate_transfer_options(payload, issues)
@@ -120,6 +141,29 @@ class _TransferState:
         return _redact_payload(output, secret=self.secret)
 
 
+@dataclass
+class _DirectoryDeleteState:
+    remote_path: str
+    recursive: bool
+    secret: str = field(repr=False)
+    deleted_paths: list[dict[str, str]] = field(default_factory=list)
+
+    def output(self, *, status: str = "success") -> dict[str, Any]:
+        output = {
+            "provider": "ftp",
+            "operation": "directory.delete",
+            "status": status,
+            "remote_path": self.remote_path,
+            "recursive": self.recursive,
+            "deleted_count": len(self.deleted_paths),
+            "file_count": sum(item["type"] == "file" for item in self.deleted_paths),
+            "directory_count": sum(item["type"] == "directory" for item in self.deleted_paths),
+            "symlink_count": sum(item["type"] == "symlink" for item in self.deleted_paths),
+            "deleted_paths": self.deleted_paths,
+        }
+        return _redact_payload(output, secret=self.secret)
+
+
 class _StopTransfer(Exception):
     pass
 
@@ -139,6 +183,14 @@ def _execute_sync(request: ActionConnectorRequest) -> ActionConnectorResult:
         client = _connect(settings)
         if request.operation == "directory.list":
             return _browse(client, request, settings)
+        if request.operation == "file.delete":
+            return _delete_remote_file(client, request, settings)
+        if request.operation == "directory.create":
+            return _create_remote_directory(client, request, settings)
+        if request.operation == "directory.delete":
+            return _delete_remote_directory(client, request, settings)
+        if request.operation == "path.rename":
+            return _rename_remote_path(client, request, settings)
 
         state = _TransferState(
             operation=request.operation,
@@ -186,7 +238,7 @@ def _execute_sync(request: ActionConnectorRequest) -> ActionConnectorResult:
             output_json=output,
             metadata_json=_metadata(request, settings),
         ) from exc
-    except (ftplib.Error, OSError, EOFError, ValueError) as exc:
+    except (ftplib.Error, OSError, EOFError, ValueError, ValidationError) as exc:
         output = state.output(status="failed") if state is not None else None
         raise ActionConnectorError(
             "FTP provider operation failed",
@@ -231,6 +283,217 @@ def _browse(
             "file_count": sum(item["type"] == "file" for item in entries),
             "symlink_count": sum(item["type"] == "symlink" for item in entries),
             "entries": entries,
+        },
+        metadata_json=_metadata(request, settings),
+    )
+
+
+def _delete_remote_file(
+    client: Any,
+    request: ActionConnectorRequest,
+    settings: Mapping[str, Any],
+) -> ActionConnectorResult:
+    remote_path = _resolved_remote_path(client, str(request.input_json["remote_path"]))
+    guidance = "Inspect or list the selected remote path before deciding whether to retry."
+    try:
+        client.delete(remote_path)
+    except (OSError, EOFError) as exc:
+        raise _mutation_error(
+            request,
+            settings,
+            exc,
+            stage="delete",
+            target_path=remote_path,
+            outcome_unknown=True,
+            reconciliation_guidance=guidance,
+        ) from exc
+    except ftplib.Error as exc:
+        outcome_unknown = not _is_explicit_ftp_failure(exc)
+        raise _mutation_error(
+            request,
+            settings,
+            exc,
+            stage="delete",
+            target_path=remote_path,
+            outcome_unknown=outcome_unknown,
+            reconciliation_guidance=guidance if outcome_unknown else None,
+        ) from exc
+    return ActionConnectorResult(
+        output_json={
+            "provider": "ftp",
+            "operation": request.operation,
+            "status": "success",
+            "remote_path": _redact_text(
+                remote_path,
+                secret=str(settings["password"]),
+            ),
+        },
+        metadata_json=_metadata(request, settings),
+    )
+
+
+def _create_remote_directory(
+    client: Any,
+    request: ActionConnectorRequest,
+    settings: Mapping[str, Any],
+) -> ActionConnectorResult:
+    remote_path = _resolved_remote_path(client, str(request.input_json["remote_path"]))
+    guidance = "Inspect or list the selected remote path before deciding whether to retry."
+    try:
+        client.mkd(remote_path)
+    except (OSError, EOFError) as exc:
+        raise _mutation_error(
+            request,
+            settings,
+            exc,
+            stage="create",
+            target_path=remote_path,
+            outcome_unknown=True,
+            reconciliation_guidance=guidance,
+        ) from exc
+    except ftplib.Error as exc:
+        outcome_unknown = not _is_explicit_ftp_failure(exc)
+        raise _mutation_error(
+            request,
+            settings,
+            exc,
+            stage="create",
+            target_path=remote_path,
+            outcome_unknown=outcome_unknown,
+            reconciliation_guidance=guidance if outcome_unknown else None,
+        ) from exc
+    return ActionConnectorResult(
+        output_json={
+            "provider": "ftp",
+            "operation": request.operation,
+            "status": "success",
+            "remote_path": _redact_text(
+                remote_path,
+                secret=str(settings["password"]),
+            ),
+        },
+        metadata_json=_metadata(request, settings),
+    )
+
+
+def _delete_remote_directory(
+    client: Any,
+    request: ActionConnectorRequest,
+    settings: Mapping[str, Any],
+) -> ActionConnectorResult:
+    remote_path = _resolved_remote_path(client, str(request.input_json["remote_path"]))
+    recursive = bool(request.input_json["recursive"])
+    state = _DirectoryDeleteState(
+        remote_path=remote_path,
+        recursive=recursive,
+        secret=str(settings["password"]),
+    )
+    if recursive:
+        try:
+            plan = _recursive_delete_plan(client, remote_path)
+        except (ValidationError, ftplib.Error, OSError, EOFError, ValueError) as exc:
+            partial = state.output(status="failed")
+            raise _mutation_error(
+                request,
+                settings,
+                exc,
+                stage="plan",
+                target_path=remote_path,
+                partial_result=partial,
+            ) from exc
+    else:
+        plan = [{"remote_path": remote_path, "type": "directory"}]
+
+    guidance = (
+        "Inspect or list the selected remote path and its parent before deciding whether to retry."
+    )
+    for item in plan:
+        target_path = item["remote_path"]
+        target_type = item["type"]
+        try:
+            if target_type == "directory":
+                client.rmd(target_path)
+            else:
+                client.delete(target_path)
+        except (OSError, EOFError) as exc:
+            partial = state.output(status="failed")
+            raise _mutation_error(
+                request,
+                settings,
+                exc,
+                stage="delete",
+                target_path=target_path,
+                target_type=target_type,
+                outcome_unknown=True,
+                reconciliation_guidance=guidance,
+                partial_result=partial,
+            ) from exc
+        except ftplib.Error as exc:
+            partial = state.output(status="failed")
+            outcome_unknown = not _is_explicit_ftp_failure(exc)
+            raise _mutation_error(
+                request,
+                settings,
+                exc,
+                stage="delete",
+                target_path=target_path,
+                target_type=target_type,
+                outcome_unknown=outcome_unknown,
+                reconciliation_guidance=guidance if outcome_unknown else None,
+                partial_result=partial,
+            ) from exc
+        state.deleted_paths.append(dict(item))
+
+    return ActionConnectorResult(
+        output_json=state.output(),
+        metadata_json=_metadata(request, settings),
+    )
+
+
+def _rename_remote_path(
+    client: Any,
+    request: ActionConnectorRequest,
+    settings: Mapping[str, Any],
+) -> ActionConnectorResult:
+    source_path = _resolved_remote_path(client, str(request.input_json["source_path"]))
+    destination_path = _resolved_remote_path(
+        client,
+        str(request.input_json["destination_path"]),
+    )
+    guidance = "Inspect or list both selected remote paths before deciding whether to retry."
+    try:
+        client.rename(source_path, destination_path)
+    except (OSError, EOFError) as exc:
+        raise _mutation_error(
+            request,
+            settings,
+            exc,
+            stage="rename",
+            source_path=source_path,
+            destination_path=destination_path,
+            outcome_unknown=True,
+            reconciliation_guidance=guidance,
+        ) from exc
+    except ftplib.Error as exc:
+        outcome_unknown = not _is_explicit_ftp_failure(exc)
+        raise _mutation_error(
+            request,
+            settings,
+            exc,
+            stage="rename",
+            source_path=source_path,
+            destination_path=destination_path,
+            outcome_unknown=outcome_unknown,
+            reconciliation_guidance=guidance if outcome_unknown else None,
+        ) from exc
+    secret = str(settings["password"])
+    return ActionConnectorResult(
+        output_json={
+            "provider": "ftp",
+            "operation": request.operation,
+            "status": "success",
+            "source_path": _redact_text(source_path, secret=secret),
+            "destination_path": _redact_text(destination_path, secret=secret),
         },
         metadata_json=_metadata(request, settings),
     )
@@ -628,13 +891,8 @@ def _list_remote(client: Any, remote_path: str) -> list[dict[str, Any]]:
 def _list_remote_fallback(client: Any, remote_path: str) -> list[dict[str, Any]]:
     names = client.nlst(remote_path)
     entries: list[dict[str, Any]] = []
-    prefix = remote_path.rstrip("/") + "/"
     for raw_name in names:
-        name = str(raw_name)
-        if name.startswith(prefix):
-            name = name[len(prefix) :]
-        elif "/" in name:
-            name = posixpath.basename(name)
+        name = _listed_remote_child_name(remote_path, raw_name)
         if not name:
             continue
         path = posixpath.join(remote_path, name)
@@ -650,6 +908,123 @@ def _list_remote_fallback(client: Any, remote_path: str) -> list[dict[str, Any]]
             }
         )
     return sorted(entries, key=lambda item: str(item["name"]))
+
+
+def _recursive_delete_plan(client: Any, remote_path: str) -> list[dict[str, str]]:
+    return _plan_remote_directory_delete(
+        client,
+        remote_path,
+        root_identity=None,
+        visited_identities=set(),
+    )
+
+
+def _plan_remote_directory_delete(
+    client: Any,
+    remote_path: str,
+    *,
+    root_identity: str | None,
+    visited_identities: set[str],
+) -> list[dict[str, str]]:
+    identity = _remote_directory_identity(client, remote_path)
+    if root_identity is None:
+        root_identity = identity
+    elif not _is_within_remote_directory(identity, root_identity):
+        raise ValidationError(f"remote directory {remote_path} resolves outside the selected root")
+    if identity in visited_identities:
+        raise ValidationError(f"remote directory cycle or alias detected at {remote_path}")
+    visited_identities.add(identity)
+    plan: list[dict[str, str]] = []
+    seen_names: set[str] = set()
+    for entry in _list_remote_for_recursive_delete(client, remote_path):
+        name = str(entry["name"])
+        if not _is_safe_remote_child(name):
+            raise ValidationError(f"unsafe remote child name: {name!r}")
+        if name in seen_names:
+            raise ValidationError(f"duplicate remote child name: {name!r}")
+        seen_names.add(name)
+        entry_type = str(entry.get("type") or "unknown")
+        if entry_type not in {"file", "directory", "symlink"}:
+            raise ValidationError(
+                "FTP recursive directory delete requires machine-readable MLSD or "
+                f"MLST entry types; {name!r} has type {entry_type!r}"
+            )
+        child_path = posixpath.join(remote_path, name)
+        _require_safe_command_path(child_path, "remote_path")
+        if entry_type == "directory":
+            plan.extend(
+                _plan_remote_directory_delete(
+                    client,
+                    child_path,
+                    root_identity=root_identity,
+                    visited_identities=visited_identities,
+                )
+            )
+        else:
+            plan.append({"remote_path": child_path, "type": entry_type})
+    plan.append({"remote_path": remote_path, "type": "directory"})
+    return plan
+
+
+def _list_remote_for_recursive_delete(
+    client: Any,
+    remote_path: str,
+) -> list[dict[str, Any]]:
+    _require_safe_command_path(remote_path, "remote_path")
+    try:
+        raw_entries = list(client.mlsd(remote_path, facts=_MLSD_FACTS))
+    except (AttributeError, ftplib.Error):
+        return _list_remote_with_mlst_types(client, remote_path)
+    entries: list[dict[str, Any]] = []
+    for name, facts in raw_entries:
+        entry_type = _entry_type(facts)
+        if entry_type in {"current", "parent"}:
+            continue
+        entries.append({"name": name, "type": entry_type})
+    return sorted(entries, key=lambda item: str(item["name"]))
+
+
+def _list_remote_with_mlst_types(
+    client: Any,
+    remote_path: str,
+) -> list[dict[str, Any]]:
+    try:
+        names = client.nlst(remote_path)
+    except AttributeError as exc:
+        raise ValidationError(
+            "FTP recursive directory delete requires machine-readable MLSD or MLST entry types"
+        ) from exc
+    entries: list[dict[str, Any]] = []
+    for raw_name in names:
+        name = _listed_remote_child_name(remote_path, raw_name)
+        if not _is_safe_remote_child(name):
+            raise ValidationError(f"unsafe remote child name: {name!r}")
+        path = posixpath.join(remote_path, name)
+        try:
+            response = client.sendcmd(f"MLST {path}")
+        except (AttributeError, ftplib.Error) as exc:
+            raise ValidationError(
+                "FTP recursive directory delete requires machine-readable MLSD or MLST entry types"
+            ) from exc
+        parsed = _parse_mlst(str(response))
+        entry_type = str(parsed.get("type") if parsed is not None else "unknown")
+        if entry_type not in {"file", "directory", "symlink"}:
+            raise ValidationError(
+                "FTP recursive directory delete requires machine-readable MLSD or "
+                f"MLST entry types; {name!r} has type {entry_type!r}"
+            )
+        entries.append({"name": name, "type": entry_type})
+    return sorted(entries, key=lambda item: str(item["name"]))
+
+
+def _listed_remote_child_name(remote_path: str, raw_name: Any) -> str:
+    name = str(raw_name)
+    prefix = remote_path.rstrip("/") + "/"
+    if name.startswith(prefix):
+        return name[len(prefix) :]
+    if "/" in name:
+        return posixpath.basename(name)
+    return name
 
 
 def _parse_mlst(response: str) -> dict[str, Any] | None:
@@ -745,7 +1120,13 @@ def _close(client: Any | None) -> None:
 
 def _resolved_remote_path(client: Any, value: str) -> str:
     _require_safe_command_path(value, "remote_path")
-    candidate = value if value.startswith("/") else posixpath.join(_safe_pwd(client) or "/", value)
+    if value.startswith("/"):
+        candidate = value
+    else:
+        current = _safe_pwd(client)
+        if current is None:
+            raise ValidationError("FTP server PWD is required to resolve relative remote paths")
+        candidate = posixpath.join(current, value)
     normalized = posixpath.normpath(candidate)
     if not normalized.startswith("/"):
         normalized = "/" + normalized
@@ -764,6 +1145,7 @@ def _safe_pwd(client: Any) -> str | None:
 
 def _remote_directory_identity(client: Any, remote_path: str) -> str:
     original = _safe_pwd(client)
+    resolved: str | None = None
     try:
         client.cwd(remote_path)
         resolved = _safe_pwd(client)
@@ -771,7 +1153,58 @@ def _remote_directory_identity(client: Any, remote_path: str) -> str:
         if original is not None and _safe_pwd(client) != original:
             with suppress(ftplib.Error, OSError, EOFError):
                 client.cwd(original)
-    return posixpath.normpath(resolved or remote_path)
+    if resolved is None:
+        raise ValidationError("FTP server PWD is required to verify recursive directory identity")
+    return posixpath.normpath(resolved)
+
+
+def _is_explicit_ftp_failure(exc: ftplib.Error) -> bool:
+    return isinstance(exc, (ftplib.error_temp, ftplib.error_perm))
+
+
+def _mutation_error(
+    request: ActionConnectorRequest,
+    settings: Mapping[str, Any],
+    exc: BaseException,
+    *,
+    stage: str,
+    target_path: str | None = None,
+    target_type: str | None = None,
+    source_path: str | None = None,
+    destination_path: str | None = None,
+    outcome_unknown: bool = False,
+    reconciliation_guidance: str | None = None,
+    partial_result: dict[str, Any] | None = None,
+) -> ActionConnectorError:
+    secret = str(settings["password"])
+    provider_error: dict[str, Any] = {
+        "type": type(exc).__name__,
+        "message": _safe_error(exc, secret=secret),
+        "stage": stage,
+    }
+    for key, value in (
+        ("target_path", target_path),
+        ("target_type", target_type),
+        ("source_path", source_path),
+        ("destination_path", destination_path),
+    ):
+        if value is not None:
+            provider_error[key] = _redact_text(value, secret=secret)
+    if outcome_unknown:
+        provider_error["outcome_unknown"] = True
+        provider_error["retry_safe"] = False
+    if reconciliation_guidance is not None:
+        provider_error["reconciliation_guidance"] = reconciliation_guidance
+    output_json: dict[str, Any] | None = None
+    if partial_result is not None:
+        provider_error["partial_result"] = partial_result
+        output_json = {**partial_result, "provider_error": provider_error}
+    return ActionConnectorError(
+        "FTP remote mutation failed",
+        provider_error=provider_error,
+        output_json=output_json,
+        metadata_json=_metadata(request, settings),
+    )
 
 
 def _record_skip(
@@ -844,6 +1277,16 @@ def _is_safe_remote_child(name: str) -> bool:
         and "/" not in name
         and "\\" not in name
         and not any(ord(char) < 32 or ord(char) == 127 for char in name)
+    )
+
+
+def _is_within_remote_directory(path: str, root: str) -> bool:
+    normalized_path = posixpath.normpath(path)
+    normalized_root = posixpath.normpath(root)
+    if normalized_root == "/":
+        return normalized_path.startswith("/")
+    return normalized_path == normalized_root or normalized_path.startswith(
+        normalized_root.rstrip("/") + "/"
     )
 
 

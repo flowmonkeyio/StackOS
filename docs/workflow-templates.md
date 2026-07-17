@@ -242,6 +242,28 @@ skip optional specialist roles for small work, but it should not erase
 acceptance criteria, dependencies, evidence, or closeout truth from the run
 plan.
 
+Tracked delivery keeps planning and delivery roles required while architecture,
+test-design, and delivery-review specialists are recommended depth tools. The
+main agent selects them from architectural and production risk, records a
+reason when omitting them, and still produces each workflow disposition. This
+keeps the SDLC complete without forcing a subagent or ceremony for every small
+change.
+
+`engineering.tracked-delivery` compiles material operator input into one
+effective, precedence-aware contract. Current invariants, product decisions,
+implementation constraints, prohibitions, authority, deferrals, supersession,
+and acceptance cases retain the traceability needed for the delivery. Retired
+entries remain auditable but are not supplied beside current requirements as if
+both still applied. Material unresolved contradictions block implementation.
+
+For repository-bound delivery, the agent identifies the integrated candidate
+covered by verification. Executed evidence records its HEAD commit, staged and
+unstaged diff checksums, untracked-file manifest checksum, covered paths,
+migration head, generated-contract revision, and capture time. A material
+covered change makes affected proof stale and returns the workflow to the
+earliest affected gate. StackOS validates the declared output and evidence
+contracts; the agent decides which evidence was affected from project context.
+
 The test design itself must be verified before implementation starts, either by
 the main orchestrator or a designated reviewer. A mechanical "manual smoke" is
 not a test design when the risk calls for full signoff or a production-like
@@ -265,9 +287,10 @@ For workflow-backed tracker work, attachment is not readiness. A ticket created
 with `run_plan_id` and `step_id` is contained under the mirrored workflow step,
 but no execution dependency exists until the agent adds dependency edges.
 Tracked-delivery planning must bridge child tickets into the workflow spine:
-first executable child depends on its step ticket, the next step depends on the
-prior step's terminal child tickets, and verification/docs/signoff work cannot
-float as a ready branch beside delivery.
+an `activates` edge makes the first executable child ready while its parent
+step is active, `blocks` edges hold work until real prerequisites complete, the
+next step blocks on the prior step's terminal child tickets, and
+verification/docs/signoff work cannot float as a ready branch beside delivery.
 
 The customer feedback baseline is deliberately split. Slack is the canonical
 thread for support work, even when feedback originates in Telegram or another

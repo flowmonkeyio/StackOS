@@ -22,6 +22,8 @@ DEFAULT_PRIORITIES: tuple[tuple[str, str, int], ...] = (
     ("p2", "P2", 20),
     ("p3", "P3", 30),
 )
+BLOCKS_DEPENDENCY_TYPE = "blocks"
+ACTIVATES_DEPENDENCY_TYPE = "activates"
 TERMINAL_TRACKER_STATUSES = {
     TrackerItemStatus.COMPLETE,
     TrackerItemStatus.DEFERRED,
@@ -75,6 +77,19 @@ def _is_terminal_tracker_status(value: TrackerItemStatus | str) -> bool:
     return _status_value(value) in TERMINAL_TRACKER_STATUSES
 
 
+def _is_dependency_satisfied(
+    dependency_type: str,
+    dependency_status: TrackerItemStatus | str,
+) -> bool:
+    status = _status_value(dependency_status)
+    if dependency_type == ACTIVATES_DEPENDENCY_TYPE:
+        return status in {
+            TrackerItemStatus.IN_PROGRESS,
+            TrackerItemStatus.COMPLETE,
+        }
+    return status == TrackerItemStatus.COMPLETE
+
+
 def _is_closed_tracker_scope(
     parent_status: TrackerItemStatus | str,
     child_statuses: list[TrackerItemStatus | str],
@@ -91,6 +106,8 @@ def _required_id(value: int | None, entity: str) -> int:
 
 
 __all__ = [
+    "ACTIVATES_DEPENDENCY_TYPE",
+    "BLOCKS_DEPENDENCY_TYPE",
     "DEFAULT_LANES",
     "DEFAULT_PRIORITIES",
     "DEFAULT_TRACKER_KEY",
@@ -98,6 +115,7 @@ __all__ = [
     "TERMINAL_TRACKER_STATUSES",
     "_clean_text",
     "_is_closed_tracker_scope",
+    "_is_dependency_satisfied",
     "_is_terminal_tracker_status",
     "_jsonable",
     "_required_id",

@@ -479,6 +479,54 @@ _FTP_DOWNLOAD_INPUT_SCHEMA = {
     "required": ["items", "conflict_policy", "error_policy"],
     "properties": _FTP_TRANSFER_BASE_PROPERTIES,
 }
+_FTP_REMOTE_PATH_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["remote_path"],
+    "properties": {
+        "remote_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact remote FTP path selected by the agent.",
+        },
+    },
+}
+_FTP_DIRECTORY_DELETE_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["remote_path", "recursive"],
+    "properties": {
+        "remote_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact remote FTP directory selected by the agent.",
+        },
+        "recursive": {
+            "type": "boolean",
+            "description": (
+                "False sends one RMD for the selected directory. True deletes its "
+                "machine-readable child tree post-order before removing the root."
+            ),
+        },
+    },
+}
+_FTP_RENAME_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["source_path", "destination_path"],
+    "properties": {
+        "source_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact existing remote FTP path selected by the agent.",
+        },
+        "destination_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact new remote FTP path selected by the agent.",
+        },
+    },
+}
 _FTP_DIRECTORY_LIST_OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -561,6 +609,88 @@ _FTP_TRANSFER_OUTPUT_SCHEMA = {
         "completed_paths": {"type": "array", "items": {"type": "string"}},
         "skipped_paths": {"type": "array", "items": {"type": "string"}},
         "failed_paths": {"type": "array", "items": {"type": "string"}},
+    },
+}
+_FTP_FILE_DELETE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["provider", "operation", "status", "remote_path"],
+    "properties": {
+        "provider": {"type": "string", "const": "ftp"},
+        "operation": {"type": "string", "const": "file.delete"},
+        "status": {"type": "string", "const": "success"},
+        "remote_path": {"type": "string"},
+    },
+}
+_FTP_DIRECTORY_CREATE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["provider", "operation", "status", "remote_path"],
+    "properties": {
+        "provider": {"type": "string", "const": "ftp"},
+        "operation": {"type": "string", "const": "directory.create"},
+        "status": {"type": "string", "const": "success"},
+        "remote_path": {"type": "string"},
+    },
+}
+_FTP_DIRECTORY_DELETE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "provider",
+        "operation",
+        "status",
+        "remote_path",
+        "recursive",
+        "deleted_count",
+        "file_count",
+        "directory_count",
+        "symlink_count",
+        "deleted_paths",
+    ],
+    "properties": {
+        "provider": {"type": "string", "const": "ftp"},
+        "operation": {"type": "string", "const": "directory.delete"},
+        "status": {"type": "string", "const": "success"},
+        "remote_path": {"type": "string"},
+        "recursive": {"type": "boolean"},
+        "deleted_count": {"type": "integer", "minimum": 0},
+        "file_count": {"type": "integer", "minimum": 0},
+        "directory_count": {"type": "integer", "minimum": 0},
+        "symlink_count": {"type": "integer", "minimum": 0},
+        "deleted_paths": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["remote_path", "type"],
+                "properties": {
+                    "remote_path": {"type": "string"},
+                    "type": {
+                        "type": "string",
+                        "enum": ["file", "directory", "symlink"],
+                    },
+                },
+            },
+        },
+    },
+}
+_FTP_RENAME_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "provider",
+        "operation",
+        "status",
+        "source_path",
+        "destination_path",
+    ],
+    "properties": {
+        "provider": {"type": "string", "const": "ftp"},
+        "operation": {"type": "string", "const": "path.rename"},
+        "status": {"type": "string", "const": "success"},
+        "source_path": {"type": "string"},
+        "destination_path": {"type": "string"},
     },
 }
 _CLOUDFLARE_RECORD_TYPES = [
@@ -1983,8 +2113,8 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 key="ftp",
                 name="FTP / Explicit FTPS",
                 description=(
-                    "Protocol connection for stateless remote browsing and recursive "
-                    "agent-selected uploads or downloads."
+                    "Protocol connection for stateless remote browsing, recursive "
+                    "agent-selected transfers, and exact remote path management."
                 ),
                 auth_type="ftp-password",
                 auth_methods=[
@@ -5144,6 +5274,125 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "https://www.rfc-editor.org/rfc/rfc959",
                         "https://www.rfc-editor.org/rfc/rfc3659",
                         "https://www.rfc-editor.org/rfc/rfc4217",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="ftp.file.delete",
+                name="Delete FTP File",
+                description="Delete one exact agent-selected remote file with FTP DELE.",
+                provider="ftp",
+                capability="file-transfer",
+                risk_level="write",
+                input_schema=_FTP_REMOTE_PATH_INPUT_SCHEMA,
+                output_schema=_FTP_FILE_DELETE_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "ftp",
+                    "operation": "file.delete",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "agent_guidance": (
+                        "Pass the exact remote file path selected by the user or agent. "
+                        "StackOS sends DELE without another FTP-specific confirmation or "
+                        "path gate; missing paths and permission failures remain provider "
+                        "errors."
+                    ),
+                    "docs": [
+                        "docs/integration-contracts/ftp.md",
+                        "https://www.rfc-editor.org/rfc/rfc959",
+                        "https://docs.python.org/3/library/ftplib.html#ftplib.FTP.delete",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="ftp.directory.create",
+                name="Create FTP Directory",
+                description="Create one exact agent-selected remote directory with FTP MKD.",
+                provider="ftp",
+                capability="file-transfer",
+                risk_level="write",
+                input_schema=_FTP_REMOTE_PATH_INPUT_SCHEMA,
+                output_schema=_FTP_DIRECTORY_CREATE_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "ftp",
+                    "operation": "directory.create",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "agent_guidance": (
+                        "Pass one exact remote directory path. This action sends one MKD; "
+                        "it does not silently create missing parents or convert an "
+                        "existing-path provider rejection into success."
+                    ),
+                    "docs": [
+                        "docs/integration-contracts/ftp.md",
+                        "https://www.rfc-editor.org/rfc/rfc959",
+                        "https://docs.python.org/3/library/ftplib.html#ftplib.FTP.mkd",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="ftp.directory.delete",
+                name="Delete FTP Directory",
+                description=(
+                    "Delete one exact remote directory, either with one RMD or with an "
+                    "agent-selected recursive post-order deletion."
+                ),
+                provider="ftp",
+                capability="file-transfer",
+                risk_level="write",
+                input_schema=_FTP_DIRECTORY_DELETE_INPUT_SCHEMA,
+                output_schema=_FTP_DIRECTORY_DELETE_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "ftp",
+                    "operation": "directory.delete",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "agent_guidance": (
+                        "Set recursive explicitly. False sends one RMD and lets the server "
+                        "reject non-empty directories. True plans the selected tree from "
+                        "machine-readable MLSx facts, deletes files and identified links "
+                        "with DELE, then removes directories post-order. Partial effects "
+                        "are returned if a later mutation fails."
+                    ),
+                    "docs": [
+                        "docs/integration-contracts/ftp.md",
+                        "https://www.rfc-editor.org/rfc/rfc959",
+                        "https://www.rfc-editor.org/rfc/rfc3659",
+                        "https://docs.python.org/3/library/ftplib.html#ftplib.FTP.rmd",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="ftp.path.rename",
+                name="Rename Or Move FTP Path",
+                description=(
+                    "Ask the FTP server to rename or move one exact remote file or "
+                    "directory path with RNFR followed by RNTO."
+                ),
+                provider="ftp",
+                capability="file-transfer",
+                risk_level="write",
+                input_schema=_FTP_RENAME_INPUT_SCHEMA,
+                output_schema=_FTP_RENAME_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "ftp",
+                    "operation": "path.rename",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "agent_guidance": (
+                        "Pass exact source and destination paths. StackOS does not "
+                        "pre-delete a destination, force replacement, create destination "
+                        "parents, or emulate rejected directory moves. Existing-target and "
+                        "directory support remain server-defined."
+                    ),
+                    "docs": [
+                        "docs/integration-contracts/ftp.md",
+                        "https://www.rfc-editor.org/rfc/rfc959",
+                        "https://docs.python.org/3/library/ftplib.html#ftplib.FTP.rename",
                     ],
                 },
             ),

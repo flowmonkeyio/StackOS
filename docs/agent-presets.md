@@ -31,6 +31,17 @@ technology stack, rules, documentation references, available MCP tools,
 workflow/run-plan model, tracker task/ticket conventions, verification
 commands, and release expectations.
 
+Adaptation starts with investigation, not invention. The agent identifies the
+nearest project rules, current architecture and flows, canonical owner, active
+consumers, reusable helpers and contracts, and established test boundaries.
+Project-native patterns are the default. A new abstraction needs a demonstrated
+gap, rejected project-native alternatives, a named canonical owner and
+consumers, and a migration or removal boundary. Specialist/subagents return
+evidence and recommendations; the main agent retains scope, integration, and
+architecture decisions. This keeps one source of truth with multiple consumers
+or adapters instead of parallel helpers, services, repositories, policies, or
+pass-through layers.
+
 Workflow infrastructure setup uses one deterministic materialization policy:
 
 - every required role must be materialized when the host supports local agents,
@@ -107,7 +118,8 @@ verification, review, and release. The workflows reference generic presets as
 required and recommended roles, but the workflow owns the flow.
 
 When an operator explicitly asks to use a workflow, engineering workflow,
-StackOS workflow, or "the workflow", agents must create or resolve the
+StackOS workflow, "the workflow", to follow the SDLC, for release-grade
+delivery, or equivalent lifecycle enforcement, agents must create or resolve the
 workflow-backed run plan before creating tracker tickets. All discovery, design,
 delivery, verification, and closeout tickets for that work belong under the
 workflow task/run plan from the start. Direct tracker tasks are valid only when
@@ -214,10 +226,11 @@ durable hints with `workspace.updateProfile` when they will help later agents.
 
 ## StackOS Skill And Skill Presets
 
-Workflow templates declare `skill_requirements`. The built-in workflows
-recommend `stackos:stackos`, the host-side skill that teaches an agent how to
-use StackOS MCP, operations, workflows, run plans, tracker tasks/tickets,
-dependencies, and evidence.
+Workflow templates declare `skill_requirements`. Requirements may be required,
+recommended, or optional according to the workflow. The tracked-delivery
+workflow requires `stackos:stackos`, the host-side skill that teaches an agent
+how to use StackOS MCP, operations, workflows, run plans, tracker
+tasks/tickets, dependencies, and evidence.
 
 Workflow templates declare `skill_preset_requirements` for reusable main-agent
 operating guidance that should be resolved and adapted like agent presets. A

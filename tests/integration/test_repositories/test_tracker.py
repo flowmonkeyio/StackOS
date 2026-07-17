@@ -23,6 +23,7 @@ from stackos.repositories.tracker.events import (
     TRACKER_TASK_STATUS_CHANGED,
     TRACKER_TICKET_STATUS_CHANGED,
 )
+from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
 
 def test_tracker_reads_do_not_create_default_tracker(session: Session, project_id: int) -> None:
@@ -719,6 +720,119 @@ def test_tracker_graph_allows_post_delivery_review_dependencies(
 
     assert snapshot.graph is not None
     assert snapshot.graph.warnings == []
+
+
+def test_workflow_parent_dependency_activates_child_while_step_is_running(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-activation.run",
+            "title": "Workflow Activation",
+            "steps": [{"id": "deliver", "title": "Deliver"}],
+        },
+        created_by="codex",
+    ).data
+    started = run_plans.start(plan.id, project_id=project_id).data
+    run_plans.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="deliver",
+        claimed_by="codex",
+    )
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).one()
+    parent_key = workflow_step_ticket_key(plan.id, "deliver")
+    tracker = TrackerRepository(session)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent_key,
+        key="workflow-activated-child",
+        title="Activated child",
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        dependency_keys=[parent_key],
+        created_by="codex",
+    )
+
+    child_row = session.exec(
+        select(TrackerTicket).where(TrackerTicket.key == "workflow-activated-child")
+    ).one()
+    dependency = session.exec(
+        select(TrackerTicketDependency).where(TrackerTicketDependency.ticket_id == child_row.id)
+    ).one()
+    next_work = tracker.next(project_id=project_id)
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+
+    assert dependency.dependency_type == "activates"
+    assert [ticket.key for ticket in next_work.tickets] == ["workflow-activated-child"]
+    child = next(ticket for ticket in snapshot.tickets if ticket.key == "workflow-activated-child")
+    assert child.blocked_by == []
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == []
+
+
+def test_tracker_terminal_semantics_reject_failure_deferral_and_warn_on_drift(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="terminal-semantics",
+        title="Terminal semantics",
+        created_by="codex",
+    )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="terminal-semantics",
+        key="attempted-failure",
+        title="Attempted failure",
+        created_by="codex",
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="attempted-failure",
+        patch_json={"status": "failed", "outcome": "The attempted check failed."},
+        actor="codex",
+    )
+
+    with pytest.raises(ConflictError):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="attempted-failure",
+            patch_json={"status": "deferred", "blocker_reason": "Try later."},
+            actor="codex",
+        )
+
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="terminal-semantics",
+        key="missing-resume-condition",
+        title="Missing resume condition",
+        status=TrackerItemStatus.DEFERRED,
+        created_by="codex",
+    )
+    task = session.exec(select(TrackerTask).where(TrackerTask.key == "terminal-semantics")).one()
+    task.status = TrackerItemStatus.IN_PROGRESS
+    session.add(task)
+    session.commit()
+
+    snapshot = repo.get(project_id=project_id, task_key="terminal-semantics")
+
+    assert snapshot.graph is not None
+    assert any(
+        "is in-progress but all child tickets are terminal" in warning
+        for warning in snapshot.graph.warnings
+    )
+    assert any(
+        "missing-resume-condition is deferred without a named resume condition" in warning
+        for warning in snapshot.graph.warnings
+    )
 
 
 def test_tracker_status_ignores_terminal_blocker_notes(

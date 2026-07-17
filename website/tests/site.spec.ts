@@ -80,6 +80,7 @@ test('unknown routes return a branded, useful, and accessible 404 page', async (
 
   const htaccess = await readFile(new URL('../public/.htaccess', import.meta.url), 'utf8')
   expect(htaccess).toContain('ErrorDocument 404 /404.html')
+  expect(htaccess).toContain('AddType application/x-apple-diskimage .dmg')
 
   await page.getByRole('link', { name: 'Go to StackOS home' }).click()
   await expect(page).toHaveURL(/\/$/)

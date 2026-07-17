@@ -310,7 +310,6 @@ TRACKER_ITEM_STATUS_TRANSITIONS: dict[TrackerItemStatus, frozenset[TrackerItemSt
         {
             TrackerItemStatus.IN_PROGRESS,
             TrackerItemStatus.ABORTED,
-            TrackerItemStatus.DEFERRED,
         }
     ),
     TrackerItemStatus.SKIPPED: frozenset(

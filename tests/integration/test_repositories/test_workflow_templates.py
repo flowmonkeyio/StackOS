@@ -504,7 +504,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert all(not step.approval_refs for step in engineering_described.spec.steps)
     assert engineering_described.spec.metadata_json["workflow_family"] == "sdlc"
     assert engineering_described.spec.metadata_json["workflow_selection_invariant"] == (
-        "explicit_workflow_intent_requires_run_plan_before_tracker_tickets"
+        "lifecycle_intent_requires_run_plan_before_tracker_tickets"
     )
     assert engineering_described.spec.metadata_json["feedback_gatekeeper"] == "main_orchestrator"
     engineering_text = engineering_described.spec.model_dump_json()
@@ -529,7 +529,7 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "pass run_plan_id and step_id at creation time" in plan_text
     assert "one root" in plan_text
     assert "tracker.updateTicket" in plan_text
-    assert "bridge child tickets" in plan_text
+    assert "activates edge" in plan_text
     assert "detached branches" in plan_text
     test_design_step = next(
         step for step in engineering_described.spec.steps if step.id == "design-tests"
@@ -1055,7 +1055,7 @@ def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
         plugin_slug="seo",
     )
     spec = described.spec
-    assert spec.version == "0.2.0"
+    assert spec.version == "0.3.0"
 
     assert [step.id for step in spec.steps] == [
         "scope-audit",
@@ -1088,6 +1088,8 @@ def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
     assert {
         "public_baseline_always_available",
         "use_ready_relevant_sources",
+        "canonical_evidence_index",
+        "canonical_reviewed_findings",
         "evidence_classification",
         "no_invented_measurements",
         "reconcile_provider_semantics",
@@ -1099,6 +1101,7 @@ def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
     assert "website-seo-analysis" in resources
     outputs = {item.key: item for item in spec.outputs}
     finding_schema = outputs["seo_findings"].schema_data
+    assert outputs["draft_findings"].schema_data == finding_schema
     finding_required = set(finding_schema["items"]["required"])
     assert {
         "type",
@@ -1112,32 +1115,53 @@ def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
         "validation_path",
     } <= finding_required
 
-    public_map_schema = outputs["public_site_map"].schema_data
-    public_url_required = set(public_map_schema["properties"]["observed_urls"]["items"]["required"])
+    review_schema = outputs["review_summary"].schema_data
     assert {
-        "url",
-        "discovery_sources",
-        "template_type",
-        "response_state",
-        "indexability_state",
-        "canonical_state",
-        "evidence_refs",
-    } <= public_url_required
+        "reviewer_role",
+        "reviewed_at",
+        "dispositions",
+        "unresolved_evidence_gaps",
+        "residual_limitations",
+    } <= set(review_schema["required"])
+    disposition_schema = review_schema["properties"]["dispositions"]["items"]
+    assert set(disposition_schema["properties"]["disposition"]["enum"]) == {
+        "accepted",
+        "revised",
+        "rejected",
+    }
+
+    public_map_schema = outputs["public_site_map"].schema_data
+    assert "observed_urls" not in public_map_schema["properties"]
     assert (
         public_map_schema["properties"]["representative_templates"]["items"]["additionalProperties"]
         is False
     )
 
     inventory_schema = outputs["site_inventory"].schema_data
-    assert "url_rows" in inventory_schema["required"]
+    assert "representative_url_rows" in inventory_schema["required"]
+    assert "url_rows" not in inventory_schema["properties"]
     assert (
         inventory_schema["properties"]["template_types"]["items"]["additionalProperties"] is False
     )
-    assert inventory_schema["properties"]["url_sets"]["additionalProperties"] == {
-        "type": "array",
-        "items": {"type": "string"},
+    assert inventory_schema["properties"]["url_set_counts"]["additionalProperties"] == {
+        "type": "integer",
+        "minimum": 0,
     }
     assert inventory_schema["properties"]["reconciliation"]["additionalProperties"] is False
+
+    evidence_schema = outputs["evidence_index"].schema_data
+    evidence_item = evidence_schema["items"]
+    assert {
+        "evidence_ref",
+        "kind",
+        "source",
+        "captured_at",
+        "lifecycle_state",
+        "scope",
+        "receipt_ref",
+        "limitations",
+    } <= set(evidence_item["required"])
+    assert "response_file_refs" not in outputs["source_ledger"].schema_data["items"]["properties"]
 
     seo_plugin = next(item for item in BUILTIN_PLUGIN_MANIFESTS if item.slug == "seo")
     analysis_resource = next(
@@ -1146,15 +1170,24 @@ def test_website_seo_analysis_has_public_fallback_and_evidence_contract(
     resource_properties = analysis_resource["properties"]
     for output_key, resource_key in (
         ("source_ledger", "source_ledger"),
+        ("evidence_index", "evidence_index"),
+        ("review_summary", "review_summary"),
         ("executive_summary", "executive_summary"),
         ("prioritized_roadmap", "prioritized_actions"),
     ):
         assert outputs[output_key].schema_data == resource_properties[resource_key]
-    assert (
-        resource_properties["raw_provider_data_refs"]
-        == outputs["raw_provider_data_refs"].schema_data
-    )
-    assert "raw_provider_data_refs" in analysis_resource["required"]
+    assert "raw_provider_data_refs" not in resource_properties
+    assert "evidence_index" in analysis_resource["required"]
+    assert "review_summary" in analysis_resource["required"]
+    assert analysis_resource["properties"]["status"]["enum"] == ["complete", "partial"]
+    assert analysis_resource["properties"]["artifact_refs"]["required"] == ["final_report"]
+    complete_rule = analysis_resource["allOf"][0]
+    assert complete_rule["if"]["properties"]["status"] == {"const": "complete"}
+    assert complete_rule["then"]["properties"]["artifact_refs"]["required"] == [
+        "final_report",
+        "site_inventory",
+        "finding_register",
+    ]
 
     run_plan = run_plan_from_template(
         described,

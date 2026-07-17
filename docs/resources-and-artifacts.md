@@ -13,7 +13,9 @@ A resource is a plugin-declared schema, such as `core.learning`,
 Resource schemas live in plugin manifests and are synced into the catalog. They
 are not workflow logic. They describe record shape so generic UI, agents, and
 validators can render and retrieve data without every plugin needing custom
-screens.
+screens. `resource.upsert` validates the redacted `data_json` against the
+declared JSON Schema before persistence and returns bounded issue paths when
+the payload is invalid.
 
 Project records live in `resource_records`:
 
@@ -39,6 +41,16 @@ MCP write tool:
 
 Writes are granted through run plans/tool grants. They are not global
 agent powers.
+
+`engineering.engineering-evidence` uses the versioned
+`stackos.engineering-evidence.v2` contract. Authored records capture reviews,
+decisions, limitations, and other non-executed claims without inventing a test
+receipt. Executed records always include an execution receipt and counts;
+repository-bound execution additionally includes the exact repository
+fingerprint. `scope.covered_paths` is the canonical path scope. Pre-v2 records
+are historical context, and records whose covered state changes become
+`invalidated`, `superseded`, or `historical`; they must not be presented as
+current proof.
 
 ## Artifacts
 

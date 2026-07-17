@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
-    version: 0.2.0
+    version: 0.3.0
     description: Generic main-agent SDLC delivery orchestration preset for project-adapted flow design, planning, tracker/run-plan coordination, reviewer selection, E2E/manual verification matrices, evidence gates, and truthful closeout.
     domain: engineering
     skill_type: main-agent-orchestration
@@ -25,7 +25,7 @@ presets:
     project_adaptation:
       required: true
       do_not_use_verbatim: true
-      instruction: Adapt this generic SDLC delivery loop to the active project before acting. Preserve the lifecycle gates, but rewrite project rules, local docs, tools, test stack, reviewer needs, deployment rules, and signoff expectations from project context.
+      instruction: Adapt this generic SDLC delivery loop to the active project before acting. Investigate the nearest project rules, current architecture and flows, canonical owners, active consumers, reusable contracts/helpers, test boundaries, and signoff expectations before making delivery decisions.
       required_context_refs:
         - ref: AGENTS.md
           purpose: Project rules, command prefixes, allowed tools, local constraints, and worktree hygiene.
@@ -65,10 +65,13 @@ presets:
         choose micro, standard, high-risk, or blocked delivery depth, select
         the smallest convincing proof, and name skipped ceremony. Choose direct
         tracker versus workflow-backed delivery from operator intent and
-        project policy. Read project guidance, inspect existing StackOS
-        task/run-plan state, map changed user/data/system/business flows to
-        verification, and keep the
-        main agent accountable for integration and final claims. Use specialist
+        project policy. Treat requests to use a workflow, engineering workflow,
+        StackOS workflow, "the workflow", follow the SDLC, deliver release-grade
+        work, or equivalent lifecycle language as workflow-backed intent. Read
+        project guidance, inspect existing StackOS task/run-plan state, establish
+        the canonical owner and existing pattern, map changed
+        user/data/system/business flows to verification, and keep the main agent
+        accountable for integration and final claims. Use specialist
         agents or reviewers for depth when risk warrants it, but do not
         delegate away final accountability.
     operating_contract:
@@ -79,6 +82,9 @@ presets:
         - Decide whether work belongs in direct tracker tasks or a workflow-backed run plan.
         - Keep StackOS task, ticket, and run-plan state canonical and avoid duplicate delivery truth.
         - Read project guidance, scoped rules, workflow extensions, local skills, local agent setup, and signoff docs before planning.
+        - Establish the current canonical owner, project pattern, writers, readers, active consumers, shared contracts/helpers, and established test boundary before approving architecture or implementation.
+        - Prefer extending the project-native owner. Require a demonstrated gap, rejected project-native alternatives, named owner and consumers, and migration/removal implications before accepting a new abstraction.
+        - Keep one source of truth with multiple consumers or adapters; reject pass-through aliases, copied logic, duplicate helpers/types, and parallel repositories/services/policies unless a documented compatibility obligation requires them.
         - Map user flow, data flow, permissions, scope, business risk, runtime, migration, UI, and deployment blast radius when relevant.
         - Ensure non-micro work has an explicit flow design covering user, data, system, and business flows, including before/change/now/why context for changed flows.
         - Select specialist agents or reviewers only when changed-surface risk requires their depth.
@@ -88,7 +94,7 @@ presets:
         - Choose proof depth by reasoning from quality, production risk, and user/business impact rather than speed.
         - Verify or explicitly waive the test design before implementation begins.
         - Merge, shorten, or skip SDLC phases when the thread already contains enough evidence and the risk profile is low, while recording the reason.
-        - Dependency-bridge workflow-backed tickets into the workflow spine.
+        - Use an activates edge from an active workflow-step mirror to its first executable child; use blocks edges only for prerequisites that must complete, including terminal-child handoff to the next workflow step.
         - Maintain a changed-surface verification matrix.
         - Ensure changed or at-risk flows have E2E/manual or automated coverage that the agent executes before signoff unless the gate is explicitly operator-owned or waived.
         - Before final closeout, require or waive independent verification checks for one-brain ownership, cleanup/dead-code risk, architecture/contracts, and business/user/data/system flow regressions.
@@ -107,6 +113,8 @@ presets:
         - Use the smallest convincing proof for the actual changed surface.
         - For micro changes such as wording, docs, metadata, or preset guidance, prefer load/parse/resolve checks over broad test suites unless the change affects generated contracts, parsers, runtime behavior, or release-critical surfaces.
         - Keep the main agent accountable for integration and final decisions.
+        - When the operator asks to use a workflow, engineering workflow, StackOS workflow, "the workflow", follow the SDLC, deliver release-grade work, or uses equivalent lifecycle language, create or resolve the workflow-backed run plan before tracker tasks or tickets.
+        - For workflow-backed child work, treat run-plan attachment as containment only; add activates and blocks edges according to the real readiness relationship and inspect the resulting graph before handoff.
         - Defer or reject feedback that does not protect the agreed deliverable; ask the operator before materially expanding the outcome.
         - Before delivery starts, confirm the test design maps each accepted requirement to automated proof or a risk-appropriate manual proof path with steps, expected outcomes, and evidence.
         - Confirm the test design maps each changed or at-risk flow to automated, E2E, or manual proof, and that agent-executed E2E/manual scenarios are closeout-blocking unless explicitly waived.
@@ -133,6 +141,7 @@ presets:
         - Do not mark work complete because one broad check passed.
         - Do not close non-micro work without flow design, E2E/manual flow proof, and independent verification unless each missing gate is explicitly waived.
         - Do not treat workflow step attachment as dependency order.
+        - Do not invent a convention, abstraction, helper, schema, layer, or parallel owner when the current project architecture can own the behavior cleanly.
         - Do not treat progress report fields as exact text to copy; preserve structure while writing useful TLDR content.
         - Do not hide skipped checks or user-prohibited checks.
         - Do not make release operations a mandatory separate role unless a project explicitly opts into one.
@@ -271,16 +280,16 @@ presets:
           fields:
             - "Outcome: <one sentence>"
             - "Calibration: <micro/standard/high-risk/blocked and why>"
-            - "One-brain architecture: ✅/❌"
-            - "Pattern adherence: ✅/❌"
-            - "Over-engineering check: ✅/❌"
-            - "Self-verification: ✅/❌ <checks>"
-            - "Architecture signoff: ✅/❌ <reviewer or reason>"
-            - "Business logic signoff: ✅/❌ <evidence or reason>"
-            - "Flow regression proof: ✅/❌ <before/change/now/why and E2E/manual evidence>"
-            - "Docs updated: ✅/❌"
-            - "Targeted E2E/manual: ✅/❌/not applicable"
-            - "Unit/integration tests: ✅/❌/not applicable"
+            - "One-brain ownership: <disposition and canonical-owner evidence refs>"
+            - "Pattern adherence: <disposition and project-rule/code-path evidence refs>"
+            - "Over-engineering review: <disposition and finding refs or reason not applicable>"
+            - "Self-verification: <status, exact checks, and evidence refs>"
+            - "Architecture signoff: <disposition, reviewer/evidence refs, or reason not applicable>"
+            - "Business logic signoff: <disposition and evidence refs or reason not applicable>"
+            - "Flow regression proof: <disposition, before/change/now/why, and E2E/manual evidence refs>"
+            - "Docs: <changed refs or reason not applicable>"
+            - "Targeted E2E/manual: <status, scenario refs, or reason not applicable>"
+            - "Unit/integration tests: <status, commands/run refs, or reason not applicable>"
             - "Residual risk: <short list or none>"
           style:
             max_bullets: 12

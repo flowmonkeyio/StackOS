@@ -43,7 +43,9 @@ def test_generic_workflow_orchestrator_keeps_the_normal_loop_small() -> None:
     ).lower()
 
     assert loaded.preset.metadata_json["boundary"]["not_a_subagent"] is True
-    assert len(loaded.preset.applies_to_workflows) == 20
+    assert loaded.preset.version == "0.1.1"
+    assert len(loaded.preset.applies_to_workflows) == 21
+    assert "seo.website-analysis" in loaded.preset.applies_to_workflows
     assert "structural, context, provider-route, and execution readiness" in text
     assert "prefer one ready provider route" in text
     assert "stop at a documented prepare-only or recommendation boundary" in text
@@ -67,6 +69,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
         ]
     ).lower()
 
+    assert loaded.preset.version == "0.3.0"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "delivery ledger" in contract_text
@@ -90,6 +93,11 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert "tracker" in contract_text
     assert "project" in action
     assert "calibrate the work" in action
+    assert "release-grade" in action
+    assert "canonical owner" in action
+    assert "activates edge" in contract_text
+    assert "blocks edges" in contract_text
+    assert "pass-through aliases" in contract_text
     assert "subagent role" in contract_text
     assert "ticket start report" in contract_text
     assert "ticket end report" in contract_text
@@ -128,7 +136,11 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert (
         "Calibration: <micro/standard/high-risk/blocked and why>" in reporting["task_end"]["fields"]
     )
-    assert "One-brain architecture: ✅/❌" in reporting["task_end"]["fields"]
+    assert any(
+        field.startswith("One-brain ownership: <disposition and")
+        for field in reporting["task_end"]["fields"]
+    )
+    assert all("✅/❌" not in field for field in reporting["task_end"]["fields"])
     assert reporting["task_end"]["style"]["no_long_paragraphs"] is True
     assert "do not restate every mechanical step" in reporting["task_end"]["content_rule"]
 

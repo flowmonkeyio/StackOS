@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy import select as sa_select
@@ -66,6 +68,38 @@ def _required_id(value: int | None) -> int:
     if value is None:
         raise RuntimeError("expected persisted row id")
     return int(value)
+
+
+def _resource_schema_error_paths(error: Any) -> list[str]:
+    path = "$"
+    for part in error.absolute_path:
+        path += f"[{part}]" if isinstance(part, int) else f".{part}"
+    if (
+        error.validator == "required"
+        and isinstance(error.instance, dict)
+        and isinstance(error.validator_value, list)
+    ):
+        missing = [
+            key
+            for key in error.validator_value
+            if isinstance(key, str) and key not in error.instance
+        ]
+        if missing:
+            return [f"{path}.{key}" for key in missing]
+    return [path]
+
+
+def _resource_schema_error_message(error: Any) -> str:
+    validator = str(error.validator or "schema")
+    if validator == "required":
+        return "required field is missing"
+    if validator == "type":
+        return f"expected type {error.validator_value!r}"
+    if validator == "enum":
+        return "value is not one of the allowed enum values"
+    if validator == "const":
+        return "value does not match the required constant"
+    return f"value does not satisfy {validator}"
 
 
 class ResourceOut(BaseModel):
@@ -269,6 +303,7 @@ class ResourceRepository:
         now = _utcnow()
         clean_data = redact_secrets(data_json)
         clean_provenance = redact_secrets(provenance_json) if provenance_json is not None else None
+        self._validate_resource_data(resource=resource, plugin=plugin, data_json=clean_data)
         if row is None:
             row = ResourceRecord(
                 project_id=project_id,
@@ -290,6 +325,58 @@ class ResourceRepository:
         return Envelope(
             data=self._record_out(row, resource, plugin),
             project_id=project_id,
+        )
+
+    def _validate_resource_data(
+        self,
+        *,
+        resource: Resource,
+        plugin: Plugin,
+        data_json: dict[str, Any],
+    ) -> None:
+        schema = resource.schema_data or {}
+        if not schema:
+            return
+        try:
+            Draft202012Validator.check_schema(schema)
+        except SchemaError as exc:
+            raise ValidationError(
+                "resource schema is invalid",
+                data={
+                    "plugin_slug": plugin.slug,
+                    "resource_key": resource.key,
+                    "next_operations": ["plugin validation", "resource.get"],
+                },
+            ) from exc
+        validator = Draft202012Validator(schema)
+        errors = sorted(
+            validator.iter_errors(data_json),
+            key=lambda item: (_resource_schema_error_paths(item)[0], str(item.validator)),
+        )
+        if not errors:
+            return
+        issues: list[dict[str, str]] = []
+        for error in errors:
+            for path in _resource_schema_error_paths(error):
+                issues.append(
+                    {
+                        "path": path,
+                        "code": f"schema_{error.validator or 'validation'}",
+                        "message": _resource_schema_error_message(error),
+                    }
+                )
+                if len(issues) >= 20:
+                    break
+            if len(issues) >= 20:
+                break
+        raise ValidationError(
+            "resource data does not satisfy its declared schema",
+            data={
+                "plugin_slug": plugin.slug,
+                "resource_key": resource.key,
+                "issues": issues,
+                "next_operations": ["resource.get"],
+            },
         )
 
     def _find_record(

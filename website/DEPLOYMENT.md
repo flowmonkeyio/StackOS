@@ -55,8 +55,9 @@ Confirm that `index.html`, `.htaccess`, `getting-started`,
 `getting-started.md`, `_nuxt`, `library`, `robots.txt`, and `sitemap.xml` are
 directly inside the remote document root. Some FTP clients hide dotfiles;
 explicitly include `.htaccess` because it gives the Markdown guide its content
-type, `noindex` directive, and canonical response header. It also routes missing
-paths to the generated branded `404.html` while preserving the HTTP 404 status.
+type, `noindex` directive, and canonical response header, and serves desktop
+DMGs with the macOS disk-image media type. It also routes missing paths to the
+generated branded `404.html` while preserving the HTTP 404 status.
 
 After replacing an existing release, open Hostinger hPanel → Cache Manager and
 use **Purge All**. If Hostinger CDN is enabled, flush its cache too. Use the
@@ -142,6 +143,8 @@ After deployment, verify:
 - `/robots.txt`
 - `/sitemap.xml`
 - `/feed.xml`
+- `/StackOS/stackos-latest-mac-arm64.dmg` returns
+  `application/x-apple-diskimage`
 - a nonexistent URL returns HTTP 404 and displays `404.html`
 - page source contains the production canonical URL
 - HTTPS is enabled and forced

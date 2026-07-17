@@ -92,6 +92,10 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     assert workflow_refs == expected_refs
 
     config = tomllib.loads((REPO_ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
+    assert config["features"]["code_mode"] == {
+        "enabled": False,
+        "direct_only_tool_namespaces": ["mcp__stackos"],
+    }
     assert set(config["agents"]) == (
         set(LOCAL_CODEX_AGENT_PRESETS) | set(LOCAL_CODEX_BRANDING_AGENT_PRESETS)
     )
@@ -101,7 +105,7 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
         local_path = REPO_ROOT / ".codex" / config_file
         local_text = local_path.read_text(encoding="utf-8")
 
-        assert f"Source preset: {preset_ref} v0.1.0" in local_text
+        assert f"Source preset: {preset_ref} v0.2.0" in local_text
         assert "Workflow: engineering.tracked-delivery" in local_text
         assert "Keep aligned with plugins/engineering/agent-presets/sdlc.yaml." in local_text
         tomllib.loads(local_text)
@@ -131,7 +135,7 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     assert "planned persistent `profile_key`" in reviewer_text
     assert "include_graph=true" in planning_text
     assert "detached branches" in planning_text
-    assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.2.0" in (orchestrator_text)
+    assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.3.0" in (orchestrator_text)
     assert "not a subagent" in orchestrator_text
     assert "Quality beats speed" in orchestrator_text
     assert "StackOS browser `profile_key`" in orchestrator_text
@@ -142,6 +146,10 @@ def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
     assert "Every non-micro delivery needs an explicit flow design" in orchestrator_text
     assert "E2E/manual flow scenarios are agent-executed" in orchestrator_text
     assert "one-brain ownership" in orchestrator_text
+    assert "Project-Native Architecture And One Brain" in orchestrator_text
+    assert "Specialists and subagents investigate and recommend" in orchestrator_text
+    assert "pass-through" in orchestrator_text
+    assert "parallel repositories/services/policies" in orchestrator_text
 
 
 def test_codex_local_branding_agents_track_branding_presets() -> None:
@@ -235,6 +243,19 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert by_key["stackos.workflow.workflow-author"].plugin_slug == "core"
     assert by_key["branding.claim-auditor"].plugin_slug == "branding"
     assert by_key["seo.workflow.website-analysis"].plugin_slug == "seo"
+    assert by_key["seo.workflow.website-analysis"].version == "0.2.0"
+
+    website_preset = AgentPresetLoader().describe_preset(key="seo.workflow.website-analysis").preset
+    website_text = " ".join(
+        [
+            *website_preset.prompt_contract.responsibilities,
+            *website_preset.prompt_contract.must_do,
+            *website_preset.prompt_contract.must_not_do,
+        ]
+    ).lower()
+    assert "one canonical register" in website_text
+    assert "temporary provider response-file paths" in website_text
+    assert "external retrieval providers" in website_text
 
 
 def test_bundled_agent_presets_explicitly_classify_role_execution_style() -> None:
@@ -275,6 +296,48 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     assert "canonical workflow-backed task/run plan" in contract_text.lower()
     assert "pass run_plan_id and step_id together" in contract_text.lower()
     assert "never retry tracker.createticket with only one" in contract_text.lower()
+    assert "canonical owner" in shared_action
+    assert "do not invent" in shared_action
+    assert "specialist or subagent" in shared_action
+
+
+def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None:
+    loader = AgentPresetLoader()
+    architecture = loader.describe_preset(key="stackos.sdlc.architecture").preset
+    explorer = loader.describe_preset(key="stackos.sdlc.codebase-explorer").preset
+    delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
+    reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
+
+    assert architecture.version == "0.2.0"
+    architecture_text = " ".join(
+        [
+            *architecture.prompt_contract.responsibilities,
+            *architecture.prompt_contract.must_do,
+            *architecture.prompt_contract.must_not_do,
+        ]
+    ).lower()
+    explorer_text = " ".join(
+        [*explorer.prompt_contract.responsibilities, *explorer.prompt_contract.must_do]
+    ).lower()
+    delivery_text = " ".join(
+        [*delivery.prompt_contract.must_do, *delivery.prompt_contract.must_not_do]
+    ).lower()
+    reviewer_text = " ".join(
+        [
+            *reviewer.prompt_contract.responsibilities,
+            *reviewer.prompt_contract.must_do,
+            *reviewer.prompt_contract.must_not_do,
+        ]
+    ).lower()
+
+    assert "current canonical owner" in architecture_text
+    assert "one source of truth" in architecture_text
+    assert "pass-through aliases" in architecture_text
+    assert "active consumers" in explorer_text
+    assert "producer or writer" in delivery_text
+    assert "do not copy logic" in delivery_text
+    assert "actual imports, call paths, writers, readers, and consumers" in reviewer_text
+    assert "only when evidence indicates" in reviewer_text
 
     test_designer = AgentPresetLoader().describe_preset(key="stackos.sdlc.test-designer")
     test_designer_text = " ".join(

@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.2.0
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.3.0
 Workflow: `engineering.tracked-delivery`
 
 This is project-local main-agent guidance for Codex when orchestrating StackOS
@@ -12,7 +12,8 @@ final user-facing claims.
 ## Use
 
 Use this guide when the user invokes engineering delivery, asks for the
-engineering workflow, or asks to set up/use the local SDLC agents. Resolve the
+engineering workflow, asks to follow the SDLC or for release-grade delivery,
+or asks to set up/use the local SDLC agents. Resolve the
 workflow with StackOS when executing durable work, and adapt the current run to
 the active project context, dirty worktree, user constraints, and release risk.
 
@@ -63,6 +64,25 @@ The agreed plan is the delivery contract. The main orchestrator is the sole gate
 
 Reviewers and audits provide signal, not backlog authority.
 
+## Project-Native Architecture And One Brain
+
+Before design or implementation, investigate the nearest project rules,
+current architecture and flows, canonical owner, writers, readers, active
+consumers, shared helpers/contracts, and established test boundary. Evidence
+from the current project outranks generic agent assumptions.
+
+Prefer extending the canonical owner and existing project pattern. Keep one
+source of truth with multiple consumers or adapters. A new abstraction needs a
+demonstrated gap, rejected project-native alternatives, a named owner and
+consumers, and migration/removal implications. Do not accept pass-through
+aliases, duplicated helpers/types, parallel repositories/services/policies, or
+defensive reader workarounds when the producer can own the root fix.
+
+Specialists and subagents investigate and recommend. They do not broaden scope,
+invent project architecture, or make the final integration decision; the main
+agent adjudicates their claims against the project evidence and delivery
+contract.
+
 ## Flow Design
 
 Every non-micro delivery needs an explicit flow design before implementation.
@@ -82,7 +102,8 @@ The flow design must cover the relevant:
 ## Workflow Truth
 
 - If the operator explicitly asks to use a workflow, engineering workflow,
-  StackOS workflow, or "the workflow", create or resolve the workflow-backed
+  StackOS workflow, "the workflow", to follow the SDLC, for release-grade
+  delivery, or equivalent lifecycle enforcement, create or resolve the workflow-backed
   run plan before creating tracker tickets.
 - Keep StackOS tasks, tickets, and run plans as the durable delivery state.
 - For workflow-backed child tickets, use tracker operations for child-ticket

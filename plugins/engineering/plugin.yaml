@@ -1,6 +1,6 @@
 slug: engineering
 name: Engineering
-version: 0.1.0
+version: 0.2.0
 description: First-party StackOS domain package for SDLC workflow templates, engineering task state, and reusable delivery agent presets.
 display_order: 10
 source: builtin
@@ -91,19 +91,25 @@ resources:
       agent_guidance: Record durable decisions only when they affect future engineering delivery, review, or release work.
   - key: engineering-evidence
     name: Engineering Evidence
-    description: Verification evidence, manual review notes, or signoff evidence for engineering work.
+    description: Versioned authored or executed engineering evidence with explicit lifecycle and conditional repository binding.
     schema:
       type: object
-      additionalProperties: false
       required:
+        - schema_version
         - title
         - evidence_type
+        - evidence_mode
         - summary
         - status
+        - lifecycle_state
+        - scope
+        - checked_at
       properties:
+        schema_version:
+          const: stackos.engineering-evidence.v2
         title:
           type: string
-          description: Short evidence title.
+          minLength: 1
         evidence_type:
           type: string
           enum:
@@ -111,62 +117,177 @@ resources:
             - browser-review
             - manual-review
             - command-output
+            - design-review
+            - tracker-audit
             - release-signoff
             - limitation
+        evidence_mode:
+          type: string
+          enum: [authored, executed]
+        repository_bound:
+          type: boolean
+          description: Whether the executed proof is tied to a repository fingerprint.
         summary:
           type: string
-          description: What was verified or what limitation remains.
+          minLength: 1
         status:
           type: string
-          enum:
-            - passed
-            - failed
-            - blocked
-            - informational
-        ticket_keys:
-          type: array
-          items:
-            type: string
-        task_key:
+          enum: [passed, failed, blocked, waived, informational]
+        lifecycle_state:
           type: string
-        run_plan_id:
-          type: integer
-        command:
-          type: string
-        result:
-          type: string
-        reviewer:
-          type: string
+          enum: [current, invalidated, superseded, blocked, waived, historical]
+        repository_state:
+          type: object
+          required:
+            - head_commit
+            - staged_diff_checksum
+            - unstaged_diff_checksum
+            - untracked_manifest_checksum
+            - migration_head
+            - generated_contract_revision
+            - captured_at
+          properties:
+            head_commit:
+              type: string
+              pattern: "^[0-9a-fA-F]{40,64}$"
+            staged_diff_checksum:
+              type: string
+              pattern: "^sha256:[0-9a-fA-F]{64}$"
+            unstaged_diff_checksum:
+              type: string
+              pattern: "^sha256:[0-9a-fA-F]{64}$"
+            untracked_manifest_checksum:
+              type: string
+              pattern: "^sha256:[0-9a-fA-F]{64}$"
+            migration_head:
+              type: [string, "null"]
+            generated_contract_revision:
+              type: [string, "null"]
+            captured_at:
+              type: string
+              format: date-time
+        execution:
+          type: object
+          required:
+            - status
+            - command_or_run_ref
+            - pass_count
+            - fail_count
+            - skipped_count
+            - output_checksum
+            - executed_at
+          properties:
+            status:
+              const: executed
+            command_or_run_ref:
+              type: string
+              minLength: 1
+            pass_count: {type: integer, minimum: 0}
+            fail_count: {type: integer, minimum: 0}
+            skipped_count: {type: integer, minimum: 0}
+            output_checksum:
+              type: string
+              pattern: "^sha256:[0-9a-fA-F]{64}$"
+            executed_at:
+              type: string
+              format: date-time
+        scope:
+          type: object
+          required: [covered_paths, flow_refs, ticket_keys]
+          properties:
+            covered_paths:
+              type: array
+              items: {type: string}
+            flow_refs:
+              type: array
+              items: {type: string}
+            ticket_keys:
+              type: array
+              items: {type: string}
+            run_plan_id:
+              type: integer
+              minimum: 1
+        author: {type: string}
+        superseded_by: {type: string, minLength: 1}
+        invalidated_reason: {type: string, minLength: 1}
+        waiver_reason: {type: string, minLength: 1}
         checked_at:
           type: string
           format: date-time
+      allOf:
+        - if:
+            properties:
+              evidence_mode: {const: executed}
+            required: [evidence_mode]
+          then:
+            required: [repository_bound, execution]
+        - if:
+            properties:
+              repository_bound: {const: true}
+            required: [repository_bound]
+          then:
+            required: [repository_state]
+        - if:
+            properties:
+              status: {const: passed}
+            required: [status]
+          then:
+            properties:
+              evidence_mode: {const: executed}
+              execution:
+                properties:
+                  fail_count: {const: 0}
+            required: [execution]
+        - if:
+            properties:
+              lifecycle_state: {const: superseded}
+            required: [lifecycle_state]
+          then:
+            required: [superseded_by]
+        - if:
+            properties:
+              lifecycle_state: {const: invalidated}
+            required: [lifecycle_state]
+          then:
+            required: [invalidated_reason]
+        - if:
+            properties:
+              lifecycle_state: {const: waived}
+            required: [lifecycle_state]
+          then:
+            required: [waiver_reason]
     ui_schema:
       table_columns:
         - title
         - evidence_type
+        - evidence_mode
         - status
+        - lifecycle_state
         - checked_at
       summary_fields:
         - summary
-        - result
       detail_sections:
         - title: Evidence
           fields:
+            - schema_version
             - title
             - evidence_type
+            - evidence_mode
             - status
+            - lifecycle_state
             - summary
-            - result
+            - execution
         - title: Traceability
           fields:
-            - task_key
-            - ticket_keys
-            - run_plan_id
-            - command
+            - repository_state
+            - scope
+            - superseded_by
+            - invalidated_reason
+            - waiver_reason
     config:
-      schema_version: stackos.resource.v1
+      schema_version: stackos.engineering-evidence.v2
       record_kind: engineering-evidence
-      agent_guidance: Store only verification evidence or explicit limitations that future agents can use for signoff decisions.
+      agent_guidance: Use authored mode for decisions, reviews, limitations, and other claims. Executed mode always needs a receipt; set repository_bound true and include repository_state only when the proof covers a repository candidate. scope.covered_paths is the canonical path owner. Treat pre-v2 records as historical context and invalidate or supersede stale proof.
 ui:
   nav:
     section: Engineering

@@ -4,10 +4,10 @@
 
 - Moved the public macOS download and updater feed to
   `https://stackos.flowmonkey.io/StackOS/`; future packaged releases use that
-  endpoint while the legacy main-domain feed remains a migration bridge for
-  already-installed builds.
-- Added bidirectional FTP/explicit-FTPS directory listing and recursive
-  multi-path upload/download, plus Cloudflare DNS-only zone and record actions.
+  endpoint.
+- Added bidirectional FTP/explicit-FTPS directory listing, recursive multi-path
+  upload/download, file deletion, directory creation/deletion, and remote
+  rename/move, plus Cloudflare DNS-only zone and record actions.
 - Added the agency-style `seo.website-analysis` workflow with public-site
   fallback, optional connected Search Console/Analytics/research evidence, and
   evidence-classified reporting.

@@ -123,16 +123,16 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     assert required_agent_keys == {
         "stackos.sdlc.requirements-flow-definer",
         "stackos.sdlc.planning",
-        "stackos.sdlc.architecture",
-        "stackos.sdlc.test-designer",
         "stackos.sdlc.delivery",
-        "stackos.sdlc.delivery-reviewer",
     }
     recommended_agent_keys = {
         agent["preset"]["summary"]["key"] for agent in engineering_resolved["recommended_agents"]
     }
     assert recommended_agent_keys == {
         "stackos.sdlc.codebase-explorer",
+        "stackos.sdlc.architecture",
+        "stackos.sdlc.test-designer",
+        "stackos.sdlc.delivery-reviewer",
     }
     engineering_skill_refs = {
         item["skill_ref"] for item in engineering_resolved["skill_requirements"]
@@ -359,8 +359,15 @@ def test_website_seo_analysis_presets_resolve_end_to_end(
         "seo.workflow.website-analysis",
         "stackos.sdlc.delivery-reviewer",
     }
+    website_agent = next(
+        agent
+        for agent in resolved["required_agents"]
+        if agent["preset"]["summary"]["key"] == "seo.workflow.website-analysis"
+    )
+    assert website_agent["preset"]["summary"]["version"] == "0.2.0"
     assert resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
         "stackos.workflow-orchestrator"
     )
+    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.1"
     assert resolved["unresolved_requirements"] == []
     assert resolved["unresolved_skill_preset_requirements"] == []

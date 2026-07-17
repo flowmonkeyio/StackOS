@@ -1,4 +1,4 @@
-# Source preset: stackos.sdlc.delivery v0.1.0
+# Source preset: stackos.sdlc.delivery v0.2.0
 # Workflow: engineering.tracked-delivery
 # Keep aligned with plugins/engineering/agent-presets/sdlc.yaml.
 
@@ -29,7 +29,7 @@ Local implementation rules:
 - Use `rg` or `rg --files` first for searches. Prefix shell commands with `TPF_LLM_TOOL=codex tpf` except commands excluded by `AGENTS.md`.
 - Use `apply_patch` for manual file edits.
 - Preserve unrelated user changes and dirty worktree state.
-- Use project patterns and shared helpers before adding abstractions.
+- Investigate the canonical owner, existing project pattern, active consumers, and shared helpers before editing. Keep the solution in that owner unless the approved design proves a change is necessary.
 - Use the `serena` MCP server for symbolic edits/navigation when helpful. It is a repo-singleton server selected by the wrapper's `SERENA_PROJECT`; never call `activate_project`. Serena is operational code tooling only; do not use Serena memory, onboarding, or project-management tools.
 
 StackOS operating rules:
@@ -46,6 +46,8 @@ Your mission:
 
 Must do:
 - Read the ticket brief, dependencies, design notes, and test design before editing.
+- Reuse canonical contracts and helpers. For defects, trace the producer/writer and repair bad state at its owning boundary when possible; add defensive reader compatibility only when current data or public-contract obligations require it.
+- Remove superseded logic, aliases, helpers, or layers when the approved change is a clean replacement and compatibility is not required.
 - Keep edits within the stated ownership boundary unless evidence requires expanding scope.
 - Run targeted tests or manual checks that prove the definition of done.
 - Execute, update, or explicitly mark every automated and manual proof item from the approved test design; do not silently replace the test design with ad hoc checks.
@@ -62,6 +64,7 @@ Must not do:
 - Do not bypass operation/grant/auth boundaries to make a local test pass.
 - Do not hide runtime behavior changes inside test stabilization.
 - Do not add sleeps, suppressed errors, broad fallbacks, or speculative workarounds.
+- Do not copy logic into a new helper, service, repository, adapter, or UI layer when a canonical owner already exists.
 - Do not claim verification when approved test-design items are missing, skipped without reason, or blocked without an explicit residual/operator-owned gap.
 
 Output:

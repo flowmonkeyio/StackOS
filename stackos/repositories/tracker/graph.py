@@ -19,6 +19,7 @@ from stackos.repositories.tracker.schema import (
     TrackerTicketOut,
 )
 from stackos.repositories.tracker.utils import (
+    ACTIVATES_DEPENDENCY_TYPE,
     _is_closed_tracker_scope,
     _is_terminal_tracker_status,
 )
@@ -135,7 +136,10 @@ class TrackerGraphMixin:
                 "group_by": "task",
                 "edge_semantics": {
                     "contains": "Attached under task or workflow step; does not affect readiness.",
-                    "dependency": "Blocks readiness and carries execution order.",
+                    "dependency": (
+                        "The edge label distinguishes blocking prerequisites from workflow "
+                        "step activation."
+                    ),
                     "link": "External reference only.",
                 },
             },
@@ -165,6 +169,30 @@ class TrackerGraphMixin:
         task_by_key = {task.key: task for task in tasks}
         for task_key, task_tickets in tickets_by_task.items():
             task = task_by_key.get(task_key)
+            if (
+                task is not None
+                and task.status == TrackerItemStatus.IN_PROGRESS
+                and task_tickets
+                and all(_is_terminal_tracker_status(ticket.status) for ticket in task_tickets)
+            ):
+                warnings.append(
+                    f"Task {task_key} is in-progress but all child tickets are terminal; "
+                    "reconcile the parent lifecycle."
+                )
+            for ticket in task_tickets:
+                resume_condition = (
+                    ticket.metadata_json.get("resume_condition")
+                    if isinstance(ticket.metadata_json, dict)
+                    else None
+                )
+                if (
+                    ticket.status == TrackerItemStatus.DEFERRED
+                    and not ticket.blocker_reason
+                    and not (isinstance(resume_condition, str) and resume_condition.strip())
+                ):
+                    warnings.append(
+                        f"Ticket {ticket.key} is deferred without a named resume condition."
+                    )
             if task is not None and task.source_kind == TrackerSourceKind.WORKFLOW:
                 edges = dependency_keys_by_task.get(task_key, set())
                 dependent_ticket_keys = {ticket_key for ticket_key, _ in edges}
@@ -257,6 +285,11 @@ class TrackerGraphMixin:
         dependency_edges = {
             (dependency.depends_on_ticket_key, dependency.ticket_key) for dependency in dependencies
         }
+        activation_edges = {
+            (dependency.depends_on_ticket_key, dependency.ticket_key)
+            for dependency in dependencies
+            if dependency.dependency_type == ACTIVATES_DEPENDENCY_TYPE
+        }
         children_by_parent: dict[str, list[TrackerTicketOut]] = {}
         for ticket in tickets:
             if ticket.parent_ticket_key:
@@ -284,13 +317,13 @@ class TrackerGraphMixin:
             if _is_closed_tracker_scope(parent.status, [child.status for child in children]):
                 continue
             directly_bridged = [
-                child.key for child in children if (parent.key, child.key) in dependency_edges
+                child.key for child in children if (parent.key, child.key) in activation_edges
             ]
             if not directly_bridged:
                 warnings.append(
                     "Workflow step "
-                    f"{parent.key} has attached child tickets but no dependency bridge from "
-                    "the step ticket. Attachment is containment only; add dependency edges "
+                    f"{parent.key} has attached child tickets but no activation bridge from "
+                    "the step ticket. Attachment is containment only; add an activates edge "
                     "before execution."
                 )
             for child in children:

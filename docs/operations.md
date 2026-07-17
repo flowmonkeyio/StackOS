@@ -654,9 +654,9 @@ Use `action.execute` when the action belongs to a workflow:
 5. `runPlan.recordStep(blocked)` records a recoverable blocker and keeps the
    plan started so the same step can be reclaimed after repair.
 6. `runPlan.recordStep(success)` enforces run-plan lifecycle, transitive step
-   dependencies, and the frozen required output keys and JSON schemas before
-   changing state. Validation failures keep the step running and return output
-   repair paths. Tracker graph warnings stay visible through
+   dependencies, and frozen required output keys and JSON schemas before
+   changing state. Validation failures keep the step running and return repair
+   paths. Tracker graph warnings stay visible through
    `tracker.get(include_graph=true)` and `runPlan.get.consistency_issues`, but
    do not by themselves reject a valid step result.
 7. `runPlan.recordStep(success|failed|skipped)` persists a terminal step result

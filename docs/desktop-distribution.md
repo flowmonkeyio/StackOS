@@ -378,12 +378,8 @@ manual download and drag-and-drop installation. The website should link to the
 stable `stackos-latest-mac-arm64.dmg` alias; updater metadata must continue to
 reference the versioned ZIP and checksums from the same release build.
 
-Releases packaged before this endpoint migration may still read
-`https://flowmonkey.io/StackOS/`. Keep that legacy feed mirrored or redirected
-through at least one higher-version bridge release whose packaged
-`update-config.json` points to `https://stackos.flowmonkey.io/StackOS/`.
-Changing the website link or future build command alone cannot move an already
-installed app away from its packaged endpoint.
+The website download link and future packaged `update-config.json` should both
+use `https://stackos.flowmonkey.io/StackOS/`.
 
 After an app update, the next launch sees a new app version or new packaged
 payload build id and reruns `stackos install --launchd --force`, then restarts
