@@ -325,8 +325,6 @@ class PluginRepository:
         project_id: int | None = None,
     ) -> list[ActionOut]:
         self.sync_builtin_plugins()
-        if plugin_slug in {None, "trackbooth"}:
-            self._retire_removed_trackbooth_actions()
         if project_id is not None:
             self._require_project(project_id)
         stmt = (
@@ -365,19 +363,6 @@ class PluginRepository:
             )
             for action, plugin, provider in rows
         ]
-
-    def _retire_removed_trackbooth_actions(self) -> None:
-        plugin = self._s.exec(select(Plugin).where(Plugin.slug == "trackbooth")).first()
-        if plugin is None or plugin.id is None:
-            return
-        from stackos.actions.trackbooth import retire_removed_trackbooth_actions
-
-        retire_removed_trackbooth_actions(
-            session=self._s,
-            plugin_id=plugin.id,
-            now=_utcnow(),
-        )
-        self._s.flush()
 
     def get_action(
         self,

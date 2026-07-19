@@ -306,10 +306,49 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     }
 
 
+def test_list_actions_does_not_retire_trackbooth_actions_or_flush(
+    session: Session,
+    monkeypatch,
+) -> None:
+    repo = PluginRepository(session)
+    repo.sync_builtin_plugins()
+    retirement_calls: list[dict[str, object]] = []
+    flush_calls = 0
+
+    from stackos.actions import trackbooth
+
+    def record_retirement(**kwargs) -> None:
+        retirement_calls.append(kwargs)
+
+    def record_flush(*args, **kwargs) -> None:
+        nonlocal flush_calls
+        flush_calls += 1
+
+    monkeypatch.setattr(trackbooth, "retire_removed_trackbooth_actions", record_retirement)
+    monkeypatch.setattr(session, "flush", record_flush)
+
+    with session.no_autoflush:
+        repo.list_actions(plugin_slug="trackbooth")
+        repo.list_actions()
+
+    assert flush_calls == 0
+    assert retirement_calls == []
+
+
 def test_trackbooth_plugin_sync_hides_removed_generic_rest_actions(
     session: Session,
     project_id: int,
+    monkeypatch,
 ) -> None:
+    snapshot = SimpleNamespace(
+        generation="removed-generic-rest-actions-1",
+        manifests=BUILTIN_PLUGIN_MANIFESTS,
+    )
+    monkeypatch.setattr(
+        plugin_repository_module,
+        "get_builtin_plugin_manifest_snapshot",
+        lambda: snapshot,
+    )
     repo = PluginRepository(session)
     trackbooth = repo.get_plugin("trackbooth")
     provider = session.exec(
@@ -338,6 +377,7 @@ def test_trackbooth_plugin_sync_hides_removed_generic_rest_actions(
         )
     session.commit()
 
+    snapshot.generation = "removed-generic-rest-actions-2"
     repo.sync_builtin_plugins()
     action_keys = {
         action.key for action in repo.list_actions(plugin_slug="trackbooth", project_id=project_id)
@@ -363,7 +403,17 @@ def test_trackbooth_plugin_sync_hides_removed_generic_rest_actions(
 def test_trackbooth_plugin_sync_hides_removed_internal_scope_generated_actions(
     session: Session,
     project_id: int,
+    monkeypatch,
 ) -> None:
+    snapshot = SimpleNamespace(
+        generation="removed-internal-scope-actions-1",
+        manifests=BUILTIN_PLUGIN_MANIFESTS,
+    )
+    monkeypatch.setattr(
+        plugin_repository_module,
+        "get_builtin_plugin_manifest_snapshot",
+        lambda: snapshot,
+    )
     repo = PluginRepository(session)
     trackbooth = repo.get_plugin("trackbooth")
     provider = session.exec(
@@ -392,6 +442,8 @@ def test_trackbooth_plugin_sync_hides_removed_internal_scope_generated_actions(
     )
     session.commit()
 
+    snapshot.generation = "removed-internal-scope-actions-2"
+    repo.sync_builtin_plugins()
     action_refs = {
         action.action_ref
         for action in repo.list_actions(plugin_slug="trackbooth", project_id=project_id)

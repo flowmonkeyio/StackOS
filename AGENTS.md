@@ -53,10 +53,14 @@ work, start here:
   `.codex/orchestrator/sdlc-delivery-orchestrator.md` and is adapted from the
   `stackos.sdlc.delivery-orchestrator` skill preset; it is guidance for the
   main agent, not a subagent role.
-- Agents never receive secrets. They receive safe provider/account refs,
-  auth-method keys, status, scopes, diagnostics, and opaque `credential_ref`
-  values. `action.run` and `action.execute` resolve credentials inside the
-  daemon process.
+- Provider credentials stay daemon-held. Agents receive safe provider/account
+  refs, auth-method keys, status, scopes, diagnostics, and opaque
+  `credential_ref` values; `action.run` and `action.execute` resolve provider
+  credentials inside the daemon process. For an authorized tenant/customer
+  string that belongs in action payload rather than provider authentication,
+  call the MCP-only `secret.set` once and place only the exact
+  `{"$secret_ref":"secret_..."}` marker at that string field. Do not create a
+  Connection for payload data or reuse the raw value.
 - Agents should use `toolProfile.resolve` when they need one provider/profile
   execution target. It returns a compact safe tuple and avoids broad auth/profile
   discovery calls when the provider intent is already known.

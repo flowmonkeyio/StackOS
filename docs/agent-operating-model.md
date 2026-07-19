@@ -193,12 +193,16 @@ agent receives one explicit user request
 -> operation.describe / action.list / action.describe when the contract is not already clear
 -> toolbox.call(readiness.check) for the selected action when setup is uncertain
 -> toolbox.call(toolProfile.resolve) when provider/auth/profile selection is needed
--> toolbox.call(action.describe / action.validate) when needed
+-> toolbox.call(secret.set) once when a non-auth string payload value is sensitive
+-> toolbox.call(action.validate) with the $secret_ref marker when validation is needed
 -> toolbox.call(action.run)
 -> daemon-side credential resolution
 -> connector execution
 -> compact response-file path for external provider output and action_calls audit row
 ```
+
+Inspecting the schema can happen before `secret.set`, but concrete payload
+validation must use the returned marker instead of the raw sensitive value.
 
 `action.run` is available through the MCP toolbox, REST, and CLI. It still uses
 the same connector, auth, redaction, idempotency, cost, and audit code as
@@ -209,7 +213,15 @@ Direct non-read actions require:
 - `confirm_direct=true`
 - `intent_summary`
 - an explicit `action_ref` or plugin/action pair
-- only safe refs, such as `credential_ref`, never secret values
+- only safe refs in action input: use `credential_ref` for provider auth and an
+  exact `{"$secret_ref":"secret_..."}` marker for a non-auth sensitive string
+
+When an authorized secure input has already made a tenant/customer value
+available to the agent, call `secret.set` once and retain only its returned ref.
+Do not echo the value in prose, create a provider Connection for it, or pass it
+as raw `input_json`. The same marker works through direct `action.run` and
+granted workflow `action.execute`; the shared runtime resolves it only for the
+connector request.
 
 When the provider target is not already obvious, call `toolProfile.resolve`
 once instead of chaining broad provider/profile/auth discovery calls. The
@@ -388,8 +400,10 @@ This model keeps the current StackOS principles intact:
   StackOS does not infer strategy.
 - **One execution substrate**: `action.run` and `action.execute` both call the
   same daemon-side action repository and connectors.
-- **No secrets**: agents pass credential refs; credentials resolve only inside
-  the daemon process.
+- **Separated secret boundaries**: provider credentials remain daemon-held
+  behind `credential_ref`; authorized payload values use one write-only
+  `secret.set` call and symbolic action markers, then resolve only at connector
+  dispatch.
 - **Audited simple calls**: direct actions still write `action_calls` rows.
 - **Workflow memory preserved**: multi-step work still uses templates, run
   plans, resources, artifacts, context, learnings, experiments, and decisions.

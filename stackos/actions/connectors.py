@@ -36,7 +36,7 @@ class ActionConnectorRequest:
     action_ref: str
     provider_key: str | None
     operation: str
-    input_json: dict[str, Any]
+    input_json: dict[str, Any] = field(repr=False)
     config_json: Mapping[str, Any]
     provider_context_json: dict[str, Any] = field(default_factory=dict)
     credential: ResolvedCredential | None = field(default=None, repr=False)

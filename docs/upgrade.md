@@ -82,7 +82,7 @@ updates, still bump `pyproject.toml`, `stackos/__init__.py`, and
 | MCP registration | Codex CLI, Claude Code, Claude Desktop, and Gemini CLI use the shared host MCP lifecycle service. Current local stdio registrations are a no-op; stale `stackos` entries that point at an old app/package path are removed and replaced by install, desktop Repair, or the focused registration scripts where available. Package installs register the bundled StackOS launcher instead of system Python and pass a host-specific `--runtime` to the bridge. Desktop launch also runs MCP-only reconciliation when the packaged payload is already prepared, because external client state can drift independently from app install state. Hosts installed after StackOS remain advisory until desktop Repair, app relaunch, or `stackos install --mcp-only` registers them. Claude Desktop config changes require restarting Claude Desktop. Legacy `~/.claude/mcp.json` StackOS entries are cleanup-only and sibling servers are preserved. No host registration stores a bearer token in client config. |
 | Auth token | **Does not rotate on upgrade.** Run `stackos rotate-token --yes` or `make rotate-token` explicitly to rotate; registration refreshes saved configs. Restart any running daemon so middleware loads the new token. |
 | launchd plist | `stackos autostart install` owns plist generation for clone and package installs. If the existing plist matches the generated one, it is a no-op. If different, `--force` overwrites with a `.bak` retained. |
-| Desktop app | The Electron shell checks the custom update endpoint, installs the app update, then runs the normal install/repair path on next launch when the app version or packaged payload build id changed. The app restarts the daemon after install/repair so the running process uses the packaged code. Local DB, generated assets, seed, token, and provider credentials remain in user-local StackOS paths. |
+| Desktop app | The Electron shell checks the custom update endpoint, installs the app update, then runs the normal install/repair path on next launch when the app version or packaged payload build id changed. The app restarts the daemon after install/repair so the running process uses the packaged code. Local DB, generated assets, seed, token, provider credentials, and encrypted payload transit values remain in user-local StackOS paths. |
 
 ## Breaking changes
 
@@ -152,5 +152,7 @@ Migration of an install across machines requires copying:
 Without `seed.bin`, the daemon refuses to start and `doctor` reports a
 credential decrypt/seed problem. Restore the matching seed from backup, or
 recreate the affected provider credentials through the StackOS Connections UI.
-The DB itself stays intact, but encrypted credential payloads are unrecoverable
-without the original seed.
+The DB itself stays intact, but encrypted provider credentials and payload
+transit values are unrecoverable without the original seed. Recreate lost
+payload values with `secret.set` and replace their opaque refs in any pending
+action input.

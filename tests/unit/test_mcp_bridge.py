@@ -29,8 +29,9 @@ from stackos.mcp.bridge import (
 from stackos.mcp.bridge.catalog import _bridge_toolbox_specs
 from stackos.mcp.contract import verb_is_mutating
 from stackos.mcp.permissions import SKILL_TOOL_GRANTS, SYSTEM_SKILL
-from stackos.mcp.server import STACKOS_MCP_INSTRUCTIONS, ToolRegistry, _to_tool
+from stackos.mcp.server import STACKOS_MCP_INSTRUCTIONS, ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
+from stackos.mcp.tool_registry import _to_tool
 from stackos.mcp.tools import register_all
 from stackos.operations.registry import build_operation_registry
 
@@ -807,6 +808,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "action.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "action.validate" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "action.run" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "secret.set" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "integration.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "agentPreset.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "agentPreset.describe" in _AGENT_SETUP_TOOLBOX_NAMES

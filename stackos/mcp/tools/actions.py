@@ -16,6 +16,7 @@ def _action_operations() -> OperationRegistry:
         "action.validate",
         "action.execute",
         "action.run",
+        "secret.set",
     ):
         operations.register(all_operations.get(name))
     return operations

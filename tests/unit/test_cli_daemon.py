@@ -9,6 +9,8 @@ import pytest
 from typer.testing import CliRunner
 
 import stackos.cli.daemon_commands as daemon_cli
+import stackos.cli.daemon_processes as daemon_processes
+import stackos.cli.launchd as launchd_cli
 from stackos.cli import app
 from stackos.config import Settings
 
@@ -65,11 +67,11 @@ def test_discover_daemon_processes_classifies_listener_pids(
         123: f"{sys.executable} -m stackos serve --port 5180",
         456: "/usr/bin/python3 -m something_else serve --port 5180",
     }
-    monkeypatch.setattr(daemon_cli, "_listener_pids", lambda _port: [123, 456])
-    monkeypatch.setattr(daemon_cli, "_pid_command", lambda pid: commands.get(pid))
-    monkeypatch.setattr(daemon_cli, "_pid_is_running", lambda _pid: True)
+    monkeypatch.setattr(daemon_processes, "_listener_pids", lambda _port: [123, 456])
+    monkeypatch.setattr(daemon_processes, "_pid_command", lambda pid: commands.get(pid))
+    monkeypatch.setattr(daemon_processes, "_pid_is_running", lambda _pid: True)
 
-    daemons, blockers = daemon_cli._discover_daemon_processes(settings, 5180)
+    daemons, blockers = daemon_processes._discover_daemon_processes(settings, 5180)
 
     assert daemons == [123]
     assert blockers == [456]
@@ -86,10 +88,10 @@ def test_discover_daemon_processes_removes_stale_pid_file(
     settings.ensure_dirs()
     settings.pid_path.write_text("123\n", encoding="utf-8")
 
-    monkeypatch.setattr(daemon_cli, "_listener_pids", lambda _port: [])
-    monkeypatch.setattr(daemon_cli, "_pid_is_running", lambda _pid: False)
+    monkeypatch.setattr(daemon_processes, "_listener_pids", lambda _port: [])
+    monkeypatch.setattr(daemon_processes, "_pid_is_running", lambda _pid: False)
 
-    daemons, blockers = daemon_cli._discover_daemon_processes(settings, 5180)
+    daemons, blockers = daemon_processes._discover_daemon_processes(settings, 5180)
 
     assert daemons == []
     assert blockers == []
@@ -103,10 +105,10 @@ def test_wait_for_daemon_uses_health_endpoint(monkeypatch: pytest.MonkeyPatch) -
         calls.append((host, port, timeout))
         return len(calls) == 2
 
-    monkeypatch.setattr(daemon_cli, "_daemon_health_ok", fake_health)
-    monkeypatch.setattr(daemon_cli.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(daemon_processes, "_daemon_health_ok", fake_health)
+    monkeypatch.setattr(daemon_processes.time, "sleep", lambda _seconds: None)
 
-    assert daemon_cli._wait_for_daemon("127.0.0.1", 5180, timeout=1.0) is True
+    assert daemon_processes._wait_for_daemon("127.0.0.1", 5180, timeout=1.0) is True
     assert calls == [("127.0.0.1", 5180, 0.25), ("127.0.0.1", 5180, 0.25)]
 
 
@@ -207,12 +209,12 @@ def test_launchd_bootout_waits_until_job_is_unloaded(
         events.append(args)
         return True, "booted out"
 
-    monkeypatch.setattr(daemon_cli, "_launchd_loaded", fake_loaded)
-    monkeypatch.setattr(daemon_cli, "_launchd_service", lambda: "gui/501/com.stackos.daemon")
-    monkeypatch.setattr(daemon_cli, "_launchctl", fake_launchctl)
-    monkeypatch.setattr(daemon_cli.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", fake_loaded)
+    monkeypatch.setattr(launchd_cli, "_launchd_service", lambda: "gui/501/com.stackos.daemon")
+    monkeypatch.setattr(launchd_cli, "_launchctl", fake_launchctl)
+    monkeypatch.setattr(launchd_cli.time, "sleep", lambda _seconds: None)
 
-    ok, message = daemon_cli._launchd_bootout(plist)
+    ok, message = launchd_cli._launchd_bootout(plist)
 
     assert ok is True
     assert message == "booted out"
@@ -226,16 +228,16 @@ def test_launchd_bootout_uses_caller_timeout_for_slow_launchd_handoff(
     plist = sandbox / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
     observed: list[float] = []
 
-    monkeypatch.setattr(daemon_cli, "_launchd_loaded", lambda: (True, "loaded"))
-    monkeypatch.setattr(daemon_cli, "_launchd_service", lambda: "gui/501/com.stackos.daemon")
-    monkeypatch.setattr(daemon_cli, "_launchctl", lambda _args: (True, "booted out"))
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (True, "loaded"))
+    monkeypatch.setattr(launchd_cli, "_launchd_service", lambda: "gui/501/com.stackos.daemon")
+    monkeypatch.setattr(launchd_cli, "_launchctl", lambda _args: (True, "booted out"))
     monkeypatch.setattr(
-        daemon_cli,
+        launchd_cli,
         "_wait_for_launchd_unloaded",
         lambda *, timeout: observed.append(timeout) or True,
     )
 
-    ok, message = daemon_cli._launchd_bootout(plist, wait_timeout=20.0)
+    ok, message = launchd_cli._launchd_bootout(plist, wait_timeout=20.0)
 
     assert ok is True
     assert message == "booted out"
@@ -282,9 +284,9 @@ def test_cli_restart_stops_existing_daemon_and_starts_new(
         )
         return True, "started daemon pid=222; url=http://127.0.0.1:5180; log=/tmp/daemon.log"
 
-    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([111], []))
-    monkeypatch.setattr(daemon_cli, "_terminate_daemon_processes", fake_terminate)
-    monkeypatch.setattr(daemon_cli, "_spawn_detached_daemon", fake_spawn)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([111], []))
+    monkeypatch.setattr(daemon_processes, "_terminate_daemon_processes", fake_terminate)
+    monkeypatch.setattr(daemon_processes, "_spawn_detached_daemon", fake_spawn)
 
     result = CliRunner().invoke(
         app,
@@ -314,8 +316,8 @@ def test_cli_stop_stops_existing_daemon(
         events.append({"pids": pids, "timeout": timeout, "force": force})
         return True, "stopped daemon pid(s): 111"
 
-    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([111], []))
-    monkeypatch.setattr(daemon_cli, "_terminate_daemon_processes", fake_terminate)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([111], []))
+    monkeypatch.setattr(daemon_processes, "_terminate_daemon_processes", fake_terminate)
 
     result = CliRunner().invoke(
         app,
@@ -340,10 +342,10 @@ def test_cli_stop_boots_out_loaded_launchd_before_stopping(
         events.append(("bootout", path))
         return True, "launchd job unloaded"
 
-    monkeypatch.setattr(daemon_cli, "_loaded_launchd_plist", lambda _home: plist)
-    monkeypatch.setattr(daemon_cli, "_launchd_bootout", fake_bootout)
-    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([], []))
-    monkeypatch.setattr(daemon_cli, "_tcp_can_connect", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(launchd_cli, "_loaded_launchd_plist", lambda _home: plist)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fake_bootout)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([], []))
+    monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda *_args, **_kwargs: False)
 
     result = CliRunner().invoke(
         app,
@@ -361,8 +363,8 @@ def test_cli_stop_no_running_daemon_is_ok(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _ = sandbox
-    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([], []))
-    monkeypatch.setattr(daemon_cli, "_tcp_can_connect", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([], []))
+    monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda *_args, **_kwargs: False)
 
     result = CliRunner().invoke(app, ["stop"], catch_exceptions=False)
 
@@ -398,14 +400,14 @@ def test_cli_restart_uses_loaded_launchd_job(
     def fail_spawn(*_args: object, **_kwargs: object) -> tuple[bool, str]:
         raise AssertionError("launchd-owned restart should not spawn detached daemon")
 
-    monkeypatch.setattr(daemon_cli, "_installed_launchd_plist", lambda _home: plist)
-    monkeypatch.setattr(daemon_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
-    monkeypatch.setattr(daemon_cli, "_launchd_bootout", fake_bootout)
-    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([111], []))
-    monkeypatch.setattr(daemon_cli, "_terminate_daemon_processes", fake_terminate)
-    monkeypatch.setattr(daemon_cli, "_launchd_bootstrap", fake_bootstrap)
-    monkeypatch.setattr(daemon_cli, "_wait_for_daemon", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(daemon_cli, "_spawn_detached_daemon", fail_spawn)
+    monkeypatch.setattr(launchd_cli, "_installed_launchd_plist", lambda _home: plist)
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fake_bootout)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([111], []))
+    monkeypatch.setattr(daemon_processes, "_terminate_daemon_processes", fake_terminate)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootstrap", fake_bootstrap)
+    monkeypatch.setattr(daemon_processes, "_wait_for_daemon", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(daemon_processes, "_spawn_detached_daemon", fail_spawn)
 
     result = CliRunner().invoke(
         app,
@@ -448,17 +450,17 @@ def test_cli_restart_ignores_stale_zombie_pid_before_launchd_bootstrap(
     def fail_spawn(*_args: object, **_kwargs: object) -> tuple[bool, str]:
         raise AssertionError("launchd-owned restart should not spawn detached daemon")
 
-    monkeypatch.setattr(daemon_cli, "_installed_launchd_plist", lambda _home: plist)
-    monkeypatch.setattr(daemon_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
-    monkeypatch.setattr(daemon_cli, "_launchd_bootout", fake_bootout)
-    monkeypatch.setattr(daemon_cli, "_launchd_bootstrap", fake_bootstrap)
-    monkeypatch.setattr(daemon_cli, "_listener_pids", lambda _port: [])
-    monkeypatch.setattr(daemon_cli.os, "kill", lambda _pid, _signal: None)
-    monkeypatch.setattr(daemon_cli, "_pid_is_zombie", lambda _pid: True)
-    monkeypatch.setattr(daemon_cli, "_tcp_can_connect", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(daemon_cli, "_terminate_daemon_processes", fail_terminate)
-    monkeypatch.setattr(daemon_cli, "_wait_for_daemon", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(daemon_cli, "_spawn_detached_daemon", fail_spawn)
+    monkeypatch.setattr(launchd_cli, "_installed_launchd_plist", lambda _home: plist)
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fake_bootout)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootstrap", fake_bootstrap)
+    monkeypatch.setattr(daemon_processes, "_listener_pids", lambda _port: [])
+    monkeypatch.setattr(daemon_processes.os, "kill", lambda _pid, _signal: None)
+    monkeypatch.setattr(daemon_processes, "_pid_is_zombie", lambda _pid: True)
+    monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(daemon_processes, "_terminate_daemon_processes", fail_terminate)
+    monkeypatch.setattr(daemon_processes, "_wait_for_daemon", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(daemon_processes, "_spawn_detached_daemon", fail_spawn)
 
     result = CliRunner().invoke(
         app,
@@ -505,14 +507,14 @@ def test_cli_restart_hands_off_detached_daemon_to_installed_launchd(
     def fail_spawn(*_args: object, **_kwargs: object) -> tuple[bool, str]:
         raise AssertionError("packaged launchd lifecycle must not spawn detached daemon")
 
-    monkeypatch.setattr(daemon_cli, "_installed_launchd_plist", lambda _home: plist)
-    monkeypatch.setattr(daemon_cli, "_launchd_loaded", lambda: (False, "not loaded"))
-    monkeypatch.setattr(daemon_cli, "_launchd_bootout", fake_bootout)
-    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", fake_discover)
-    monkeypatch.setattr(daemon_cli, "_terminate_daemon_processes", fake_terminate)
-    monkeypatch.setattr(daemon_cli, "_launchd_bootstrap", fake_bootstrap)
-    monkeypatch.setattr(daemon_cli, "_wait_for_daemon", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(daemon_cli, "_spawn_detached_daemon", fail_spawn)
+    monkeypatch.setattr(launchd_cli, "_installed_launchd_plist", lambda _home: plist)
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (False, "not loaded"))
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fake_bootout)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", fake_discover)
+    monkeypatch.setattr(daemon_processes, "_terminate_daemon_processes", fake_terminate)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootstrap", fake_bootstrap)
+    monkeypatch.setattr(daemon_processes, "_wait_for_daemon", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(daemon_processes, "_spawn_detached_daemon", fail_spawn)
 
     result = CliRunner().invoke(
         app,
@@ -539,10 +541,10 @@ def test_cli_restart_refuses_launchd_blocker_before_bootout(
     def fail_bootout(_path: Path, **_kwargs: object) -> tuple[bool, str]:
         raise AssertionError("restart must not unload launchd when a blocker is already known")
 
-    monkeypatch.setattr(daemon_cli, "_installed_launchd_plist", lambda _home: plist)
-    monkeypatch.setattr(daemon_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
-    monkeypatch.setattr(daemon_cli, "_launchd_bootout", fail_bootout)
-    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([], [999]))
+    monkeypatch.setattr(launchd_cli, "_installed_launchd_plist", lambda _home: plist)
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fail_bootout)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([], [999]))
 
     result = CliRunner().invoke(app, ["restart"], catch_exceptions=False)
 
@@ -574,12 +576,12 @@ def test_cli_restart_restores_launchd_when_termination_fails(
         events.append(("terminate", {"pids": pids, "timeout": timeout, "force": force}))
         return False, "daemon did not stop before timeout"
 
-    monkeypatch.setattr(daemon_cli, "_installed_launchd_plist", lambda _home: plist)
-    monkeypatch.setattr(daemon_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
-    monkeypatch.setattr(daemon_cli, "_launchd_bootout", fake_bootout)
-    monkeypatch.setattr(daemon_cli, "_launchd_bootstrap", fake_bootstrap)
-    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([111], []))
-    monkeypatch.setattr(daemon_cli, "_terminate_daemon_processes", fake_terminate)
+    monkeypatch.setattr(launchd_cli, "_installed_launchd_plist", lambda _home: plist)
+    monkeypatch.setattr(launchd_cli, "_launchd_loaded", lambda: (True, "launchd job loaded"))
+    monkeypatch.setattr(launchd_cli, "_launchd_bootout", fake_bootout)
+    monkeypatch.setattr(launchd_cli, "_launchd_bootstrap", fake_bootstrap)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([111], []))
+    monkeypatch.setattr(daemon_processes, "_terminate_daemon_processes", fake_terminate)
 
     result = CliRunner().invoke(
         app,
@@ -602,7 +604,7 @@ def test_cli_restart_refuses_non_stackos_listener(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _ = sandbox
-    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([], [999]))
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *_args: ([], [999]))
 
     result = CliRunner().invoke(app, ["restart"])
 

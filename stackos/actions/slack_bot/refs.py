@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping
 from typing import Any
 
 from stackos.actions.connectors import ActionConnectorRequest
 from stackos.actions.provider_utils import credential_config
+from stackos.communications.provider_ids import (
+    slack_message_ref as _message_ref,  # noqa: F401
+)
+from stackos.communications.provider_ids import (
+    slack_outbound_button_external_id as _outbound_button_external_id,  # noqa: F401
+)
+from stackos.communications.provider_ids import (
+    slack_surface_ref as _surface_ref,
+)
+from stackos.communications.provider_ids import (
+    slack_thread_ref as _thread_ref,  # noqa: F401
+)
 from stackos.repositories.base import ValidationError
 
 
@@ -78,32 +89,6 @@ def _team_id(request: ActionConnectorRequest, body: Any | None = None) -> str | 
     config = credential_config(request)
     value = config.get("team_id") or config.get("provider_account_id")
     return str(value).strip() if value is not None and str(value).strip() else None
-
-
-def _surface_ref(channel_id: str) -> str:
-    return f"slack-channel:{channel_id}"
-
-
-def _message_ref(channel: str, ts: str) -> str:
-    return f"slack-message:{channel}:{ts}"
-
-
-def _thread_ref(channel: str, ts: str) -> str:
-    return f"slack-thread:{channel}:{ts}"
-
-
-def _outbound_button_external_id(
-    *,
-    profile_key: str,
-    message_ref: str,
-    action_id: str,
-    value: str,
-    block_id: str,
-) -> str:
-    digest = hashlib.sha256(
-        f"{message_ref}\0{block_id}\0{action_id}\0{value}".encode()
-    ).hexdigest()[:24]
-    return f"slack-button:{profile_key}:{digest}"
 
 
 def _button_specs(blocks: list[Any]) -> list[dict[str, Any]]:

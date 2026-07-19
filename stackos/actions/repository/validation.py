@@ -14,6 +14,8 @@ from stackos.actions.manifest import ExecutableActionManifest
 from stackos.db.models import Credential
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.execution_contexts import ExecutionContextRepository
+from stackos.repositories.secrets import PayloadSecretRepository
+from stackos.secret_refs import find_secret_ref_occurrences, project_secret_refs
 from stackos.workflows.run_plan_schema import find_run_plan_secret_paths
 
 from .schema import ActionValidationOut
@@ -66,7 +68,22 @@ class ActionValidationMixin:
             credential_ref=resolved_ref,
             provider_context_json=provider_context,
         )
-        issues = self._validate_payload(manifest=manifest, payload=payload)
+        projected_payload = project_secret_refs(payload)
+        secret_repository = PayloadSecretRepository(self._s)
+        issues = [
+            ActionValidationIssue(
+                path=occurrence.path,
+                message="payload secret reference is unavailable",
+                code="secret_ref_unavailable",
+            )
+            for occurrence in find_secret_ref_occurrences(payload)
+            if project_id is None
+            or not secret_repository.is_available(
+                project_id=project_id,
+                secret_ref=occurrence.secret_ref,
+            )
+        ]
+        issues.extend(self._validate_payload(manifest=manifest, payload=projected_payload))
         issues.extend(runtime_context.issues)
         issues.extend(
             self._validate_provider_context(
@@ -91,7 +108,7 @@ class ActionValidationMixin:
                 request = self._connector_request(
                     project_id=project_id or 0,
                     manifest=manifest,
-                    input_json=payload,
+                    input_json=projected_payload,
                     provider_context_json=runtime_context.provider_context_json,
                     credential=None,
                     dry_run=True,
@@ -253,7 +270,8 @@ class ActionValidationMixin:
         secret_paths = find_run_plan_secret_paths(payload)
         if secret_paths:
             raise ValidationError(
-                "action input must not contain secrets; use opaque credential_ref values",
+                "action input must not contain secrets as raw values; use secret.set and an exact "
+                "$secret_ref marker for payload values; credential_ref is only for provider auth",
                 data={"paths": secret_paths[:8]},
             )
         return payload, resolved_ref

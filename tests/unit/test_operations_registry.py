@@ -8,9 +8,10 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 190
+    assert len(names) == 191
     assert {
         "action.execute",
+        "secret.set",
         "schema.get",
         "auth.status",
         "workflowTemplate.authoringGuide",
@@ -91,6 +92,13 @@ def test_operation_registry_documents_core_operations() -> None:
     assert "WriteEnvelope" in described.output_schema["title"]
     assert any("run_token" in item for item in described.prerequisites)
     assert described.examples[0].arguments["action_ref"] == "utils.sitemap.fetch"
+
+    secret_set = registry.get("secret.set").describe_out()
+    assert secret_set.surfaces["mcp"].enabled is True
+    assert secret_set.surfaces["rest"].enabled is False
+    assert secret_set.surfaces["cli"].enabled is False
+    assert secret_set.input_schema["properties"]["value"]["writeOnly"] is True
+    assert secret_set.secret_policy == "write-only-input-no-secret-output"
 
     direct_action = registry.get("action.run").describe_out()
     assert direct_action.surfaces["mcp"].enabled is True
@@ -417,7 +425,7 @@ def test_operation_registry_surface_filter() -> None:
     registry = build_operation_registry()
 
     cli_names = {item.name for item in registry.by_surface("cli")}
-    assert cli_names == {item.name for item in registry.all()}
+    assert cli_names == {item.name for item in registry.all()} - {"secret.set"}
     assert {
         "workflowTemplate.describe",
         "resource.query",

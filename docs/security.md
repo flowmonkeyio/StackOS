@@ -69,6 +69,29 @@ before persistence. Secret-like keys such as `api_key`, `access_token`,
 `refresh_token`, `authorization`, and nested equivalents are stored as
 `[redacted]`.
 
+## Write-only action payload transit
+
+Some multi-tenant actions need a tenant-owned string such as an SMTP password
+while the connected provider credential belongs to an administrator. These are
+different trust domains. Do not create another provider Connection or overload
+`credential_ref` for the tenant value.
+
+The authorized agent sends the value once to the project-scoped, MCP-only
+`secret.set` operation and receives an opaque `secret_ref`. StackOS encrypts the
+value at rest and exposes no plaintext read/list operation. Action input carries
+only the exact marker `{"$secret_ref":"secret_..."}`. Validation checks the
+reference without decryption; immediately before connector dispatch the daemon
+resolves it into a fresh request copy. Audit, idempotency, and file-backed
+request envelopes retain the symbolic marker.
+
+For every value StackOS resolves, the shared action boundary removes exact
+occurrences from connector results, structured errors, metadata, response
+files, and controlled exception text before persistence or return. Connector
+request representations omit payloads entirely. This defense does not claim to
+control telemetry in an external agent host or a provider that transforms or
+partially echoes a value; connectors must still avoid logging input and
+providers should not return credentials.
+
 ## REST vs agent execution
 
 REST mutation routes are local-admin surfaces behind the daemon bearer token.
@@ -209,8 +232,8 @@ state, plugin, and MCP bridge contract:
   is restarted.
 - **Seed file**: never rotated by install. Cross-machine moves
   require copying `seed.bin` alongside the DB; without it,
-  `integration_credentials` rows are unrecoverable. See
-  [`./upgrade.md#cross-machine-moves`](./upgrade.md). Rotation stages
+  encrypted provider credentials and payload transit values are unrecoverable.
+  See [`./upgrade.md#cross-machine-moves`](./upgrade.md). Rotation stages
   `seed.bin.new` before committing re-encrypted rows; if a crash leaves
   that staged file behind, daemon startup refuses to continue until the
   operator finishes or restores the rotation.

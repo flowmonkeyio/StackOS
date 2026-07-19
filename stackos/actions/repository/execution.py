@@ -23,6 +23,12 @@ from stackos.config import Settings
 from stackos.db.models import ActionCallStatus
 from stackos.repositories.base import ConflictError, Envelope, ValidationError
 from stackos.repositories.projects import IntegrationBudgetRepository
+from stackos.repositories.secrets import PayloadSecretRepository
+from stackos.secret_refs import (
+    materialize_secret_refs,
+    project_secret_refs,
+    redact_secret_values,
+)
 
 from .schema import ActionExecutionOut
 from .utils import _redact_for_audit
@@ -172,10 +178,11 @@ class ActionExecutionMixin:
             if replay is not None:
                 return Envelope(data=replay, project_id=project_id, run_id=run_id)
         connector = self._connectors.get(manifest.connector_key)
+        projected_payload = project_secret_refs(payload)
         dry_request = self._connector_request(
             project_id=project_id,
             manifest=manifest,
-            input_json=payload,
+            input_json=projected_payload,
             provider_context_json=provider_context,
             credential=None,
             dry_run=True,
@@ -228,26 +235,45 @@ class ActionExecutionMixin:
                 kind=manifest.budget_kind,
                 cost_usd=estimated_cost_cents / 100,
             )
+        materialized_payload, sensitive_values = materialize_secret_refs(
+            payload,
+            resolve=lambda secret_ref: PayloadSecretRepository(self._s).resolve(
+                project_id=project_id,
+                secret_ref=secret_ref,
+            ),
+        )
         request = self._connector_request(
             project_id=project_id,
             manifest=manifest,
-            input_json=payload,
+            input_json=materialized_payload,
             provider_context_json=provider_context,
             credential=credential,
             dry_run=False,
         )
         started = time.perf_counter()
         try:
-            result = await connector.execute(request)
+            try:
+                result = await connector.execute(request)
+            finally:
+                del request
+                del materialized_payload
         except ActionConnectorError as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
-            output_json = _redact_for_audit(exc.output_json)
-            connector_metadata = _redact_for_audit(exc.metadata_json) if exc.metadata_json else {}
+            output_json = _redact_for_audit(redact_secret_values(exc.output_json, sensitive_values))
+            connector_metadata = (
+                _redact_for_audit(redact_secret_values(exc.metadata_json, sensitive_values))
+                if exc.metadata_json
+                else {}
+            )
             failed_metadata = {
-                **(_redact_for_audit(metadata_json) if metadata_json else {}),
+                **(
+                    _redact_for_audit(redact_secret_values(metadata_json, sensitive_values))
+                    if metadata_json
+                    else {}
+                ),
                 **connector_metadata,
             } or None
-            safe_error = redact_secret_text(exc.detail)
+            safe_error = redact_secret_text(redact_secret_values(exc.detail, sensitive_values))
             row = self._record_call(
                 project_id=project_id,
                 manifest=manifest,
@@ -279,7 +305,7 @@ class ActionExecutionMixin:
             ) from exc
         except Exception as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
-            safe_error = redact_secret_text(str(exc))
+            safe_error = redact_secret_text(redact_secret_values(str(exc), sensitive_values))
             row = self._record_call(
                 project_id=project_id,
                 manifest=manifest,
@@ -292,7 +318,9 @@ class ActionExecutionMixin:
                 request_json=payload,
                 provider_context_json=provider_context_for_audit,
                 response_json=None,
-                metadata_json=metadata_json,
+                metadata_json=(
+                    redact_secret_values(metadata_json, sensitive_values) if metadata_json else None
+                ),
                 status=ActionCallStatus.FAILED,
                 dry_run=False,
                 cost_cents=estimated_cost_cents,
@@ -311,8 +339,12 @@ class ActionExecutionMixin:
             ) from exc
 
         duration_ms = int((time.perf_counter() - started) * 1000)
-        output_json = _redact_for_audit(result.output_json)
-        result_metadata = _redact_for_audit(result.metadata_json) if result.metadata_json else None
+        output_json = _redact_for_audit(redact_secret_values(result.output_json, sensitive_values))
+        result_metadata = (
+            _redact_for_audit(redact_secret_values(result.metadata_json, sensitive_values))
+            if result.metadata_json
+            else None
+        )
         actual_cost_cents = max(0, result.cost_cents)
         if (
             manifest.enforce_budget
@@ -325,7 +357,11 @@ class ActionExecutionMixin:
                 cost_usd=(actual_cost_cents - estimated_cost_cents) / 100,
             )
         success_metadata = {
-            **(_redact_for_audit(metadata_json) if metadata_json else {}),
+            **(
+                _redact_for_audit(redact_secret_values(metadata_json, sensitive_values))
+                if metadata_json
+                else {}
+            ),
             **(result_metadata or {}),
         } or None
         try:
@@ -381,7 +417,7 @@ class ActionExecutionMixin:
                 )
         except Exception as exc:
             self._s.rollback()
-            safe_error = redact_secret_text(str(exc))
+            safe_error = redact_secret_text(redact_secret_values(str(exc), sensitive_values))
             row = self._record_call(
                 project_id=project_id,
                 manifest=manifest,

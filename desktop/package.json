@@ -1,6 +1,6 @@
 {
   "name": "stackos-desktop",
-  "version": "2.1.5",
+  "version": "2.1.6",
   "private": true,
   "description": "macOS desktop shell for the local StackOS daemon and UI.",
   "main": "src/main.js",

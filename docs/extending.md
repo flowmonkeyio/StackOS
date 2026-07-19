@@ -57,6 +57,15 @@ Provider implementation belongs in daemon-side integration code. It should own:
 
 Agents should pass provider/account references, not secrets.
 
+If an action schema needs a sensitive string that belongs to the target tenant
+or request rather than provider authentication, keep it as a normal string
+field. Agents store the value with `secret.set` and pass the exact
+`{"$secret_ref":"secret_..."}` marker at that field. Do not model secondary
+provider credentials or add provider-specific vault plumbing. The shared action
+runtime projects the marker for validation, materializes it at dispatch, and
+redacts exact resolved values from controlled outputs. Connectors must not log
+or deliberately echo materialized input.
+
 Provider setup metadata is required for every provider, including local,
 custom, and placeholder providers. Put it once in provider manifest
 `config.setup`; do not duplicate setup prose across actions or workflow docs.

@@ -1212,6 +1212,21 @@ def test_bridge_toolbox_operates_setup_actions(
 
     project_id = _create_project(mcp_client, "bridge-agent-path")
 
+    secret = _structured(
+        _toolbox_call(
+            proxy,
+            client,
+            "secret.set",
+            {
+                "project_id": project_id,
+                "value": "bridge-payload-transit-canary",
+            },
+            request_id="secret-set",
+        )
+    )
+    assert secret["data"]["secret_ref"].startswith("secret_")
+    assert "bridge-payload-transit-canary" not in json.dumps(secret)
+
     budget = _structured(
         _tool_call(
             proxy,

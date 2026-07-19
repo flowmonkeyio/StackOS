@@ -205,6 +205,28 @@ Action inputs are split into endpoint payload and provider execution context.
 `provider_context_schema_json` and mapped by the connector to provider scope or
 auth context. It is never copied into endpoint payload fields.
 
+When a string-valued payload field needs a tenant/customer secret that is not
+provider authentication, use the separate write-only transit flow:
+
+```text
+toolbox.call(secret.set, {"value": "<value-from-authorized-input>"})
+-> {"secret_ref": "secret_..."}
+
+input_json: {
+  "smtp": {"password": {"$secret_ref": "secret_..."}}
+}
+```
+
+`credential_ref` still identifies the daemon-held provider connection; it is
+not a container for payload data. `secret.set` is project-scoped and MCP-only,
+returns no plaintext, and has no read/list counterpart. The marker grammar is
+exactly one `$secret_ref` key at a string position. Validation checks the ref
+and a safe string projection without decrypting it. The shared action runtime
+keeps the marker in idempotency/audit state, materializes a fresh payload only
+at connector dispatch, and removes the resolved exact value from controlled
+results, errors, metadata, response files, and request representations. Raw
+secret-like action values remain invalid.
+
 Reusable `context_ref` values can supply the credential, typed provider
 context, output policy, request budget, and artifact namespace for
 `action.validate`, `action.run`, and workflow-scoped `action.execute`. Risk

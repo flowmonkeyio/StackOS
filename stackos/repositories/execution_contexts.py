@@ -9,14 +9,11 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
 from stackos.actions.manifest import ExecutableActionManifest, parse_action_manifest
-from stackos.actions.repository.utils import _schema_issues
-from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     Action,
     Artifact,
@@ -33,111 +30,32 @@ from stackos.generated_inventory import (
     generated_action_visible_for_project,
 )
 from stackos.repositories.base import ConflictError, Envelope, NotFoundError, Page, ValidationError
-from stackos.workflows.run_plan_schema import find_run_plan_secret_paths
+from stackos.repositories.execution_context_policy import (
+    clean_execution_context_object,
+    clean_execution_context_string_list,
+    clean_optional_execution_context_object,
+    derive_execution_context_scope,
+    execution_context_provider_issues,
+    validate_execution_context_locked_fields,
+    validate_execution_context_provider,
+    validate_execution_context_request_budget,
+    validate_stored_execution_context_output_policy,
+)
+from stackos.repositories.execution_context_schema import (
+    ExecutionContextArtifactOut,
+    ExecutionContextDiscoveryOut,
+    ExecutionContextLinkOut,
+    ExecutionContextOut,
+    ExecutionContextResolveOut,
+)
 
 _REF_SAFE = re.compile(r"[^a-z0-9_]+")
 _VALID_STATUSES = {"active", "disabled", "archived"}
 _VALID_LINK_TYPES = {"task", "ticket", "run_plan", "run", "run_plan_step"}
-_VALID_OUTPUT_MODES = {"inline", "file_if_large", "always_file"}
 
 
 def _utcnow() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
-
-
-_VALID_REQUEST_BUDGET_FIELDS = {
-    "max_parallel",
-    "max_calls",
-    "max_calls_per_run",
-    "window_seconds",
-    "notes",
-}
-
-
-class ExecutionContextLinkOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    project_id: int
-    context_id: int
-    link_type: str
-    link_ref: str
-    role: str
-    metadata_json: dict[str, Any] | None = None
-    created_at: datetime
-
-
-class ExecutionContextOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    project_id: int
-    context_ref: str
-    name: str
-    description: str
-    plugin_slug: str | None = None
-    provider_key: str | None = None
-    action_ref: str | None = None
-    credential_ref: str | None = None
-    credential_locked: bool
-    provider_context_json: dict[str, Any] = Field(default_factory=dict)
-    provider_context_locked_fields_json: list[str] = Field(default_factory=list)
-    output_policy_json: dict[str, Any] = Field(default_factory=dict)
-    request_budget_json: dict[str, Any] = Field(default_factory=dict)
-    artifact_namespace: str | None = None
-    status: str
-    metadata_json: dict[str, Any] | None = None
-    created_by: str | None = None
-    created_at: datetime
-    updated_at: datetime
-    links: list[ExecutionContextLinkOut] = Field(default_factory=list)
-    artifact_count: int = 0
-
-
-class ExecutionContextArtifactOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    project_id: int
-    context_id: int
-    context_ref: str
-    artifact_id: int
-    action_call_id: int | None = None
-    semantic_name: str | None = None
-    action_ref: str | None = None
-    input_hash: str | None = None
-    metadata_json: dict[str, Any] | None = None
-    created_at: datetime
-    artifact: dict[str, Any] = Field(default_factory=dict)
-
-
-class ExecutionContextResolveOut(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    context: ExecutionContextOut
-    action_ref: str | None = None
-    compatible: bool
-    issues: list[dict[str, Any]] = Field(default_factory=list)
-    credential_ref: str | None = None
-    provider_context_json: dict[str, Any] = Field(default_factory=dict)
-    provider_context_schema_json: dict[str, Any] = Field(default_factory=dict)
-    provider_context_schema_source: str | None = None
-    output_policy_json: dict[str, Any] = Field(default_factory=dict)
-    request_budget_json: dict[str, Any] = Field(default_factory=dict)
-    artifact_namespace: str | None = None
-    next_call: dict[str, Any] = Field(default_factory=dict)
-
-
-class ExecutionContextDiscoveryOut(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    project_id: int
-    filters_json: dict[str, Any] = Field(default_factory=dict)
-    context_refs: list[str] = Field(default_factory=list)
-    items: list[ExecutionContextOut] = Field(default_factory=list)
-    next_cursor: int | None = None
-    total_estimate: int = 0
-    next_calls: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExecutionContextRepository:
@@ -174,23 +92,25 @@ class ExecutionContextRepository:
             project_id=project_id,
             credential_ref=credential_ref,
         )
-        plugin_slug, provider_key = self._derive_scope(
+        plugin_slug, provider_key = derive_execution_context_scope(
             action_manifest=action_manifest,
             plugin_slug=plugin_slug,
             provider_key=provider_key,
         )
-        provider_context = self._clean_object(provider_context_json, "provider_context_json")
-        output_policy = self._clean_object(output_policy_json, "output_policy_json")
-        self._validate_output_policy(output_policy)
-        request_budget = self._clean_object(request_budget_json, "request_budget_json")
-        self._validate_request_budget(request_budget)
-        metadata = self._clean_optional_object(metadata_json, "metadata_json")
-        locked_fields = self._clean_string_list(
+        provider_context = clean_execution_context_object(
+            provider_context_json, "provider_context_json"
+        )
+        output_policy = clean_execution_context_object(output_policy_json, "output_policy_json")
+        validate_stored_execution_context_output_policy(output_policy)
+        request_budget = clean_execution_context_object(request_budget_json, "request_budget_json")
+        validate_execution_context_request_budget(request_budget)
+        metadata = clean_optional_execution_context_object(metadata_json, "metadata_json")
+        locked_fields = clean_execution_context_string_list(
             provider_context_locked_fields_json,
             "provider_context_locked_fields_json",
         )
-        self._validate_locked_fields(locked_fields)
-        self._validate_provider_context(action_manifest, provider_context)
+        validate_execution_context_locked_fields(locked_fields)
+        validate_execution_context_provider(action_manifest, provider_context)
         self._validate_credential(
             project_id=project_id,
             credential_ref=credential_ref,
@@ -270,33 +190,33 @@ class ExecutionContextRepository:
         if "credential_locked" in patch:
             row.credential_locked = bool(patch["credential_locked"])
         if "provider_context_json" in patch:
-            provider_context = self._clean_object(
+            provider_context = clean_execution_context_object(
                 patch["provider_context_json"],
                 "provider_context_json",
             )
-            self._validate_provider_context(
+            validate_execution_context_provider(
                 self._manifest_for_ref(row.action_ref, project_id=row.project_id),
                 provider_context,
             )
             row.provider_context_json = provider_context
         if "provider_context_locked_fields_json" in patch:
-            row.provider_context_locked_fields_json = self._clean_string_list(
+            row.provider_context_locked_fields_json = clean_execution_context_string_list(
                 patch["provider_context_locked_fields_json"],
                 "provider_context_locked_fields_json",
             )
-            self._validate_locked_fields(row.provider_context_locked_fields_json)
+            validate_execution_context_locked_fields(row.provider_context_locked_fields_json)
         if "output_policy_json" in patch:
-            row.output_policy_json = self._clean_object(
+            row.output_policy_json = clean_execution_context_object(
                 patch["output_policy_json"],
                 "output_policy_json",
             )
-            self._validate_output_policy(row.output_policy_json)
+            validate_stored_execution_context_output_policy(row.output_policy_json)
         if "request_budget_json" in patch:
-            row.request_budget_json = self._clean_object(
+            row.request_budget_json = clean_execution_context_object(
                 patch["request_budget_json"],
                 "request_budget_json",
             )
-            self._validate_request_budget(row.request_budget_json)
+            validate_execution_context_request_budget(row.request_budget_json)
         if "artifact_namespace" in patch:
             value = patch["artifact_namespace"]
             row.artifact_namespace = str(value) if value not in {None, ""} else None
@@ -306,7 +226,9 @@ class ExecutionContextRepository:
                 raise ValidationError("invalid execution context status", data={"status": status})
             row.status = status
         if "metadata_json" in patch:
-            row.metadata_json = self._clean_optional_object(patch["metadata_json"], "metadata_json")
+            row.metadata_json = clean_optional_execution_context_object(
+                patch["metadata_json"], "metadata_json"
+            )
         row.updated_at = _utcnow()
         self._s.add(row)
         self._s.commit()
@@ -540,7 +462,7 @@ class ExecutionContextRepository:
                         "message": "context provider does not match action",
                     }
                 )
-        issues.extend(self._provider_context_issues(manifest, row.provider_context_json))
+        issues.extend(execution_context_provider_issues(manifest, row.provider_context_json))
         if row.credential_ref is not None:
             try:
                 self._validate_credential(
@@ -660,7 +582,9 @@ class ExecutionContextRepository:
         existing.semantic_name = semantic_name
         existing.action_ref = action_ref
         existing.input_hash = input_hash
-        existing.metadata_json = self._clean_optional_object(metadata_json, "metadata_json")
+        existing.metadata_json = clean_optional_execution_context_object(
+            metadata_json, "metadata_json"
+        )
         self._s.add(existing)
         self._s.commit()
         self._s.refresh(existing)
@@ -947,74 +871,6 @@ class ExecutionContextRepository:
                 )
         return candidates[0]
 
-    def _derive_scope(
-        self,
-        *,
-        action_manifest: ExecutableActionManifest | None,
-        plugin_slug: str | None,
-        provider_key: str | None,
-    ) -> tuple[str | None, str | None]:
-        if action_manifest is None:
-            return plugin_slug, provider_key
-        if plugin_slug is not None and plugin_slug != action_manifest.plugin_slug:
-            raise ValidationError(
-                "plugin_slug does not match action_ref",
-                data={"plugin_slug": plugin_slug, "action_ref": action_manifest.action_ref},
-            )
-        if provider_key is not None and provider_key != action_manifest.provider_key:
-            raise ValidationError(
-                "provider_key does not match action_ref",
-                data={"provider_key": provider_key, "action_ref": action_manifest.action_ref},
-            )
-        return action_manifest.plugin_slug, action_manifest.provider_key
-
-    def _validate_provider_context(
-        self,
-        action_manifest: ExecutableActionManifest | None,
-        provider_context: dict[str, Any],
-    ) -> None:
-        issues = self._provider_context_issues(action_manifest, provider_context)
-        if issues:
-            raise ValidationError(
-                "provider context is invalid",
-                data={"issues": issues},
-            )
-
-    def _provider_context_issues(
-        self,
-        action_manifest: ExecutableActionManifest | None,
-        provider_context: dict[str, Any],
-    ) -> builtins.list[dict[str, Any]]:
-        if not provider_context:
-            return []
-        if action_manifest is None:
-            return [
-                {
-                    "path": "$.provider_context_json",
-                    "code": "provider_context_schema_required",
-                    "message": (
-                        "provider context requires an action_ref with provider_context_schema"
-                    ),
-                }
-            ]
-        if not action_manifest.provider_context_schema_json:
-            return [
-                {
-                    "path": "$.provider_context_json",
-                    "code": "provider_context_not_allowed",
-                    "message": "provider context is not allowed for this action",
-                    "data": {"action_ref": action_manifest.action_ref},
-                }
-            ]
-        return [
-            issue.model_dump(mode="json")
-            for issue in _schema_issues(
-                action_manifest.provider_context_schema_json,
-                provider_context,
-                path="$.provider_context_json",
-            )
-        ]
-
     def _validate_credential(
         self,
         *,
@@ -1051,93 +907,6 @@ class ExecutionContextRepository:
                 },
             )
 
-    def _clean_object(self, value: dict[str, Any] | None, field: str) -> dict[str, Any]:
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            raise ValidationError(f"{field} must be an object")
-        _reject_secrets(value, field=field)
-        return redact_secrets(dict(value))
-
-    def _clean_optional_object(
-        self,
-        value: dict[str, Any] | None,
-        field: str,
-    ) -> dict[str, Any] | None:
-        if value is None:
-            return None
-        return self._clean_object(value, field)
-
-    def _clean_string_list(
-        self,
-        value: builtins.list[str] | None,
-        field: str,
-    ) -> builtins.list[str]:
-        if value is None:
-            return []
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise ValidationError(f"{field} must be a string array")
-        return list(dict.fromkeys(item.strip() for item in value if item.strip()))
-
-    def _validate_locked_fields(self, fields: builtins.list[str]) -> None:
-        unsupported = [field for field in fields if _locked_field_key(field) is None]
-        if unsupported:
-            raise ValidationError(
-                "provider_context_locked_fields_json supports top-level provider "
-                "context fields only",
-                data={"fields": unsupported},
-            )
-
-    def _validate_output_policy(self, policy: dict[str, Any]) -> None:
-        if not policy:
-            return
-        allowed = {"mode", "max_inline_bytes", "semantic_name", "content_type"}
-        unknown = sorted(set(policy) - allowed)
-        if unknown:
-            raise ValidationError("unsupported output_policy_json fields", data={"fields": unknown})
-        mode = str(policy.get("mode") or "inline")
-        if mode not in _VALID_OUTPUT_MODES:
-            raise ValidationError(
-                "invalid output policy mode",
-                data={"mode": mode, "accepted": sorted(_VALID_OUTPUT_MODES)},
-            )
-        max_inline_bytes = policy.get("max_inline_bytes")
-        if max_inline_bytes is not None and (
-            not isinstance(max_inline_bytes, int)
-            or isinstance(max_inline_bytes, bool)
-            or max_inline_bytes < 1
-        ):
-            raise ValidationError("output_policy_json.max_inline_bytes must be a positive integer")
-        for field in ("semantic_name", "content_type"):
-            value = policy.get(field)
-            if value is not None and not isinstance(value, str):
-                raise ValidationError(f"output_policy_json.{field} must be a string")
-        content_type = policy.get("content_type")
-        if content_type is not None and content_type != "application/json":
-            raise ValidationError(
-                "output_policy_json.content_type must be application/json for file-backed outputs",
-                data={"content_type": content_type},
-            )
-
-    def _validate_request_budget(self, budget: dict[str, Any]) -> None:
-        if not budget:
-            return
-        unknown = sorted(set(budget) - _VALID_REQUEST_BUDGET_FIELDS)
-        if unknown:
-            raise ValidationError(
-                "unsupported request_budget_json fields",
-                data={"fields": unknown},
-            )
-        for field in ("max_parallel", "max_calls", "max_calls_per_run", "window_seconds"):
-            value = budget.get(field)
-            if value is None:
-                continue
-            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-                raise ValidationError(f"request_budget_json.{field} must be a positive integer")
-        notes = budget.get("notes")
-        if notes is not None and not isinstance(notes, str):
-            raise ValidationError("request_budget_json.notes must be a string")
-
     def _normalize_link_args(self, raw: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw, dict):
             raise ValidationError("links_json items must be objects")
@@ -1168,7 +937,7 @@ class ExecutionContextRepository:
                 "invalid execution context link_type",
                 data={"link_type": link_type},
             )
-        metadata = self._clean_optional_object(metadata_json, "metadata_json")
+        metadata = clean_optional_execution_context_object(metadata_json, "metadata_json")
         existing = self._s.exec(
             select(ExecutionContextLink).where(
                 col(ExecutionContextLink.context_id) == row.id,
@@ -1227,30 +996,6 @@ def _clean_context_ref(value: str) -> str:
             "context_ref must be 3-160 characters using letters, numbers, _, ., :, or -"
         )
     return ref
-
-
-def _locked_field_key(value: str) -> str | None:
-    field = value.strip()
-    if not field:
-        return None
-    if field.startswith("$."):
-        field = field[2:]
-    if field.startswith("."):
-        field = field[1:]
-    if "." in field or "[" in field or "]" in field:
-        return None
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_:-]*", field):
-        return None
-    return field
-
-
-def _reject_secrets(value: dict[str, Any], *, field: str) -> None:
-    secret_paths = find_run_plan_secret_paths(value)
-    if secret_paths:
-        raise ValidationError(
-            f"{field} must not contain secrets; use opaque credential_ref values",
-            data={"paths": secret_paths[:8]},
-        )
 
 
 def _short_digest(value: dict[str, Any]) -> str:

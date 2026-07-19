@@ -16,8 +16,8 @@ import typer
 
 from stackos.config import get_settings
 
+from . import launchd as launchd_service
 from .app import app
-from .daemon_commands import _install_launchd_autostart, _uninstall_launchd_autostart
 from .doctor_commands import doctor
 from .paths import _doctor_home
 
@@ -196,7 +196,7 @@ def install(
             raise typer.Exit(code=1)
 
     if launchd:
-        ok, message = _install_launchd_autostart(
+        ok, message = launchd_service._install_launchd_autostart(
             settings,
             home=_doctor_home(),
             force=force,
@@ -240,7 +240,7 @@ def uninstall() -> None:
     home = _doctor_home()
 
     typer.echo("==> Removing launchd autostart")
-    ok, message = _uninstall_launchd_autostart(home=home)
+    ok, message = launchd_service._uninstall_launchd_autostart(home=home)
     if not ok:
         typer.echo(f"==> launchd autostart removal failed: {message}", err=True)
         raise typer.Exit(code=1)
@@ -273,13 +273,13 @@ def rotate_seed(
         bool,
         typer.Option(
             "--reencrypt",
-            help="Required — re-encrypt every integration_credentials row under a fresh seed.",
+            help="Required — re-encrypt every daemon-held secret row under a fresh seed.",
         ),
     ] = False,
 ) -> None:
-    """Rotate the integration-credentials seed.
+    """Rotate the daemon-held-secrets seed.
 
-    Writes a fresh 32-byte seed, re-encrypts every credential row in a single
+    Writes a fresh 32-byte seed, re-encrypts every encrypted row in a single
     SQLite transaction, and keeps the old seed at ``seed.bin.bak`` for one
     daemon boot. ``--reencrypt`` is mandatory because rotating without
     re-encrypting would orphan every existing credential.
@@ -302,7 +302,7 @@ def rotate_seed(
         stage_seed_rotation,
     )
     from stackos.db.connection import make_engine
-    from stackos.db.models import IntegrationCredential
+    from stackos.db.models import IntegrationCredential, PayloadSecret
 
     settings = get_settings()
     settings.ensure_dirs()
@@ -313,22 +313,36 @@ def rotate_seed(
         with Session(engine) as session:
             from sqlmodel import select
 
-            rows = list(session.exec(select(IntegrationCredential)).all())
+            credential_rows = list(session.exec(select(IntegrationCredential)).all())
+            payload_secret_rows = list(session.exec(select(PayloadSecret)).all())
             row_dicts = [
                 {
                     "id": r.id,
+                    "storage_kind": "integration_credential",
                     "project_id": r.project_id,
                     "kind": r.kind,
                     "encrypted_payload": r.encrypted_payload,
                     "nonce": r.nonce,
                 }
-                for r in rows
+                for r in credential_rows
+            ] + [
+                {
+                    "id": r.id,
+                    "storage_kind": "payload_secret",
+                    "project_id": r.project_id,
+                    "kind": f"payload-secret:{r.value_type}:{r.secret_ref}",
+                    "encrypted_payload": r.encrypted_payload,
+                    "nonce": r.nonce,
+                }
+                for r in payload_secret_rows
             ]
             new_seed, rotated = reencrypt_rows_for_seed_rotation(settings.seed_path, rows=row_dicts)
             stage_seed_rotation(settings.seed_path, new_seed)
-            id_to_row = {r.id: r for r in rows}
+            id_to_row = {("integration_credential", r.id): r for r in credential_rows} | {
+                ("payload_secret", r.id): r for r in payload_secret_rows
+            }
             for rotated_row in rotated:
-                row = id_to_row[rotated_row["id"]]
+                row = id_to_row[(rotated_row["storage_kind"], rotated_row["id"])]
                 row.encrypted_payload = rotated_row["encrypted_payload"]
                 row.nonce = rotated_row["nonce"]
                 session.add(row)
@@ -338,7 +352,7 @@ def rotate_seed(
         # Drop any cached key from the old seed so subsequent calls in
         # this process re-derive from the fresh seed file.
         configure_seed_path(settings.seed_path)
-        typer.echo(f"rotate-seed: rotated {len(rows)} row(s); old seed → seed.bin.bak")
+        typer.echo(f"rotate-seed: rotated {len(row_dicts)} row(s); old seed → seed.bin.bak")
     except Exception:
         if not db_committed:
             abort_staged_seed_rotation(settings.seed_path)

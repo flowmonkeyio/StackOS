@@ -67,6 +67,12 @@ from stackos.repositories.tracker.utils import (
     _required_id,
 )
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
+from stackos.repositories.tracker.workflow_graph_analysis import (
+    bypassing_workflow_gate_children,
+    dependency_path_exists,
+    is_workflow_gate_child,
+    terminal_workflow_children,
+)
 
 
 class TrackerQueryMixin:
@@ -463,7 +469,13 @@ class TrackerQueryMixin:
                     }
                 )
                 bypassing_gate_children = self._workflow_bypassing_gate_child_keys(siblings)
-                if self._is_workflow_gate_child(ticket) or ticket.key in bypassing_gate_children:
+                ticket_is_gate_child = is_workflow_gate_child(
+                    key=ticket.key,
+                    title=ticket.title,
+                    goal=ticket.goal,
+                    lane_key=ticket.lane_key,
+                )
+                if ticket_is_gate_child or ticket.key in bypassing_gate_children:
                     checks.append(
                         {
                             "key": "workflow-child-gate-contained",
@@ -592,13 +604,10 @@ class TrackerQueryMixin:
 
     def _terminal_workflow_child_rows(self, step_ticket: TrackerTicket) -> list[TrackerTicket]:
         children = self._workflow_child_rows(step_ticket)
-        child_ids = {child.id for child in children if child.id is not None}
-        depended_on_by_sibling: set[int] = set()
-        for child in children:
-            for dependent in self._dependent_rows_for_ticket(child.id):
-                if dependent.ticket_id in child_ids and child.id is not None:
-                    depended_on_by_sibling.add(child.id)
-        return [child for child in children if child.id not in depended_on_by_sibling]
+        child_ids = [child.id for child in children if child.id is not None]
+        dependency_edges = self._workflow_dependency_edges(set(child_ids))
+        terminal_child_ids = set(terminal_workflow_children(child_ids, dependency_edges))
+        return [child for child in children if child.id in terminal_child_ids]
 
     def _workflow_step_dependencies(self, ticket: TrackerTicket) -> list[TrackerTicket]:
         rows: list[TrackerTicket] = []
@@ -617,56 +626,24 @@ class TrackerQueryMixin:
         self,
         children: list[TrackerTicket],
     ) -> list[str]:
-        gate_children = [child for child in children if self._is_workflow_gate_child(child)]
-        delivery_children = self._workflow_delivery_child_rows(children)
-        if not gate_children or not delivery_children:
-            return []
-        scope_ids = {child.id for child in children if child.id is not None}
-        bypassing: list[str] = []
-        for gate_child in gate_children:
-            downstream_of_all_delivery = all(
-                self._dependency_path_exists(
-                    source_ticket=delivery_child,
-                    target_ticket=gate_child,
-                    scope_ids=scope_ids,
-                )
-                for delivery_child in delivery_children
+        children_by_id = {child.id: child for child in children if child.id is not None}
+        child_ids = list(children_by_id)
+        gate_child_ids = {
+            child_id
+            for child_id, child in children_by_id.items()
+            if is_workflow_gate_child(
+                key=child.key,
+                title=child.title,
+                goal=child.goal,
+                lane_key=child.lane_key,
             )
-            if not downstream_of_all_delivery:
-                bypassing.append(gate_child.key)
-        return bypassing
-
-    def _workflow_delivery_child_rows(
-        self,
-        children: list[TrackerTicket],
-    ) -> list[TrackerTicket]:
-        return [child for child in children if not self._is_workflow_gate_child(child)]
-
-    def _is_workflow_gate_child(self, ticket: TrackerTicket) -> bool:
-        haystack = " ".join(
-            (
-                ticket.key,
-                ticket.title,
-                ticket.goal,
-                ticket.lane_key,
-            )
-        ).lower()
-        if ticket.lane_key in {"verification", "review", "release", "docs", "qa"}:
-            return True
-        return any(
-            keyword in haystack
-            for keyword in (
-                "qa",
-                "review",
-                "release",
-                "sign-off",
-                "signoff",
-                "sign off",
-                "test",
-                "verification",
-                "verify",
-            )
+        }
+        bypassing_ids = bypassing_workflow_gate_children(
+            child_ids,
+            gate_child_ids,
+            self._workflow_dependency_edges(set(child_ids)),
         )
+        return [children_by_id[child_id].key for child_id in bypassing_ids]
 
     def _ticket_depends_on(
         self,
@@ -690,19 +667,26 @@ class TrackerQueryMixin:
     ) -> bool:
         if source_ticket.id is None or target_ticket.id is None:
             return False
-        queue = [source_ticket.id]
-        seen: set[int] = set()
-        while queue:
-            current = queue.pop(0)
-            if current == target_ticket.id:
-                return True
-            if current in seen:
-                continue
-            seen.add(current)
-            for dependent in self._dependent_rows_for_ticket(current):
-                if dependent.ticket_id in scope_ids and dependent.ticket_id not in seen:
-                    queue.append(dependent.ticket_id)
-        return False
+        return dependency_path_exists(
+            source_ticket.id,
+            target_ticket.id,
+            self._workflow_dependency_edges(scope_ids),
+        )
+
+    def _workflow_dependency_edges(self, scope_ids: set[int]) -> set[tuple[int, int]]:
+        if not scope_ids:
+            return set()
+        rows = self._s.exec(
+            select(TrackerTicketDependency).where(
+                col(TrackerTicketDependency.depends_on_ticket_id).in_(scope_ids),
+                col(TrackerTicketDependency.ticket_id).in_(scope_ids),
+            )
+        )
+        return {
+            (row.depends_on_ticket_id, row.ticket_id)
+            for row in rows
+            if row.depends_on_ticket_id is not None and row.ticket_id is not None
+        }
 
     def history(
         self,
@@ -1339,11 +1323,6 @@ class TrackerQueryMixin:
             and ticket.parent_ticket_id is None
             and ticket.run_plan_id is not None
             and ticket.run_plan_step_id is not None
-            and ticket.key
-            == workflow_step_ticket_key(
-                ticket.run_plan_id,
-                str((ticket.source_json or {}).get("step_id") or ""),
-            )
         )
 
     def _ticket_activity_sets(

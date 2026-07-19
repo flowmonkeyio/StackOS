@@ -29,6 +29,9 @@ def test_plugin_skill_preserves_repo_local_files_by_default() -> None:
 
     assert "Do not create `.env`, `.mcp.json`, `AGENTS.md`, `CLAUDE.md`" in text
     assert "workspace.connect" in text
+    assert "secret.set" in text
+    assert '{"$secret_ref":"secret_..."}' in text
+    assert "do not create or select another Connection" in text
 
 
 def test_plugin_exposes_only_root_stackos_skill() -> None:

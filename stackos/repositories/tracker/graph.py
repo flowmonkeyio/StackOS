@@ -23,7 +23,12 @@ from stackos.repositories.tracker.utils import (
     _is_closed_tracker_scope,
     _is_terminal_tracker_status,
 )
-from stackos.repositories.tracker.workflow import workflow_step_ticket_key
+from stackos.repositories.tracker.workflow_graph_analysis import (
+    bypassing_workflow_gate_children,
+    dependency_path_exists,
+    is_workflow_gate_child,
+    terminal_workflow_children,
+)
 
 
 class TrackerGraphMixin:
@@ -327,15 +332,26 @@ class TrackerGraphMixin:
                     "before execution."
                 )
             for child in children:
-                if not self._graph_dependency_path_exists(parent.key, child.key, dependency_edges):
+                if not dependency_path_exists(parent.key, child.key, dependency_edges):
                     warnings.append(
                         "Workflow child "
                         f"{child.key} is attached to {parent.key} but is not reachable from "
                         "that step through dependency edges."
                     )
-            bypassing_gate_children = self._graph_bypassing_gate_child_keys(
-                children=children,
-                dependency_edges=dependency_edges,
+            gate_child_keys = {
+                child.key
+                for child in children
+                if is_workflow_gate_child(
+                    key=child.key,
+                    title=child.title,
+                    goal=child.goal,
+                    lane_key=child.lane_key,
+                )
+            }
+            bypassing_gate_children = bypassing_workflow_gate_children(
+                [child.key for child in children],
+                gate_child_keys,
+                dependency_edges,
             )
             if bypassing_gate_children:
                 sample = ", ".join(bypassing_gate_children[:3])
@@ -371,13 +387,15 @@ class TrackerGraphMixin:
                 if ticket_key == step_ticket.key
             }
             for prior_step in prior_steps:
-                terminal_children = self._graph_terminal_workflow_children(
-                    prior_step.key,
-                    children_by_parent,
+                prior_children = children_by_parent.get(prior_step.key, [])
+                terminal_child_keys = terminal_workflow_children(
+                    [child.key for child in prior_children],
                     dependency_edges,
                 )
                 missing = [
-                    child.key for child in terminal_children if child.key not in direct_dependencies
+                    child_key
+                    for child_key in terminal_child_keys
+                    if child_key not in direct_dependencies
                 ]
                 if missing:
                     sample = ", ".join(missing[:3])
@@ -390,116 +408,13 @@ class TrackerGraphMixin:
                     )
         return warnings
 
-    def _graph_terminal_workflow_children(
-        self,
-        parent_key: str,
-        children_by_parent: dict[str, list[TrackerTicketOut]],
-        dependency_edges: set[tuple[str, str]],
-    ) -> list[TrackerTicketOut]:
-        children = children_by_parent.get(parent_key, [])
-        child_keys = {child.key for child in children}
-        depended_on_by_sibling = {
-            dependency_key
-            for dependency_key, ticket_key in dependency_edges
-            if dependency_key in child_keys and ticket_key in child_keys
-        }
-        return [child for child in children if child.key not in depended_on_by_sibling]
-
-    def _graph_bypassing_gate_child_keys(
-        self,
-        *,
-        children: list[TrackerTicketOut],
-        dependency_edges: set[tuple[str, str]],
-    ) -> list[str]:
-        gate_children = [child for child in children if self._graph_is_workflow_gate_child(child)]
-        delivery_children = self._graph_workflow_delivery_children(
-            children,
-        )
-        if not gate_children or not delivery_children:
-            return []
-        child_keys = {child.key for child in children}
-        scoped_edges = {
-            edge for edge in dependency_edges if edge[0] in child_keys and edge[1] in child_keys
-        }
-        bypassing: list[str] = []
-        for gate_child in gate_children:
-            downstream_of_all_delivery = all(
-                self._graph_dependency_path_exists(
-                    delivery_child.key,
-                    gate_child.key,
-                    scoped_edges,
-                )
-                for delivery_child in delivery_children
-            )
-            if not downstream_of_all_delivery:
-                bypassing.append(gate_child.key)
-        return bypassing
-
-    def _graph_workflow_delivery_children(
-        self,
-        children: list[TrackerTicketOut],
-    ) -> list[TrackerTicketOut]:
-        return [child for child in children if not self._graph_is_workflow_gate_child(child)]
-
     def _graph_is_workflow_step_mirror_ticket(self, ticket: TrackerTicketOut) -> bool:
-        if (
-            ticket.source_kind != TrackerSourceKind.WORKFLOW
-            or ticket.parent_ticket_key is not None
-            or ticket.run_plan_id is None
-            or ticket.run_plan_step_id is None
-            or not isinstance(ticket.source_json, dict)
-        ):
-            return False
-        step_id = ticket.source_json.get("step_id")
-        if not isinstance(step_id, str) or not step_id.strip():
-            return False
-        return ticket.key == workflow_step_ticket_key(ticket.run_plan_id, step_id)
-
-    def _graph_is_workflow_gate_child(self, ticket: TrackerTicketOut) -> bool:
-        haystack = " ".join(
-            (
-                ticket.key,
-                ticket.title,
-                ticket.goal,
-                ticket.lane_key,
-            )
-        ).lower()
-        if ticket.lane_key in {"verification", "review", "release", "docs", "qa"}:
-            return True
-        return any(
-            keyword in haystack
-            for keyword in (
-                "qa",
-                "review",
-                "release",
-                "sign-off",
-                "signoff",
-                "sign off",
-                "test",
-                "verification",
-                "verify",
-            )
+        return (
+            ticket.source_kind == TrackerSourceKind.WORKFLOW
+            and ticket.parent_ticket_key is None
+            and ticket.run_plan_id is not None
+            and ticket.run_plan_step_id is not None
         )
-
-    def _graph_dependency_path_exists(
-        self,
-        source_key: str,
-        target_key: str,
-        dependency_edges: set[tuple[str, str]],
-    ) -> bool:
-        queue = [source_key]
-        seen: set[str] = set()
-        while queue:
-            current = queue.pop(0)
-            if current == target_key:
-                return True
-            if current in seen:
-                continue
-            seen.add(current)
-            for dependency_key, ticket_key in dependency_edges:
-                if dependency_key == current and ticket_key not in seen:
-                    queue.append(ticket_key)
-        return False
 
 
 __all__ = [

@@ -63,8 +63,14 @@ run token.
    `include_unavailable_integrations=true` only for deliberate setup/catalog
    inspection. Generated provider inventories expose stable public action refs;
    do not call internal generated storage keys.
-8. When a step requires a provider call, use `action.describe`,
-   `action.validate`, and the step-granted `action.execute` path. When several
+8. When a step requires a provider call, use `action.describe` and prepare the
+   concrete input. If a string field in `input_json` needs a tenant/customer
+   secret that is not provider authentication, call `secret.set` once and
+   place only `{"$secret_ref":"secret_..."}` at that field. Keep
+   `credential_ref` for provider auth. Do not create a Connection for payload
+   data, echo the value
+   in prose, or reuse the raw value in later calls. Then call `action.validate`
+   and use the step-granted `action.execute` path. When several
    provider calls share credential, provider scope, output policy, request
    budget, or reusable execution context, use `executionContext.discover`,
    `executionContext.resolve`, or `executionContext.create` and pass
@@ -330,12 +336,19 @@ run token.
   and the stale-run reaper preserves normal long-running workflow work. Do not add
   periodic `run.heartbeat` calls unless a workflow explicitly asks for audit
   liveness evidence.
-- Execute one direct action: describe/validate when useful, call
+- Execute one direct action: describe the action when useful, call
   `toolbox.call` for `readiness.check` when setup is uncertain, resolve an
-  `executionContext.*` ref when the provider scope will be reused, call
-  `toolbox.call` for `action.run`, then inspect the returned response-file path
-  before making another paid or side-effecting provider call. Call `schema.get`
-  with `schema_ref` only when the file envelope schema is needed.
+  `executionContext.*` ref when the provider scope will be reused, and prepare
+  the concrete input. If a sensitive field value is available through an
+  authorized secure input, call `toolbox.call` for `secret.set`, retain only the
+  returned `secret_ref`, and use the exact marker
+  `{"$secret_ref":"secret_..."}` in `input_json` before concrete validation.
+  This is payload transit, not provider setup; do not create or select another Connection.
+  Validate the concrete input when useful, then call
+  `toolbox.call` for `action.run`. After execution, inspect the returned
+  response-file path before making another paid or side-effecting provider
+  call. Call `schema.get` with `schema_ref` only when the file envelope schema
+  is needed.
 - Execute a workflow action: validate the manifest and input, let the daemon
   resolve credentials through `action.execute`, then store synthesized outputs
   as resources, learnings, or run step summaries. Keep endpoint

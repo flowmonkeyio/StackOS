@@ -8,8 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from pytest_httpx import HTTPXMock
+from sqlmodel import Session, select
 
 from stackos.config import Settings
+from stackos.db.connection import make_engine
+from stackos.db.models import IdempotencyKey, PayloadSecret
 
 from .conftest import MCPClient
 
@@ -58,6 +61,7 @@ def test_action_describe_and_validate_are_read_only_discovery_tools(
     assert "action.validate" in tools
     assert "action.execute" in tools
     assert "action.run" in tools
+    assert "secret.set" in tools
 
     listed = mcp_client.call_tool_structured("action.list", {"query": "catalog"})
     described = _call_tool_raw(
@@ -79,6 +83,60 @@ def test_action_describe_and_validate_are_read_only_discovery_tools(
     assert described["agent_execute_available"] is False
     assert validation["valid"] is True
     assert validation["issues"] == []
+
+
+def test_secret_set_is_write_only_mcp_ingress_with_safe_replay(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    tools = {tool["name"]: tool for tool in mcp_client.list_tools()}
+    schema = tools["secret.set"]["inputSchema"]
+    assert schema["properties"]["value"]["writeOnly"] is True
+
+    arguments = {
+        "project_id": project_id,
+        "value": "mcp-transit-canary-2fdd9a47",
+        "idempotency_key": "mcp-transit-create",
+        "response_mode": "raw",
+    }
+    first = mcp_client.call_tool_structured("secret.set", arguments)
+    replay = mcp_client.call_tool_structured("secret.set", arguments)
+    distinct = mcp_client.call_tool_structured(
+        "secret.set",
+        {
+            **arguments,
+            "idempotency_key": "mcp-transit-create-distinct",
+        },
+    )
+
+    assert first["data"] == replay["data"]
+    assert replay["idempotency_replay"] is True
+    assert first["data"]["secret_ref"].startswith("secret_")
+    assert distinct["data"]["secret_ref"] != first["data"]["secret_ref"]
+    assert "mcp-transit-canary-2fdd9a47" not in json.dumps(first)
+    assert "mcp-transit-canary-2fdd9a47" not in json.dumps(replay)
+    assert "mcp-transit-canary-2fdd9a47" not in json.dumps(distinct)
+    engine = make_engine(mcp_settings.db_path)
+    try:
+        with Session(engine) as session:
+            idempotency_rows = list(
+                session.exec(
+                    select(IdempotencyKey).where(IdempotencyKey.tool_name == "secret.set")
+                ).all()
+            )
+            secret_rows = list(session.exec(select(PayloadSecret)).all())
+            assert len(idempotency_rows) == 2
+            assert len(secret_rows) == 2
+            assert "mcp-transit-canary-2fdd9a47" not in json.dumps(
+                [row.response_json for row in idempotency_rows]
+            )
+            assert all(
+                b"mcp-transit-canary-2fdd9a47" not in row.encrypted_payload for row in secret_rows
+            )
+    finally:
+        engine.dispose()
 
 
 def test_action_describe_reports_project_availability(

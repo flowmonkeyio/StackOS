@@ -8,6 +8,7 @@ from typing import Any
 
 from stackos.actions.connectors import ActionValidationIssue
 from stackos.artifacts import redact_secret_text
+from stackos.secret_refs import is_opaque_secret_ref, is_secret_ref_marker
 
 
 def utcnow() -> datetime:
@@ -48,7 +49,17 @@ def _redact_for_audit(value: Any) -> Any:
         redacted: dict[str, Any] = {}
         for raw_key, raw_value in value.items():
             key = str(raw_key)
-            redacted[key] = "[redacted]" if _is_secret_key(key) else _redact_for_audit(raw_value)
+            opaque_secret_ref = key.lower().replace("-", "_") in {
+                "secret_ref",
+                "$secret_ref",
+            } and is_opaque_secret_ref(raw_value)
+            redacted[key] = (
+                "[redacted]"
+                if _is_secret_key(key)
+                and not opaque_secret_ref
+                and not is_secret_ref_marker(raw_value)
+                else _redact_for_audit(raw_value)
+            )
         return redacted
     if isinstance(value, list):
         return [_redact_for_audit(item) for item in value]

@@ -17,8 +17,8 @@ from stackos.browser.runtime import playwright_chromium_executable_path
 from stackos.config import Settings, get_settings
 from stackos.install import _codex_mcp_line_is_bridge as _install_codex_mcp_line_is_bridge
 
+from . import daemon_processes, launchd
 from .app import _exit, app
-from .daemon_commands import _launchd_plist_path, _tcp_can_connect
 from .paths import _doctor_home
 
 
@@ -33,11 +33,11 @@ def _check_credentials_decrypt(
     settings: Settings,
     db_present: bool,
 ) -> tuple[bool, list[dict[str, object]]]:
-    """Return ``(all_ok, [issues])`` for every integration_credentials row.
+    """Return ``(all_ok, [issues])`` for every daemon-encrypted row.
 
-    Each issue is ``{credential_id, kind, project_id, error}``. Returns
-    ``(True, [])`` when there are zero rows or when the DB does not
-    exist yet — those are not failures, just a fresh install.
+    Issues identify either a provider credential or payload-secret row plus its
+    kind, project, and safe error. Returns ``(True, [])`` when there are zero
+    rows or when the DB does not exist yet.
     """
     if not db_present:
         return True, []
@@ -49,8 +49,9 @@ def _check_credentials_decrypt(
             configure_seed_path,
         )
         from stackos.db.connection import make_engine
-        from stackos.db.models import IntegrationCredential
+        from stackos.db.models import IntegrationCredential, PayloadSecret
         from stackos.repositories.projects import IntegrationCredentialRepository
+        from stackos.repositories.secrets import PayloadSecretRepository
 
         configure_seed_path(settings.seed_path)
         engine = make_engine(settings.db_path)
@@ -59,17 +60,35 @@ def _check_credentials_decrypt(
             with Session(engine) as session:
                 rows = session.exec(select(IntegrationCredential)).all()
                 repo = IntegrationCredentialRepository(session)
-                for row in rows:
-                    if row.id is None:
+                for credential_row in rows:
+                    if credential_row.id is None:
                         continue
                     try:
-                        repo.get_decrypted(row.id)
+                        repo.get_decrypted(credential_row.id)
                     except CryptoError as exc:
                         issues.append(
                             {
-                                "credential_id": row.id,
-                                "kind": row.kind,
-                                "project_id": row.project_id,
+                                "credential_id": credential_row.id,
+                                "kind": credential_row.kind,
+                                "project_id": credential_row.project_id,
+                                "error": str(exc.detail),
+                            }
+                        )
+                payload_repo = PayloadSecretRepository(session)
+                for payload_row in session.exec(select(PayloadSecret)).all():
+                    if payload_row.id is None:
+                        continue
+                    try:
+                        payload_repo.resolve(
+                            project_id=payload_row.project_id,
+                            secret_ref=payload_row.secret_ref,
+                        )
+                    except CryptoError as exc:
+                        issues.append(
+                            {
+                                "payload_secret_id": payload_row.id,
+                                "kind": f"payload-secret:{payload_row.value_type}",
+                                "project_id": payload_row.project_id,
                                 "error": str(exc.detail),
                             }
                         )
@@ -109,7 +128,7 @@ def _check_scheduler_jobs(settings: Settings) -> tuple[bool, int]:
     that the daemon is up. When it is, we trust the lifespan registered the
     expected operations jobs.
     """
-    daemon_up = _tcp_can_connect(settings.host, settings.port)
+    daemon_up = daemon_processes._tcp_can_connect(settings.host, settings.port)
     return daemon_up, 4 if daemon_up else 0
 
 
@@ -409,7 +428,7 @@ def mcp_host_status(
 
 def _check_launchd_plist(home: Path) -> tuple[bool, dict[str, object]]:
     """Optional launchd plist presence check; launchd itself is not required."""
-    target = _launchd_plist_path(home)
+    target = launchd._launchd_plist_path(home)
     return target.exists(), {"target": str(target), "exists": target.exists()}
 
 
@@ -544,7 +563,7 @@ def doctor(
     """
     settings = get_settings()
 
-    daemon_up = _tcp_can_connect(settings.host, settings.port)
+    daemon_up = daemon_processes._tcp_can_connect(settings.host, settings.port)
 
     seed_mode = _file_mode_or_none(settings.seed_path)
     seed_ok = seed_mode == 0o600
@@ -554,9 +573,9 @@ def doctor(
 
     db_present = settings.db_path.exists()
 
-    # Walk every integration_credentials row and confirm it decrypts cleanly.
+    # Walk every daemon-encrypted row and confirm it decrypts cleanly.
     # A failure here usually means the seed file was rotated outside the CLI or
-    # restored from a backup that doesn't match the DB's credentials. Surface it
+    # restored from a backup that doesn't match the DB. Surface it
     # as an issue list rather than crashing doctor.
     credentials_ok, credential_issues = _check_credentials_decrypt(settings, db_present)
 

@@ -37,6 +37,18 @@ from stackos.communications import (
     evaluate_inbound_policy,
     process_inbound_event,
 )
+from stackos.communications.provider_ids import (
+    slack_message_ref as _message_ref,
+)
+from stackos.communications.provider_ids import (
+    slack_outbound_button_external_id as _outbound_button_external_id,
+)
+from stackos.communications.provider_ids import (
+    slack_surface_ref as _surface_ref,
+)
+from stackos.communications.provider_ids import (
+    slack_thread_ref as _thread_ref,
+)
 from stackos.db.models import IntegrationCredential
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
@@ -651,20 +663,6 @@ def _slack_click_patch(
     )
 
 
-def _outbound_button_external_id(
-    *,
-    profile_key: str,
-    message_ref: str,
-    action_id: str,
-    value: str,
-    block_id: str,
-) -> str:
-    digest = hashlib.sha256(
-        f"{message_ref}\0{block_id}\0{action_id}\0{value}".encode()
-    ).hexdigest()[:24]
-    return f"slack-button:{profile_key}:{digest}"
-
-
 def _first_action(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     actions = payload.get("actions")
     if isinstance(actions, list):
@@ -713,18 +711,6 @@ def _nested(payload: Mapping[str, Any], path: str) -> Any:
             return None
         current = current.get(part)
     return current
-
-
-def _surface_ref(channel_id: str) -> str:
-    return f"slack-channel:{channel_id}"
-
-
-def _message_ref(channel_id: str, ts: str) -> str:
-    return f"slack-message:{channel_id}:{ts}"
-
-
-def _thread_ref(channel_id: str, ts: str) -> str:
-    return f"slack-thread:{channel_id}:{ts}"
 
 
 def _safe_text(value: Any) -> str:

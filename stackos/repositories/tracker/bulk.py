@@ -12,12 +12,9 @@ from sqlmodel import select
 
 from stackos.db.models import (
     TaskTracker,
-    TrackerItemStatus,
-    TrackerSourceKind,
     TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
-    TrackerTicketKind,
 )
 from stackos.repositories.base import (
     ConflictError,
@@ -31,11 +28,15 @@ from stackos.repositories.tracker.schema import (
     TrackerListItemResultOut,
     TrackerMutationOut,
 )
+from stackos.repositories.tracker.ticket_list_specs import (
+    normalize_internal_dependency_declarations,
+    normalize_ticket_key,
+    normalize_ticket_spec,
+    self_dependency_issue,
+)
 from stackos.repositories.tracker.utils import (
     DEPENDENCY_PATCH_FIELDS,
-    _clean_text,
     _required_id,
-    _slug,
     _utcnow,
 )
 
@@ -388,25 +389,14 @@ class TrackerBulkMixin:
 
         seen_keys: set[str] = set()
         for index, raw in enumerate(raw_tickets):
-            if not isinstance(raw, dict):
-                errors.append(
-                    TrackerListIssueOut(
-                        index=index, field="tickets", message="ticket must be an object"
-                    )
-                )
+            normalized_raw, key, key_errors = normalize_ticket_key(
+                raw,
+                index=index,
+                seen_keys=seen_keys,
+            )
+            errors.extend(key_errors)
+            if normalized_raw is None or key is None:
                 continue
-            key = _slug(str(raw.get("key") or ""), fallback="", max_length=180)
-            if not key:
-                errors.append(
-                    TrackerListIssueOut(index=index, field="key", message="ticket key is required")
-                )
-                continue
-            if key in seen_keys:
-                errors.append(
-                    TrackerListIssueOut(
-                        index=index, key=key, field="key", message="duplicate ticket key"
-                    )
-                )
             seen_keys.add(key)
             if self._ticket_by_key(tracker.id, key, missing_ok=True) is not None:
                 errors.append(
@@ -417,190 +407,26 @@ class TrackerBulkMixin:
                         message="tracker ticket key already exists",
                     )
                 )
-            title = _clean_text(raw.get("title")) if raw.get("title") is not None else ""
-            if not title:
-                title = key
-                warnings.append(f"ticket {key} has no title; key will be used as title")
-            status = self._list_enum(
-                raw.get("status", TrackerItemStatus.NOT_STARTED.value),
-                TrackerItemStatus,
-                errors,
+            spec, spec_errors, spec_warnings = normalize_ticket_spec(
+                normalized_raw,
                 index=index,
                 key=key,
-                field="status",
+                list_created_by=ticket_list_json.get("created_by"),
             )
-            kind = self._list_enum(
-                raw.get("kind", TrackerTicketKind.TICKET.value),
-                TrackerTicketKind,
-                errors,
-                index=index,
-                key=key,
-                field="kind",
-            )
-            source_kind = self._list_enum(
-                raw.get("source_kind", TrackerSourceKind.MANUAL.value),
-                TrackerSourceKind,
-                errors,
-                index=index,
-                key=key,
-                field="source_kind",
-            )
-            dependency_keys = self._json_string_list(
-                raw.get("dependency_keys", []),
-                errors,
-                index=index,
-                key=key,
-                field="dependency_keys",
-            )
-            references_json = raw.get("references_json", [])
-            if not isinstance(references_json, list):
-                errors.append(
-                    TrackerListIssueOut(
-                        index=index,
-                        key=key,
-                        field="references_json",
-                        message="references_json must be a list",
-                    )
-                )
-                references_json = []
-            elif any(not isinstance(item, dict) for item in references_json):
-                errors.append(
-                    TrackerListIssueOut(
-                        index=index,
-                        key=key,
-                        field="references_json",
-                        message="references_json entries must be objects",
-                    )
-                )
-                references_json = []
-            completion_evidence_json = raw.get("completion_evidence_json")
-            if completion_evidence_json is not None and not isinstance(
-                completion_evidence_json, dict
-            ):
-                errors.append(
-                    TrackerListIssueOut(
-                        index=index,
-                        key=key,
-                        field="completion_evidence_json",
-                        message="completion_evidence_json must be an object",
-                    )
-                )
-                completion_evidence_json = None
-            specs.append(
-                {
-                    "index": index,
-                    "key": key,
-                    "title": title,
-                    "goal": _clean_text(raw.get("goal")),
-                    "status": status or TrackerItemStatus.NOT_STARTED,
-                    "kind": kind or TrackerTicketKind.TICKET,
-                    "assignee": raw.get("assignee"),
-                    "priority_key": str(raw.get("priority_key") or "p2"),
-                    "lane_key": str(raw.get("lane_key") or "implementation"),
-                    "parent_ticket_key": str(raw.get("parent_ticket_key") or "").strip() or None,
-                    "dependency_keys": dependency_keys,
-                    "blocker_reason": raw.get("blocker_reason"),
-                    "outcome": raw.get("outcome"),
-                    "effort": raw.get("effort"),
-                    "source_kind": source_kind or TrackerSourceKind.MANUAL,
-                    "source_json": raw.get("source_json")
-                    if isinstance(raw.get("source_json"), dict)
-                    else None,
-                    "definition_of_done_json": self._json_string_list(
-                        raw.get("definition_of_done_json", []),
-                        errors,
-                        index=index,
-                        key=key,
-                        field="definition_of_done_json",
-                    ),
-                    "constraints_json": self._json_string_list(
-                        raw.get("constraints_json", []),
-                        errors,
-                        index=index,
-                        key=key,
-                        field="constraints_json",
-                    ),
-                    "expected_changes_json": self._json_string_list(
-                        raw.get("expected_changes_json", []),
-                        errors,
-                        index=index,
-                        key=key,
-                        field="expected_changes_json",
-                    ),
-                    "allowed_paths_json": self._json_string_list(
-                        raw.get("allowed_paths_json", []),
-                        errors,
-                        index=index,
-                        key=key,
-                        field="allowed_paths_json",
-                    ),
-                    "references_json": references_json,
-                    "completion_evidence_json": completion_evidence_json,
-                    "context_json": raw.get("context_json")
-                    if isinstance(raw.get("context_json"), dict)
-                    else None,
-                    "metadata_json": raw.get("metadata_json")
-                    if isinstance(raw.get("metadata_json"), dict)
-                    else None,
-                    "run_plan_id": raw.get("run_plan_id")
-                    if isinstance(raw.get("run_plan_id"), int)
-                    else None,
-                    "run_plan_step_id": raw.get("run_plan_step_id")
-                    if isinstance(raw.get("run_plan_step_id"), int)
-                    else None,
-                    "created_by": raw.get("created_by") or ticket_list_json.get("created_by"),
-                }
-            )
+            errors.extend(spec_errors)
+            warnings.extend(spec_warnings)
+            specs.append(spec)
 
         by_key = {spec["key"]: spec for spec in specs}
-        raw_dependencies = ticket_list_json.get("dependencies", [])
-        if raw_dependencies is not None and not isinstance(raw_dependencies, list):
-            errors.append(
-                TrackerListIssueOut(field="dependencies", message="dependencies must be a list")
-            )
-        elif isinstance(raw_dependencies, list):
-            for dep_index, raw_dep in enumerate(raw_dependencies):
-                if not isinstance(raw_dep, dict):
-                    errors.append(
-                        TrackerListIssueOut(
-                            index=dep_index,
-                            field="dependencies",
-                            message="dependency must be an object",
-                        )
-                    )
-                    continue
-                ticket_key = _slug(
-                    str(raw_dep.get("ticket_key") or ""), fallback="", max_length=180
-                )
-                dependency_key = _slug(
-                    str(
-                        raw_dep.get("depends_on_ticket_key") or raw_dep.get("dependency_key") or ""
-                    ),
-                    fallback="",
-                    max_length=180,
-                )
-                if not ticket_key or not dependency_key:
-                    errors.append(
-                        TrackerListIssueOut(
-                            index=dep_index,
-                            field="dependencies",
-                            message="dependency requires ticket_key and depends_on_ticket_key",
-                        )
-                    )
-                    continue
-                target = by_key.get(ticket_key)
-                if target is None:
-                    errors.append(
-                        TrackerListIssueOut(
-                            index=dep_index,
-                            key=ticket_key,
-                            field="dependencies",
-                            message="dependency ticket_key must refer to a list ticket",
-                        )
-                    )
-                    continue
-                if dependency_key not in target["dependency_keys"]:
-                    target["dependency_keys"].append(dependency_key)
+        dependency_declarations, dependency_errors = normalize_internal_dependency_declarations(
+            ticket_list_json.get("dependencies", []),
+            list_ticket_keys=set(by_key),
+        )
+        errors.extend(dependency_errors)
+        for ticket_key, dependency_key in dependency_declarations:
+            target = by_key[ticket_key]
+            if dependency_key not in target["dependency_keys"]:
+                target["dependency_keys"].append(dependency_key)
 
         for spec in specs:
             if spec["parent_ticket_key"]:
@@ -611,15 +437,8 @@ class TrackerBulkMixin:
                 self._validate_ticket_list_ref(
                     tracker, dependency_key, by_key, errors, spec, "dependency_keys"
                 )
-            if spec["key"] in spec["dependency_keys"]:
-                errors.append(
-                    TrackerListIssueOut(
-                        index=spec["index"],
-                        key=spec["key"],
-                        field="dependency_keys",
-                        message="ticket cannot depend on itself",
-                    )
-                )
+            if (issue := self_dependency_issue(spec)) is not None:
+                errors.append(issue)
             try:
                 self._validate_workflow_ticket_initial_status(
                     key=spec["key"],
@@ -638,52 +457,6 @@ class TrackerBulkMixin:
                     )
                 )
         return task, specs, errors, warnings
-
-    def _list_enum(
-        self,
-        value: Any,
-        enum_cls: Any,
-        errors: list[TrackerListIssueOut],
-        *,
-        index: int,
-        key: str,
-        field: str,
-    ) -> Any:
-        try:
-            return enum_cls(str(value))
-        except ValueError:
-            errors.append(
-                TrackerListIssueOut(
-                    index=index,
-                    key=key,
-                    field=field,
-                    message=f"unsupported {field}: {value}",
-                )
-            )
-            return None
-
-    def _json_string_list(
-        self,
-        value: Any,
-        errors: list[TrackerListIssueOut],
-        *,
-        index: int,
-        key: str,
-        field: str,
-    ) -> list[str]:
-        if value is None:
-            return []
-        if not isinstance(value, list):
-            errors.append(
-                TrackerListIssueOut(
-                    index=index,
-                    key=key,
-                    field=field,
-                    message=f"{field} must be a list",
-                )
-            )
-            return []
-        return [str(item) for item in value]
 
     def _validate_ticket_list_ref(
         self,

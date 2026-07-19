@@ -23,6 +23,7 @@ from pydantic import (
 
 from stackos.artifacts import redact_secret_text
 from stackos.plugins.manifest import get_builtin_plugin_manifest_snapshot
+from stackos.secret_refs import is_opaque_secret_ref, is_secret_ref_marker
 from stackos.workflows.run_plan_grants import (
     RunPlanMcpToolGrant,
     parse_run_plan_mcp_tool_grants,
@@ -68,12 +69,20 @@ def _is_secret_key(key: str) -> bool:
 
 
 def _secret_paths(value: Any, *, path: str = "$") -> list[str]:
+    if is_secret_ref_marker(value):
+        return []
     paths: list[str] = []
     if isinstance(value, dict):
         for raw_key, raw_value in value.items():
             key = str(raw_key)
             child_path = f"{path}.{key}"
-            if _is_secret_key(key):
+            normalized_key = key.lower().replace("-", "_")
+            opaque_secret_ref = normalized_key == "secret_ref" and is_opaque_secret_ref(raw_value)
+            if (
+                _is_secret_key(key)
+                and not is_secret_ref_marker(raw_value)
+                and not opaque_secret_ref
+            ):
                 paths.append(child_path)
             paths.extend(_secret_paths(raw_value, path=child_path))
     elif isinstance(value, list):
@@ -94,8 +103,9 @@ def ensure_run_plan_has_no_secrets(value: Any) -> None:
     paths = find_run_plan_secret_paths(value)
     if paths:
         raise ValueError(
-            "run plans must not contain secrets; use opaque credential_ref values: "
-            + ", ".join(paths[:8])
+            "run plans must not contain secrets as raw values; use credential_ref for "
+            "provider auth or secret.set with an exact $secret_ref marker for action "
+            "payload values: " + ", ".join(paths[:8])
         )
 
 

@@ -251,6 +251,34 @@ def test_operation_docs_are_agent_readable(api: TestClient) -> None:
     assert any("run_token" in item for item in run_plan_body["prerequisites"])
 
 
+def test_secret_set_is_documented_but_not_exposed_through_rest_or_cli(
+    api: TestClient,
+) -> None:
+    listed = api.get("/api/v1/operations", params={"surface": "rest"})
+    described = api.get("/api/v1/operations/secret.set")
+    blocked = api.post(
+        "/api/v1/operations/secret.set/call",
+        json={
+            "arguments": {
+                "project_id": 1,
+                "value": "route-transit-canary-43ef55b1",
+            }
+        },
+    )
+
+    assert listed.status_code == 200
+    assert "secret.set" not in {item["name"] for item in listed.json()["items"]}
+    assert described.status_code == 200
+    body = described.json()
+    assert body["surfaces"]["mcp"]["enabled"] is True
+    assert body["surfaces"]["rest"]["enabled"] is False
+    assert body["surfaces"]["cli"]["enabled"] is False
+    assert body["input_schema"]["properties"]["value"]["writeOnly"] is True
+    assert body["secret_policy"] == "write-only-input-no-secret-output"
+    assert blocked.status_code == 404
+    assert "route-transit-canary-43ef55b1" not in blocked.text
+
+
 def test_catalog_list_compact_responses_keep_agent_usable_items(
     api: TestClient,
     project_id: int,

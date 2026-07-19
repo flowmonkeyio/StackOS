@@ -19,11 +19,13 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session, SQLModel, select
 from typer.testing import CliRunner
 
 import stackos.cli.daemon_commands as daemon_cli
+import stackos.cli.daemon_processes as daemon_processes
 import stackos.cli.doctor_commands as doctor_cli
+import stackos.cli.launchd as launchd_cli
 import stackos.cli.local_commands as local_cli
 import stackos.db.migrate as migrate_module
 import stackos.db.models  # noqa: F401  (populate SQLModel metadata)
@@ -34,12 +36,15 @@ from stackos.auth_providers import AuthRepository
 from stackos.cli import app
 from stackos.config import Settings
 from stackos.crypto.aes_gcm import configure_seed_path
+from stackos.crypto.seed import ensure_seed_file
 from stackos.db.connection import make_engine
 from stackos.db.migrate import current_alembic_version, upgrade_to_head
-from stackos.db.models import Project
+from stackos.db.models import PayloadSecret, Project
 from stackos.repositories.plugins import PluginRepository
+from stackos.repositories.projects import ProjectRepository
+from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0022_artifact_lifecycle"
+HEAD_REVISION = "0023_payload_secrets"
 
 
 @pytest.fixture
@@ -523,9 +528,9 @@ def test_bridge_autostart_spawns_loopback_daemon(
         calls.append((args, kwargs))
         return FakeProcess()
 
-    monkeypatch.setattr(daemon_cli, "_tcp_can_connect", lambda *args, **kwargs: False)
-    monkeypatch.setattr(daemon_cli, "_wait_for_daemon", lambda *args, **kwargs: True)
-    monkeypatch.setattr(daemon_cli.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda *args, **kwargs: False)
+    monkeypatch.setattr(daemon_processes, "_wait_for_daemon", lambda *args, **kwargs: True)
+    monkeypatch.setattr(daemon_processes.subprocess, "Popen", fake_popen)
 
     ok, message = daemon_cli._autostart_bridge_daemon(settings, "127.0.0.1", 5180)
 
@@ -545,8 +550,8 @@ def test_bridge_autostart_spawns_loopback_daemon(
         "--log-level",
         settings.log_level,
     ]
-    assert kwargs["stdin"] is daemon_cli.subprocess.DEVNULL
-    assert kwargs["stderr"] is daemon_cli.subprocess.STDOUT
+    assert kwargs["stdin"] is daemon_processes.subprocess.DEVNULL
+    assert kwargs["stderr"] is daemon_processes.subprocess.STDOUT
     assert kwargs["start_new_session"] is True
 
 
@@ -562,8 +567,8 @@ def test_bridge_autostart_rejects_non_loopback(
     def fail_popen(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("Popen should not be called for non-loopback hosts")
 
-    monkeypatch.setattr(daemon_cli, "_tcp_can_connect", lambda *args, **kwargs: False)
-    monkeypatch.setattr(daemon_cli.subprocess, "Popen", fail_popen)
+    monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda *args, **kwargs: False)
+    monkeypatch.setattr(daemon_processes.subprocess, "Popen", fail_popen)
 
     ok, message = daemon_cli._autostart_bridge_daemon(settings, "0.0.0.0", 5180)
 
@@ -1118,7 +1123,7 @@ def test_cli_install_launchd_force_overwrites_plist(
         launchd_calls.append(force)
         return True, "installed launchd plist"
 
-    monkeypatch.setattr(local_cli, "_install_launchd_autostart", fake_install_launchd)
+    monkeypatch.setattr(launchd_cli, "_install_launchd_autostart", fake_install_launchd)
 
     result = CliRunner().invoke(
         app,
@@ -1238,15 +1243,79 @@ def test_cli_rotate_token_reports_restart_even_when_mcp_repair_fails(
     assert "run `stackos restart`" in result.output
 
 
+def test_cli_rotate_seed_reencrypts_payload_secrets(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings()
+    settings.ensure_dirs()
+    ensure_seed_file(settings.seed_path)
+    configure_seed_path(settings.seed_path)
+    upgrade_to_head(settings)
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            project = (
+                ProjectRepository(session)
+                .create(
+                    slug="payload-secret-rotation",
+                    name="Payload Secret Rotation",
+                    domain="rotation.example.test",
+                    locale="en-US",
+                )
+                .data
+            )
+            assert project.id is not None
+            secret_ref = (
+                PayloadSecretRepository(session)
+                .set(
+                    project_id=project.id,
+                    value="rotation-canary",
+                )
+                .secret_ref
+            )
+            before = session.exec(select(PayloadSecret)).one().encrypted_payload
+    finally:
+        engine.dispose()
+
+    monkeypatch.setattr(local_cli, "get_settings", lambda: settings)
+    result = CliRunner().invoke(app, ["rotate-seed", "--reencrypt"])
+
+    assert result.exit_code == 0
+    assert "rotated 1 row(s)" in result.output
+    configure_seed_path(settings.seed_path)
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            row = session.exec(select(PayloadSecret)).one()
+            assert row.encrypted_payload != before
+            assert (
+                PayloadSecretRepository(session).resolve(
+                    project_id=row.project_id,
+                    secret_ref=secret_ref,
+                )
+                == "rotation-canary"
+            )
+            row.encrypted_payload = b"tampered" + row.encrypted_payload
+            session.add(row)
+            session.commit()
+    finally:
+        engine.dispose()
+
+    decrypt_ok, issues = doctor_cli._check_credentials_decrypt(settings, True)
+    assert decrypt_ok is False
+    assert issues[0]["payload_secret_id"] is not None
+
+
 def test_cli_start_spawns_background_daemon(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, int, str, Path]] = []
 
-    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *args: ([], []))
-    monkeypatch.setattr(daemon_cli, "_daemon_health_ok", lambda *args, **kwargs: False)
-    monkeypatch.setattr(daemon_cli, "_tcp_can_connect", lambda *args, **kwargs: False)
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *args: ([], []))
+    monkeypatch.setattr(daemon_processes, "_daemon_health_ok", lambda *args, **kwargs: False)
+    monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda *args, **kwargs: False)
 
     def fake_spawn(
         settings: Settings,
@@ -1263,7 +1332,7 @@ def test_cli_start_spawns_background_daemon(
         calls.append((host, port, log_level, log_path))
         return True, "started daemon pid=42; url=http://127.0.0.1:5180"
 
-    monkeypatch.setattr(daemon_cli, "_spawn_detached_daemon", fake_spawn)
+    monkeypatch.setattr(daemon_processes, "_spawn_detached_daemon", fake_spawn)
 
     result = CliRunner().invoke(app, ["start"], catch_exceptions=False)
 
@@ -1289,10 +1358,10 @@ def test_launchd_autostart_install_writes_python_plist(
             return subprocess.CompletedProcess(args, 1, "", "not loaded")
         return subprocess.CompletedProcess(args, 0, "", "")
 
-    monkeypatch.setattr(daemon_cli.shutil, "which", lambda name: "/bin/launchctl")
-    monkeypatch.setattr(daemon_cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(launchd_cli.shutil, "which", lambda name: "/bin/launchctl")
+    monkeypatch.setattr(launchd_cli.subprocess, "run", fake_run)
 
-    ok, message = daemon_cli._install_launchd_autostart(
+    ok, message = launchd_cli._install_launchd_autostart(
         settings,
         home=sandbox,
         force=False,
@@ -1331,7 +1400,7 @@ def test_packaged_launchd_plist_associates_with_stackos_app(
         "/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
     )
 
-    content = daemon_cli._launchd_plist_content(
+    content = launchd_cli._launchd_plist_content(
         settings,
         home=sandbox,
         host="127.0.0.1",
@@ -1355,9 +1424,9 @@ def test_launchd_autostart_requires_force_for_different_plist(
     plist.parent.mkdir(parents=True)
     plist.write_text("<plist><dict>custom</dict></plist>", encoding="utf-8")
 
-    monkeypatch.setattr(daemon_cli.shutil, "which", lambda name: "/bin/launchctl")
+    monkeypatch.setattr(launchd_cli.shutil, "which", lambda name: "/bin/launchctl")
 
-    ok, message = daemon_cli._install_launchd_autostart(
+    ok, message = launchd_cli._install_launchd_autostart(
         settings,
         home=sandbox,
         force=False,
@@ -1446,7 +1515,7 @@ def test_doctor_plain_output_reports_claude_absent_without_blocking(
     seed = sandbox / ".local" / "state" / "stackos" / "seed.bin"
     seed.write_bytes(b"0" * 32)
     os.chmod(seed, 0o600)
-    monkeypatch.setattr(doctor_cli, "_tcp_can_connect", lambda host, port: True)
+    monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda host, port: True)
     monkeypatch.setattr(
         doctor_cli, "_check_credentials_decrypt", lambda settings, db_present: (True, [])
     )
@@ -1559,7 +1628,7 @@ def test_doctor_exits_9_for_stale_claude_registration(
     seed = sandbox / ".local" / "state" / "stackos" / "seed.bin"
     seed.write_bytes(b"0" * 32)
     os.chmod(seed, 0o600)
-    monkeypatch.setattr(doctor_cli, "_tcp_can_connect", lambda host, port: True)
+    monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda host, port: True)
     monkeypatch.setattr(
         doctor_cli, "_check_credentials_decrypt", lambda settings, db_present: (True, [])
     )

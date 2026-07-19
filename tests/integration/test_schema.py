@@ -45,6 +45,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "learnings",
         "metric_snapshots",
         "oauth_states",
+        "payload_secrets",
         "plugins",
         "project_events",
         "project_plugins",

@@ -17,6 +17,13 @@ from sqlmodel import Session, col, select
 from stackos.db.models import AgentSession, Project, WorkspaceBinding
 from stackos.repositories.base import Envelope, NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectOut, ProjectRepository
+from stackos.repositories.workspace_guidance import (
+    _connect_required_next_step,
+    _connected_next_step,
+    _repo_hints,
+    _setup_state,
+    _ui_paths,
+)
 from stackos.workspace_identity import (
     NAMED_WORKSPACE_PREFIX as _NAMED_WORKSPACE_PREFIX,
 )
@@ -88,123 +95,6 @@ def _effective_workspace_fingerprint(
     return repo_fingerprint or alias_fingerprint
 
 
-def _ui_paths(project_id: int | None) -> dict[str, str]:
-    if project_id is None:
-        return {"projects": "/"}
-    return {
-        "setup": f"/projects/{project_id}/setup",
-        "connections": f"/projects/{project_id}/connections",
-        "tasks": f"/projects/{project_id}/tasks",
-        "workflow_templates": f"/projects/{project_id}/workflow-templates",
-    }
-
-
-def _setup_state(
-    *,
-    binding: WorkspaceBindingOut | None,
-    needs_connect: bool,
-    auto_bootstrap: bool | None = None,
-) -> dict[str, Any]:
-    if needs_connect or binding is None:
-        return {
-            "state": "needs_workspace_binding",
-            "workspace_bound": False,
-            "project_scoped_tools_usable": False,
-            "profile_complete": False,
-            "profile_missing": ["workspace_binding"],
-            "meaning": (
-                "No project-scoped StackOS operations are available until this workspace is bound."
-            ),
-        }
-    profile_missing: list[str] = []
-    if not binding.framework:
-        profile_missing.append("framework")
-    if binding.content_model_json is None:
-        profile_missing.append("content_model_json")
-    out: dict[str, Any] = {
-        "state": "bound_profile_incomplete" if profile_missing else "bound_profile_configured",
-        "workspace_bound": True,
-        "project_scoped_tools_usable": True,
-        "profile_complete": not profile_missing,
-        "profile_missing": profile_missing,
-        "meaning": (
-            "The workspace is bound and project-scoped tools are usable. "
-            "Profile fields are adaptation hints for agents and workflows, not a blocker."
-        ),
-        "auto_bootstrap": auto_bootstrap,
-    }
-    if profile_missing:
-        out["profile_update_suggestion"] = _profile_update_suggestion(
-            binding=binding,
-            profile_missing=profile_missing,
-        )
-    return out
-
-
-def _profile_update_suggestion(
-    *,
-    binding: WorkspaceBindingOut,
-    profile_missing: list[str],
-) -> dict[str, Any]:
-    recommended_arguments: dict[str, Any] = {
-        "binding_id": binding.id,
-        "project_id": binding.project_id,
-    }
-    if "framework" in profile_missing:
-        recommended_arguments["framework"] = "<detected-framework-or-stack>"
-    if "content_model_json" in profile_missing:
-        recommended_arguments["content_model_json"] = {
-            "project_type": "saas|content|commerce|internal-tool|other",
-            "primary_objects": ["customer", "account", "project"],
-            "primary_workflows": [
-                "Name the durable product/workflow concepts agents should understand."
-            ],
-            "content_heavy": False,
-            "notes": "Replace this with project-specific model hints after reading repo docs.",
-        }
-    return {
-        "tool": "workspace.updateProfile",
-        "call_via": "toolbox.call",
-        "recommended_arguments": recommended_arguments,
-        "guidance": [
-            "This is an adaptation hint, not a setup blocker.",
-            (
-                "Populate framework from local repo evidence such as README, AGENTS, "
-                "package files, or build config."
-            ),
-            (
-                "For non-content SaaS/internal tools, describe domain objects and workflows "
-                "instead of forcing a content taxonomy."
-            ),
-        ],
-    }
-
-
-def _repo_hints(
-    *,
-    repo_fingerprint: str | None,
-    git_remote_url: str | None,
-    cwd: str | None,
-) -> dict[str, Any]:
-    normalized_cwd = _normalize_path(cwd)
-    hints = {
-        "repo_fingerprint": repo_fingerprint,
-        "git_remote_url": git_remote_url,
-        "cwd": cwd,
-        "normalized_cwd": normalized_cwd,
-        "fingerprint_format": (
-            "The StackOS bridge sends path:<sha256(workspace_root)[:24]> by default; "
-            "git:<stable-repo-id> is also accepted when a host supplies it."
-        ),
-    }
-    if normalized_cwd and not _is_usable_workspace_root(normalized_cwd):
-        hints["workspace_hint_warning"] = (
-            "The MCP host did not provide a usable project directory; filesystem root "
-            "and app bundle paths are not treated as StackOS workspaces."
-        )
-    return hints
-
-
 def _project_candidate(project: ProjectOut) -> WorkspaceProjectCandidateOut:
     return WorkspaceProjectCandidateOut(
         id=project.id,
@@ -232,131 +122,6 @@ def _named_workspace_candidate(
         project_name=project.name,
         ui_paths=_ui_paths(project.id),
     )
-
-
-def _connect_required_next_step(
-    *,
-    repo_fingerprint: str | None,
-    git_remote_url: str | None,
-    cwd: str | None,
-) -> dict[str, Any]:
-    bootstrap_args: dict[str, Any] = {}
-    if repo_fingerprint:
-        bootstrap_args["repo_fingerprint"] = repo_fingerprint
-    if git_remote_url:
-        bootstrap_args["git_remote_url"] = git_remote_url
-    if cwd:
-        bootstrap_args["cwd"] = cwd
-    project_identity_required = (
-        _derive_project_name(
-            normalized_repo_name=None,
-            git_remote_url=git_remote_url,
-            workspace_root=_normalize_path(cwd),
-        )
-        is None
-    )
-    if project_identity_required:
-        bootstrap_args["project_name"] = "<operator-provided project name>"
-    if project_identity_required and not any(
-        (repo_fingerprint, git_remote_url, _normalize_path(cwd))
-    ):
-        return {
-            "status": "project_selection_required",
-            "call_via": "toolbox.call",
-            "project_identity_required": True,
-            "project_identity_guidance": (
-                "The host did not provide a reliable directory, repo fingerprint, or git "
-                "remote. Choose an existing named workspace/project from user intent, or "
-                "ask for the business project name before creating one."
-            ),
-            "recommended_arguments": {
-                "workspace_alias": "<business-project-alias>",
-                "project_name": "<operator-provided project name>",
-            },
-            "why": (
-                "Desktop/global hosts can start without filesystem identity. StackOS will "
-                "not use last-used/global fallback; an agent must explicitly connect or "
-                "bootstrap the intended project."
-            ),
-            "options": [
-                {
-                    "tool": "workspace.connect",
-                    "when": (
-                        "Reuse a known named workspace or intentionally selected existing project."
-                    ),
-                    "arguments": {
-                        "workspace_alias": "<known alias>",
-                        "project_id": "<selected existing project id>",
-                    },
-                },
-                {
-                    "tool": "workspace.bootstrap",
-                    "when": (
-                        "Create a new named desktop workspace from an "
-                        "operator-provided project name."
-                    ),
-                    "arguments": {
-                        "project_name": "<business project name>",
-                        "workspace_alias": "<business-project-alias>",
-                    },
-                },
-                {
-                    "tool": "project.list",
-                    "when": "Inspect projects when user intent is ambiguous.",
-                },
-            ],
-        }
-    return {
-        "status": "bootstrap_required",
-        "recommended_tool": "workspace.bootstrap",
-        "call_via": "toolbox.call",
-        "recommended_arguments": bootstrap_args,
-        "project_identity_required": project_identity_required,
-        "project_identity_guidance": (
-            "Pass project_name or project_slug when StackOS cannot derive a reliable "
-            "business project name from the host-supplied workspace directory."
-            if project_identity_required
-            else "StackOS can derive a project name from the current workspace metadata."
-        ),
-        "why": (
-            "This workspace has no daemon-owned project binding yet. "
-            "workspace.bootstrap explicitly creates or reuses one project for this "
-            "workspace root and stores the binding."
-        ),
-        "alternatives": [
-            {
-                "tool": "project.list",
-                "call_via": "toolbox.call",
-                "when": "Choose an existing project intentionally before binding.",
-            },
-            {
-                "tool": "project.create",
-                "call_via": "toolbox.call",
-                "when": "Create a project with explicit operator-provided metadata.",
-            },
-            {
-                "tool": "workspace.connect",
-                "call_via": "toolbox.call",
-                "when": "Bind to a known project_id, project_slug, or project_name.",
-            },
-        ],
-    }
-
-
-def _connected_next_step(project_id: int) -> dict[str, Any]:
-    return {
-        "status": "ready",
-        "call_via": "toolbox.call",
-        "recommended_tools": [
-            "operation.list",
-            "workflowTemplate.list",
-            "readiness.check",
-            "agentPreset.list",
-            "tracker.status",
-            "auth.status",
-        ],
-        "ui_paths": _ui_paths(project_id),
-    }
 
 
 class WorkspaceBindingOut(BaseModel):
@@ -774,6 +539,8 @@ class WorkspaceRepository:
                     repo_fingerprint=effective_fingerprint,
                     git_remote_url=git_remote_url,
                     cwd=cwd,
+                    normalized_cwd=normalized_cwd,
+                    workspace_root_usable=usable_cwd is not None,
                 ),
                 ui_paths=_ui_paths(None),
                 setup_state=_setup_state(binding=None, needs_connect=True),
@@ -781,6 +548,17 @@ class WorkspaceRepository:
                     repo_fingerprint=effective_fingerprint,
                     git_remote_url=git_remote_url,
                     cwd=cwd,
+                    project_identity_required=(
+                        _derive_project_name(
+                            normalized_repo_name=None,
+                            git_remote_url=git_remote_url,
+                            workspace_root=normalized_cwd,
+                        )
+                        is None
+                    ),
+                    has_workspace_identity=any(
+                        (effective_fingerprint, git_remote_url, normalized_cwd)
+                    ),
                 ),
             )
 
@@ -797,6 +575,8 @@ class WorkspaceRepository:
                 repo_fingerprint=effective_fingerprint or row.repo_fingerprint,
                 git_remote_url=git_remote_url or row.git_remote_url,
                 cwd=cwd,
+                normalized_cwd=normalized_cwd,
+                workspace_root_usable=usable_cwd is not None,
             ),
             ui_paths=_ui_paths(row.project_id),
             setup_state=_setup_state(binding=out, needs_connect=False),
@@ -1106,6 +886,7 @@ class WorkspaceRepository:
         git_remote_url: str | None,
         cwd: str | None,
     ) -> WorkspaceBootstrapOut:
+        normalized_cwd = _normalize_path(cwd)
         return WorkspaceBootstrapOut(
             project_id=project.id,
             project=project,
@@ -1116,6 +897,8 @@ class WorkspaceRepository:
                 repo_fingerprint=repo_fingerprint,
                 git_remote_url=git_remote_url,
                 cwd=cwd,
+                normalized_cwd=normalized_cwd,
+                workspace_root_usable=_is_usable_workspace_root(normalized_cwd),
             ),
             ui_paths=_ui_paths(project.id),
             setup_state=_setup_state(

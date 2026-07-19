@@ -1,473 +1,53 @@
-"""StackOS run-plan operation registrations."""
+"""Operation spec registration for run-plan operations."""
 
 from __future__ import annotations
 
-from typing import Any
-
-from pydantic import ConfigDict
-
-from stackos.db.models import (
-    ApprovalRequestStatus,
-    RunPlanStatus,
-    RunPlanStepStatus,
+from stackos.mcp.contract import WriteEnvelope
+from stackos.operations.run_plans.handlers import (
+    run_plan_abort,
+    run_plan_check_consistency,
+    run_plan_claim_step,
+    run_plan_create,
+    run_plan_get,
+    run_plan_get_step,
+    run_plan_list,
+    run_plan_record_step,
+    run_plan_recover,
+    run_plan_reopen,
+    run_plan_start,
+    run_plan_update,
+    run_plan_validate,
 )
-from stackos.mcp.context import MCPContext
-from stackos.mcp.contract import MCPInput, WriteEnvelope
-from stackos.mcp.streaming import ProgressEmitter
+from stackos.operations.run_plans.schemas import (
+    RunPlanAbortInput,
+    RunPlanCheckConsistencyInput,
+    RunPlanClaimStepInput,
+    RunPlanCreateInput,
+    RunPlanGetInput,
+    RunPlanGetStepInput,
+    RunPlanListInput,
+    RunPlanRecordStepInput,
+    RunPlanRecoverInput,
+    RunPlanReopenInput,
+    RunPlanStartInput,
+    RunPlanUpdateInput,
+    RunPlanValidateInput,
+)
+from stackos.operations.run_plans.spec_helpers import _surfaces
 from stackos.operations.spec import (
     OperationExample,
     OperationSpec,
-    OperationSurface,
-    OperationSurfaces,
 )
-from stackos.repositories.base import Page, ValidationError
+from stackos.repositories.base import Page
 from stackos.repositories.run_plans import (
     RunPlanConsistencyOut,
     RunPlanOut,
     RunPlanReopenOut,
-    RunPlanRepository,
     RunPlanStartOut,
     RunPlanStepOut,
     RunPlanSummaryOut,
 )
 from stackos.workflows import RunPlanValidationOut
-
-
-class RunPlanValidateInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"workflow_key": "core.project-memory-review"}},
-    )
-
-    project_id: int | None = None
-    run_plan_json: dict[str, Any] | None = None
-    template_key: str | None = None
-    workflow_key: str | None = None
-    repo_root: str | None = None
-    plugin_slug: str | None = None
-    source: str | None = None
-    inputs_json: dict[str, Any] | None = None
-    selected_context_json: dict[str, Any] | None = None
-    metadata_json: dict[str, Any] | None = None
-    enforce_required_inputs: bool = False
-
-
-class RunPlanCreateInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "workflow_key": "core.project-memory-review",
-                "inputs_json": {"goal": "Review recent project memory"},
-            }
-        },
-    )
-
-    project_id: int
-    run_plan_json: dict[str, Any] | None = None
-    template_key: str | None = None
-    workflow_key: str | None = None
-    repo_root: str | None = None
-    plugin_slug: str | None = None
-    source: str | None = None
-    key: str | None = None
-    title: str | None = None
-    inputs_json: dict[str, Any] | None = None
-    context_snapshot_id: int | None = None
-    selected_context_json: dict[str, Any] | None = None
-    created_by: str | None = None
-    metadata_json: dict[str, Any] | None = None
-
-
-class RunPlanStartInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"project_id": 1, "run_plan_id": 1}},
-    )
-
-    project_id: int
-    run_plan_id: int
-
-
-class RunPlanGetInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_plan_id": 1}})
-
-    run_plan_id: int
-    project_id: int | None = None
-
-
-class RunPlanGetStepInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"run_plan_id": 1, "step_id": "review"}},
-    )
-
-    run_plan_id: int
-    step_id: str
-    project_id: int | None = None
-
-
-class RunPlanCheckConsistencyInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"run_plan_id": 1}},
-    )
-
-    run_plan_id: int
-    project_id: int | None = None
-
-
-class RunPlanRecoverInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "run_plan_id": 1,
-                "step_id": "plan-tickets",
-                "step_status": "blocked",
-                "reason": "Recover stale daemon/controller failure as a live blocker.",
-                "error": "Recoverable controller failure needs review.",
-            }
-        },
-    )
-
-    run_plan_id: int
-    project_id: int | None = None
-    step_id: str
-    step_status: RunPlanStepStatus = RunPlanStepStatus.BLOCKED
-    reason: str | None = None
-    actor: str | None = None
-    result_json: dict[str, Any] | None = None
-    error: str | None = None
-
-
-class RunPlanReopenInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "run_plan_id": 27,
-                "reason": (
-                    "Admin selected this closed run plan as the canonical in-place recovery target."
-                ),
-                "actor": "stackos-admin",
-            }
-        },
-    )
-
-    run_plan_id: int
-    project_id: int | None = None
-    step_id: str | None = None
-    reason: str
-    actor: str | None = None
-
-
-class RunPlanListInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
-
-    project_id: int | None = None
-    run_id: int | None = None
-    status: RunPlanStatus | None = None
-    template_key: str | None = None
-    workflow_key: str | None = None
-    limit: int | None = None
-    after_id: int | None = None
-
-
-class RunPlanUpdateInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "run_plan_id": 1,
-                "approval_key": "launch-review",
-                "approval_status": "approved",
-            }
-        },
-    )
-
-    run_plan_id: int
-    project_id: int | None = None
-    metadata_json: dict[str, Any] | None = None
-    approval_key: str | None = None
-    approval_status: ApprovalRequestStatus | None = None
-    decided_by: str | None = None
-    decision_json: dict[str, Any] | None = None
-
-
-class RunPlanAbortInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "run_plan_id": 1,
-                "reason": "Superseded by a newer support workflow run.",
-                "actor": "codex",
-            }
-        },
-    )
-
-    run_plan_id: int
-    project_id: int | None = None
-    reason: str | None = None
-    actor: str | None = None
-
-
-class RunPlanClaimStepInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"run_plan_id": 1, "step_id": "review"}},
-    )
-
-    run_plan_id: int
-    project_id: int | None = None
-    step_id: str | None = None
-    claimed_by: str | None = None
-
-
-class RunPlanRecordStepInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "run_plan_id": 1,
-                "step_id": "review",
-                "status": "success",
-                "result_json": {"summary": "done"},
-            }
-        },
-    )
-
-    run_plan_id: int
-    project_id: int | None = None
-    step_id: str
-    status: RunPlanStepStatus
-    result_json: dict[str, Any] | None = None
-    error: str | None = None
-
-
-def _template_key(template_key: str | None, workflow_key: str | None) -> str | None:
-    if template_key is not None and workflow_key is not None and template_key != workflow_key:
-        raise ValidationError(
-            "template_key and workflow_key must match when both are provided",
-            data={"template_key": template_key, "workflow_key": workflow_key},
-        )
-    return template_key if template_key is not None else workflow_key
-
-
-async def run_plan_validate(
-    inp: RunPlanValidateInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> RunPlanValidationOut:
-    return RunPlanRepository(ctx.session).validate_plan(
-        run_plan_json=inp.run_plan_json,
-        template_key=_template_key(inp.template_key, inp.workflow_key),
-        project_id=inp.project_id,
-        repo_root=inp.repo_root,
-        plugin_slug=inp.plugin_slug,
-        source=inp.source,
-        inputs_json=inp.inputs_json,
-        selected_context_json=inp.selected_context_json,
-        metadata_json=inp.metadata_json,
-        enforce_required_inputs=inp.enforce_required_inputs,
-    )
-
-
-async def run_plan_create(
-    inp: RunPlanCreateInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> WriteEnvelope[RunPlanOut]:
-    env = RunPlanRepository(ctx.session).create(
-        project_id=inp.project_id,
-        run_plan_json=inp.run_plan_json,
-        template_key=_template_key(inp.template_key, inp.workflow_key),
-        repo_root=inp.repo_root,
-        plugin_slug=inp.plugin_slug,
-        source=inp.source,
-        key=inp.key,
-        title=inp.title,
-        inputs_json=inp.inputs_json,
-        context_snapshot_id=inp.context_snapshot_id,
-        selected_context_json=inp.selected_context_json,
-        created_by=inp.created_by,
-        metadata_json=inp.metadata_json,
-    )
-    return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
-
-
-async def run_plan_start(
-    inp: RunPlanStartInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> WriteEnvelope[RunPlanStartOut]:
-    env = RunPlanRepository(ctx.session).start(inp.run_plan_id, project_id=inp.project_id)
-    return WriteEnvelope[RunPlanStartOut](
-        data=env.data,
-        run_id=env.run_id,
-        project_id=env.project_id,
-    )
-
-
-async def run_plan_get(
-    inp: RunPlanGetInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> RunPlanOut:
-    return RunPlanRepository(ctx.session).get(inp.run_plan_id, project_id=inp.project_id)
-
-
-async def run_plan_get_step(
-    inp: RunPlanGetStepInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> RunPlanStepOut:
-    return RunPlanRepository(ctx.session).get_step(
-        inp.run_plan_id,
-        inp.step_id,
-        project_id=inp.project_id,
-    )
-
-
-async def run_plan_check_consistency(
-    inp: RunPlanCheckConsistencyInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> RunPlanConsistencyOut:
-    return RunPlanRepository(ctx.session).check_consistency(
-        inp.run_plan_id,
-        project_id=inp.project_id,
-    )
-
-
-async def run_plan_recover(
-    inp: RunPlanRecoverInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> WriteEnvelope[RunPlanOut]:
-    env = RunPlanRepository(ctx.session).recover(
-        run_plan_id=inp.run_plan_id,
-        project_id=inp.project_id,
-        step_id=inp.step_id,
-        step_status=inp.step_status,
-        reason=inp.reason,
-        actor=inp.actor,
-        result_json=inp.result_json,
-        error=inp.error,
-    )
-    return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
-
-
-async def run_plan_reopen(
-    inp: RunPlanReopenInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> WriteEnvelope[RunPlanReopenOut]:
-    env = RunPlanRepository(ctx.session).reopen(
-        run_plan_id=inp.run_plan_id,
-        project_id=inp.project_id,
-        step_id=inp.step_id,
-        reason=inp.reason,
-        actor=inp.actor,
-    )
-    return WriteEnvelope[RunPlanReopenOut](
-        data=env.data,
-        run_id=env.run_id,
-        project_id=env.project_id,
-    )
-
-
-async def run_plan_list(
-    inp: RunPlanListInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> Page[RunPlanSummaryOut]:
-    return RunPlanRepository(ctx.session).list(
-        project_id=inp.project_id,
-        run_id=inp.run_id,
-        status=inp.status,
-        template_key=_template_key(inp.template_key, inp.workflow_key),
-        limit=inp.limit,
-        after_id=inp.after_id,
-    )
-
-
-async def run_plan_update(
-    inp: RunPlanUpdateInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> WriteEnvelope[RunPlanOut]:
-    env = RunPlanRepository(ctx.session).update(
-        run_plan_id=inp.run_plan_id,
-        metadata_json=inp.metadata_json,
-        approval_key=inp.approval_key,
-        approval_status=inp.approval_status,
-        decided_by=inp.decided_by,
-        decision_json=inp.decision_json,
-        project_id=inp.project_id,
-    )
-    return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
-
-
-async def run_plan_abort(
-    inp: RunPlanAbortInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> WriteEnvelope[RunPlanOut]:
-    env = RunPlanRepository(ctx.session).abort(
-        run_plan_id=inp.run_plan_id,
-        project_id=inp.project_id,
-        reason=inp.reason,
-        actor=inp.actor,
-    )
-    return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
-
-
-async def run_plan_claim_step(
-    inp: RunPlanClaimStepInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> WriteEnvelope[RunPlanStepOut]:
-    env = RunPlanRepository(ctx.session).claim_step(
-        run_plan_id=inp.run_plan_id,
-        project_id=inp.project_id,
-        run_id=ctx.run_id,
-        step_id=inp.step_id,
-        claimed_by=inp.claimed_by,
-    )
-    return WriteEnvelope[RunPlanStepOut](
-        data=env.data,
-        run_id=env.run_id,
-        project_id=env.project_id,
-    )
-
-
-async def run_plan_record_step(
-    inp: RunPlanRecordStepInput,
-    ctx: MCPContext,
-    _emitter: ProgressEmitter,
-) -> WriteEnvelope[RunPlanOut]:
-    env = RunPlanRepository(ctx.session).record_step(
-        run_plan_id=inp.run_plan_id,
-        project_id=inp.project_id,
-        run_id=ctx.run_id,
-        step_id=inp.step_id,
-        status=inp.status,
-        result_json=inp.result_json,
-        error=inp.error,
-    )
-    return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
-
-
-def _surfaces(name: str, command: str | None = None) -> OperationSurfaces:
-    rest_path = f"/api/v1/operations/{name}/call"
-    return OperationSurfaces(
-        mcp=OperationSurface(enabled=True),
-        rest=OperationSurface(enabled=True, path=rest_path),
-        cli=OperationSurface(enabled=True, command=command or f"ops call {name}"),
-    )
 
 
 def operation_specs() -> list[OperationSpec]:
@@ -947,28 +527,4 @@ def operation_specs() -> list[OperationSpec]:
     ]
 
 
-__all__ = [
-    "RunPlanClaimStepInput",
-    "RunPlanCreateInput",
-    "RunPlanGetInput",
-    "RunPlanGetStepInput",
-    "RunPlanListInput",
-    "RunPlanRecordStepInput",
-    "RunPlanRecoverInput",
-    "RunPlanReopenInput",
-    "RunPlanStartInput",
-    "RunPlanUpdateInput",
-    "RunPlanValidateInput",
-    "operation_specs",
-    "run_plan_claim_step",
-    "run_plan_create",
-    "run_plan_get",
-    "run_plan_get_step",
-    "run_plan_list",
-    "run_plan_record_step",
-    "run_plan_recover",
-    "run_plan_reopen",
-    "run_plan_start",
-    "run_plan_update",
-    "run_plan_validate",
-]
+__all__ = ["operation_specs"]

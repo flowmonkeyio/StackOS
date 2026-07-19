@@ -16,6 +16,7 @@ obvious without loading every document.
 | Auditing agent-facing flows and release clarity | [`agent-operating-model.md`](./agent-operating-model.md), [`workflow-templates.md`](./workflow-templates.md), [`operations.md`](./operations.md); use [`agent-experience-audit.md`](./agent-experience-audit.md) only as the May 2026 historical baseline |
 | Setting up generic agents or workflow roles | [`agent-presets.md`](./agent-presets.md), [`agent-operating-model.md`](./agent-operating-model.md), [`workflow-templates.md`](./workflow-templates.md), [`task-tracker.md`](./task-tracker.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
+| Passing a tenant/customer secret in an action payload | [`action-executor.md`](./action-executor.md), [`security.md`](./security.md) |
 | Adding or using browser automation | [`browser-automation.md`](./browser-automation.md), [`operations.md`](./operations.md), [`setup.md`](./setup.md), [`security.md`](./security.md) |
 | Adding or changing task/ticket tracking | [`task-tracker.md`](./task-tracker.md), [`run-plans.md`](./run-plans.md), [`operations.md`](./operations.md) |
 | Adding providers, auth, or credentials | [`auth-providers.md`](./auth-providers.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |
@@ -48,8 +49,11 @@ obvious without loading every document.
   calls belong in plugin actions executed through `toolbox.call` for
   `action.run` on one explicit action, or through `action.execute` inside a
   granted run-plan step.
-- Agents never receive secrets. They receive safe provider keys, account refs,
-  auth status, scopes, diagnostics, and opaque `credential_ref` values.
+- Provider credentials stay daemon-held; agents receive only safe provider
+  keys, account refs, auth status, scopes, diagnostics, and opaque
+  `credential_ref` values. Authorized non-auth string payload values use the
+  write-only MCP `secret.set` operation and exact `$secret_ref` action markers,
+  never a second provider Connection.
 - Agents should resolve known provider targets with `toolProfile.resolve`
   before broad auth/profile discovery.
 - Communications are provider-neutral state plus explicit provider actions. Use

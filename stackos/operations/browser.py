@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 from uuid import uuid4
-
-from pydantic import BaseModel, ConfigDict, Field
 
 from stackos.browser.manifest import browser_method_manifest, get_method_spec
 from stackos.browser.runtime import (
-    BROWSER_PROVIDER,
     browser_profile_dir,
     get_browser_runtime,
     safe_browser_key,
@@ -21,10 +16,45 @@ from stackos.browser.runtime import (
 )
 from stackos.config import get_settings
 from stackos.mcp.context import MCPContext
-from stackos.mcp.contract import MCPInput, WriteEnvelope
+from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations._helpers import operation_spec
-from stackos.operations.spec import OperationExample, OperationResponsePolicy
+from stackos.operations.browser_contracts import (
+    BROWSER_SIDE_EFFECT_POLICY,
+    BrowserContextCallInput,
+    BrowserHandleCallInput,
+    BrowserMethodManifestOut,
+    BrowserPageCallInput,
+    BrowserPageSnapshotInput,
+    BrowserProfileCreateInput,
+    BrowserProfileListInput,
+    BrowserRuntimeStatusInput,
+    BrowserScreenshotInput,
+    BrowserScriptInjectInput,
+    BrowserScriptRunInput,
+    BrowserSessionListInput,
+    BrowserSessionRefInput,
+    BrowserSessionStartInput,
+)
+from stackos.operations.browser_receipts import (
+    call_summary as _call_summary,
+)
+from stackos.operations.browser_receipts import (
+    error_summary as _error_summary,
+)
+from stackos.operations.browser_receipts import (
+    failure_summary as _failure_summary,
+)
+from stackos.operations.browser_receipts import (
+    redact_url as _redact_url,
+)
+from stackos.operations.browser_receipts import (
+    result_summary as _result_summary,
+)
+from stackos.operations.browser_receipts import (
+    target_origin as _origin,
+)
+from stackos.operations.spec import OperationExample
 from stackos.repositories.base import Page, RepositoryError, ValidationError
 from stackos.repositories.browser import (
     BrowserCallOut,
@@ -34,240 +64,6 @@ from stackos.repositories.browser import (
     BrowserSessionOut,
 )
 
-_BROWSER_SIDE_EFFECT_POLICY = OperationResponsePolicy(
-    default_mode="raw",
-    allowed_modes=("raw",),
-    ack_safe=False,
-    raw_only_reason=(
-        "Browser operations are live external side effects. Return the full redacted receipt, "
-        "session refs, artifact refs, result value, and retry context."
-    ),
-)
-_SAFE_INPUT_FIELD_NAMES = frozenset(
-    {
-        "button",
-        "click_count",
-        "delay_ms",
-        "full_page",
-        "key",
-        "selector",
-        "state",
-        "timeout_ms",
-        "wait_until",
-    }
-)
-
-
-class BrowserRuntimeStatusInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"example": {"project_id": 1}},
-    )
-
-    project_id: int | None = None
-
-
-class BrowserProfileCreateInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "profile_key": "personal-brand",
-                "name": "Personal Brand Browser",
-            }
-        },
-    )
-
-    project_id: int
-    profile_key: str
-    name: str | None = None
-    allowed_origins_json: list[str] | None = None
-    launch_options_json: dict[str, Any] | None = None
-    metadata_json: dict[str, Any] | None = None
-
-
-class BrowserProfileListInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
-
-    project_id: int
-
-
-class BrowserSessionStartInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "profile_key": "personal-brand",
-                "session_key": "linkedin",
-                "headless": False,
-            }
-        },
-    )
-
-    project_id: int
-    profile_key: str = "default"
-    profile_ref: str | None = None
-    session_key: str = "default"
-    name: str | None = None
-    headless: bool = False
-    launch_options_json: dict[str, Any] | None = None
-    metadata_json: dict[str, Any] | None = None
-
-
-class BrowserSessionRefInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "session_ref": "browser-session:project-1:default:default",
-            }
-        },
-    )
-
-    project_id: int
-    session_ref: str
-
-
-class BrowserPageSnapshotInput(BrowserSessionRefInput):
-    page_ref: str | None = None
-
-
-class BrowserSessionListInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
-
-    project_id: int
-
-
-class BrowserPageCallInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "session_ref": "browser-session:project-1:default:default",
-                "method": "goto",
-                "arguments": {"url": "https://example.com"},
-            }
-        },
-    )
-
-    project_id: int
-    session_ref: str
-    page_ref: str | None = None
-    method: str
-    arguments: dict[str, Any] = Field(default_factory=dict)
-    args: list[Any] | None = None
-    kwargs: dict[str, Any] | None = None
-
-
-class BrowserContextCallInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "session_ref": "browser-session:project-1:default:default",
-                "method": "cookies",
-                "arguments": {},
-            }
-        },
-    )
-
-    project_id: int
-    session_ref: str
-    method: str
-    arguments: dict[str, Any] = Field(default_factory=dict)
-    args: list[Any] | None = None
-    kwargs: dict[str, Any] | None = None
-
-
-class BrowserHandleCallInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "session_ref": "browser-session:project-1:default:default",
-                "handle_ref": "browser-session:project-1:default:default:handle-1",
-                "method": "click",
-            }
-        },
-    )
-
-    project_id: int
-    session_ref: str
-    handle_ref: str
-    method: str
-    arguments: dict[str, Any] = Field(default_factory=dict)
-    args: list[Any] | None = None
-    kwargs: dict[str, Any] | None = None
-
-
-class BrowserScriptRunInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "session_ref": "browser-session:project-1:default:default",
-                "script": "() => document.title",
-            }
-        },
-    )
-
-    project_id: int
-    session_ref: str
-    page_ref: str | None = None
-    script: str
-    arg: Any | None = None
-
-
-class BrowserScriptInjectInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "session_ref": "browser-session:project-1:default:default",
-                "script": "window.__stackosInjected = true;",
-            }
-        },
-    )
-
-    project_id: int
-    session_ref: str
-    page_ref: str | None = None
-    script: str
-
-
-class BrowserScreenshotInput(MCPInput):
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "session_ref": "browser-session:project-1:default:default",
-                "full_page": True,
-            }
-        },
-    )
-
-    project_id: int
-    session_ref: str
-    page_ref: str | None = None
-    full_page: bool = True
-    name: str | None = None
-
-
-class BrowserMethodManifestOut(BaseModel):
-    provider: str = BROWSER_PROVIDER
-    parity_model: str = "full-control-public-api"
-    methods: list[dict[str, Any]]
-    notes: list[str]
-
 
 def _settings(ctx: MCPContext):
     value = ctx.extras.get("settings")
@@ -276,94 +72,6 @@ def _settings(ctx: MCPContext):
 
 def _now_slug() -> str:
     return datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
-
-
-def _digest(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-def _redact_url(value: str | None) -> str | None:
-    if not value:
-        return None
-    parsed = urlparse(value)
-    if parsed.scheme in {"data", "blob", "javascript"}:
-        return f"{parsed.scheme}:<redacted>"
-    if parsed.scheme in {"about", "file"}:
-        return f"{parsed.scheme}:<redacted>" if parsed.scheme == "file" else value
-    if parsed.scheme and parsed.netloc:
-        redacted = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-        if parsed.query:
-            redacted += "?<redacted>"
-        if parsed.fragment:
-            redacted += "#<redacted>"
-        return redacted
-    return value[:240]
-
-
-def _origin(value: str | None) -> str | None:
-    if not value:
-        return None
-    parsed = urlparse(value)
-    if not parsed.scheme or not parsed.netloc:
-        return None
-    return f"{parsed.scheme}://{parsed.netloc}"
-
-
-def _value_summary(value: Any) -> dict[str, Any]:
-    if value is None:
-        return {"type": "null"}
-    if isinstance(value, str):
-        return {"type": "str", "length": len(value), "sha256": _digest(value)}
-    if isinstance(value, bool):
-        return {"type": "bool"}
-    if isinstance(value, int | float):
-        return {"type": type(value).__name__}
-    if isinstance(value, list | tuple):
-        return {"type": "array", "count": len(value)}
-    if isinstance(value, dict):
-        return {"type": "object", "key_count": len(value)}
-    return {"type": type(value).__name__, "repr": repr(value)[:120]}
-
-
-def _result_summary(result: Any) -> dict[str, Any]:
-    out: dict[str, Any] = {
-        "method": result.method,
-        "status": result.status,
-        "page_ref": result.page_ref,
-    }
-    if result.url is not None:
-        out["url"] = _redact_url(result.url)
-    if result.title is not None:
-        out["title_summary"] = _value_summary(result.title)
-    if result.value is not None:
-        out["value_summary"] = _value_summary(result.value)
-    if result.page_refs is not None:
-        out["page_refs"] = result.page_refs
-    return out
-
-
-def _failure_summary(
-    *,
-    method: str,
-    page_ref: str | None,
-    url: str | None,
-    exc: Exception,
-) -> dict[str, Any]:
-    out: dict[str, Any] = {
-        "method": method,
-        "status": "failed",
-        "error_type": type(exc).__name__,
-    }
-    if page_ref is not None:
-        out["page_ref"] = page_ref
-    if url is not None:
-        out["url"] = _redact_url(url)
-    return out
-
-
-def _error_summary(exc: Exception) -> str:
-    message = str(exc)
-    return f"{type(exc).__name__}: message_sha256={_digest(message)} length={len(message)}"
 
 
 def _raise_safe_browser_error(
@@ -388,32 +96,6 @@ def _is_not_live_session_error(exc: Exception) -> bool:
     if not isinstance(exc, ValidationError):
         return False
     return exc.detail == "browser session is not live in this daemon process"
-
-
-def _call_summary(
-    method: str,
-    arguments: dict[str, Any],
-    args: list[Any] | None,
-    kwargs: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    summary: dict[str, Any] = {"method": method}
-    if args is not None:
-        summary["arg_count"] = len(args)
-    if kwargs is not None:
-        summary["kwarg_keys"] = sorted(str(key) for key in kwargs)
-    for key, value in arguments.items():
-        if key in {"script", "handler", "value", "text"} and isinstance(value, str):
-            summary[f"{key}_length"] = len(value)
-            summary[f"{key}_sha256"] = _digest(value)
-        elif key == "url" and isinstance(value, str):
-            summary[key] = _redact_url(value)
-        elif key == "arg":
-            summary["arg_summary"] = _value_summary(value)
-        elif key in _SAFE_INPUT_FIELD_NAMES:
-            summary[key] = value
-        else:
-            summary[f"{key}_summary"] = _value_summary(value)
-    return summary
 
 
 def _session_key_from_ref(session_ref: str) -> str:
@@ -1215,7 +897,7 @@ def operation_specs():
             grant_policy=direct_browser,
             secret_policy=raw_browser_output,
             category="browser",
-            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+            response_policy=BROWSER_SIDE_EFFECT_POLICY,
         ),
         operation_spec(
             name="browser.profile.list",
@@ -1243,7 +925,7 @@ def operation_specs():
             grant_policy=direct_browser,
             secret_policy=raw_browser_output,
             category="browser",
-            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+            response_policy=BROWSER_SIDE_EFFECT_POLICY,
         ),
         operation_spec(
             name="browser.session.stop",
@@ -1256,7 +938,7 @@ def operation_specs():
             grant_policy=direct_browser,
             secret_policy=raw_browser_output,
             category="browser",
-            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+            response_policy=BROWSER_SIDE_EFFECT_POLICY,
         ),
         operation_spec(
             name="browser.session.list",
@@ -1306,7 +988,7 @@ def operation_specs():
             grant_policy=direct_browser,
             secret_policy=raw_browser_output,
             category="browser",
-            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+            response_policy=BROWSER_SIDE_EFFECT_POLICY,
         ),
         operation_spec(
             name="browser.context.call",
@@ -1322,7 +1004,7 @@ def operation_specs():
             grant_policy=direct_browser,
             secret_policy=raw_browser_output,
             category="browser",
-            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+            response_policy=BROWSER_SIDE_EFFECT_POLICY,
         ),
         operation_spec(
             name="browser.handle.call",
@@ -1339,7 +1021,7 @@ def operation_specs():
             grant_policy=direct_browser,
             secret_policy=raw_browser_output,
             category="browser",
-            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+            response_policy=BROWSER_SIDE_EFFECT_POLICY,
         ),
         operation_spec(
             name="browser.script.run",
@@ -1352,7 +1034,7 @@ def operation_specs():
             grant_policy=direct_browser,
             secret_policy=raw_browser_output,
             category="browser",
-            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+            response_policy=BROWSER_SIDE_EFFECT_POLICY,
         ),
         operation_spec(
             name="browser.script.inject",
@@ -1365,7 +1047,7 @@ def operation_specs():
             grant_policy=direct_browser,
             secret_policy=raw_browser_output,
             category="browser",
-            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+            response_policy=BROWSER_SIDE_EFFECT_POLICY,
         ),
         operation_spec(
             name="browser.page.snapshot",
@@ -1378,7 +1060,7 @@ def operation_specs():
             grant_policy=direct_browser,
             secret_policy=raw_browser_output,
             category="browser",
-            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+            response_policy=BROWSER_SIDE_EFFECT_POLICY,
         ),
         operation_spec(
             name="browser.page.screenshot",
@@ -1393,7 +1075,7 @@ def operation_specs():
             grant_policy=direct_browser,
             secret_policy=raw_browser_output,
             category="browser",
-            response_policy=_BROWSER_SIDE_EFFECT_POLICY,
+            response_policy=BROWSER_SIDE_EFFECT_POLICY,
         ),
     ]
 

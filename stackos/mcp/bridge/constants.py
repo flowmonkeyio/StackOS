@@ -108,6 +108,7 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "action.list",
         "action.run",
         "action.validate",
+        "secret.set",
         "integration.list",
         "agentPreset.describe",
         "agentPreset.list",

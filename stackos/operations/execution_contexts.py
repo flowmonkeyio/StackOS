@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import ConfigDict, Field
 
+from stackos.artifacts.json_path import select_json_path
 from stackos.config import Settings
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
@@ -453,7 +454,7 @@ async def execution_context_artifact_read(
         value = json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise ValidationError("artifact file is not valid JSON") from exc
-    value = _select_json_path(value, selected_json_path)
+    value = select_json_path(value, selected_json_path)
     content = json.dumps(value, ensure_ascii=False, indent=2, default=str)
     encoded = content.encode("utf-8")
     truncated = len(encoded) > inp.max_bytes
@@ -520,41 +521,6 @@ def _returns() -> tuple[str, ...]:
         "Safe context refs and redacted execution defaults; never provider secrets.",
         "Task/run links are organization and discovery metadata only, not grant state.",
     )
-
-
-def _select_json_path(value: Any, json_path: str) -> Any:
-    if json_path in {"", "$"}:
-        return value
-    if not json_path.startswith("$."):
-        raise ValidationError("json_path must start with '$.'")
-    current = value
-    for token in json_path[2:].split("."):
-        if not token:
-            raise ValidationError("json_path contains an empty segment")
-        field, indexes = _split_json_path_token(token)
-        if field:
-            if not isinstance(current, dict) or field not in current:
-                raise ValidationError("json_path field was not found", data={"field": field})
-            current = current[field]
-        for index in indexes:
-            if not isinstance(current, list) or index >= len(current):
-                raise ValidationError("json_path array index was not found", data={"index": index})
-            current = current[index]
-    return current
-
-
-def _split_json_path_token(token: str) -> tuple[str, list[int]]:
-    field = token.split("[", 1)[0]
-    rest = token[len(field) :]
-    indexes: list[int] = []
-    while rest:
-        if not rest.startswith("[") or "]" not in rest:
-            raise ValidationError("json_path supports only simple field and [index] segments")
-        raw_index, rest = rest[1:].split("]", 1)
-        if not raw_index.isdigit():
-            raise ValidationError("json_path array index must be a non-negative integer")
-        indexes.append(int(raw_index))
-    return field, indexes
 
 
 def operation_specs():

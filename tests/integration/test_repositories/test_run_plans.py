@@ -353,6 +353,147 @@ def test_approval_gate_transition_then_step_completion(
     assert step_ticket_events[-1].metadata_json["schema_version"] == 1
 
 
+def test_run_plan_mirror_ticket_keys_preserve_distinct_valid_step_ids(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "mirror.ticket-identity.run",
+            "title": "Mirror ticket identity",
+            "steps": [
+                {"id": "foo.bar", "title": "Dot step"},
+                {"id": "foo-bar", "title": "Hyphen step", "depends_on": ["foo.bar"]},
+                {"id": "foo_bar", "title": "Underscore step", "depends_on": ["foo-bar"]},
+            ],
+        },
+    ).data
+
+    snapshot = TrackerRepository(session).get(
+        project_id=project_id,
+        run_plan_id=plan.id,
+        include_graph=False,
+    )
+    mirrored_tickets = [ticket for ticket in snapshot.tickets if ticket.parent_ticket_key is None]
+    step_rows = {
+        step.step_id: step
+        for step in session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id))
+    }
+    ticket_by_step_id = {str(ticket.source_json["step_id"]): ticket for ticket in mirrored_tickets}
+
+    assert set(ticket_by_step_id) == {"foo.bar", "foo-bar", "foo_bar"}
+    assert {step_id: ticket.key for step_id, ticket in ticket_by_step_id.items()} == {
+        step_id: f"workflow-{plan.id}-{step_id}" for step_id in ("foo.bar", "foo-bar", "foo_bar")
+    }
+    assert {step_id: ticket.run_plan_step_id for step_id, ticket in ticket_by_step_id.items()} == {
+        step_id: step.id for step_id, step in step_rows.items()
+    }
+    assert {
+        (dependency.depends_on_ticket_key, dependency.ticket_key)
+        for dependency in snapshot.dependencies
+    } == {
+        (f"workflow-{plan.id}-foo.bar", f"workflow-{plan.id}-foo-bar"),
+        (f"workflow-{plan.id}-foo-bar", f"workflow-{plan.id}-foo_bar"),
+    }
+
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="foo.bar",
+        claimed_by="agent",
+    )
+    ticket_statuses = {
+        ticket.key: ticket.status
+        for ticket in TrackerRepository(session)
+        .get(project_id=project_id, run_plan_id=plan.id, include_graph=False)
+        .tickets
+    }
+
+    assert ticket_statuses[f"workflow-{plan.id}-foo.bar"] == TrackerItemStatus.IN_PROGRESS
+    assert ticket_statuses[f"workflow-{plan.id}-foo-bar"] == TrackerItemStatus.NOT_STARTED
+    assert ticket_statuses[f"workflow-{plan.id}-foo_bar"] == TrackerItemStatus.NOT_STARTED
+
+
+def test_legacy_mirror_key_uses_structured_workflow_identity(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "legacy.mirror-identity.run",
+            "title": "Legacy mirror identity",
+            "steps": [{"id": "legacy.step", "title": "Legacy step"}],
+        },
+    ).data
+    canonical_key = workflow_step_ticket_key(plan.id, "legacy.step")
+    legacy_key = f"workflow-{plan.id}-legacy-step"
+    mirrored_ticket = session.exec(
+        select(TrackerTicket).where(TrackerTicket.key == canonical_key)
+    ).one()
+    mirrored_ticket.key = legacy_key
+    session.add(mirrored_ticket)
+    session.commit()
+
+    tracker = TrackerRepository(session)
+    context = tracker.workflow_step_ticket_context(
+        project_id=project_id,
+        run_plan_id=plan.id,
+        step_id="legacy.step",
+    )
+    ready_keys = {ticket.key for ticket in tracker.next(project_id=project_id).tickets}
+    snapshot = tracker.get(
+        project_id=project_id,
+        run_plan_id=plan.id,
+        include_graph=True,
+    )
+
+    assert context["parent_ticket_key"] == legacy_key
+    assert legacy_key not in ready_keys
+    assert snapshot.graph is not None
+    assert not any(
+        "should have exactly one root workflow step ticket" in warning
+        for warning in snapshot.graph.warnings
+    )
+    with pytest.raises(ValidationError, match=r"controlled by runPlan\.\*"):
+        tracker.update_ticket(
+            project_id=project_id,
+            ticket_key=legacy_key,
+            patch_json={"title": "Tracker-owned title"},
+            actor="agent",
+        )
+
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="legacy.step",
+        claimed_by="agent",
+    )
+    session.refresh(mirrored_ticket)
+
+    assert mirrored_ticket.key == legacy_key
+    assert mirrored_ticket.status == TrackerItemStatus.IN_PROGRESS
+
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="legacy.step",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Legacy mirror lifecycle completed."},
+    )
+    session.refresh(mirrored_ticket)
+
+    assert mirrored_ticket.key == legacy_key
+    assert mirrored_ticket.status == TrackerItemStatus.COMPLETE
+
+
 def test_successful_step_result_must_match_frozen_expected_outputs(
     session: Session,
     project_id: int,
@@ -1265,6 +1406,172 @@ def test_recover_daemon_orphan_abort_restores_steps_approvals_and_child_tickets(
     assert child_ticket.completed_at is None
     assert child_ticket.outcome is None
     assert child_ticket.blocker_reason is None
+
+
+def test_auto_abort_prose_only_ticket_is_not_recovered(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recover.prose-only.run",
+            "title": "Do not recover from prose",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+    ).data
+    repo.start(plan.id, project_id=project_id)
+    plan_step = next(step for step in repo.get(plan.id).steps if step.step_id == "plan")
+    tracker = TrackerRepository(session)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=workflow_step_ticket_key(plan.id, "plan"),
+        key="prose-only-child",
+        title="Prose-only child",
+        run_plan_id=plan.id,
+        run_plan_step_id=plan_step.id,
+        metadata_json={"owner": "human"},
+        commit=False,
+    )
+    session.commit()
+
+    repo.abort(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        reason="daemon-restart-orphan",
+        actor="system",
+    )
+    prose_only = session.exec(
+        select(TrackerTicket).where(TrackerTicket.key == "prose-only-child")
+    ).one()
+    assert prose_only.status == TrackerItemStatus.ABORTED
+    assert str(prose_only.outcome).startswith("Run plan aborted before this step completed.")
+    prose_only.metadata_json = {"owner": "human"}
+    session.add(prose_only)
+    session.commit()
+
+    repo.recover(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        step_id="plan",
+        step_status=RunPlanStepStatus.BLOCKED,
+        reason="tracker repair",
+        actor="codex",
+        error="tracker repair needed",
+    )
+    session.refresh(prose_only)
+
+    assert prose_only.status == TrackerItemStatus.ABORTED
+    assert str(prose_only.outcome).startswith("Run plan aborted before this step completed.")
+    assert prose_only.metadata_json == {"owner": "human"}
+
+
+def test_auto_abort_marker_matches_plan_and_preserves_metadata(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    other_plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recover.other-plan.run",
+            "title": "Other plan",
+            "steps": [{"id": "other", "title": "Other"}],
+        },
+    ).data
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recover.marker.run",
+            "title": "Recover matching marker",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+    ).data
+    repo.start(plan.id, project_id=project_id)
+    plan_step = next(step for step in repo.get(plan.id).steps if step.step_id == "plan")
+    tracker = TrackerRepository(session)
+    for key, owner in (
+        ("matching-marker-child", "keep"),
+        ("cross-plan-marker-child", "cross"),
+    ):
+        tracker.create_ticket(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            parent_ticket_key=workflow_step_ticket_key(plan.id, "plan"),
+            key=key,
+            title=key,
+            run_plan_id=plan.id,
+            run_plan_step_id=plan_step.id,
+            metadata_json={"owner": owner},
+            commit=False,
+        )
+    session.commit()
+
+    repo.abort(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        reason="daemon-restart-orphan",
+        actor="system",
+    )
+    mirror = session.exec(
+        select(TrackerTicket).where(TrackerTicket.key == workflow_step_ticket_key(plan.id, "plan"))
+    ).one()
+    matching = session.exec(
+        select(TrackerTicket).where(TrackerTicket.key == "matching-marker-child")
+    ).one()
+    cross_plan = session.exec(
+        select(TrackerTicket).where(TrackerTicket.key == "cross-plan-marker-child")
+    ).one()
+    assert mirror.metadata_json == {
+        "action_refs": [],
+        "resource_refs": [],
+        "workflow_auto_abort": {"run_plan_id": plan.id},
+    }
+    assert matching.metadata_json == {
+        "owner": "keep",
+        "workflow_auto_abort": {"run_plan_id": plan.id},
+    }
+    assert cross_plan.metadata_json == {
+        "owner": "cross",
+        "workflow_auto_abort": {"run_plan_id": plan.id},
+    }
+
+    cross_plan.metadata_json = {
+        "owner": "cross",
+        "workflow_auto_abort": {"run_plan_id": other_plan.id},
+    }
+    session.add(cross_plan)
+    session.commit()
+
+    repo.recover(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        step_id="plan",
+        step_status=RunPlanStepStatus.BLOCKED,
+        reason="tracker repair",
+        actor="codex",
+        error="tracker repair needed",
+    )
+    session.refresh(mirror)
+    session.refresh(matching)
+    session.refresh(cross_plan)
+
+    assert mirror.status == TrackerItemStatus.IN_PROGRESS
+    assert mirror.metadata_json == {"action_refs": [], "resource_refs": []}
+    assert matching.status == TrackerItemStatus.NOT_STARTED
+    assert matching.outcome is None
+    assert matching.metadata_json == {"owner": "keep"}
+    assert cross_plan.status == TrackerItemStatus.ABORTED
+    assert str(cross_plan.outcome).startswith("Run plan aborted before this step completed.")
+    assert cross_plan.metadata_json == {
+        "owner": "cross",
+        "workflow_auto_abort": {"run_plan_id": other_plan.id},
+    }
 
 
 def test_recover_live_orphan_recovery_restores_future_steps_from_previous_abort_metadata(

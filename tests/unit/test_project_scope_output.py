@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from stackos.mcp.server import _find_mismatched_project_id as find_mcp_mismatch
+from stackos.mcp.dispatcher import _find_mismatched_project_id as find_mcp_mismatch
 from stackos.operations.dispatcher import (
     _find_mismatched_project_id as find_operation_mismatch,
 )

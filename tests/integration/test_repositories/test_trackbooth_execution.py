@@ -28,6 +28,7 @@ from stackos.db.models import (
 from stackos.repositories.base import (
     ConflictError,
 )
+from stackos.repositories.secrets import PayloadSecretRepository
 from tests.integration.test_repositories.trackbooth_test_support import (
     _add_trackbooth_sync_responses,
     _sync_trackbooth_catalog,
@@ -132,6 +133,79 @@ def test_trackbooth_generated_write_action_sends_body_without_catalog_preflight(
     assert actual.url.path == "/api/links"
     assert actual.headers["X-Acting-As-Account"] == "acct-managed"
     assert json.loads(actual.content)["routing_mode"] == "direct"
+
+
+def test_trackbooth_generated_action_materializes_tenant_secret_without_replacing_auth(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    tenant_password = "trackbooth-tenant-smtp-canary"
+    detail = {
+        "operation_id": "AccountCommunicationController.configureSmtp",
+        "name": "account_communication_configure_smtp",
+        "method": "POST",
+        "path": "/api/accounts/acct-tenant/smtp",
+        "context": {"title": "Configure tenant SMTP", "category": "accounts"},
+        "body_schema": {
+            "component_name": "ConfigureTenantSmtpBody",
+            "details": {
+                "type": "object",
+                "fields": [
+                    {"name": "host", "type": "string", "required": True},
+                    {"name": "password", "type": "string", "required": True},
+                ],
+            },
+        },
+        "response_schema": {
+            "component_name": "ApiOkResponse<ConfigureTenantSmtpResult>",
+            "details": {"type": "object", "fields": []},
+        },
+    }
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    _add_trackbooth_sync_responses(httpx_mock, detail)
+    sync_output = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    action_ref = _trackbooth_generated_action_ref(
+        sync_output,
+        "AccountCommunicationController.configureSmtp",
+    )
+    secret_ref = (
+        PayloadSecretRepository(session)
+        .set(
+            project_id=project_id,
+            value=tenant_password,
+        )
+        .secret_ref
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://trackbooth.local.test/api/accounts/acct-tenant/smtp",
+        json={"data": {"status": "configured", "provider_echo": tenant_password}},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref=action_ref,
+            input_json={
+                "body": {
+                    "host": "smtp.tenant.test",
+                    "password": {"$secret_ref": secret_ref},
+                }
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    actual = httpx_mock.get_requests()[-1]
+    assert json.loads(actual.content)["password"] == tenant_password
+    assert actual.headers["X-API-Key"] != tenant_password
+    assert out.output_json["data"]["data"]["provider_echo"] == "[redacted]"
+    call = session.exec(
+        select(ActionCall).where(ActionCall.action_key == action_ref.split(".", 1)[1])
+    ).one()
+    assert call.request_json["body"]["password"] == {"$secret_ref": secret_ref}
+    assert tenant_password not in json.dumps(call.model_dump(mode="json"))
 
 
 def test_trackbooth_generated_action_uses_provider_context_for_acting_account(

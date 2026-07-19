@@ -23,10 +23,12 @@ from stackos.repositories.tracker.schema import TrackerMutationOut
 from stackos.repositories.tracker.utils import (
     TERMINAL_TRACKER_STATUSES,
     _clean_text,
-    _slug,
     _utcnow,
 )
-from stackos.repositories.tracker.workflow import is_workflow_step_mirror_ticket
+from stackos.repositories.tracker.workflow import (
+    is_workflow_step_mirror_ticket,
+    workflow_step_ticket_key,
+)
 
 
 class TrackerMirrorMixin:
@@ -145,7 +147,7 @@ class TrackerMirrorMixin:
         step_by_id = {step.step_id: step for step in steps}
         ticket_by_step: dict[str, TrackerTicket] = {}
         for step in sorted(steps, key=lambda item: (item.position, item.id or 0)):
-            ticket_key = f"workflow-{plan.id}-{_slug(step.step_id, fallback='step', max_length=80)}"
+            ticket_key = workflow_step_ticket_key(plan.id, step.step_id)
             ticket = self._ticket_by_key(tracker.id, ticket_key, missing_ok=True)
             if ticket is None:
                 ticket = self._create_ticket_row(
@@ -304,6 +306,9 @@ class TrackerMirrorMixin:
             ticket.outcome = "Run plan aborted before this step completed."
             if reason:
                 ticket.outcome = f"{ticket.outcome} Reason: {reason}"
+            metadata = dict(ticket.metadata_json or {})
+            metadata["workflow_auto_abort"] = {"run_plan_id": plan.id}
+            ticket.metadata_json = metadata
             self._s.add(ticket)
             self._record_tracker_ticket_status_event(
                 ticket,
@@ -364,13 +369,15 @@ class TrackerMirrorMixin:
         for ticket in self._ticket_rows_for_run_plan(tracker.id, plan.id):
             old_ticket_status = ticket.status
             ticket.run_id = plan.run_id
+            auto_aborted = self._is_auto_abort_ticket(ticket, plan.id)
             if ticket.run_plan_step_id is None:
-                if self._is_auto_abort_ticket(ticket):
+                if auto_aborted:
                     ticket.status = TrackerItemStatus.NOT_STARTED
                     ticket.lane_key = "planning"
                     ticket.blocker_reason = None
                     ticket.outcome = None
                     ticket.completed_at = None
+                    self._consume_auto_abort_marker(ticket)
                 ticket.updated_at = now
                 self._s.add(ticket)
                 self._record_tracker_ticket_status_event(
@@ -395,12 +402,14 @@ class TrackerMirrorMixin:
                 ticket.lane_key = (
                     "done" if ticket.status in TERMINAL_TRACKER_STATUSES else "planning"
                 )
-            elif self._is_auto_abort_ticket(ticket):
+            elif auto_aborted:
                 ticket.status = TrackerItemStatus.NOT_STARTED
                 ticket.lane_key = "planning"
                 ticket.blocker_reason = None
                 ticket.outcome = None
                 ticket.completed_at = None
+            if auto_aborted:
+                self._consume_auto_abort_marker(ticket)
             ticket.updated_at = now
             self._s.add(ticket)
             self._record_tracker_ticket_status_event(
@@ -712,12 +721,19 @@ class TrackerMirrorMixin:
         return step.status.value
 
     @staticmethod
-    def _is_auto_abort_ticket(ticket: TrackerTicket) -> bool:
+    def _is_auto_abort_ticket(ticket: TrackerTicket, run_plan_id: int) -> bool:
+        marker = (ticket.metadata_json or {}).get("workflow_auto_abort")
         return (
             ticket.status == TrackerItemStatus.ABORTED
-            and bool(ticket.outcome)
-            and str(ticket.outcome).startswith("Run plan aborted before this step completed.")
+            and isinstance(marker, dict)
+            and marker.get("run_plan_id") == run_plan_id
         )
+
+    @staticmethod
+    def _consume_auto_abort_marker(ticket: TrackerTicket) -> None:
+        metadata = dict(ticket.metadata_json or {})
+        metadata.pop("workflow_auto_abort", None)
+        ticket.metadata_json = metadata or None
 
 
 __all__ = [

@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 import stackos.plugins.manifest as manifest_module
+from stackos.plugins.builtin_utils_ftp import ftp_action_kwargs, ftp_provider_kwargs
 from stackos.plugins.manifest import (
     BUILTIN_PLUGIN_MANIFESTS,
     PluginManifest,
@@ -23,6 +24,25 @@ def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) 
         methods = [method for method in methods if method.key == method_key]
     assert methods
     return [field.key for field in methods[0].fields]
+
+
+def test_ftp_fragments_return_fresh_plain_data() -> None:
+    first_provider = ftp_provider_kwargs()
+    second_provider = ftp_provider_kwargs()
+    first_actions = ftp_action_kwargs()
+    second_actions = ftp_action_kwargs()
+
+    assert isinstance(first_provider, dict)
+    assert all(isinstance(action, dict) for action in first_actions)
+    assert first_provider is not second_provider
+    assert first_actions is not second_actions
+    assert first_actions[0] is not second_actions[0]
+
+    first_provider["config"]["docs"].append("mutated")
+    first_actions[0]["config"]["docs"].append("mutated")
+
+    assert "mutated" not in second_provider["config"]["docs"]
+    assert "mutated" not in second_actions[0]["config"]["docs"]
 
 
 def test_clone_plugin_manifest_generation_changes_with_editable_source(

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 2.1.6 - 2026-07-18
+
+- Split oversized action, run-plan, tracker, operation, and CLI modules into
+  focused owners while preserving their existing public contracts.
+- Fixed workflow mirror identity and plan-scoped recovery handling, removed
+  action-list read side effects, and centralized shared Slack provider-ID and
+  artifact JSON-path behavior.
+- Added project-scoped encrypted payload secret references that remain symbolic
+  in audit data and materialize only immediately before connector dispatch.
+- Aligned local setup, repair, Doctor, host-MCP registration, and supporting
+  documentation with the shared lifecycle owners.
+
 ## 2.1.5 - 2026-07-16
 
 - Moved the public macOS download and updater feed to

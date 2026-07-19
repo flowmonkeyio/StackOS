@@ -93,6 +93,7 @@ from stackos.db.model_runtime import (
     ScheduledJob,
     WorkspaceBinding,
 )
+from stackos.db.model_secrets import PayloadSecret
 from stackos.db.model_tracker import (
     TaskTracker,
     TaskTrackerLane,
@@ -159,6 +160,7 @@ __all__ = [
     "Learning",
     "MetricSnapshot",
     "OAuthState",
+    "PayloadSecret",
     "Plugin",
     "PluginSource",
     "Project",

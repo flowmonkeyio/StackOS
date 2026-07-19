@@ -10,8 +10,9 @@ state, plugin catalogs, auth boundaries, run plans, and tool execution.
    strategy, vendor selection, and next actions live with the agent.
 2. **Static tools**: tools expose configuration, validation, execution, and
    persistence. They do not encode business strategy.
-3. **No-secret agents**: credentials stay in the daemon process. Agents pass
-   provider and account references.
+3. **Separated secret boundaries**: provider credentials stay in the daemon
+   process. Authorized non-auth payload strings enter once through write-only
+   `secret.set` and remain symbolic until connector dispatch.
 4. **Generic product surface**: core UI/API/MCP/CLI render templates, run
    plans, resources, artifacts, auth, actions, and operations. Domain UX comes
    from plugin config.
@@ -24,7 +25,7 @@ state, plugin catalogs, auth boundaries, run plans, and tool execution.
 
 The project is the top-level operating context. It owns plugin enablement,
 credential accounts, resources, artifacts, run history, context snapshots,
-learnings, experiments, and decisions.
+learnings, experiments, decisions, and encrypted payload transit values.
 
 ### Plugin
 
@@ -92,6 +93,7 @@ Core StackOS tables include:
 - `capabilities`, `providers`, `actions`, `action_versions`, `action_calls`
 - `auth_providers`, `credential_accounts`, `credentials`,
   `credential_scopes`, `credential_usage_events`, `credential_refresh_events`
+- `payload_secrets`
 - `resources`, `resource_records`
 - `artifacts`
 - `workflow_templates`, `workflow_template_versions`,
@@ -121,7 +123,8 @@ The agent-facing MCP bridge surface is intentionally small:
 - discovery: the current workspace/project, plugin, catalog, capability,
   provider, resources, artifacts, and project memory
 - bootstrap/setup: workspace binding, budgets, schedules, safe auth
-  status/test, workflow-template discovery, and run-plan creation/start
+  status/test, write-only payload secret ingress, workflow-template discovery,
+  and run-plan creation/start
 - direct execution: `action.run` through `toolbox.call` for one explicit action
   with compact response-file paths plus `schema_ref`/`schema_operation` for
   external-provider output by default

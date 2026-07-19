@@ -8,14 +8,16 @@ telemetry or phone-home behavior.
 
 The daemon stores project configuration, task/ticket state, resource records,
 artifacts, communication history that providers deliver to configured ingress
-routes, run logs, provider metadata, and encrypted credentials in
+routes, run logs, provider metadata, encrypted credentials, and write-only
+encrypted action payload transit values in
 `~/.local/share/stackos/stackos.db` by default. The
 per-machine encryption seed and bearer token live under
 `~/.local/state/stackos/` with mode `0600`.
 
 Backups and restores copy local files only. Moving an install to another
 machine requires the database and matching `seed.bin`; without that seed,
-encrypted integration credentials cannot be decrypted.
+encrypted integration credentials and payload transit values cannot be
+decrypted.
 
 ## Outbound Calls
 
@@ -49,8 +51,9 @@ OAuth callback routes documented in `docs/security.md`.
 ## Logs
 
 Run and step logs are local database rows. Daemon logs are local files
-under the state directory. Request/response audit rows are sanitized so
-secret tokens are not intentionally written to logs.
+under the state directory. Request/response audit rows retain opaque transit
+refs and remove exact values resolved by StackOS so those values are not
+intentionally written to logs.
 
 ## Removing Data
 

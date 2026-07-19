@@ -82,6 +82,8 @@ Lifecycle mirroring is mechanical:
 
 Only generated workflow step mirror tickets are lifecycle-owned by run-plan
 operations. These tickets use the key shape `workflow-{run_plan_id}-{step_id}`.
+The `{step_id}` segment preserves the exact already-validated run-plan step ID;
+it is not normalized.
 Child tickets attached to a step with `run_plan_id` and `step_id` remain
 tracker-owned work items. Agents should update their status, evidence, outcome,
 and blockers with `tracker.updateTicket` when the work changes; reserve

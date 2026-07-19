@@ -106,6 +106,13 @@ Each description includes:
 - return notes
 - examples
 
+`secret.set` is the narrow exception for write-only action payload ingress. It
+is available only through MCP/toolbox, is scoped to the bound project, and
+returns one opaque `secret_ref`. It is intentionally absent from REST and CLI
+and has no plaintext read/list operation. Put the ref into an action string
+field only as the exact marker `{"$secret_ref":"secret_..."}`. This is
+separate from `credential_ref`, which remains provider authentication.
+
 ## Public Getting-Started Guide
 
 `guide.gettingStarted` is the agent-readable path to the public first-use
