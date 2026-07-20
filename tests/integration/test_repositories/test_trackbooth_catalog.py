@@ -36,6 +36,48 @@ from tests.integration.test_repositories.trackbooth_test_support import (
 )
 
 
+def _trackbooth_account_create_detail() -> dict:
+    return {
+        "operation_id": "AccountsController.createCommercialAccount",
+        "name": "accounts_create_commercial_account",
+        "method": "POST",
+        "path": "/api/accounts",
+        "checksum": "account-create-v1",
+        "context": {"title": "Create commercial account", "category": "accounts"},
+        "body_schema": {
+            "component_name": "CreateCommercialAccountBody",
+            "json_schema": {
+                "type": "object",
+                "required": ["name", "email", "account_type"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "email": {"type": "string"},
+                    "account_type": {
+                        "type": "string",
+                        "const": "network",
+                        "default": "network",
+                        "description": ("New commercial accounts are independent network accounts"),
+                    },
+                },
+            },
+            "details": {
+                "fields": [
+                    {
+                        "name": "account_type",
+                        "type": "literal",
+                        "default_value": '"network"',
+                        "required": True,
+                    }
+                ]
+            },
+        },
+        "response_schema": {
+            "component_name": "ApiOkResponse<AccountDetail>",
+            "json_schema": {"type": "object", "properties": {}},
+        },
+    }
+
+
 def test_trackbooth_catalog_search_filters_live_catalog_and_uses_api_key_header(
     session: Session,
     project_id: int,
@@ -304,6 +346,94 @@ def test_trackbooth_catalog_sync_creates_runtime_generated_actions(
         ]
         == "LinkDetailItem"
     )
+
+
+def test_trackbooth_catalog_sync_uses_canonical_schema_for_generic_validation(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    detail = _trackbooth_account_create_detail()
+    _add_trackbooth_sync_responses(httpx_mock, detail, catalog_hash="catalog-v1")
+    sync_output = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    action_ref = _trackbooth_generated_action_ref(
+        sync_output,
+        "AccountsController.createCommercialAccount",
+    )
+
+    repo = ActionRepository(session)
+    described = repo.describe(project_id=project_id, action_ref=action_ref)
+    account_type = described.manifest.input_schema_json["properties"]["body"]["properties"][
+        "account_type"
+    ]
+
+    assert account_type == {
+        "type": "string",
+        "const": "network",
+        "default": "network",
+        "description": "New commercial accounts are independent network accounts",
+    }
+    validation = repo.validate(
+        project_id=project_id,
+        action_ref=action_ref,
+        credential_ref=credential_ref,
+        input_json={
+            "body": {
+                "name": "Schema validation probe",
+                "email": "schema-probe@example.com",
+                "account_type": "network",
+            }
+        },
+    )
+    assert validation.issues == []
+
+
+def test_trackbooth_catalog_sync_repairs_stale_manifest_with_unchanged_provider_hashes(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    detail = _trackbooth_account_create_detail()
+    _add_trackbooth_sync_responses(httpx_mock, detail, catalog_hash="catalog-v1")
+    first = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    action_ref = _trackbooth_generated_action_ref(
+        first,
+        "AccountsController.createCommercialAccount",
+    )
+    row = next(
+        row
+        for row in session.exec(select(Action)).all()
+        if (row.config_json or {}).get("public_action_key")
+        == action_ref.removeprefix("trackbooth.")
+    )
+    stale_schema = json.loads(json.dumps(row.input_schema_json))
+    stale_schema["properties"]["body"]["properties"]["account_type"] = {
+        "type": "object",
+        "x_trackbooth_type": "literal",
+        "default": '"network"',
+    }
+    stale_config = dict(row.config_json or {})
+    stale_config["inventory_manifest_hash"] = "legacy-projection"
+    row.input_schema_json = stale_schema
+    row.config_json = stale_config
+    session.add(row)
+    session.commit()
+
+    _add_trackbooth_sync_responses(httpx_mock, detail, catalog_hash="catalog-v1")
+    second = _sync_trackbooth_catalog(session, project_id, credential_ref)
+
+    assert second["created"] == 0
+    assert second["updated"] == 1
+    assert second["skipped"] == 0
+    session.refresh(row)
+    assert row.input_schema_json["properties"]["body"]["properties"]["account_type"] == {
+        "type": "string",
+        "const": "network",
+        "default": "network",
+        "description": "New commercial accounts are independent network accounts",
+    }
 
 
 def test_trackbooth_catalog_sync_skips_unchanged_catalog_hash(

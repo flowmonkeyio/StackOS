@@ -245,39 +245,6 @@ def retire_superseded_trackbooth_inventory_scopes(
     return retired
 
 
-def _runtime_catalog_hash_unchanged(
-    *,
-    session: Any,
-    plugin_id: int,
-    logical_scope: tuple[int, str, str] | None,
-    catalog_hash: str,
-    action_keys: set[str],
-) -> bool:
-    if logical_scope is None or not action_keys:
-        return False
-    rows = session.exec(
-        select(Action).where(
-            col(Action.plugin_id) == plugin_id,
-            col(Action.key).like(f"{_RUNTIME_ACTION_KEY_PREFIX}%"),
-        )
-    ).all()
-    active_rows = [
-        row
-        for row in rows
-        if _runtime_action_logical_scope(
-            row.config_json if isinstance(row.config_json, Mapping) else {}
-        )
-        == logical_scope
-    ]
-    if {str(row.key) for row in active_rows} != action_keys:
-        return False
-    for row in active_rows:
-        config = row.config_json if isinstance(row.config_json, Mapping) else {}
-        if config.get("inventory_catalog_hash") != catalog_hash:
-            return False
-    return True
-
-
 def _upsert_runtime_actions(
     *,
     session: Any,
@@ -349,34 +316,6 @@ def _upsert_runtime_actions(
                 "action_key": action_key,
             }
         )
-
-    if (
-        prune_missing
-        and catalog_hash
-        and _runtime_catalog_hash_unchanged(
-            session=session,
-            plugin_id=plugin.id,
-            logical_scope=logical_scope,
-            catalog_hash=catalog_hash,
-            action_keys=action_keys,
-        )
-    ):
-        session.commit()
-        return {
-            "synced": len(planned_actions),
-            "created": 0,
-            "updated": 0,
-            "skipped": len(planned_actions),
-            "pruned": 0,
-            "retired": 0,
-            "action_refs": [
-                f"{_TRACKBOOTH_PLUGIN_SLUG}.{item['public_action_key']}" for item in planned_actions
-            ],
-            "operation_ids": [str(item["operation_id"]) for item in planned_actions],
-            "blocked_operation_ids": blocked_operation_ids,
-            "inventory_scope_key": scope_key,
-            "write_ms": int((perf_counter() - write_started) * 1000),
-        }
 
     action_refs: list[str] = []
     operation_ids: list[str] = []
@@ -508,9 +447,6 @@ def _runtime_action_row_unchanged(row: Action, manifest_json: Mapping[str, Any])
     manifest_config = manifest_json.get("config")
     if not isinstance(manifest_config, Mapping):
         return False
-    manifest_checksum = manifest_config.get("inventory_endpoint_checksum")
-    if isinstance(manifest_checksum, str) and manifest_checksum:
-        return config.get("inventory_endpoint_checksum") == manifest_checksum
     manifest_hash = manifest_config.get("inventory_manifest_hash")
     return isinstance(manifest_hash, str) and config.get("inventory_manifest_hash") == manifest_hash
 

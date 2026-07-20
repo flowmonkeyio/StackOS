@@ -31,5 +31,4 @@ TRACKBOOTH_PROVIDER_CONTEXT_SCHEMA: JsonObject = {
     },
 }
 PATH_PARAM_RE = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\}")
-ENUM_VALUE_RE = re.compile(r"'([^']*)'")
 ACTION_SLUG_RE = re.compile(r"[^a-z0-9_]+")

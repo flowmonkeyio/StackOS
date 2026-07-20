@@ -53,30 +53,27 @@ def _trackbooth_links_create_detail() -> dict:
         },
         "body_schema": {
             "component_name": "CreateLinkBody",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [
-                    {"name": "campaign_id", "type": "string", "required": True},
-                    {"name": "name", "type": "string", "required": True},
-                    {
-                        "name": "routing_mode",
-                        "type": "'direct' | 'rules'",
-                        "required": True,
+                "required": ["campaign_id", "name", "routing_mode"],
+                "properties": {
+                    "campaign_id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "routing_mode": {"type": "string", "enum": ["direct", "rules"]},
+                    "offer_id": {"type": "string"},
+                    "redirect_type": {
+                        "type": "string",
+                        "enum": ["301", "302", "meta", "javascript"],
                     },
-                    {"name": "offer_id", "type": "string", "required": False},
-                    {
-                        "name": "redirect_type",
-                        "type": "'301' | '302' | 'meta' | 'javascript'",
-                        "required": False,
-                    },
-                ],
+                },
             },
         },
         "response_schema": {
             "component_name": "ApiOkResponse<LinkDetailItem>",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [{"name": "data", "type": "LinkDetailItem", "required": True}],
+                "required": ["data"],
+                "properties": {"data": {"type": "object", "x_trackbooth_type": "LinkDetailItem"}},
             },
         },
     }
@@ -95,19 +92,20 @@ def _trackbooth_offers_findbyid_detail() -> dict:
         },
         "query_schema": {
             "component_name": "FindOfferQuery",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [
-                    {"name": "include", "type": "string[]", "required": False},
-                    {"name": "active", "type": "boolean", "required": False},
-                ],
+                "properties": {
+                    "include": {"type": "array", "items": {"type": "string"}},
+                    "active": {"type": "boolean"},
+                },
             },
         },
         "response_schema": {
             "component_name": "ApiOkResponse<OfferDetailItem>",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [{"name": "data", "type": "OfferDetailItem", "required": True}],
+                "required": ["data"],
+                "properties": {"data": {"type": "object", "x_trackbooth_type": "OfferDetailItem"}},
             },
         },
     }
@@ -127,19 +125,20 @@ def _trackbooth_offers_update_detail() -> dict:
         "path_params": [{"name": "id"}],
         "body_schema": {
             "component_name": "UpdateOfferBody",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [
-                    {"name": "name", "type": "string", "required": False},
-                    {"name": "active", "type": "boolean", "required": False},
-                ],
+                "properties": {
+                    "name": {"type": "string"},
+                    "active": {"type": "boolean"},
+                },
             },
         },
         "response_schema": {
             "component_name": "ApiOkResponse<OfferDetailItem>",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [{"name": "data", "type": "OfferDetailItem", "required": True}],
+                "required": ["data"],
+                "properties": {"data": {"type": "object", "x_trackbooth_type": "OfferDetailItem"}},
             },
         },
     }
@@ -177,57 +176,47 @@ def _trackbooth_reporting_aggregate_detail() -> dict:
         },
         "body_schema": {
             "component_name": "ReportingAggregateBody",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [
-                    {
-                        "name": "report_type",
-                        "type": "enum",
-                        "required": True,
-                        "enum_values": ["offer", "campaign", "country"],
+                "required": ["report_type", "filters", "group_by", "metrics"],
+                "properties": {
+                    "report_type": {
+                        "type": "string",
+                        "enum": ["offer", "campaign", "country"],
                     },
-                    {"name": "filters", "type": "object", "required": True},
-                    {
-                        "name": "drilldown_path",
-                        "type": "readonly ReportingInvestigationDimensionKey[]",
-                        "required": False,
-                        "enum_values": dimensions,
+                    "filters": {"type": "object", "additionalProperties": True},
+                    "drilldown_path": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": dimensions},
                     },
-                    {
-                        "name": "group_by",
-                        "type": "Array<'offer' | 'campaign' | 'country' | 'device' | 'link'>",
-                        "required": True,
-                        "enum_values": dimensions,
+                    "group_by": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": dimensions},
                     },
-                    {
-                        "name": "metrics",
-                        "type": (
-                            "Array<'clicks' | 'unique_clicks' | 'leads' | 'sales' | "
-                            "'revenue' | 'payout' | 'margin' | 'margin_rate' | 'epc' | "
-                            "'epl' | 'cpl' | 'cpa' | 'lead_cr' | 'sale_cr' | "
-                            "'lead_to_sale_cr'>"
-                        ),
-                        "required": True,
-                        "validations": ["min(1)"],
-                        "enum_values": metrics,
+                    "metrics": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {"type": "string", "enum": metrics},
                     },
-                ],
-                "type_script": (
-                    "type reportingAggregateSchema = { group_by: "
-                    "Array<'offer' | 'campaign'>; metrics: Array<'clicks' | "
-                    "'unique_clicks'>; };"
-                ),
+                },
             },
         },
         "response_schema": {
             "component_name": "ApiOkResponse<ReportingAggregateResponse>",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [
-                    {"name": "report_type", "type": "string", "required": True},
-                    {"name": "group_by", "type": "readonly string[]", "required": True},
-                    {"name": "rows", "type": "readonly ReportingAggregateRow[]", "required": True},
-                ],
+                "required": ["report_type", "group_by", "rows"],
+                "properties": {
+                    "report_type": {"type": "string"},
+                    "group_by": {"type": "array", "items": {"type": "string"}},
+                    "rows": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "x_trackbooth_type": "ReportingAggregateRow",
+                        },
+                    },
+                },
             },
         },
     }
@@ -247,12 +236,13 @@ def _trackbooth_reporting_list_metrics_detail(entity: str) -> dict:
         },
         "body_schema": {
             "component_name": f"Reporting{title_entity}ListMetricsBody",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [
-                    {"name": "row_ids", "type": "string[]", "required": True},
-                    {"name": "filters", "type": "object", "required": True},
-                ],
+                "required": ["row_ids", "filters"],
+                "properties": {
+                    "row_ids": {"type": "array", "items": {"type": "string"}},
+                    "filters": {"type": "object", "additionalProperties": True},
+                },
             },
         },
     }
@@ -271,30 +261,40 @@ def _trackbooth_dashboard_detail() -> dict:
         },
         "query_schema": {
             "component_name": "DashboardQuery",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [
-                    {
-                        "name": "include",
-                        "type": "Array<'kpis' | 'top_offers' | 'top_campaigns'>",
-                        "required": False,
-                        "enum_values": ["kpis", "top_offers", "top_campaigns"],
-                    },
-                ],
+                "properties": {
+                    "include": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["kpis", "top_offers", "top_campaigns"],
+                        },
+                    }
+                },
             },
         },
         "response_schema": {
             "component_name": "ApiOkResponse<DashboardResult>",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [
-                    {"name": "top_offers", "type": "DashboardTopOfferItem[]", "required": True},
-                    {
-                        "name": "top_campaigns",
-                        "type": "DashboardTopCampaignItem[]",
-                        "required": True,
+                "required": ["top_offers", "top_campaigns"],
+                "properties": {
+                    "top_offers": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "x_trackbooth_type": "DashboardTopOfferItem",
+                        },
                     },
-                ],
+                    "top_campaigns": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "x_trackbooth_type": "DashboardTopCampaignItem",
+                        },
+                    },
+                },
             },
         },
     }

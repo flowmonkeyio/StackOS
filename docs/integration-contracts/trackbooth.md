@@ -41,9 +41,23 @@ the inventory can come from production, a remote staging URL, or a local
 Trackbooth server without crawling per-operation details.
 Sync output includes `source_endpoint`, `detail_fetch_count`, `endpoint_count`,
 `synced`, `created`, `updated`, `skipped`, `pruned`/`retired`, `catalog_hash`,
-`write_ms`, and `total_ms`. Full unchanged syncs can skip by `catalog_hash`;
-mixed or scoped syncs skip unchanged generated rows by endpoint checksum or a
-stable manifest hash.
+`write_ms`, and `total_ms`. Every sync derives each candidate generated
+manifest. A row is skipped only when its stable generated-manifest hash still
+matches; `catalog_hash` and endpoint checksum remain source provenance, not
+proof that StackOS' local schema projection is unchanged. This lets a normal
+sync repair stale generated schemas after a StackOS projection fix even when
+the provider catalog and endpoint checksums did not change.
+
+For live catalog schema descriptors, an object `json_schema` is authoritative.
+StackOS copies it without merging or reconstructing schema properties from
+`details.fields`; that legacy field list is not a schema source. A referenced
+OpenAPI component remains the narrow fallback when a descriptor has no
+`json_schema`.
+
+Schema synchronization acceptance requires the full chain: compare the live
+Trackbooth `json_schema` with the synchronized generated action schema, then
+run `action.validate` with a representative valid payload. A successful sync
+count, changed checksum, or matching catalog hash is not schema proof.
 
 Generated action storage is scoped to the StackOS project, credential ref, and
 API URL used for the sync. A local sync cannot overwrite production inventory,

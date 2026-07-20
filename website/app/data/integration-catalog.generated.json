@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-11T06:16:58.519Z",
+  "generatedAt": "2026-07-20T06:41:03.945Z",
   "source": "StackOS catalog.list after Trackbooth catalog sync",
   "counts": {
-    "providers": 52,
+    "providers": 54,
     "plugins": 10,
-    "actions": 557,
+    "actions": 571,
     "trackboothActions": 337
   },
   "plugins": [
@@ -204,13 +204,15 @@
       "name": "Utilities",
       "description": "Reusable research, media generation, data, and productivity tools for any workflow.",
       "color": "#9aa7bd",
-      "providerCount": 15,
-      "actionCount": 27,
-      "capabilityCount": 6,
+      "providerCount": 17,
+      "actionCount": 41,
+      "capabilityCount": 8,
       "providerSlugs": [
         "alibaba-wan",
         "byteplus-ark",
+        "cloudflare",
         "firecrawl",
+        "ftp",
         "google-gemini-image",
         "google-veo",
         "ideogram",
@@ -227,7 +229,9 @@
       "providerNames": [
         "Alibaba Wan",
         "BytePlus ModelArk",
+        "Cloudflare DNS",
         "Firecrawl",
+        "FTP / Explicit FTPS",
         "Google Gemini Image",
         "Google Veo",
         "Ideogram",
@@ -706,6 +710,117 @@
       "setupNote": "Clearbit is now HubSpot-owned; if a legacy Clearbit key is not available, start from HubSpot Data Breeze/Data products and record the approved credential path in StackOS."
     },
     {
+      "key": "utils.cloudflare",
+      "slug": "cloudflare",
+      "providerKey": "cloudflare",
+      "name": "Cloudflare DNS",
+      "description": "Cloudflare zone discovery and individual DNS record list, get, create, edit, replace, and delete operations.",
+      "authType": "api-token",
+      "pluginSlug": "utils",
+      "pluginName": "Utilities",
+      "pluginDescription": "Reusable research, media generation, data, and productivity tools for any workflow.",
+      "color": "#9aa7bd",
+      "logo": null,
+      "actionCount": 7,
+      "capabilities": [
+        "DNS Management"
+      ],
+      "actions": [
+        {
+          "key": "utils.cloudflare.dns.records.create",
+          "name": "Create Cloudflare DNS Record",
+          "description": "Create the DNS record explicitly supplied for the selected zone.",
+          "keywords": "Create the DNS record explicitly supplied for the selected zone.",
+          "capability": "dns-management",
+          "capabilityName": "DNS Management",
+          "risk": "write"
+        },
+        {
+          "key": "utils.cloudflare.dns.records.delete",
+          "name": "Delete Cloudflare DNS Record",
+          "description": "Delete the exact DNS record selected by zone id and record id.",
+          "keywords": "Delete the exact DNS record selected by zone id and record id.",
+          "capability": "dns-management",
+          "capabilityName": "DNS Management",
+          "risk": "write"
+        },
+        {
+          "key": "utils.cloudflare.dns.records.edit",
+          "name": "Edit Cloudflare DNS Record",
+          "description": "PATCH the selected DNS record with the explicitly supplied fields.",
+          "keywords": "PATCH the selected DNS record with the explicitly supplied fields.",
+          "capability": "dns-management",
+          "capabilityName": "DNS Management",
+          "risk": "write"
+        },
+        {
+          "key": "utils.cloudflare.dns.records.get",
+          "name": "Get Cloudflare DNS Record",
+          "description": "Get one DNS record by the exact zone and record ids selected.",
+          "keywords": "Get one DNS record by the exact zone and record ids selected.",
+          "capability": "dns-management",
+          "capabilityName": "DNS Management",
+          "risk": "read"
+        },
+        {
+          "key": "utils.cloudflare.dns.records.list",
+          "name": "List Cloudflare DNS Records",
+          "description": "List one page of DNS records in the exact zone selected by the agent.",
+          "keywords": "List one page of DNS records in the exact zone selected by the agent.",
+          "capability": "dns-management",
+          "capabilityName": "DNS Management",
+          "risk": "read"
+        },
+        {
+          "key": "utils.cloudflare.zones.list",
+          "name": "List Cloudflare Zones",
+          "description": "List one page of zones visible to the selected Cloudflare token.",
+          "keywords": "List one page of zones visible to the selected Cloudflare token.",
+          "capability": "dns-management",
+          "capabilityName": "DNS Management",
+          "risk": "read"
+        },
+        {
+          "key": "utils.cloudflare.dns.records.replace",
+          "name": "Replace Cloudflare DNS Record",
+          "description": "PUT a complete replacement for the selected DNS record.",
+          "keywords": "PUT a complete replacement for the selected DNS record.",
+          "capability": "dns-management",
+          "capabilityName": "DNS Management",
+          "risk": "write"
+        }
+      ],
+      "links": [
+        {
+          "key": "homepage_url",
+          "label": "Visit tool",
+          "url": "https://www.cloudflare.com/",
+          "confidence": "verified"
+        },
+        {
+          "key": "docs_url",
+          "label": "Documentation",
+          "url": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/",
+          "confidence": "verified"
+        },
+        {
+          "key": "signup_url",
+          "label": "Create account",
+          "url": "https://dash.cloudflare.com/sign-up",
+          "confidence": "verified"
+        },
+        {
+          "key": "console_url",
+          "label": "Open console",
+          "url": "https://dash.cloudflare.com/",
+          "confidence": "verified"
+        }
+      ],
+      "primaryUrl": "https://www.cloudflare.com/",
+      "docsUrl": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/",
+      "setupNote": "Create a least-privilege API token with Zone Read and DNS Write for the zones the operator intends the agent to manage."
+    },
+    {
       "key": "gtm.custom-gtm-tool",
       "slug": "custom-gtm-tool",
       "providerKey": "custom-gtm-tool",
@@ -934,8 +1049,8 @@
         {
           "key": "branding.publish.email",
           "name": "Publish Email",
-          "description": "Send an approved digest or standalone authority email through a configured ESP API.",
-          "keywords": "Send an approved digest or standalone authority email through a configured ESP API.",
+          "description": "Send a final digest or standalone authority email through a configured ESP API.",
+          "keywords": "Send a final digest or standalone authority email through a configured ESP API.",
           "capability": "content-distribution",
           "capabilityName": "Content Distribution",
           "risk": "write"
@@ -963,7 +1078,7 @@
       ],
       "primaryUrl": "https://resend.com/",
       "docsUrl": "https://resend.com/docs",
-      "setupNote": "Select a project-approved ESP that exposes send and metrics APIs, then store only its API key and safe sender/audience refs in StackOS."
+      "setupNote": "Select a project-designated ESP that exposes send and metrics APIs, then store only its API key and safe sender/audience refs in StackOS."
     },
     {
       "key": "utils.firecrawl",
@@ -1047,6 +1162,99 @@
       "setupNote": "Sign in to Firecrawl, create/copy an API key, confirm plan limits, and store the key in StackOS."
     },
     {
+      "key": "utils.ftp",
+      "slug": "ftp",
+      "providerKey": "ftp",
+      "name": "FTP / Explicit FTPS",
+      "description": "Protocol connection for stateless remote browsing, recursive agent-selected transfers, and exact remote path management.",
+      "authType": "ftp-password",
+      "pluginSlug": "utils",
+      "pluginName": "Utilities",
+      "pluginDescription": "Reusable research, media generation, data, and productivity tools for any workflow.",
+      "color": "#9aa7bd",
+      "logo": null,
+      "actionCount": 7,
+      "capabilities": [
+        "File Transfer"
+      ],
+      "actions": [
+        {
+          "key": "utils.ftp.directory.create",
+          "name": "Create FTP Directory",
+          "description": "Create one exact agent-selected remote directory with FTP MKD.",
+          "keywords": "Create one exact agent-selected remote directory with FTP MKD.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        },
+        {
+          "key": "utils.ftp.directory.delete",
+          "name": "Delete FTP Directory",
+          "description": "Delete one exact remote directory, either with one RMD or with an agent-selected recursive post-order deletion.",
+          "keywords": "Delete one exact remote directory, either with one RMD or with an agent-selected recursive post-order deletion.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        },
+        {
+          "key": "utils.ftp.file.delete",
+          "name": "Delete FTP File",
+          "description": "Delete one exact agent-selected remote file with FTP DELE.",
+          "keywords": "Delete one exact agent-selected remote file with FTP DELE.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        },
+        {
+          "key": "utils.ftp.file.download",
+          "name": "Download Files Or Directories From FTP",
+          "description": "Download one or more remote FTP files or directories to exact agent-selected local destinations with recursive tree preservation.",
+          "keywords": "Download one or more remote FTP files or directories to exact agent-selected local destinations with recursive tree preservation.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        },
+        {
+          "key": "utils.ftp.directory.list",
+          "name": "List FTP Directory",
+          "description": "List one remote FTP directory without downloading its files; returned child paths can be reused in later actions.",
+          "keywords": "List one remote FTP directory without downloading its files; returned child paths can be reused in later actions.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "read"
+        },
+        {
+          "key": "utils.ftp.path.rename",
+          "name": "Rename Or Move FTP Path",
+          "description": "Ask the FTP server to rename or move one exact remote file or directory path with RNFR followed by RNTO.",
+          "keywords": "Ask the FTP server to rename or move one exact remote file or directory path with RNFR followed by RNTO.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        },
+        {
+          "key": "utils.ftp.file.upload",
+          "name": "Upload Files Or Directories To FTP",
+          "description": "Upload one or more agent-selected local files or directories; directories recurse automatically and preserve their relative tree.",
+          "keywords": "Upload one or more agent-selected local files or directories; directories recurse automatically and preserve their relative tree.",
+          "capability": "file-transfer",
+          "capabilityName": "File Transfer",
+          "risk": "write"
+        }
+      ],
+      "links": [
+        {
+          "key": "docs_url",
+          "label": "Documentation",
+          "url": "https://www.rfc-editor.org/rfc/rfc4217",
+          "confidence": "verified"
+        }
+      ],
+      "primaryUrl": "https://www.rfc-editor.org/rfc/rfc4217",
+      "docsUrl": "https://www.rfc-editor.org/rfc/rfc4217",
+      "setupNote": "FTP is a protocol, not one vendor. Obtain connection settings from the server operator and store the password only in StackOS."
+    },
+    {
       "key": "publishing.ghost",
       "slug": "ghost",
       "providerKey": "ghost",
@@ -1123,8 +1331,8 @@
         {
           "key": "branding.publish.git-blog",
           "name": "Publish Git Blog Piece",
-          "description": "Publish an approved canonical piece to a git-backed site repo.",
-          "keywords": "Publish an approved canonical piece to a git-backed site repo.",
+          "description": "Publish a final canonical piece to a git-backed site repo within the run's explicit publication intent.",
+          "keywords": "Publish a final canonical piece to a git-backed site repo within the run's explicit publication intent.",
           "capability": "content-distribution",
           "capabilityName": "Content Distribution",
           "risk": "write"
@@ -2104,8 +2312,8 @@
         {
           "key": "branding.publish.linkedin",
           "name": "Publish LinkedIn Post",
-          "description": "Publish an approved LinkedIn member or organization post where API access permits it.",
-          "keywords": "Publish an approved LinkedIn member or organization post where API access permits it.",
+          "description": "Publish a final LinkedIn member or organization post where API access permits it.",
+          "keywords": "Publish a final LinkedIn member or organization post where API access permits it.",
           "capability": "content-distribution",
           "capabilityName": "Content Distribution",
           "risk": "write"
@@ -4334,8 +4542,8 @@
         {
           "key": "trackbooth.api.accountcommunication_activateemailprovidersetup",
           "name": "Activate email provider",
-          "description": "Turns on the email provider setup for this account.",
-          "keywords": "category: accounts | tags: accounts, email, provider-setup | Turns on the email provider setup for this account.",
+          "description": "Activates an already verified email provider setup.",
+          "keywords": "category: accounts | tags: accounts, email, provider-setup | Activates an already verified email provider setup.",
           "capability": "agent-api",
           "capabilityName": "Agent API",
           "risk": "write"
@@ -6035,8 +6243,8 @@
         {
           "key": "trackbooth.api.accountcommunication_upsertemailprovidersetup",
           "name": "Save email provider setup",
-          "description": "Saves the email sending setup for this account.",
-          "keywords": "category: accounts | tags: accounts, email, provider-setup | Saves the email sending setup for this account.",
+          "description": "Verifies candidate SMTP credentials before saving them; a failed candidate does not replace a working setup.",
+          "keywords": "category: accounts | tags: accounts, email, provider-setup | Verifies candidate SMTP credentials before saving them; a failed candidate does not replace a working setup.",
           "capability": "agent-api",
           "capabilityName": "Agent API",
           "risk": "write"
@@ -6602,8 +6810,8 @@
         {
           "key": "trackbooth.api.accountcommunication_verifyemailprovidersetup",
           "name": "Verify email provider",
-          "description": "Checks that this account's email provider setup is ready to use.",
-          "keywords": "category: accounts | tags: accounts, email, verification | Checks that this account's email provider setup is ready to use.",
+          "description": "Rechecks the saved SMTP credentials; failure deactivates the setup, while success does not activate an inactive setup.",
+          "keywords": "category: accounts | tags: accounts, email, verification | Rechecks the saved SMTP credentials; failure deactivates the setup, while success does not activate an inactive setup.",
           "capability": "agent-api",
           "capabilityName": "Agent API",
           "risk": "write"
@@ -7429,7 +7637,7 @@
       "slug": "x-api",
       "providerKey": "x-api",
       "name": "X API",
-      "description": "X API publishing provider contract for approved posts or threads.",
+      "description": "X API publishing provider contract for intent-scoped posts or threads.",
       "authType": "oauth",
       "pluginSlug": "branding",
       "pluginName": "Branding",
@@ -7447,8 +7655,8 @@
         {
           "key": "branding.publish.x",
           "name": "Publish X Post",
-          "description": "Publish an approved X post or thread after an explicit per-send approval gate.",
-          "keywords": "Publish an approved X post or thread after an explicit per-send approval gate.",
+          "description": "Publish a final X post or thread within the run's explicit publication intent.",
+          "keywords": "Publish a final X post or thread within the run's explicit publication intent.",
           "capability": "content-distribution",
           "capabilityName": "Content Distribution",
           "risk": "write"

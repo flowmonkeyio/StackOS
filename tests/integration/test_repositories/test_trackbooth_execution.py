@@ -149,17 +149,25 @@ def test_trackbooth_generated_action_materializes_tenant_secret_without_replacin
         "context": {"title": "Configure tenant SMTP", "category": "accounts"},
         "body_schema": {
             "component_name": "ConfigureTenantSmtpBody",
-            "details": {
+            "json_schema": {
                 "type": "object",
-                "fields": [
-                    {"name": "host", "type": "string", "required": True},
-                    {"name": "password", "type": "string", "required": True},
-                ],
+                "required": ["host", "password"],
+                "properties": {
+                    "host": {"type": "string"},
+                    "password": {"type": "string"},
+                    "secure": {
+                        "type": "boolean",
+                        "description": (
+                            "Use true for implicit TLS from connect, or false for required "
+                            "STARTTLS."
+                        ),
+                    },
+                },
             },
         },
         "response_schema": {
             "component_name": "ApiOkResponse<ConfigureTenantSmtpResult>",
-            "details": {"type": "object", "fields": []},
+            "json_schema": {"type": "object", "properties": {}},
         },
     }
     credential_ref = _trackbooth_credential_ref(session, project_id)
@@ -169,6 +177,15 @@ def test_trackbooth_generated_action_materializes_tenant_secret_without_replacin
         sync_output,
         "AccountCommunicationController.configureSmtp",
     )
+    secure_schema = (
+        ActionRepository(session)
+        .describe(project_id=project_id, action_ref=action_ref)
+        .manifest.input_schema_json["properties"]["body"]["properties"]["secure"]
+    )
+    assert secure_schema == {
+        "type": "boolean",
+        "description": "Use true for implicit TLS from connect, or false for required STARTTLS.",
+    }
     secret_ref = (
         PayloadSecretRepository(session)
         .set(

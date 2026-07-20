@@ -332,13 +332,6 @@ def _schema_required_fields(raw: Any) -> list[str]:
     required = raw.get("required")
     if isinstance(required, list):
         return [str(item) for item in required if isinstance(item, str)]
-    properties = raw.get("properties")
-    if isinstance(properties, Mapping):
-        return [
-            str(name)
-            for name, prop in properties.items()
-            if isinstance(name, str) and isinstance(prop, Mapping) and prop.get("required") is True
-        ]
     return []
 
 
@@ -377,20 +370,24 @@ def _configured_endpoint(config: Mapping[str, Any], operation_id: str) -> JsonOb
     body_required_fields = config.get("body_required_fields")
     if not isinstance(body_required_fields, list):
         body_required_fields = []
-    body_fields = [
-        {"name": str(item), "type": "unknown", "required": True}
-        for item in body_required_fields
-        if isinstance(item, str)
-    ]
+    body_properties: dict[str, JsonObject] = {
+        str(item): {} for item in body_required_fields if isinstance(item, str)
+    }
     return {
         "operation_id": operation_id,
         "method": method.upper(),
         "path": path,
         "path_params": [{"name": str(item)} for item in path_param_names if isinstance(item, str)],
-        "body_schema": {"details": {"type": "object", "fields": body_fields}}
+        "body_schema": {
+            "json_schema": {
+                "type": "object",
+                "required": list(body_properties),
+                "properties": body_properties,
+            }
+        }
         if config.get("has_body") is True
         else None,
-        "query_schema": {"details": {"type": "object", "fields": []}}
+        "query_schema": {"json_schema": {"type": "object", "properties": {}}}
         if config.get("has_query") is True
         else None,
         "category": config.get("category"),
