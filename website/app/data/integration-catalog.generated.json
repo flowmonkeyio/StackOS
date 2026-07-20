@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-20T06:41:03.945Z",
+  "generatedAt": "2026-07-20T07:43:18.522Z",
   "source": "StackOS catalog.list after Trackbooth catalog sync",
   "counts": {
     "providers": 54,
@@ -720,7 +720,10 @@
       "pluginName": "Utilities",
       "pluginDescription": "Reusable research, media generation, data, and productivity tools for any workflow.",
       "color": "#9aa7bd",
-      "logo": null,
+      "logo": {
+        "src": "/images/integrations/cloudflare-wordmark.png",
+        "kind": "wordmark"
+      },
       "actionCount": 7,
       "capabilities": [
         "DNS Management"
@@ -1172,7 +1175,10 @@
       "pluginName": "Utilities",
       "pluginDescription": "Reusable research, media generation, data, and productivity tools for any workflow.",
       "color": "#9aa7bd",
-      "logo": null,
+      "logo": {
+        "src": "/images/integrations/ftp.svg",
+        "kind": "wordmark-dark"
+      },
       "actionCount": 7,
       "capabilities": [
         "File Transfer"
@@ -2116,7 +2122,7 @@
       "color": "#7ee2ad",
       "logo": {
         "src": "/images/integrations/imap.svg",
-        "kind": "icon"
+        "kind": "wordmark-dark"
       },
       "actionCount": 5,
       "capabilities": [
@@ -4139,7 +4145,7 @@
       "color": "#7ee2ad",
       "logo": {
         "src": "/images/integrations/smtp.svg",
-        "kind": "icon"
+        "kind": "wordmark-dark"
       },
       "actionCount": 1,
       "capabilities": [
