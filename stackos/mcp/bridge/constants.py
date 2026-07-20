@@ -51,6 +51,7 @@ _AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
         "communicationTarget.resolve",
         "action.describe",
         "action.list",
+        "actionCall.get",
         "integration.list",
         "catalog.describe",
     }
@@ -108,6 +109,7 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "action.list",
         "action.run",
         "action.validate",
+        "actionCall.get",
         "secret.set",
         "integration.list",
         "agentPreset.describe",

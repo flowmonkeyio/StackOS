@@ -457,6 +457,7 @@ _FTP_ACTION_KWARGS: tuple[dict[str, Any], ...] = (
             "schema_version": "stackos.action.v1",
             "connector": "ftp",
             "operation": "file.upload",
+            "execution_mode": "background",
             "requires_credential": True,
             "enforce_budget": False,
             "agent_guidance": (
@@ -488,6 +489,7 @@ _FTP_ACTION_KWARGS: tuple[dict[str, Any], ...] = (
             "schema_version": "stackos.action.v1",
             "connector": "ftp",
             "operation": "file.download",
+            "execution_mode": "background",
             "requires_credential": True,
             "enforce_budget": False,
             "agent_guidance": (

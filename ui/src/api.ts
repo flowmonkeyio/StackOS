@@ -7852,6 +7852,7 @@ export enum PathsApiV1ProjectsProject_idArtifactsGetParametersQueryStatusAnyOf0 
 }
 export enum ActionCallStatus {
     dry_run = "dry-run",
+    running = "running",
     success = "success",
     failed = "failed"
 }

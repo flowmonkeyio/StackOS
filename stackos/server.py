@@ -26,6 +26,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 
 from stackos import __version__
+from stackos.actions import ActionRepository
 from stackos.api import register_routers
 from stackos.auth import BearerTokenMiddleware, derive_ui_token, ensure_token
 from stackos.config import Settings, get_settings
@@ -207,6 +208,14 @@ def _build_lifespan(
         app.state.ui_token = derive_ui_token(token)
         app.state.engine = engine
         app.state.started_at = time.monotonic()
+
+        with Session(engine) as session:
+            reconciled_actions = ActionRepository(session).reconcile_running_calls()
+            if reconciled_actions:
+                log.info(
+                    "daemon.action_recovery_sweep.reconciled",
+                    count=reconciled_actions,
+                )
 
         # Build the APScheduler instance + run the crash-recovery
         # sweep BEFORE registering recurring jobs (per audit BLOCKER-13).

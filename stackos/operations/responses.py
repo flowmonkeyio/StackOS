@@ -736,6 +736,8 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return {"value": data}
     if operation_name in {"action.run", "action.execute"}:
         return _compact_action_execution(data)
+    if operation_name == "actionCall.get":
+        return _compact_action_call_get(data)
     if operation_name == "resource.get":
         return _compact_resource_get(data)
     if operation_name == "resource.query":
@@ -810,6 +812,9 @@ def _compact_action_execution(data: dict[str, Any]) -> dict[str, Any]:
         "cost_cents": data.get("cost_cents"),
         "dry_run": data.get("dry_run"),
         "replayed": data.get("replayed"),
+        "poll_operation": data.get("poll_operation"),
+        "poll_arguments": data.get("poll_arguments"),
+        "next_poll_after_ms": data.get("next_poll_after_ms"),
     }
     if file_pointer:
         out["output"] = {
@@ -835,6 +840,31 @@ def _compact_action_execution(data: dict[str, Any]) -> dict[str, Any]:
     if summary:
         out["summary"] = _compact_mapping(summary)
     return {key: value for key, value in out.items() if value is not None}
+
+
+def _compact_action_call_get(data: dict[str, Any]) -> dict[str, Any]:
+    out = {
+        key: copy.deepcopy(data.get(key))
+        for key in (
+            "action_call_id",
+            "status",
+            "action_ref",
+            "provider_key",
+            "operation",
+            "progress",
+            "created_at",
+            "completed_at",
+            "output_json",
+            "error",
+            "outcome_unknown",
+            "retry_safe",
+            "poll_operation",
+            "poll_arguments",
+            "next_poll_after_ms",
+        )
+        if data.get(key) is not None
+    }
+    return out
 
 
 def _compact_tracker_mutation(data: dict[str, Any]) -> dict[str, Any]:

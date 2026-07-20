@@ -8,14 +8,21 @@ import hashlib
 import json
 import re
 import time
-from dataclasses import replace
+from contextlib import suppress
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from sqlmodel import Session
+
 from stackos.action_availability import build_action_availability, build_action_exposure
 from stackos.action_output_contract import ACTION_OUTPUT_SCHEMA_REF, action_output_schema_hint
-from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
+from stackos.actions.connectors import (
+    ActionConnectorError,
+    ActionConnectorRequest,
+    ActionProgressCallback,
+)
 from stackos.actions.manifest import ExecutableActionManifest
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import AuthRepository, ResolvedCredential
@@ -30,11 +37,30 @@ from stackos.secret_refs import (
     redact_secret_values,
 )
 
+from .background import BACKGROUND_ACTION_TASKS
 from .schema import ActionExecutionOut
 from .utils import _redact_for_audit
 from .validation import RuntimeActionContext
 
 ACTION_OUTPUT_SCHEMA_VERSION = ACTION_OUTPUT_SCHEMA_REF
+
+
+@dataclass(frozen=True)
+class _PreparedActionExecution:
+    project_id: int
+    manifest: ExecutableActionManifest
+    payload: dict[str, Any]
+    provider_context: dict[str, Any]
+    provider_context_for_audit: dict[str, Any] | None
+    credential_ref: str | None
+    runtime_context: RuntimeActionContext
+    effective_output_policy: dict[str, Any]
+    metadata_json: dict[str, Any] | None
+    estimated_cost_cents: int
+    run_id: int | None
+    run_plan_id: int | None
+    run_plan_step_id: int | None
+    idempotency_key: str | None
 
 
 class ActionExecutionMixin:
@@ -165,7 +191,8 @@ class ActionExecutionMixin:
             run_plan_id=run_plan_id,
             run_plan_step_id=run_plan_step_id,
         )
-        if idempotency_key is not None:
+        background_execution = manifest.execution_mode == "background" and not dry_run
+        if idempotency_key is not None and not background_execution:
             replay = self._idempotency_replay(
                 project_id=project_id,
                 manifest=manifest,
@@ -224,6 +251,107 @@ class ActionExecutionMixin:
                 run_id=run_id,
             )
 
+        prepared = _PreparedActionExecution(
+            project_id=project_id,
+            manifest=manifest,
+            payload=payload,
+            provider_context=provider_context,
+            provider_context_for_audit=provider_context_for_audit,
+            credential_ref=resolved_ref,
+            runtime_context=runtime_context,
+            effective_output_policy=effective_output_policy,
+            metadata_json=metadata_json,
+            estimated_cost_cents=estimated_cost_cents,
+            run_id=run_id,
+            run_plan_id=run_plan_id,
+            run_plan_step_id=run_plan_step_id,
+            idempotency_key=idempotency_key,
+        )
+        if background_execution:
+            bind = self._s.get_bind()
+            row, replayed = self._reserve_background_call(
+                project_id=project_id,
+                manifest=manifest,
+                credential_ref=resolved_ref,
+                run_id=run_id,
+                run_plan_id=run_plan_id,
+                run_plan_step_id=run_plan_step_id,
+                idempotency_key=idempotency_key,
+                request_json=payload,
+                provider_context_json=provider_context_for_audit,
+                metadata_json=metadata_json,
+                estimated_cost_cents=estimated_cost_cents,
+            )
+            assert row.id is not None
+            if not replayed:
+                repository_type = type(self)
+                connectors = self._connectors
+                asset_dir = self._asset_dir
+                action_call_id = row.id
+                BACKGROUND_ACTION_TASKS.start(
+                    action_call_id,
+                    lambda report: _execute_background_action(
+                        repository_type=repository_type,
+                        bind=bind,
+                        connectors=connectors,
+                        asset_dir=asset_dir,
+                        prepared=prepared,
+                        action_call_id=action_call_id,
+                        progress_callback=report,
+                    ),
+                )
+            return Envelope(
+                data=ActionExecutionOut(
+                    action_call=self._call_audit_out(row),
+                    output_json=row.response_json or {},
+                    metadata_json=row.metadata_json,
+                    cost_cents=row.cost_cents,
+                    replayed=replayed,
+                    credential_ref=row.credential_ref,
+                    poll_operation="actionCall.get",
+                    poll_arguments={"action_call_id": row.id},
+                    next_poll_after_ms=500,
+                ),
+                project_id=project_id,
+                run_id=run_id,
+            )
+
+        row = await self._execute_prepared(prepared)
+        return Envelope(
+            data=ActionExecutionOut(
+                action_call=self._call_audit_out(row),
+                output_json=row.response_json or {},
+                metadata_json=row.metadata_json,
+                cost_cents=row.cost_cents,
+                dry_run=False,
+                credential_ref=row.credential_ref,
+            ),
+            project_id=project_id,
+            run_id=run_id,
+        )
+
+    async def _execute_prepared(
+        self,
+        prepared: _PreparedActionExecution,
+        *,
+        action_call_id: int | None = None,
+        progress_callback: ActionProgressCallback | None = None,
+    ) -> Any:
+        project_id = prepared.project_id
+        manifest = prepared.manifest
+        payload = prepared.payload
+        provider_context = prepared.provider_context
+        provider_context_for_audit = prepared.provider_context_for_audit
+        resolved_ref = prepared.credential_ref
+        runtime_context = prepared.runtime_context
+        effective_output_policy = prepared.effective_output_policy
+        metadata_json = prepared.metadata_json
+        estimated_cost_cents = prepared.estimated_cost_cents
+        run_id = prepared.run_id
+        run_plan_id = prepared.run_plan_id
+        run_plan_step_id = prepared.run_plan_step_id
+        idempotency_key = prepared.idempotency_key
+        connector = self._connectors.get(manifest.connector_key or "")
         credential = self._resolve_credential(
             project_id=project_id,
             manifest=manifest,
@@ -249,6 +377,7 @@ class ActionExecutionMixin:
             provider_context_json=provider_context,
             credential=credential,
             dry_run=False,
+            progress_callback=progress_callback,
         )
         started = time.perf_counter()
         try:
@@ -292,6 +421,7 @@ class ActionExecutionMixin:
                 cost_cents=estimated_cost_cents,
                 duration_ms=duration_ms,
                 error=safe_error,
+                action_call_id=action_call_id,
             )
             raise ConflictError(
                 "action connector failed",
@@ -326,6 +456,7 @@ class ActionExecutionMixin:
                 cost_cents=estimated_cost_cents,
                 duration_ms=duration_ms,
                 error=safe_error,
+                action_call_id=action_call_id,
             )
             raise ConflictError(
                 "action connector failed",
@@ -383,6 +514,7 @@ class ActionExecutionMixin:
                     dry_run=False,
                     cost_cents=actual_cost_cents,
                     duration_ms=duration_ms,
+                    action_call_id=action_call_id,
                 )
             else:
                 row = self._record_call(
@@ -403,6 +535,7 @@ class ActionExecutionMixin:
                     cost_cents=actual_cost_cents,
                     duration_ms=duration_ms,
                     commit=False,
+                    action_call_id=action_call_id,
                 )
                 row = self._apply_output_policy(
                     project_id=project_id,
@@ -439,6 +572,7 @@ class ActionExecutionMixin:
                 cost_cents=actual_cost_cents,
                 duration_ms=duration_ms,
                 error=safe_error,
+                action_call_id=action_call_id,
             )
             raise ConflictError(
                 "action output persistence failed",
@@ -450,18 +584,7 @@ class ActionExecutionMixin:
                     "error": safe_error,
                 },
             ) from exc
-        return Envelope(
-            data=ActionExecutionOut(
-                action_call=self._call_audit_out(row),
-                output_json=row.response_json or {},
-                metadata_json=row.metadata_json,
-                cost_cents=row.cost_cents,
-                dry_run=False,
-                credential_ref=row.credential_ref,
-            ),
-            project_id=project_id,
-            run_id=run_id,
-        )
+        return row
 
     def _resolve_credential(
         self,
@@ -493,6 +616,7 @@ class ActionExecutionMixin:
         provider_context_json: dict[str, Any],
         credential: ResolvedCredential | None,
         dry_run: bool,
+        progress_callback: ActionProgressCallback | None = None,
     ) -> ActionConnectorRequest:
         return ActionConnectorRequest(
             project_id=project_id,
@@ -508,6 +632,7 @@ class ActionExecutionMixin:
             asset_dir=self._asset_dir,
             session=self._s,
             dry_run=dry_run,
+            progress_callback=progress_callback,
         )
 
     def _apply_output_policy(
@@ -597,6 +722,50 @@ class ActionExecutionMixin:
         self._s.commit()
         self._s.refresh(row)
         return row
+
+
+async def _execute_background_action(
+    *,
+    repository_type: type[Any],
+    bind: Any,
+    connectors: Any,
+    asset_dir: Path | None,
+    prepared: _PreparedActionExecution,
+    action_call_id: int,
+    progress_callback: ActionProgressCallback,
+) -> None:
+    with Session(bind) as session:
+        repository = repository_type(session, connectors=connectors, asset_dir=asset_dir)
+        try:
+            await repository._execute_prepared(
+                prepared,
+                action_call_id=action_call_id,
+                progress_callback=progress_callback,
+            )
+        except ConflictError:
+            return
+        except Exception:
+            with suppress(ConflictError):
+                repository._record_call(
+                    project_id=prepared.project_id,
+                    manifest=prepared.manifest,
+                    credential=None,
+                    credential_ref=prepared.credential_ref,
+                    run_id=prepared.run_id,
+                    run_plan_id=prepared.run_plan_id,
+                    run_plan_step_id=prepared.run_plan_step_id,
+                    idempotency_key=prepared.idempotency_key,
+                    request_json=prepared.payload,
+                    provider_context_json=prepared.provider_context_for_audit,
+                    response_json={"outcome_unknown": True, "retry_safe": False},
+                    metadata_json=prepared.metadata_json,
+                    status=ActionCallStatus.FAILED,
+                    dry_run=False,
+                    cost_cents=prepared.estimated_cost_cents,
+                    duration_ms=None,
+                    error="background-action-worker-failed",
+                    action_call_id=action_call_id,
+                )
 
 
 def _metadata_with_execution_context(

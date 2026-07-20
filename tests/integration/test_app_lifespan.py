@@ -10,8 +10,13 @@ from __future__ import annotations
 import stat
 
 from fastapi.testclient import TestClient
+from sqlmodel import Session
 
 from stackos.config import Settings
+from stackos.db.connection import make_engine
+from stackos.db.migrate import upgrade_to_head
+from stackos.db.model_core import ActionCall, Project
+from stackos.db.model_enums import ActionCallStatus
 from stackos.server import create_app
 
 
@@ -49,3 +54,44 @@ def test_host_header_check_rejects_non_loopback(settings: Settings) -> None:
     with TestClient(app, base_url="http://127.0.0.1:5180") as client:
         resp = client.get("/api/v1/health", headers={"host": "example.com"})
         assert resp.status_code == 421
+
+
+def test_startup_reconciles_running_action_calls(settings: Settings) -> None:
+    """A daemon restart makes orphaned background action outcomes explicit."""
+    upgrade_to_head(settings)
+    engine = make_engine(settings.db_path)
+    with Session(engine) as session:
+        project = Project(
+            slug="startup-action-reconciliation",
+            name="Startup action reconciliation",
+            domain="example.test",
+            locale="en-US",
+        )
+        session.add(project)
+        session.flush()
+        call = ActionCall(
+            project_id=int(project.id),
+            action_key="builtin.utils.ftp.upload",
+            plugin_slug="builtin-utils-ftp",
+            operation="file.upload",
+            status=ActionCallStatus.RUNNING,
+        )
+        session.add(call)
+        session.commit()
+        call_id = int(call.id)
+    engine.dispose()
+
+    app = create_app(settings)
+    with (
+        TestClient(app, base_url="http://127.0.0.1:5180"),
+        Session(app.state.engine) as session,
+    ):
+        reconciled = session.get(ActionCall, call_id)
+
+    assert reconciled is not None
+    assert reconciled.status == ActionCallStatus.FAILED
+    assert reconciled.completed_at is not None
+    assert reconciled.error == "daemon-restart-orphan"
+    assert reconciled.response_json is not None
+    assert reconciled.response_json["outcome_unknown"] is True
+    assert reconciled.response_json["retry_safe"] is False

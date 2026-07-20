@@ -808,6 +808,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "action.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "action.validate" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "action.run" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "actionCall.get" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "secret.set" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "integration.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "agentPreset.list" in _AGENT_SETUP_TOOLBOX_NAMES

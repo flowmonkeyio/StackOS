@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from stackos.action_availability import ActionExposureOut
+from stackos.db.models import ActionCallStatus
 from stackos.mcp.contract import MCPInput
 from stackos.operations.spec import OperationResponsePolicy
 
@@ -20,6 +22,16 @@ ACTION_FILE_OUTPUT_RESPONSE_POLICY = OperationResponsePolicy(
         "MCP and REST calls store external provider output in plain response files by "
         "default. CLI calls default to raw inline responses unless an explicit output "
         "policy says otherwise.",
+    ),
+)
+
+ACTION_CALL_POLL_RESPONSE_POLICY = OperationResponsePolicy(
+    default_mode="compact",
+    allowed_modes=("compact", "raw"),
+    ack_safe=False,
+    compact_notes=(
+        "Compact polling responses keep action_call_id, status, progress, timestamps, "
+        "terminal output or failure details, and next-poll guidance.",
     ),
 )
 
@@ -240,6 +252,36 @@ class ActionRunInput(MCPInput):
     )
 
 
+class ActionCallGetInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"project_id": 1, "action_call_id": 42}},
+    )
+
+    project_id: int | None = None
+    action_call_id: int
+
+
+class ActionCallGetOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_call_id: int
+    status: ActionCallStatus
+    action_ref: str
+    provider_key: str | None = None
+    operation: str
+    progress: dict[str, Any] | None = None
+    output_json: dict[str, Any] | None = None
+    error: str | None = None
+    outcome_unknown: bool | None = None
+    retry_safe: bool | None = None
+    created_at: datetime
+    completed_at: datetime | None = None
+    poll_operation: str | None = None
+    poll_arguments: dict[str, Any] | None = None
+    next_poll_after_ms: int | None = None
+
+
 class ActionRunOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -255,10 +297,16 @@ class ActionRunOut(BaseModel):
     action_call: dict[str, Any] | None = None
     output_json: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None = None
+    poll_operation: str | None = None
+    poll_arguments: dict[str, Any] | None = None
+    next_poll_after_ms: int | None = None
 
 
 __all__ = [
+    "ACTION_CALL_POLL_RESPONSE_POLICY",
     "ACTION_FILE_OUTPUT_RESPONSE_POLICY",
+    "ActionCallGetInput",
+    "ActionCallGetOut",
     "ActionDescribeInput",
     "ActionExecuteInput",
     "ActionListInput",

@@ -118,6 +118,17 @@ status, counts, duration, and partial result. Passwords never enter action
 input, output, metadata, or audit JSON, including when a server echoes a
 credential in PWD, listing facts, names, paths, or errors.
 
+Only `utils.ftp.file.upload` and `utils.ftp.file.download` run in the shared
+background action mode; browse and remote-management actions remain inline.
+An accepted transfer returns status `running`, an `action_call_id`, and
+`actionCall.get` poll arguments. While that stored call remains running, the
+probe may include allowlisted process-live byte and item counters. Those
+counters are not completion proof. The stored terminal status, output or
+error, and completion timestamp are authoritative. If the daemon restarts,
+live progress disappears and an orphaned running call is stored as failed with
+`outcome_unknown=true` and `retry_safe=false`; StackOS does not infer success
+or retry the transfer.
+
 `STOR` writes directly to the selected remote path because rename/temp-file
 semantics are not part of this contract. If the connection fails after upload
 bytes may have been accepted, the failed item reports `outcome_unknown=true`,

@@ -26,6 +26,7 @@ from stackos.actions.connectors import (
     ActionConnectorError,
     ActionConnectorRequest,
     ActionConnectorResult,
+    ActionProgressCallback,
     ActionValidationIssue,
 )
 from stackos.actions.provider_utils import (
@@ -112,11 +113,36 @@ class _TransferState:
     operation: str
     error_policy: str
     secret: str = field(repr=False)
+    progress_callback: ActionProgressCallback | None = field(default=None, repr=False)
     completed: list[dict[str, Any]] = field(default_factory=list)
     skipped: list[dict[str, Any]] = field(default_factory=list)
     failed: list[dict[str, Any]] = field(default_factory=list)
     created_directories: list[dict[str, str]] = field(default_factory=list)
     bytes_transferred: int = 0
+    _reported_bytes: int = field(default=0, init=False, repr=False)
+
+    def report(
+        self,
+        *,
+        source_path: str,
+        target_path: str,
+        bytes_delta: int = 0,
+    ) -> None:
+        if self.progress_callback is None:
+            return
+        self._reported_bytes += bytes_delta
+        self.progress_callback(
+            {
+                "phase": "transferring",
+                "operation": self.operation,
+                "current_source_path": _redact_text(source_path, secret=self.secret),
+                "current_target_path": _redact_text(target_path, secret=self.secret),
+                "bytes_transferred": self._reported_bytes,
+                "completed_count": len(self.completed),
+                "skipped_count": len(self.skipped),
+                "failed_count": len(self.failed),
+            }
+        )
 
     def output(self, *, status: str | None = None) -> dict[str, Any]:
         if status is None:
@@ -196,6 +222,7 @@ def _execute_sync(request: ActionConnectorRequest) -> ActionConnectorResult:
             operation=request.operation,
             error_policy=str(request.input_json["error_policy"]),
             secret=str(settings["password"]),
+            progress_callback=request.progress_callback,
         )
         try:
             if request.operation == "file.upload":
@@ -636,10 +663,16 @@ def _upload_file(
             raise FileExistsError(f"remote file exists: {remote_path}")
 
     byte_count = 0
+    state.report(source_path=str(local_path), target_path=remote_path)
 
     def count(chunk: bytes) -> None:
         nonlocal byte_count
         byte_count += len(chunk)
+        state.report(
+            source_path=str(local_path),
+            target_path=remote_path,
+            bytes_delta=len(chunk),
+        )
 
     with local_path.open("rb") as file_obj:
         try:
@@ -655,6 +688,7 @@ def _upload_file(
             "type": "file",
         }
     )
+    state.report(source_path=str(local_path), target_path=remote_path)
 
 
 def _download(client: Any, request: ActionConnectorRequest, state: _TransferState) -> None:
@@ -794,6 +828,7 @@ def _download_file(
     local_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = local_path.with_name(f".{local_path.name}.stackos-ftp-{uuid.uuid4().hex}.part")
     byte_count = 0
+    state.report(source_path=remote_path, target_path=str(local_path))
     try:
         with temporary.open("xb") as file_obj:
 
@@ -801,6 +836,11 @@ def _download_file(
                 nonlocal byte_count
                 file_obj.write(chunk)
                 byte_count += len(chunk)
+                state.report(
+                    source_path=remote_path,
+                    target_path=str(local_path),
+                    bytes_delta=len(chunk),
+                )
 
             client.retrbinary(f"RETR {remote_path}", write)
             file_obj.flush()
@@ -819,6 +859,7 @@ def _download_file(
             "type": "file",
         }
     )
+    state.report(source_path=remote_path, target_path=str(local_path))
 
 
 def _ensure_remote_directory(
@@ -949,6 +990,7 @@ def _record_skip(
     reason: str,
 ) -> None:
     state.skipped.append({"source_path": source_path, "target_path": target_path, "reason": reason})
+    state.report(source_path=source_path, target_path=target_path)
 
 
 def _record_failure(
@@ -980,6 +1022,7 @@ def _record_failure(
             }
         )
     state.failed.append(failure)
+    state.report(source_path=source_path, target_path=target_path)
     if state.error_policy == "stop":
         raise _StopTransfer(message) from exc
 

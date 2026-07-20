@@ -9,14 +9,91 @@ from typing import Any
 from sqlmodel import col, select
 
 from stackos.actions import ActionExecutionOut, ActionRepository
-from stackos.db.models import ApprovalRequest, ApprovalRequestStatus
+from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
+from stackos.db.models import ActionCallStatus, ApprovalRequest, ApprovalRequestStatus
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.permissions import active_run_plan_step
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.base import ConflictError
 
-from .schemas import ActionExecuteInput, ActionRunInput, ActionRunOut
+from .schemas import (
+    ActionCallGetInput,
+    ActionCallGetOut,
+    ActionExecuteInput,
+    ActionRunInput,
+    ActionRunOut,
+)
+
+
+async def action_call_get(
+    inp: ActionCallGetInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> ActionCallGetOut:
+    project_id = inp.project_id if inp.project_id is not None else ctx.project_id
+    if project_id is None:
+        from stackos.repositories.base import ValidationError
+
+        raise ValidationError(
+            "project_id is required unless the agent bridge resolved the workspace project"
+        )
+
+    call = ActionRepository(ctx.session).get_call(
+        project_id=project_id,
+        action_call_id=inp.action_call_id,
+    )
+    running = call.status == ActionCallStatus.RUNNING
+    output_json = call.response_json
+    progress = BACKGROUND_ACTION_TASKS.progress(call.id) if running else None
+    return ActionCallGetOut(
+        action_call_id=call.id,
+        status=call.status,
+        action_ref=f"{call.plugin_slug}.{call.action_key}",
+        provider_key=call.provider_key,
+        operation=call.operation,
+        progress=_public_action_progress(progress),
+        output_json=output_json,
+        error=call.error,
+        outcome_unknown=_terminal_diagnosis_flag(output_json, "outcome_unknown"),
+        retry_safe=_terminal_diagnosis_flag(output_json, "retry_safe"),
+        created_at=call.created_at,
+        completed_at=call.completed_at,
+        poll_operation="actionCall.get" if running else None,
+        poll_arguments={"action_call_id": call.id} if running else None,
+        next_poll_after_ms=500 if running else None,
+    )
+
+
+def _public_action_progress(progress: dict[str, Any] | None) -> dict[str, Any] | None:
+    if progress is None:
+        return None
+    return {
+        key: progress[key]
+        for key in (
+            "phase",
+            "operation",
+            "bytes_transferred",
+            "completed_count",
+            "skipped_count",
+            "failed_count",
+        )
+        if key in progress
+    }
+
+
+def _terminal_diagnosis_flag(output: dict[str, Any] | None, key: str) -> bool | None:
+    if not isinstance(output, dict):
+        return None
+    direct = output.get(key)
+    if isinstance(direct, bool):
+        return direct
+    provider_error = output.get("provider_error")
+    if isinstance(provider_error, dict):
+        nested = provider_error.get(key)
+        if isinstance(nested, bool):
+            return nested
+    return None
 
 
 async def action_execute(
@@ -332,6 +409,9 @@ def _action_run_out(execution: ActionExecutionOut, *, verbose: bool) -> ActionRu
         action_call=call.model_dump(mode="json") if verbose else None,
         output_json=execution.output_json if verbose else None,
         metadata_json=execution.metadata_json if verbose else None,
+        poll_operation=execution.poll_operation,
+        poll_arguments=execution.poll_arguments,
+        next_poll_after_ms=execution.next_poll_after_ms,
     )
 
 
@@ -486,6 +566,7 @@ def _add_telegram_chat_ref(out: dict[str, Any], raw: Any) -> None:
 __all__ = [
     "_approval_ref_for_action",
     "_compact_action_output",
+    "action_call_get",
     "action_execute",
     "action_run",
 ]

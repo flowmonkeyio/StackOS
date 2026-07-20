@@ -104,3 +104,6 @@ class ActionExecutionOut(BaseModel):
     dry_run: bool = False
     replayed: bool = False
     credential_ref: str | None = None
+    poll_operation: str | None = None
+    poll_arguments: dict[str, Any] | None = None
+    next_poll_after_ms: int | None = None

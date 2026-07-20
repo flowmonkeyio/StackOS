@@ -121,6 +121,71 @@ def test_action_compact_response_keeps_file_pointer_and_drops_raw_payload() -> N
     assert "this should not appear" not in str(compact)
 
 
+def test_action_compact_response_keeps_background_poll_guidance() -> None:
+    specs = {spec.name: spec for spec in action_operation_specs()}
+    payload = {
+        "project_id": 1,
+        "data": {
+            "action_call": {
+                "id": 14,
+                "status": "running",
+                "plugin_slug": "utils",
+                "action_key": "ftp.file.upload",
+                "provider_key": "ftp",
+                "operation": "file.upload",
+            },
+            "output_json": {},
+            "poll_operation": "actionCall.get",
+            "poll_arguments": {"action_call_id": 14},
+            "next_poll_after_ms": 500,
+        },
+    }
+
+    compact = shape_operation_response(
+        specs["action.execute"],
+        payload,
+        response_mode="compact",
+    )
+
+    assert compact["data"]["status"] == "running"
+    assert compact["data"]["action_call_id"] == 14
+    assert compact["data"]["poll_operation"] == "actionCall.get"
+    assert compact["data"]["poll_arguments"] == {"action_call_id": 14}
+    assert compact["data"]["next_poll_after_ms"] == 500
+
+
+def test_action_call_compact_response_keeps_progress_and_terminal_diagnosis() -> None:
+    specs = {spec.name: spec for spec in action_operation_specs()}
+    payload = {
+        "action_call_id": 14,
+        "status": "failed",
+        "action_ref": "utils.ftp.file.upload",
+        "progress": {"phase": "transferring", "bytes_transferred": 12},
+        "created_at": "2026-07-19T17:00:00Z",
+        "completed_at": "2026-07-19T17:00:02Z",
+        "output_json": {"failed_count": 1},
+        "error": "daemon-restart-orphan",
+        "outcome_unknown": True,
+        "retry_safe": False,
+    }
+
+    compact = shape_operation_response(
+        specs["actionCall.get"],
+        payload,
+        response_mode="compact",
+    )
+
+    data = compact["data"]
+    assert data["action_call_id"] == 14
+    assert data["status"] == "failed"
+    assert data["progress"]["bytes_transferred"] == 12
+    assert data["completed_at"] == "2026-07-19T17:00:02Z"
+    assert data["output_json"] == {"failed_count": 1}
+    assert data["error"] == "daemon-restart-orphan"
+    assert data["outcome_unknown"] is True
+    assert data["retry_safe"] is False
+
+
 def test_non_side_effect_default_response_mode_uses_policy_default() -> None:
     spec = _spec("tracker.get", mutating=False)
 

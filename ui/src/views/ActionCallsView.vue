@@ -33,7 +33,7 @@ import { useStackOsCatalogStore } from '@/stores/plugins'
 
 import ActionCallDetailDrawer from './action-calls/ActionCallDetailDrawer.vue'
 
-type StatusFilter = 'all' | `${ActionCallStatus}`
+type StatusFilter = 'all' | 'running' | `${ActionCallStatus}`
 
 const route = useRoute()
 const catalogStore = useStackOsCatalogStore()
@@ -53,6 +53,7 @@ const statusFilter = ref<StatusFilter>('all')
 
 const statusOptions: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'All' },
+  { key: ActionCallStatus.running, label: 'Running' },
   { key: ActionCallStatus.success, label: 'Success' },
   { key: ActionCallStatus.failed, label: 'Failed' },
   { key: ActionCallStatus.dry_run, label: 'Dry run' },
@@ -88,6 +89,9 @@ const selectedAction = computed(() => {
 
 const loadedSuccess = computed(
   () => rows.value.filter((call) => call.status === ActionCallStatus.success).length,
+)
+const loadedRunning = computed(
+  () => rows.value.filter((call) => call.status === ActionCallStatus.running).length,
 )
 const loadedFailed = computed(
   () => rows.value.filter((call) => call.status === ActionCallStatus.failed).length,
@@ -277,7 +281,7 @@ onMounted(load)
       {{ error }}
     </UiCallout>
 
-    <div class="grid gap-3 md:grid-cols-4">
+    <div class="grid gap-3 md:grid-cols-5">
       <button
         type="button"
         :class="metricFilterClass('all')"
@@ -288,6 +292,19 @@ onMounted(load)
         <UiMetricCard
           label="Loaded calls"
           :value="rows.length"
+          density="compact"
+        />
+      </button>
+      <button
+        type="button"
+        :class="metricFilterClass('running')"
+        :aria-pressed="statusFilter === 'running'"
+        aria-label="Filter to running calls"
+        @click="setStatus('running')"
+      >
+        <UiMetricCard
+          label="Running"
+          :value="loadedRunning"
           density="compact"
         />
       </button>

@@ -77,7 +77,7 @@ def test_approval_request_status_values() -> None:
 
 
 def test_action_call_status_values() -> None:
-    assert _values(ActionCallStatus) == {"dry-run", "success", "failed"}
+    assert _values(ActionCallStatus) == {"dry-run", "running", "success", "failed"}
 
 
 def test_agent_request_status_values() -> None:
@@ -132,6 +132,9 @@ def test_terminal_states_are_terminal() -> None:
     assert RUN_STATUS_TRANSITIONS[RunStatus.SUCCESS] == frozenset()
     assert RUN_PLAN_STATUS_TRANSITIONS[RunPlanStatus.COMPLETED] == frozenset()
     assert RUN_PLAN_STATUS_TRANSITIONS[RunPlanStatus.FAILED] == frozenset()
+    assert ACTION_CALL_STATUS_TRANSITIONS[ActionCallStatus.RUNNING] == frozenset(
+        {ActionCallStatus.SUCCESS, ActionCallStatus.FAILED}
+    )
     assert ACTION_CALL_STATUS_TRANSITIONS[ActionCallStatus.SUCCESS] == frozenset()
     assert AGENT_REQUEST_STATUS_TRANSITIONS[AgentRequestStatus.RESOLVED] == frozenset()
     assert AGENT_REQUEST_STATUS_TRANSITIONS[AgentRequestStatus.IGNORED] == frozenset()

@@ -40,6 +40,7 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("browser.script.inject", SYSTEM_SKILL)
     check_grant("browser.page.screenshot", SYSTEM_SKILL)
     check_grant("action.run", SYSTEM_SKILL)
+    check_grant("actionCall.get", SYSTEM_SKILL)
     check_grant("agentPreset.list", SYSTEM_SKILL)
     check_grant("agentPreset.describe", SYSTEM_SKILL)
     check_grant("agentPreset.resolveForWorkflow", SYSTEM_SKILL)

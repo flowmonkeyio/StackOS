@@ -8,9 +8,10 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 191
+    assert len(names) == 192
     assert {
         "action.execute",
+        "actionCall.get",
         "secret.set",
         "schema.get",
         "auth.status",
@@ -117,6 +118,14 @@ def test_operation_registry_documents_core_operations() -> None:
     assert action_list.surfaces["cli"].command == "actions list"
     assert action_list.grant_policy == "direct-read"
     assert any("currently usable action refs" in item for item in [action_list.purpose])
+
+    action_call_get = registry.get("actionCall.get").describe_out()
+    assert action_call_get.surfaces["mcp"].enabled is True
+    assert action_call_get.surfaces["rest"].enabled is True
+    assert action_call_get.surfaces["cli"].enabled is True
+    assert action_call_get.surfaces["cli"].command == "ops call actionCall.get"
+    assert action_call_get.grant_policy == "direct-read"
+    assert action_call_get.read_only is True
 
     integration_list = registry.get("integration.list").describe_out()
     assert integration_list.category == "setup"

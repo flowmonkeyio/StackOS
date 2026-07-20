@@ -80,6 +80,17 @@ actions, callers may pass `idempotency_key` or the more agent-friendly
 and workflow calls derive a stable run/step/action key before reaching the
 connector.
 
+Actions declared with `execution_mode=background` first persist a `RUNNING`
+action call. The accepted `action.run` or `action.execute` response includes its
+`action_call_id`, `poll_operation=actionCall.get`, the exact poll arguments, and
+`next_poll_after_ms`. `actionCall.get` returns only allowlisted process-live
+progress while the stored status is `RUNNING`; the stored response, error, and
+completion timestamp are authoritative after the call becomes terminal. Live
+progress is not durable proof and may disappear on daemon restart. Startup
+reconciliation marks an orphaned `RUNNING` call `FAILED` with
+`outcome_unknown=true` and `retry_safe=false` rather than reporting success or
+silently retrying it.
+
 The read API exposes the same public audit shape at
 `GET /api/v1/projects/{project_id}/action-calls`. It can be filtered by run,
 run plan, run-plan step, plugin, action key, and status. Results are returned
@@ -120,10 +131,13 @@ allows it. Agents and scripts can inspect the operation contract with:
 stackos ops describe action.execute --json
 stackos ops describe action.list --json
 stackos ops describe action.run --json
+stackos ops describe actionCall.get --json
 ```
 
 or through `GET /api/v1/operations/action.execute`,
 `GET /api/v1/operations/action.list`, and `GET /api/v1/operations/action.run`.
+`actionCall.get` uses the same generic operation route and is scoped by
+`project_id` plus `action_call_id`.
 
 Direct/read discovery operations:
 
@@ -132,6 +146,7 @@ Direct/read discovery operations:
   inventory and hidden-action counts without broad `auth.status` noise
 - `action.describe`
 - `action.validate`
+- `actionCall.get` after a background action returns polling guidance
 - `readiness.check` when the agent already knows the selected workflow/action
   and wants only scoped setup blockers
 - `toolProfile.resolve` when an agent needs a safe provider/profile/credential

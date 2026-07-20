@@ -34,7 +34,12 @@ describe('ActionCallsView', () => {
           page(
             status === 'failed'
               ? [actionCall({ id: 2, status: 'failed', error: 'provider rejected request' })]
-              : [actionCall({ id: 1, status: 'success' })],
+              : status === 'running'
+                ? [actionCall({ id: 3, status: 'running' })]
+                : [
+                    actionCall({ id: 1, status: 'success' }),
+                    actionCall({ id: 3, status: 'running' }),
+                  ],
           ),
         )
       }
@@ -54,8 +59,18 @@ describe('ActionCallsView', () => {
 
     expect(requestedUrls.some((url) => url.includes('plugin_slug=utils'))).toBe(true)
     expect(wrapper.text()).not.toContain('Action call #1')
+    expect(wrapper.get('button[aria-label="Filter to running calls"]').text()).toContain('1')
 
-    await clickRow(wrapper, 'utils:image.generate')
+    await clickButton(wrapper, 'Running')
+    await vi.waitFor(() =>
+      expect(requestedUrls.some((url) => url.includes('status=running'))).toBe(true),
+    )
+    await vi.waitFor(() => expect(wrapper.text()).toContain('#3'))
+
+    await clickButton(wrapper, 'All')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('#1'))
+
+    await emitRowClick(wrapper, actionCall({ id: 1, status: 'success' }))
     await vi.waitFor(() => expect(document.body.textContent ?? '').toContain('Action call #1'))
     const detailText = document.body.textContent ?? ''
     expect(detailText).toContain('Execution Target')
@@ -134,7 +149,7 @@ function actionCall({
   error = null,
 }: {
   id: number
-  status: 'success' | 'failed'
+  status: 'running' | 'success' | 'failed'
   error?: string | null
 }) {
   return {
@@ -190,14 +205,6 @@ async function clickButton(wrapper: ReturnType<typeof mount>, label: string): Pr
     .find((candidate) => candidate.text().trim() === label)
   expect(button, `${label} button`).toBeDefined()
   await button?.trigger('click')
-}
-
-async function clickRow(wrapper: ReturnType<typeof mount>, text: string): Promise<void> {
-  const row = wrapper
-    .findAll('[role="button"], tbody tr, article')
-    .find((candidate) => candidate.text().includes(text))
-  expect(row, `${text} row`).toBeDefined()
-  await row?.trigger('click')
 }
 
 async function emitRowClick(

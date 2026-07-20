@@ -12,9 +12,12 @@ from stackos.operations.spec import (
 )
 
 from .discovery import action_describe, action_list, action_validate
-from .execution import action_execute, action_run
+from .execution import action_call_get, action_execute, action_run
 from .schemas import (
+    ACTION_CALL_POLL_RESPONSE_POLICY,
     ACTION_FILE_OUTPUT_RESPONSE_POLICY,
+    ActionCallGetInput,
+    ActionCallGetOut,
     ActionDescribeInput,
     ActionExecuteInput,
     ActionListInput,
@@ -184,6 +187,46 @@ def operation_specs() -> list[OperationSpec]:
             ),
             mutating=False,
             grant_policy="direct-read",
+        ),
+        OperationSpec(
+            name="actionCall.get",
+            summary="Poll one project-scoped action call for live progress or stored outcome.",
+            input_model=ActionCallGetInput,
+            output_model=ActionCallGetOut,
+            handler=action_call_get,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True,
+                    path="/api/v1/operations/actionCall.get/call",
+                ),
+                cli=OperationSurface(enabled=True, command="ops call actionCall.get"),
+            ),
+            purpose=(
+                "Use this after a background action is accepted to inspect process-live "
+                "progress while running and the persisted terminal result afterward."
+            ),
+            when_to_use=(
+                "action.run or action.execute returned action_call_id and poll guidance.",
+                "The caller needs authoritative completion or failure state.",
+            ),
+            prerequisites=(
+                "Pass the returned action_call_id.",
+                "The current workspace must resolve to the owning project, or pass project_id.",
+            ),
+            returns=(
+                "Sanitized live progress only while the persisted call is running.",
+                "Persisted terminal output or failure details, including uncertainty flags.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Poll a background action call",
+                    arguments={"project_id": 1, "action_call_id": 42},
+                ),
+            ),
+            mutating=False,
+            grant_policy="direct-read",
+            response_policy=ACTION_CALL_POLL_RESPONSE_POLICY,
         ),
         OperationSpec(
             name="action.execute",

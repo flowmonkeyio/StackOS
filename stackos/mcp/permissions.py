@@ -79,6 +79,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "action.list",
         "action.run",
         "action.validate",
+        "actionCall.get",
         "integration.list",
         "agentPreset.describe",
         "agentPreset.list",

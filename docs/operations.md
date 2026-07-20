@@ -37,6 +37,7 @@ description for every registered operation:
 stackos ops list
 stackos ops describe action.execute --json
 stackos ops describe action.run --json
+stackos ops describe actionCall.get --json
 stackos ops describe runPlan.claimStep --json
 ```
 
@@ -46,6 +47,7 @@ The same metadata is available through REST:
 GET /api/v1/operations
 GET /api/v1/operations/action.execute
 GET /api/v1/operations/action.run
+GET /api/v1/operations/actionCall.get
 ```
 
 Native MCP clients can read the same operation catalog without leaving the MCP
@@ -163,6 +165,15 @@ need the envelope schema.
 Communication delivery operations
 such as `communication.send` and `communication.reply` remain raw-only until
 their own provider-safe compact contract exists.
+
+When a background action is accepted, its response has status `running` and
+includes `action_call_id`, `poll_operation=actionCall.get`, exact
+`poll_arguments`, and `next_poll_after_ms`. Call the project-scoped,
+read-only `actionCall.get` operation until the persisted status is terminal.
+Its live progress counters exist only in the daemon process and are never
+terminal evidence; stored status, output/error, and completion time are the
+authority. After a daemon restart, an orphaned running call is stored as
+`failed` with `outcome_unknown=true` and `retry_safe=false`.
 
 MCP tools are generated from the same operation specs, so the daemon has one
 callable contract per StackOS primitive. The agent bridge advertises
@@ -365,6 +376,7 @@ index for common core operations, not a replacement for registry discovery.
 - `action.validate`
 - `action.run`
 - `action.execute`
+- `actionCall.get`
 - `artifact.create`
 - `artifact.read`
 - `artifact.update`

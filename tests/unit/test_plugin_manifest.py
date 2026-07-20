@@ -45,6 +45,21 @@ def test_ftp_fragments_return_fresh_plain_data() -> None:
     assert "mutated" not in second_actions[0]["config"]["docs"]
 
 
+def test_only_ftp_transfers_are_background_actions() -> None:
+    execution_modes = {
+        action["key"]: action["config"].get("execution_mode") for action in ftp_action_kwargs()
+    }
+
+    assert {
+        key for key, execution_mode in execution_modes.items() if execution_mode == "background"
+    } == {"ftp.file.upload", "ftp.file.download"}
+    assert all(
+        execution_mode is None
+        for key, execution_mode in execution_modes.items()
+        if key not in {"ftp.file.upload", "ftp.file.download"}
+    )
+
+
 def test_clone_plugin_manifest_generation_changes_with_editable_source(
     tmp_path: Path,
     monkeypatch,

@@ -7,12 +7,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
+from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.config import Settings
 from stackos.db.connection import make_engine
-from stackos.db.models import IdempotencyKey, PayloadSecret
+from stackos.db.models import ActionCall, ActionCallStatus, IdempotencyKey, PayloadSecret
 
 from .conftest import MCPClient
 
@@ -61,6 +63,7 @@ def test_action_describe_and_validate_are_read_only_discovery_tools(
     assert "action.validate" in tools
     assert "action.execute" in tools
     assert "action.run" in tools
+    assert "actionCall.get" in tools
     assert "secret.set" in tools
 
     listed = mcp_client.call_tool_structured("action.list", {"query": "catalog"})
@@ -83,6 +86,125 @@ def test_action_describe_and_validate_are_read_only_discovery_tools(
     assert described["agent_execute_available"] is False
     assert validation["valid"] is True
     assert validation["issues"] == []
+
+
+def test_action_call_get_is_project_scoped_and_returns_running_or_terminal_state(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    seeded_project: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    other_project = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "other-action-call-project",
+            "name": "Other Action Call Project",
+            "domain": "other.example",
+            "locale": "en-US",
+        },
+    )
+    other_project_id = other_project["data"]["id"]
+
+    engine = make_engine(mcp_settings.db_path)
+    try:
+        with Session(engine) as session:
+            running = ActionCall(
+                project_id=project_id,
+                action_key="file.upload",
+                plugin_slug="ftp",
+                provider_key="ftp",
+                connector_key="ftp",
+                operation="file.upload",
+                status=ActionCallStatus.RUNNING,
+                dry_run=False,
+                credential_ref="cred_private",
+                request_json={"local_path": "/private/local.txt", "password": "secret"},
+            )
+            failed = ActionCall(
+                project_id=project_id,
+                action_key="file.download",
+                plugin_slug="ftp",
+                provider_key="ftp",
+                connector_key="ftp",
+                operation="file.download",
+                status=ActionCallStatus.FAILED,
+                dry_run=False,
+                response_json={
+                    "status": "failed",
+                    "provider_error": {"outcome_unknown": True, "retry_safe": False},
+                },
+                error="daemon-restart-orphan",
+            )
+            session.add(running)
+            session.add(failed)
+            session.commit()
+            session.refresh(running)
+            session.refresh(failed)
+            running_id = int(running.id or 0)
+            failed_id = int(failed.id or 0)
+    finally:
+        engine.dispose()
+
+    monkeypatch.setattr(
+        BACKGROUND_ACTION_TASKS,
+        "progress",
+        lambda action_call_id: (
+            {
+                "phase": "transferring",
+                "operation": "file.upload",
+                "current_source_path": "/private/ftp-path-canary/source.txt",
+                "current_target_path": "/remote/ftp-secret-canary/target.txt",
+                "bytes_transferred": 12,
+                "completed_count": 1,
+                "skipped_count": 0,
+                "failed_count": 0,
+            }
+            if action_call_id == running_id
+            else None
+        ),
+    )
+
+    running_envelope = mcp_client.call_tool_structured(
+        "actionCall.get",
+        {"project_id": project_id, "action_call_id": running_id},
+    )
+    running_result = running_envelope["data"]
+    assert running_result["action_call_id"] == running_id
+    assert running_result["status"] == "running"
+    assert running_result["poll_operation"] == "actionCall.get"
+    assert running_result["poll_arguments"] == {"action_call_id": running_id}
+    assert running_result["next_poll_after_ms"] == 500
+    assert running_result["progress"] == {
+        "phase": "transferring",
+        "operation": "file.upload",
+        "bytes_transferred": 12,
+        "completed_count": 1,
+        "skipped_count": 0,
+        "failed_count": 0,
+    }
+    assert "credential_ref" not in running_result
+    assert "request_json" not in running_result
+    assert "/private/local.txt" not in json.dumps(running_result)
+    assert "ftp-path-canary" not in json.dumps(running_result)
+    assert "ftp-secret-canary" not in json.dumps(running_result)
+
+    terminal_result = _call_tool_raw(
+        mcp_client,
+        "actionCall.get",
+        {"project_id": project_id, "action_call_id": failed_id},
+    )
+    assert terminal_result["status"] == "failed"
+    assert terminal_result["error"] == "daemon-restart-orphan"
+    assert terminal_result["outcome_unknown"] is True
+    assert terminal_result["retry_safe"] is False
+    assert terminal_result["poll_operation"] is None
+
+    wrong_project = mcp_client.call_tool_error(
+        "actionCall.get",
+        {"project_id": other_project_id, "action_call_id": running_id},
+    )
+    assert wrong_project["code"] == -32004
 
 
 def test_secret_set_is_write_only_mcp_ingress_with_safe_replay(

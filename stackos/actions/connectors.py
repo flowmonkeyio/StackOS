@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from stackos.auth_providers import ResolvedCredential
 from stackos.repositories.base import NotFoundError
+
+ActionProgressCallback = Callable[[dict[str, Any]], None]
 
 
 class ActionValidationIssue(BaseModel):
@@ -43,6 +45,11 @@ class ActionConnectorRequest:
     asset_dir: Path | None = None
     session: Any | None = field(default=None, repr=False)
     dry_run: bool = False
+    progress_callback: ActionProgressCallback | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
 
 class ActionConnectorResult(BaseModel):
@@ -146,5 +153,6 @@ __all__ = [
     "ActionConnectorRegistry",
     "ActionConnectorRequest",
     "ActionConnectorResult",
+    "ActionProgressCallback",
     "ActionValidationIssue",
 ]

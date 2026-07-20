@@ -68,6 +68,7 @@ class ActionCallStatus(enum.StrEnum):
     """Persists to ``action_calls.status`` for generic action execution audit."""
 
     DRY_RUN = "dry-run"
+    RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
 
@@ -217,6 +218,12 @@ APPROVAL_REQUEST_STATUS_TRANSITIONS: dict[
 
 ACTION_CALL_STATUS_TRANSITIONS: dict[ActionCallStatus, frozenset[ActionCallStatus]] = {
     ActionCallStatus.DRY_RUN: frozenset(),
+    ActionCallStatus.RUNNING: frozenset(
+        {
+            ActionCallStatus.SUCCESS,
+            ActionCallStatus.FAILED,
+        }
+    ),
     ActionCallStatus.SUCCESS: frozenset(),
     ActionCallStatus.FAILED: frozenset(),
 }

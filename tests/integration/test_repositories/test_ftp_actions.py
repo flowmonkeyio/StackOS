@@ -6,6 +6,7 @@ import asyncio
 import ftplib
 import json
 import posixpath
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, ClassVar
@@ -13,8 +14,15 @@ from typing import Any, ClassVar
 import pytest
 from sqlmodel import Session
 
-from stackos.actions import ActionRepository
+from stackos.actions import (
+    ActionConnectorError,
+    ActionConnectorRequest,
+    ActionExecutionOut,
+    ActionRepository,
+    FtpActionConnector,
+)
 from stackos.auth_providers import AuthRepository
+from stackos.db.models import ActionCallStatus
 from stackos.repositories.base import ConflictError
 from stackos.repositories.projects import IntegrationCredentialRepository
 
@@ -434,6 +442,257 @@ def _patch_ftps(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _FakeFTPTLS)
 
 
+def _ftp_connector_request(
+    session: Session,
+    project_id: int,
+    *,
+    operation: str,
+    input_json: dict[str, Any],
+    progress_callback: Any,
+) -> ActionConnectorRequest:
+    credential_ref = _credential_ref(session, project_id)
+    credential = AuthRepository(session).resolve_for_execution(
+        project_id=project_id,
+        provider_key="ftp",
+        credential_ref=credential_ref,
+        operation=operation,
+    )
+    return ActionConnectorRequest(
+        project_id=project_id,
+        plugin_slug="utils",
+        action_key=f"ftp.{operation}",
+        action_ref=f"utils.ftp.{operation}",
+        provider_key="ftp",
+        operation=operation,
+        input_json=input_json,
+        config_json={},
+        credential=credential,
+        progress_callback=progress_callback,
+    )
+
+
+def _assert_transfer_progress(
+    snapshots: list[dict[str, Any]],
+    *,
+    source_path: str,
+    target_path: str,
+    expected_bytes: int,
+) -> None:
+    transferring = [item for item in snapshots if item.get("phase") == "transferring"]
+    assert transferring
+    assert transferring[-1]["current_source_path"] == source_path
+    assert transferring[-1]["current_target_path"] == target_path
+    assert transferring[-1]["bytes_transferred"] == expected_bytes
+    assert [item["bytes_transferred"] for item in snapshots] == sorted(
+        item["bytes_transferred"] for item in snapshots
+    )
+    for count_key in ("completed_count", "skipped_count", "failed_count"):
+        values = [item[count_key] for item in snapshots]
+        assert values == sorted(values)
+
+
+def _run_action_to_terminal(
+    session: Session,
+    repository: ActionRepository,
+    **execute_kwargs: Any,
+) -> Any:
+    async def run() -> Any:
+        execution = (await repository.execute(**execute_kwargs)).data
+        if execution.action_call.status != ActionCallStatus.RUNNING:
+            return execution
+
+        call_id = execution.action_call.id
+        task_name = f"stackos-action-{call_id}"
+        tasks = [task for task in asyncio.all_tasks() if task.get_name() == task_name]
+        assert len(tasks) == 1
+        await tasks[0]
+
+        with Session(session.get_bind()) as observer:
+            calls = ActionRepository(observer).query_calls(
+                project_id=int(execute_kwargs["project_id"]),
+                limit=100,
+            )
+            call = next(call for call in calls.items if call.id == call_id)
+            return ActionExecutionOut(
+                action_call=call,
+                output_json=call.response_json or {},
+                metadata_json=call.metadata_json,
+                cost_cents=call.cost_cents,
+                credential_ref=call.credential_ref,
+            )
+
+    return asyncio.run(run())
+
+
+def test_ftp_upload_progress_waits_for_final_server_reply(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.actions.ftp as ftp_module
+
+    class _FinalReplyFTPTLS(_FakeFTPTLS):
+        instances: ClassVar[list[_FinalReplyFTPTLS]] = []
+        bytes_sent = threading.Event()
+        allow_final_reply = threading.Event()
+
+        def storbinary(
+            self,
+            command: str,
+            file_obj: Any,
+            blocksize: int = 8192,
+            callback: Any | None = None,
+        ) -> str:
+            _, raw_path = command.split(" ", 1)
+            path = self._path(raw_path)
+            self.calls.append(("storbinary", path))
+            chunks: list[bytes] = []
+            while chunk := file_obj.read(blocksize):
+                chunks.append(chunk)
+                if callback is not None:
+                    callback(chunk)
+            self.__class__.server_files[path] = b"".join(chunks)
+            self.__class__.bytes_sent.set()
+            self.__class__.allow_final_reply.wait()
+            return "226 stored"
+
+    _FinalReplyFTPTLS.reset()
+    monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _FinalReplyFTPTLS)
+    source = tmp_path / "payload.bin"
+    payload = b"raw-file-content-must-not-leak"
+    source.write_bytes(payload)
+    snapshots: list[dict[str, Any]] = []
+    request = _ftp_connector_request(
+        session,
+        project_id,
+        operation="file.upload",
+        input_json={
+            "items": [{"local_path": str(source), "remote_path": "/payload.bin"}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        progress_callback=snapshots.append,
+    )
+
+    async def execute() -> tuple[bool, list[dict[str, Any]], dict[str, Any]]:
+        task = asyncio.create_task(FtpActionConnector().execute(request))
+        await asyncio.to_thread(_FinalReplyFTPTLS.bytes_sent.wait)
+        done_before_final_reply = task.done()
+        progress_before_final_reply = list(snapshots)
+        _FinalReplyFTPTLS.allow_final_reply.set()
+        result = await task
+        return done_before_final_reply, progress_before_final_reply, result.output_json
+
+    done_before_reply, progress_before_reply, output = asyncio.run(execute())
+
+    assert done_before_reply is False
+    assert all(item["completed_count"] == 0 for item in progress_before_reply)
+    _assert_transfer_progress(
+        progress_before_reply,
+        source_path=str(source),
+        target_path="/payload.bin",
+        expected_bytes=len(payload),
+    )
+    assert output["completed_count"] == 1
+    rendered = json.dumps(snapshots)
+    assert "raw-file-content-must-not-leak" not in rendered
+    assert "ftp-secret" not in rendered
+
+
+def test_ftp_download_reports_sanitized_monotonic_progress_and_keeps_atomic_placement(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_ftps(monkeypatch)
+    payload = b"download-file-content-must-not-leak"
+    _FakeFTPTLS.server_files = {"/download.bin": payload}
+    destination = tmp_path / "download.bin"
+    snapshots: list[dict[str, Any]] = []
+    request = _ftp_connector_request(
+        session,
+        project_id,
+        operation="file.download",
+        input_json={
+            "items": [{"remote_path": "/download.bin", "local_path": str(destination)}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        progress_callback=snapshots.append,
+    )
+
+    result = asyncio.run(FtpActionConnector().execute(request))
+
+    _assert_transfer_progress(
+        snapshots,
+        source_path="/download.bin",
+        target_path=str(destination),
+        expected_bytes=len(payload),
+    )
+    assert destination.read_bytes() == payload
+    assert not list(tmp_path.glob(".download.bin.stackos-ftp-*.part"))
+    assert result.output_json["completed_count"] == 1
+    rendered = json.dumps(snapshots)
+    assert "download-file-content-must-not-leak" not in rendered
+    assert "ftp-secret" not in rendered
+
+
+def test_ftp_upload_full_bytes_then_final_error_remains_outcome_unknown(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import stackos.actions.ftp as ftp_module
+
+    class _FinalErrorFTPTLS(_FakeFTPTLS):
+        instances: ClassVar[list[_FinalErrorFTPTLS]] = []
+
+        def storbinary(
+            self,
+            command: str,
+            file_obj: Any,
+            blocksize: int = 8192,
+            callback: Any | None = None,
+        ) -> str:
+            _, raw_path = command.split(" ", 1)
+            path = self._path(raw_path)
+            payload = file_obj.read()
+            self.__class__.server_files[path] = payload
+            if callback is not None:
+                callback(payload)
+            raise ftplib.error_temp("451 final transfer acknowledgement failed")
+
+    _FinalErrorFTPTLS.reset()
+    monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _FinalErrorFTPTLS)
+    payload = b"all-bytes-were-sent"
+    source = tmp_path / "payload.bin"
+    source.write_bytes(payload)
+    snapshots: list[dict[str, Any]] = []
+    request = _ftp_connector_request(
+        session,
+        project_id,
+        operation="file.upload",
+        input_json={
+            "items": [{"local_path": str(source), "remote_path": "/payload.bin"}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        progress_callback=snapshots.append,
+    )
+
+    with pytest.raises(ActionConnectorError) as excinfo:
+        asyncio.run(FtpActionConnector().execute(request))
+
+    failure = excinfo.value.output_json["failed"][0]
+    assert failure["attempted_bytes"] == len(payload)
+    assert failure["outcome_unknown"] is True
+    assert failure["retry_safe"] is False
+    assert excinfo.value.output_json["completed_count"] == 0
+
+
 def test_ftp_browse_upload_and_download_recursive_arbitrary_paths(
     session: Session,
     project_id: int,
@@ -451,19 +710,19 @@ def test_ftp_browse_upload_and_download_recursive_arbitrary_paths(
     unrelated_asset_dir.mkdir()
     repo = ActionRepository(session, asset_dir=unrelated_asset_dir)
 
-    uploaded = asyncio.run(
-        repo.execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.upload",
-            input_json={
-                "items": [{"local_path": str(source), "remote_path": "/public/site"}],
-                "conflict_policy": "overwrite",
-                "error_policy": "stop",
-                "follow_symlinks": False,
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    uploaded = _run_action_to_terminal(
+        session,
+        repo,
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [{"local_path": str(source), "remote_path": "/public/site"}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+            "follow_symlinks": False,
+        },
+        credential_ref=credential_ref,
+    )
 
     assert _FakeFTPTLS.server_files["/public/site/index.html"] == b"home"
     assert _FakeFTPTLS.server_files["/public/site/assets/app.js"] == b"app"
@@ -491,18 +750,18 @@ def test_ftp_browse_upload_and_download_recursive_arbitrary_paths(
     assert all(call[0] != "retrbinary" for call in _FakeFTPTLS.instances[1].calls)
 
     destination = tmp_path / "agent-selected-download"
-    downloaded = asyncio.run(
-        repo.execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.download",
-            input_json={
-                "items": [{"remote_path": "/public/site", "local_path": str(destination)}],
-                "conflict_policy": "overwrite",
-                "error_policy": "stop",
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    downloaded = _run_action_to_terminal(
+        session,
+        repo,
+        project_id=project_id,
+        action_ref="utils.ftp.file.download",
+        input_json={
+            "items": [{"remote_path": "/public/site", "local_path": str(destination)}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
 
     assert (destination / "index.html").read_text(encoding="utf-8") == "home"
     assert (destination / "assets" / "app.js").read_text(encoding="utf-8") == "app"
@@ -1058,35 +1317,35 @@ def test_ftp_plain_mode_and_conflict_policies_are_agent_selected(
     _FakeFTP.server_dirs = {"/", "/target"}
     _FakeFTP.server_files = {"/target/source.txt": b"old"}
 
-    skipped = asyncio.run(
-        ActionRepository(session).execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.upload",
-            input_json={
-                "items": [{"local_path": str(source), "remote_path": "/target/source.txt"}],
-                "conflict_policy": "skip",
-                "error_policy": "stop",
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    skipped = _run_action_to_terminal(
+        session,
+        ActionRepository(session),
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [{"local_path": str(source), "remote_path": "/target/source.txt"}],
+            "conflict_policy": "skip",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
 
     assert _FakeFTP.server_files["/target/source.txt"] == b"old"
     assert skipped.output_json["skipped_count"] == 1
     assert all(call[0] not in {"auth", "prot_p"} for call in _FakeFTP.instances[0].calls)
 
-    overwritten = asyncio.run(
-        ActionRepository(session).execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.upload",
-            input_json={
-                "items": [{"local_path": str(source), "remote_path": "/target/source.txt"}],
-                "conflict_policy": "overwrite",
-                "error_policy": "stop",
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    overwritten = _run_action_to_terminal(
+        session,
+        ActionRepository(session),
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [{"local_path": str(source), "remote_path": "/target/source.txt"}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
     assert _FakeFTP.server_files["/target/source.txt"] == b"new"
     assert overwritten.output_json["completed_count"] == 1
 
@@ -1103,44 +1362,44 @@ def test_ftp_continue_preserves_partial_results_and_stop_audits_partial_effects(
     good.write_text("good", encoding="utf-8")
     missing = tmp_path / "missing.txt"
 
-    partial = asyncio.run(
-        ActionRepository(session).execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.upload",
-            input_json={
-                "items": [
-                    {"local_path": str(missing), "remote_path": "/batch/missing.txt"},
-                    {"local_path": str(good), "remote_path": "/batch/good.txt"},
-                ],
-                "conflict_policy": "overwrite",
-                "error_policy": "continue",
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    partial = _run_action_to_terminal(
+        session,
+        ActionRepository(session),
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [
+                {"local_path": str(missing), "remote_path": "/batch/missing.txt"},
+                {"local_path": str(good), "remote_path": "/batch/good.txt"},
+            ],
+            "conflict_policy": "overwrite",
+            "error_policy": "continue",
+        },
+        credential_ref=credential_ref,
+    )
     assert partial.output_json["status"] == "partial"
     assert partial.output_json["failed_count"] == 1
     assert partial.output_json["completed_count"] == 1
     assert _FakeFTPTLS.server_files["/batch/good.txt"] == b"good"
 
     _FakeFTPTLS.reset()
-    with pytest.raises(ConflictError) as excinfo:
-        asyncio.run(
-            ActionRepository(session).execute(
-                project_id=project_id,
-                action_ref="utils.ftp.file.upload",
-                input_json={
-                    "items": [
-                        {"local_path": str(good), "remote_path": "/batch/good.txt"},
-                        {"local_path": str(missing), "remote_path": "/batch/missing.txt"},
-                    ],
-                    "conflict_policy": "overwrite",
-                    "error_policy": "stop",
-                },
-                credential_ref=credential_ref,
-            )
-        )
-    partial_result = excinfo.value.data["provider_error"]["partial_result"]
+    failed = _run_action_to_terminal(
+        session,
+        ActionRepository(session),
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [
+                {"local_path": str(good), "remote_path": "/batch/good.txt"},
+                {"local_path": str(missing), "remote_path": "/batch/missing.txt"},
+            ],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
+    assert failed.action_call.status == ActionCallStatus.FAILED
+    partial_result = failed.output_json["provider_error"]["partial_result"]
     assert partial_result["completed_count"] == 1
     assert partial_result["failed_count"] == 1
     assert partial_result["status"] == "failed"
@@ -1158,21 +1417,21 @@ def test_ftp_download_rejects_server_child_traversal(
     _FakeFTPTLS.malicious_children = {"/unsafe": ["../escape.txt"]}
     destination = tmp_path / "destination"
 
-    with pytest.raises(ConflictError) as excinfo:
-        asyncio.run(
-            ActionRepository(session).execute(
-                project_id=project_id,
-                action_ref="utils.ftp.file.download",
-                input_json={
-                    "items": [{"remote_path": "/unsafe", "local_path": str(destination)}],
-                    "conflict_policy": "overwrite",
-                    "error_policy": "stop",
-                },
-                credential_ref=credential_ref,
-            )
-        )
+    failed = _run_action_to_terminal(
+        session,
+        ActionRepository(session),
+        project_id=project_id,
+        action_ref="utils.ftp.file.download",
+        input_json={
+            "items": [{"remote_path": "/unsafe", "local_path": str(destination)}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
 
-    assert "unsafe remote child name" in json.dumps(excinfo.value.data["provider_error"])
+    assert failed.action_call.status == ActionCallStatus.FAILED
+    assert "unsafe remote child name" in json.dumps(failed.output_json["provider_error"])
     assert not (tmp_path / "escape.txt").exists()
 
 
@@ -1242,73 +1501,73 @@ def test_ftp_supports_multiple_mappings_and_all_download_conflict_policies(
     second.write_text("second", encoding="utf-8")
     repo = ActionRepository(session)
 
-    uploaded = asyncio.run(
-        repo.execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.upload",
-            input_json={
-                "items": [
-                    {"local_path": str(first), "remote_path": "/one/first.txt"},
-                    {"local_path": str(second), "remote_path": "/two/second.txt"},
-                ],
-                "conflict_policy": "overwrite",
-                "error_policy": "stop",
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    uploaded = _run_action_to_terminal(
+        session,
+        repo,
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [
+                {"local_path": str(first), "remote_path": "/one/first.txt"},
+                {"local_path": str(second), "remote_path": "/two/second.txt"},
+            ],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
     assert uploaded.output_json["completed_count"] == 2
     assert _FakeFTPTLS.server_files["/one/first.txt"] == b"first"
     assert _FakeFTPTLS.server_files["/two/second.txt"] == b"second"
 
     skip_target = tmp_path / "skip.txt"
     skip_target.write_text("keep", encoding="utf-8")
-    skipped = asyncio.run(
-        repo.execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.download",
-            input_json={
-                "items": [{"remote_path": "/one/first.txt", "local_path": str(skip_target)}],
-                "conflict_policy": "skip",
-                "error_policy": "stop",
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    skipped = _run_action_to_terminal(
+        session,
+        repo,
+        project_id=project_id,
+        action_ref="utils.ftp.file.download",
+        input_json={
+            "items": [{"remote_path": "/one/first.txt", "local_path": str(skip_target)}],
+            "conflict_policy": "skip",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
     assert skipped.output_json["skipped_count"] == 1
     assert skip_target.read_text(encoding="utf-8") == "keep"
 
-    with pytest.raises(ConflictError):
-        asyncio.run(
-            repo.execute(
-                project_id=project_id,
-                action_ref="utils.ftp.file.download",
-                input_json={
-                    "items": [{"remote_path": "/one/first.txt", "local_path": str(skip_target)}],
-                    "conflict_policy": "fail",
-                    "error_policy": "stop",
-                },
-                credential_ref=credential_ref,
-            )
-        )
+    failed = _run_action_to_terminal(
+        session,
+        repo,
+        project_id=project_id,
+        action_ref="utils.ftp.file.download",
+        input_json={
+            "items": [{"remote_path": "/one/first.txt", "local_path": str(skip_target)}],
+            "conflict_policy": "fail",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
+    assert failed.action_call.status == ActionCallStatus.FAILED
     assert skip_target.read_text(encoding="utf-8") == "keep"
 
     other_target = tmp_path / "other.txt"
-    downloaded = asyncio.run(
-        repo.execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.download",
-            input_json={
-                "items": [
-                    {"remote_path": "/one/first.txt", "local_path": str(skip_target)},
-                    {"remote_path": "/two/second.txt", "local_path": str(other_target)},
-                ],
-                "conflict_policy": "overwrite",
-                "error_policy": "stop",
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    downloaded = _run_action_to_terminal(
+        session,
+        repo,
+        project_id=project_id,
+        action_ref="utils.ftp.file.download",
+        input_json={
+            "items": [
+                {"remote_path": "/one/first.txt", "local_path": str(skip_target)},
+                {"remote_path": "/two/second.txt", "local_path": str(other_target)},
+            ],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
     assert downloaded.output_json["completed_count"] == 2
     assert skip_target.read_text(encoding="utf-8") == "first"
     assert other_target.read_text(encoding="utf-8") == "second"
@@ -1328,35 +1587,35 @@ def test_ftp_symlink_policies_detect_local_cycles_and_skip_remote_links(
     local_link = tmp_path / "file-link"
     local_link.symlink_to(real_file)
 
-    skipped = asyncio.run(
-        repo.execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.upload",
-            input_json={
-                "items": [{"local_path": str(local_link), "remote_path": "/links/file.txt"}],
-                "conflict_policy": "overwrite",
-                "error_policy": "stop",
-                "follow_symlinks": False,
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    skipped = _run_action_to_terminal(
+        session,
+        repo,
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [{"local_path": str(local_link), "remote_path": "/links/file.txt"}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+            "follow_symlinks": False,
+        },
+        credential_ref=credential_ref,
+    )
     assert skipped.output_json["skipped"][0]["reason"] == "symlink_not_followed"
     assert "/links/file.txt" not in _FakeFTPTLS.server_files
 
-    followed = asyncio.run(
-        repo.execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.upload",
-            input_json={
-                "items": [{"local_path": str(local_link), "remote_path": "/links/file.txt"}],
-                "conflict_policy": "overwrite",
-                "error_policy": "stop",
-                "follow_symlinks": True,
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    followed = _run_action_to_terminal(
+        session,
+        repo,
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [{"local_path": str(local_link), "remote_path": "/links/file.txt"}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+            "follow_symlinks": True,
+        },
+        credential_ref=credential_ref,
+    )
     assert followed.output_json["completed_count"] == 1
     assert _FakeFTPTLS.server_files["/links/file.txt"] == b"payload"
 
@@ -1364,19 +1623,19 @@ def test_ftp_symlink_policies_detect_local_cycles_and_skip_remote_links(
     cyclic.mkdir()
     (cyclic / "kept.txt").write_text("kept", encoding="utf-8")
     (cyclic / "loop").symlink_to(cyclic, target_is_directory=True)
-    cycle_result = asyncio.run(
-        repo.execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.upload",
-            input_json={
-                "items": [{"local_path": str(cyclic), "remote_path": "/cycle"}],
-                "conflict_policy": "overwrite",
-                "error_policy": "continue",
-                "follow_symlinks": True,
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    cycle_result = _run_action_to_terminal(
+        session,
+        repo,
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [{"local_path": str(cyclic), "remote_path": "/cycle"}],
+            "conflict_policy": "overwrite",
+            "error_policy": "continue",
+            "follow_symlinks": True,
+        },
+        credential_ref=credential_ref,
+    )
     assert cycle_result.output_json["completed_count"] == 1
     assert cycle_result.output_json["failed_count"] == 1
     assert "symlink cycle detected" in cycle_result.output_json["failed"][0]["message"]
@@ -1394,21 +1653,21 @@ def test_ftp_symlink_policies_detect_local_cycles_and_skip_remote_links(
     assert browsed.output_json["entries"][0]["type"] == "symlink"
 
     remote_destination = tmp_path / "remote-download"
-    remote_result = asyncio.run(
-        repo.execute(
-            project_id=project_id,
-            action_ref="utils.ftp.file.download",
-            input_json={
-                "items": [
-                    {"remote_path": "/remote-link", "local_path": str(remote_destination / "top")},
-                    {"remote_path": "/remote", "local_path": str(remote_destination / "tree")},
-                ],
-                "conflict_policy": "overwrite",
-                "error_policy": "stop",
-            },
-            credential_ref=credential_ref,
-        )
-    ).data
+    remote_result = _run_action_to_terminal(
+        session,
+        repo,
+        project_id=project_id,
+        action_ref="utils.ftp.file.download",
+        input_json={
+            "items": [
+                {"remote_path": "/remote-link", "local_path": str(remote_destination / "top")},
+                {"remote_path": "/remote", "local_path": str(remote_destination / "tree")},
+            ],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
     assert remote_result.output_json["skipped_count"] == 2
     assert {item["reason"] for item in remote_result.output_json["skipped"]} == {
         "remote_symlink_not_followed"
@@ -1461,21 +1720,21 @@ def test_ftp_fallback_download_stops_remote_directory_cycle(
     monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _FallbackCycleFTPTLS)
     credential_ref = _credential_ref(session, project_id)
 
-    with pytest.raises(ConflictError) as excinfo:
-        asyncio.run(
-            ActionRepository(session).execute(
-                project_id=project_id,
-                action_ref="utils.ftp.file.download",
-                input_json={
-                    "items": [{"remote_path": "/cycle", "local_path": str(tmp_path / "cycle")}],
-                    "conflict_policy": "overwrite",
-                    "error_policy": "continue",
-                },
-                credential_ref=credential_ref,
-            )
-        )
+    failed = _run_action_to_terminal(
+        session,
+        ActionRepository(session),
+        project_id=project_id,
+        action_ref="utils.ftp.file.download",
+        input_json={
+            "items": [{"remote_path": "/cycle", "local_path": str(tmp_path / "cycle")}],
+            "conflict_policy": "overwrite",
+            "error_policy": "continue",
+        },
+        credential_ref=credential_ref,
+    )
 
-    result = excinfo.value.data["provider_error"]["partial_result"]
+    assert failed.action_call.status == ActionCallStatus.FAILED
+    result = failed.output_json["provider_error"]["partial_result"]
     assert result["failed_count"] == 1
     assert "remote directory cycle detected" in result["failed"][0]["message"]
     assert [call for call in _FallbackCycleFTPTLS.instances[0].calls if call[0] == "nlst"] == [
@@ -1497,20 +1756,20 @@ def test_ftp_failed_download_removes_partial_file_and_preserves_existing_target(
     _FailingDownloadFTPTLS.server_files = {"/broken.txt": b"complete"}
     destination = tmp_path / "broken.txt"
 
-    with pytest.raises(ConflictError):
-        asyncio.run(
-            ActionRepository(session).execute(
-                project_id=project_id,
-                action_ref="utils.ftp.file.download",
-                input_json={
-                    "items": [{"remote_path": "/broken.txt", "local_path": str(destination)}],
-                    "conflict_policy": "overwrite",
-                    "error_policy": "stop",
-                },
-                credential_ref=credential_ref,
-            )
-        )
+    failed = _run_action_to_terminal(
+        session,
+        ActionRepository(session),
+        project_id=project_id,
+        action_ref="utils.ftp.file.download",
+        input_json={
+            "items": [{"remote_path": "/broken.txt", "local_path": str(destination)}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
 
+    assert failed.action_call.status == ActionCallStatus.FAILED
     assert not destination.exists()
     assert list(tmp_path.glob(".*.stackos-ftp-*.part")) == []
 
@@ -1527,20 +1786,20 @@ def test_ftp_rejects_recursive_command_injection_names_and_redacts_auth_secrets(
     source.mkdir()
     (source / "bad\r\nDELE target").write_text("unsafe", encoding="utf-8")
 
-    with pytest.raises(ConflictError) as unsafe_exc:
-        asyncio.run(
-            ActionRepository(session).execute(
-                project_id=project_id,
-                action_ref="utils.ftp.file.upload",
-                input_json={
-                    "items": [{"local_path": str(source), "remote_path": "/safe"}],
-                    "conflict_policy": "overwrite",
-                    "error_policy": "stop",
-                },
-                credential_ref=credential_ref,
-            )
-        )
-    assert "cannot contain NUL, CR, or LF" in json.dumps(unsafe_exc.value.data["provider_error"])
+    failed = _run_action_to_terminal(
+        session,
+        ActionRepository(session),
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [{"local_path": str(source), "remote_path": "/safe"}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
+    assert failed.action_call.status == ActionCallStatus.FAILED
+    assert "cannot contain NUL, CR, or LF" in json.dumps(failed.output_json["provider_error"])
     assert all(call[0] != "storbinary" for call in _FakeFTPTLS.instances[0].calls)
 
     import stackos.actions.ftp as ftp_module
@@ -1624,27 +1883,27 @@ def test_ftp_interrupted_upload_reports_unknown_partial_outcome_and_redacts_secr
     source = tmp_path / "payload.bin"
     source.write_bytes(b"abcdef")
 
-    with pytest.raises(ConflictError) as excinfo:
-        asyncio.run(
-            ActionRepository(session).execute(
-                project_id=project_id,
-                action_ref="utils.ftp.file.upload",
-                input_json={
-                    "items": [{"local_path": str(source), "remote_path": "/payload.bin"}],
-                    "conflict_policy": "overwrite",
-                    "error_policy": "stop",
-                },
-                credential_ref=credential_ref,
-            )
-        )
+    failed = _run_action_to_terminal(
+        session,
+        ActionRepository(session),
+        project_id=project_id,
+        action_ref="utils.ftp.file.upload",
+        input_json={
+            "items": [{"local_path": str(source), "remote_path": "/payload.bin"}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
 
-    failure = excinfo.value.data["provider_error"]["partial_result"]["failed"][0]
+    assert failed.action_call.status == ActionCallStatus.FAILED
+    failure = failed.output_json["provider_error"]["partial_result"]["failed"][0]
     assert failure["outcome_unknown"] is True
     assert failure["remote_partial_possible"] is True
     assert failure["retry_safe"] is False
     assert failure["attempted_bytes"] == 3
     assert "Inspect the selected remote path" in failure["reconciliation_guidance"]
-    assert "ftp-secret" not in json.dumps(excinfo.value.data)
+    assert "ftp-secret" not in json.dumps(failed.model_dump(mode="json"))
 
 
 def test_ftp_never_reuses_server_pwd_with_command_control_characters(
@@ -1667,23 +1926,21 @@ def test_ftp_never_reuses_server_pwd_with_command_control_characters(
     monkeypatch.setattr(ftp_module.ftplib, "FTP_TLS", _UnsafePwdFTPTLS)
     credential_ref = _credential_ref(session, project_id)
 
-    with pytest.raises(ConflictError) as excinfo:
-        asyncio.run(
-            ActionRepository(session).execute(
-                project_id=project_id,
-                action_ref="utils.ftp.file.download",
-                input_json={
-                    "items": [
-                        {"remote_path": "/remote.txt", "local_path": str(tmp_path / "remote.txt")}
-                    ],
-                    "conflict_policy": "overwrite",
-                    "error_policy": "stop",
-                },
-                credential_ref=credential_ref,
-            )
-        )
+    failed = _run_action_to_terminal(
+        session,
+        ActionRepository(session),
+        project_id=project_id,
+        action_ref="utils.ftp.file.download",
+        input_json={
+            "items": [{"remote_path": "/remote.txt", "local_path": str(tmp_path / "remote.txt")}],
+            "conflict_policy": "overwrite",
+            "error_policy": "stop",
+        },
+        credential_ref=credential_ref,
+    )
 
-    assert "server PWD cannot contain NUL, CR, or LF" in json.dumps(excinfo.value.data)
+    assert failed.action_call.status == ActionCallStatus.FAILED
+    assert "server PWD cannot contain NUL, CR, or LF" in json.dumps(failed.output_json)
     assert all(
         not any(isinstance(value, str) and ("\r" in value or "\n" in value) for value in call)
         for call in _UnsafePwdFTPTLS.instances[0].calls
