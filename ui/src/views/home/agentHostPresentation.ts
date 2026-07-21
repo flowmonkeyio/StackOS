@@ -2,6 +2,7 @@ import type { DesktopMcpHostStatus } from '@/lib/desktop'
 
 export const SUPPORTED_AGENT_HOSTS = [
   { host_key: 'codex', label: 'Codex' },
+  { host_key: 'hermes', label: 'Hermes' },
   { host_key: 'claude-code', label: 'Claude Code' },
   { host_key: 'claude-desktop', label: 'Claude Desktop' },
   { host_key: 'gemini-cli', label: 'Gemini CLI' },

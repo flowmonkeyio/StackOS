@@ -10,7 +10,7 @@ import tempfile
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 import typer
 
@@ -122,6 +122,20 @@ def install(
         bool,
         typer.Option("--skip-doctor", help="Skip the post-install doctor check."),
     ] = False,
+    skill_runtime: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--skill-runtime",
+            help="Limit skill mirroring to one or more runtimes (repeatable).",
+        ),
+    ] = None,
+    mcp_host: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--mcp-host",
+            help="Limit MCP registration to one or more hosts (repeatable).",
+        ),
+    ] = None,
 ) -> None:
     """End-user one-liner install — clone-mode or pipx-mode.
 
@@ -149,7 +163,19 @@ def install(
     do_skills = skills_only or not (mcp_only or plugins_only)
     do_mcp = mcp_only or not (skills_only or plugins_only)
     do_plugins = plugins_only or not (skills_only or mcp_only)
-
+    if skill_runtime and not do_skills:
+        typer.echo("error: --skill-runtime requires skills to be installed.", err=True)
+        raise typer.Exit(code=2)
+    if mcp_host and not do_mcp:
+        typer.echo("error: --mcp-host requires MCP registration.", err=True)
+        raise typer.Exit(code=2)
+    invalid_skill_runtimes = set(skill_runtime or ()) - {"codex", "claude"}
+    if invalid_skill_runtimes:
+        typer.echo(
+            "error: --skill-runtime must be one of: codex, claude.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     mode = installer.detect_mode()
     typer.echo(f"==> Install mode: {mode}")
 
@@ -176,7 +202,10 @@ def install(
 
     home = Path.home()
 
-    runtimes: tuple[Literal["codex", "claude"], ...] = ("codex", "claude")
+    runtimes = tuple(
+        cast(Literal["codex", "claude"], runtime)
+        for runtime in dict.fromkeys(skill_runtime or ["codex", "claude"])
+    )
     if do_skills:
         for runtime in runtimes:
             target, count = installer.copy_skills(runtime, home=home)
@@ -189,7 +218,10 @@ def install(
         typer.echo(f"==> {msg}")
 
     if do_mcp:
-        ok, messages = installer.repair_mcp_hosts(home=home)
+        if mcp_host:
+            ok, messages = installer.repair_mcp_hosts(home=home, host_keys=tuple(mcp_host))
+        else:
+            ok, messages = installer.repair_mcp_hosts(home=home)
         for msg in messages:
             typer.echo(f"==> {msg}")
         if not ok:

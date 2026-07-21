@@ -72,4 +72,34 @@ assert.equal(hostStatus.ok, true);
 assert.equal(hostStatus.hosts.length, 1);
 assert.equal(hostStatus.hosts[0].host_key, "codex");
 
+const mcpFailure = service.installReadiness({
+  start: { ok: true },
+  startReady: true,
+  mcpReady: false,
+  mcpRepair: { exitCode: 1 },
+  doctor: null
+});
+assert.equal(mcpFailure.ok, false);
+assert.equal(mcpFailure.status, "mcp-failed");
+assert.equal(mcpFailure.code, 1);
+assert.equal(
+  service.installPhase({
+    start: { ok: true },
+    startReady: true,
+    mcpReady: false,
+    doctor: null
+  }),
+  "mcp"
+);
+assert.deepEqual(service.scopedInstallArgs({ mcpHosts: ["codex"], launchd: true }), [
+  "install",
+  "--skill-runtime",
+  "codex",
+  "--mcp-host",
+  "codex",
+  "--launchd",
+  "--force",
+  "--skip-doctor"
+]);
+
 console.log("desktop service readiness test ok");

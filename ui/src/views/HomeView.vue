@@ -6,6 +6,7 @@ import { onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell } from '@/components/ui'
+import { usePolling } from '@/composables/usePolling'
 import { isDesktopShell } from '@/lib/desktop'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import { useProjectsStore } from '@/stores/projects'
@@ -47,13 +48,16 @@ const {
   load: loadPortfolioInsights,
 } = useHomePortfolioInsights()
 
+async function loadPortfolio(): Promise<void> {
+  await projects.refresh()
+  await loadPortfolioInsights(projectItems.value)
+}
+
+usePolling(loadPortfolio, { intervalMs: 20_000 })
+
 onMounted(() => {
   void loadHealth()
   void loadHostStatuses()
-  void (async () => {
-    await projects.refresh()
-    await loadPortfolioInsights(projectItems.value)
-  })()
 })
 
 function confirmRepair(): void {

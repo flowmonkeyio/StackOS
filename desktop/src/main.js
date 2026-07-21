@@ -404,6 +404,7 @@ function failureCopy(title, payload) {
   const phase = payloadText(payload, "phase");
   const installError = commandError(payload.install);
   const startError = commandError(payload.start);
+  const mcpError = commandError(payload.mcpRepair);
   const doctorError = commandError(payload.doctor);
   const readinessRepair =
     payload.readiness && typeof payload.readiness === "object"
@@ -434,9 +435,22 @@ function failureCopy(title, payload) {
         "Open Service > Run Doctor for details, then use the Connections page to finish provider setup if needed."
     };
   }
+  if (phase === "mcp") {
+    return {
+      summary: mcpError || "StackOS could not finish connecting its local agent bridges.",
+      repair:
+        readinessRepair ||
+        "Verify that Codex and Hermes are installed, then use Service > Install or Repair again."
+    };
+  }
 
   return {
-    summary: startError || installError || doctorError || "StackOS could not finish preparing the local service.",
+    summary:
+      startError ||
+      installError ||
+      mcpError ||
+      doctorError ||
+      "StackOS could not finish preparing the local service.",
     repair:
       readinessRepair ||
       "Try Service > Restart Service, then Service > Run Doctor. If it fails again, open the daemon log from the Service menu."

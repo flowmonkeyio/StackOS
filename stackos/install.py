@@ -527,11 +527,18 @@ def register_mcp_claude(
     return _host_mcp_message(result)
 
 
-def repair_mcp_hosts(*, home: Path | None = None) -> tuple[bool, list[str]]:
+def repair_mcp_hosts(
+    *,
+    home: Path | None = None,
+    host_keys: tuple[str, ...] | None = None,
+) -> tuple[bool, list[str]]:
     """Repair every known host MCP registration and return status lines."""
     from stackos.host_mcp import repair_all
 
-    aggregate = repair_all(home=home if home is not None else Path.home())
+    aggregate = repair_all(
+        home=home if home is not None else Path.home(),
+        host_keys=host_keys,
+    )
     return aggregate.ok, aggregate.summary_lines()
 
 

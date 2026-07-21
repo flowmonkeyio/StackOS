@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
-from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli
+from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, hermes
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
 from stackos.host_mcp.result import HostMcpResult
 
@@ -50,9 +50,17 @@ class HostMcpAggregate:
         ]
 
 
-def inspect_all(*, home: Path | None = None) -> HostMcpAggregate:
+def inspect_all(
+    *,
+    home: Path | None = None,
+    host_keys: Sequence[str] | None = None,
+) -> HostMcpAggregate:
     home_dir = home or default_home()
-    adapters = _adapters()
+    adapters, invalid_host_keys = _selected_adapters(host_keys)
+    if invalid_host_keys:
+        return _invalid_host_aggregate(invalid_host_keys)
+    if not adapters:
+        return _aggregate([])
     with ThreadPoolExecutor(
         max_workers=len(adapters),
         thread_name_prefix="stackos-host-inspect",
@@ -64,8 +72,15 @@ def inspect_all(*, home: Path | None = None) -> HostMcpAggregate:
     return _aggregate(results)
 
 
-def repair_all(*, home: Path | None = None) -> HostMcpAggregate:
+def repair_all(
+    *,
+    home: Path | None = None,
+    host_keys: Sequence[str] | None = None,
+) -> HostMcpAggregate:
     home_dir = home or default_home()
+    adapters, invalid_host_keys = _selected_adapters(host_keys)
+    if invalid_host_keys:
+        return _invalid_host_aggregate(invalid_host_keys)
     token_error = token_preflight(home_dir)
     if token_error:
         return _aggregate(
@@ -82,13 +97,20 @@ def repair_all(*, home: Path | None = None) -> HostMcpAggregate:
                 )
             ]
         )
-    results = [_call_adapter(adapter.register, home_dir) for adapter in _adapters()]
+    results = [_call_adapter(adapter.register, home_dir) for adapter in adapters]
     return _aggregate(results)
 
 
-def remove_all(*, home: Path | None = None) -> HostMcpAggregate:
+def remove_all(
+    *,
+    home: Path | None = None,
+    host_keys: Sequence[str] | None = None,
+) -> HostMcpAggregate:
     home_dir = home or default_home()
-    results = [_call_adapter(adapter.remove, home_dir) for adapter in _adapters()]
+    adapters, invalid_host_keys = _selected_adapters(host_keys)
+    if invalid_host_keys:
+        return _invalid_host_aggregate(invalid_host_keys)
+    results = [_call_adapter(adapter.remove, home_dir) for adapter in adapters]
     return _aggregate(results)
 
 
@@ -119,16 +141,7 @@ def _single(
     home_dir = home or default_home()
     adapter = _adapter_by_key(host_key)
     if adapter is None:
-        return HostMcpResult(
-            host_key=host_key,
-            surface="unknown",
-            status="unsupported_host_version",
-            message=f"Unknown MCP host {host_key!r}.",
-            ok=False,
-            available=False,
-            blocking=True,
-            repair="Use one of: codex, claude-code, claude-desktop, gemini-cli.",
-        )
+        return _unknown_host_result(host_key)
     if action == "inspect":
         return _call_adapter(adapter.inspect, home_dir)
     if action == "remove":
@@ -141,7 +154,40 @@ def _single(
 
 
 def _adapters() -> tuple[HostMcpAdapter, ...]:
-    return (codex, claude_code, claude_desktop, gemini_cli)
+    return (codex, hermes, claude_code, claude_desktop, gemini_cli)
+
+
+def supported_host_keys() -> tuple[str, ...]:
+    return tuple(adapter.HOST_KEY for adapter in _adapters())
+
+
+def _selected_adapters(
+    host_keys: Sequence[str] | None,
+) -> tuple[tuple[HostMcpAdapter, ...], tuple[str, ...]]:
+    adapters = _adapters()
+    if host_keys is None:
+        return adapters, ()
+    requested = tuple(dict.fromkeys(host_keys))
+    available = {adapter.HOST_KEY: adapter for adapter in adapters}
+    invalid = tuple(host_key for host_key in requested if host_key not in available)
+    return tuple(available[host_key] for host_key in requested if host_key in available), invalid
+
+
+def _invalid_host_aggregate(host_keys: Sequence[str]) -> HostMcpAggregate:
+    return _aggregate([_unknown_host_result(host_key) for host_key in host_keys])
+
+
+def _unknown_host_result(host_key: str) -> HostMcpResult:
+    return HostMcpResult(
+        host_key=host_key,
+        surface="unknown",
+        status="unsupported_host_version",
+        message=f"Unknown MCP host {host_key!r}.",
+        ok=False,
+        available=False,
+        blocking=True,
+        repair=f"Use one of: {', '.join(supported_host_keys())}.",
+    )
 
 
 def _adapter_by_key(host_key: str) -> HostMcpAdapter | None:

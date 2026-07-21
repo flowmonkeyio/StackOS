@@ -16,6 +16,9 @@ const STACKOS_STATE_DIR =
   process.env.STACKOS_STATE_DIR || path.join(os.homedir(), ".local", "state", "stackos");
 const AUTH_TOKEN_PATH =
   process.env.STACKOS_DESKTOP_AUTH_TOKEN_PATH || path.join(STACKOS_STATE_DIR, "auth.token");
+const DESKTOP_SKILL_RUNTIME = "codex";
+const INITIAL_MCP_HOSTS = ["codex"];
+const DESKTOP_MCP_HOSTS = ["codex", "hermes"];
 let packagedRuntime = false;
 
 function isExecutable(filePath) {
@@ -167,7 +170,7 @@ function reportInstallLineProgress(options, line) {
     [/Installed \d+ skills/i, ["Installing agent skills...", 54]],
     [/Installed \d+ plugins/i, ["Installing plugins...", 58]],
     [/marketplace/i, ["Registering plugin marketplace...", 60]],
-    [/(Codex|Claude|Gemini|MCP)/i, ["Registering app connections...", 63]],
+    [/(Codex|Hermes|Claude|Gemini|MCP)/i, ["Registering app connections...", 63]],
     [/launchd|autostart/i, ["Installing autostart...", 66]]
   ];
   for (const [pattern, [phase, progress]] of progressByPattern) {
@@ -548,10 +551,10 @@ async function installOrRepair(options = 240) {
   const lifecycle = normalizeLifecycleOptions(options, 240);
   const timeoutSeconds = lifecycle.timeoutSeconds;
   const shouldRunDoctor = lifecycle.runDoctor !== false;
-  const installArgs =
-    process.platform === "darwin"
-      ? ["install", "--launchd", "--force", "--skip-doctor"]
-      : ["install", "--skip-doctor"];
+  const installArgs = scopedInstallArgs({
+    mcpHosts: INITIAL_MCP_HOSTS,
+    launchd: process.platform === "darwin"
+  });
   await reportProgress(lifecycle, "Preparing local files...", 30);
   const install = await runStackos(installArgs, {
     timeoutMs: timeoutSeconds * 1000,
@@ -569,46 +572,37 @@ async function installOrRepair(options = 240) {
     timeoutSeconds: 20
   });
   const startReady = start.ok && start.health && start.health.ok;
+  let mcpRepair = null;
+  if (startReady) {
+    await reportProgress(lifecycle, "Connecting local agents...", 80);
+    mcpRepair = await repairMcpRegistrations(lifecycle, ["hermes"]);
+  }
+  const mcpReady = !mcpRepair || mcpRepair.ok;
   let doctor = null;
-  if (startReady && shouldRunDoctor) {
+  if (startReady && mcpReady && shouldRunDoctor) {
     await reportProgress(lifecycle, "Running doctor...", 84);
     doctor = await runDoctor();
   }
-  const readiness = doctor
-    ? readinessFromDoctor(doctor)
-    : startReady
-      ? {
-          ok: true,
-          status: "health-ready",
-          code: null,
-          repair: null
-        }
-      : {
-          ok: false,
-          status: start.ok ? "health-failed" : "restart-failed",
-          code: null,
-          repair: start.ok
-            ? "wait for the StackOS service, then run doctor"
-            : "restart the StackOS service, then run doctor"
-        };
-  if (startReady && (!doctor || doctor.ok)) {
+  const readiness = installReadiness({ start, startReady, mcpReady, mcpRepair, doctor });
+  if (startReady && mcpReady && (!doctor || doctor.ok)) {
     await reportProgress(lifecycle, "Local service is ready...", 88);
   }
   return {
-    ok: startReady && (!doctor || doctor.ok),
-    phase: !start.ok ? "restart" : startReady ? (doctor && !doctor.ok ? "doctor" : "ready") : "health",
+    ok: startReady && mcpReady && (!doctor || doctor.ok),
+    phase: installPhase({ start, startReady, mcpReady, doctor }),
     install,
     start,
+    mcpRepair,
     doctor,
     readiness
   };
 }
 
-async function repairMcpRegistrations(options = 60) {
+async function repairMcpRegistrations(options = 60, hostKeys = DESKTOP_MCP_HOSTS) {
   const lifecycle = normalizeLifecycleOptions(options, 60);
   const timeoutSeconds = lifecycle.timeoutSeconds;
   await reportProgress(lifecycle, "Refreshing app connections...", 32);
-  return runStackos(["install", "--mcp-only", "--skip-doctor"], {
+  return runStackos(["install", "--mcp-only", ...mcpHostArgs(hostKeys), "--skip-doctor"], {
     timeoutMs: timeoutSeconds * 1000,
     onStdout: createInstallProgressReporter(lifecycle)
   });
@@ -632,10 +626,13 @@ async function repairPreparedInstall(options = 180) {
   }
 
   await reportProgress(lifecycle, "Repairing autostart...", 46);
-  const install = await runStackos(["install", "--launchd", "--force", "--skip-doctor"], {
+  const install = await runStackos(
+    scopedInstallArgs({ mcpHosts: INITIAL_MCP_HOSTS, launchd: true }),
+    {
     timeoutMs: timeoutSeconds * 1000,
     onStdout: createInstallProgressReporter(lifecycle)
-  });
+    }
+  );
   if (!install.ok) {
     return {
       ok: false,
@@ -648,12 +645,82 @@ async function repairPreparedInstall(options = 180) {
     ...lifecycle,
     timeoutSeconds: 20
   });
+  const restartReady = restart.ok && restart.health && restart.health.ok;
+  const mcpRepair = restartReady ? await repairMcpRegistrations(lifecycle, ["hermes"]) : null;
   return {
-    ok: restart.ok,
-    phase: restart.ok ? "prepared-launchd-repaired" : "prepared-launchd-restart",
+    ok: restartReady && (!mcpRepair || mcpRepair.ok),
+    phase: !restart.ok
+      ? "prepared-launchd-restart"
+      : !restartReady
+        ? "prepared-launchd-health"
+      : mcpRepair && !mcpRepair.ok
+        ? "prepared-mcp-repair"
+        : "prepared-launchd-repaired",
     status,
     install,
-    restart
+    restart,
+    mcpRepair
+  };
+}
+
+function mcpHostArgs(hosts) {
+  return hosts.flatMap((host) => ["--mcp-host", host]);
+}
+
+function scopedInstallArgs({ mcpHosts, launchd }) {
+  return [
+    "install",
+    "--skill-runtime",
+    DESKTOP_SKILL_RUNTIME,
+    ...mcpHostArgs(mcpHosts),
+    ...(launchd ? ["--launchd", "--force"] : []),
+    "--skip-doctor"
+  ];
+}
+
+function installPhase({ start, startReady, mcpReady, doctor }) {
+  if (!start.ok) {
+    return "restart";
+  }
+  if (!startReady) {
+    return "health";
+  }
+  if (!mcpReady) {
+    return "mcp";
+  }
+  if (doctor && !doctor.ok) {
+    return "doctor";
+  }
+  return "ready";
+}
+
+function installReadiness({ start, startReady, mcpReady, mcpRepair, doctor }) {
+  if (!startReady) {
+    return {
+      ok: false,
+      status: start.ok ? "health-failed" : "restart-failed",
+      code: null,
+      repair: start.ok
+        ? "wait for the StackOS service, then run doctor"
+        : "restart the StackOS service, then run doctor"
+    };
+  }
+  if (!mcpReady) {
+    return {
+      ok: false,
+      status: "mcp-failed",
+      code: mcpRepair && Number.isInteger(mcpRepair.exitCode) ? mcpRepair.exitCode : null,
+      repair: "Run Service > Install or Repair after verifying Codex and Hermes are installed."
+    };
+  }
+  if (doctor) {
+    return readinessFromDoctor(doctor);
+  }
+  return {
+    ok: true,
+    status: "health-ready",
+    code: null,
+    repair: null
   };
 }
 
@@ -817,6 +884,8 @@ module.exports = {
   autostartStatus,
   ensureDaemonReady,
   installOrRepair,
+  installPhase,
+  installReadiness,
   installKeyFor,
   installStatePath,
   inspectMcpHosts,
@@ -834,6 +903,7 @@ module.exports = {
   restartDaemon,
   runDoctor,
   runStackos,
+  scopedInstallArgs,
   setPackagedRuntime,
   startDaemon
 };
