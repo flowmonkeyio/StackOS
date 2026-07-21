@@ -2,19 +2,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import type { VueWrapper } from '@vue/test-utils'
 
 import HomeView from './HomeView.vue'
 
 const ORIG_FETCH = globalThis.fetch
+let mountedWrappers: VueWrapper[] = []
 
 describe('HomeView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    mountedWrappers = []
     Reflect.deleteProperty(window, 'stackosDesktop')
     vi.restoreAllMocks()
   })
 
   afterEach(() => {
+    mountedWrappers.forEach((wrapper) => wrapper.unmount())
+    vi.useRealTimers()
     globalThis.fetch = ORIG_FETCH
     Reflect.deleteProperty(window, 'stackosDesktop')
     document.body.innerHTML = ''
@@ -51,6 +56,29 @@ describe('HomeView', () => {
     const guides = wrapper.findAll('a[href="https://stackos.flowmonkey.io/getting-started"]')
     expect(guides).toHaveLength(2)
     expect(guides.some((guide) => guide.text().includes('Open getting started'))).toBe(true)
+  })
+
+  it('shows a project bound by an agent after the initial empty portfolio read', async () => {
+    vi.useFakeTimers()
+    let projectReads = 0
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/projects?limit=50') {
+        projectReads += 1
+        return json(projectReads === 1 ? emptyProjectsPage() : projectsPage())
+      }
+      return defaultFetch(url)
+    }) as typeof fetch
+
+    const wrapper = await mountHome()
+    await flushPromises()
+    expect(wrapper.text()).toContain('Ready for your first project')
+
+    await vi.advanceTimersByTimeAsync(20_000)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Demo')
+    expect(projectReads).toBeGreaterThanOrEqual(2)
   })
 
   it('renders fast desktop AI-tool connection status in user-facing language', async () => {
@@ -123,6 +151,7 @@ async function mountHome() {
       },
     },
   )
+  mountedWrappers.push(wrapper)
   await flushPromises()
   return wrapper
 }
@@ -137,24 +166,32 @@ function defaultFetch(url: string): Response {
     })
   }
   if (url === '/api/v1/projects?limit=50') {
-    return json({
-      items: [
-        {
-          id: 1,
-          slug: 'demo',
-          name: 'Demo',
-          domain: 'example.com',
-          locale: 'en',
-          is_active: true,
-          created_at: '2026-06-26T00:00:00Z',
-          updated_at: '2026-06-26T00:00:00Z',
-        },
-      ],
-      next_cursor: null,
-      total_estimate: 1,
-    })
+    return json(projectsPage())
   }
   return json({})
+}
+
+function emptyProjectsPage() {
+  return { items: [], next_cursor: null, total_estimate: 0 }
+}
+
+function projectsPage() {
+  return {
+    items: [
+      {
+        id: 1,
+        slug: 'demo',
+        name: 'Demo',
+        domain: 'example.com',
+        locale: 'en',
+        is_active: true,
+        created_at: '2026-06-26T00:00:00Z',
+        updated_at: '2026-06-26T00:00:00Z',
+      },
+    ],
+    next_cursor: null,
+    total_estimate: 1,
+  }
 }
 
 function host(overrides: Record<string, unknown>) {
