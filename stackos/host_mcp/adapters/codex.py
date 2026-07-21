@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -36,6 +37,8 @@ COMMON_CODEX_CLI_CANDIDATES = (
 MACOS_CODEX_APP_BUNDLE_CANDIDATES = (
     "/Applications/Codex.app/Contents/Resources/codex",
     "~/Applications/Codex.app/Contents/Resources/codex",
+    "/Applications/ChatGPT.app/Contents/Resources/codex",
+    "~/Applications/ChatGPT.app/Contents/Resources/codex",
 )
 
 
@@ -45,6 +48,11 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
     if codex_bin is None:
         return _absent()
     command = resolve_bridge_command(runtime=HOST_KEY)
+    details = _run_codex(codex_bin, ["mcp", "get", server_name, "--json"])
+    if details.returncode == 0:
+        details_result = _json_details_result(details.stdout, command, server_name)
+        if details_result is not None:
+            return details_result
     listed = _run_codex(codex_bin, ["mcp", "list"])
     if listed.returncode != 0:
         return HostMcpResult(
@@ -139,7 +147,28 @@ def register(
             available=True,
             command=command,
         )
-    if current.available and current.status != "available_unregistered":
+    if current.status == "registered_unsafe":
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="registered_unsafe",
+            message=(
+                "Codex has a StackOS MCP entry with unsafe connection settings; "
+                "it was not replaced."
+            ),
+            ok=False,
+            available=True,
+            blocking=True,
+            repair=(
+                f"Inspect and remove `codex mcp` entry '{server_name}' manually "
+                "before StackOS Repair."
+            ),
+            warnings=["unsafe Codex MCP entry redacted"],
+        )
+    replaces_current_entry = current.status == "registered_stale" or (
+        current.status == "registered_current" and force
+    )
+    if replaces_current_entry:
         removed = _run_codex(codex_bin, ["mcp", "remove", server_name])
         if removed.returncode != 0:
             return HostMcpResult(
@@ -152,6 +181,8 @@ def register(
                 blocking=True,
                 repair=f"Run `codex mcp remove {server_name}`, then rerun StackOS Repair.",
             )
+    if not replaces_current_entry and current.status != "available_unregistered":
+        return current
     command = resolve_bridge_command(runtime=HOST_KEY)
     added = _run_codex(codex_bin, ["mcp", "add", server_name, "--", *command])
     if added.returncode != 0:
@@ -285,7 +316,88 @@ def _line_is_bridge(
     forbidden = ("/mcp", "--url", "--bearer-token-env-var", "authorization", "bearer")
     if any(token in lowered for token in forbidden):
         return False
-    return command_line_mentions(command, normalized)
+    return command_line_mentions(command, normalized) or " ".join(command) in normalized
+
+
+def _json_details_result(
+    stdout: str,
+    command: Sequence[str],
+    server_name: str,
+) -> HostMcpResult | None:
+    """Classify Codex's machine-readable MCP record without exposing its contents."""
+
+    try:
+        payload = json.loads(stdout)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("name") not in (None, server_name):
+        return None
+    transport = payload.get("transport")
+    if not isinstance(transport, dict):
+        return None
+
+    if _transport_is_unsafe(transport):
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="registered_unsafe",
+            message="Codex has a StackOS MCP entry with unsafe connection settings.",
+            ok=False,
+            available=True,
+            blocking=True,
+            repair="Inspect and remove the entry manually before StackOS Repair.",
+            warnings=["unsafe Codex MCP entry redacted"],
+        )
+
+    actual_command = _transport_command(transport)
+    if (
+        payload.get("enabled") is True
+        and transport.get("type") == "stdio"
+        and actual_command == list(command)
+    ):
+        return HostMcpResult(
+            host_key=HOST_KEY,
+            surface=SURFACE,
+            status="registered_current",
+            message="Codex StackOS MCP registration is healthy.",
+            ok=True,
+            available=True,
+            command=list(command),
+        )
+    return HostMcpResult(
+        host_key=HOST_KEY,
+        surface=SURFACE,
+        status="registered_stale",
+        message="Codex has a StackOS MCP entry, but it is not the local stdio bridge.",
+        ok=False,
+        available=True,
+        blocking=True,
+        repair="Run `stackos install --mcp-only` or desktop Repair.",
+        warnings=["stale Codex MCP entry redacted"],
+    )
+
+
+def _transport_is_unsafe(transport: dict[str, object]) -> bool:
+    expected_fields = {"type", "command", "args", "env", "env_vars", "cwd"}
+    if set(transport) - expected_fields:
+        return True
+    if transport.get("env") not in (None, {}):
+        return True
+    if transport.get("env_vars") not in (None, []):
+        return True
+    if transport.get("cwd") is not None:
+        return True
+    return looks_secretish(transport)
+
+
+def _transport_command(transport: dict[str, object]) -> list[str] | None:
+    executable = transport.get("command")
+    args = transport.get("args")
+    if not isinstance(executable, str) or not isinstance(args, list):
+        return None
+    if not all(isinstance(arg, str) for arg in args):
+        return None
+    return [executable, *args]
 
 
 def _text(value: object) -> str:

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import type { DesktopMcpHostStatus } from '@/lib/desktop'
 
-import { agentHostPresentation, agentHostSummary } from './agentHostPresentation'
+import {
+  SUPPORTED_AGENT_HOSTS,
+  agentHostPresentation,
+  agentHostSummary,
+} from './agentHostPresentation'
 
 function host(overrides: Partial<DesktopMcpHostStatus> = {}): DesktopMcpHostStatus {
   return {
@@ -18,6 +22,10 @@ function host(overrides: Partial<DesktopMcpHostStatus> = {}): DesktopMcpHostStat
 }
 
 describe('agent host presentation', () => {
+  it('includes Hermes in the visible local-agent connection list', () => {
+    expect(SUPPORTED_AGENT_HOSTS).toContainEqual({ host_key: 'hermes', label: 'Hermes' })
+  })
+
   it('describes the StackOS connection instead of claiming a host is installed', () => {
     expect(agentHostPresentation(host()).label).toBe('Connected')
     expect(

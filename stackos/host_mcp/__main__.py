@@ -7,11 +7,15 @@ import sys
 from pathlib import Path
 
 from stackos.host_mcp import inspect_host, register_host, remove_host
+from stackos.host_mcp.service import supported_host_keys
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Manage StackOS host MCP registration.")
-    parser.add_argument("host", choices=["codex", "claude-code", "claude-desktop", "gemini-cli"])
+    parser.add_argument(
+        "host",
+        choices=supported_host_keys(),
+    )
     parser.add_argument("action", choices=["inspect", "register", "remove"])
     parser.add_argument("--home", type=Path, default=None)
     parser.add_argument(

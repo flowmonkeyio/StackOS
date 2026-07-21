@@ -721,6 +721,41 @@ def test_cli_install_skills_only_subcommand(sandbox: Path) -> None:
     assert not (sandbox / ".codex" / "plugins" / "stackos").exists()
 
 
+def test_cli_install_can_scope_skills_and_mcp_hosts(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected_hosts: list[tuple[str, ...]] = []
+    monkeypatch.setattr(installer, "ensure_playwright_browser", lambda: (True, "browser ok"))
+
+    def repair_mcp_hosts(*, home: Path, host_keys: tuple[str, ...]):
+        _ = home
+        selected_hosts.append(host_keys)
+        return True, ["codex ok", "hermes ok"]
+
+    monkeypatch.setattr(installer, "repair_mcp_hosts", repair_mcp_hosts)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "install",
+            "--skill-runtime",
+            "codex",
+            "--mcp-host",
+            "codex",
+            "--mcp-host",
+            "hermes",
+            "--skip-doctor",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert (sandbox / ".codex" / "skills" / "stackos" / "SKILL.md").is_file()
+    assert not (sandbox / ".claude" / "skills" / "stackos").exists()
+    assert selected_hosts == [("codex", "hermes")]
+
+
 def test_cli_install_default_installs_plugin_and_skill_mirrors(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,

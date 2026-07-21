@@ -1,5 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
-  <path d="M18 69h27l8 12h22l8-12h27v31H18V69Z" stroke="#090B10" stroke-width="7" stroke-linejoin="round"/>
-  <path d="M64 18v43m0 0L47 44m17 17 17-17" stroke="#3153D6" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="103" cy="28" r="9" fill="#79DFFF"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 120" role="img" aria-label="IMAP mailbox sync">
+  <rect x="2" y="2" width="256" height="116" rx="9" fill="#050505"/>
+  <path d="M2 31h256" stroke="#fff" stroke-width="3.5"/>
+  <path d="M180 16.5h16m8 0h16m8 0h16" stroke="#fff" stroke-width="5"/>
+  <path fill="#fff" stroke="#fff" stroke-width="4.5" d="M26.8 57.4V49.1H55.4V57.4H45.9V88.7H55.4V97H26.8V88.7H36.4V57.4Z M63.7 49.1H75L80.7 70.1L86.4 49.1H97.7V97H89.6V58.6L84.5 79.6H77L71.8 58.6V97H63.7Z M120.3 57.7 115.8 77.4H124.8ZM114.5 49.1H126.1L139 97H129.6L126.6 85.2H113.9L111 97H101.6Z M154.8 57V71.1H158.6Q163.3 71.1 165.2 69.5Q167.1 67.9 167.1 64.1Q167.1 60.2 165.2 58.6Q163.3 57 158.6 57ZM145.3 49.1H158.3Q168.2 49.1 172.6 52.6Q176.9 56.1 176.9 64.1Q176.9 72 172.6 75.5Q168.2 79.1 158.3 79.1H154.8V97H145.3Z"/>
+  <path fill="#fff" d="M210.4 50h10.5v11.5h8.1L215.7 74L202.3 61.5h8.1Z M192.7 81.6h8.6l3.8 6.7h21.1l3.8 -6.7h8.6v14.4h-46Z"/>
 </svg>

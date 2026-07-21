@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from stackos.host_mcp.adapters import claude_desktop, codex, gemini_cli
+from stackos.host_mcp.adapters import claude_desktop, codex, gemini_cli, hermes
 from stackos.host_mcp.bridge import resolve_bridge_command
 from stackos.host_mcp.restart_state import state_path
 
@@ -19,7 +19,22 @@ def _write_token(home: Path) -> None:
     token.chmod(0o600)
 
 
-def _write_fake_cli(bin_dir: Path, name: str, log: Path, *, list_output: str = "") -> Path:
+def _write_hermes_config(path: Path, stackos: dict[str, object] | None = None) -> None:
+    servers: dict[str, object] = {}
+    if stackos is not None:
+        servers["stackos"] = stackos
+    path.write_text(json.dumps({"mcp_servers": servers}), encoding="utf-8")
+
+
+def _write_fake_cli(
+    bin_dir: Path,
+    name: str,
+    log: Path,
+    *,
+    list_output: str = "",
+    get_output: str = "",
+    get_returncode: int = 2,
+) -> Path:
     script = bin_dir / name
     script.write_text(
         f"""#!{sys.executable}
@@ -30,6 +45,8 @@ from pathlib import Path
 
 LOG = Path({str(log)!r})
 LIST_OUTPUT = {list_output!r}
+GET_OUTPUT = {get_output!r}
+GET_RETURNCODE = {get_returncode!r}
 
 
 def main(argv):
@@ -39,6 +56,9 @@ def main(argv):
     if argv[:2] == ["mcp", "list"]:
         print(LIST_OUTPUT, end="")
         return 0
+    if argv[:3] == ["mcp", "get", "stackos"]:
+        print(GET_OUTPUT, end="")
+        return GET_RETURNCODE
     if argv[:2] in (["mcp", "add"], ["mcp", "remove"]):
         return 0
     return 2
@@ -92,6 +112,374 @@ def test_codex_adapter_finds_gui_app_and_node_manager_installs(tmp_path: Path, m
 
     nvm_cli.unlink()
     assert codex.resolve_codex_bin() == str(app_cli)
+
+
+def test_codex_adapter_recognizes_chatgpt_bundled_codex_cli() -> None:
+    assert (
+        "/Applications/ChatGPT.app/Contents/Resources/codex"
+        in codex.MACOS_CODEX_APP_BUNDLE_CANDIDATES
+    )
+
+
+def test_codex_adapter_recognizes_json_bridge_with_space_in_app_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "codex.log"
+    packaged = (
+        tmp_path / "StackOS Local.app" / "Contents" / "Resources" / "stackos" / "bin" / "stackos"
+    )
+    packaged.parent.mkdir(parents=True)
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    _write_fake_cli(
+        bin_dir,
+        "codex",
+        log,
+        get_output=json.dumps(
+            {
+                "name": "stackos",
+                "transport": {
+                    "type": "stdio",
+                    "command": str(packaged),
+                    "args": ["mcp-bridge", "--runtime", "codex"],
+                    "env": None,
+                    "env_vars": [],
+                    "cwd": None,
+                },
+                "enabled": True,
+            }
+        ),
+        get_returncode=0,
+    )
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+
+    result = codex.inspect(tmp_path)
+
+    assert result.ok is True
+    assert result.status == "registered_current"
+    assert result.command == [str(packaged), "mcp-bridge", "--runtime", "codex"]
+
+
+def test_codex_adapter_does_not_replace_unsafe_json_entry(tmp_path: Path, monkeypatch) -> None:
+    _write_token(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "codex.log"
+    _write_fake_cli(
+        bin_dir,
+        "codex",
+        log,
+        get_output=json.dumps(
+            {
+                "name": "stackos",
+                "transport": {
+                    "type": "sse",
+                    "url": "https://remote.example.test/mcp",
+                },
+                "enabled": True,
+            }
+        ),
+        get_returncode=0,
+    )
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    result = codex.register(tmp_path)
+
+    assert result.ok is False
+    assert result.status == "registered_unsafe"
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert not any(call.startswith("mcp remove") for call in calls)
+
+
+def test_codex_adapter_force_replaces_current_json_entry(tmp_path: Path, monkeypatch) -> None:
+    _write_token(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "codex.log"
+    packaged = tmp_path / "stackos"
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    _write_fake_cli(
+        bin_dir,
+        "codex",
+        log,
+        get_output=json.dumps(
+            {
+                "name": "stackos",
+                "transport": {
+                    "type": "stdio",
+                    "command": str(packaged),
+                    "args": ["mcp-bridge", "--runtime", "codex"],
+                    "env": None,
+                    "env_vars": [],
+                    "cwd": None,
+                },
+                "enabled": True,
+            }
+        ),
+        get_returncode=0,
+    )
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+
+    result = codex.register(tmp_path, force=True)
+
+    assert result.ok is True
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert "mcp remove stackos" in calls
+    assert f"mcp add stackos -- {packaged} mcp-bridge --runtime codex" in calls
+
+
+def test_hermes_adapter_registers_local_bridge_after_daemon_is_ready(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_token(tmp_path)
+    hermes_cli = tmp_path / "bin" / "hermes"
+    hermes_cli.parent.mkdir()
+    hermes_cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    hermes_cli.chmod(0o755)
+    packaged = tmp_path / "StackOS.app" / "Contents" / "Resources" / "stackos" / "bin" / "stackos"
+    packaged.parent.mkdir(parents=True)
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    config = tmp_path / "hermes-config.yaml"
+    _write_hermes_config(config)
+    calls: list[tuple[list[str], str | None]] = []
+
+    def fake_run(_binary: str, args: list[str], *, input_text: str | None = None):
+        calls.append((args, input_text))
+        if args == ["config", "path"]:
+            return subprocess.CompletedProcess(args, 0, f"{config}\n", "")
+        if args[:2] == ["mcp", "add"]:
+            _write_hermes_config(
+                config,
+                {
+                    "command": str(packaged),
+                    "args": ["mcp-bridge", "--runtime", "hermes"],
+                    "enabled": True,
+                },
+            )
+            return subprocess.CompletedProcess(args, 0, "Saved 'stackos' to config.yaml\n", "")
+        raise AssertionError(f"unexpected Hermes command: {args}")
+
+    monkeypatch.setenv("STACKOS_HERMES_BIN", str(hermes_cli))
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(hermes, "_daemon_is_ready", lambda: True)
+    monkeypatch.setattr(hermes, "_run_hermes", fake_run)
+
+    result = hermes.register(tmp_path)
+
+    assert result.ok is True
+    assert result.command == [str(packaged), "mcp-bridge", "--runtime", "hermes"]
+    assert (
+        [
+            "mcp",
+            "add",
+            "stackos",
+            "--command",
+            str(packaged),
+            "--args",
+            "mcp-bridge",
+            "--runtime",
+            "hermes",
+        ],
+        "y\n",
+    ) in calls
+
+
+def test_hermes_adapter_refuses_registration_while_daemon_is_not_ready(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_token(tmp_path)
+    hermes_cli = tmp_path / "bin" / "hermes"
+    hermes_cli.parent.mkdir()
+    hermes_cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    hermes_cli.chmod(0o755)
+    monkeypatch.setenv("STACKOS_HERMES_BIN", str(hermes_cli))
+    monkeypatch.setattr(hermes, "_daemon_is_ready", lambda: False)
+    monkeypatch.setattr(
+        hermes,
+        "_run_hermes",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not invoke Hermes")),
+    )
+
+    result = hermes.register(tmp_path)
+
+    assert result.ok is False
+    assert result.status == "register_failed"
+    assert "running" in result.message.lower()
+
+
+def test_hermes_adapter_does_not_probe_a_remote_stackos_entry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    hermes_cli = tmp_path / "bin" / "hermes"
+    hermes_cli.parent.mkdir()
+    hermes_cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    hermes_cli.chmod(0o755)
+    packaged = tmp_path / "StackOS.app" / "Contents" / "Resources" / "stackos" / "bin" / "stackos"
+    packaged.parent.mkdir(parents=True)
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    config = tmp_path / "hermes-config.yaml"
+    _write_hermes_config(config, {"url": "https://remote.example.test/mcp", "enabled": True})
+    calls: list[list[str]] = []
+
+    def fake_run(_binary: str, args: list[str], *, input_text: str | None = None):
+        _ = input_text
+        calls.append(args)
+        if args == ["config", "path"]:
+            return subprocess.CompletedProcess(args, 0, f"{config}\n", "")
+        raise AssertionError(f"unexpected Hermes command: {args}")
+
+    monkeypatch.setenv("STACKOS_HERMES_BIN", str(hermes_cli))
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(hermes, "_run_hermes", fake_run)
+
+    result = hermes.inspect(tmp_path)
+
+    assert result.status == "registered_unsafe"
+    assert calls == [["config", "path"]]
+
+
+def test_hermes_adapter_recognizes_its_expected_local_bridge(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    hermes_cli = tmp_path / "bin" / "hermes"
+    hermes_cli.parent.mkdir()
+    hermes_cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    hermes_cli.chmod(0o755)
+    packaged = tmp_path / "StackOS.app" / "Contents" / "Resources" / "stackos" / "bin" / "stackos"
+    packaged.parent.mkdir(parents=True)
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    config = tmp_path / "hermes-config.yaml"
+    _write_hermes_config(
+        config,
+        {
+            "command": str(packaged),
+            "args": ["mcp-bridge", "--runtime", "hermes"],
+            "enabled": True,
+        },
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(_binary: str, args: list[str], *, input_text: str | None = None):
+        _ = input_text
+        calls.append(args)
+        if args == ["config", "path"]:
+            return subprocess.CompletedProcess(args, 0, f"{config}\n", "")
+        raise AssertionError(f"unexpected Hermes command: {args}")
+
+    monkeypatch.setenv("STACKOS_HERMES_BIN", str(hermes_cli))
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(hermes, "_run_hermes", fake_run)
+
+    result = hermes.inspect(tmp_path)
+
+    assert result.ok is True
+    assert result.status == "registered_current"
+    assert calls == [["config", "path"]]
+
+
+def test_hermes_adapter_rejects_wrong_runtime_from_exact_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    hermes_cli = tmp_path / "bin" / "hermes"
+    hermes_cli.parent.mkdir()
+    hermes_cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    hermes_cli.chmod(0o755)
+    packaged = tmp_path / "StackOS.app" / "Contents" / "Resources" / "stackos" / "bin" / "stackos"
+    packaged.parent.mkdir(parents=True)
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    config = tmp_path / "hermes-config.yaml"
+    _write_hermes_config(
+        config,
+        {
+            "command": str(packaged),
+            "args": ["mcp-bridge", "--runtime", "codex"],
+            "enabled": True,
+        },
+    )
+
+    def fake_run(_binary: str, args: list[str], *, input_text: str | None = None):
+        _ = input_text
+        if args == ["config", "path"]:
+            return subprocess.CompletedProcess(args, 0, f"{config}\n", "")
+        raise AssertionError(f"unexpected Hermes command: {args}")
+
+    monkeypatch.setenv("STACKOS_HERMES_BIN", str(hermes_cli))
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(hermes, "_run_hermes", fake_run)
+
+    result = hermes.inspect(tmp_path)
+
+    assert result.ok is False
+    assert result.status == "registered_stale"
+
+
+def test_hermes_adapter_removes_disabled_registration_after_failed_discovery(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_token(tmp_path)
+    hermes_cli = tmp_path / "bin" / "hermes"
+    hermes_cli.parent.mkdir()
+    hermes_cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    hermes_cli.chmod(0o755)
+    packaged = tmp_path / "StackOS.app" / "Contents" / "Resources" / "stackos" / "bin" / "stackos"
+    packaged.parent.mkdir(parents=True)
+    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
+    packaged.chmod(0o755)
+    config = tmp_path / "hermes-config.yaml"
+    _write_hermes_config(config)
+    calls: list[list[str]] = []
+
+    def fake_run(_binary: str, args: list[str], *, input_text: str | None = None):
+        _ = input_text
+        calls.append(args)
+        if args == ["config", "path"]:
+            return subprocess.CompletedProcess(args, 0, f"{config}\n", "")
+        if args[:2] == ["mcp", "add"]:
+            _write_hermes_config(
+                config,
+                {
+                    "command": str(packaged),
+                    "args": ["mcp-bridge", "--runtime", "hermes"],
+                    "enabled": False,
+                },
+            )
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                "Saved 'stackos' to config (disabled)\n",
+                "",
+            )
+        if args == ["mcp", "remove", "stackos"]:
+            _write_hermes_config(config)
+            return subprocess.CompletedProcess(args, 0, "Removed 'stackos' from config\n", "")
+        raise AssertionError(f"unexpected Hermes command: {args}")
+
+    monkeypatch.setenv("STACKOS_HERMES_BIN", str(hermes_cli))
+    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
+    monkeypatch.setattr(hermes, "_daemon_is_ready", lambda: True)
+    monkeypatch.setattr(hermes, "_run_hermes", fake_run)
+
+    result = hermes.register(tmp_path)
+
+    assert result.ok is False
+    assert result.status == "register_failed"
+    assert ["mcp", "remove", "stackos"] in calls
+    assert json.loads(config.read_text(encoding="utf-8"))["mcp_servers"] == {}
 
 
 def test_resolve_bridge_command_accepts_workspace_root(tmp_path: Path, monkeypatch) -> None:

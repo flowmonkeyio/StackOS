@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 120" role="img" aria-label="FTP protocol">
+  <rect x="2" y="2" width="256" height="116" rx="9" fill="#050505"/>
+  <path d="M2 31h256" stroke="#fff" stroke-width="3.5"/>
+  <path d="M180 16.5h16m8 0h16m8 0h16" stroke="#fff" stroke-width="5"/>
+  <path fill="#fff" stroke="#fff" stroke-width="4.5" d="M65.3 57.4H44.9V67.8H63.5V76.1H44.9V97H35.5V49.1H65.3Z M93.7 97H84.3V57.3H72.1V49.1H105.9V57.3H93.7Z M123.5 57V71.1H127.4Q132 71.1 133.9 69.5Q135.8 67.9 135.8 64.1Q135.8 60.2 133.9 58.6Q132 57 127.4 57ZM114 49.1H127Q136.9 49.1 141.3 52.6Q145.6 56.1 145.6 64.1Q145.6 72 141.3 75.5Q136.9 79.1 127 79.1H123.5V97H114Z"/>
+  <path fill="#fff" d="M154.4 59h14v14h-14Z M154.4 83h14v14h-14Z M193.4 49h14L191.4 97h-14Z M216.4 49h14L214.4 97h-14Z"/>
+</svg>
